@@ -383,6 +383,13 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(listed).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: a quoted fence inside a list item closes in its quote.
+    let quoted_in_list = "- > ```\n  > example code long enough to read as prose\n  > ```\n\n\
+                          PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(quoted_in_list).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
     // An unclosed fence hides the rest.
     assert!(preview_of("```\nPERSON_1 signed the agreement today.\n").is_none());
 }
@@ -558,4 +565,48 @@ fn markers_inside_code_do_not_close_its_fence() {
             "{text:?}"
         );
     }
+}
+
+/// Review of #280: one long paragraph of wrapped lines, with furniture
+/// among them, is cleaned in one pass rather than a cut at a time.
+#[test]
+fn a_long_wrapped_paragraph_previews_in_linear_time() {
+    let mut text = String::new();
+    for line in 0..100_000 {
+        if line % 50 == 49 {
+            text.push_str("12\n");
+        } else {
+            text.push_str("PERSON_1 signed **the** agreement with ORG_1 today\n");
+        }
+    }
+    let started = std::time::Instant::now();
+    let preview = preview_of(&text).unwrap();
+    assert!(
+        preview.text.starts_with("PERSON_1 signed the agreement with ORG_1 today PERSON_1"),
+        "{}",
+        preview.text
+    );
+    assert!(preview.text.ends_with('…'));
+    assert!(!preview.text.contains(LINE_MARK) && !preview.text.contains("12"));
+    assert!(
+        started.elapsed() < Duration::from_secs(20),
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
+/// A paragraph cut short may end in half a name: it shows only when its
+/// text runs well past the preview, so that end is never in sight.
+#[test]
+fn a_paragraph_cut_short_never_shows_its_end() {
+    let link = format!("[x](https://example.com/{})", "a".repeat(300));
+    let mut text = String::from("PERSON_1 signed the agreement today.\n\n");
+    while text.len() < 2 * PARAGRAPH_BYTES {
+        text.push_str(&link);
+        text.push('\n');
+    }
+    // Mostly hidden link targets: too little text shows, so only the
+    // paragraph before it does, and the preview says there is more.
+    let preview = preview_of(&text).unwrap();
+    assert_eq!(preview.text, "PERSON_1 signed the agreement today.…");
 }

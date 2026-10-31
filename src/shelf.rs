@@ -31,6 +31,10 @@ pub(crate) const MAX_DOCUMENTS: usize = 8;
 /// A preview is cut after about this many characters: more than two
 /// wrapped lines of the shelf hold, so the view's clamp ends it.
 const PREVIEW_CHARS: usize = 220;
+/// A preview reads at most this much of one paragraph's source, so a huge
+/// paragraph costs no more than a long one (the span scanner also numbers
+/// a line's spans in a `u16`).
+const PARAGRAPH_BYTES: usize = 32 * 1024;
 /// A line is prose, and may start a preview, with at least this many
 /// words and letters; shorter ones are page furniture (page numbers,
 /// rules, "Page 1 of 5").
@@ -418,15 +422,33 @@ impl Styled {
         }
     }
 
-    /// Remove the bytes `cut` (char boundaries), moving the ranges after it.
-    fn remove(&mut self, cut: Range<usize>) {
-        let len = cut.len();
-        self.text.replace_range(cut.clone(), "");
+    /// Remove the bytes in `cuts` (sorted, disjoint, on char boundaries) in
+    /// one pass, moving the ranges after each: a long paragraph with many
+    /// cuts stays linear.
+    fn remove_all(&mut self, cuts: &[Range<usize>]) {
+        if cuts.is_empty() {
+            return;
+        }
+        let mut text = String::with_capacity(self.text.len());
+        let mut at = 0;
+        // Bytes removed before each cut, and in all.
+        let mut before = Vec::with_capacity(cuts.len());
+        let mut gone = 0;
+        for cut in cuts {
+            before.push(gone);
+            text.push_str(&self.text[at..cut.start]);
+            at = cut.end;
+            gone += cut.len();
+        }
+        text.push_str(&self.text[at..]);
+        self.text = text;
         let moved = |at: usize| {
-            if at >= cut.end {
-                at - len
-            } else {
-                at.min(cut.start)
+            // The cuts wholly before `at`, then one `at` may sit inside.
+            let k = cuts.partition_point(|cut| cut.end <= at);
+            match cuts.get(k) {
+                Some(cut) if cut.start < at => cut.start - before[k],
+                Some(_) => at - before[k],
+                None => at - gone,
             }
         };
         for ranges in [&mut self.bold, &mut self.italic] {
@@ -502,20 +524,19 @@ fn drop_furniture(mut paragraph: Styled, names: &RestoreMap) -> Styled {
             _ => merged.push(cut),
         }
     }
-    for cut in merged.into_iter().rev() {
-        paragraph.remove(cut);
-    }
-    while let Some(at) = paragraph.text.find(LINE_MARK) {
-        let end = at + mark_len;
-        let end = if paragraph.text[end..].starts_with(' ') {
-            end + 1
-        } else {
-            end
-        };
-        paragraph.remove(at..end);
-    }
+    paragraph.remove_all(&merged);
+    // Each remaining mark goes with a space after it.
+    let marks: Vec<Range<usize>> = paragraph
+        .text
+        .match_indices(LINE_MARK)
+        .map(|(at, _)| {
+            let end = at + mark_len;
+            at..end + usize::from(paragraph.text[end..].starts_with(' '))
+        })
+        .collect();
+    paragraph.remove_all(&marks);
     if paragraph.text.starts_with(' ') {
-        paragraph.remove(0..1);
+        paragraph.remove_all(&[Range { start: 0, end: 1 }]);
     }
     let len = paragraph.text.trim_end().len();
     paragraph.truncate(len);
@@ -618,23 +639,15 @@ fn unquote(mut line: &str, levels: usize) -> &str {
     line
 }
 
-/// How many blockquote levels `line` sits in.
-fn quote_depth(line: &str) -> usize {
-    let mut depth = 0;
-    let mut rest = line;
-    while let Some(prefix) = lines::blockquote_prefix(rest) {
-        depth += rest[..prefix].matches('>').count();
-        rest = rest[prefix..].trim_start();
-    }
-    depth
-}
-
 /// `line` without its containers' markers: blockquotes (`>`, nested `>>`
 /// too, and an alert's `[!NOTE]`), list items (`-`, `1.`) and task boxes,
-/// however they nest.
-fn block_content(mut line: &str) -> &str {
+/// however they nest; and how many blockquote levels it sits in, list
+/// items between them too (`- > ```` is in one).
+fn containers(mut line: &str) -> (&str, usize) {
+    let mut quotes = 0;
     loop {
         if let Some(prefix) = lines::blockquote_prefix(line) {
+            quotes += line[..prefix].matches('>').count();
             line = line[prefix..].trim_start();
             if let Some((_, alert, _)) = mdoc_markdown::syntax::alert_prefix(line) {
                 line = line[alert..].trim_start();
@@ -644,7 +657,7 @@ fn block_content(mut line: &str) -> &str {
         } else if let Some((prefix, ..)) = lines::list_prefix(line) {
             line = line[prefix..].trim_start();
         } else {
-            return line;
+            return (line, quotes);
         }
     }
 }
@@ -703,10 +716,14 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     // is hidden and it is masked whole before it is judged: a name split
     // over two lines, by an entity or by emphasis running on, is never left
     // half shown.
-    let finish = |paragraph: &mut String, styled: &mut Styled| -> bool {
+    //
+    // A paragraph cut at [`PARAGRAPH_BYTES`] (`capped`) may end in half a
+    // name, so it shows only when its text runs well past the preview's
+    // length, which keeps that end out of sight; either way it is the last.
+    let finish = |paragraph: &mut String, styled: &mut Styled, capped: bool| -> bool {
         let source = std::mem::take(paragraph);
         if source.is_empty() {
-            return false;
+            return capped;
         }
         let mut done = drop_furniture(plain_line(&source), names);
         let (masked, _) = names.pseudonymize(&done.text);
@@ -717,18 +734,21 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             };
         }
         if !is_prose(&done.text) {
-            return false;
+            return capped;
         }
         if styled.text.chars().count() >= PREVIEW_CHARS {
             return true;
         }
+        if capped && done.text.chars().count() < 2 * PREVIEW_CHARS {
+            return true;
+        }
         styled.append(done);
-        false
+        capped
     };
     for line in text.lines() {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
-        let block = block_content(trimmed);
+        let (block, quotes) = containers(trimmed);
         if let Some((c, n, quotes)) = fenced {
             // Only a fence of the same character, at least as long, with
             // nothing after it and in the opener's quotes, closes the block;
@@ -753,13 +773,13 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         // a quote's lines run on.
         let item = lines::list_prefix(unquoted(trimmed)).is_some();
         if structure || item {
-            more = finish(&mut paragraph, &mut styled);
+            more = finish(&mut paragraph, &mut styled, false);
             if more {
                 break;
             }
         }
         if let Some((c, n)) = fence(block) {
-            fenced = Some((c, n, quote_depth(trimmed)));
+            fenced = Some((c, n, quotes));
             continue;
         }
         if structure {
@@ -771,9 +791,13 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             paragraph.push(' ');
         }
         paragraph.push_str(without_hard_break(block));
+        if paragraph.len() >= PARAGRAPH_BYTES {
+            more = finish(&mut paragraph, &mut styled, true);
+            break;
+        }
     }
     if !more {
-        more = finish(&mut paragraph, &mut styled);
+        more = finish(&mut paragraph, &mut styled, false);
     }
     if styled.text.is_empty() {
         return None;
