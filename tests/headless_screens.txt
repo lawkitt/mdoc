@@ -46,6 +46,7 @@ conversion-failed
 ocr-consent
 restored-reply
 comments
+docx-source
 shelf
 shelf-copied
 shelf-note
