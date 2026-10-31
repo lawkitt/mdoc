@@ -131,6 +131,14 @@ fn case_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource>
         .cloned()
 }
 
+/// Each row's "N replaced" as last painted, for renders to hover.
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
+type CountBounds = Rc<std::cell::RefCell<Vec<(usize, gpui::Bounds<Pixels>)>>>;
+
 /// What the shelf shows, read from the workspace when it opens.
 pub(crate) struct ShelfContent {
     pub documents: Vec<ShelfDocument>,
@@ -272,6 +280,13 @@ pub(crate) struct ShelfView {
     /// The last clipboard action's result, on the source line for a while.
     result: Option<String>,
     result_clear: Option<Task<()>>,
+    /// Where each row's "N replaced" was painted, so a render can hover it.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    counts: CountBounds,
     /// The last drag's payload and card, for tests (no native drag runs
     /// there).
     #[cfg(test)]
@@ -345,6 +360,12 @@ impl ShelfView {
             fit: None,
             result: None,
             result_clear: None,
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
+            counts: Rc::default(),
             #[cfg(test)]
             dragged: None,
             #[cfg(test)]
@@ -385,6 +406,21 @@ impl ShelfView {
     ))]
     pub(crate) fn show_copied(&mut self, index: usize) {
         self.copied = Some(index);
+    }
+
+    /// The middle of row `index`'s "N replaced" as last painted, for
+    /// renders to hover.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn count_center(&self, index: usize) -> Option<Point<Pixels>> {
+        self.counts
+            .borrow()
+            .iter()
+            .find(|(row, _)| *row == index)
+            .map(|(_, bounds)| bounds.center())
     }
 
     /// The shelf is its own popup, `height` tall with at most `max` under

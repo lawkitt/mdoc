@@ -53,7 +53,7 @@ class RestoreTest {
         val intent = Intent(app, RestoreActivity::class.java)
             .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, reply)
         ActivityScenario.launch<RestoreActivity>(intent).use {
-            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 values restored")).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 value restored")).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText(title).assertExists()
             compose.onNodeWithText("Save to document").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("Saved")).fetchSemanticsNodes().isNotEmpty() }
@@ -78,7 +78,7 @@ class RestoreTest {
             .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, reply)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ActivityScenario.launch<RestoreActivity>(share("First: PERSON_1.")).use { scenario ->
-            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 values restored")).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 value restored")).fetchSemanticsNodes().isNotEmpty() }
             // The activity is single-task: a new share arrives through onNewIntent.
             scenario.onActivity { it.startActivity(share("Second: PERSON_1 and PERSON_9.")) }
             compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 unrecognised", substring = true)).fetchSemanticsNodes().isNotEmpty() }

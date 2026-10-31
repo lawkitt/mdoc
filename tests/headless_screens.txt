@@ -47,6 +47,8 @@ ocr-consent
 restored-reply
 comments
 shelf
+shelf-demos
+shelf-demos-count
 shelf-copied
 shelf-note
 shelf-empty

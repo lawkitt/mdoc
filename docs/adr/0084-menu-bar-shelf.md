@@ -54,9 +54,10 @@ window.
 - **Row.** The title without `.md`, cut in the middle; then the case as a
   small label tinted in the case colour (nothing without a case); readiness
   states use the same label style in amber. Then the preview, then a muted
-  line: "5 min ago · 1,297 words · 14 replaced" (a date once older than
-  yesterday). Hovering "14 replaced" lists its categories ("6 people ·
-  4 organisations · 4 IDs").
+  line: "5 min ago · 1,297 words · 24 replaced" (a date once older than
+  yesterday). The count is of mentions, the same number as the editor's
+  Share tab; hovering it lists the distinct names those mentions are, by
+  category ("14 names: 6 people · 4 organizations · 4 IDs").
 - **Preview.** The first real prose of the pseudonymized text: lines with
   fewer than about 3 words or 12 letters (page numbers, rules, "Page 1 of
   5") are skipped, and Markdown syntax is hidden through `mdoc-markdown`

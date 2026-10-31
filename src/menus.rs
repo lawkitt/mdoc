@@ -1,18 +1,30 @@
 //! The menu bar. On macOS GPUI makes the first menu the application menu, so
-//! it is the app menu (About, Settings, Services, Hide, Quit), followed by
-//! File, Edit, View, Window and Help. Edit items use the editor's actions with their
-//! OS actions, so they also reach native Open/Save panels.
+//! it is the app menu (About, Check for Updates…, Settings, Services, Hide,
+//! Quit), followed by File, Edit, View, Window and Help. Edit items use the
+//! editor's actions with their OS actions, so they also reach native
+//! Open/Save panels. File › Open Recent follows the window's Recents.
 
 use crate::{
-    document_view::{CopyMarkdown, Save, SaveAs, ToggleCompare, ZoomIn, ZoomOut, ZoomReset},
+    document_view::{
+        CopyMarkdown, Save, SaveAs, ShowEditView, ShowOriginalView, ShowPseudonymizedView,
+        ShowReplacements, ToggleCompare, ZoomIn, ZoomOut, ZoomReset,
+    },
     pii::ui::{CopyForAi, Pseudonymize},
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
-        Close, Import, New, NextTab, Open, OpenCase, PasteAiResponse, PreviousTab,
-        PseudonymizeClipboard, Quit, Settings, ToggleSidebar, shortcuts_ui::ShowShortcuts,
+        CheckForUpdates, ClearRecentFiles, Close, Import, New, NextTab, Open, OpenCase,
+        OpenPalette, OpenRecent, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
+        RestoreClipboard, Settings, ShowHome, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
-use gpui::{App, Menu, MenuItem, OsAction, SystemMenuType, actions};
+use gpui::{App, Global, Menu, MenuItem, OsAction, SystemMenuType, actions};
+use std::path::PathBuf;
+
+/// What Help › mdoc Help and the sidebar's ? open.
+pub(crate) const HELP_URL: &str = "https://github.com/lawkitt/mdoc#readme";
+
+/// File › Open Recent lists at most this many files.
+const RECENT_LIMIT: usize = 10;
 
 actions!(
     mdoc,
@@ -22,9 +34,52 @@ actions!(
         HideOtherApps,
         ShowAllApps,
         MinimizeWindow,
-        ZoomWindow
+        ZoomWindow,
+        OpenHelp
     ]
 );
+
+/// The files File › Open Recent lists, most recent first.
+#[derive(Default)]
+struct RecentFiles(Vec<PathBuf>);
+
+impl Global for RecentFiles {}
+
+/// Set once [`install`] has put up the menu bar, so Recents changes rebuild it.
+struct Installed;
+
+impl Global for Installed {}
+
+/// The window's Recents changed: rebuild File › Open Recent.
+pub(crate) fn set_recent_files(paths: Vec<PathBuf>, cx: &mut App) {
+    cx.set_global(RecentFiles(paths));
+    if cx.has_global::<Installed>() {
+        cx.set_menus(menus(&recent_files(cx)));
+    }
+}
+
+/// File › Open Recent's item titles, separators left out (tests).
+#[cfg(test)]
+pub(crate) fn open_recent_titles(cx: &App) -> Vec<gpui::SharedString> {
+    titles(open_recent(&recent_files(cx)))
+}
+
+#[cfg(test)]
+fn titles(menu: Menu) -> Vec<gpui::SharedString> {
+    menu.items
+        .into_iter()
+        .filter_map(|item| match item {
+            MenuItem::Action { name, .. } => Some(name),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recent_files(cx: &App) -> Vec<PathBuf> {
+    cx.try_global::<RecentFiles>()
+        .map(|recent| recent.0.clone())
+        .unwrap_or_default()
+}
 
 /// Install the menu bar and the app-level actions only it needs.
 pub(crate) fn install(cx: &mut App) {
@@ -41,14 +96,16 @@ pub(crate) fn install(cx: &mut App) {
             let _ = window.update(cx, |_, window, _| window.zoom_window());
         }
     });
+    cx.on_action(|_: &OpenHelp, cx| cx.open_url(HELP_URL));
     // macOS only: the table has no Windows keys for these.
     cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Menus));
-    cx.set_menus(menus());
+    cx.set_global(Installed);
+    cx.set_menus(menus(&recent_files(cx)));
 }
 
 /// Every action item, with its title, in menu order (tests).
 #[cfg(test)]
-pub(crate) fn items() -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
+pub(crate) fn items(recent: &[PathBuf]) -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
     fn walk(items: Vec<MenuItem>, out: &mut Vec<(gpui::SharedString, Box<dyn gpui::Action>)>) {
         for item in items {
             match item {
@@ -59,18 +116,53 @@ pub(crate) fn items() -> Vec<(gpui::SharedString, Box<dyn gpui::Action>)> {
         }
     }
     let mut out = Vec::new();
-    for menu in menus() {
+    for menu in menus(recent) {
         walk(menu.items, &mut out);
     }
     out
 }
 
-fn menus() -> Vec<Menu> {
-    let mut app = vec![
-        MenuItem::action("About mdoc", About),
+/// File › Open Recent: file names, with the folder when two share a name,
+/// then Clear Menu.
+fn open_recent(recent: &[PathBuf]) -> Menu {
+    let recent = &recent[..recent.len().min(RECENT_LIMIT)];
+    let name = |path: &PathBuf| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string_lossy().into_owned())
+    };
+    let mut items: Vec<MenuItem> = recent
+        .iter()
+        .map(|path| {
+            let file = name(path);
+            let shared = recent.iter().filter(|other| name(other) == file).count() > 1;
+            let folder = path
+                .parent()
+                .and_then(|folder| folder.file_name())
+                .map(|folder| folder.to_string_lossy().into_owned());
+            let label = match folder {
+                Some(folder) if shared => format!("{file} — {folder}"),
+                _ => file,
+            };
+            MenuItem::action(label, OpenRecent(path.clone()))
+        })
+        .collect();
+    if !items.is_empty() {
+        items.push(MenuItem::separator());
+    }
+    items.push(MenuItem::action("Clear Menu", ClearRecentFiles).disabled(recent.is_empty()));
+    Menu::new("Open Recent").items(items)
+}
+
+fn menus(recent: &[PathBuf]) -> Vec<Menu> {
+    let mut app = vec![MenuItem::action("About mdoc", About)];
+    if cfg!(target_os = "macos") {
+        app.push(MenuItem::action("Check for Updates…", CheckForUpdates));
+    }
+    app.extend([
         MenuItem::separator(),
         MenuItem::action("Settings…", Settings),
-    ];
+    ]);
     if cfg!(target_os = "macos") {
         app.extend([
             MenuItem::separator(),
@@ -82,11 +174,22 @@ fn menus() -> Vec<Menu> {
         ]);
     }
     app.extend([MenuItem::separator(), MenuItem::action("Quit mdoc", Quit)]);
+    let mut help = vec![
+        MenuItem::action("mdoc Help", OpenHelp),
+        MenuItem::action("Keyboard Shortcuts", ShowShortcuts),
+    ];
+    if !cfg!(target_os = "macos") {
+        help.extend([
+            MenuItem::separator(),
+            MenuItem::action("Check for Updates…", CheckForUpdates),
+        ]);
+    }
     vec![
         Menu::new("mdoc").items(app),
         Menu::new("File").items([
             MenuItem::action("New", New),
             MenuItem::action("Open…", Open),
+            MenuItem::submenu(open_recent(recent)),
             MenuItem::action("Open Case…", OpenCase),
             MenuItem::action("Convert to Markdown", Import),
             MenuItem::separator(),
@@ -115,10 +218,19 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Pseudonymize", Pseudonymize),
             MenuItem::action("Pseudonymize Clipboard", PseudonymizeClipboard),
+            MenuItem::action("Restore Clipboard", RestoreClipboard),
         ]),
         Menu::new("View").items([
+            MenuItem::action("Home", ShowHome),
+            MenuItem::action("Search", OpenPalette),
             MenuItem::action("Toggle Sidebar", ToggleSidebar),
+            MenuItem::separator(),
+            MenuItem::action("Edit", ShowEditView),
+            MenuItem::action("Original", ShowOriginalView),
+            MenuItem::action("Pseudonymized", ShowPseudonymizedView),
             MenuItem::action("Side by Side", ToggleCompare),
+            MenuItem::separator(),
+            MenuItem::action("Show Replacements", ShowReplacements),
             MenuItem::separator(),
             MenuItem::action("Zoom In", ZoomIn),
             MenuItem::action("Zoom Out", ZoomOut),
@@ -133,6 +245,33 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Next Tab", NextTab),
             MenuItem::action("Previous Tab", PreviousTab),
         ]),
-        Menu::new("Help").items([MenuItem::action("Keyboard Shortcuts", ShowShortcuts)]),
+        Menu::new("Help").items(help),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_recent_lists_ten_names_then_clear_menu() {
+        assert_eq!(titles(open_recent(&[])), ["Clear Menu"]);
+        assert!(open_recent(&[]).items[0].is_disabled(), "nothing to clear");
+
+        let mut recent: Vec<PathBuf> = (0..12)
+            .map(|i| PathBuf::from(format!("/docs/note-{i}.md")))
+            .collect();
+        recent[1] = PathBuf::from("/a/Contract.md");
+        recent[2] = PathBuf::from("/b/Contract.md");
+        let titles = titles(open_recent(&recent));
+        assert_eq!(titles.len(), 11, "ten files, then Clear Menu");
+        assert_eq!(titles[0], "note-0.md");
+        assert_eq!(
+            titles[1], "Contract.md — a",
+            "a shared name shows its folder"
+        );
+        assert_eq!(titles[2], "Contract.md — b");
+        assert_eq!(titles[10], "Clear Menu");
+        assert!(!open_recent(&recent).items.last().unwrap().is_disabled());
+    }
 }

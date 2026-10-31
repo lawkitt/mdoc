@@ -2,8 +2,8 @@ package io.github.lawkitt.mdoc
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -25,10 +25,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
-import androidx.core.content.IntentCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -236,7 +237,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         AlertDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.scan)) },
-            text = { Text(stringResource(R.string.pages_scanned, pages.size)) },
+            text = { Text(pluralStringResource(R.plurals.pages_scanned, pages.size, pages.size)) },
             confirmButton = {
                 TextButton(onClick = {
                     askNextPage = false

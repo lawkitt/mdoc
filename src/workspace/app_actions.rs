@@ -1,7 +1,8 @@
 //! Commands whose availability must not depend on a focused element.
 use super::Workspace;
 use crate::workspace::{
-    New, Open, OpenCase, Quit, Settings, ToggleSidebar, ToggleTheme, shortcuts_ui::ShowShortcuts,
+    CheckForUpdates, New, Open, OpenCase, Quit, Settings, ToggleSidebar, ToggleTheme,
+    shortcuts_ui::ShowShortcuts,
 };
 use gpui::{App, Context, Window};
 
@@ -15,6 +16,20 @@ pub(crate) fn bind(cx: &mut App) {
         this.settings.update(cx, |panel, cx| {
             panel.show_category(crate::settings_ui::Category::About, window, cx)
         });
+    });
+    // Settings at About, where the result shows, and a check now (ADR 0038).
+    app_action::<CheckForUpdates>(cx, |this, window, cx| {
+        window.activate_window();
+        this.settings.update(cx, |panel, cx| {
+            panel.show_category(crate::settings_ui::Category::About, window, cx)
+        });
+        let updates = this
+            .preferences
+            .borrow()
+            .snapshot()
+            .unwrap_or_default()
+            .updates;
+        crate::updater::spawn_check(updates.include_prereleases, false, cx);
     });
     app_action::<New>(cx, |this, window, cx| {
         if this.ready && !this.quit_flow.quitting() {
