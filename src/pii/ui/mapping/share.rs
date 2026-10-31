@@ -488,7 +488,10 @@ mod tests {
             share_status(0, 18, 0, 0),
             "18 replaced. Names in the text are aliases now."
         );
-        assert_eq!(share_status(0, 18, 0, 1), "18 replaced. 1 name not replaced.");
+        assert_eq!(
+            share_status(0, 18, 0, 1),
+            "18 replaced. 1 name not replaced."
+        );
         assert_eq!(
             share_status(0, 18, 2, 3),
             "18 replaced · 2 kept. 3 names not replaced."

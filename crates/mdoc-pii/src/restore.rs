@@ -192,14 +192,11 @@ impl RestoreMap {
             .map(|(range, _)| range.clone())
             .chain(self.tokens(text).into_iter().map(|token| token.range))
             .collect();
-        let words = self
-            .name_words_in(text)
-            .into_iter()
-            .filter(|(range, _)| {
-                !taken
-                    .iter()
-                    .any(|t| t.start < range.end && range.start < t.end)
-            });
+        let words = self.name_words_in(text).into_iter().filter(|(range, _)| {
+            !taken
+                .iter()
+                .any(|t| t.start < range.end && range.start < t.end)
+        });
         whole
             .into_iter()
             .chain(words)

@@ -2225,13 +2225,20 @@ fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext
     });
     // Replacing the leftover by hand makes the line true again.
     app.update(cx, |app, cx| {
-        let text = app.editor.read(cx).text().replace("Марина обратилась", "PERSON_1 обратилась");
+        let text = app
+            .editor
+            .read(cx)
+            .text()
+            .replace("Марина обратилась", "PERSON_1 обратилась");
         app.editor.update(cx, |e, cx| e.set_text(&text, cx));
     });
     cx.run_until_parked();
     app.read_with(cx, |app, cx| {
         assert_eq!(app.names_not_replaced(cx), 0);
-        assert!(app.share_status(cx).ends_with("Names in the text are aliases now."));
+        assert!(
+            app.share_status(cx)
+                .ends_with("Names in the text are aliases now.")
+        );
     });
 }
 

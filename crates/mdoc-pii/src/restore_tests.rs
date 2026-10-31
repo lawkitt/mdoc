@@ -537,9 +537,16 @@ fn a_lone_word_of_a_multi_word_person_original_is_a_name_not_replaced() {
         identity("ORG_1", Category::Organization, &["ООО «Северный двор»"]),
     ]);
     // #301: the Russian demo's first name alone stayed in Copy for AI.
-    assert_eq!(map.known_names("PERSON_1 работала. Марина обратилась в суд."), 1);
+    assert_eq!(
+        map.known_names("PERSON_1 работала. Марина обратилась в суд."),
+        1
+    );
     assert_eq!(map.known_names("Сергеевна и Павлова"), 1, "one person");
-    assert_eq!(map.known_names("Марина Сергеевна и Марина"), 1, "counted once");
+    assert_eq!(
+        map.known_names("Марина Сергеевна и Марина"),
+        1,
+        "counted once"
+    );
     // Whole words and exact case only: no inflection beyond ADR 0068's
     // proposed variants.
     assert_eq!(map.known_names("Маринад, марина, Марину, PERSON_1."), 0);

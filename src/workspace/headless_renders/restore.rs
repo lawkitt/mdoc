@@ -90,7 +90,10 @@ pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
     d.change(|w, _, cx| {
         let view = w.active_view().unwrap().read(cx);
         let text = view.editor.read(cx).text();
-        assert!(text.contains("Марина обратилась") && !text.contains("Павлова"), "{text}");
+        assert!(
+            text.contains("Марина обратилась") && !text.contains("Павлова"),
+            "{text}"
+        );
         assert_eq!(view.names_not_replaced(cx), 1, "{text}");
     })?;
     d.capture("share-leftover")
