@@ -118,4 +118,15 @@ class SetupFixesTest {
         }
         compose.onNodeWithText("Not now").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun withEverythingInstalledTheCardOffersNoDownload() {
+        val state = SetupState(
+            SetupSnapshot(DeviceTier.BelowFloor, listOf(ModelOffer(ModelId.OCR_ENGLISH_RUSSIAN, "Text recognition", 18_000_000, installed = true))),
+        )
+        compose.setContent { SetupCard(state, onDownload = {}, onNotNow = null, onCancel = {}, onUseCellular = {}) }
+        compose.onNodeWithText("Installed", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Download", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Set up", substring = true).assertDoesNotExist()
+    }
 }
