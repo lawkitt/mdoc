@@ -26,6 +26,16 @@ struct ReplySheet: View {
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topLeading) {
+                        if reply.isEmpty {
+                            Text("Paste the AI's reply here")
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 16)
+                                .padding(.leading, 13)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .accessibilityLabel(Text("AI reply"))
                     .accessibilityIdentifier("reply-editor")
             }

@@ -140,7 +140,9 @@ struct ManualReplaceSheet: View {
                     Text("Every exact repeat in this document is replaced too.")
                 }
             }
-            .navigationTitle("Replace")
+            // Titled by what the selection becomes, like the candidate
+            // sheet; Replace is the button.
+            .navigationTitle(category.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

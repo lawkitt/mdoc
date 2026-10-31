@@ -171,6 +171,24 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertTrue(model.needsSetup)
     }
 
+    /// On iPad Home and the document are on screen together: the setup card
+    /// shows once, in the document that asked for it.
+    func testHomeLeavesTheSetupCardToTheDocumentThatAsked() async throws {
+        let app = AppModel(
+            core: Fixture.core(modelsInstalled: false), storage: try Fixture.temporaryStorage(),
+            background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
+            network: FakeNetwork(.wifi))
+        XCTAssertTrue(app.setup.showsCard)
+        app.selection = Fixture.quotation
+        let document = try XCTUnwrap(app.documentModel(for: Fixture.quotation))
+        XCTAssertFalse(app.openDocumentShowsSetup)
+        await document.findNames()
+        XCTAssertTrue(document.needsSetup)
+        XCTAssertTrue(app.openDocumentShowsSetup)
+        app.selection = nil
+        XCTAssertFalse(app.openDocumentShowsSetup)
+    }
+
     func testSetupThenScanBelowTheFloor() async throws {
         let core = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte)
         let model = try model(Fixture.tenancy, core: core)
