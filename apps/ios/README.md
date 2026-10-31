@@ -55,16 +55,19 @@ just ios-device-test <hardware UDID>
 `scripts/ios-device-test.sh` builds for the phone, installs mdoc, copies the
 fixtures into its data container with `devicectl` (the app ships none), runs
 `ReviewFlowUITests` and `DeviceLongJobsUITests`, and fails on a new
-`mdoc-*.ips` crash report. The fixtures are the demo .docx, a text PDF and
-six camera pages it renders (`scripts/ios-scan-pages.swift`), in
+`mdoc-*.ips` crash report (or when it cannot list them). The fixtures are
+the demo .docx, the 37-page `legal-opinion.docx`, a text PDF and six camera
+pages it renders (`scripts/ios-scan-pages.swift`), in
 `Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
 a fixture there when its Mac path does not exist. The long-jobs test runs
 at the detector tier with real downloads: the scan's Download & continue
 fetches text recognition on Wi-Fi and recognizes the pages while the test
-leaves the app for ten seconds (the app must still be running and finish the
-job), Find names underlines the tenant, and the .docx and the text PDF come
-in. The first run also downloads the name detector, which later runs keep;
-it skips on the Simulator. Results go to `target/ios/device-test-*.xcresult`.
+leaves the app for ten seconds, and Find names underlines the tenant. Find
+names on the legal opinion takes over a minute; the test leaves for 45 s,
+past the grace iOS gives without a continued processing task, and mdoc must
+still be running (not suspended) and finish the job. The text PDF comes in
+last. The first run also downloads the name detector, which later runs
+keep; it skips on the Simulator. Results go to `target/ios/device-test-*.xcresult`.
 
 ## Layout
 

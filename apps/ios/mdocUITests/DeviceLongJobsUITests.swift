@@ -4,9 +4,10 @@ import XCTest
 /// refuses `BGContinuedProcessingTask`, so every job here goes through the
 /// real background task only on a device. A camera scan downloads text
 /// recognition for real on Wi-Fi and is recognized while mdoc leaves the
-/// screen; the name detector finds names in it; a .docx and a text PDF
-/// come in. `just ios-device-test <udid>` copies the fixtures into the app's
-/// container and runs this; it skips on the Simulator. It needs a phone at
+/// screen; the name detector finds names in it; Find names on a 37-page
+/// .docx keeps running in the background past the short grace iOS gives
+/// without that task; a text PDF comes in. `just ios-device-test <udid>`
+/// copies the fixtures into the app's container and runs this; it skips on the Simulator. It needs a phone at
 /// the detector tier (8 GB); the first run also downloads the detector,
 /// which later runs keep.
 final class DeviceLongJobsUITests: XCTestCase {
@@ -20,7 +21,7 @@ final class DeviceLongJobsUITests: XCTestCase {
     @MainActor
     func testLongJobs() throws {
         try scanDownloadRecognizeAndFindNames()
-        try importDocx()
+        try findNamesInTheBackground()
         try importTextPDF()
     }
 
@@ -53,25 +54,33 @@ final class DeviceLongJobsUITests: XCTestCase {
         expect(NSPredicate(format: "value CONTAINS 'Harbour Street'"), on: text, timeout: 300)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "recognition stopped in the background")
 
-        // Find names with the detector, leaving at once.
+        // Find names with the detector.
         let primary = app.buttons["primary-action"]
         expect(NSPredicate(format: "label == 'Find names'"), on: primary, timeout: 30)
         primary.tap()
-        try leaveAndReturn(app)
         let name = app.links.matching(NSPredicate(format: "label CONTAINS 'Whitlow'")).firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 120), "the detector found no name in the scan")
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
 
-    /// The seed imports the demo agreement and finds names with the detector.
+    /// The seed imports the 37-page legal opinion and starts Find names,
+    /// which takes over a minute on the iPhone 17 Pro (20 pages in 35–43 s,
+    /// ADR 0088's measurement). mdoc leaves for 45 s while it runs: past the
+    /// grace iOS gives without a continued processing task, after which
+    /// mdoc would be suspended and the job stopped. With the task, mdoc
+    /// still runs in the background and the job finishes.
     @MainActor
-    private func importDocx() throws {
-        let app = launch(seed: MdocUITest.defaultSeed)
-        let row = MdocUITest.documentRow(app)
-        XCTAssertTrue(row.waitForExistence(timeout: 180))
+    private func findNamesInTheBackground() throws {
+        let app = launch(seed: MdocUITest.longDocx)
+        let row = Self.row(app, title: MdocUITest.longDocxTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
         row.tap()
-        let name = app.links.matching(NSPredicate(format: "label CONTAINS 'Bennett'")).firstMatch
-        XCTAssertTrue(name.waitForExistence(timeout: 30), "the detector found no name in the .docx")
+        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
+        expect(NSPredicate(format: "label CONTAINS 'Finding names'"), on: progress, timeout: 120)
+        try leaveAndReturn(app, seconds: 45, stillWorking: true)
+        let primary = app.buttons["primary-action"]
+        expect(NSPredicate(format: "label BEGINSWITH 'Replace'"), on: primary, timeout: 180)
+        XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
 
     /// A PDF with a text layer reads without text recognition.
@@ -100,17 +109,22 @@ final class DeviceLongJobsUITests: XCTestCase {
         return app
     }
 
-    /// Home, ten seconds in the background, and back. The app must still
-    /// be running: a background task handler that trips Swift's isolation
-    /// check stops it the moment a job starts (lawkitt/mdoc#290).
+    /// Home, `seconds` in the background, and back. The app must still be
+    /// there: a background task handler that trips Swift's isolation check
+    /// stops it the moment a job starts (lawkitt/mdoc#290). `stillWorking`:
+    /// the job outlasts the stay, so mdoc must still be running, not
+    /// suspended, which only the continued processing task allows.
     @MainActor
-    private func leaveAndReturn(_ app: XCUIApplication) throws {
+    private func leaveAndReturn(_ app: XCUIApplication, seconds: UInt32 = 10, stillWorking: Bool = false) throws {
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(
             app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended,
             "mdoc did not go to the background")
-        sleep(10)
+        sleep(seconds)
         XCTAssertNotEqual(app.state, .notRunning, "mdoc stopped in the background")
+        if stillWorking {
+            XCTAssertEqual(app.state, .runningBackground, "mdoc was suspended: no continued processing task")
+        }
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
     }
@@ -135,6 +149,9 @@ extension MdocUITest {
     /// renders into `target/ios/device-fixtures` and copies to the phone.
     static let deviceScan = "target/ios/device-fixtures/Tenancy scan"
     static let deviceScanTitle = "Tenancy scan"
+    /// A scrubbed 37-page legal opinion, the floor measurement's document.
+    static let longDocx = "tests/fixtures/docx-preview/legal-opinion.docx"
+    static let longDocxTitle = "legal-opinion"
     /// A PDF with a text layer and no names.
     static let textPDF = "tests/fixtures/import/text.pdf"
     static let textPDFTitle = "text"
