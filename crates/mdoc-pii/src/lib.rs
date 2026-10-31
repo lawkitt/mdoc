@@ -536,6 +536,34 @@ impl Review {
         self.refresh(source);
         let first = self.next_id;
         selected.sort_by_key(|detection| detection.range.start);
+        // A new wording found only inside longer ones ("Harrow & Finch" of
+        // "Harrow & Finch Ltd") would have no mention to show; it must not
+        // take an alias either, or the numbering skips one (issue #302).
+        let mut listed = HashSet::new();
+        let fresh: Vec<Arc<str>> = selected
+            .iter()
+            .map(|detection| &source[detection.range.clone()])
+            .filter(|text| self.candidates.by_original(text).is_none() && listed.insert(*text))
+            .map(Arc::from)
+            .collect();
+        let mut input = self.discovery_input();
+        let known = input.originals.len();
+        input.enabled.extend(fresh.iter().map(|_| true));
+        input.priority.extend(fresh.iter().map(|_| 0));
+        input.originals.extend(fresh.iter().cloned());
+        input.matcher = None;
+        let unseen: HashSet<Arc<str>> = input
+            .run(&std::sync::atomic::AtomicBool::new(false))
+            .map(|result| {
+                fresh
+                    .into_iter()
+                    .zip(&result.mentions[known..])
+                    .filter(|(_, mentions)| mentions.is_empty())
+                    .map(|(original, _)| original)
+                    .collect()
+            })
+            .unwrap_or_default();
+        selected.retain(|detection| !unseen.contains(&source[detection.range.clone()]));
         for detection in selected {
             self.add_seed(&source[detection.range], detection.category);
         }
