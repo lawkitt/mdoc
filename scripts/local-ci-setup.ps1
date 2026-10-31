@@ -116,13 +116,21 @@ Stop-Runner
 foreach ($file in 'local-ci.sh', 'lib.sh') {
     Copy-Item -Force (Join-Path $source "scripts\$file") $runnerScripts
 }
+# The machine's own settings after these three lines survive a re-run.
+$envPath = Join-Path $Root 'runner.env'
+$kept = @()
+if (Test-Path $envPath) {
+    $kept = @(Get-Content $envPath | Where-Object {
+            $_ -notmatch '^(# Written by scripts/local-ci|LOCAL_CI_URL=|LOCAL_CI_PORT=)'
+        })
+}
 $envFile = @(
-    '# Written by scripts/local-ci-setup.ps1; re-run it to change.'
+    '# Written by scripts/local-ci-setup.ps1, which keeps the lines after these three.'
     "LOCAL_CI_URL=https://$dns/ci"
     "LOCAL_CI_PORT=$Port"
-)
+) + $kept
 # LF line endings: bash sources this file.
-[IO.File]::WriteAllText((Join-Path $Root 'runner.env'), ($envFile -join "`n") + "`n")
+[IO.File]::WriteAllText($envPath, ($envFile -join "`n") + "`n")
 
 # A Git Bash command as a task at logon, this user, restarted if it ends.
 # conhost --headless keeps it from opening a console window, but writes to

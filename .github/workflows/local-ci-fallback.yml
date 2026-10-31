@@ -1,0 +1,51 @@
+name: Local CI fallback
+
+# When a PR head's local/macos or local/windows status is stuck (the machine
+# is off or asleep, or its runner stopped or is out of capacity), dispatch
+# the full hosted CI run on the PR branch and post its result under that
+# context (ADR 0082). The rules are in scripts/local-ci-fallback.sh. Runs
+# main's copy of the script with this workflow's token and never checks out
+# or runs PR code: the dispatched ci.yml run does that, with its own
+# read-only permissions.
+on:
+  schedule:
+    # GitHub may start a scheduled run late; the thresholds allow for it.
+    - cron: "*/10 * * * *"
+  # Posts a dispatched run's result as soon as it finishes.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+# One pass at a time; a pass started while another runs waits for it.
+concurrency:
+  group: local-ci-fallback
+  cancel-in-progress: false
+
+jobs:
+  fallback:
+    name: local CI fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Dispatch ci.yml.
+      actions: write
+      # Read the dispatched run's check runs.
+      checks: read
+      contents: read
+      pull-requests: read
+      # Post local/macos and local/windows.
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - run: bash scripts/local-ci-fallback.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOCAL_CI_REPO: ${{ github.repository }}
