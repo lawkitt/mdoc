@@ -392,6 +392,26 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(quote_ends).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: a fence in a list item ends with the item, at a
+    // sibling item or at prose after the list.
+    for ended in [
+        "- ~~~\n  code example that is long enough as prose\n- PERSON_1 signed the agreement today.\n",
+        "- ~~~\n  code example that is long enough as prose\nPERSON_1 signed the agreement today.\n",
+        "> - ~~~\n>   code example that is long enough as prose\n> - PERSON_1 signed the agreement today.\n",
+    ] {
+        assert_eq!(
+            preview_of(ended).unwrap().text,
+            "PERSON_1 signed the agreement today.",
+            "{ended:?}"
+        );
+    }
+    // Code indented in the item stays code, list markers included.
+    let indented = "- ```\n  - looks like an item but it is code here\n  ```\n\n\
+                    PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(indented).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
     // Review of #280: a quoted fence inside a list item closes in its quote.
     let quoted_in_list = "- > ```\n  > example code long enough to read as prose\n  > ```\n\n\
                           PERSON_1 signed the agreement today.\n";
@@ -654,5 +674,26 @@ fn an_initial_on_its_own_line_keeps_the_name_masked() {
         preview.text.starts_with("PERSON_2 signed"),
         "{}",
         preview.text
+    );
+}
+
+/// Review of #280: a `<br>` inside a line reads as a space, so a name it
+/// breaks is masked whole; any other split that still spells a name out
+/// gives no preview at all.
+#[test]
+fn a_break_inside_a_line_never_shows_an_original() {
+    for text in [
+        "PERSON_1 met Anna<br>Petrova about the agreement today.",
+        "PERSON_1 met Anna<BR />Petrova about the agreement today.",
+    ] {
+        let preview = preview_of(text).unwrap();
+        assert_eq!(
+            preview.text, "PERSON_1 met PERSON_1 about the agreement today.",
+            "{text}"
+        );
+    }
+    assert!(
+        preview_of("PERSON_1 met Anna<wbr>Petrova about the agreement today.").is_none(),
+        "a split the masking misses spells the name: no preview"
     );
 }

@@ -559,6 +559,95 @@ fn without_hard_break(line: &str) -> &str {
     line
 }
 
+/// `line` with each `<br>` (any case, `<br/>`, `<br />`) read as the space
+/// it shows as, so a name broken by one is still masked whole.
+fn breaks_as_spaces(line: &str) -> std::borrow::Cow<'_, str> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.contains("<br") {
+        return line.into();
+    }
+    let mut out = String::with_capacity(line.len());
+    let mut at = 0;
+    while let Some(found) = lower[at..].find("<br") {
+        let start = at + found;
+        let rest = lower[start + 3..].trim_start();
+        let rest = rest.strip_prefix('/').unwrap_or(rest).trim_start();
+        if let Some(after) = rest.strip_prefix('>') {
+            let end = lower.len() - after.len();
+            out.push_str(&line[at..start]);
+            out.push(' ');
+            at = end;
+        } else {
+            out.push_str(&line[at..start + 3]);
+            at = start + 3;
+        }
+    }
+    out.push_str(&line[at..]);
+    out.into()
+}
+
+/// Lowercase letters and digits of `text`, its HTML tags left out: how a
+/// name reads however it was split.
+fn squeezed(text: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in text.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            c if !in_tag && c.is_alphanumeric() => out.extend(c.to_lowercase()),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether `text` still spells out a known name of two words or more,
+/// ignoring the spaces, marks and tags between its letters. The preview's
+/// last line of defence against a split the masking did not see.
+fn spells_an_original(text: &str, names: &RestoreMap) -> bool {
+    let text = squeezed(text);
+    names
+        .identities()
+        .iter()
+        .flat_map(|identity| identity.originals.iter())
+        .filter(|original| original.split_whitespace().nth(1).is_some())
+        .map(|original| squeezed(original))
+        .any(|original| original.chars().count() >= 4 && text.contains(&original))
+}
+
+/// `line` without `levels` blockquote markers, keeping the indentation
+/// after them; `None` when it has fewer.
+fn unquote_raw(mut line: &str, levels: usize) -> Option<&str> {
+    for _ in 0..levels {
+        let rest = line.trim_start_matches(' ').strip_prefix('>')?;
+        line = rest.strip_prefix(' ').unwrap_or(rest);
+    }
+    Some(line)
+}
+
+/// The width of `line`'s leading whitespace, a tab as four.
+fn indent_width(line: &str) -> usize {
+    width(&line[..line.len() - line.trim_start().len()])
+}
+
+/// The columns `text` takes, a tab as four.
+fn width(text: &str) -> usize {
+    text.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum()
+}
+
+/// An open code fence.
+#[derive(Clone, Copy)]
+struct Fence {
+    /// Its character and length.
+    mark: (u8, usize),
+    /// How many quote levels it sits in.
+    quotes: usize,
+    /// The content indent of the list item it opened in, if any: a line
+    /// indented less (a sibling item, prose after the list) ends it.
+    item: Option<usize>,
+}
+
 /// One source line with its Markdown syntax hidden: markers and line
 /// prefixes removed (escapes and entities as the editor shows them), bold
 /// and italic kept as ranges.
@@ -709,9 +798,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let mut styled = Styled::default();
     // The paragraph's source, its lines joined by spaces.
     let mut paragraph = String::new();
-    // An open fence: its character and length, and how many quote levels
-    // it sits in.
-    let mut fenced: Option<(u8, usize, usize)> = None;
+    let mut fenced: Option<Fence> = None;
     let mut more = false;
     // A paragraph's lines read as one (Markdown joins them), so its syntax
     // is hidden and it is masked whole before it is judged: a name split
@@ -750,10 +837,19 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
         let (block, quotes) = containers(trimmed);
-        if let Some((c, n, opened_in)) = fenced {
-            if quotes < opened_in {
-                // The opener's quote has ended, and its code with it: this
-                // line is read for what it is outside.
+        if let Some(Fence {
+            mark: (c, n),
+            quotes: opened_in,
+            item,
+        }) = fenced
+        {
+            let item_ended = item.is_some_and(|content| {
+                unquote_raw(line.trim_end(), opened_in)
+                    .is_some_and(|raw| !raw.trim().is_empty() && indent_width(raw) < content)
+            });
+            if quotes < opened_in || item_ended {
+                // The opener's quote or list item has ended, and its code
+                // with it: this line is read for what it is outside.
                 fenced = None;
             } else {
                 // Only a fence of the same character, at least as long, with
@@ -785,8 +881,13 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
                 break;
             }
         }
-        if let Some((c, n)) = fence(block) {
-            fenced = Some((c, n, quotes));
+        if let Some(mark) = fence(block) {
+            // In a list item (inside the fence's quotes): where its content
+            // starts.
+            let item = unquote_raw(line.trim_end(), quotes)
+                .filter(|raw| lines::list_prefix(raw).is_some() && raw.len() >= block.len())
+                .map(|raw| width(&raw[..raw.len() - block.len()]));
+            fenced = Some(Fence { mark, quotes, item });
             continue;
         }
         if structure {
@@ -797,7 +898,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             paragraph.push(LINE_MARK);
             paragraph.push(' ');
         }
-        let block = without_hard_break(block);
+        let block = breaks_as_spaces(without_hard_break(block));
         let room = PARAGRAPH_BYTES.saturating_sub(paragraph.len());
         if block.len() >= room {
             // Up to the limit, at a character boundary.
@@ -809,7 +910,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             more = finish(&mut paragraph, &mut styled, true);
             break;
         }
-        paragraph.push_str(block);
+        paragraph.push_str(&block);
     }
     if !more {
         more = finish(&mut paragraph, &mut styled, false);
@@ -836,6 +937,9 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let mut text = styled.text;
     if more {
         text.push('…');
+    }
+    if spells_an_original(&text, names) {
+        return None;
     }
     let aliases = names
         .tokens(&text)
