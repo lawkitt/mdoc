@@ -38,12 +38,21 @@ check only; rc.2 follows the shelf and gets the full acceptance
 merges to `main` on its own when green.
 
 1. **[Shelf] Menu bar shelf** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)),
-   macOS: an optional menu bar item listing pseudonymized documents to open,
+   macOS: a menu bar item listing pseudonymized documents to open,
    drag out or Copy for AI, with Pseudonymize Clipboard and Restore
    Clipboard. *Done when:* platform acceptance section 12 passes on rc.2,
    Windows is unchanged (no tray), and a test drags and copies ready,
    not-ready and changed-since-review documents and finds no original in any
    export.
+2. **[Shelf] On by default, and polish** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md),
+   [polish grill](docs/design/menu-bar-grill-2026-10-31.md#polish-grill-after-263265-merged)):
+   the switch on by default with the first-close note; prose previews with
+   Markdown hidden, two lines and "…"; case labels; an outlined Copy for AI
+   with "Copied" and ⌘1–⌘8; "N replaced" with categories on hover; the
+   Clipboard section; one footer row; vibrancy; the drag cursor, card and
+   hint. Lands before rc.2. *Done when:* rows M1–M3, M5, M7, M8 and M11 hold
+   on a local build, headless renders show the polished shelf in both
+   themes, and Windows is unchanged.
 
 Records: [2026-10-29 grill](docs/design/roadmap-grill-2026-10-29.md),
 [2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md), [shelf grill](docs/design/menu-bar-grill-2026-10-31.md). One RC is the

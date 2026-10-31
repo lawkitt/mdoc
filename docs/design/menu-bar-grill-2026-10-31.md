@@ -116,3 +116,58 @@ empty.
     is out and rc.2 follows the shelf.
 27. **rc.1:** its release run (started 2026-10-31) publishes as a
     pre-release with an install and smoke check only.
+
+## Polish grill (after #263–#265 merged)
+
+The maintainer ran the merged shelf (screenshots, dark and light) and asked
+for three things: the menu bar on by default, a more elegant shelf, and
+more polish ideas to grill.
+
+### What the screenshots and code show
+
+- **Previews** are the first three non-empty lines with leading `#`, `>`,
+  `-`, `*`, `+` trimmed (`shelf::preview_lines`). Inline Markdown stays raw
+  ("Страница **1** из **5**"), page furniture leads ("—", "23456"), and
+  each line is clipped at the edge with no ellipsis (`whitespace_nowrap`,
+  `overflow_hidden`). `crates/mdoc-markdown` (ADR 0085) now recognises
+  Markdown spans without GPUI and could style or strip them.
+- **Titles** keep `.md`; the dot is the case colour, grey without a case.
+- **Copy for AI** is plain text at the right of the title, with no button
+  shape and no visible feedback.
+- **Meta line:** "edited 07:53 · 1,297 words" (clock time today, date
+  before).
+- **Clipboard rows** name the source in quotes; without a case that is the
+  tab's file name ("Pseudonymize Clipboard · “Legal-Document-11.md” ▾").
+- **Footer:** "Show all in mdoc", then "Quit mdoc", each its own row.
+- **Window:** an opaque `PopUp` window; GPUI also offers a blurred
+  (vibrancy) background on macOS.
+
+### Round 1 (asked 2026-10-31)
+
+All fourteen recommendations accepted; ADR 0084 rewritten to match, the
+glossary, acceptance rows M1–M11 and a second 0.3.0 roadmap item updated.
+The frontier is empty.
+
+1. **One switch,** on by default: the shelf is only useful once windows are
+   closed, and a second switch is a choice almost nobody needs.
+2. **First-close note** under the icon, once: Got it, or Quit when windows
+   close (turns the switch off).
+3. **Everyone** who has not turned it off gets the new default; the setting
+   never shipped in a release.
+4. **Before rc.2,** as one builder PR.
+5. **Preview text:** first real prose (skip lines under ~3 words or ~12
+   letters), Markdown hidden through `mdoc-markdown`. Alias-picked
+   fragments read as chips.
+6. **Two wrapped lines** ending in "…".
+7. **Title** without `.md`; case as a tinted label, nothing without a case;
+   readiness in the same style, amber.
+8. **Copy for AI:** small outlined button, always visible; ✓ "Copied", then
+   the shelf closes after ~0.8 s.
+9. **Meta:** "5 min ago · 1,297 words · 14 replaced".
+10. **Clipboard section:** Pseudonymize and Restore buttons, a "Names from …
+    ▾" source line that also shows results.
+11. **Footer:** Open mdoc, Settings gear, Quit in one row.
+12. **Look:** vibrancy, 12 pt radius, system shadow, 13/12/11 pt type.
+13. **Drag affordance:** open-hand cursor, card drag image, one-time hint.
+14. **Extras:** ⌘1–⌘8 and the category breakdown on hover taken; Paste AI
+    reply row, progress bar, search and format tag not adopted.

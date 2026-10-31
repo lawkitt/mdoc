@@ -256,22 +256,23 @@ not mark it Fail.
 
 ## 12. Menu bar shelf
 
-*macOS only* (ADR 0084); on Windows, check only M10. Use a case with one
+*macOS only* (ADR 0084); on Windows, check only that nothing changed (no tray, quit on last window close). Use a case with one
 ready document, one with a pending proposal, and one closed member edited in
 another editor since its last save.
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| M1 | Settings › General › "Show mdoc in the menu bar" is off on a fresh profile; turning it on shows a monochrome icon with no badge | | |
-| M2 | Closing the last window keeps mdoc running and removes it from the Dock; a shelf row click reopens the same tabs, unsaved text and undo included | | |
-| M3 | The shelf lists at most 8 documents, most recent first, with case colours and "Show all in mdoc"; previews show aliases only, never originals | | |
+| M1 | On a fresh profile the monochrome icon (no badge) shows at launch and Settings › General › "Show mdoc in the menu bar" is on | | |
+| M2 | The first close of the last window shows the note "mdoc is still in the menu bar…" under the icon, once only; mdoc keeps running and leaves the Dock; a shelf row click reopens the same tabs, unsaved text and undo included. **Quit when windows close** in the note turns the switch off | | |
+| M3 | The shelf lists at most 8 documents, most recent first; titles have no `.md`, a case shows as a tinted label and no case shows none; each preview is two wrapped lines of prose ending in "…", with no Markdown syntax and no page numbers; the meta line reads "… ago · N words · N replaced" and hovering the count lists categories; only aliases, never originals | | |
 | M4 | Dragging a ready document into the ChatGPT web composer inserts its text; dropping it in Finder saves a `.md` whose name has no original (e.g. "PERSON_1 settlement.md") | | |
-| M5 | The shelf's Copy for AI (button and ⌘C) puts the same bytes on the clipboard as the editor's Copy for AI | | |
+| M5 | Copy for AI (the button, ⌘C, and ⌘1–⌘8) shows ✓ "Copied", closes the shelf, and puts the same bytes on the clipboard as the editor's Copy for AI | | |
 | M6 | The pending-proposal document reads "N left to review", the edited closed member "Changed since review"; neither copies or drags, and a click opens the review | | |
-| M7 | Restore Clipboard with a copied AI reply restores the names of the case shown on the row and reports "N names restored · M unrecognised"; the ▾ picker switches the case | | |
-| M8 | With cases locked, the clipboard rows read "Unlock cases in mdoc…" and no system dialog appears until it is clicked | | |
+| M7 | Clipboard › Restore with a copied AI reply restores the names of the source on "Names from … ▾" and that line then reads "N names restored · M unrecognised"; ▾ switches the source; Pseudonymize does the reverse | | |
+| M8 | With cases locked, the clipboard buttons read "Unlock cases in mdoc…" and no system dialog appears until one is clicked | | |
 | M9 | VoiceOver reads a row's title, case and state and the "Copy for AI" button; ↑↓, Enter and Esc work | | |
 | M10 | ⌘Q and the shelf's Quit run the unsaved-work prompts; with "Restart to update" shown, it prompts first; turning the setting off restores quit on last window close | | |
+| M11 | Over a preview the cursor is an open hand; the drag image is a card with the title and first line; after the first drop the hint "Drag a preview into any app" never returns. The shelf has a blurred background and one footer row: Open mdoc, Settings, Quit | | |
 
 ## 13. iOS app
 

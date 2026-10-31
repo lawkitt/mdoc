@@ -218,8 +218,9 @@ primary wordings, from the shelf; the clipboard counterpart of Restore
 ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
 
 **Shelf**: the menu bar item's panel: pseudonymized documents as small
-previews to open, drag out or Copy for AI, and the clipboard actions. Optional;
-turning it on keeps mdoc running without a window (ADR 0084). Avoid "tray"
+previews to open, drag out or Copy for AI, and the clipboard actions. On by
+default on macOS, which keeps mdoc running without a window; a one-time
+**first-close note** says so (ADR 0084). Avoid "tray"
 for the macOS item.
 
 **Ready document**: one with at least one applied alias and no pending
