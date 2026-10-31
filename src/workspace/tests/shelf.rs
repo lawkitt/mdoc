@@ -271,6 +271,28 @@ fn saving_records_the_ready_fingerprint_in_the_case(cx: &mut TestAppContext) {
     assert_eq!(reviewed(cx), None);
 }
 
+/// #304: the row's "N replaced" is the editor's Share tab count, mentions
+/// rather than names.
+#[gpui::test]
+fn the_shelf_counts_replaced_mentions_as_the_share_tab_does(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "Notes.md",
+        "Anna Petrova met Northwind Ltd. Anna Petrova signed for Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    let view = active(&tabs, cx);
+    let applied = cx.update(|_, cx| view.read(cx).pii.review().applied().len());
+    let row = row_of(&tabs, id, cx);
+    assert_eq!(applied, 4);
+    assert_eq!(row.replaced_count(), applied);
+    assert_eq!(row.names_count(), 2);
+}
+
 /// Review findings on #263: a kept original and a scan still finding
 /// proposals after an edit each keep an open tab from leaving the shelf,
 /// and a kept name stays masked in the title.
@@ -764,7 +786,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
             .unwrap()
     };
     assert!(
-        line(cx).ends_with(" restored · 0 unrecognised"),
+        line(cx).ends_with(" restored · 0 unrecognized"),
         "{}",
         line(cx)
     );

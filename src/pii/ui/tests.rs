@@ -23,6 +23,7 @@ fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64,
         revision,
         generation,
         config: settings::PiiConfig::default(),
+        progress: Default::default(),
     });
     (generation, identity, revision)
 }
@@ -564,6 +565,7 @@ fn accept_all_refuses_pending_scans_and_invalid_alias_drafts(cx: &mut gpui::Test
             revision,
             generation: 1,
             config: settings::PiiConfig::default(),
+            progress: Default::default(),
         });
         app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).revision(), revision);
@@ -714,6 +716,7 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
                 revision,
                 generation: 7,
                 config: settings::PiiConfig::default(),
+                progress: Default::default(),
             });
         };
         install_job(app);
@@ -733,6 +736,7 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
             revision,
             generation: 9,
             config: settings::PiiConfig::default(),
+            progress: Default::default(),
         });
         app.session.replace(Document::default());
         app.complete_pii_scan(9, identity, revision, result(), cx);
@@ -2663,5 +2667,59 @@ fn a_proposed_wording_offers_no_category_menu(cx: &mut gpui::TestAppContext) {
         app.add_manual_candidate(Some(Category::Organization), window, cx);
         let (_, category) = app.selected_name().unwrap();
         assert_eq!(category, Category::Person, "a pick never recategorizes");
+    });
+}
+
+#[test]
+fn a_long_scan_counts_its_windows_once_it_knows_them() {
+    use super::render::scan_stage;
+    // Before the source is split, and for one window, stages run on a timer.
+    for count in [(0, 0), (0, 1), (1, 1)] {
+        let stage = scan_stage(0.5, count);
+        assert_eq!(stage.text.as_ref(), "Reading…");
+        assert!(stage.fade.is_some());
+    }
+    assert_eq!(scan_stage(4.0, (0, 0)).text.as_ref(), "Finding names…");
+    // Several windows: the one being read, out of all, holding still.
+    for (count, text) in [
+        ((0, 12), "Finding names… 1 of 12"),
+        ((2, 12), "Finding names… 3 of 12"),
+        ((12, 12), "Finding names… 12 of 12"),
+    ] {
+        let stage = scan_stage(4.0, count);
+        assert_eq!(stage.text.as_ref(), text);
+        assert_eq!(stage.fade, None);
+    }
+    let count = super::scan::ScanCount::default();
+    assert_eq!(count.get(), (0, 0));
+    count.set(3, 12);
+    assert_eq!(count.get(), (3, 12));
+}
+
+#[gpui::test]
+fn a_running_scan_shows_skeleton_rows_and_keeps_rescan_off(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Anna met Bob.", cx))
+    });
+    cx.run_until_parked();
+    let generation = app.update(cx, |app, cx| {
+        let (generation, ..) = install_scan(app, cx);
+        app.pii.mapping.begin_review();
+        app.pii.job.as_ref().unwrap().progress.set(2, 12);
+        cx.notify();
+        generation
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("replacement-skeleton").is_some());
+    assert!(cx.debug_bounds("scan-status").is_some());
+    let rescan = cx.debug_bounds("review-rescan").unwrap().center();
+    cx.simulate_click(rescan, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        let job = app.pii.job.as_ref().expect("the scan keeps running");
+        assert_eq!(job.generation, generation);
+        assert!(!job.cancel.load(std::sync::atomic::Ordering::Relaxed));
     });
 }

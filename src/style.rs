@@ -72,6 +72,15 @@ pub fn theme_label(choice: ThemeChoice) -> &'static str {
     }
 }
 
+/// The palette row that cycles the theme names the choice it switches to.
+pub fn theme_switch_label(next: ThemeChoice) -> &'static str {
+    match next {
+        ThemeChoice::System => "Switch to system theme",
+        ThemeChoice::Light => "Switch to light theme",
+        ThemeChoice::Dark => "Switch to dark theme",
+    }
+}
+
 impl Theme {
     /// The icon names the theme the button will switch to.
     pub fn pdf_style(self) -> PdfStyle {
@@ -112,6 +121,15 @@ impl Theme {
                 overlays: PageOverlays::default(),
                 themed_pages: None,
             },
+        }
+    }
+
+    /// The dimmed window behind a modal dialog (ADR 0064): darker in Dark,
+    /// where a light one would barely separate the dialog from the editor.
+    pub fn scrim(self) -> Hsla {
+        match self {
+            Self::Dark => hsla(0., 0., 0., 0.5),
+            Self::Light => hsla(0., 0., 0., 0.25),
         }
     }
 

@@ -37,8 +37,10 @@ folder-sheet
 folder-sheet-over-cap
 folder-sheet-add-to-case
 confirm-delete-case
+confirm-save-and-mapping
 confirm-keep-mapping
 confirm-unsaved
+confirm-quit-summary
 confirm-remove-model
 model-comparison
 conversion-failed
@@ -46,7 +48,10 @@ ocr-consent
 restored-reply
 comments
 shelf
+shelf-demos
+shelf-demos-count
 shelf-copied
 shelf-note
 shelf-empty
 shelf-locked
+review-scanning

@@ -1,5 +1,6 @@
 //! Pseudonymization review: the Replacements panel, the word popup, model
-//! setup, Before/After and the merge hint (ADR 0080).
+//! setup, Before/After, an applied alias selected at the minimum window
+//! size (#303), the merge hint (ADR 0080) and a running scan.
 use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document_view::DocumentView,
@@ -248,4 +249,38 @@ pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
         });
     })?;
     d.capture("merge-hint")
+}
+
+/// A scan of a long document under way (#309): skeleton rows, "Scanning…"
+/// in the footer, Rescan off and the toolbar's window count. No detector
+/// runs; the scan is stopped after the capture.
+pub(super) fn scanning(d: &mut Driver) -> Result<()> {
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.editor.update(cx, |e, cx| {
+                e.set_text(
+                    "# Services Agreement
+
+Maya Bennett and Northbridge Legal Ltd agree.",
+                    cx,
+                )
+            });
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.pii.show_scan(Some((2, 12)));
+            window.focus(&v.replacements_focus(), cx);
+            cx.notify();
+        });
+    })?;
+    d.capture("review-scanning")?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.pii.show_scan(None);
+            v.toggle_replacements_panel(window, cx);
+        });
+    })
 }

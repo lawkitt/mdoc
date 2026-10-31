@@ -235,7 +235,7 @@ impl Workspace {
                     .justify_center()
                     .items_start()
                     .pt(px(72.))
-                    .bg(gpui::hsla(0., 0., 0., 0.25))
+                    .bg(theme.scrim())
                     // A modal: nothing behind it takes the pointer.
                     .occlude()
                     .on_mouse_down(

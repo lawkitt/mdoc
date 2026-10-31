@@ -48,7 +48,7 @@ step, but as a one-document wizard that hides editing.
    Source (the PDF/DOCX page view, renamed from "Original"), ⋯, and the
    **primary action**: Pseudonymize → stage + Cancel → Apply N ⌘↩; once applied,
    a quiet Share; Copy on a restored reply tab. ⋯ holds Save, Save as, Copy
-   Markdown, Copy for AI, Paste AI reply…, Spelling, Rescan, case actions and
+   Markdown, Copy for AI, Paste AI reply, Spelling, Rescan, case actions and
    Close tab, all also in the palette and the menu bar. No stepper.
 4. **Command palette ⌘K**: actions, Go to (tabs, cases, Settings), Go to
    heading (the active document's ATX headings outside code fences: the caret
@@ -57,7 +57,7 @@ step, but as a one-document wizard that hides editing.
    identities. ⌘F stays find-in-document.
 5. **Home**: shown with no tab open and from the sidebar: greeting, drop zone (a
    drag anywhere over the window activates it: solid accent border, lifted
-   illustration, "Drop N files"), Open files… ⌘O, Paste text, Restore AI reply,
+   illustration, "Drop N files"), Open files… ⌘O, Paste text, Paste AI reply,
    Pseudonymize clipboard, the local note (ADR 0046), Cases and Recent files.
    Launch shows Home or the restored session, never an empty Untitled tab. A
    hidden blank placeholder tab sits under Home; ⌘N turns it into Untitled and

@@ -593,7 +593,7 @@ impl DocumentView {
                         .child(
                             ui::menu_row_because(
                                 "more-paste-reply",
-                                "Paste AI reply…",
+                                "Paste AI reply",
                                 Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
                                 None,
                                 theme,

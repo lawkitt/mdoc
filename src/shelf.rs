@@ -113,8 +113,11 @@ pub(crate) struct ShelfDocument {
     /// Only a ready document with prose has one.
     pub preview: Option<Preview>,
     /// Distinct names its text holds by an alias, per category, in
-    /// [`Category::ALL`] order: "14 replaced" and its breakdown.
+    /// [`Category::ALL`] order: the breakdown hovering "24 replaced" shows.
     pub replaced: Vec<(Category, usize)>,
+    /// Mentions its text holds by an alias: "24 replaced", the count the
+    /// editor's Share tab shows.
+    pub mentions: usize,
     /// Copy for AI's text; only a ready document has it.
     for_ai: Option<String>,
 }
@@ -253,6 +256,7 @@ impl ShelfDocument {
             .is_ready()
             .then(|| preview_lines(text, names))
             .flatten();
+        let (mentions, replaced) = replaced(text, names);
         Self {
             key,
             title: names.pseudonymize(title).0,
@@ -265,7 +269,8 @@ impl ShelfDocument {
                 .filter(|word| word.chars().any(char::is_alphanumeric))
                 .count(),
             preview,
-            replaced: replaced(text, names),
+            replaced,
+            mentions,
             for_ai,
         }
     }
@@ -296,8 +301,21 @@ impl ShelfDocument {
         })
     }
 
-    /// How many distinct names its text replaced.
+    /// How many mentions its text replaced: "24 replaced".
     pub(crate) fn replaced_count(&self) -> usize {
+        self.mentions
+    }
+
+    /// How many distinct names those mentions are: "14 names".
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn names_count(&self) -> usize {
         self.replaced.iter().map(|(_, n)| n).sum()
     }
 
@@ -338,15 +356,18 @@ pub(crate) fn title_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Distinct names `text` holds by an alias, per category.
-fn replaced(text: &str, names: &RestoreMap) -> Vec<(Category, usize)> {
+/// The mentions `text` holds by an alias, and the distinct names they are,
+/// per category.
+fn replaced(text: &str, names: &RestoreMap) -> (usize, Vec<(Category, usize)>) {
     let identities = names.identities();
+    let mut mentions = 0;
     let mut seen: Vec<&str> = Vec::new();
     let mut counts = [0usize; Category::ALL.len()];
     for token in names.tokens(text) {
         let Some(identity) = token.identity.and_then(|i| identities.get(i)) else {
             continue;
         };
+        mentions += 1;
         // The tab's names list one person in its mapping and its case.
         if seen.contains(&identity.alias.as_str()) {
             continue;
@@ -356,11 +377,12 @@ fn replaced(text: &str, names: &RestoreMap) -> Vec<(Category, usize)> {
             counts[at] += 1;
         }
     }
-    Category::ALL
+    let replaced = Category::ALL
         .into_iter()
         .zip(counts)
         .filter(|(_, n)| *n > 0)
-        .collect()
+        .collect();
+    (mentions, replaced)
 }
 
 /// Text with byte ranges for bold and italic, built a piece at a time:
@@ -1116,10 +1138,10 @@ pub(crate) struct ClipboardRestore {
 }
 
 impl ClipboardRestore {
-    /// "7 names restored · 1 unrecognised".
+    /// "7 names restored · 1 unrecognized".
     pub(crate) fn summary(&self) -> String {
         format!(
-            "{} {} restored · {} unrecognised",
+            "{} {} restored · {} unrecognized",
             self.restored,
             if self.restored == 1 { "name" } else { "names" },
             self.unrecognised

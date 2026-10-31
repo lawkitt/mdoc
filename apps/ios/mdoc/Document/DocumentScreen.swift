@@ -441,7 +441,7 @@ private struct ActionBar: View {
                 .accessibilityLabel(Text("Share reply"))
                 .accessibilityIdentifier("share-reply")
                 Button {
-                    model.copyReply { UIPasteboard.general.string = $0 }
+                    model.copyReply { RestoredPasteboard.copy($0) }
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                         .frame(maxWidth: .infinity)

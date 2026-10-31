@@ -2,6 +2,8 @@
 
 mdoc prepares local documents as editable Markdown for external AI tools.
 Behavior and rationale live in [ADRs](docs/adr/); this file defines shared terms.
+UI labels and every UI string use US English ("unrecognized", "license",
+"organization"); identifiers and file names keep their spelling.
 
 ## Documents and handoff
 
@@ -16,7 +18,7 @@ until ADR 0048; "Original" now names the pill's pre-pseudonymization view).
 **Page tone**: how Original pages are painted: *original* paper or *themed*
 (paper and ink remapped to the dark theme). Follows the app theme unless
 overridden in the Original header ([ADR 0035](docs/adr/0035-dark-original-pages.md)).
-Avoid "invert", which suggests a plain colour flip.
+Avoid "invert", which suggests a plain color flip.
 
 **Markdown handoff**: saving or copying prepared Markdown to another tool.
 **Copy Markdown** copies the full current source exactly, including unsaved edits
@@ -34,17 +36,17 @@ the AI to keep placeholders exactly; shown when aliases are applied.
 
 **Restore**: replace aliases in a pasted AI reply with the source's primary
 wordings, in a new tab where restored values are proposals keeping their aliases.
-UI label: **Paste AI Response**.
+UI label: **Paste AI Reply** (Title Case in menus, "Paste AI reply" elsewhere).
 
 **Reply box**: the Share panel's "AI reply" field that restores a pasted
-reply in place; its summary reads "N values restored · M unrecognised"
-with Next unrecognised, Copy reply and Open as tab. Plain text: a paste is
+reply in place; its summary reads "N values restored · M unrecognized"
+with Next unrecognized, Copy reply and Open as tab. Plain text: a paste is
 kept exactly. The reply, in alias form, is kept encrypted in its case, or
 only while the tab is open without a case; its aliases follow the document's
 renumbering ([ADR 0078](docs/adr/0078-restore-in-place.md)).
 
 **Reply view**: the view switcher's read-only Reply segment showing the
-restored reply; live, like Before / after, and shown while a reply exists.
+restored reply; live, like Side by side, and shown while a reply exists.
 Filling the reply box switches to it. Open as tab turns it into a
 Restore tab.
 
@@ -99,10 +101,10 @@ document's state: Pseudonymize, scanning + Cancel, Apply N, Copy for AI.
 without a case sit under "Open".
 
 **Case page**: the transient page in the content card, like Home, giving a
-case's documents, names, colour, categories and delete
+case's documents, names, color, categories and delete
 ([ADR 0077](docs/adr/0077-case-page.md)).
 
-**Case colour**: one of eight named swatches stored on a case and shown
+**Case color**: one of eight named swatches stored on a case and shown
 wherever the case appears; it never encodes state.
 
 **Folder sheet**: the sheet a dropped folder shows before anything opens: its
@@ -176,7 +178,9 @@ changes, an unsaved mapping, or both; each gets one prompt
 ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
 
 **Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
-in the sidebar. One case per document. Avoid "matter" and "project".
+in the sidebar. One case per document. Avoid "matter" and "project". Making
+one: **Save as Case** (Title Case in menus and dialogs, "Save as case" elsewhere;
+not "Save mapping as case").
 
 **Case key**: the 256-bit key encrypting saved cases, held by the OS (macOS
 Keychain, Windows DPAPI, Linux Secret Service). Read only for an action that
@@ -231,7 +235,7 @@ proposals; only a ready document can be copied or dragged from the shelf
 the current text into a private folder cleared at quit; its name is the title
 with known originals pseudonymized (ADR 0084).
 
-**Before / after view**: read-only, line-paired view of original wording beside
+**Side by side view**: read-only, line-paired view of original wording beside
 pseudonymized text. Live: it follows every applied-replacement change
 (ADR 0042). Avoid "diff", which suggests arbitrary edits.
 

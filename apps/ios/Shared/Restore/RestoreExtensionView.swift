@@ -108,7 +108,7 @@ struct RestoreExtensionView: View {
         // Copy is what most replies need (back into the chat or a document),
         // so it is the one prominent button.
         Button {
-            UIPasteboard.general.string = result.text
+            RestoredPasteboard.copy(result.text)
             copied = true
         } label: {
             Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")

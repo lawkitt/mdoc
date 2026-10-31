@@ -167,7 +167,7 @@ Fixture: the English demo, scanned.
 | R5 | Mod+Z inside the popup and the panel undoes the last decision; Mod+Shift+Z (and Ctrl+Y on Windows) redoes | | |
 | R6 | Panel list: ↑/↓, Space, Enter, →/←, ⌫ behave as described in ADR 0048 | | |
 | R7 | Mod+Enter and the toolbar's Apply N apply all and close the popup; one Mod+Z undoes them | | |
-| R8 | Before / After (Mod+\\) shows both columns; Esc leaves | | |
+| R8 | Side by Side (Mod+\\) shows both columns; Esc leaves | | |
 | R9 | Alt+Enter, Alt+↑/↓ and Mod+Alt+P work in the editor | | |
 
 ## 7. Clipboard
@@ -176,7 +176,7 @@ Fixture: the English demo, scanned.
 | --- | --- | --- | --- |
 | C1 | Copy for AI, pasted into the ChatGPT and Claude web apps, arrives as plain text with the placeholder note | | |
 | C2 | Copy Markdown of the Russian demo, pasted into TextEdit (plain text mode) or Notepad, is byte-identical to the saved file, Cyrillic intact; the same for a line with CJK text | | |
-| C3 | Paste AI Response (Mod+Alt+Shift+V) of a browser selection carrying HTML and plain text uses the plain text and restores aliases | | |
+| C3 | Paste AI Reply (Mod+Alt+Shift+V) of a browser selection carrying HTML and plain text uses the plain text and restores aliases | | |
 | C4 | Pseudonymize Clipboard (Mod+Alt+Shift+C) replaces the known case names in the clipboard; pasting elsewhere shows the aliases | | |
 | C5 | Copy, cut and paste between two editor tabs keep the text exactly | | |
 
@@ -234,7 +234,7 @@ Every application shortcut, from the one shortcuts table
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
 | E1 | Nothing asks for the key at launch | | |
-| E2 | *macOS*: Save mapping as case shows the "mdoc will ask for Keychain access" explainer, then the system dialog; Always Allow saves the case. On an unsaved conversion, Save As opens first with the message "Save the document first so the case can find it" | | |
+| E2 | *macOS*: Save as Case shows the "mdoc will ask for Keychain access" explainer, then the system dialog; Always Allow saves the case. On an unsaved conversion, Save As opens first with the message "Save the document first so the case can find it" | | |
 | E3 | *macOS*: Not now (Esc) cancels the action, and the locked-cases bar offers Unlock… | | |
 | E4 | *Windows*: saving a case asks nothing (DPAPI). On an unsaved conversion, Save as case opens Save As titled "Save the document first so the case can find it" | | |
 | E5 | After quit and relaunch, opening a case member restores its replacements without a prompt | | |
@@ -268,7 +268,7 @@ another editor since its last save.
 | M4 | Dragging a ready document into the ChatGPT web composer inserts its text; dropping it in Finder saves a `.md` whose name has no original (e.g. "PERSON_1 settlement.md") | | |
 | M5 | Copy for AI (the button, ⌘C, and ⌘1–⌘8) shows ✓ "Copied", closes the shelf, and puts the same bytes on the clipboard as the editor's Copy for AI | | |
 | M6 | The pending-proposal document reads "N left to review", the edited closed member "Changed since review"; neither copies or drags, and a click opens the review | | |
-| M7 | Clipboard › Restore with a copied AI reply restores the names of the source on "Names from … ▾" and that line then reads "N names restored · M unrecognised"; ▾ switches the source; Pseudonymize does the reverse | | |
+| M7 | Clipboard › Restore with a copied AI reply restores the names of the source on "Names from … ▾" and that line then reads "N names restored · M unrecognized"; ▾ switches the source; Pseudonymize does the reverse | | |
 | M8 | With cases locked, the clipboard buttons read "Unlock cases in mdoc…" and no system dialog appears until one is clicked | | |
 | M9 | VoiceOver reads a row's title, case and state and the "Copy for AI" button; ↑↓, Enter and Esc work | | |
 | M10 | ⌘Q and the shelf's Quit run the unsaved-work prompts; with "Restart to update" shown, it prompts first; turning the setting off restores quit on last window close | | |

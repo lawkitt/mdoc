@@ -227,6 +227,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-emulator [--window] [phone\|tablet]` | Windows: boots a Pixel 8-sized phone (`emulator-5554`) or Pixel Tablet-sized tablet (`emulator-5556`) on the pinned API 36 image with 16 KB pages, headless unless `--window`, writing its virtual device on first use; prints the adb serial. `adb -s <serial> emu kill` stops it |
 | `just android` | Windows: the Android job when the commit changes `crates/`, `Cargo.lock`, `apps/android/` or the Android scripts: `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. Windows local CI runs it after `test`, with a 40-minute limit |
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of local CI |
+| `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of local CI |
 | `just android-core` | Windows or macOS: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
 | `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android, then, when the commit changes `crates/`, `Cargo.lock` or `apps/`, the iOS job (`just ios-app ios-test`, shutting down the Simulator it booted); the Mac's local CI runs it after `test`, with a 40-minute limit |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
@@ -338,7 +339,8 @@ before/after, What you did with done and undone entries, Open Case, the unlocked
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,
-a restored AI reply, and the menu bar shelf (ready, not-ready and
+a restored AI reply, a scan under way (skeleton rows, "Scanning…",
+Rescan off, a window count), and the menu bar shelf (ready, not-ready and
 changed-since-review rows, a row's "Copied", the first-close note, empty,
 and locked) on a stage window. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
