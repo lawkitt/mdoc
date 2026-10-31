@@ -293,23 +293,24 @@ fn scan_inline(
 ) {
     let b = text.as_bytes();
     let mut i = start;
-    // End of the raw inline HTML or autolink the scan is inside: its bytes
-    // are literal, so a `\` there escapes nothing (CommonMark).
-    let mut raw_until = start;
+    // End of the autolink (`<https://…>`) the scan is inside: its bytes are
+    // literal, so a `\` there escapes nothing (CommonMark). The bare-URL
+    // rule below still colours it.
+    let mut autolink_until = start;
     while i < end {
         let c = b[i];
-        if i >= raw_until
+        if i >= autolink_until
             && c == b'<'
-            && let Some(len) = raw_html_len(&b[i..end])
+            && let Some(len) = autolink_len(&b[i..end])
         {
-            raw_until = i + len;
+            autolink_until = i + len;
         }
         // A backslash escape (`\*`, `1\.`, `\\`, … — any ASCII punctuation):
         // the backslash is a marker (the reader consumes it), dimmed when
         // shown and hidden like the others; the escaped character is literal
         // content in its own span, skipped so no construct opens on it.
         // Reveal-on-caret shows the backslash for editing.
-        if i >= raw_until && is_escape(b, i, end) {
+        if i >= autolink_until && is_escape(b, i, end) {
             push_escape(out, i, SpanStyle::default().over(base));
             i += 2;
             continue;
@@ -362,27 +363,7 @@ fn scan_inline(
         // (backslashes are literal INSIDE a span; only the opener can be
         // escaped).
         if c == b'`' && !is_backslash_escaped(b, i) {
-            let mut n = 1;
-            while i + n < end && b[i + n] == b'`' {
-                n += 1;
-            }
-            let mut j = i + n;
-            let mut close = None;
-            while j < end {
-                if b[j] == b'`' {
-                    let mut m = 1;
-                    while j + m < end && b[j + m] == b'`' {
-                        m += 1;
-                    }
-                    if m == n {
-                        close = Some(j);
-                        break;
-                    }
-                    j += m;
-                } else {
-                    j += 1;
-                }
-            }
+            let (n, close) = code_span(b, i, end);
             if let Some(close) = close {
                 let id = *next_id;
                 *next_id += 1;
@@ -699,6 +680,14 @@ fn scan_inline(
             i = close + close_len;
             continue;
         }
+        // Any other raw inline HTML (a tag, a comment, …) is literal: no
+        // construct or escape inside it (CommonMark).
+        if c == b'<'
+            && let Some(len) = raw_html_len(&b[i..end])
+        {
+            i += len;
+            continue;
+        }
         // Bare URL: colored like a link (it clicks like one — see the shared
         // `links()` grammar; `url_end` keeps styling and hit-tests identical).
         // Compare BYTES: `i` walks bytes, so a str slice here would panic
@@ -750,13 +739,42 @@ fn push_escape(out: &mut Vec<Span>, i: usize, style: SpanStyle) {
     push(out, i + 1..i + 2, style);
 }
 
+/// The backtick run at `b[i]` (CommonMark code span): its length `n`, and
+/// where the next run of exactly `n` backticks before `end` starts, if any.
+fn code_span(b: &[u8], i: usize, end: usize) -> (usize, Option<usize>) {
+    let run = |at: usize| b[at..end].iter().take_while(|&&c| c == b'`').count();
+    let n = run(i);
+    let mut j = i + n;
+    while j < end {
+        if b[j] == b'`' {
+            let m = run(j);
+            if m == n {
+                return (n, Some(j));
+            }
+            j += m;
+        } else {
+            j += 1;
+        }
+    }
+    (n, None)
+}
+
 /// `range` as one span of `style`, split around the escapes in it — for
-/// text pushed whole rather than scanned, such as a link's label.
+/// text pushed whole rather than scanned, such as a link's label. Code spans
+/// and raw HTML in it stay literal.
 fn push_with_escapes(out: &mut Vec<Span>, b: &[u8], range: Range<usize>, style: SpanStyle) {
     let mut from = range.start;
     let mut i = range.start;
     while i < range.end {
-        if is_escape(b, i, range.end) {
+        if b[i] == b'`' && !is_backslash_escaped(b, i) {
+            let (n, close) = code_span(b, i, range.end);
+            i = close.map_or(i + n, |close| close + n);
+        } else if b[i] == b'<'
+            && let Some(len) =
+                raw_html_len(&b[i..range.end]).or_else(|| autolink_len(&b[i..range.end]))
+        {
+            i += len;
+        } else if is_escape(b, i, range.end) {
             if i > from {
                 push(out, from..i, style.clone());
             }
@@ -773,8 +791,8 @@ fn push_with_escapes(out: &mut Vec<Span>, b: &[u8], range: Range<usize>, style: 
 }
 
 /// Byte length of the CommonMark raw inline HTML (open or closing tag,
-/// comment, processing instruction, declaration, CDATA) or autolink that
-/// `s` starts with. Line-scoped: a construct must close within `s`.
+/// comment, processing instruction, declaration, CDATA) that `s` starts
+/// with. Line-scoped: a construct must close within `s`.
 fn raw_html_len(s: &[u8]) -> Option<usize> {
     let find = |from: usize, pat: &[u8]| {
         s.get(from..)?
@@ -800,7 +818,7 @@ fn raw_html_len(s: &[u8]) -> Option<usize> {
     if s.starts_with(b"<!") && s.get(2).is_some_and(u8::is_ascii_alphabetic) {
         return find(3, b">");
     }
-    open_or_closing_tag_len(s).or_else(|| autolink_len(s))
+    open_or_closing_tag_len(s)
 }
 
 /// An open tag (`<a href="x">`, `<br/>`) or a closing tag (`</a>`).
@@ -1293,6 +1311,7 @@ mod tests {
             r"<br/> \*",
             r"</a > \*",
             r"<?php a\*b ?> \*",
+            r"x <!-- > *a\*b* --> \*",
         ] {
             let markers: Vec<_> = escape_spans(line).into_iter().filter(|&(_, m)| m).collect();
             assert_eq!(markers.len(), 1, "{line:?}");
@@ -1311,6 +1330,21 @@ mod tests {
             escape_spans(r#"<a b="1"c> \*"#),
             vec![(r"\", true), ("*", false)]
         );
+    }
+
+    #[test]
+    fn raw_html_is_literal_and_autolinks_keep_their_colour() {
+        // Emphasis inside a comment or an attribute does not open.
+        for line in [r"<!-- *a* -->", r#"<a title="*a*">t</a>"#] {
+            let mut out = Vec::new();
+            scan_line(line, 0, line.len(), &mut out);
+            assert!(out.iter().all(|s| !s.style.italic), "{line:?}");
+        }
+        let line = "<https://example.com/a>";
+        let mut out = Vec::new();
+        scan_line(line, 0, line.len(), &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].style.color, Some(Color::Link));
     }
 
     #[test]
@@ -1333,6 +1367,12 @@ mod tests {
                 ],
                 "{line:?}"
             );
+        }
+        // Code and raw HTML in a label stay literal.
+        for line in [r"[`\*`](u)", r#"[<b title="\*">](u)"#] {
+            let mut out = Vec::new();
+            scan_line(line, 0, line.len(), &mut out);
+            assert!(out.iter().all(|s| !s.style.escape), "{line:?}");
         }
     }
 }
