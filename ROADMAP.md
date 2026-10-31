@@ -92,7 +92,9 @@ green and leave desktop unchanged. Record:
    leaving the app, the below-floor note where Find names would be (and in
    Settings), and marking a name by selecting it. *Done when:* `just
    ios-device-test` runs a below-floor test on the iPhone 12 Pro and it
-   passes, with no new crash report.
+   passes, with no new crash report. The test is in #296; on the 12 Pro the
+   runner timed out enabling automation, so turn on Settings → Developer →
+   UI Automation there first.
 
 ## Android 0.1
 
