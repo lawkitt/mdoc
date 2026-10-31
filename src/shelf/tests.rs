@@ -398,6 +398,7 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         "- ~~~\n  code example that is long enough as prose\n- PERSON_1 signed the agreement today.\n",
         "- ~~~\n  code example that is long enough as prose\nPERSON_1 signed the agreement today.\n",
         "> - ~~~\n>   code example that is long enough as prose\n> - PERSON_1 signed the agreement today.\n",
+        "- > ~~~\n  > code example that is long enough as prose\n- > PERSON_1 signed the agreement today.\n",
     ] {
         assert_eq!(
             preview_of(ended).unwrap().text,

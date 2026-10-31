@@ -616,36 +616,85 @@ fn spells_an_original(text: &str, names: &RestoreMap) -> bool {
         .any(|original| original.chars().count() >= 4 && text.contains(&original))
 }
 
-/// `line` without `levels` blockquote markers, keeping the indentation
-/// after them; `None` when it has fewer.
-fn unquote_raw(mut line: &str, levels: usize) -> Option<&str> {
-    for _ in 0..levels {
-        let rest = line.trim_start_matches(' ').strip_prefix('>')?;
-        line = rest.strip_prefix(' ').unwrap_or(rest);
-    }
-    Some(line)
-}
-
-/// The width of `line`'s leading whitespace, a tab as four.
-fn indent_width(line: &str) -> usize {
-    width(&line[..line.len() - line.trim_start().len()])
-}
-
 /// The columns `text` takes, a tab as four.
 fn width(text: &str) -> usize {
     text.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum()
 }
 
+/// A block a code fence opened in, outermost first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Container {
+    /// A blockquote level: its lines start with `>`.
+    Quote,
+    /// A list item whose content starts this many columns in: its lines
+    /// are blank or indented at least that far.
+    Item(usize),
+}
+
+/// The containers `line` opens before its content, outermost first.
+fn containers_of(mut line: &str) -> Vec<Container> {
+    let mut found = Vec::new();
+    loop {
+        let rest = line.trim_start_matches(' ');
+        if let Some(rest) = rest.strip_prefix('>') {
+            found.push(Container::Quote);
+            line = rest.strip_prefix(' ').unwrap_or(rest);
+        } else if let Some((prefix, ..)) = lines::list_prefix(line) {
+            let after = &line[prefix..];
+            let spaces = after.len() - after.trim_start_matches(' ').len();
+            // Up to four more spaces belong to the marker; more make code.
+            let extra = if spaces < 4 { spaces } else { 0 };
+            found.push(Container::Item(width(&line[..prefix]) + extra));
+            line = &after[extra..];
+        } else {
+            return found;
+        }
+    }
+}
+
+/// `line` inside `containers`, or `None` once one of them has ended: a
+/// quote at a line without `>`, a list item at a line indented less than
+/// its content (a sibling item, prose after the list).
+fn inside<'a>(mut line: &'a str, containers: &[Container]) -> Option<&'a str> {
+    for container in containers {
+        match container {
+            Container::Quote => {
+                let rest = line.trim_start_matches(' ').strip_prefix('>')?;
+                line = rest.strip_prefix(' ').unwrap_or(rest);
+            }
+            Container::Item(content) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let lead = &line[..line.len() - line.trim_start().len()];
+                if width(lead) < *content {
+                    return None;
+                }
+                // Drop the item's indent, whitespace by whitespace.
+                let mut columns = 0;
+                let cut = line
+                    .char_indices()
+                    .find(|(_, c)| {
+                        if columns >= *content {
+                            return true;
+                        }
+                        columns += if *c == '\t' { 4 } else { 1 };
+                        false
+                    })
+                    .map_or(line.len(), |(at, _)| at);
+                line = &line[cut..];
+            }
+        }
+    }
+    Some(line)
+}
+
 /// An open code fence.
-#[derive(Clone, Copy)]
 struct Fence {
     /// Its character and length.
     mark: (u8, usize),
-    /// How many quote levels it sits in.
-    quotes: usize,
-    /// The content indent of the list item it opened in, if any: a line
-    /// indented less (a sibling item, prose after the list) ends it.
-    item: Option<usize>,
+    /// The blocks it opened in.
+    containers: Vec<Container>,
 }
 
 /// One source line with its Markdown syntax hidden: markers and line
@@ -731,13 +780,10 @@ fn unquote(mut line: &str, levels: usize) -> &str {
 
 /// `line` without its containers' markers: blockquotes (`>`, nested `>>`
 /// too, and an alert's `[!NOTE]`), list items (`-`, `1.`) and task boxes,
-/// however they nest; and how many blockquote levels it sits in, list
-/// items between them too (`- > ```` is in one).
-fn containers(mut line: &str) -> (&str, usize) {
-    let mut quotes = 0;
+/// however they nest.
+fn block_content(mut line: &str) -> &str {
     loop {
         if let Some(prefix) = lines::blockquote_prefix(line) {
-            quotes += line[..prefix].matches('>').count();
             line = line[prefix..].trim_start();
             if let Some((_, alert, _)) = mdoc_markdown::syntax::alert_prefix(line) {
                 line = line[alert..].trim_start();
@@ -747,7 +793,7 @@ fn containers(mut line: &str) -> (&str, usize) {
         } else if let Some((prefix, ..)) = lines::list_prefix(line) {
             line = line[prefix..].trim_start();
         } else {
-            return (line, quotes);
+            return line;
         }
     }
 }
@@ -836,32 +882,28 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     for line in text.lines() {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
-        let (block, quotes) = containers(trimmed);
+        let block = block_content(trimmed);
         if let Some(Fence {
             mark: (c, n),
-            quotes: opened_in,
-            item,
-        }) = fenced
+            containers,
+        }) = &fenced
         {
-            let item_ended = item.is_some_and(|content| {
-                unquote_raw(line.trim_end(), opened_in)
-                    .is_some_and(|raw| !raw.trim().is_empty() && indent_width(raw) < content)
-            });
-            if quotes < opened_in || item_ended {
-                // The opener's quote or list item has ended, and its code
-                // with it: this line is read for what it is outside.
-                fenced = None;
-            } else {
-                // Only a fence of the same character, at least as long, with
-                // nothing after it and in the opener's quotes, closes the
-                // block; markers written inside the code are its text.
-                let inner = unquote(trimmed, opened_in);
-                if fence(inner)
-                    .is_some_and(|(cc, nn)| cc == c && nn >= n && inner[nn..].trim().is_empty())
-                {
-                    fenced = None;
+            match inside(line, containers) {
+                // The block the fence opened in has ended, and its code with
+                // it: this line is read for what it is outside.
+                None => fenced = None,
+                Some(inner) => {
+                    // Only a fence of the same character, at least as long,
+                    // with nothing after it, closes the block; markers
+                    // written inside the code are its text.
+                    let inner = inner.trim();
+                    if fence(inner).is_some_and(|(cc, nn)| {
+                        cc == *c && nn >= *n && inner[nn..].trim().is_empty()
+                    }) {
+                        fenced = None;
+                    }
+                    continue;
                 }
-                continue;
             }
         }
         let structure = fence(block).is_some()
@@ -882,12 +924,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             }
         }
         if let Some(mark) = fence(block) {
-            // In a list item (inside the fence's quotes): where its content
-            // starts.
-            let item = unquote_raw(line.trim_end(), quotes)
-                .filter(|raw| lines::list_prefix(raw).is_some() && raw.len() >= block.len())
-                .map(|raw| width(&raw[..raw.len() - block.len()]));
-            fenced = Some(Fence { mark, quotes, item });
+            fenced = Some(Fence {
+                mark,
+                containers: containers_of(line),
+            });
             continue;
         }
         if structure {
