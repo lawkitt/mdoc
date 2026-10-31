@@ -79,6 +79,7 @@ class Jobs(private val context: Context) {
             try {
                 // A foreground service starts only while mdoc is on screen
                 // (ADR 0089); refused, the job does not run.
+                LongJobService.wanted = true
                 ContextCompat.startForegroundService(context, LongJobService.start(context, title))
                 // Written first: a process Android ends mid-job leaves it behind.
                 saveInterrupted(InterruptedJob(kind, documentId))
@@ -105,7 +106,10 @@ class Jobs(private val context: Context) {
             } catch (refused: IllegalStateException) {
                 JobOutcome.Failed(refused)
             } finally {
-                context.stopService(LongJobService.intent(context))
+                // A service not yet in the foreground must not be stopped: Android
+                // ends the app for that. It stops itself once it gets there.
+                LongJobService.wanted = false
+                if (LongJobService.started) context.stopService(LongJobService.intent(context))
                 this@Jobs.token.set(null)
                 running.value = null
             }
