@@ -9,6 +9,7 @@ final class LargeTextExploreUITests: XCTestCase {
     override func setUpWithError() throws {
         dir = ProcessInfo.processInfo.environment["MDOC_SHOTS_DIR"] ?? ""
         try XCTSkipIf(dir.isEmpty, "exploration only")
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         continueAfterFailure = true
     }
 
@@ -40,9 +41,7 @@ final class LargeTextExploreUITests: XCTestCase {
             save(app, "06-candidate-end")
             if app.buttons["candidate-done"].exists { app.buttons["candidate-done"].tap() }
         }
-        if app.buttons["identities-button"].waitForExistence(timeout: 2) {
-            app.buttons["identities-button"].tap()
-            sleep(1)
+        if MdocUITest.showIdentities(app) {
             save(app, "07-identities")
             if app.buttons["identities-done"].exists { app.buttons["identities-done"].tap() }
         }
@@ -60,6 +59,10 @@ final class LargeTextExploreUITests: XCTestCase {
     @MainActor
     private func save(_ app: XCUIApplication, _ name: String) {
         let png = app.screenshot().pngRepresentation
-        try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name + ".png"))
+        do {
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name + ".png"))
+        } catch {
+            XCTFail("could not save \(name): \(error)")
+        }
     }
 }

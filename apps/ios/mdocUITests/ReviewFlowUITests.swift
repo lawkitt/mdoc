@@ -128,6 +128,19 @@ enum MdocUITest {
             .firstMatch
     }
 
+    /// Shows Identities and waits for it: on iPad it is open beside the
+    /// text already, and its button would close it. False if it never shows.
+    @MainActor
+    static func showIdentities(_ app: XCUIApplication) -> Bool {
+        let heading = app.staticTexts["Identities"].firstMatch
+        if !heading.exists {
+            let button = app.buttons["identities-button"].firstMatch
+            guard button.waitForExistence(timeout: 2) else { return false }
+            button.tap()
+        }
+        return heading.waitForExistence(timeout: 5)
+    }
+
     @MainActor
     static func closeShareSheet(_ app: XCUIApplication) {
         let close = app.buttons["Close"].firstMatch

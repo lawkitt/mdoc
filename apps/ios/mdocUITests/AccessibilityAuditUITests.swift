@@ -26,9 +26,7 @@ final class AccessibilityAuditExploreUITests: XCTestCase {
                 app.buttons["candidate-done"].tap()
             }
         }
-        let identities = app.buttons["identities-button"].firstMatch
-        if identities.waitForExistence(timeout: 2) {
-            identities.tap()
+        if MdocUITest.showIdentities(app) {
             audit(app, "identities")
             if app.buttons["identities-done"].exists { app.buttons["identities-done"].tap() }
         }
