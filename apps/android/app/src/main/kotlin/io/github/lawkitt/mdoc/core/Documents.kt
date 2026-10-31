@@ -283,6 +283,15 @@ class Documents(
 
         fun replaceAllPending(): DocumentSnapshot = change { ffi.replaceAll() }
 
+        /**
+         * Proposals as a scan would give them, for UI tests and the survey on
+         * an emulator with no detector (the iOS app's seedForUITesting).
+         */
+        internal fun seedProposals(candidates: List<uniffi.mdoc_ffi.Candidate>): DocumentSnapshot {
+            synchronized(this) { scanned = true }
+            return change { ffi.addCandidates(candidates) }
+        }
+
         /** Replace…: a manual identity for the selected text, replaced in every exact repeat. */
         fun addReplacement(range: SourceRange, category: Category): DocumentSnapshot {
             if (range.length <= 0) throw AppError.EmptySelection()

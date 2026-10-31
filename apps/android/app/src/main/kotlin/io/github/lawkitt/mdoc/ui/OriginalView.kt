@@ -95,7 +95,8 @@ private fun PdfPages(file: File, modifier: Modifier) {
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(renderer.pageCount) { index ->
                 val page by produceState<Bitmap?>(null, renderer, index, width) {
-                    value = withContext(Dispatchers.IO) { synchronized(renderer) { render(renderer, index, width) } }
+                    // A pane can be measured at zero width first (side by side on a tablet).
+                    if (width > 0) value = withContext(Dispatchers.IO) { synchronized(renderer) { render(renderer, index, width) } }
                 }
                 page?.let {
                     Image(

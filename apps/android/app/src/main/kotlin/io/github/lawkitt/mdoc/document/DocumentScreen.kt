@@ -264,6 +264,7 @@ fun DocumentScreen(
                         stringResource(
                             if (!snapshot.kind.needsRecognition) R.string.import_not_finished_body else R.string.status_not_recognized,
                         ),
+                        paneModifier,
                     )
                 } else {
                     ReviewText(
@@ -327,8 +328,8 @@ private fun Notice(text: String) {
 }
 
 @Composable
-private fun RecognizingPane(text: String) {
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
+private fun RecognizingPane(text: String, modifier: Modifier = Modifier.fillMaxSize()) {
+    Column(modifier.padding(32.dp), verticalArrangement = Arrangement.Center) {
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

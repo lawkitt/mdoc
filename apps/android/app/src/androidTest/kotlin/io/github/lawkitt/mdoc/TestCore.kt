@@ -11,7 +11,10 @@ import java.util.UUID
  * Gives a test its own core: a fresh storage folder and a fixed case key,
  * never the app's library or Keystore key. Removed afterwards.
  */
-class TestCore : ExternalResource() {
+class TestCore(
+    /** The phone's RAM as the core sees it; null for the emulator's own (below the floor). */
+    private val physicalMemory: Long? = null,
+) : ExternalResource() {
     val app get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MdocApplication
     lateinit var storage: MdocStorage
         private set
@@ -19,7 +22,14 @@ class TestCore : ExternalResource() {
     override fun before() {
         storage = MdocStorage.app(app, "test-${UUID.randomUUID()}").prepare()
         val isolated = storage
-        app.openCore = { AppCore.make(it, storage = isolated, keys = FixedCaseKeyStore()) }
+        val memory = physicalMemory
+        app.openCore = {
+            if (memory == null) {
+                AppCore.make(it, storage = isolated, keys = FixedCaseKeyStore())
+            } else {
+                AppCore.make(it, storage = isolated, keys = FixedCaseKeyStore(), physicalMemory = memory)
+            }
+        }
         app.reopenCore()
     }
 
