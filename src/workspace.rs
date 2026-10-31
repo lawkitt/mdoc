@@ -2153,6 +2153,15 @@ impl Workspace {
         }
     }
 
+    /// A tab's or a case's context menu is open. The sidebar then shows no
+    /// tooltips (#310): GPUI keeps a shown tooltip while the pointer rests
+    /// on it, draws it over the menu, and shows a new one when the pointer
+    /// slips off the menu onto a row. Rendering a control without its
+    /// tooltip is GPUI's one way to dismiss it.
+    pub(super) fn context_menu_open(&self) -> bool {
+        self.tab_menu.is_some() || self.cases.header_menu.is_some()
+    }
+
     /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
     fn reveal_held(&self, window: &Window, cx: &App) -> bool {
         self.tab_menu.is_some()
@@ -2298,6 +2307,7 @@ impl Workspace {
             .or(listed.first().copied());
         let accent = theme.search_accent();
         let drop_index = self.file_drop_index();
+        let menu_open = self.context_menu_open();
         let labels: Vec<TabLabel> = self.tabs.iter().map(|tab| tab_label(tab, cx)).collect();
         let rows = self
             .tabs
@@ -2428,7 +2438,7 @@ impl Workspace {
                                     palette.header_muted
                                 }),
                         )
-                        .when(!revealed, |v| {
+                        .when(!revealed && !menu_open, |v| {
                             v.tooltip(style::tooltip(format!("{tooltip}\n{format}"), theme))
                         })
                         .when(dirty || busy || error, |v| {
@@ -2501,7 +2511,7 @@ impl Workspace {
                             v.bg(theme.sidebar_selected())
                         })
                         .hover(move |v| v.bg(palette.placeholder_bg))
-                        .tooltip(style::tooltip(tooltip, theme))
+                        .when(!menu_open, |v| v.tooltip(style::tooltip(tooltip, theme)))
                         .cursor_pointer()
                         .child(
                             // One badge column, so names line up whether the
@@ -2663,7 +2673,9 @@ impl Workspace {
         let new_row = ui::control("sidebar-new", "", theme, true)
             .track_focus(&self.panel_new_focus)
             .aria_label("New Markdown tab")
-            .tooltip(style::tooltip("New Markdown tab".into(), theme))
+            .when(!menu_open, |v| {
+                v.tooltip(style::tooltip("New Markdown tab".into(), theme))
+            })
             .when(cfg!(test), |v| v.debug_selector(|| "sidebar-new".into()))
             .flex()
             .items_center()
@@ -2847,13 +2859,16 @@ impl Workspace {
                         .pb_1()
                         .children(compact_rows)
                         .child(
-                            ui::header_icon(
+                            ui::header_icon_untipped(
                                 "sidebar-new-collapsed",
                                 "New Markdown tab",
                                 ui::Icon::Plus,
                                 theme,
                                 false,
                             )
+                            .when(!menu_open, |v| {
+                                v.tooltip(style::tooltip("New Markdown tab".into(), theme))
+                            })
                             .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "sidebar-new-collapsed".into())
