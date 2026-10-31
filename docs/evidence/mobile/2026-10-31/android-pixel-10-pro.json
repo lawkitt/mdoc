@@ -1,0 +1,173 @@
+{
+  "core_version": "0.1.0",
+  "runtimes": {
+    "pdfium": "\/data\/app\/~~cFYd4Xnyeelgc53JO8wy1Q==\/io.github.lawkitt.mdoc.spike-J0baAiB106Gc4fH34NaZtg==\/lib\/arm64\/libpdfium.so",
+    "onnx": "\/data\/app\/~~cFYd4Xnyeelgc53JO8wy1Q==\/io.github.lawkitt.mdoc.spike-J0baAiB106Gc4fH34NaZtg==\/lib\/arm64\/libonnxruntime.so"
+  },
+  "memory_start": {
+    "footprint_bytes": 175271936,
+    "peak_footprint_bytes": 181886976
+  },
+  "document": {
+    "source": "\/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/spike-data\/fixtures\/legal-opinion.docx",
+    "conversion_seconds": 0.073855391,
+    "words": 17698,
+    "pages": 20,
+    "page_words": 9589,
+    "page_bytes": 63354
+  },
+  "probe": {
+    "tokens": 502,
+    "bytes": 1058,
+    "cold_load_seconds": 3.072205837,
+    "runtime_seconds": 6.3073E-4,
+    "engine_load_seconds": 3.071575107,
+    "run_seconds": [
+      1.7930568770000002,
+      1.7741341940000002,
+      1.758311747,
+      1.762454767,
+      1.6154869280000002
+    ],
+    "median_seconds": 1.762454767
+  },
+  "probe_error": null,
+  "memory_after_probe": {
+    "footprint_bytes": 266887168,
+    "peak_footprint_bytes": 1801449472
+  },
+  "scan": null,
+  "scan_error": "Scan exceeded two minutes. Review a smaller document or add selections manually.",
+  "memory_after_scan": {
+    "footprint_bytes": 255635456,
+    "peak_footprint_bytes": 1801449472
+  },
+  "ocr": [
+    {
+      "fixture": "english.pdf",
+      "bundle": "PP-OCRv6 Small",
+      "seconds": 1.714040157,
+      "markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    },
+    {
+      "fixture": "russian.pdf",
+      "bundle": "PP-OCRv5 Cyrillic + v6 detector",
+      "seconds": 1.775760339,
+      "markdown": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    }
+  ],
+  "memory_end": {
+    "footprint_bytes": 382238720,
+    "peak_footprint_bytes": 1801449472
+  },
+  "budgets": [
+    {
+      "name": "detector peak memory (GiB)",
+      "limit": 2,
+      "measured": 1.6777305603027344,
+      "pass": true
+    },
+    {
+      "name": "cold load (s)",
+      "limit": 10,
+      "measured": 3.072205837,
+      "pass": true
+    },
+    {
+      "name": "20-page scan (s)",
+      "limit": 60,
+      "measured": null,
+      "pass": false
+    },
+    {
+      "name": "thermal status below severe",
+      "limit": "moderate",
+      "measured": "none",
+      "pass": true
+    }
+  ],
+  "platform": {
+    "device": "Google Pixel 10 Pro (blazer)",
+    "system": "Android 16 (API 36)",
+    "simulator": false,
+    "physical_memory_bytes": 16332029952,
+    "available_memory_at_start_bytes": 10482053120,
+    "low_memory_threshold_bytes": 226492416,
+    "abi": "arm64-v8a",
+    "wall_seconds": 140.533,
+    "model_download_seconds": 133.834,
+    "thermal_worst": "none",
+    "thermal_samples": [
+      {
+        "t": 0.003,
+        "state": "none"
+      },
+      {
+        "t": 10.015,
+        "state": "none"
+      },
+      {
+        "t": 20.015,
+        "state": "none"
+      },
+      {
+        "t": 30.015,
+        "state": "none"
+      },
+      {
+        "t": 40.015,
+        "state": "none"
+      },
+      {
+        "t": 50.016,
+        "state": "none"
+      },
+      {
+        "t": 60.015,
+        "state": "none"
+      },
+      {
+        "t": 70.015,
+        "state": "none"
+      },
+      {
+        "t": 80.015,
+        "state": "none"
+      },
+      {
+        "t": 90.016,
+        "state": "none"
+      },
+      {
+        "t": 100.016,
+        "state": "none"
+      },
+      {
+        "t": 110.015,
+        "state": "none"
+      },
+      {
+        "t": 120.015,
+        "state": "none"
+      },
+      {
+        "t": 130.015,
+        "state": "none"
+      },
+      {
+        "t": 140.025,
+        "state": "none"
+      },
+      {
+        "t": 140.55,
+        "state": "none"
+      }
+    ]
+  }
+}
