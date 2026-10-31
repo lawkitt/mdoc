@@ -56,7 +56,7 @@ Findings: [device grill](../design/ios-device-grill-2026-10-31.md).
   a job, all through the real background task. A phone below the floor runs
   a below-floor test instead: the same download and scan, the note where
   Find names would be and in Settings, marking by selection, and a .docx
-  import, leaving the app during the jobs. They run by hand before
+  import that is whole after leaving the app. They run by hand before
   every TestFlight build after the first.
 - **The first TestFlight build waits** for the measured floor and the device
   checklist (P17) on the phones that run the detector.

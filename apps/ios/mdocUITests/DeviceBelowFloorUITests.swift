@@ -6,8 +6,8 @@ import XCTest
 /// phone cannot find names, and Home has no setup card; a camera scan
 /// downloads text recognition for real on Wi-Fi and is recognized while
 /// mdoc leaves the screen; selecting a word marks it and the text shares;
-/// the 37-page .docx comes in while mdoc is away. Every job goes through the
-/// real background task, which the Simulator refuses, so this skips there.
+/// the 37-page .docx comes in and is whole after mdoc is away. Every job
+/// goes through the real background task, which the Simulator refuses, so this skips there.
 /// `just ios-device-test <udid>` runs it on a phone below the floor (or with
 /// `below-floor` on any phone: UI tests take the tier from a stand-in
 /// memory size, not the phone's).
@@ -91,18 +91,24 @@ final class DeviceBelowFloorUITests: XCTestCase {
         MdocUITest.closeShareSheet(app)
     }
 
-    /// The seed imports the 37-page legal opinion at launch; the test opens
-    /// it at once and leaves while it comes in, if it has not already. The
-    /// import must finish, not stop with "Import not finished".
+    /// The seed imports the 37-page legal opinion at launch, through the
+    /// real background task (whose handler crashed every job in
+    /// lawkitt/mdoc#290). The conversion takes about 40 ms on the iPhone
+    /// 12 Pro, so no stay away can overlap it; the scan above covers leaving
+    /// during a job. Here mdoc leaves for 15 s once the document is listed
+    /// and must come back with the import whole, not "Import not finished".
     @MainActor
     private func importDocxInTheBackground() throws {
         let app = launch(seed: MdocUITest.longDocx)
         let row = Self.row(app, title: MdocUITest.longDocxTitle)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
-        row.tap()
-        let running = app.descendants(matching: .any)["job-progress"].firstMatch.waitForExistence(timeout: 5)
-        XCTContext.runActivity(named: running ? "left during the import" : "the import ended before mdoc left") { _ in }
         try leaveAndReturn(app, seconds: 15)
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == 'document-row' AND label CONTAINS 'Import not finished'"))
+                .firstMatch.exists,
+            "the import did not finish")
+        row.tap()
 
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 60))

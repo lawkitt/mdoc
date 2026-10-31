@@ -78,8 +78,9 @@ says the phone cannot find names and Home has no setup card; the scan's
 Download & continue fetches text recognition on Wi-Fi and recognizes the pages
 while the test leaves for ten seconds; where Find names would be, the
 document says so; a word selected and replaced as a person becomes
-`PERSON_1`, and the text shares. Then the legal opinion comes in while the
-test leaves for 15 s. Results go to `target/ios/device-test-*.xcresult`.
+`PERSON_1`, and the text shares. Then the legal opinion comes in (in about
+40 ms, too fast to leave during it) and is whole after the test leaves for
+15 s. Results go to `target/ios/device-test-*.xcresult`.
 
 ## Layout
 
