@@ -59,7 +59,11 @@ invariants or with Google Play's rules. Findings:
   serious throttling is thermal status SEVERE or higher; the report adds
   total and available memory and whether the process was killed. Android
   has its own floor constant: the lowest RAM class where every budget
-  passes and the app is not killed. UI work runs beside the spike.
+  passes and the app is not killed. Because Android phones of one RAM class
+  differ widely in speed (the iPhone 12 Pro met memory but missed the scan
+  budget), setup also times one short detector run on the phone before
+  offering the model download; a phone too slow for the 20-page budget is
+  treated as below the floor. UI work runs beside the spike.
 - **ADR 0088 holds on Android.** No rules-only tier: a phone below the
   floor installs (no Play device-catalog RAM exclusion), imports,
   recognizes text, marks by hand and says it cannot find names. A model

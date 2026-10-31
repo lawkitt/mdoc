@@ -270,8 +270,15 @@ and the design tree. Hub: the Windows PC (`windows`).
 34. **Every step on the maintainer's side comes as exact instructions**
     (below), kept current as scripts land.
 
-The frontier is empty, pending the maintainer's confirmation of the roadmap
-section.
+### Round 4
+
+35. **The Android floor checks speed as well as RAM.** RAM sets the floor
+    constant; setup also times one short detector run on the phone before
+    offering the model download, and a phone too slow for the 20-page
+    budget is treated as below the floor (the app says it cannot find
+    names).
+
+The frontier is empty.
 
 ## Maintainer actions
 
