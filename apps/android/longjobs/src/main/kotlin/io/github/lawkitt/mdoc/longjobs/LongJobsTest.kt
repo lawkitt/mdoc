@@ -210,17 +210,18 @@ class LongJobsTest {
     }
 
     private fun recognized() {
-        assertTrue("recognition finished", device.wait(Until.gone(running), 30 * 60_000L))
-        // The fixture's own words, read from the page images.
-        assertNotNull("the recognized text shows", device.wait(Until.findObject(By.textContains("LOCAL OCR ACCEPTANCE TEST")), 30_000))
-        assertTrue(device.findObjects(By.text(Pattern.compile("Resume recognition|Finish import|Recognize text"))).isEmpty())
+        // The fixture's own words, read from the page images. Waited for
+        // themselves: the progress line comes and goes between stages.
+        val text = device.wait(Until.findObject(By.textContains("LOCAL OCR ACCEPTANCE TEST")), 30 * 60_000L)
+        assertNotNull("the recognized text shows", text)
+        assertTrue(device.findObjects(By.text(Pattern.compile("Resume recognition|Finish import|Recognize text|$RUNNING"))).isEmpty())
     }
 
     private fun namesFound() {
-        assertTrue("Find names finished", device.wait(Until.gone(By.text("Finding names")), 30 * 60_000L))
-        val result = device.wait(Until.findObject(By.textStartsWith("Replace ")), 30_000)
-            ?: device.wait(Until.findObject(By.textStartsWith("No names found")), 5_000)
+        // What was found: Replace all, or the note that there was nothing.
+        val result = device.wait(Until.findObject(By.text(Pattern.compile("Replace .*|No names found.*"))), 30 * 60_000L)
         assertNotNull("the document shows what was found", result)
+        assertTrue(device.findObjects(By.text("Finding names")).isEmpty())
     }
 
     /**
