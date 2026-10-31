@@ -14,6 +14,9 @@ const DEMO: &str = "Соглашение об урегулировании";
 pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
     let folder = path.with_file_name("Matters");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    // Recent shows only this scene's files, not earlier scenes' (the DOCX
+    // source scene previews the same demo from its own folder).
+    d.change(|w, _, cx| w.clear_recents(cx))?;
 
     // A Markdown file pseudonymized with a proposal, nothing applied.
     let notes = folder.join("Meeting notes.md");
@@ -80,9 +83,10 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<()> {
         let badged = |name: &str| {
             files
                 .iter()
-                .find(|r| r.path.file_name().is_some_and(|n| n == name))
+                .find(|r| r.path.ends_with(Path::new("Matters").join(name)))
                 .map(|r| r.pseudonymized)
         };
+        assert_eq!(files.len(), 2, "{files:?}");
         assert_eq!(badged("Meeting notes.md"), Some(false), "{files:?}");
         assert_eq!(badged(&format!("{DEMO}.md")), Some(true), "{files:?}");
         assert_eq!(badged(&format!("{DEMO}.docx")), None, "{files:?}");
