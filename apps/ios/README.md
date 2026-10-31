@@ -82,6 +82,20 @@ document says so; a word selected and replaced as a person becomes
 40 ms, too fast to leave during it) and is whole after the test leaves for
 15 s. Results go to `target/ios/device-test-*.xcresult`.
 
+### Accessibility audit
+
+`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Home,
+the review, the candidate sheet, Identities, the replaced document and the
+reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
+failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
+`-only-testing:mdocUITests/AccessibilityAuditExploreUITests`. It is a guide,
+not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
+clipping on sheet text (and the system's Cancel and Done) that reads fine;
+missing labels, small targets and text in a category colour are real.
+`LargeTextExploreUITests` saves the main screens at the largest accessibility
+text size as PNGs into the folder in `TEST_RUNNER_MDOC_SHOTS_DIR` (it skips
+without it), for checking that rows stack instead of breaking words.
+
 ## Layout
 
 The project is written by hand (`objectVersion` 77): each folder below is a
