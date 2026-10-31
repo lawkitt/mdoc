@@ -110,17 +110,18 @@ fn category_noun(category: Category, count: usize) -> &'static str {
 }
 
 /// What hovering "24 replaced" lists: the distinct names those mentions
-/// are, "14 names: 6 people · 4 organizations · 4 IDs".
+/// are, "14 names: 6 people · 4 organizations · 4 IDs". Each count keeps
+/// its noun on its line ("1 phone number"): a long list wraps at the dots.
 pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
     let names: usize = replaced.iter().map(|(_, n)| n).sum();
     let categories = replaced
         .iter()
-        .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)))
+        .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)).replace(' ', "\u{a0}"))
         .collect::<Vec<_>>()
         .join(" · ");
     match names {
-        1 => format!("1 name: {categories}"),
-        n => format!("{n} names: {categories}"),
+        1 => format!("1\u{a0}name: {categories}"),
+        n => format!("{n}\u{a0}names: {categories}"),
     }
 }
 
@@ -566,15 +567,21 @@ mod tests {
 
     #[test]
     fn the_replaced_count_breaks_down_by_category() {
+        let shown = |replaced: &[(Category, usize)]| breakdown(replaced).replace('\u{a0}', " ");
         assert_eq!(
-            breakdown(&[
+            shown(&[
                 (Category::Person, 6),
                 (Category::Organization, 4),
                 (Category::Identity, 4)
             ]),
             "14 names: 6 people · 4 organizations · 4 IDs"
         );
-        assert_eq!(breakdown(&[(Category::Person, 1)]), "1 name: 1 person");
+        assert_eq!(shown(&[(Category::Person, 1)]), "1 name: 1 person");
+        // A wrap falls between categories, never inside one.
+        assert_eq!(
+            breakdown(&[(Category::Email, 1), (Category::Phone, 1)]),
+            "2\u{a0}names: 1\u{a0}email · 1\u{a0}phone\u{a0}number"
+        );
     }
 
     /// GUI run of #280: bold and chips wrap wider than plain text, so the

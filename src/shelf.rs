@@ -307,6 +307,14 @@ impl ShelfDocument {
     }
 
     /// How many distinct names those mentions are: "14 names".
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(crate) fn names_count(&self) -> usize {
         self.replaced.iter().map(|(_, n)| n).sum()
     }
