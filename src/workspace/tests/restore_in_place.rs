@@ -209,6 +209,14 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     });
     assert!(cx.debug_bounds("view-reply").is_some());
     assert!(cx.debug_bounds("reply-view").is_some());
+    // The Reply chip centers on Close's line (U25).
+    let chip = cx.debug_bounds("compare-label-reply").unwrap();
+    let close = cx.debug_bounds("close-compare").unwrap();
+    assert_eq!(chip.center().y, close.center().y);
+    // Next unrecognized is a bordered button like Copy reply (U25).
+    let next = cx.debug_bounds("share-next-unrecognised").unwrap();
+    let copy = cx.debug_bounds("share-copy-reply").unwrap();
+    assert_eq!(next.size.height, copy.size.height);
     let restored = "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 \
                     disagree with PERSON_8.";
     assert_eq!(reply_view_text(&source, cx), restored);
