@@ -60,33 +60,6 @@ default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
 fix after rc.1 to the installer, signing, updates or the keychain forces
 another, so such work lands first.
 
-## UI polish
-
-Desktop polish from the 2026-10-31 UI/UX survey, run overnight by a hub on
-2026-11-01; decisions and lanes in the
-[grill record](docs/design/ui-polish-grill-2026-11-01.md). Each item is one
-PR; a lane runs its items in order. *Done when* for every item: headless
-renders of what it changes in light and dark, tests where behavior changes,
-and the ADR it touches amended.
-
-7. **[UI] Small alignment items.** "Open a case…" ends 7 pt short of the line
-   above it; "Next unrecognised" is borderless beside bordered buttons; the
-   Reply view's chip and Close don't align; Home's first Tab stop is the
-   toolbar bell.
-   ([U25](docs/evidence/ui-ux-survey/2026-10-31/README.md#u25-small-alignment-and-style-items))
-   Lane D.
-8. **[UI] A fuller tab menu.** Reveal in Finder, Copy path, Close others
-   beside Save mapping as case and Close tab.
-   ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas)) Lane D,
-   decision 13; after item 7.
-9. **[UI] Narrow windows.** At 720×480 with the sidebar and Replacements open
-   the editor is about 270 pt (three or four words a line); the sidebar is a
-   fixed 180 pt, so names truncate early and shared prefixes look alike.
-   Collapse the sidebar below a width, let it be dragged, and truncate names
-   in the middle.
-   ([U21](docs/evidence/ui-ux-survey/2026-10-31/README.md#u21-narrow-windows))
-   Lane E, decision 12.
-
 ## iOS 0.1
 
 The review-first iPhone and iPad app on the shared Rust core
@@ -251,6 +224,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   reads it as the name. The shelf preview and drag card mask it since #280;
   detection and Copy for AI need the same decoding. *From the 2026-10-31
   shelf polish review.*
+- **[Mobile]** US spelling in the iOS and Android apps: desktop moved every
+  UI string to US spelling (UI polish decision 8, #327), but the mobile apps
+  still say "unrecognised" and "Licence". *From the 2026-11-01 UI polish run.*
 - **[Shelf]** Review the shelf preview's Markdown block reading (`src/shelf.rs`,
   `preview_lines`) against CommonMark as a whole rather than case by case:
   round after round of Codex review on #280 found another container or
@@ -522,6 +498,10 @@ Android takes what applies. Its clipboard finding is
   stay live. *Done when:* an experiment shows covered captures update and
   whether background keys reach GPUI, and `docs/development.md` (Fleet) says
   which GUI rows still need focus. *From the 0.3.0 away hub.*
+- **Local CI with two hubs:** the Mac runner tests one PR at a time, so two
+  hubs queued 8–9 PRs and waits reached 30–45 minutes (the hosted fallback
+  starts at 45). Measure a second Mac slot or a shorter fallback wait.
+  *From the 2026-11-01 UI polish run.*
 - **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
   checks run on a scratch profile instead of moving the user's
   `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*

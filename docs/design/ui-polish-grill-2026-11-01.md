@@ -104,3 +104,28 @@ rows, what was cut), no release.
   section (one item per PR) so lane briefs come from `fleet-brief`.
 - Codex weekly is at 0%, so reviews are skipped (fleet rule: skip, never
   queue).
+
+## Outcome (2026-10-31 22:25Z)
+
+All nine items merged in about four and a half hours: #327 (1), #336 (2),
+#338 (3), #344 (4), #330 (5), #337 (6), #345 (7), #346 (8), #341 (9), plus
+the hub's #347 (the Open a case hint, after the other hub's #333). Nothing
+was held or cut; Codex reviews were skipped (weekly limit).
+
+- **Where it ran.** All five lanes ended up on the Mac: A, C, E as Desktop
+  sessions, B and D as hub sub-agents once the other hub freed Mac slots
+  (an event-driven turn can't start sessions). A worktree's `target/` was
+  about 6 GB, not the profile's 30, so the Mac held five builders; the
+  Windows lanes stayed with the other hub.
+- **Deviations.** Copy Markdown is ⇧⌘M, since ⌥⇧⌘C is Pseudonymize
+  Clipboard (decision 10's fallback). ⌘\ from Original or Pseudonymized
+  now goes to Side by Side (ADR 0042). Tab-menu labels are sentence case
+  ("Copy path", "Close others"), per decision 9's per-surface rule.
+- **GUI checks.** The hub checked what background computer use reaches:
+  #337's native Open panel and window frame (Light under Dark macOS) and
+  #336's menu bar contents. GPUI ignores background clicks on segments,
+  drags and typing, and full-screen control needs the maintainer, so the
+  other rows are in the "GUI rows pending (maintainer)" issue.
+- **Pitfalls.** `gh pr merge --delete-branch` on a stacked parent closed
+  its child (#334, reopened as #337): retarget the child first. Local CI
+  was the bottleneck with two hubs (ROADMAP Engineering).
