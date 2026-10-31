@@ -153,7 +153,17 @@ struct MarkdownStyler {
                 // An alias chip once replaced.
                 attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 attributes[.backgroundColor] = colour.withAlphaComponent(fill.replaced)
-                attributes[.font] = monospaced(size: body.pointSize)
+                // Monospaced at the size and weight of what it sits in: a
+                // table cell's smaller font, a heading's bold.
+                text.enumerateAttribute(.font, in: range) { value, part, _ in
+                    let font = value as? UIFont ?? body
+                    let traits = font.fontDescriptor.symbolicTraits
+                    var alias = traits.contains(.traitMonoSpace) ? font : monospaced(size: font.pointSize)
+                    if traits.contains(.traitBold) {
+                        alias = alias.withTraits(.traitBold)
+                    }
+                    text.addAttribute(.font, value: alias, range: part)
+                }
             case .kept:
                 // A muted dotted underline for a kept original.
                 attributes[.underlineStyle] = NSUnderlineStyle.single.union(.patternDot).rawValue

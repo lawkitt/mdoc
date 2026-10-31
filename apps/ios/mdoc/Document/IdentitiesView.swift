@@ -37,17 +37,18 @@ struct IdentitiesView: View {
         // Its own title row: a navigation title here would replace the
         // document's in the bar on iPhone, where the inspector is a sheet.
         .safeAreaInset(edge: .top, spacing: 0) {
-            ZStack {
+            // Title and Done side by side, the title wrapping first, so they
+            // never overlap at large text sizes.
+            HStack(alignment: .firstTextBaseline) {
                 Text("Identities")
                     .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: onClose == nil ? .center : .leading)
                     .accessibilityAddTraits(.isHeader)
                 if let onClose {
-                    HStack {
-                        Spacer()
-                        Button("Done", action: onClose)
-                            .fontWeight(.semibold)
-                            .accessibilityIdentifier("identities-done")
-                    }
+                    Button("Done", action: onClose)
+                        .fontWeight(.semibold)
+                        .fixedSize()
+                        .accessibilityIdentifier("identities-done")
                 }
             }
             .frame(maxWidth: .infinity)

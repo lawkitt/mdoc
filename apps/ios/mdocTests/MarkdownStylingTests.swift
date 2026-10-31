@@ -139,6 +139,33 @@ final class MarkdownStylingTests: XCTestCase {
         }
     }
 
+    /// A replaced alias in a table keeps the table's size, and a header's
+    /// bold (#286).
+    func testAReplacedAliasKeepsItsTablesFont() throws {
+        let text = "| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |"
+        let styling = MarkdownStyling(markdown: text)
+        func candidate(_ word: String, _ index: Int) throws -> Candidate {
+            let start = try XCTUnwrap(text.range(of: word)).lowerBound.utf16Offset(in: text)
+            return Candidate(
+                id: CandidateID(rawValue: "c\(index)"), identityID: IdentityID(rawValue: "i\(index)"),
+                range: SourceRange(start: start, end: start + word.utf8.count),
+                original: word, alias: "PERSON_\(index)", category: .person, state: .replaced)
+        }
+        let candidates = [try candidate("Name", 1), try candidate("Maya Bennett", 2)]
+        let plain = styler.attributedText(markdown: text, styling: styling, candidates: [])
+        let styled = styler.attributedText(markdown: text, styling: styling, candidates: candidates)
+        for word in ["Name", "Maya Bennett"] {
+            let at = (text as NSString).range(of: word).location
+            let before = try XCTUnwrap(plain.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            let after = try XCTUnwrap(styled.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            XCTAssertEqual(after.pointSize, before.pointSize, accuracy: 0.01, word)
+            XCTAssertEqual(
+                after.fontDescriptor.symbolicTraits.contains(.traitBold),
+                before.fontDescriptor.symbolicTraits.contains(.traitBold), word)
+            XCTAssertTrue(after.fontDescriptor.symbolicTraits.contains(.traitMonoSpace), word)
+        }
+    }
+
     /// A heading after a list marker (`- ## Notes`) is a heading: its size
     /// and VoiceOver's heading level, as on the desktop.
     func testAHeadingInAListItemIsAHeading() {

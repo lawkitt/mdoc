@@ -167,19 +167,21 @@ private struct DocumentRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 }
-                Label {
-                    Text(HomeViewModel.status(of: document))
-                } icon: {
-                    if caseSummary?.name == document.title, let caseSummary {
+                HStack(spacing: 8) {
+                    // The case's dot, when its name line is left out.
+                    if let caseSummary, caseSummary.name == document.title {
                         CaseDot(colour: caseSummary.colour)
-                    } else {
+                    }
+                    Label {
+                        Text(HomeViewModel.status(of: document))
+                    } icon: {
                         Image(systemName: HomeViewModel.statusSymbol(of: document))
                     }
+                    .labelStyle(StatusLabelStyle())
+                    .fontWeight(document.phase == .reviewing ? .semibold : .regular)
+                    .foregroundStyle(document.phase == .reviewing ? .primary : .secondary)
                 }
-                .labelStyle(StatusLabelStyle())
                 .font(.footnote)
-                .fontWeight(document.phase == .reviewing ? .semibold : .regular)
-                .foregroundStyle(document.phase == .reviewing ? .primary : .secondary)
             }
         }
         .accessibilityElement(children: .combine)
