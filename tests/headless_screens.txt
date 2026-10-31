@@ -30,6 +30,7 @@ before-after
 applied-alias-selected
 reply-view
 share-reply
+share-leftover
 decision-history
 open-case
 case-page

@@ -112,7 +112,7 @@ fn canonical(value: &str) -> String {
         .to_lowercase()
 }
 /// Lowercase courtesy titles that precede a name and never identify anyone.
-const TITLES: [&str; 7] = ["mr", "mrs", "ms", "miss", "mx", "dr", "prof"];
+pub(crate) const TITLES: [&str; 7] = ["mr", "mrs", "ms", "miss", "mx", "dr", "prof"];
 fn name_parts(value: &str) -> Vec<String> {
     value
         .split(|c: char| !c.is_alphabetic())

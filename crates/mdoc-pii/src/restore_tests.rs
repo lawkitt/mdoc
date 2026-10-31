@@ -527,6 +527,67 @@ fn known_names_counts_identities_still_written_as_originals() {
 }
 
 #[test]
+fn a_lone_word_of_a_multi_word_person_original_is_a_name_not_replaced() {
+    let map = RestoreMap::new(vec![
+        identity(
+            "PERSON_1",
+            Category::Person,
+            &["Павлова Марина Сергеевна", "Марина Сергеевна"],
+        ),
+        identity("ORG_1", Category::Organization, &["ООО «Северный двор»"]),
+    ]);
+    // #301: the Russian demo's first name alone stayed in Copy for AI.
+    assert_eq!(map.known_names("PERSON_1 работала. Марина обратилась в суд."), 1);
+    assert_eq!(map.known_names("Сергеевна и Павлова"), 1, "one person");
+    assert_eq!(map.known_names("Марина Сергеевна и Марина"), 1, "counted once");
+    // Whole words and exact case only: no inflection beyond ADR 0068's
+    // proposed variants.
+    assert_eq!(map.known_names("Маринад, марина, Марину, PERSON_1."), 0);
+    // An organisation's words are no names: "Северный ветер" is not ORG_1.
+    assert_eq!(map.known_names("Северный ветер; ООО помогло. ORG_1."), 0);
+}
+
+/// #301's Apply on the Russian demo: every name but a lone "Марина" was
+/// replaced, and readiness used to pass it.
+#[test]
+fn the_russian_demos_lone_first_name_is_not_ready() {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |path: std::path::PathBuf| std::fs::read_to_string(path).unwrap();
+    let demo = read(repo.join("docs/product-media/Соглашение об урегулировании.md"));
+    let mut identities = captured_identities(&read(
+        repo.join("tests/fixtures/restore/claude-ru/identities.json"),
+    ));
+    for identity in &mut identities {
+        identity.originals.retain(|o| o.as_ref() != "Марина");
+    }
+    let map = RestoreMap::new(identities);
+    let (sent, _) = map.pseudonymize(&demo);
+    assert!(sent.contains("Марина обратилась в суд"));
+    assert_eq!(map.known_names(&sent), 1);
+}
+
+#[test]
+fn lone_words_skip_titles_short_and_lowercase_words_and_aliases() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["Ms Anna van der Berg"]),
+        identity("PERSON_2", Category::Person, &["Li Bo", "Dr Bennett"]),
+        identity("Мария Иванова", Category::Person, &["Мария Петрова"]),
+        identity("ORG_1", Category::Organization, &["Northwind Trading Ltd"]),
+    ]);
+    // "Ms", "van" and "der" are no names; "Li" and "Bo" are too short;
+    // "Dr Bennett" is one word with its title.
+    assert_eq!(
+        map.known_names("Ms Lee met van der Meer, Li and Bo. Bennett left."),
+        0
+    );
+    assert_eq!(map.known_names("Anna met Berg."), 1);
+    // A custom alias that shares a word with an original is no leftover.
+    assert_eq!(map.known_names("Мария Иванова подписала."), 0);
+    assert_eq!(map.known_names("Мария подписала."), 1);
+    assert_eq!(map.known_names("Northwind and Trading Ltd."), 0);
+}
+
+#[test]
 fn a_partial_longer_match_does_not_hide_a_whole_shorter_name() {
     let map = RestoreMap::new(vec![
         identity("PERSON_1", Category::Person, &["Anna Petrova"]),
@@ -606,6 +667,9 @@ fn captured_replies_restore_completely() {
             sent,
             "{name}: identities.json is not the mapping that was sent"
         );
+        // Readiness finds no leftover in a fully pseudonymized demo, lone
+        // name words included (#301).
+        assert_eq!(map.known_names(sent), 0, "{name}: names not replaced");
         let reply = read(&dir.join("reply.md"));
         assert_eq!(
             map.restore(&reply).unresolved,

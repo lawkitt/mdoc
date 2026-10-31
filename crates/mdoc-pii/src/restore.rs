@@ -178,15 +178,79 @@ impl RestoreMap {
         out.push_str(&text[last..]);
         (out, found.len())
     }
-    /// How many identities of this map still appear in `text` by an
-    /// original wording (exact, whole words): names a pseudonymized text
-    /// did not replace (ADR 0084).
+    /// How many names of this map still appear in `text`: by an original
+    /// wording (exact, whole words), or by a lone word of a multi-word
+    /// person original ("Марина" of "Марина Сергеевна"): names a
+    /// pseudonymized text did not replace (ADR 0084). Counted by alias, as
+    /// a tab's mapping and its case list one person twice.
     pub fn known_names(&self, text: &str) -> usize {
-        self.originals_in(text)
+        let whole = self.originals_in(text);
+        // A word inside a whole original or an alias is no leftover of its
+        // own: a custom alias may share a word with an original.
+        let taken: Vec<Range<usize>> = whole
+            .iter()
+            .map(|(range, _)| range.clone())
+            .chain(self.tokens(text).into_iter().map(|token| token.range))
+            .collect();
+        let words = self
+            .name_words_in(text)
             .into_iter()
-            .map(|(_, owner)| owner)
+            .filter(|(range, _)| {
+                !taken
+                    .iter()
+                    .any(|t| t.start < range.end && range.start < t.end)
+            });
+        whole
+            .into_iter()
+            .chain(words)
+            .map(|(_, owner)| self.identities[owner].alias.as_str())
             .collect::<HashSet<_>>()
             .len()
+    }
+    /// Lone words of multi-word person originals in `text`, exact and
+    /// whole, with the first identity that has each. Only name-like words:
+    /// 3+ letters, not starting lowercase, no courtesy title (ADR 0068), so
+    /// "Ms", "van" and initials never count.
+    fn name_words_in(&self, text: &str) -> Vec<(Range<usize>, usize)> {
+        let mut patterns: Vec<&str> = Vec::new();
+        let mut owners = Vec::new();
+        for (index, identity) in self.identities.iter().enumerate() {
+            if identity.category != Category::Person {
+                continue;
+            }
+            for original in &identity.originals {
+                let words: Vec<&str> = original
+                    .split_whitespace()
+                    .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()))
+                    .filter(|w| {
+                        !w.is_empty()
+                            && !super::identities::TITLES.contains(&w.to_lowercase().as_str())
+                    })
+                    .collect();
+                if words.len() < 2 {
+                    continue;
+                }
+                for word in words {
+                    let name_like = word.chars().filter(|c| c.is_alphabetic()).count() >= 3
+                        && !word.starts_with(char::is_lowercase);
+                    if name_like && !patterns.contains(&word) {
+                        patterns.push(word);
+                        owners.push(index);
+                    }
+                }
+            }
+        }
+        if patterns.is_empty() {
+            return Vec::new();
+        }
+        let Ok(matcher) = aho_corasick::AhoCorasick::new(&patterns) else {
+            return Vec::new();
+        };
+        matcher
+            .find_overlapping_iter(text)
+            .map(|m| (m.start()..m.end(), owners[m.pattern().as_usize()]))
+            .filter(|(range, _)| super::exact_boundary(text, range, &text[range.clone()]))
+            .collect()
     }
     /// Known originals in `text` with their identity index: exact wording,
     /// whole words, then the leftmost and longest of those, non-overlapping.
