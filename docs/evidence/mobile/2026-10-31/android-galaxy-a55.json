@@ -1,0 +1,165 @@
+{
+  "core_version": "0.1.0",
+  "runtimes": {
+    "pdfium": "\/data\/app\/~~zAJhrRPY9iTtS4VMZkvNoQ==\/io.github.lawkitt.mdoc.spike-I0BeZtNmzxWJxmPL-uHYxw==\/lib\/arm64\/libpdfium.so",
+    "onnx": "\/data\/app\/~~zAJhrRPY9iTtS4VMZkvNoQ==\/io.github.lawkitt.mdoc.spike-I0BeZtNmzxWJxmPL-uHYxw==\/lib\/arm64\/libonnxruntime.so"
+  },
+  "memory_start": {
+    "footprint_bytes": 151982080,
+    "peak_footprint_bytes": 151982080
+  },
+  "document": {
+    "source": "\/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/spike-data\/fixtures\/legal-opinion.docx",
+    "conversion_seconds": 0.050028516,
+    "words": 17698,
+    "pages": 20,
+    "page_words": 9589,
+    "page_bytes": 63354
+  },
+  "probe": {
+    "tokens": 502,
+    "bytes": 1058,
+    "cold_load_seconds": 3.771916993,
+    "runtime_seconds": 6.83946E-4,
+    "engine_load_seconds": 3.771233047,
+    "run_seconds": [
+      2.055977382,
+      2.007615586,
+      2.017196836,
+      1.990930898,
+      1.964652344
+    ],
+    "median_seconds": 2.007615586
+  },
+  "probe_error": null,
+  "memory_after_probe": {
+    "footprint_bytes": 1125224448,
+    "peak_footprint_bytes": 1770250240
+  },
+  "scan": null,
+  "scan_error": "Scan exceeded two minutes. Review a smaller document or add selections manually.",
+  "memory_after_scan": {
+    "footprint_bytes": 1101996032,
+    "peak_footprint_bytes": 1770250240
+  },
+  "ocr": [
+    {
+      "fixture": "english.pdf",
+      "bundle": "PP-OCRv6 Small",
+      "seconds": 1.028846445,
+      "markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    },
+    {
+      "fixture": "russian.pdf",
+      "bundle": "PP-OCRv5 Cyrillic + v6 detector",
+      "seconds": 1.054005234,
+      "markdown": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    }
+  ],
+  "memory_end": {
+    "footprint_bytes": 483745792,
+    "peak_footprint_bytes": 1770250240
+  },
+  "budgets": [
+    {
+      "name": "detector peak memory (GiB)",
+      "limit": 2,
+      "measured": 1.6486740112304688,
+      "pass": true
+    },
+    {
+      "name": "cold load (s)",
+      "limit": 10,
+      "measured": 3.771916993,
+      "pass": true
+    },
+    {
+      "name": "20-page scan (s)",
+      "limit": 60,
+      "measured": null,
+      "pass": false
+    },
+    {
+      "name": "thermal status below severe",
+      "limit": "moderate",
+      "measured": "none",
+      "pass": true
+    }
+  ],
+  "platform": {
+    "device": "samsung SM-A5560 (a55x)",
+    "system": "Android 16 (API 36)",
+    "simulator": false,
+    "physical_memory_bytes": 7790362624,
+    "available_memory_at_start_bytes": 3960582144,
+    "low_memory_threshold_bytes": 226492416,
+    "abi": "arm64-v8a",
+    "wall_seconds": 139.221,
+    "model_download_seconds": 111.432,
+    "thermal_worst": "none",
+    "thermal_samples": [
+      {
+        "t": 0,
+        "state": "none"
+      },
+      {
+        "t": 10.003,
+        "state": "none"
+      },
+      {
+        "t": 20.003,
+        "state": "none"
+      },
+      {
+        "t": 30.003,
+        "state": "none"
+      },
+      {
+        "t": 40.003,
+        "state": "none"
+      },
+      {
+        "t": 50.003,
+        "state": "none"
+      },
+      {
+        "t": 60.003,
+        "state": "none"
+      },
+      {
+        "t": 70.004,
+        "state": "none"
+      },
+      {
+        "t": 80.003,
+        "state": "none"
+      },
+      {
+        "t": 90.003,
+        "state": "none"
+      },
+      {
+        "t": 100.004,
+        "state": "none"
+      },
+      {
+        "t": 110.005,
+        "state": "none"
+      },
+      {
+        "t": 120.005,
+        "state": "none"
+      },
+      {
+        "t": 130.003,
+        "state": "none"
+      }
+    ]
+  }
+}

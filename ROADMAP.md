@@ -106,8 +106,13 @@ Maintainer actions list the steps on the maintainer's side.
 
 2. **[Android] Feasibility spike.** `tools/android-spike` and
    `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
-   or more. *Done when:* each row has pass or fail
-   against ADR 0085's budgets and Android's floor constant is set from them.
+   or more. *Measured 2026-10-31
+   ([report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)):*
+   memory, load, heat and OCR pass on all four phones, but FP16 on the CPU
+   scans 3.6 to 9 times slower than the iPhone 17 Pro and misses the 60 s
+   budget everywhere; threads, XNNPACK and INT8 are untried. *Done when:*
+   each row has pass or fail against ADR 0085's budgets and Android's floor
+   constant is set from them.
 3. **[Android] App scaffold and the Android job.** `apps/android` over
    `mdoc-ffi` with pinned, verified Gradle dependencies; JVM parity tests;
    the Android job in `local/windows`. *Done when:* a PR touching
