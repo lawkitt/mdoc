@@ -103,7 +103,8 @@ matrix() {
 }
 
 matrix app apps/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk 30m "${app_phones[@]}"
-matrix longjobs apps/android/longjobs/build/outputs/apk/debug/longjobs-debug.apk 60m "${long_phones[@]}"
+# 45 minutes is the most Test Lab allows a run.
+matrix longjobs apps/android/longjobs/build/outputs/apk/debug/longjobs-debug.apk 45m "${long_phones[@]}"
 echo "android-device-test: results in $out"
 [ "$failed" = 0 ] || die "a phone failed or was inconclusive; see the logs in $out"
 [ "$missing" = 0 ] || die "$missing phone runs left no results; see the logs in $out"
