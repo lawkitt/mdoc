@@ -1,12 +1,12 @@
 //! Comment extraction runs in the conversion worker, before the renderer sees
 //! a temporary copy with its unreliable comment-margin rendering disabled.
-use super::{PreviewError, xml_text};
+use super::{PreviewError, replace_parts, word, xml_text};
 use roxmltree::Node;
 use std::{
     collections::HashMap,
-    io::{Cursor, Read, Write},
+    io::{Cursor, Read},
 };
-use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+use zip::ZipArchive;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DocxComment {
@@ -15,17 +15,6 @@ pub struct DocxComment {
     pub date: String,
     pub text: String,
     pub quote: String,
-}
-
-fn word(node: Node<'_, '_>, name: &str) -> bool {
-    node.tag_name().name() == name
-        && matches!(
-            node.tag_name().namespace(),
-            Some(
-                "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-                    | "http://purl.oclc.org/ooxml/wordprocessingml/main"
-            )
-        )
 }
 
 fn attr<'a>(node: Node<'a, '_>, name: &str) -> &'a str {
@@ -155,26 +144,7 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>
             replacements.insert(index, modified);
         }
     }
-    let mut output = ZipWriter::new(Cursor::new(Vec::new()));
-    for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(invalid)?;
-        if let Some(xml) = replacements.get(&i) {
-            output
-                .start_file(
-                    entry.name().map_err(invalid)?,
-                    SimpleFileOptions::default()
-                        .compression_method(zip::CompressionMethod::Deflated),
-                )
-                .map_err(invalid)?;
-            output.write_all(xml.as_bytes())?;
-        } else {
-            output.raw_copy_file(entry).map_err(invalid)?;
-        }
-    }
-    Ok((
-        Some(output.finish().map_err(invalid)?.into_inner()),
-        comments,
-    ))
+    Ok((Some(replace_parts(&mut archive, &replacements)?), comments))
 }
 
 #[cfg(test)]

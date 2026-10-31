@@ -23,6 +23,7 @@ command-palette
 keyboard-shortcuts
 find-replace
 before-after
+applied-alias-selected
 reply-view
 share-reply
 decision-history
@@ -36,6 +37,8 @@ folder-sheet
 folder-sheet-over-cap
 folder-sheet-add-to-case
 confirm-delete-case
+home-locked-notice
+home-locked-open-case
 confirm-save-and-mapping
 confirm-keep-mapping
 confirm-unsaved
@@ -46,6 +49,7 @@ conversion-failed
 ocr-consent
 restored-reply
 comments
+docx-source
 shelf
 shelf-demos
 shelf-demos-count
