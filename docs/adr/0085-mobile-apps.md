@@ -79,9 +79,9 @@ already lives in GUI-free Rust crates (ADR 0069).
   all of: peak memory (`phys_footprint`) ≤ 2 GiB, cold load ≤ 10 s, a 20-page document scanned
   in ≤ 60 s, and no serious thermal throttling. If FP16 fails, an INT8
   export is tried and ships only if it matches FP16 on the pseudonymization
-  qualification fixtures. Devices below the floor get OCR, the structured
-  rules (emails, phones, IBAN, INN/SNILS and the rest of `mdoc-detect`'s
-  rules) and manual marking, labelled as such. The floor is set by physical
+  qualification fixtures. Devices below the floor get OCR and manual
+  marking, with no rules-only scan ([ADR 0088](0088-ios-on-real-devices.md),
+  which replaces the rules-only tier). The floor is set by physical
   RAM, not OS version: 6 GB if the iPhone 12 Pro meets every budget,
   otherwise 8 GB; INT8 fills the gap if it passes where FP16 fails. Setup
   checks RAM and offers only the models the device can run.
@@ -185,4 +185,5 @@ already lives in GUI-free Rust crates (ADR 0069).
   platform features.
 
 References: [interview](../design/mobile-grill-2026-10-31.md). See also
-[ADR 0087](0087-ios-ui-polish.md) for the iOS screens' polish.
+[ADR 0087](0087-ios-ui-polish.md) for the iOS screens' polish and
+[ADR 0088](0088-ios-on-real-devices.md) for what real devices changed.
