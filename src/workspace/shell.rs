@@ -305,16 +305,13 @@ impl Workspace {
         }
         // Saved Markdown first: a conversion saved as .md reopens as that
         // file, not as a fresh conversion of its source (#76).
-        let path = view
-            .session
-            .document
-            .path
-            .as_ref()
-            .or(view.preview.attachment())
-            .or(view.preview.source());
+        let saved = view.session.document.path.as_ref();
+        let source = view.preview.attachment().or(view.preview.source());
+        let path = saved.or(source);
         let opened = self.tabs.note_recent(id, path);
         if let Some(path) = path {
-            let pseudonymized = view.pseudonymized();
+            // The badge means replacements were applied, not just a scan (#306).
+            let pseudonymized = view.has_applied_aliases();
             let new_badge = pseudonymized
                 && self
                     .shell
@@ -322,8 +319,10 @@ impl Workspace {
                     .files
                     .iter()
                     .any(|recent| &recent.path == path && !recent.pseudonymized);
+            // A saved conversion's source folds into the .md's row (#306).
+            let folded = saved.and(source).map(PathBuf::as_path);
             // Cleared or evicted entries return only on a new file event.
-            if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized) {
+            if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized, folded) {
                 share_recents(&self.shell.recents, cx);
             }
         }

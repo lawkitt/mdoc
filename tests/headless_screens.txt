@@ -61,5 +61,6 @@ shelf-copied
 shelf-note
 shelf-empty
 shelf-locked
+home-recents
 review-scanning
 review-long-counts
