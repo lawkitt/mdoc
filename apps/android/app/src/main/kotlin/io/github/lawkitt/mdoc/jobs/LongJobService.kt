@@ -29,8 +29,20 @@ class LongJobService : Service() {
             return START_NOT_STICKY
         }
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: getString(R.string.app_name)
+        // Always, once started with startForegroundService: Android ends an app
+        // whose service does not, even when the job finished first.
         startForeground(NOTIFICATION, notification(title), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        started = true
+        if (!wanted) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        started = false
+        super.onDestroy()
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -61,6 +73,12 @@ class LongJobService : Service() {
     }
 
     companion object {
+        /** A job is running and wants the service in the foreground. */
+        @Volatile internal var wanted = false
+
+        /** The service has called startForeground and not yet been destroyed. */
+        @Volatile internal var started = false
+
         private const val CHANNEL = "jobs"
         private const val NOTIFICATION = 1
         private const val EXTRA_TITLE = "title"
