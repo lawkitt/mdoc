@@ -293,16 +293,14 @@ fn scan_inline(
 ) {
     let b = text.as_bytes();
     let mut i = start;
-    // End of the raw inline HTML tag or autolink the scan is inside: its
-    // bytes are literal, so a `\` there escapes nothing (CommonMark).
+    // End of the raw inline HTML or autolink the scan is inside: its bytes
+    // are literal, so a `\` there escapes nothing (CommonMark).
     let mut raw_until = start;
     while i < end {
         let c = b[i];
         if i >= raw_until
             && c == b'<'
-            && b.get(i + 1)
-                .is_some_and(|&n| n.is_ascii_alphabetic() || matches!(n, b'/' | b'!' | b'?'))
-            && let Some(len) = inline_tag_len(&text[i..end])
+            && let Some(len) = raw_html_len(&b[i..end])
         {
             raw_until = i + len;
         }
@@ -311,22 +309,8 @@ fn scan_inline(
         // shown and hidden like the others; the escaped character is literal
         // content in its own span, skipped so no construct opens on it.
         // Reveal-on-caret shows the backslash for editing.
-        if c == b'\\'
-            && i >= raw_until
-            && i + 1 < end
-            && b[i + 1].is_ascii_punctuation()
-            && !is_backslash_escaped(b, i)
-        {
-            out.push(Span {
-                range: i..i + 1,
-                style: SpanStyle {
-                    color: Some(Color::Marker),
-                    hide: true,
-                    escape: true,
-                    ..Default::default()
-                },
-            });
-            push(out, i + 1..i + 2, SpanStyle::default().over(base));
+        if i >= raw_until && is_escape(b, i, end) {
+            push_escape(out, i, SpanStyle::default().over(base));
             i += 2;
             continue;
         }
@@ -643,8 +627,9 @@ fn scan_inline(
                 i
             };
             marker(out, marker_start..i + 1);
-            push(
+            push_with_escapes(
                 out,
+                b,
                 i + 1..rb,
                 SpanStyle {
                     color: Some(Color::Link),
@@ -666,8 +651,9 @@ fn scan_inline(
             && let Some(rb2) = find1(b, rb + 2, end, b']')
         {
             marker(out, i..i + 1);
-            push(
+            push_with_escapes(
                 out,
+                b,
                 i + 1..rb,
                 SpanStyle {
                     color: Some(Color::Link),
@@ -741,6 +727,165 @@ fn scan_inline(
 
 fn push(out: &mut Vec<Span>, range: Range<usize>, style: SpanStyle) {
     out.push(Span { range, style });
+}
+
+/// Whether `b[i]` starts a backslash escape that ends by `end`: a `\`, not
+/// itself escaped, before ASCII punctuation.
+fn is_escape(b: &[u8], i: usize, end: usize) -> bool {
+    b[i] == b'\\' && i + 1 < end && b[i + 1].is_ascii_punctuation() && !is_backslash_escaped(b, i)
+}
+
+/// The escape at `i`: its backslash a marker flagged [`SpanStyle::escape`],
+/// its character a span of `style`.
+fn push_escape(out: &mut Vec<Span>, i: usize, style: SpanStyle) {
+    out.push(Span {
+        range: i..i + 1,
+        style: SpanStyle {
+            color: Some(Color::Marker),
+            hide: true,
+            escape: true,
+            ..Default::default()
+        },
+    });
+    push(out, i + 1..i + 2, style);
+}
+
+/// `range` as one span of `style`, split around the escapes in it — for
+/// text pushed whole rather than scanned, such as a link's label.
+fn push_with_escapes(out: &mut Vec<Span>, b: &[u8], range: Range<usize>, style: SpanStyle) {
+    let mut from = range.start;
+    let mut i = range.start;
+    while i < range.end {
+        if is_escape(b, i, range.end) {
+            if i > from {
+                push(out, from..i, style.clone());
+            }
+            push_escape(out, i, style.clone());
+            i += 2;
+            from = i;
+        } else {
+            i += 1;
+        }
+    }
+    if from < range.end {
+        push(out, from..range.end, style);
+    }
+}
+
+/// Byte length of the CommonMark raw inline HTML (open or closing tag,
+/// comment, processing instruction, declaration, CDATA) or autolink that
+/// `s` starts with. Line-scoped: a construct must close within `s`.
+fn raw_html_len(s: &[u8]) -> Option<usize> {
+    let find = |from: usize, pat: &[u8]| {
+        s.get(from..)?
+            .windows(pat.len())
+            .position(|w| w == pat)
+            .map(|at| from + at + pat.len())
+    };
+    if s.starts_with(b"<!-->") {
+        return Some(5);
+    }
+    if s.starts_with(b"<!--->") {
+        return Some(6);
+    }
+    if s.starts_with(b"<!--") {
+        return find(4, b"-->");
+    }
+    if s.starts_with(b"<?") {
+        return find(2, b"?>");
+    }
+    if s.starts_with(b"<![CDATA[") {
+        return find(9, b"]]>");
+    }
+    if s.starts_with(b"<!") && s.get(2).is_some_and(u8::is_ascii_alphabetic) {
+        return find(3, b">");
+    }
+    open_or_closing_tag_len(s).or_else(|| autolink_len(s))
+}
+
+/// An open tag (`<a href="x">`, `<br/>`) or a closing tag (`</a>`).
+fn open_or_closing_tag_len(s: &[u8]) -> Option<usize> {
+    let ws = |at: usize| {
+        s[at..]
+            .iter()
+            .take_while(|c| matches!(c, b' ' | b'\t'))
+            .count()
+    };
+    let closing = s.get(1) == Some(&b'/');
+    let mut at = if closing { 2 } else { 1 };
+    if !s.get(at)?.is_ascii_alphabetic() {
+        return None;
+    }
+    at += s[at..]
+        .iter()
+        .take_while(|c| c.is_ascii_alphanumeric() || **c == b'-')
+        .count();
+    if !closing {
+        loop {
+            let gap = ws(at);
+            let name = at + gap;
+            if gap == 0
+                || !s
+                    .get(name)
+                    .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, b'_' | b':'))
+            {
+                break;
+            }
+            at = name
+                + s[name..]
+                    .iter()
+                    .take_while(|c| {
+                        c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b':' | b'-')
+                    })
+                    .count();
+            // An optional `= value`, quoted or not.
+            let eq = at + ws(at);
+            if s.get(eq) == Some(&b'=') {
+                let value = eq + 1 + ws(eq + 1);
+                at = match *s.get(value)? {
+                    q @ (b'"' | b'\'') => {
+                        value + 1 + s[value + 1..].iter().position(|&c| c == q)? + 1
+                    }
+                    _ => {
+                        let len = s[value..]
+                            .iter()
+                            .take_while(|c| !b" \t\"'=<>`".contains(c))
+                            .count();
+                        if len == 0 {
+                            return None;
+                        }
+                        value + len
+                    }
+                };
+            }
+        }
+    }
+    at += ws(at);
+    if !closing && s.get(at) == Some(&b'/') {
+        at += 1;
+    }
+    (s.get(at) == Some(&b'>')).then_some(at + 1)
+}
+
+/// A URI autolink (`<https://example.com>`): a scheme of 2–32 characters,
+/// a colon, then no spaces, controls or angle brackets.
+fn autolink_len(s: &[u8]) -> Option<usize> {
+    if !s.get(1)?.is_ascii_alphabetic() {
+        return None;
+    }
+    let scheme = 1 + s[1..]
+        .iter()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, b'+' | b'.' | b'-'))
+        .count();
+    if !(3..=33).contains(&scheme) || s.get(scheme) != Some(&b':') {
+        return None;
+    }
+    let rest = s[scheme + 1..]
+        .iter()
+        .take_while(|&&c| c > b' ' && c != b'<' && c != b'>' && c != 0x7f)
+        .count();
+    let close = scheme + 1 + rest;
+    (s.get(close) == Some(&b'>')).then_some(close + 1)
 }
 
 /// First index of byte `c` in `b[from..end]`.
@@ -1144,6 +1289,10 @@ mod tests {
             r#"<a title="x\*y">t</a> \*"#,
             r"<https://example.com/a\_b> \*",
             r"<!-- a\*b --> \*",
+            r"<!-- > \* --> \*",
+            r"<br/> \*",
+            r"</a > \*",
+            r"<?php a\*b ?> \*",
         ] {
             let markers: Vec<_> = escape_spans(line).into_iter().filter(|&(_, m)| m).collect();
             assert_eq!(markers.len(), 1, "{line:?}");
@@ -1152,10 +1301,38 @@ mod tests {
             let at = out.iter().find(|s| s.style.escape).unwrap().range.start;
             assert_eq!(at, line.len() - 2, "{line:?}");
         }
-        // A `<` that starts no tag leaves later escapes alone.
+        // A `<` that starts no tag, or a malformed tag, leaves escapes alone.
         assert_eq!(
             escape_spans(r"1 < 2 \* 3 > 0"),
             vec![(r"\", true), ("*", false)]
         );
+        assert_eq!(escape_spans(r"<x\*>"), vec![(r"\", true), ("*", false)]);
+        assert_eq!(
+            escape_spans(r#"<a b="1"c> \*"#),
+            vec![(r"\", true), ("*", false)]
+        );
+    }
+
+    #[test]
+    fn an_escape_in_a_link_label_is_a_marker() {
+        for line in [r"[a\*b](u)", r"[a\*b][id]"] {
+            let mut out = Vec::new();
+            scan_line(line, 0, line.len(), &mut out);
+            out.sort_by_key(|s| s.range.start);
+            let label: Vec<_> = out[1..5]
+                .iter()
+                .map(|s| (&line[s.range.clone()], s.style.escape, s.style.color))
+                .collect();
+            assert_eq!(
+                label,
+                vec![
+                    ("a", false, Some(Color::Link)),
+                    (r"\", true, Some(Color::Marker)),
+                    ("*", false, Some(Color::Link)),
+                    ("b", false, Some(Color::Link)),
+                ],
+                "{line:?}"
+            );
+        }
     }
 }

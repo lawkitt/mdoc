@@ -622,6 +622,20 @@ mod tests {
     }
 
     #[test]
+    fn an_escape_in_a_link_label_dims_its_backslash() {
+        assert_eq!(
+            described(r"[a\*](u)"),
+            pairs(&[
+                ("[", "marker"),
+                ("a", "link"),
+                (r"\", "marker"),
+                ("*", "link"),
+                ("](u)", "marker"),
+            ])
+        );
+    }
+
+    #[test]
     fn a_backslash_in_code_or_before_a_letter_is_text() {
         assert_eq!(
             described(r"`a\*b` C:\Users"),

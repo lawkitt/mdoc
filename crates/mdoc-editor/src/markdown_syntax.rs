@@ -1885,6 +1885,10 @@ mod tests {
         let runs = styled_runs(r"1\. a", &font, c, &[], Some(&st));
         let colours: Vec<_> = runs.iter().map(|r| (r.len, r.color)).collect();
         assert_eq!(colours, vec![(1, c), (1, dim), (1, c), (2, c)]);
+        // In a link's label too.
+        let (disp, _, map) = hidden_runs(r"[a\*](u) x", &font, c, &[], None, 0, 0, false, &st);
+        assert_eq!(disp, "a* x");
+        assert_eq!(&map[..2], &[1, 2]);
     }
 
     #[test]
