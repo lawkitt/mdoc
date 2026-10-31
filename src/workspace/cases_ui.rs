@@ -1735,7 +1735,9 @@ impl Workspace {
             .when(rows.is_empty() && locked.is_none(), |v| {
                 v.child(
                     div()
-                        .when(cfg!(test), |v| v.debug_selector(|| "case-list-empty".into()))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "case-list-empty".into())
+                        })
                         .px_2()
                         .py_2()
                         .text_size(px(12.))

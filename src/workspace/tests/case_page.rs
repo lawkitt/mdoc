@@ -1258,7 +1258,10 @@ fn locked_cases_are_counted_and_the_list_hangs_from_homes_link(cx: &mut TestAppC
     assert!(cx.debug_bounds("case-list-empty").is_none());
     let locked = cx.debug_bounds("case-list-locked").unwrap();
     let unlock = cx.debug_bounds("case-list-unlock").unwrap();
-    assert!(locked.bottom() <= unlock.top(), "{locked:?} above {unlock:?}");
+    assert!(
+        locked.bottom() <= unlock.top(),
+        "{locked:?} above {unlock:?}"
+    );
     let list = cx.debug_bounds("case-list").unwrap();
     assert!(
         list.top() >= link.bottom() && list.top() <= link.bottom() + px(12.),
