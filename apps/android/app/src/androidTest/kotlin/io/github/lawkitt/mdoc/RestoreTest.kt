@@ -60,4 +60,28 @@ class RestoreTest {
         }
         assertEquals("Thank you, Maya Bennett. The claim is filed.", session.snapshot().reply?.restored?.text)
     }
+
+    @Test
+    fun aSecondReplyReplacesTheFirst() {
+        val title = "Second ${System.nanoTime()}"
+        val letter = "Dear Maya Bennett, your claim is ready."
+        val session = app.core.documents.importDocument(ImportSource.Text(letter), title, CaseChoice.New(title))
+        session.recognize(object : JobObserver {
+            override fun stage(stage: JobStage) = Unit
+
+            override fun onCancel(handler: () -> Unit) = Unit
+        })
+        val start = letter.indexOf("Maya Bennett")
+        session.addReplacement(SourceRange(start, start + 12), Category.Person)
+        session.copyForAi()
+        fun share(reply: String) = Intent(app, RestoreActivity::class.java)
+            .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, reply)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ActivityScenario.launch<RestoreActivity>(share("First: PERSON_1.")).use { scenario ->
+            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 values restored")).fetchSemanticsNodes().isNotEmpty() }
+            // The activity is single-task: a new share arrives through onNewIntent.
+            scenario.onActivity { it.startActivity(share("Second: PERSON_1 and PERSON_9.")) }
+            compose.waitUntil(15_000) { compose.onAllNodes(hasText("1 unrecognised", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        }
+    }
 }
