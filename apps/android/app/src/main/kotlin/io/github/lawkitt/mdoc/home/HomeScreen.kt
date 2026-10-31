@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -102,9 +103,10 @@ fun HomeScreen(
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
-            state.documents.isEmpty() -> Column(inner) {
+            // Scrolls, so the setup card's buttons stay reachable on a short screen or at large text.
+            state.documents.isEmpty() -> Column(inner.verticalScroll(rememberScrollState())) {
                 setupCard?.let { Box(Modifier.padding(16.dp)) { it() } }
-                EmptyHome(state.canFindNames, Modifier.weight(1f))
+                EmptyHome(state.canFindNames, Modifier.heightIn(min = 320.dp))
             }
             else -> LazyColumn(inner) {
                 setupCard?.let { card -> item(key = "setup") { Box(Modifier.padding(16.dp)) { card() } } }
@@ -169,7 +171,7 @@ private fun CoreFailed(error: String, onRetry: () -> Unit, modifier: Modifier = 
 @Composable
 private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.fillMaxSize().padding(32.dp),
+        modifier = modifier.fillMaxWidth().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

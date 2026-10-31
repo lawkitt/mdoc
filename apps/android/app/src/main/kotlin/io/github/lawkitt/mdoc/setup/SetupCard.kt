@@ -3,7 +3,8 @@ package io.github.lawkitt.mdoc.setup
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -30,6 +31,7 @@ import uniffi.mdoc_ffi.ModelId
  * on Wi-Fi unless the user allows cellular; each model's state while it runs.
  * `continues`: a document asked for it, so the button says "& continue".
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupCard(
     state: SetupState,
@@ -70,13 +72,14 @@ fun SetupCard(
                 }
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            // Buttons wrap onto new lines rather than squeeze, at any text size.
             if (state.working) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.waitingForWiFi) OutlinedButton(onUseCellular) { Text(stringResource(R.string.use_cellular)) }
                     TextButton(onCancel) { Text(stringResource(R.string.cancel_download)) }
                 }
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onDownload) {
                         Text(stringResource(if (continues) R.string.download_and_continue else R.string.download_size, size))
                     }

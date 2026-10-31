@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.mdoc_ffi.JobStage
@@ -30,7 +31,10 @@ import uniffi.mdoc_ffi.ModelId
 @RunWith(AndroidJUnit4::class)
 class SetupTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
-    private val app get() = instrumentation.targetContext.applicationContext as MdocApplication
+    @get:Rule
+    val core = TestCore()
+
+    private val app get() = core.app
 
     @Test
     fun ocrDownloadsOnWiFiAndReadsAScan() = runBlocking {

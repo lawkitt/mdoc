@@ -12,8 +12,17 @@ class MdocApplication : Application() {
      * case key from the Keystore. A failure is not kept, so Try again retries.
      */
     val core: AppCore
-        get() = synchronized(this) { opened ?: AppCore.make(this).also { opened = it } }
+        get() = synchronized(this) { opened ?: openCore(this).also { opened = it } }
     private var opened: AppCore? = null
+
+    /** How the core opens; tests swap in an isolated storage and key, or a failure. */
+    @Volatile internal var openCore: (MdocApplication) -> AppCore = { AppCore.make(it) }
+
+    /** Forgets the open core, so the next use opens it again (tests only). */
+    internal fun reopenCore() = synchronized(this) {
+        opened = null
+        setup.refresh()
+    }
 
     /** The one long job (ADR 0006, 0089). */
     val jobs: Jobs by lazy { Jobs(this) }

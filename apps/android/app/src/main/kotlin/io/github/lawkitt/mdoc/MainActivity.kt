@@ -73,6 +73,8 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val scope = rememberCoroutineScope()
     val state by home.state.collectAsStateWithLifecycle()
     val setupState by app.setup.state.collectAsStateWithLifecycle()
+    // Setup reads the core's models once the library has opened.
+    LaunchedEffect(state.loaded, state.error) { if (state.loaded && state.error == null) app.setup.refresh() }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
 
