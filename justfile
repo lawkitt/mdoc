@@ -84,6 +84,10 @@ android-setup:
     scripts/install-android-sdk.sh
     scripts/install-android-ndk.sh
 
+# Boot the API 36 emulator (16 KB pages) headless and print its adb serial; --window shows it (ADR 0089)
+android-emulator *args:
+    scripts/android-emulator.sh {{args}}
+
 # Android core into target/android: jniLibs for arm64-v8a and x86_64, Kotlin bindings (ADR 0089)
 android-core:
     scripts/build-android-core.sh
@@ -117,6 +121,11 @@ ios-app: ios-core
 [macos]
 ios-test device="iPhone 17": ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'platform=iOS Simulator,OS=26.1,name={{device}}' -derivedDataPath target/ios/DerivedData -quiet test
+
+# The device UI tests on a connected iPhone: the review flow and the long jobs (ADR 0088)
+[macos]
+ios-device-test udid: ios-core
+    scripts/ios-device-test.sh "{{udid}}"
 
 # Take the iOS UI survey (every screen, light and dark) into a folder (ADR 0087)
 [macos]

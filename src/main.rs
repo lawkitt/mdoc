@@ -209,10 +209,16 @@ fn main() {
         let _ = handle.update(cx, |workspace, _, cx| {
             workspace.check_for_updates_at_launch(cx)
         });
-        let menu_bar = handle
+        let (menu_bar, note_shown) = handle
             .read(cx)
-            .is_ok_and(|workspace| workspace.menu_bar_setting());
-        menu_bar::install(handle, menu_bar, cx);
+            .map(|workspace| {
+                (
+                    workspace.menu_bar_setting(),
+                    workspace.menu_bar_note_shown(),
+                )
+            })
+            .unwrap_or_default();
+        menu_bar::install(handle, menu_bar, note_shown, cx);
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         if let Some(launches) = later_launches {
             // Polled: the listener is a plain thread, and a launch is rare.

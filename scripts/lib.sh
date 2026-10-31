@@ -80,6 +80,11 @@ sha() {
   fi
 }
 
+# curl flags for large pinned downloads: a stalled transfer (under 10 KB/s for
+# a minute) is dropped and retried rather than waited on forever.
+CURL_PATIENT=(--fail --silent --show-error --location --connect-timeout 30
+  --speed-limit 10240 --speed-time 60 --retry 5 --retry-all-errors)
+
 # fetch_pinned <url> <size> <sha1> <file>: downloads unless a verified copy is
 # there, and checks the size and SHA-1 Google publishes for its Android
 # archives (it publishes no SHA-256).
@@ -88,7 +93,7 @@ fetch_pinned() {
     return
   fi
   echo "downloading $(basename "$1") ($(($2 / 1048576)) MiB)" >&2
-  curl --fail --silent --show-error --location --retry 3 --output "$4.part" "$1"
+  curl "${CURL_PATIENT[@]}" --output "$4.part" "$1"
   [ "$(wc -c <"$4.part" | tr -d ' ')" = "$2" ] || die "$1: size mismatch"
   [ "$(sha 1 "$4.part")" = "$3" ] || die "$1: checksum mismatch"
   mv -f "$4.part" "$4"
@@ -99,7 +104,7 @@ fetch_sha256() {
   if [ -f "$3" ] && [ "$(sha 256 "$3")" = "$2" ]; then
     return
   fi
-  curl --fail --silent --show-error --location --retry 3 --output "$3.part" "$1"
+  curl "${CURL_PATIENT[@]}" --output "$3.part" "$1"
   [ "$(sha 256 "$3.part")" = "$2" ] || die "$1 failed its checksum"
   mv -f "$3.part" "$3"
 }

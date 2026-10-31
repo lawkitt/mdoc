@@ -26,12 +26,32 @@ enum CoreFactory {
         let defaults = UserDefaults(suiteName: MdocStorage.appGroup)
         if isUITesting {
             let storage = try MdocStorage.shared(folder: uiTestingFolder)
-            try? FileManager.default.removeItem(at: storage.root)
+            clearKeepingDetector(storage)
             defaults?.set(true, forKey: uiTestingKey)
             return storage
         }
         defaults?.removeObject(forKey: uiTestingKey)
         return try MdocStorage.shared()
+    }
+
+    /// A fresh test library, all but a downloaded name detector: only the
+    /// device tests download one (hundreds of megabytes), and their next run
+    /// reuses it. Text recognition is downloaded again each time.
+    private static func clearKeepingDetector(_ storage: MdocStorage) {
+        let files = FileManager.default
+        let models = storage.url(.models)
+        // `mdoc-ffi`'s Setup keeps the detector in `models/pseudonymization`.
+        let detector = "pseudonymization"
+        guard files.fileExists(atPath: models.appendingPathComponent(detector).path) else {
+            try? files.removeItem(at: storage.root)
+            return
+        }
+        for (folder, kept) in [(storage.root, models.lastPathComponent), (models, detector)] {
+            let items = (try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            for item in items where item.lastPathComponent != kept {
+                try? files.removeItem(at: item)
+            }
+        }
     }
 
     static func appCore(storage: MdocStorage) throws -> Core {

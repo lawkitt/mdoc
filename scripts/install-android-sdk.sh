@@ -12,9 +12,9 @@
 #                               the emulator rejects a misaligned library
 # Each archive is pinned: Google's by size and SHA-1 from repository2-3.xml
 # and sys-img2-3.xml (no SHA-256 published), the JDK by Adoptium's SHA-256.
-# Then accepts the SDK licences (the maintainer agreed, 2026-10-31). Prints
-# the SDK directory on stdout. About 3 GB, downloaded once; a new pin
-# replaces only its own directory.
+# Command-line tools 23 and later take no licence acceptance. Prints the SDK
+# directory on stdout. About 3 GB, downloaded once; a new pin replaces only
+# its own directory.
 source "$(dirname "$0")/lib.sh"
 
 [ "$(platform)" = windows-x64 ] || die "the Android SDK install is for Windows x64"
@@ -69,14 +69,6 @@ jdk_sha=a4dbaa05fca4bd89d84584e58c459bd732efebb1722af80ab13c6516832004f9
 if [ "$(cat "$home/jdk-21/.mdoc-pin" 2>/dev/null)" != "$jdk_sha" ]; then
   fetch_sha256 "$jdk_url" "$jdk_sha" "$cache/temurin-21.zip"
   install "$home/jdk-21" "$cache/temurin-21.zip" "$jdk_sha"
-fi
-
-# The SDK licences, accepted once; sdkmanager needs the JDK.
-if [ ! -f "$sdk/licenses/android-sdk-license" ]; then
-  export JAVA_HOME
-  JAVA_HOME=$(native_path "$home/jdk-21")
-  yes | "$sdk/cmdline-tools/latest/bin/sdkmanager.bat" --sdk_root="$(native_path "$sdk")" --licenses >/dev/null ||
-    [ -f "$sdk/licenses/android-sdk-license" ] || die "accepting the SDK licences failed"
 fi
 
 echo "$sdk"

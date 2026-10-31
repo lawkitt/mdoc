@@ -15,6 +15,11 @@ UI polish ([ADR 0087](../../../adr/0087-ios-ui-polish.md)); findings in the
   screens; 05 (Paste's second sheet), 20 (the Share menu) and 25 (the
   reply's menu) are gone with them, and the iPad set has its own Home
   (`ipad-01`, `ipad-08`) in place of 31.
+- **`layout/`**: the layout pass after it (portrait iPad, one-row hand-off
+  bar), the shots that changed, by the same test: `16` and `24` on the
+  iPhone 17 Pro; on the iPad `ipad-24`, `ipad-26-pdf-text-original`,
+  `ipad-26-pdf-text-identities` (the picker's Identities) and
+  `ipad-26-pdf-landscape`.
 
 Both sets are downscaled to 1000 px high. The table names the screens:
 
@@ -49,7 +54,7 @@ second), the interruption banner and OCR resume (see `2026-10-31-ocr-resume`),
 the cellular question, error alerts, the camera, Photos and Files pickers,
 and the extension's case picker. The before set has no iPad document
 layout; the after set's `ipad-26` shows text, original and Identities side
-by side.
+by side, and `layout/` the portrait and landscape layouts that replaced it.
 
 The `¬£` in the before set's shots 24–25 comes from `simctl pbcopy` reading the test reply
 without a UTF-8 locale, not from the app.

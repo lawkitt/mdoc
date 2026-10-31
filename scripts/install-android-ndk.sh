@@ -19,13 +19,18 @@ esac
 root=$(android_home)/ndk
 dir=$root/android-ndk-$ANDROID_NDK_VERSION
 if [ ! -f "$dir/source.properties" ]; then
-  tmp=$(mktemp -d)
+  # Unpacked beside its destination, so the final move is a rename.
+  mkdir -p "$root"
+  tmp=$(mktemp -d "$root/.unpack.XXXXXX")
   trap 'rm -rf "$tmp"' EXIT
   zip=$tmp/ndk.zip
   fetch_pinned "https://dl.google.com/android/repository/android-ndk-$ANDROID_NDK_VERSION-$os.zip" "$size" "$sha1" "$zip"
-  mkdir -p "$tmp/unpacked" "$root"
   unzip -q "$zip" -d "$tmp/unpacked"
-  mv "$tmp/unpacked/android-ndk-$ANDROID_NDK_VERSION" "$dir"
-  echo "Android NDK $ANDROID_NDK_VERSION installed to $dir" >&2
+  if [ -e "$dir" ]; then
+    echo "Android NDK $ANDROID_NDK_VERSION was installed meanwhile" >&2
+  else
+    mv "$tmp/unpacked/android-ndk-$ANDROID_NDK_VERSION" "$dir"
+    echo "Android NDK $ANDROID_NDK_VERSION installed to $dir" >&2
+  fi
 fi
 echo "$dir"

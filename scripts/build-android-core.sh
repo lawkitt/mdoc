@@ -37,6 +37,8 @@ bin=$ndk/toolchains/llvm/prebuilt/$host/bin
 readelf=$bin/llvm-readelf$exe
 
 out=target/android
+# Cargo's own output, which CARGO_TARGET_DIR may move.
+cargo_target=${CARGO_TARGET_DIR:-target}
 deps=$out/deps
 rm -rf "$out/jniLibs" "$out/kotlin" "$out/licenses"
 mkdir -p "$deps" "$out/kotlin" "$out/licenses/pdfium"
@@ -64,7 +66,7 @@ for slice in "${slices[@]}"; do
 
   dir=$out/jniLibs/$abi
   mkdir -p "$dir"
-  cp "target/$target/mobile/libmdoc_ffi.so" "$dir/"
+  cp "$cargo_target/$target/mobile/libmdoc_ffi.so" "$dir/"
   cp "$deps/onnxruntime/jni/$abi/libonnxruntime.so" "$dir/"
   fetch_sha256 "$pdfium_base/$pdfium" "$pdfium_sha" "$deps/$pdfium"
   rm -rf "$deps/pdfium-$abi" && mkdir "$deps/pdfium-$abi"
@@ -88,6 +90,6 @@ done
 
 # Kotlin bindings from the library's UniFFI metadata.
 cargo run --locked -p mdoc-ffi --features bindgen --bin uniffi-bindgen -- \
-  generate --library "target/aarch64-linux-android/mobile/libmdoc_ffi.so" \
+  generate --library "$cargo_target/aarch64-linux-android/mobile/libmdoc_ffi.so" \
   --language kotlin --no-format --out-dir "$out/kotlin"
 echo "$out"

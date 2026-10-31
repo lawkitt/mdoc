@@ -56,6 +56,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }
+# Shelf previews hide Markdown syntax (src/shelf.rs, ADR 0084).
+mdoc-markdown = { path = "crates/mdoc-markdown" }
 mdoc-pii = { path = "crates/mdoc-pii" }
 mdoc-spell = { path = "crates/mdoc-spell" }
 mdoc-store = { path = "crates/mdoc-store" }
