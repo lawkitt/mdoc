@@ -8,7 +8,7 @@
 
 use cocoa::{
     appkit::{NSScreen, NSWindow},
-    base::{NO, YES, id, nil},
+    base::{NO, id, nil},
     foundation::{NSPoint, NSRect, NSSize, NSUInteger},
 };
 use objc::{class, msg_send, runtime::BOOL, sel, sel_impl};
@@ -16,6 +16,15 @@ use objc::{class, msg_send, runtime::BOOL, sel, sel_impl};
 /// `NSApplicationActivationPolicyRegular` and `…Accessory`.
 const REGULAR: isize = 0;
 const ACCESSORY: isize = 1;
+
+/// Long enough for AppKit's redraw at the end of this run-loop turn, short
+/// enough not to show.
+const REDRAW_AFTER: std::time::Duration = std::time::Duration::from_millis(20);
+
+#[link(name = "QuartzCore", kind = "framework")]
+unsafe extern "C" {
+    static kCAGravityTop: id;
+}
 
 /// AppKit window and app state change only on the main thread: debug
 /// builds check it.
@@ -64,20 +73,34 @@ pub fn hide_window(window: &gpui::Window) {
 /// screen's visible frame. GPUI's view is then given the new size through
 /// its own `setFrameSize:`, which resizes its drawable, and the window
 /// re-reads its size (`Window::bounds_changed`): GPUI's own resize callback
-/// cannot update a window that is being updated, as it is here. The next
-/// frame is laid out at the new height rather than the old one stretched.
-/// Main thread only.
+/// cannot update a window that is being updated, as it is here.
+///
+/// AppKit then redraws the resized view through `displayLayer:`, presenting
+/// inside its own transaction, and that frame does not reach the screen
+/// after a programmatic resize like this one (shrinking or growing). So the
+/// layer keeps its old picture unscaled at the top, which after a shrink
+/// already shows the new layout, and the window draws again once AppKit's
+/// redraw is past, on GPUI's own display tick. Main thread only.
 pub fn set_window_height_keeping_top(window: &mut gpui::Window, cx: &mut gpui::App, height: f32) {
-    resize_keeping_top(window, height);
+    if !resize_keeping_top(window, height) {
+        return;
+    }
     window.bounds_changed(cx);
+    let handle = window.window_handle();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(REDRAW_AFTER).await;
+        let _ = handle.update(cx, |_, window, _| window.refresh());
+    })
+    .detach();
 }
 
-fn resize_keeping_top(window: &gpui::Window, height: f32) {
+/// Whether the window changed size.
+fn resize_keeping_top(window: &gpui::Window, height: f32) -> bool {
     debug_assert_main_thread();
     let view = native_view(window);
     let native_window = native_window(window);
     if view.is_null() || native_window.is_null() {
-        return;
+        return false;
     }
     // SAFETY: main thread; a live window, its screen checked for nil.
     unsafe {
@@ -93,7 +116,7 @@ fn resize_keeping_top(window: &gpui::Window, height: f32) {
         }
         let frame_height = frame_height.max(chrome + 1.);
         if (frame_height - frame.size.height).abs() < 0.5 {
-            return;
+            return false;
         }
         let resized = NSRect::new(
             NSPoint::new(frame.origin.x, top - frame_height),
@@ -110,8 +133,14 @@ fn resize_keeping_top(window: &gpui::Window, height: f32) {
         let _: () = msg_send![view, setFrameOrigin: NSPoint::new(0., 0.)];
         let _: () = msg_send![view, setFrameSize: content.size];
         let _: () = msg_send![view, setAutoresizingMask: mask];
-        let _: () = msg_send![view, setNeedsDisplay: YES];
+        // A picture of the old height stays pinned to the top, not
+        // stretched or squashed, until the next frame replaces it.
+        let layer: id = msg_send![view, layer];
+        if !layer.is_null() {
+            let _: () = msg_send![layer, setContentsGravity: kCAGravityTop];
+        }
     }
+    true
 }
 
 /// Show mdoc in the Dock and the app switcher, or leave both (the menu bar

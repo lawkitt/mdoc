@@ -52,7 +52,11 @@ Local changes, marked `mdoc patch`:
   through its own `setFrameSize:`, which resizes the drawable; then the
   window re-reads its size with `Window::bounds_changed`, since GPUI's own
   resize callback cannot update a window from inside that window's update.
-  The next frame is laid out at the new size.
+  AppKit's own redraw of the resized view (`displayLayer:`, presented in
+  its transaction) never reaches the screen after such a resize, so the
+  layer's contents are pinned to the top (`kCAGravityTop`: an old picture
+  is never stretched or squashed) and the window refreshes 20 ms later,
+  once that redraw is past, drawing the new size on GPUI's display tick.
   Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
   (`src/menu_bar.rs`); the native effect is a GUI check.
