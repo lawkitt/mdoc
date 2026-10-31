@@ -204,6 +204,16 @@ impl Workspace {
         cx.notify();
     }
 
+    /// macOS: the Save panel, its alerts and the menus follow the choice
+    /// too (ADR 0076). Called when the choice changes, not from the
+    /// appearance observer: setting the appearance notifies it.
+    pub(super) fn sync_app_appearance(&self, cx: &App) {
+        #[cfg(target_os = "macos")]
+        cx.set_window_appearance(style::app_appearance(self.theme_choice));
+        #[cfg(not(target_os = "macos"))]
+        let _ = cx;
+    }
+
     pub(super) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.select_theme(self.theme_choice.next(), window, cx);
     }
@@ -215,6 +225,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.theme_choice = choice;
+        self.sync_app_appearance(cx);
         self.apply_theme(window, cx);
         self.checkpoint(window, cx);
         cx.notify();
