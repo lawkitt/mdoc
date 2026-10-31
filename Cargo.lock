@@ -4665,6 +4665,7 @@ dependencies = [
  "mdoc-detect",
  "mdoc-editor",
  "mdoc-import",
+ "mdoc-markdown",
  "mdoc-pii",
  "mdoc-spell",
  "mdoc-store",

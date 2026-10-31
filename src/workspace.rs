@@ -2023,6 +2023,8 @@ impl Workspace {
                         let was_quitting = this.quit_flow.abandon();
                         this.cancel_case_quit();
                         if was_quitting {
+                            // A window hidden in the menu bar (ADR 0084) shows to ask.
+                            crate::menu_bar::reveal_if_hidden(window, cx);
                             let answer = window.prompt(PromptLevel::Warning,
                                 "Could not save the tab list",
                                 Some("Your saved Markdown files are safe. Cancel to retry, or quit using the previous session list."),

@@ -17,7 +17,10 @@ use mdoc_import::{
 pub use mdoc_store::model_state::Status;
 use mdoc_store::model_state::{Files, ModelState};
 use mdoc_store::session_store::ThemeChoice;
-use mdoc_store::settings::{Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, save};
+use mdoc_store::settings::{
+    Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, is_latest_write, next_write,
+    save_in_order,
+};
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 mod categories;
@@ -352,6 +355,22 @@ impl Panel {
             controls: Default::default(),
             dictionary: None,
         }
+    }
+    /// A Settings › General choice changed and saved outside the panel (the
+    /// menu bar shelf's notes, ADR 0084): the same change is made in the
+    /// draft, keeping its other choices, so the next save keeps it; a save
+    /// in flight, which captured the draft before it, is followed by one
+    /// with it.
+    pub fn general_changed(
+        &mut self,
+        change: impl FnOnce(&mut mdoc_store::settings::GeneralConfig),
+        cx: &mut Context<Self>,
+    ) {
+        change(&mut self.draft.general);
+        if self.applying {
+            self.save_pending = true;
+        }
+        cx.notify();
     }
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.open {
@@ -722,7 +741,8 @@ impl Panel {
         match self.category {
             Category::General => {
                 self.draft.updates = defaults.updates;
-                self.draft.general = defaults.general;
+                // Notes already seen stay seen (ADR 0084).
+                self.draft.general.menu_bar = defaults.general.menu_bar;
             }
             Category::Detection => {
                 self.draft.pseudonymization = defaults.pseudonymization;
@@ -777,6 +797,9 @@ impl Panel {
             })
             .unwrap_or_default();
         let path = self.shared.borrow().path.clone();
+        // Taken now: a later write (a shelf note's) skips this one if it
+        // finishes last.
+        let write = next_write();
         self.applying = true;
         #[cfg(test)]
         let save_gate = self.save_gate.take();
@@ -787,15 +810,32 @@ impl Panel {
                 if let Some(gate) = save_gate {
                     gate.await;
                 }
-                path.map_or(Ok(()), |path| save(&path, &prefs))
+                // `Ok(false)`: a later write (a shelf note's) started, and
+                // this one's choices are not the latest.
+                match path {
+                    Some(path) => save_in_order(&path, &prefs, write),
+                    None => Ok(is_latest_write(write)),
+                }
             }
         });
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            // A later write (a shelf note's) may have landed since this one
+            // finished: then it is not the latest and publishes nothing.
+            let result = task.await.map(|saved| saved && is_latest_write(write));
             let _ = this.update(cx, |this, cx| {
                 this.applying = false;
                 match result {
-                    Ok(()) => {
+                    // Overtaken: publish nothing; the draft, which holds the
+                    // later change too, saves next, carrying a General
+                    // reset's theme change (a newer theme choice still wins).
+                    Ok(false) => {
+                        this.save_pending = false;
+                        if this.reset_theme.is_none() {
+                            this.reset_theme = reset_theme;
+                        }
+                        this.persist(cx);
+                    }
+                    Ok(true) => {
                         this.shared.borrow_mut().current = Some(prefs);
                         this.shared.borrow_mut().error = None;
                         this.error = None;

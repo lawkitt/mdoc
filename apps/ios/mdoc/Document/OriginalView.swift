@@ -35,7 +35,7 @@ struct PDFKitView: UIViewRepresentable {
     let url: URL
 
     func makeUIView(context: Context) -> PDFView {
-        let view = PDFView()
+        let view = FittingPDFView()
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.backgroundColor = .secondarySystemBackground
@@ -46,6 +46,28 @@ struct PDFKitView: UIViewRepresentable {
     func updateUIView(_ view: PDFView, context: Context) {
         if view.document?.documentURL != url {
             view.document = PDFDocument(url: url)
+        }
+    }
+}
+
+/// A PDF view that fits the page to its width again whenever that width
+/// changes (rotation, iPad's columns); `autoScales` alone keeps the scale it
+/// first computed.
+final class FittingPDFView: PDFView {
+    private var fittedWidth: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0, bounds.width != fittedWidth, document != nil else { return }
+        fittedWidth = bounds.width
+        // The page the reader was on, from its top: PDFKit's destinations
+        // land mid-page after a new scale.
+        let page = currentPage
+        // The fit is only right once PDFKit has laid out its own views.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scaleFactor = self.scaleFactorForSizeToFit
+            if let page { self.go(to: page) }
         }
     }
 }

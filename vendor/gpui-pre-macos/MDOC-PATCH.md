@@ -31,13 +31,33 @@ Local changes, marked `mdoc patch`:
 - `window.rs`: `start_text_and_file_drag` starts an outbound drag from a
   window's last left mouse down carrying one `NSPasteboardItem` with both
   plain text and a file URL (upstream's `start_external_drag` carries files
-  only). The shelf drags a document with it (ADR 0084).
+  only). The shelf drags a document with it (ADR 0084). It shows an optional
+  `DragCard` (title and first line, light or dark, drawn as a rounded
+  `NSImage`) in place of the `.md` icon, and calls `on_end(dropped)` exactly
+  once: from `draggingSession:endedAtPoint:operation:` (dropped when the
+  operation is not `NSDragOperationNone`), with `false` when a later drag
+  starts first, or at once when the drag cannot start. The source window and
+  the image are retained until the drag ends, so the end still arrives after
+  the window closes. `DragCard` is exported from `gpui_macos.rs`.
 - `presence.rs` (new), exported from `gpui_macos.rs`: `hide_window`
   (`orderOut:`, which GPUI lacks) and `set_dock_visible` (the activation
   policy, Regular or Accessory), so with the menu bar item on, closing
   mdoc's window hides it and mdoc leaves the Dock until it shows again
   (ADR 0084); GPUI's `Window::activate_window` shows the window again.
-  Debug builds assert both run on the main thread and that AppKit accepts
+  `set_window_height_keeping_top` gives a window a new content height with
+  its top edge kept and no animation, clamped to its screen's visible frame
+  (`setFrame:display:`; GPUI's `Window::resize` keeps the bottom edge), so
+  the shelf popup fits its content under the menu bar item. GPUI's view sits
+  out that change (its autoresizing is off for it) and is then sized
+  through its own `setFrameSize:`, which resizes the drawable; then the
+  window re-reads its size with `Window::bounds_changed`, since GPUI's own
+  resize callback cannot update a window from inside that window's update.
+  AppKit's own redraw of the resized view (`displayLayer:`, presented in
+  its transaction) never reaches the screen after such a resize, so the
+  layer's contents are pinned to the top (`kCAGravityTop`: an old picture
+  is never stretched or squashed) and the window refreshes 20 ms later,
+  once that redraw is past, drawing the new size on GPUI's display tick.
+  Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
   (`src/menu_bar.rs`); the native effect is a GUI check.
 - `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream

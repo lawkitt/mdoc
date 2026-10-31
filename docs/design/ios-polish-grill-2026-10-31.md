@@ -194,11 +194,13 @@ What the after survey still shows, for the next pass:
 
 - **iPad portrait is cramped** [after/ipad-26]: the sidebar, the text, the
   original page and Identities share 1032 pt, leaving the text a narrow
-  column. Hiding the sidebar once a document opens, or showing Identities
-  over the original in portrait, would give the text room.
+  column. *Done in the layout pass* [layout/]: in portrait the sidebar
+  hides once a document opens and Identities show over the original, from
+  the picker; landscape keeps all four side by side (ADR 0087).
 - **The hand-off bar stacks at default text size** on a 402 pt iPhone
   [after/16, after/24]: three equal-width buttons do not fit "Paste reply"
   or "Paste another", so they stack, as decided, at the cost of height.
-  Shorter labels or an icon-only third button would keep one row.
+  *Done in the layout pass*: the maintainer chose shorter labels, Share,
+  Copy and Paste on both tabs, with the full names for VoiceOver.
 - **Converter escapes** (`1\.`) dim once #284 lands.
 - The rules-only gap is ROADMAP item 4.
