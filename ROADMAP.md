@@ -446,6 +446,76 @@ some reopen a Deferred or ADR decision, as noted.
   free, sells support, or offers a firm edition. *From the 2026-10-31
   competitor scan.*
 
+Mobile ideas from the [2026-10-31 mobile UX ideas](docs/design/mobile-ux-ideas-2026-10-31.md)
+(the iOS survey's after set, the app's code and a scan of mobile
+redaction apps), roughly by expected value; each needs a grill, and
+Android takes what applies.
+
+- **[Mobile] To grill: restored text stays off the shared clipboard.** Copy
+  reply and Restore with mdoc's Copy put the restored reply, real names
+  included, on `UIPasteboard.general` with no expiry, so Universal
+  Clipboard can carry it to the Mac. Write it local-only with an expiry;
+  Copy for AI (aliases only) can stay shared. Android 13+ marks the clip
+  sensitive. Also: `RestoredTextView` lacks the review view's Writing Tools
+  opt-out. *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: app switcher cover and an optional Face ID lock.**
+  The app switcher's snapshot shows client names; a plain cover when the
+  scene leaves the foreground, and an opt-in lock for the app and Restore
+  with mdoc (Android: `FLAG_SECURE`, biometric lock). *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: one proposal at a time.** A full-screen review card
+  (the proposal in its sentence, category, alias), Replace and Keep at
+  thumb height or by swipe, "3 of 12", haptics, undo the last; today the
+  candidate sheet covers half the text. *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: undo.** Replace, Keep, Replace all, Keep all,
+  Remove reply and Delete document have no undo on iOS; an Undo toast plus
+  `UndoManager` (shake, three-finger swipe). *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: merge hint and Same as… on mobile.** ADR 0080's hint
+  on Identities rows and Same as… in the candidate sheet; without them
+  "Ms Bennett", "Maya" and "Mia" reach the AI as three people. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: "As the AI sees it".** A read-only view of the Copy
+  for AI text with any original still in it highlighted, so the user sees
+  what leaves before sharing; it could also be the default while the screen
+  is recorded or mirrored. Desktop has no such view either. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: text from any app becomes a document.** Shared text,
+  web pages and Mail selections open as a pasted document (the extension
+  hands over; the app does the work); Android's `ACTION_PROCESS_TEXT` puts
+  mdoc in every app's selection menu. Today only files arrive by share.
+  *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: a demo document before the download.** "Try a
+  sample" on the empty Home: the settlement letter with stored proposals,
+  so review, share and restore work before the 649.5 MB download. *From
+  the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: Shortcuts and Siri.** App Intents for Restore text
+  with a case, Get a reviewed document's text for AI, and Add text to mdoc
+  (opens for review), so iOS 26's Use Model action can chain share, ask and
+  restore; no intent hides names without review. *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: find, and mark every match.** `UIFindInteraction`
+  (⌘F on iPad) and Replace all matches as one identity, for a surname the
+  detector missed. *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: share a selection.** "Share for AI" in the selection
+  menu sends one clause through Copy for AI's export path. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: remove documents after a while.** Settings: never, 7,
+  30 or 90 days; documents and replies go, cases stay so replies still
+  restore; storage per kind shown. *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: iPad as a work surface.** Drop files in, drag the
+  text for AI out to an AI app in Split View and the reply back in, keyboard
+  shortcuts (⌘F, R/K, arrows), two windows. *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: highlights on the original page.** Found names boxed
+  on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: hints, haptics and quick actions.** TipKit for
+  select-to-mark, long-press Share and the Restore extension; haptics on
+  decisions; Home Screen quick actions Scan, Paste, Paste reply. *From the
+  2026-10-31 mobile UX ideas.*
+
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
