@@ -333,7 +333,7 @@ pub fn live_tooltip(
     move |_, cx| cx.new(|_| LiveTip(read.clone())).into()
 }
 
-fn tip_body(text: String, theme: Theme) -> impl gpui::IntoElement {
+pub(crate) fn tip_body(text: String, theme: Theme) -> impl gpui::IntoElement {
     {
         use gpui::{div, prelude::*, px};
         let palette = theme.pdf_style();

@@ -1937,3 +1937,74 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
 fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
     download_retains_card_focus(cx, settings::Model::Pii(settings::PiiModel::Fp16));
 }
+
+/// Tooltips name the key that does the same (U16): the sidebar's toggle,
+/// Back and New tab, and the toolbar's Pseudonymize. Home's "Documents stay
+/// on this Mac" explains itself above the note, clear of the buttons beside
+/// it.
+#[gpui::test]
+fn tooltips_name_their_keys_and_the_home_note_opens_above(cx: &mut TestAppContext) {
+    use crate::{shortcuts::tip, workspace::navigation_ui::Back};
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    let hover = |cx: &mut VisualTestContext, id: &'static str| {
+        let at = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("{id}"))
+            .center();
+        cx.simulate_mouse_move(at, None, gpui::Modifiers::none());
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(600));
+        cx.run_until_parked();
+        draw(cx);
+    };
+    let shown = |cx: &mut VisualTestContext, text: String| {
+        let selector: &'static str = Box::leak(format!("tooltip-{text}").into_boxed_str());
+        assert!(cx.debug_bounds(selector).is_some(), "no tooltip “{text}”");
+    };
+
+    // Home's note: the explanation sits above it, right-aligned, and covers
+    // none of the buttons beside it.
+    hover(cx, "empty-page-local");
+    let note = cx.debug_bounds("empty-page-local").unwrap();
+    let machine = if cfg!(target_os = "macos") {
+        "this Mac"
+    } else {
+        "this computer"
+    };
+    let detail = format!(
+        "tooltip-Detection, conversion and saved cases run on {machine}. mdoc goes online \
+         only to check for updates and to download models you choose."
+    );
+    let bubble = cx
+        .debug_bounds(Box::leak(detail.into_boxed_str()))
+        .expect("the note explains itself on hover");
+    assert!(bubble.bottom() <= note.top(), "{bubble:?} over {note:?}");
+    assert!((bubble.right() - note.right()).abs() < px(1.));
+    let clipboard = cx.debug_bounds("home-clipboard").unwrap();
+    assert!(
+        !bubble.intersects(&clipboard),
+        "{bubble:?} covers {clipboard:?}"
+    );
+
+    hover(cx, "sidebar-toggle");
+    shown(cx, tip("Collapse sidebar", &ToggleSidebar));
+    hover(cx, "sidebar-new");
+    shown(cx, tip("New Markdown tab", &New));
+    // A tab to go back from.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+    });
+    cx.simulate_input("alpha beta");
+    draw(cx);
+    let back = tabs.read_with(cx, |tabs, cx| tabs.navigation_label(true, cx));
+    hover(cx, "workspace-back");
+    shown(cx, tip(back, &Back));
+    hover(cx, "Pseudonymize");
+    shown(
+        cx,
+        tip("Find names to replace", &crate::pii::ui::Pseudonymize),
+    );
+}

@@ -192,6 +192,13 @@ impl DocumentView {
             }
             Primary::Pseudonymize => {
                 ui::filled_button("primary-action", "Pseudonymize", theme, true)
+                    .tooltip(crate::style::tooltip(
+                        crate::shortcuts::tip(
+                            "Find names to replace",
+                            &crate::pii::ui::Pseudonymize,
+                        ),
+                        theme,
+                    ))
                     .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
                     .on_click(cx.listener(|this, _, window, cx| {
                         // Pseudonymize scans once and opens the panel; it never
