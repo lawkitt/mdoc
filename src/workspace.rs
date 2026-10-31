@@ -56,6 +56,9 @@ mod quit_flow;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
 mod session_writer;
+// The shelf's view uses it from the next layer of ADR 0084's stack.
+#[cfg_attr(not(test), allow(dead_code))]
+mod shelf_source;
 mod shell;
 pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
@@ -1450,6 +1453,7 @@ impl Workspace {
                 // Save As moves the member: the case forgets the old path.
                 self.case_member_moved(id, previous, cx);
                 self.case_changed(id, cx);
+                self.record_review(id, cx);
             }
             TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
             TabEvent::Case(CaseEvent::Reply) => self.case_reply_changed(id, cx),

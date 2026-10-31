@@ -250,6 +250,20 @@ pub struct Case {
     /// (ADR 0080).
     #[serde(default)]
     pub dismissed_hints: Vec<(String, String)>,
+    /// Each member's fingerprint of the text it saved while ready: a closed
+    /// member is ready on the shelf only while its file matches (ADR 0084).
+    #[serde(default)]
+    pub reviewed: Vec<ReviewedMember>,
+}
+
+/// A member's text as last saved while ready (ADR 0084): a fingerprint of
+/// the text, never the text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReviewedMember {
+    /// The member, as in [`Case::members`].
+    pub member: PathBuf,
+    /// The SHA-256 of the saved text, in hex.
+    pub fingerprint: String,
 }
 
 /// One member document's AI reply, kept for its Reply view (ADR 0078).
@@ -275,6 +289,7 @@ impl Case {
             skip: Vec::new(),
             replies: Vec::new(),
             dismissed_hints: Vec::new(),
+            reviewed: Vec::new(),
         };
         case.merge(identities);
         case
@@ -308,6 +323,44 @@ impl Case {
             }
             _ => false,
         }
+    }
+    /// The fingerprint `member` saved while ready (ADR 0084).
+    pub fn reviewed(&self, member: &Path) -> Option<&str> {
+        self.reviewed
+            .iter()
+            .find(|r| r.member == member)
+            .map(|r| r.fingerprint.as_str())
+    }
+    /// Record `fingerprint` as `member`'s ready text, or forget it with
+    /// `None` (saved while not ready). Returns whether the case changed.
+    pub fn set_reviewed(&mut self, member: &Path, fingerprint: Option<String>) -> bool {
+        let at = self.reviewed.iter().position(|r| r.member == member);
+        match (at, fingerprint) {
+            (Some(at), None) => {
+                self.reviewed.remove(at);
+                true
+            }
+            (Some(at), Some(fingerprint)) if self.reviewed[at].fingerprint != fingerprint => {
+                self.reviewed[at].fingerprint = fingerprint;
+                true
+            }
+            (None, Some(fingerprint)) => {
+                self.reviewed.push(ReviewedMember {
+                    member: member.to_path_buf(),
+                    fingerprint,
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+    /// Remove `member` and its review fingerprint. Returns whether it was a
+    /// member.
+    pub fn remove_member(&mut self, member: &Path) -> bool {
+        let was = self.members.iter().any(|m| m == member);
+        self.members.retain(|m| m != member);
+        self.reviewed.retain(|r| r.member != member);
+        was
     }
     /// The next generated alias of `category` that no identity has ever used.
     pub fn next_alias(&self, category: Category) -> String {
@@ -1183,6 +1236,32 @@ mod tests {
         assert!(loaded.set_reply(Path::new("/docs/contract.md"), None));
         assert!(!loaded.set_reply(Path::new("/docs/contract.md"), None));
         assert!(loaded.replies.is_empty());
+    }
+
+    #[test]
+    fn a_ready_fingerprint_is_kept_encrypted_and_leaves_with_its_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        let mut case = fixture_case();
+        let member = Path::new("/docs/contract.md");
+        assert_eq!(case.reviewed(member), None);
+        assert!(case.set_reviewed(member, Some("ab12".into())));
+        assert!(!case.set_reviewed(member, Some("ab12".into())));
+        assert!(case.set_reviewed(member, Some("cd34".into())));
+        assert_eq!(case.reviewed.len(), 1, "one fingerprint per member");
+        store.save(&case).unwrap();
+        let bytes = std::fs::read(dir.path().join(format!("{}.case", case.id))).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("cd34"));
+        let mut loaded = store.load(&case.id).unwrap();
+        assert_eq!(loaded.reviewed(member), Some("cd34"));
+        // Saved while not ready: the fingerprint goes.
+        assert!(loaded.set_reviewed(member, None));
+        assert!(!loaded.set_reviewed(member, None));
+        // Removing a member forgets its fingerprint too.
+        loaded.set_reviewed(member, Some("ef56".into()));
+        assert!(loaded.remove_member(member));
+        assert!(!loaded.remove_member(member));
+        assert!(loaded.members.is_empty() && loaded.reviewed.is_empty());
     }
 
     #[test]

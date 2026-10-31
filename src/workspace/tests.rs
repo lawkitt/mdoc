@@ -47,6 +47,7 @@ mod notices;
 mod quit_flow;
 mod restore_in_place;
 mod session_writer;
+mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
 mod tab_set;

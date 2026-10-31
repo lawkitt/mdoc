@@ -537,6 +537,7 @@ impl Workspace {
         });
         self.tabs.set_case(id, Some(link.id));
         self.case_reply_changed(id, cx);
+        self.record_review(id, cx);
         self.checkpoint(window, cx);
         cx.notify();
         Some(case_id)
@@ -841,8 +842,7 @@ impl Workspace {
         }
         if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
             let kept = case.set_reply(&previous, None);
-            (case.members.contains(&previous) || kept)
-                .then(|| case.members.retain(|m| *m != previous))
+            (case.remove_member(&previous) || kept).then_some(())
         }) {
             self.carry_out_cases(effect.into_iter().collect(), cx);
         }
@@ -1034,7 +1034,7 @@ impl Workspace {
             && let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
                 // The reply stays with the tab, not the case it left.
                 let kept = case.set_reply(&path, None);
-                (case.members.contains(&path) || kept).then(|| case.members.retain(|m| *m != path))
+                (case.remove_member(&path) || kept).then_some(())
             })
         {
             self.carry_out_cases(effect.into_iter().collect(), cx);

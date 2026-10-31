@@ -406,11 +406,10 @@ impl Workspace {
             self.tabs.set_case(tab, None);
         }
         // Closed/missing members have no view; removing never opens one.
-        if let Some(((), effect)) = self.case_coordinator.edit(id, |case| {
-            case.members
-                .contains(&path.to_path_buf())
-                .then(|| case.members.retain(|member| member != path))
-        }) {
+        if let Some(((), effect)) = self
+            .case_coordinator
+            .edit(id, |case| case.remove_member(path).then_some(()))
+        {
             self.carry_out_cases(effect.into_iter().collect(), cx);
         }
         self.checkpoint(window, cx);

@@ -40,6 +40,9 @@ pub(crate) struct DocumentLifecycle {
     blank_disposable: bool,
     /// One of this document's dialogs is open.
     prompting: bool,
+    /// When the user last edited the text in this session (the shelf's
+    /// order, ADR 0084).
+    edited_at: Option<std::time::SystemTime>,
 }
 
 impl DocumentLifecycle {
@@ -122,6 +125,13 @@ impl DocumentLifecycle {
     pub(crate) fn edited(&mut self) {
         self.generated_unedited = false;
         self.blank_disposable = false;
+        self.edited_at = Some(std::time::SystemTime::now());
+    }
+
+    /// When the user last edited the text in this session.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn edited_at(&self) -> Option<std::time::SystemTime> {
+        self.edited_at
     }
 
     /// Whether the text differs from the saved text, rechecked.
