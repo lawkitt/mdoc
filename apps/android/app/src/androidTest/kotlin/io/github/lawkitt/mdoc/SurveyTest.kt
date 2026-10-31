@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.printToLog
@@ -239,6 +240,8 @@ class SurveyTest {
 
     private fun click(text: String) {
         waitFor(text)
+        // Into view first, as a person would scroll a sheet with the keyboard up.
+        runCatching { compose.onAllNodesWithText(text).onFirst().performScrollTo() }
         compose.onAllNodesWithText(text).onFirst().performClick()
         compose.waitForIdle()
     }

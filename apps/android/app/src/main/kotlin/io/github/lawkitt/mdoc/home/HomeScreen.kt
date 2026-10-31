@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -132,7 +134,8 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        val inner = Modifier.padding(padding)
+        // A tablet keeps the list to a readable width, centred.
+        val inner = Modifier.padding(padding).fillMaxWidth().wrapContentWidth().widthIn(max = 720.dp)
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
