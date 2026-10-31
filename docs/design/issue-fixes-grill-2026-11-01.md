@@ -43,3 +43,15 @@ goal run while they are away. This records what was agreed before the run.
 - **Before the run** (approved): unused build output was removed: local CI
   outputs of closed PRs (~37 GB), seven merged or closed worktrees, the root
   checkout's `target/` (14 GB) and stale incremental caches.
+
+## Outcome (2026-10-31, 22:30Z)
+
+Twelve issues closed by merged PRs: #300 (#328), #321 (#326), #309 (#329),
+#304 (#331), #305 (#339), #307 (#333), #303 (#340), #308 (#343),
+#306 (#332), #310 (#348), #311 (#350), #302 (#352). #301 is partly fixed by
+#351 and stays open for the address and date-of-birth grill. Codex reviews
+were skipped (weekly quota). The hub checked #305, #307 and #311 in the real
+app; the rows it could not run are listed on #254. #352 also drops Bank spans
+containing `/` (claim and case numbers), a detection-policy choice to revisit
+in the ROADMAP's [Detection] identifier-coverage grill. Claude's login on
+`wsl` was found revoked, so #302 ran on Windows instead.
