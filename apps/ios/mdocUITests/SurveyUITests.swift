@@ -60,14 +60,14 @@ final class SurveyUITests: XCTestCase {
         shot("10-about")
     }
 
-    /// The review of the demo agreement on the rules, through share,
-    /// restore and the reply.
+    /// The review of the demo agreement (the seed's rules scan), through
+    /// share, restore and the reply.
     @MainActor
     func test2Review() throws {
         let app = launch(seed: MdocUITest.defaultSeed)
         let row = MdocUITest.documentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
-        shot("11-home-rules-tier-to-review")
+        shot("11-home-to-review")
         row.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
@@ -187,6 +187,39 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(largeText.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         scroll(largeText, toReveal: largeText.links[MdocUITest.markdownEmail].firstMatch)
         shot("30-review-ax-text")
+    }
+
+    /// Below the detector floor (ADR 0088): no setup card on Home; where
+    /// Find names would be, the document says it cannot find names; Settings
+    /// says the same.
+    @MainActor
+    func test5BelowFloor() throws {
+        let app = launch(seed: nil)
+        XCTAssertTrue(app.buttons["add-menu"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["setup-download"].exists)
+        shot("31-home-empty-below-floor")
+
+        app.buttons["add-menu"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Paste"].waitForExistence(timeout: 5))
+        app.buttons["Paste"].tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText(Self.pastedText)
+        nextOrAdd(app)
+        if app.buttons["import-add"].waitForExistence(timeout: 5) {
+            app.buttons["import-add"].tap()
+        }
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Find names"].exists)
+        XCTAssertTrue(app.buttons["paste-reply"].exists)
+        shot("32-document-below-floor")
+
+        goHome(app)
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 5))
+        shot("33-settings-below-floor")
     }
 
     // MARK: Steps

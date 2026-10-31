@@ -15,7 +15,7 @@ final class UnavailableLibrary: Library, @unchecked Sendable {
 
 final class UnavailableSetup: Setup, @unchecked Sendable {
     func snapshot() -> SetupSnapshot {
-        SetupSnapshot(physicalMemory: ProcessInfo.processInfo.physicalMemory, tier: .rulesOnly, offers: [])
+        SetupSnapshot(physicalMemory: ProcessInfo.processInfo.physicalMemory, tier: .belowFloor, offers: [])
     }
     func downloadRequests(for model: String) throws -> [ModelDownloadRequest] { [] }
     func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot { snapshot() }

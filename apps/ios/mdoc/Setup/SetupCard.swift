@@ -11,6 +11,7 @@ struct SetupCard: View {
     var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
     var then: (@MainActor () async -> Void)?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -24,11 +25,17 @@ struct SetupCard: View {
                 ForEach(model.snapshot.offers) { offer in
                     ModelRow(offer: offer, state: model.state(of: offer))
                 }
-                Button("Cancel", role: .cancel) {
-                    model.cancel()
+                ButtonRow(forceColumn: dynamicTypeSize.isAccessibilitySize) {
+                    if model.waitsForWiFi {
+                        UseCellularButton(model: model)
+                    }
+                    Button("Cancel", role: .cancel) {
+                        model.cancel()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("setup-cancel")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("setup-cancel")
+                .lineLimit(1)
             } else {
                 HStack {
                     Button {
@@ -75,18 +82,33 @@ struct SetupCard: View {
     private var title: String {
         switch model.snapshot.tier {
         case .detector: String(localized: "Set up name finding")
-        case .rulesOnly: String(localized: "Set up text recognition")
+        case .belowFloor: String(localized: "Set up text recognition")
         }
     }
 
+    /// Below the floor the card shows only in a document that needs text
+    /// recognition; it offers that model alone (ADR 0088).
     private var message: String {
         switch model.snapshot.tier {
         case .detector:
             String(localized: "mdoc downloads its name detector and text recognition once (\(size)). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
-        case .rulesOnly where UIDevice.current.userInterfaceIdiom == .pad:
-            String(localized: "This iPad has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
-        case .rulesOnly:
-            String(localized: "This iPhone has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
+        case .belowFloor:
+            String(localized: "mdoc downloads text recognition once (\(size)). After that, scans and photos are read on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
+        }
+    }
+}
+
+/// What a device below the detector floor says where Find names would be,
+/// and in Settings (ADR 0088). The floor is 8 GB (`DETECTOR_FLOOR_BYTES`
+/// sits between the 6 GB and 8 GB classes): iPhone 15 Pro and later, and
+/// every iPad with an M-series chip.
+@MainActor
+enum BelowFloor {
+    static var note: String {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            String(localized: "This iPad can't find names: the name detector needs 8 GB of memory (an iPad with M1 or later). Select text to mark a name.")
+        } else {
+            String(localized: "This iPhone can't find names: the name detector needs 8 GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
         }
     }
 }
@@ -121,6 +143,10 @@ struct ModelRow: View {
                     Text("Downloading")
                         .font(.footnote)
                 }
+            case .waitingForWiFi:
+                Label("Waiting for Wi-Fi", systemImage: "wifi.exclamationmark")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             case .verifying:
                 ProgressView {
                     Text("Checking and installing")
@@ -148,6 +174,23 @@ struct ModelRow: View {
     }
 }
 
+/// Use cellular, while a download waits for Wi-Fi: it asks the cellular
+/// question (ADR 0088).
+struct UseCellularButton: View {
+    let model: SetupViewModel
+
+    var body: some View {
+        Button {
+            model.askCellular()
+        } label: {
+            Label("Use cellular", systemImage: "antenna.radiowaves.left.and.right")
+        }
+        .buttonStyle(.bordered)
+        .accessibilityHint(Text("Asks before downloading over cellular."))
+        .accessibilityIdentifier("setup-use-cellular")
+    }
+}
+
 extension View {
     /// Asks before a download on cellular; waiting keeps it for Wi-Fi.
     func cellularQuestion(model: SetupViewModel, size: String) -> some View {
@@ -165,7 +208,7 @@ private struct CellularQuestion: ViewModifier {
             isPresented: $model.asksCellular,
             titleVisibility: .visible
         ) {
-            Button("Use Cellular") {
+            Button("Use cellular") {
                 model.answerCellular(useCellular: true)
             }
             Button("Wait for Wi-Fi") {

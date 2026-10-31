@@ -443,7 +443,10 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         case .detector:
             guard let paths = setup.detectorPaths() else { throw CoreError.modelMissing }
             detector = paths
-        case .rulesOnly:
+        case .belowFloor:
+            // Below the floor the app offers no Find names (ADR 0088). Only
+            // the UI tests' seed (`seedForUITesting`) gets here: the core's
+            // structured rules give it candidates without a model.
             detector = nil
         }
         observer.onCancel { [ffi] in ffi.cancel() }
@@ -549,7 +552,7 @@ final class RealSetup: Setup, @unchecked Sendable {
 
     func snapshot() -> SetupSnapshot {
         let catalog = ffi.catalog()
-        let tier: DeviceTier = ffi.offers(model: .gliner2Fp16) ? .detector : .rulesOnly
+        let tier: DeviceTier = ffi.offers(model: .gliner2Fp16) ? .detector : .belowFloor
         let offers = catalog
             .filter { $0.offered && ($0.id == .gliner2Fp16 || $0.id == Self.ocrModel) }
             .map { info in

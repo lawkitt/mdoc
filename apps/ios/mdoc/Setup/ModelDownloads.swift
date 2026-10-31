@@ -1,23 +1,38 @@
 import Foundation
 import Network
 
-/// Whether the current connection costs the user data.
-protocol NetworkConditions: Sendable {
-    /// Cellular or a personal hotspot: a download asks first.
-    var isExpensive: Bool { get }
+/// How mdoc reaches the network now.
+enum NetworkRoute: Sendable, Equatable {
+    /// Wi-Fi or wired: the Wi-Fi session can run.
+    case wifi
+    /// Any cellular interface, whatever iOS's expensive flag says, or a
+    /// personal hotspot: a download asks first (ADR 0088).
+    case cellular
+    case offline
 }
 
-final class NetworkMonitor: NetworkConditions, @unchecked Sendable {
+/// The current connection, for the cellular question and "Waiting for Wi-Fi".
+@MainActor
+protocol NetworkConditions: AnyObject {
+    var route: NetworkRoute { get }
+    /// Called on the main actor each time the route changes.
+    var onChange: ((NetworkRoute) -> Void)? { get set }
+}
+
+@MainActor
+final class NetworkMonitor: NetworkConditions {
     private let monitor = NWPathMonitor()
-    private let lock = NSLock()
-    private var expensive = false
+    private(set) var route: NetworkRoute = .wifi
+    var onChange: ((NetworkRoute) -> Void)?
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            lock.lock()
-            expensive = path.status == .satisfied && path.isExpensive
-            lock.unlock()
+            let route = Self.route(of: path)
+            Task { @MainActor [weak self] in
+                guard let self, self.route != route else { return }
+                self.route = route
+                self.onChange?(route)
+            }
         }
         monitor.start(queue: DispatchQueue(label: "io.github.lawkitt.mdoc.network"))
     }
@@ -26,10 +41,12 @@ final class NetworkMonitor: NetworkConditions, @unchecked Sendable {
         monitor.cancel()
     }
 
-    var isExpensive: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return expensive
+    /// Unlimited 5G with "Allow More Data" is not marked expensive, so the
+    /// interface type decides; a hotspot is Wi-Fi marked expensive, and the
+    /// Wi-Fi session refuses it too.
+    nonisolated static func route(of path: NWPath) -> NetworkRoute {
+        guard path.status == .satisfied else { return .offline }
+        return path.usesInterfaceType(.cellular) || path.isExpensive ? .cellular : .wifi
     }
 }
 
@@ -80,6 +97,11 @@ final class BackgroundModelDownloader: NSObject, ModelDownloader, URLSessionDown
         super.init()
     }
 
+    /// The Wi-Fi session never uses cellular, nor an expensive network
+    /// (a hotspot); only a yes to the cellular question starts the other.
+    /// Background sessions always wait for a network they may use and never
+    /// report it (`taskIsWaitingForConnectivity` is not called for them), so
+    /// "Waiting for Wi-Fi" comes from `NetworkMonitor`.
     static func background(identifier: String, cellular: Bool) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
         configuration.allowsCellularAccess = cellular

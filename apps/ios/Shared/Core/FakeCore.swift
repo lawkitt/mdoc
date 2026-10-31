@@ -21,8 +21,9 @@ enum FakeCore {
         var modelsInstalled = false
         /// Where fixture originals are written; nil leaves them out.
         var originalsFolder: URL?
-        /// Decides the device tier: below the floor a scan runs the
-        /// structured rules only.
+        /// Decides the device tier. Below the floor the app offers no Find
+        /// names; a scan the tests run there finds the structured
+        /// categories only, as the UI tests' seed does on the real core.
         var physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     }
 
@@ -107,7 +108,7 @@ private final class FakeState: @unchecked Sendable {
     init(options: FakeCore.Options) {
         timing = options.timing
         physicalMemory = options.physicalMemory
-        tier = options.physicalMemory >= FakeSetup.detectorFloor ? .detector : .rulesOnly
+        tier = options.physicalMemory >= FakeSetup.detectorFloor ? .detector : .belowFloor
         let installed: ModelState = options.modelsInstalled ? .installed : .notInstalled
         models = [FakeSetup.detectorID: installed, FakeSetup.ocrID: installed]
         seed(originals: options.originalsFolder)
@@ -530,8 +531,8 @@ private final class FakeSession: DocumentSession {
     }
 
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
-        // Below the floor the structured rules run without any model.
-        let ready = state.locked { state.tier == .rulesOnly || state.models[FakeSetup.detectorID] == .installed }
+        // Below the floor only tests scan: the structured rules, no model.
+        let ready = state.locked { state.tier == .belowFloor || state.models[FakeSetup.detectorID] == .installed }
         guard ready else { throw CoreError.modelMissing }
         let steps = 10
         for step in 0..<steps {

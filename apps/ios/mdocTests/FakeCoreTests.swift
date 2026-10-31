@@ -126,7 +126,7 @@ final class FakeCoreTests: XCTestCase {
 
     func testSetupOffersOnlyWhatFitsTheMemory() {
         let small = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte).setup.snapshot()
-        XCTAssertEqual(small.tier, .rulesOnly)
+        XCTAssertEqual(small.tier, .belowFloor)
         XCTAssertFalse(small.offers.contains { $0.purpose == .detector })
         let large = Fixture.core(modelsInstalled: false, memory: 8 * Fixture.gigabyte).setup.snapshot()
         XCTAssertEqual(large.tier, .detector)

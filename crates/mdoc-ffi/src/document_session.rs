@@ -203,8 +203,10 @@ impl DocumentSession {
         self.with_document(|_| Ok(()))
     }
 
-    /// Scan for candidates: the GLiNER2 detector and the structured rules,
-    /// or the rules alone on devices without the detector (ADR 0085). The
+    /// Scan for candidates: the GLiNER2 detector and the structured rules.
+    /// Without `detector` the rules run alone: only UI tests seed candidates
+    /// that way, since below the detector floor the apps offer no Find
+    /// names (ADR 0088). The
     /// review stays usable meanwhile; a transition that changes the text
     /// (Replace, Keep of a replaced mention) or a new import discards the
     /// scan's result, as an edit does on desktop.

@@ -6,12 +6,52 @@ final class DocumentViewModelTests: XCTestCase {
     private func model(
         _ id: DocumentID = Fixture.letter,
         core: Core = Fixture.core(),
-        jobs: LongJobRunner? = nil
+        jobs: LongJobRunner? = nil,
+        findsNames: Bool = true
     ) throws -> DocumentViewModel {
         DocumentViewModel(
             session: try core.library.session(for: id),
             jobs: jobs ?? LongJobRunner(background: NoBackgroundContinuation()),
-            storage: try Fixture.temporaryStorage())
+            storage: try Fixture.temporaryStorage(), findsNames: findsNames)
+    }
+
+    /// Below the floor the document offers no Find names: it says why, and
+    /// the hand-off is there for what the user marks (ADR 0088).
+    func testBelowTheFloorTheNoteStandsWhereFindNamesWouldBe() async throws {
+        let core = Fixture.core(memory: 4 * Fixture.gigabyte)
+        let below = try model(Fixture.tenancy, core: core, findsNames: false)
+        XCTAssertFalse(below.showsBelowFloorNote)
+        await below.recognize()
+        XCTAssertEqual(below.snapshot.phase, .unscanned)
+        XCTAssertEqual(below.primaryAction, .handOff)
+        XCTAssertTrue(below.showsBelowFloorNote)
+
+        let detector = try model(Fixture.tenancy, core: Fixture.core())
+        await detector.recognize()
+        XCTAssertEqual(detector.primaryAction, .findNames)
+        XCTAssertFalse(detector.showsBelowFloorNote)
+    }
+
+    /// An interrupted import of a file that needs no recognition reads as
+    /// an import, not as missing text recognition (ADR 0088).
+    func testAStoppedDocxImportOffersFinishImport() async throws {
+        let core = Fixture.core()
+        let docx = try core.library.importDocument(
+            .file(URL(fileURLWithPath: "/tmp/contract.docx"), .docx), title: "Contract", into: .newCase(name: "Contract"))
+        let model = DocumentViewModel(
+            session: docx, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        XCTAssertTrue(model.importNotFinished)
+        XCTAssertEqual(model.primaryAction, .finishImport)
+        await model.recognize()
+        XCTAssertFalse(model.importNotFinished)
+        XCTAssertEqual(model.primaryAction, .findNames)
+
+        let page = URL(fileURLWithPath: "/tmp/page-1.jpg")
+        let scan = try core.library.importDocument(.scan([page]), title: "Scan", into: .newCase(name: "Scan"))
+        let scanModel = DocumentViewModel(
+            session: scan, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        XCTAssertFalse(scanModel.importNotFinished)
+        XCTAssertEqual(scanModel.primaryAction, .recognize(resume: false))
     }
 
     func testPrimaryActionFollowsTheDocument() async throws {
@@ -226,6 +266,29 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(HomeViewModel.status(of: document), "Nothing found")
         document.candidateCount = 3
         XCTAssertEqual(HomeViewModel.status(of: document), "Ready to share")
+    }
+
+    /// An interrupted import reads as one; scans and photos keep the
+    /// recognition wording (ADR 0088).
+    func testStatusSaysWhenAnImportIsNotFinished() {
+        var document = DocumentSummary(
+            id: Fixture.quotation, title: "Quotation", caseID: nil, kind: .docx, phase: .recognizing,
+            pendingCount: 0, updated: .now)
+        XCTAssertEqual(HomeViewModel.status(of: document), "Import not finished")
+        document.kind = .pdf
+        XCTAssertEqual(HomeViewModel.status(of: document), "Import not finished")
+        document.kind = .scan
+        XCTAssertEqual(HomeViewModel.status(of: document), "Text not recognized yet")
+        document.kind = .image
+        XCTAssertEqual(HomeViewModel.status(of: document), "Text not recognized yet")
+    }
+
+    func testBelowTheFloorNothingWaitsForFindNames() {
+        let document = DocumentSummary(
+            id: Fixture.letter, title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
+            pendingCount: 0, updated: .now)
+        XCTAssertEqual(HomeViewModel.status(of: document), "Ready to find names")
+        XCTAssertEqual(HomeViewModel.status(of: document, findsNames: false), "Ready to mark names")
     }
 
     func testDeleteRemovesTheDocument() {

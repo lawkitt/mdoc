@@ -94,17 +94,26 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   PDF, which the core reads with OCR.
 - **Models.** `Setup` offers what the device's RAM allows; the files
   download in a background `URLSession` (Wi-Fi unless the user allows
-  cellular), and the core checks and installs each one.
+  cellular), and the core checks and installs each one. On any cellular
+  interface mdoc asks first, whatever iOS's expensive flag says; a download
+  held for Wi-Fi shows "Waiting for Wi-Fi" with Use cellular. That state
+  comes from `NWPathMonitor`: background sessions never call
+  `taskIsWaitingForConnectivity` ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
+- **Below the detector floor** there is no Find names and no detector setup
+  card: where Find names would be, the document says the device cannot find
+  names and that selecting text marks one; Settings says the same. Text
+  recognition is offered in the document that needs it and in Settings.
 - **The extension loads no model.** It restores with the library's current
   case or one the user picks.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`); every visible string goes there.
 
 UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
-in the App Group (the extension follows it), its own case key, and the
-structured rules instead of the detector, so no model is needed. The app
-imports the file in `MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
+in the App Group (the extension follows it), its own case key, and a device
+below the detector floor, so no model is needed. The app imports the file in
+`MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
 `tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
-JPEG pages as a scan) and scans it at launch. Tests that need the OCR model
+JPEG pages as a scan) and scans it at launch with the structured rules alone:
+the only such scan, which gives the review candidates without a model. Tests that need the OCR model
 download it and run only with `MDOC_OCR_TESTS=1` (the UI test also sets
 `MDOC_REAL_DOWNLOADS=1` for the app).

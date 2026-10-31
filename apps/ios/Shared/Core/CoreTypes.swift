@@ -79,6 +79,10 @@ struct CaseSummary: Identifiable, Hashable, Sendable {
 
 enum SourceKind: String, Sendable {
     case pdf, docx, image, scan, text
+
+    /// Scans and photos are read by text recognition; an interrupted import
+    /// of anything else reads as an import not finished (ADR 0088).
+    var needsRecognition: Bool { self == .scan || self == .image }
 }
 
 /// Where a document stands in the review-first flow.
@@ -293,6 +297,8 @@ enum ModelPurpose: Hashable, Sendable {
 enum ModelState: Hashable, Sendable {
     case notInstalled
     case downloading(fraction: Double)
+    /// Held by the Wi-Fi-only session on cellular or offline (ADR 0088).
+    case waitingForWiFi
     case verifying
     case installed
     case failed(String)
@@ -310,8 +316,9 @@ struct ModelOffer: Identifiable, Hashable, Sendable {
 enum DeviceTier: Hashable, Sendable {
     /// The GLiNER2 detector fits.
     case detector
-    /// Below the floor: OCR, the structured rules and manual marking.
-    case rulesOnly
+    /// Below the floor: OCR and manual marking; the app finds no names
+    /// (ADR 0088).
+    case belowFloor
 }
 
 struct SetupSnapshot: Hashable, Sendable {

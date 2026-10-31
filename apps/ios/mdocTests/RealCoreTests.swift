@@ -136,7 +136,7 @@ final class RealCoreTests: XCTestCase {
 
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
         let small = RealSetup(storage: storage, physicalMemory: 4 * Fixture.gigabyte).snapshot()
-        XCTAssertEqual(small.tier, .rulesOnly)
+        XCTAssertEqual(small.tier, .belowFloor)
         XCTAssertEqual(small.offers.map(\.purpose), [.ocr])
         let large = RealSetup(storage: storage, physicalMemory: 8 * Fixture.gigabyte).snapshot()
         XCTAssertEqual(large.tier, .detector)

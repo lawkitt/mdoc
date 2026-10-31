@@ -34,7 +34,7 @@ final class AppModel {
         self.core = core
         self.storage = storage
         jobs = LongJobRunner(background: background)
-        home = HomeViewModel(library: core.library)
+        home = HomeViewModel(library: core.library, findsNames: core.setup.snapshot().tier == .detector)
         setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, defaults: defaults)
     }
 
@@ -91,8 +91,10 @@ final class AppModel {
     }
 
     /// UI tests: import a fixture file through the core and scan it with
-    /// the structured rules, as a user's import would. A Markdown file comes
-    /// in as pasted text, and a folder of JPEG pages as a camera scan.
+    /// the structured rules, so the review has candidates without a model.
+    /// This is the only scan below the detector floor: the app itself
+    /// offers no Find names there (ADR 0088). A Markdown file comes in as
+    /// pasted text, and a folder of JPEG pages as a camera scan.
     private func seedForUITesting(_ file: URL) {
         Task {
             let title = file.deletingPathExtension().lastPathComponent
@@ -135,7 +137,9 @@ final class AppModel {
             return model
         }
         guard let session = try? core.library.session(for: id) else { return nil }
-        let model = DocumentViewModel(session: session, jobs: jobs, storage: storage) { [weak self] in
+        let model = DocumentViewModel(
+            session: session, jobs: jobs, storage: storage, findsNames: setup.snapshot.tier == .detector
+        ) { [weak self] in
             self?.home.refresh()
         }
         documents[id] = model

@@ -99,22 +99,23 @@ private final class ExpiringContinuation: BackgroundContinuation, @unchecked Sen
 @MainActor
 final class SetupViewModelTests: XCTestCase {
     private func model(
-        expensive: Bool,
+        network: FakeNetwork = FakeNetwork(.wifi),
         memory: UInt64 = 8 * Fixture.gigabyte,
-        downloadSeconds: Double = 0
+        downloadSeconds: Double = 0,
+        downloader: (any ModelDownloader)? = nil
     ) -> (SetupViewModel, UserDefaults) {
         let defaults = UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)")!
         let model = SetupViewModel(
             setup: Fixture.core(modelsInstalled: false, memory: memory).setup,
-            downloader: FakeModelDownloader(seconds: downloadSeconds),
-            network: FakeNetwork(isExpensive: expensive),
+            downloader: downloader ?? FakeModelDownloader(seconds: downloadSeconds),
+            network: network,
             jobs: LongJobRunner(background: NoBackgroundContinuation()),
             defaults: defaults)
         return (model, defaults)
     }
 
     func testWiFiDownloadsAndInstalls() async {
-        let (model, _) = model(expensive: false)
+        let (model, _) = model()
         XCTAssertTrue(model.showsCard)
         model.download()
         await model.waitForDownload()
@@ -123,8 +124,10 @@ final class SetupViewModelTests: XCTestCase {
         XCTAssertFalse(model.showsCard)
     }
 
+    /// Any cellular interface asks, whatever iOS's expensive flag says
+    /// (ADR 0088): `NetworkMonitor` reports it as `.cellular`.
     func testCellularAsksFirst() async {
-        let (model, _) = model(expensive: true)
+        let (model, _) = model(network: FakeNetwork(.cellular))
         model.download()
         XCTAssertTrue(model.asksCellular)
         XCTAssertTrue(model.snapshot.needsSetup)
@@ -134,8 +137,63 @@ final class SetupViewModelTests: XCTestCase {
         XCTAssertFalse(model.snapshot.needsSetup)
     }
 
+    func testWaitForWiFiKeepsTheWiFiSession() async {
+        let downloader = HeldDownloader()
+        let (model, _) = model(network: FakeNetwork(.cellular), downloader: downloader)
+        model.download()
+        model.answerCellular(useCellular: false)
+        while downloader.cellular.isEmpty { await Task.yield() }
+        XCTAssertEqual(downloader.cellular, [false])
+        XCTAssertTrue(model.waitsForWiFi)
+        model.cancel()
+        await model.waitForDownload()
+    }
+
+    /// A download held for Wi-Fi says so, and Use cellular asks the
+    /// question; a yes starts it again on the cellular session (ADR 0088).
+    func testWaitingForWiFiOffersCellular() async throws {
+        let network = FakeNetwork(.wifi)
+        let downloader = HeldDownloader()
+        let (model, _) = model(network: network, downloader: downloader)
+        var continued = false
+        model.download { continued = true }
+        while downloader.cellular.isEmpty { await Task.yield() }
+        XCTAssertFalse(model.waitsForWiFi)
+        let detector = try XCTUnwrap(model.snapshot.offers.first { $0.purpose == .detector })
+        XCTAssertEqual(model.state(of: detector), .downloading(fraction: 0))
+
+        network.change(to: .cellular)
+        XCTAssertTrue(model.waitsForWiFi)
+        XCTAssertEqual(model.state(of: detector), .waitingForWiFi)
+        model.askCellular()
+        XCTAssertTrue(model.asksCellular)
+        model.answerCellular(useCellular: true)
+        XCTAssertFalse(model.waitsForWiFi)
+        await model.waitForDownload()
+
+        XCTAssertEqual(downloader.cellular.first, false)
+        XCTAssertTrue(downloader.cellular.dropFirst().allSatisfy { $0 })
+        XCTAssertFalse(model.isWorking)
+        XCTAssertFalse(model.snapshot.needsSetup)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(continued)
+    }
+
+    func testOfflineWaitsForWiFi() async {
+        let downloader = HeldDownloader()
+        let (model, _) = model(network: FakeNetwork(.offline), downloader: downloader)
+        model.download()
+        XCTAssertFalse(model.asksCellular)
+        while downloader.cellular.isEmpty { await Task.yield() }
+        XCTAssertTrue(model.waitsForWiFi)
+        model.cancel()
+        await model.waitForDownload()
+        XCTAssertFalse(model.isWorking)
+        XCTAssertFalse(model.waitsForWiFi)
+    }
+
     func testDownloadAndContinueRunsTheWaitingScan() async {
-        let (model, _) = model(expensive: false)
+        let (model, _) = model()
         var continued = false
         model.download { continued = true }
         await model.waitForDownload()
@@ -143,7 +201,7 @@ final class SetupViewModelTests: XCTestCase {
     }
 
     func testCancelReturnsToARetryableState() async {
-        let (model, _) = model(expensive: false, downloadSeconds: 5)
+        let (model, _) = model(downloadSeconds: 5)
         var continued = false
         model.download { continued = true }
         XCTAssertTrue(model.isWorking)
@@ -156,16 +214,21 @@ final class SetupViewModelTests: XCTestCase {
         XCTAssertTrue(model.snapshot.offers.allSatisfy { model.state(of: $0) == .notInstalled })
     }
 
+    /// Below the floor only text recognition is offered, and Home shows no
+    /// setup card: it waits in the document that needs it (ADR 0088).
     func testCardNamesTheSizeOfWhatFits() {
-        let (large, _) = model(expensive: false)
+        let (large, _) = model()
         XCTAssertEqual(large.snapshot.missingBytes, 1_190_000_000 + 31_000_000)
-        let (small, _) = model(expensive: false, memory: 4 * Fixture.gigabyte)
-        XCTAssertEqual(small.snapshot.tier, .rulesOnly)
+        XCTAssertTrue(large.showsCard)
+        let (small, _) = model(memory: 4 * Fixture.gigabyte)
+        XCTAssertEqual(small.snapshot.tier, .belowFloor)
         XCTAssertEqual(small.snapshot.missingBytes, 31_000_000)
+        XCTAssertFalse(small.showsCard)
+        XCTAssertTrue(small.snapshot.offers.allSatisfy { $0.purpose == .ocr })
     }
 
     func testNotNowIsRemembered() {
-        let (model, defaults) = model(expensive: false)
+        let (model, defaults) = model()
         model.dismissCard()
         XCTAssertFalse(model.showsCard)
         XCTAssertTrue(defaults.bool(forKey: SetupViewModel.dismissedKey))
