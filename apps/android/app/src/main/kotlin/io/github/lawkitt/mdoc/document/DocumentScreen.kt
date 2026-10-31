@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -68,6 +70,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -95,6 +98,7 @@ import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
+import io.github.lawkitt.mdoc.home.PasteFromClipboard
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.setup.SetupController
@@ -315,13 +319,13 @@ fun DocumentScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    pane == Pane.Reply -> ReplyPane(snapshot.reply!!, onRemove = model::clearReply)
+                    pane == Pane.Reply -> Readable { ReplyPane(snapshot.reply!!, onRemove = model::clearReply) }
                     pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
                     wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
                         text(Modifier.weight(1f).fillMaxHeight())
                         OriginalView(snapshot.original, Modifier.weight(1f).fillMaxHeight())
                     }
-                    else -> text(Modifier.fillMaxSize())
+                    else -> Readable { text(Modifier.fillMaxSize()) }
                 }
             }
         }
@@ -346,7 +350,7 @@ fun DocumentScreen(
         IdentitiesSheet(snapshot.identities, onDismiss = { model.showIdentities(false) })
     }
     if (state.showsReplySheet) {
-        ReplySheet(onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
+        ReplySheet(snapshot.caseName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
     }
     state.error?.let { message ->
         AlertDialog(
@@ -362,6 +366,17 @@ fun DocumentScreen(
 private fun Notice(text: String) {
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Text(text, modifier = Modifier.padding(16.dp, 12.dp), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** About 90 characters: text that has a tablet's whole width keeps lines it can be read in. */
+private val ReadingWidth = 720.dp
+
+/** The pane at most [ReadingWidth] wide, centred; a phone is narrower anyway. */
+@Composable
+private fun Readable(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = ReadingWidth).fillMaxSize()) { content() }
     }
 }
 
@@ -392,7 +407,7 @@ private fun ActionBar(
     Surface(tonalElevation = 3.dp) {
         // Clear of the gesture bar: the bar's colour reaches the screen's edge, its buttons do not.
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp, 12.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().wrapContentWidth().widthIn(max = ReadingWidth).padding(16.dp, 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (action) {
@@ -621,11 +636,20 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
 /** Paste AI reply: restored with this document's case and kept as its reply (ADR 0078). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReplySheet(onRestore: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ReplySheet(caseName: String?, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
     var reply by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.paste_ai_reply), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            // Which names come back, as on iOS: the case's, never another's.
+            Text(
+                caseName?.let { stringResource(R.string.puts_back_case, it) } ?: stringResource(R.string.puts_back_this_case),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+            )
+            PasteFromClipboard(onPaste = { reply = it })
             OutlinedTextField(
                 value = reply,
                 onValueChange = { reply = it },
