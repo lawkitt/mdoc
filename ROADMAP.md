@@ -352,6 +352,100 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 
+Ideas from the [2026-10-31 competitor scan](docs/design/competitor-scan-2026-10-31.md),
+roughly by expected value; each needs a grill before it is promoted, and
+some reopen a Deferred or ADR decision, as noted.
+
+- **[Detection] To grill: dates of birth and other sensitive dates.** Both
+  demos send a date of birth to the AI (#301); ADR 0002 leaves "ordinary
+  dates" alone, and Settings has no Date category though the popup does.
+  Anoni and Doczilla replace dates, Privatiser dates of birth, Tonic
+  synthesizes them. Questions: detect only dates in a birth context, offer
+  Date in Categories, or shift dates by one per-case offset so intervals
+  survive and restore is exact. *From the 2026-10-31 competitor scan.*
+- **[Detection] To grill: always and never lists.** Privatiser and Occlira
+  keep user-wide words to always replace (a project codename, a deal
+  amount) and never replace (the firm's own name, courts, statutes);
+  Doczilla also masks sums and deal terms. mdoc decides per document or
+  case. Overlaps the Deferred cross-case dictionary; decide scope (user,
+  case), storage (encrypted like cases) and how the panel shows a listed
+  hit. *From the 2026-10-31 competitor scan.*
+- **[Detection] To grill: role-aware aliases from defined terms.**
+  Contracts name parties once ("(the Employer)") and then use the role; the
+  English demo replaces "Employer" as ORG_2. Deußer et al. (arXiv
+  2609.11335) find unique placeholders cost the AI little while shared
+  labels cost a lot; HAQQ argues role labels (`LENDER_1`) read better.
+  Questions: never propose a defined term, suggest a custom alias from it
+  (`EMPLOYER_1`), and measure alias styles on captured legal replies
+  against ADR 0002's category tokens. *From the 2026-10-31 competitor
+  scan.*
+- **[Integrations] To grill: a browser companion for chat pages.** Hush,
+  Caviard, Velum Lite, Privatiser and LawRider restore inside
+  chatgpt.com and claude.ai (tinted real names, hover shows the alias, a
+  toggle), and Hush scans attachments before upload. mdoc's round trip is
+  Copy for AI, then paste the reply back. Options: an extension that asks
+  mdoc (native messaging) to pseudonymize on paste and restore in page with
+  the case's mapping; or keep the shelf. Trust model as for Agent access
+  (Deferred). *From the 2026-10-31 competitor scan.*
+- **[Integrations] To grill: Word add-in.** Occlira, Legora and LEGALFLY
+  pseudonymize inside Word, Occlira with review; lawyers live in Word.
+  Weigh against the Deferred DOCX export and restore-into-DOCX: an Office
+  add-in talking to the local app could do both without rewriting the
+  file format. *From the 2026-10-31 competitor scan.*
+- **[Integrations] To grill: revisit Agent access (Deferred).** Anoni,
+  Occlira (Claude Desktop connector), Velum, anonym.plus and PII Shield now
+  ship MCP servers that hand agents only pseudonymized files. Decide
+  whether mdoc's reviewed-text-only rule can hold over MCP (serve only
+  reviewed, ready documents of a case; restore through the case) and
+  whether that comes before or after the browser companion. *From the
+  2026-10-31 competitor scan.*
+- **[Import] To grill: e-mail import.** Anoni reads e-mail; lawyers'
+  facts often arrive as `.eml` or Outlook `.msg` threads with attachments.
+  Questions: headers (From/To are personal data), quoted history,
+  attachments as separate tabs of one case. *From the 2026-10-31
+  competitor scan.*
+- **[Import] To grill: hidden content in Office files.** Hush scans DOCX
+  comments, headers, footers and deleted tracked changes; ДоксДодыр strips
+  metadata and revision history. Check what AnyDoc carries into the
+  Markdown (comments, deleted text, document properties), then decide:
+  drop, include and scan, or warn on import. A missed author name in a
+  comment is a leak the panel never shows. *From the 2026-10-31 competitor
+  scan.*
+- **[Cases] To grill: firm-managed settings.** Doczilla lets a firm make
+  pseudonymization mandatory; Harvey enforces ethical walls on every AI
+  call; Velum and Anoni keep audit logs. A managed profile (macOS
+  configuration profile, Windows policy) could lock categories, require
+  review before Copy for AI, turn off update checks and set the model.
+  Pairs with the Deferred audit journal. *From the 2026-10-31 competitor
+  scan.*
+- **[Restore] To grill: Russian case forms on restore.** ADRs 0041 and 0078
+  decided no automatic inflection, so "с PERSON_1" restores as "с Павлова
+  Марина Сергеевна". Doczilla and Amaze already match names across cases
+  on detection. Revisit as a suggestion only (the inflected form shown,
+  one click to accept), with a morphology dictionary, after measuring how
+  often captured replies put aliases in oblique cases. *From the 2026-10-31
+  competitor scan.*
+- **[Detection] To grill: the next detection language.** Rivals cover
+  7–46 languages and court a market each: Occlira German, Anoni and
+  Lexanon French, Amaze Polish. mdoc covers EN/RU. Pick by demand with the
+  Localized UI item, and price the cost: a model, identifier patterns,
+  spelling, fixtures and qualification. *From the 2026-10-31 competitor
+  scan.*
+- **[Import] To grill: spreadsheet columns.** XLSX and CSV of clients
+  (Limina and anonym.plus handle tabular data) are one name per cell;
+  "replace this whole column" with one alias per distinct value would beat
+  reviewing cells one by one. *From the 2026-10-31 competitor scan.*
+- **[Platform] To grill: Linux.** Anoni ships macOS, Windows and Linux;
+  GPUI runs on Linux. Cost: packaging, keyring (Secret Service), OCR and
+  model runtimes, CI and acceptance. *From the 2026-10-31 competitor
+  scan.*
+- **[Product] To grill: what a paid tier would hold.** Seen: €450/yr
+  (Lexanon), $159 once (Occlira), $149/yr (Velum), free plus Pro (Anoni);
+  mdoc is free under the GPL. Firm features above (managed settings, Word
+  add-in, audit) are what rivals charge for. Decide whether mdoc stays
+  free, sells support, or offers a firm edition. *From the 2026-10-31
+  competitor scan.*
+
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
