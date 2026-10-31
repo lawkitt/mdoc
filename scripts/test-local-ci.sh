@@ -116,6 +116,16 @@ check() { # description command...
     [ "$(cut -f1 "$posts" | tr '\n' ' ')" = "h1 h2 " ]
   check "with the reason" grep -q "^h1	Queued; waiting for memory pressure" "$posts"
   check "the queue keeps the posted text" [ "$(awk -F'\t' '$1 == 2 { print $10 }' <<<"$prs")" = "$(queued_text)" ]
+  # A runner that comes back tests heads the fallback holds or finished.
+  prs=$(
+    line 1 SUCCESS 2026-01-01T00:00:01Z "Hosted fallback: clippy and test (macos-26) passed; just mobile not run"
+    line 2 ERROR 2026-01-01T00:00:02Z "Hosted fallback: no hosted result after 3 dispatches; dispatch ci.yml by hand"
+    line 3 PENDING 2026-01-01T00:00:03Z "Hosted fallback: hosted CI on h3 (attempt 1); x"
+    line 4 SUCCESS 2026-01-01T00:00:04Z "Passed on main@abc in 3m00s"
+    line 6 FAILURE 2026-01-01T00:00:06Z "Failed in just test on main@abc"
+  )
+  check "fallback heads, finished or not, are queued; local results are not" \
+    [ "$(queue | cut -f1 | tr '\n' ' ')" = "1 2 3 " ]
   rm -f "$posts"
   # install keeps the machine's own settings in runner.env.
   LOCAL_CI_HOME=$(mktemp -d) port=8787

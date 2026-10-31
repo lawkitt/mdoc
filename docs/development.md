@@ -521,11 +521,15 @@ CI on 1a2b3c4 (attempt 1); …", linked to the branch's CI runs. When that
 run's `clippy` and `test` jobs for the same OS finish, it posts their result
 under the context: "Hosted fallback: clippy and test (macos-26) passed; just
 mobile not run" (hosted CI has no `just mobile`), or `failure` naming the
-job. A dispatch with no result in 25 minutes is retried, three attempts in
-all, then the context gets `error`. The merge gate does not change: a green
-fallback status counts like a local one. A runner that comes back still
-tests a head the fallback holds, and its status replaces the fallback's; the
-fallback never overwrites a status it did not post. The workflow runs
+job. A dispatch with no result in 25 minutes (cancelled or missing), or
+whose jobs are still queued after 60, is retried, three dispatches in all,
+then the context gets `error`; a retry waits while the head's hosted run is
+still going, and a newly stuck context joins that run. The merge gate does
+not change: a green fallback status counts like a local one. A runner that
+comes back queues every head with a fallback status, pending or finished,
+and its own result replaces the fallback's. The fallback writes only over
+the status it read, re-reading it right before each write, so a runner's
+result wins (a runner posting in that same second is the one window left). The workflow runs
 `main`'s script with its own token (`statuses: write`, `actions: write`) and
 never checks out PR code; the dispatched `ci.yml` run tests the branch head,
 not the merge ref, with its read-only permissions.
