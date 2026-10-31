@@ -25,7 +25,7 @@ context.
   their modules and are not listed.
 - **Keys are bindings.** A user-facing key is a bound action, not raw key
   handling, so the table can list it: the source preview's Page Up / Down,
-  Home, End and Go to Page, and the confirm dialog's Discard (⌘D / Alt+D).
+  Home, End and Go to Page, and the confirm dialog's Don't Save (⌘D / Alt+D).
   Enter and Esc inside a dialog stay its own.
 - **Shown keys.** A row shows the current platform's keys only. Alternates
   that are bound but not shown (⌘+ for Zoom in, the editor's Ctrl keys on

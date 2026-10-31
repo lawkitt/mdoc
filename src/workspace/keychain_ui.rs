@@ -364,7 +364,7 @@ impl Workspace {
                     .items_start()
                     .justify_center()
                     .pt(px(64.))
-                    .bg(gpui::hsla(0., 0., 0., 0.25))
+                    .bg(theme.scrim())
                     // A modal, like Settings: nothing behind it takes clicks.
                     .id("keychain-overlay")
                     .occlude()

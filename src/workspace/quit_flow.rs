@@ -187,9 +187,42 @@ impl QuitFlow {
     }
 }
 
+/// How many documents the Quit summary names before "and N more".
+const SUMMARY_NAMES: usize = 5;
+
+/// The Quit summary's detail (ADR 0071): the at-risk documents by name, in
+/// sidebar order, one per line, up to five, then "and N more".
+pub(super) fn summary_detail(names: &[String]) -> String {
+    let mut lines: Vec<String> = names.iter().take(SUMMARY_NAMES).cloned().collect();
+    if names.len() > SUMMARY_NAMES {
+        lines.push(format!("and {} more", names.len() - SUMMARY_NAMES));
+    }
+    format!(
+        "{}\n\nReview each one, or discard them all and quit. A mapping not saved as a \
+         case can't be recovered, so AI replies to its document can't be restored.",
+        lines.join("\n")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_summary_names_five_documents_then_counts_the_rest() {
+        let names = |n: usize| (1..=n).map(|i| format!("doc {i}.md")).collect::<Vec<_>>();
+        let lines = |n: usize| {
+            let detail = summary_detail(&names(n));
+            let list = detail.split("\n\n").next().unwrap().to_owned();
+            list.lines().map(str::to_owned).collect::<Vec<_>>()
+        };
+        assert_eq!(lines(2), ["doc 1.md", "doc 2.md"]);
+        assert_eq!(lines(5), names(5));
+        let mut seven = names(5);
+        seven.push("and 2 more".into());
+        assert_eq!(lines(7), seven);
+        assert!(summary_detail(&names(2)).ends_with("can't be restored."));
+    }
 
     #[test]
     fn a_quit_asks_each_dirty_tab_then_settles_on_the_first_active_one() {

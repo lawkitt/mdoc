@@ -1249,7 +1249,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Discard, in a save prompt",
+        "Don't Save, in a save prompt",
         &[on!(
             Dialog,
             Some(confirm_dialog::DIALOG),

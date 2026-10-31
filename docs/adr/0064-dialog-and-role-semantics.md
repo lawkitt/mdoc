@@ -1,6 +1,8 @@
 # Dialog and role semantics
 
-Status: Accepted, 2026-10-22.
+Status: Accepted, 2026-10-22. Amended 2026-11-01 (platform button order,
+filled default, scrim; [UI polish grill](../design/ui-polish-grill-2026-11-01.md)
+decision 11).
 
 ## Problem
 
@@ -29,10 +31,23 @@ mention popup's counter ("4/6") were not in the accessibility tree at all.
 - **Every platform prompt goes.** All `window.prompt` call sites (unsaved
   changes, model removal, case actions) use one shared in-app confirm dialog,
   so no dialog is titled by its level ("Warning", "Information").
+- **Platform order.** Callers list the default first; the dialog lays the
+  buttons out as the platform does. macOS: buttons that drop work (Don't
+  Save, Discard All, Close, Quit without …) at the left, then a gap, then
+  Cancel, the other choices and the default at the right (Don't Save …
+  Cancel · Save). Windows: in the caller's order, right-aligned, default
+  first and Cancel last (Save · Don't Save · Cancel). Tab follows the drawn
+  order.
+- **The default is filled** (the header's filled button, ADR 0048); the
+  others are outlined.
+- **A scrim** dims the window behind every modal dialog (confirm, Keychain
+  explainer, folder sheet, Keyboard Shortcuts) in both themes: 25% black in
+  Light, 50% in Dark, where a lighter one barely separates the dialog from
+  the editor.
 - **Unsaved changes:** "Save changes to “<tab title>”?" with Save (default,
-  Enter), Discard (⌘D / Alt+D) and Cancel (Esc). Focus starts on Save, stays
-  inside, and returns where it was on close. Enter answers Save even after a
-  click on the dialog's text.
+  Enter), Don't Save (⌘D / Alt+D) and Cancel (Esc). Focus starts on Save,
+  stays inside, and returns where it was on close. Enter answers Save even
+  after a click on the dialog's text.
 - **Counters are read and announced.** The find bar's match counter and the
   mention popup's position are text nodes whose value is words, not the
   drawn "14 / 16": "Match 14 of 16", "3 matches", "No matches", "Mention

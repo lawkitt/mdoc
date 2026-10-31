@@ -836,13 +836,13 @@ fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut Te
     cx.run_until_parked();
     assert!(cx.update(|_, cx| tabs.read(cx).tabs.contains(first) && tabs.read(cx).tabs.contains(second)));
     close_all(cx);
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     assert!(
         cx.has_pending_prompt(),
         "the second dirty member must be asked next"
     );
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     assert!(cx.update(
         |_, cx| !tabs.read(cx).tabs.contains(first) && !tabs.read(cx).tabs.contains(second)

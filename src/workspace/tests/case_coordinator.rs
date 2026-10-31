@@ -383,7 +383,13 @@ fn quitting_with_two_at_risk_tabs_summarizes_first(cx: &mut TestAppContext) {
     cx.simulate_input("draft");
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
-    assert_eq!(cx.pending_prompt().unwrap().0, summary);
+    let (message, detail) = cx.pending_prompt().unwrap();
+    assert_eq!(message, summary);
+    // It names them, in sidebar order (ADR 0071).
+    assert!(
+        detail.starts_with("contract.md\nUntitled.md\n\n"),
+        "{detail}"
+    );
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
@@ -410,7 +416,7 @@ fn quitting_with_two_at_risk_tabs_summarizes_first(cx: &mut TestAppContext) {
             .0
             .starts_with("Save changes to")
     );
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
     assert_eq!(
@@ -532,7 +538,7 @@ fn try_again_after_a_denied_quit_saves_the_case_without_resolving_a_later_quit(
             .starts_with("Save changes to")
     );
     assert_eq!(store().list().0.len(), 1);
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
 }
