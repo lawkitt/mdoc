@@ -119,6 +119,17 @@ fn draw(cx: &mut VisualTestContext) {
     });
 }
 
+/// Expand the sidebar as the user would, in a window too narrow for it to
+/// stay expanded by itself (ADR 0027).
+fn expand_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    draw(cx);
+    if !cx.update(|_, cx| tabs.read(cx).sidebar.visible()) {
+        cx.dispatch_action(ToggleSidebar);
+    }
+    draw(cx);
+    assert!(cx.update(|_, cx| tabs.read(cx).sidebar.visible()));
+}
+
 fn collapse(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, cx| {
         tabs.sidebar.restore(false, Some(false));

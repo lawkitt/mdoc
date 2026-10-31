@@ -30,7 +30,8 @@ step, but as a one-document wizard that hides editing.
    content is an inset rounded card on the slightly darker sidebar ground. With
    the sidebar collapsed the header joins the title row beside the traffic
    lights and the content gets its own card, exactly as tall as before.
-2. **Sidebar (240 px).** Search ⌘K, Home; open tabs grouped by case, each a
+2. **Sidebar (240 px**, dragged 160–320 and collapsed below a 900 pt window
+   by [ADR 0027](0027-chrome-style-vertical-sidebar.md)**).** Search ⌘K, Home; open tabs grouped by case, each a
    collapsible section (name, count; header hover shows + for a new tab in the
    case and ⋯ for Rename, Categories to detect, Close all, Delete case); tabs
    without a case under "Open". Tabs drag between sections. Foot: an update card

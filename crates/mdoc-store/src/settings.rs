@@ -301,6 +301,10 @@ pub struct GeneralConfig {
     /// is gone for good.
     #[serde(default)]
     pub shelf_drag_hint_shown: bool,
+    /// The expanded sidebar's width in points, from dragging its edge;
+    /// none: the default. The window clamps it to its range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_width: Option<u16>,
 }
 fn on() -> bool {
     true
@@ -311,6 +315,7 @@ impl Default for GeneralConfig {
             menu_bar: true,
             menu_bar_note_shown: false,
             shelf_drag_hint_shown: false,
+            sidebar_width: None,
         }
     }
 }
@@ -770,6 +775,25 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
         let loaded = load(&path).unwrap().general;
         assert!(loaded.menu_bar && loaded.shelf_drag_hint_shown);
+        assert_eq!(loaded.sidebar_width, None);
+    }
+    #[test]
+    fn a_dragged_sidebar_width_is_saved_and_absent_while_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut prefs = Preferences::default();
+        prefs.general.sidebar_width = Some(300);
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap().general.sidebar_width, Some(300));
+        // Another choice saved leaves the width out.
+        prefs.general.sidebar_width = None;
+        prefs.general.menu_bar = false;
+        save(&path, &prefs).unwrap();
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("sidebar_width")
+        );
     }
     #[test]
     fn removed_models_require_explicit_reset_without_rewriting_preferences() {
