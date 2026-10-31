@@ -1,17 +1,23 @@
 package io.github.lawkitt.mdoc.home
 
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +37,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -43,14 +50,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -124,7 +134,8 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        val inner = Modifier.padding(padding)
+        // A tablet keeps the list to a readable width, centred.
+        val inner = Modifier.padding(padding).fillMaxWidth().wrapContentWidth().widthIn(max = 720.dp)
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
@@ -261,6 +272,13 @@ fun AddSheet(
     val pasting = adding is PendingAdd.Text
     var text by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf(adding.suggestedTitle) }
+    // Until the title is typed, it follows the pasted text's first line (as on iOS).
+    var titleTyped by rememberSaveable { mutableStateOf(false) }
+    val fallback = stringResource(R.string.pasted_text)
+    fun setText(value: String) {
+        text = value
+        if (pasting && !titleTyped) title = HomeViewModel.suggestedTitle(value, fallback)
+    }
     var case by rememberSaveable { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -270,16 +288,20 @@ fun AddSheet(
                 modifier = Modifier.semantics { heading() },
             )
             if (pasting) {
+                PasteFromClipboard(onPaste = ::setText)
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = ::setText,
                     label = { Text(stringResource(R.string.paste_placeholder)) },
                     modifier = Modifier.fillMaxWidth().height(200.dp),
                 )
             }
             OutlinedTextField(
                 value = title,
-                onValueChange = { title = it },
+                onValueChange = {
+                    title = it
+                    titleTyped = true
+                },
                 label = { Text(stringResource(R.string.title)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -310,5 +332,34 @@ private fun CaseOption(label: String, case: CaseSummary?, selected: Boolean, onC
         RadioButton(selected = selected, onClick = onClick)
         case?.let { Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape)) }
         Text(label, modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * iOS's paste button: the clipboard's text into the field in one tap.
+ * Offered only while the clipboard holds text; its description is read
+ * without reading the text, so Android shows no paste notice until the tap.
+ */
+@Composable
+fun PasteFromClipboard(onPaste: (String) -> Unit) {
+    val context = LocalContext.current
+    val clipboard = remember { context.getSystemService(ClipboardManager::class.java) }
+    fun holdsText() = clipboard.primaryClipDescription?.let {
+        it.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) || it.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
+    } == true
+    var hasText by remember { mutableStateOf(holdsText()) }
+    // Text copied while the sheet is open turns the button on.
+    DisposableEffect(clipboard) {
+        val listener = ClipboardManager.OnPrimaryClipChangedListener { hasText = holdsText() }
+        clipboard.addPrimaryClipChangedListener(listener)
+        onDispose { clipboard.removePrimaryClipChangedListener(listener) }
+    }
+    FilledTonalButton(
+        onClick = { clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.let(onPaste) },
+        enabled = hasText,
+    ) {
+        Icon(painterResource(R.drawable.ic_content_paste), contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.paste))
     }
 }

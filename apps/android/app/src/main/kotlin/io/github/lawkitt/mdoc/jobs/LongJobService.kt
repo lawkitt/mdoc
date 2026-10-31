@@ -63,7 +63,7 @@ class LongJobService : Service() {
             this, 1, Intent(this, LongJobService::class.java).setAction(ACTION_CANCEL), PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setProgress(0, 0, true)
             .setOngoing(true)

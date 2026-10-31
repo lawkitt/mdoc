@@ -142,6 +142,13 @@ class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
     }
 
     companion object {
+        /**
+         * A pasted text's title: its first line without Markdown's heading
+         * marks, at most 60 characters, as on iOS.
+         */
+        fun suggestedTitle(text: String, fallback: String): String =
+            text.trim().lineSequence().firstOrNull().orEmpty().trim('#', ' ').take(60).trim().ifEmpty { fallback }
+
         /** What a picked file is, by its extension: mdoc opens PDF, DOCX and images. */
         fun kindOf(file: File): SourceKind? = when (file.extension.lowercase()) {
             "pdf" -> SourceKind.Pdf

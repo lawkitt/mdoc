@@ -119,6 +119,8 @@
     <string name="paste_another_reply">Paste another reply</string>
     <string name="paste_ai_reply">Paste AI reply</string>
     <string name="ai_reply">AI reply</string>
+    <string name="puts_back_case">mdoc puts back the names from the case “%1$s”.</string>
+    <string name="puts_back_this_case">mdoc puts back the names from this document\'s case.</string>
     <string name="restore">Restore</string>
     <string name="copy_reply">Copy reply</string>
     <string name="share_reply">Share reply</string>
