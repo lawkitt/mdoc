@@ -1,7 +1,7 @@
 //! One shelf row (ADR 0084): the title without `.md`, the case as a tinted
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
-//! meta line "5 min ago · 1,297 words · 14 replaced". A row that is not
+//! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
 //! ready starts its meta line with its state, so the title keeps its room.
 
 use super::ShelfView;
@@ -89,8 +89,8 @@ fn category_noun(category: Category, count: usize) -> &'static str {
     match category {
         Category::Person if one => "person",
         Category::Person => "people",
-        Category::Organization if one => "organisation",
-        Category::Organization => "organisations",
+        Category::Organization if one => "organization",
+        Category::Organization => "organizations",
         Category::Email if one => "email",
         Category::Email => "emails",
         Category::Phone if one => "phone number",
@@ -109,13 +109,19 @@ fn category_noun(category: Category, count: usize) -> &'static str {
     }
 }
 
-/// What hovering "14 replaced" lists: "6 people · 4 organisations · 4 IDs".
+/// What hovering "24 replaced" lists: the distinct names those mentions
+/// are, "14 names: 6 people · 4 organizations · 4 IDs".
 pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
-    replaced
+    let names: usize = replaced.iter().map(|(_, n)| n).sum();
+    let categories = replaced
         .iter()
         .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)))
         .collect::<Vec<_>>()
-        .join(" · ")
+        .join(" · ");
+    match names {
+        1 => format!("1 name: {categories}"),
+        n => format!("{n} names: {categories}"),
+    }
 }
 
 /// What VoiceOver reads for a row: "<title>, <case>, ready".
@@ -442,10 +448,33 @@ impl ShelfView {
         );
         let replaced = document.replaced_count();
         let count = (ready && replaced > 0).then(|| {
-            div()
+            let count = div()
                 .id(("shelf-replaced", index))
                 .child(format!("{replaced} replaced"))
-                .tooltip(style::tooltip(breakdown(&document.replaced), theme))
+                .tooltip(style::tooltip(breakdown(&document.replaced), theme));
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
+            let count = {
+                let counts = self.counts.clone();
+                count.relative().child(
+                    gpui::canvas(
+                        move |bounds, _, _| {
+                            let mut counts = counts.borrow_mut();
+                            counts.retain(|(row, _)| *row != index);
+                            counts.push((index, bounds));
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
+            };
+            count
         });
         if count.is_some() {
             meta.push_str(" · ");
@@ -543,9 +572,9 @@ mod tests {
                 (Category::Organization, 4),
                 (Category::Identity, 4)
             ]),
-            "6 people · 4 organisations · 4 IDs"
+            "14 names: 6 people · 4 organizations · 4 IDs"
         );
-        assert_eq!(breakdown(&[(Category::Person, 1)]), "1 person");
+        assert_eq!(breakdown(&[(Category::Person, 1)]), "1 name: 1 person");
     }
 
     /// GUI run of #280: bold and chips wrap wider than plain text, so the

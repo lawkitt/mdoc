@@ -64,7 +64,9 @@ fn a_ready_tab_copies_the_editor_text_and_previews_aliases() {
         row.replaced,
         [(Category::Person, 1), (Category::Organization, 1)]
     );
-    assert_eq!(row.replaced_count(), 2);
+    // PERSON_1 twice and ORG_1: three mentions of two names (#304).
+    assert_eq!(row.replaced_count(), 3);
+    assert_eq!(row.names_count(), 2);
     assert_eq!(row.words, 9, "Markdown markers are not words");
     assert_eq!(row.file_name(), "PERSON_1.md");
     assert_eq!(
@@ -486,13 +488,22 @@ fn a_preview_never_shows_an_original_even_one_the_syntax_split() {
     }
 }
 
+/// #304: "N replaced" counts mentions, as the editor's Share tab does; its
+/// hover breaks the distinct names down by category, each once.
 #[test]
-fn replaced_counts_distinct_names_by_category_once_each() {
-    let mut open = tab(1, "a.md", "PERSON_1 met ORG_1, then PERSON_1 left.", 0);
+fn replaced_counts_mentions_and_its_breakdown_distinct_names() {
+    let mut open = tab(
+        1,
+        "a.md",
+        "PERSON_1 met ORG_1, then PERSON_1 left. PERSON_9 is no one's.",
+        0,
+    );
     // The case lists the same person again.
     open.names
         .push(identity("PERSON_1", Category::Person, &["Anna Petrova"]));
     let row = ShelfDocument::of_tab(open).unwrap();
+    assert_eq!(row.replaced_count(), 3, "an unknown token is no mention");
+    assert_eq!(row.names_count(), 2);
     assert_eq!(
         row.replaced,
         [(Category::Person, 1), (Category::Organization, 1)]
