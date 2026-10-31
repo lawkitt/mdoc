@@ -35,6 +35,8 @@
     <string name="case_explanation">A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.</string>
     <string name="pasted_text">Pasted text</string>
     <string name="photo">Photo</string>
+    <string name="add_page">Add page</string>
+    <string name="pages_scanned">%1$d pages scanned.</string>
     <string name="opens_files">mdoc opens PDF, DOCX and image files.</string>
     <string name="could_not_open">mdoc could not open this file: %1$s</string>
     <string name="cancel">Cancel</string>
@@ -76,6 +78,7 @@
     <string name="replace_ellipsis">Replace…</string>
     <string name="keep">Keep</string>
     <string name="keep_all">Keep all</string>
+    <string name="next_proposal">Next proposal</string>
     <string name="apply_to">Apply to</string>
     <string name="all_occurrences">All %1$d occurrences</string>
     <string name="just_this_one">Just this one</string>
@@ -114,6 +117,7 @@
     <string name="copied_for_ai">Copied for AI</string>
     <string name="paste_reply">Paste reply</string>
     <string name="paste_ai_reply">Paste AI reply</string>
+    <string name="ai_reply">AI reply</string>
     <string name="restore">Restore</string>
     <string name="copy_reply">Copy reply</string>
     <string name="share_reply">Share reply</string>

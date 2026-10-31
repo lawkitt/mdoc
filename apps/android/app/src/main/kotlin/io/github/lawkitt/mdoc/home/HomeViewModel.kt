@@ -1,5 +1,8 @@
 package io.github.lawkitt.mdoc.home
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,48 +10,170 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.lawkitt.mdoc.MdocApplication
 import io.github.lawkitt.mdoc.core.AppCore
+import io.github.lawkitt.mdoc.core.CaseChoice
+import io.github.lawkitt.mdoc.core.CaseSummary
+import io.github.lawkitt.mdoc.core.DocumentId
+import io.github.lawkitt.mdoc.core.DocumentPhase
+import io.github.lawkitt.mdoc.core.DocumentSummary
+import io.github.lawkitt.mdoc.core.ImportSource
+import io.github.lawkitt.mdoc.core.SourceKind
+import io.github.lawkitt.mdoc.storage.MdocStorage
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import uniffi.mdoc_ffi.ModelId
+import kotlinx.coroutines.withContext
+
+/** What the add sheet is adding. */
+sealed interface PendingAdd {
+    val suggestedTitle: String
+
+    data class Text(override val suggestedTitle: String) : PendingAdd
+
+    data class Received(val source: ImportSource, override val suggestedTitle: String) : PendingAdd
+}
 
 /** Home's view state, built from the core's snapshots. */
 data class HomeState(
-    val rows: List<HomeRow> = emptyList(),
+    val documents: List<DocumentSummary> = emptyList(),
+    val cases: List<CaseSummary> = emptyList(),
     /** Above the detector floor: Find names is offered (ADR 0088, 0089). */
     val canFindNames: Boolean = true,
     /** The library has been read at least once. */
     val loaded: Boolean = false,
     val error: String? = null,
+    val adding: PendingAdd? = null,
+    /** A file mdoc could not take. */
+    val refused: String? = null,
 )
 
 class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
-    // A core that failed to open is retried on the next refresh.
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
 
-    /** Reads the library off the main thread. */
+    /** Reads the library off the main thread; a core that failed to open is tried again. */
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            mutable.value = runCatching {
+            val next = runCatching {
                 val core = core()
+                val library = core.documents.snapshot()
                 HomeState(
-                    rows = core.library.documents()
-                        .sortedByDescending { it.modified }
-                        .map { HomeRow(path = it.path, title = it.title) },
-                    canFindNames = core.setup.catalog()
-                        .any { it.id == ModelId.GLINER2_FP16 && it.offered },
+                    documents = library.documents,
+                    cases = library.cases,
+                    canFindNames = core.models.snapshot().detector != null,
                     loaded = true,
                 )
             }.getOrElse { HomeState(loaded = true, error = it.message ?: it.toString()) }
+            mutable.update { next.copy(adding = it.adding, refused = it.refused) }
         }
     }
 
+    fun startPaste(title: String) = mutable.update { it.copy(adding = PendingAdd.Text(title)) }
+
+    /** Copies picked files into mdoc's storage, then asks for a title and case. */
+    fun received(resolver: ContentResolver, uris: List<Uri>, kind: SourceKind?, fallbackTitle: String) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val storage = core().storage
+                    val folder = File(storage.dir(MdocStorage.Area.Originals), java.util.UUID.randomUUID().toString()).apply { mkdirs() }
+                    val files = uris.map { uri ->
+                        val name = displayName(resolver, uri) ?: "${fallbackTitle}.${extension(resolver, uri)}"
+                        val target = File(folder, MdocStorage.safeFileName(name))
+                        checkNotNull(resolver.openInputStream(uri)).use { input -> target.outputStream().use(input::copyTo) }
+                        target
+                    }
+                    val first = files.first()
+                    val detected = kind ?: kindOf(first) ?: error(first.name)
+                    val source = if (detected == SourceKind.Image || detected == SourceKind.Scan) {
+                        ImportSource.Pages(files, detected)
+                    } else {
+                        ImportSource.File(first, detected)
+                    }
+                    PendingAdd.Received(source, first.nameWithoutExtension.ifEmpty { fallbackTitle })
+                }
+            }
+            outcome.onSuccess { add -> mutable.update { it.copy(adding = add) } }
+                .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+        }
+    }
+
+    /** Camera pages already in mdoc's storage. */
+    fun scanned(pages: List<File>, title: String) {
+        if (pages.isNotEmpty()) mutable.update { it.copy(adding = PendingAdd.Received(ImportSource.Pages(pages, SourceKind.Scan), title)) }
+    }
+
+    fun cancelAdd() = mutable.update { it.copy(adding = null) }
+
+    fun refusalShown() = mutable.update { it.copy(refused = null) }
+
+    /** Stores the document in its case and returns its id; the caller opens it and reads it. */
+    suspend fun add(text: String?, title: String, case: CaseChoice): DocumentId? {
+        val adding = mutable.value.adding ?: return null
+        val source = when (adding) {
+            is PendingAdd.Text -> ImportSource.Text(text.orEmpty())
+            is PendingAdd.Received -> adding.source
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching { core().documents.importDocument(source, title, case).id }
+                .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+                .getOrNull()
+        }.also {
+            mutable.update { it.copy(adding = null) }
+            refresh()
+        }
+    }
+
+    private fun displayName(resolver: ContentResolver, uri: Uri): String? =
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+
+    private fun extension(resolver: ContentResolver, uri: Uri): String = when (resolver.getType(uri)) {
+        "application/pdf" -> "pdf"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
+        "image/png" -> "png"
+        else -> "jpg"
+    }
+
     companion object {
+        /** What a picked file is, by its extension: mdoc opens PDF, DOCX and images. */
+        fun kindOf(file: File): SourceKind? = when (file.extension.lowercase()) {
+            "pdf" -> SourceKind.Pdf
+            "docx" -> SourceKind.Docx
+            "jpg", "jpeg", "png", "heic", "heif", "webp" -> SourceKind.Image
+            else -> null
+        }
+
         fun factory(app: MdocApplication): ViewModelProvider.Factory = viewModelFactory {
             initializer { HomeViewModel { app.core } }
         }
+
+        /** The status line under a document's title. */
+        fun status(document: DocumentSummary, canFindNames: Boolean): StatusLine = when (document.phase) {
+            DocumentPhase.Recognizing ->
+                if (document.kind.needsRecognition) StatusLine.NotRecognized else StatusLine.ImportNotFinished
+            DocumentPhase.Unscanned -> if (canFindNames) StatusLine.ReadyToFind else StatusLine.ReadyToMark
+            DocumentPhase.Reviewing -> StatusLine.ToReview(document.pendingCount)
+            DocumentPhase.Ready -> StatusLine.ReadyToShare
+        }
     }
+}
+
+sealed interface StatusLine {
+    data object NotRecognized : StatusLine
+
+    data object ImportNotFinished : StatusLine
+
+    data object ReadyToFind : StatusLine
+
+    data object ReadyToMark : StatusLine
+
+    data class ToReview(val count: Int) : StatusLine
+
+    data object ReadyToShare : StatusLine
 }

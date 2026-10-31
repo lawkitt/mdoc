@@ -5,9 +5,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import io.github.lawkitt.mdoc.home.HomeScreen
+import io.github.lawkitt.mdoc.home.HomeState
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppCore
+import io.github.lawkitt.mdoc.core.CaseChoice
+import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.storage.KeystoreCaseKeyStore
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
@@ -28,17 +31,23 @@ class ScaffoldTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun homeOpensOnTheCore() {
-        // The app's own library is empty on a fresh install; it shows once read.
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("No documents yet").fetchSemanticsNodes().isNotEmpty()
-        }
+    fun homeListsTheLibrary() {
+        val title = "Listed ${System.nanoTime()}"
+        val app = context.applicationContext as MdocApplication
+        app.core.documents.importDocument(ImportSource.Text("A short note."), title, CaseChoice.New(title))
+        compose.activityRule.scenario.onActivity { it.recreate() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
     fun aLibraryThatFailsToOpenSaysSo() {
         compose.activity.setContent {
-            HomeScreen(rows = emptyList(), canFindNames = true, error = "The stored case key is damaged.")
+            HomeScreen(
+                state = HomeState(loaded = true, error = "The stored case key is damaged."),
+                onOpen = {},
+                onAdd = {},
+                onRetry = {},
+            )
         }
         compose.onNodeWithText("mdoc could not open its documents").assertExists()
         compose.onNodeWithText("The stored case key is damaged.").assertExists()
