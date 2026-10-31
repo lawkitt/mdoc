@@ -104,12 +104,6 @@ changes merge when green and leave desktop and iOS unchanged. Record:
 [Android grill](docs/design/android-grill-2026-10-31.md), whose
 Maintainer actions list the steps on the maintainer's side.
 
-1. **[Android] Toolchain on Windows.** Pinned SDK, NDK r29, Temurin 21 and
-   Gradle wrapper; `scripts/build-android-core.sh` with ONNX Runtime 1.27.0
-   and PDFium 7988; `just android-core`. *Done when:* on a fresh checkout
-   on `windows`, `just android-core` writes both ABIs and the Kotlin
-   bindings to `target/android/`, every download verified and every `.so`
-   16 KB aligned.
 2. **[Android] Feasibility spike.** `tools/android-spike` and
    `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
    or more. *Done when:* each row has pass or fail
