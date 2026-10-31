@@ -475,9 +475,9 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
 }
 
 /// Settings › General › "Show mdoc in the menu bar" (ADR 0084): macOS
-/// only, off by default, saved on change.
+/// only, on by default, saved on change.
 #[gpui::test]
-fn the_menu_bar_switch_is_off_by_default_and_saves_at_once(cx: &mut TestAppContext) {
+fn the_menu_bar_switch_is_on_by_default_and_saves_at_once(cx: &mut TestAppContext) {
     let shared = Store::in_memory();
     let (panel, cx) = cx.add_window_view(|_, cx| {
         Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
@@ -493,10 +493,10 @@ fn the_menu_bar_switch_is_off_by_default_and_saves_at_once(cx: &mut TestAppConte
         assert!(switch.is_none(), "no tray outside macOS yet");
         return;
     }
-    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
     cx.simulate_click(switch.unwrap().center(), gpui::Modifiers::none());
     cx.run_until_parked();
-    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
 }
 
 #[gpui::test]
@@ -722,7 +722,10 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
     custom.updates.check_automatically = false;
     custom.cases.ask_before_closing = false;
     custom.categories.set(mdoc_pii::Category::Person, false);
-    custom.general.menu_bar = true;
+    custom.general.menu_bar = false;
+    // Notes already seen stay seen through a reset.
+    custom.general.menu_bar_note_shown = true;
+    custom.general.shelf_drag_hint_shown = true;
     for category in Category::ALL {
         shared.borrow_mut().current = Some(custom.clone());
         let (panel, cx) = cx.add_window_view(|_, cx| {
@@ -738,7 +741,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
         match category {
             Category::General => {
                 expected.updates = defaults.updates;
-                expected.general = defaults.general;
+                expected.general.menu_bar = defaults.general.menu_bar;
             }
             Category::Detection => {
                 expected.pseudonymization = defaults.pseudonymization;
@@ -935,6 +938,84 @@ fn resetting_another_category_preserves_number_text_and_its_error(cx: &mut TestA
         assert_eq!(p.threshold.read(cx).value(), "0.5");
         assert!(p.number_errors[0].is_none());
     });
+}
+
+/// Review of #280: a shelf flag saved while a panel save is in flight
+/// survives that save's completion, and keeps the choices it was saving,
+/// the menu bar switch among them.
+#[gpui::test]
+fn a_shelf_flag_saved_during_a_panel_save_survives_it(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    // A General reset is among the choices saving: it resets the theme.
+    let reset = Rc::new(Cell::new(false));
+    cx.update(|_, cx| {
+        let reset = reset.clone();
+        cx.subscribe(&panel, move |_, event: &Event, _| {
+            if matches!(event, Event::ThemeSelected(ThemeChoice::System)) {
+                reset.set(true);
+            }
+        })
+        .detach()
+    });
+    panel.update(cx, |p, cx| {
+        hold_next_save(p, cx);
+        p.draft.updates.check_automatically = false;
+        p.draft.general.menu_bar = false;
+        p.reset_theme = Some(p.theme_revision);
+        p.persist(cx);
+    });
+    // The shelf records its note while that save waits, from preferences
+    // that still have the switch on; as `Workspace::update_general`, it is
+    // a later write.
+    let note =
+        |general: &mut mdoc_store::settings::GeneralConfig| general.menu_bar_note_shown = true;
+    mdoc_store::settings::next_write();
+    note(&mut shared.borrow_mut().current.as_mut().unwrap().general);
+    panel.update(cx, |p, cx| p.general_changed(note, cx));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    let saved = shared.borrow().snapshot().unwrap();
+    assert!(saved.general.menu_bar_note_shown);
+    assert!(!saved.general.menu_bar, "the switch-off is not undone");
+    assert!(!saved.updates.check_automatically);
+    assert!(reset.get(), "the reset's theme change is not lost");
+}
+
+/// Review of #280: a Settings save that a shelf note's save overtook
+/// publishes nothing, so even when the save after it fails, the older
+/// choice (the menu bar switch on) never comes back.
+#[gpui::test]
+fn an_overtaken_settings_save_never_brings_an_older_choice_back(cx: &mut TestAppContext) {
+    use mdoc_store::settings::{GeneralConfig, load, next_write, save_in_order};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let shared = Store::in_memory();
+    shared.borrow_mut().path = Some(path.clone());
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    panel.update(cx, |p, cx| {
+        hold_next_save(p, cx);
+        p.draft.updates.check_automatically = false;
+        p.persist(cx);
+    });
+    // The note's Quit when windows close, as `Workspace::update_general`.
+    let off = |general: &mut GeneralConfig| general.menu_bar = false;
+    let mut changed = shared.borrow().current.clone().unwrap();
+    off(&mut changed.general);
+    assert!(save_in_order(&path, &changed, next_write()).unwrap());
+    shared.borrow_mut().current = Some(changed);
+    panel.update(cx, |p, cx| p.general_changed(off, cx));
+    // The save after the overtaken one fails.
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(blocked.join("settings.json"));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+    panel.update(cx, |p, _| assert!(!p.draft.general.menu_bar));
+    assert!(!load(&path).unwrap().general.menu_bar, "on disk too");
 }
 
 fn hold_next_save(panel: &mut Panel, cx: &mut Context<Panel>) {

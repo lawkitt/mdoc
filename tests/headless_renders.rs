@@ -188,24 +188,55 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}: live merge hint"
                 );
             }
-            // The shelf (ADR 0084): only ready rows copy or drag; locked
-            // cases hide closed members and ask to unlock.
-            if name.starts_with("shelf") {
-                let rows = |r: &Value| r["state"]["rows"].as_array().unwrap().len();
+            // The shelf (ADR 0084): only ready rows copy or drag and show a
+            // preview, of prose without Markdown syntax or an original;
+            // locked cases hide closed members and ask to unlock.
+            if name.starts_with("shelf") && *name != "shelf-note" {
+                let state = &record["state"];
+                let rows = state["rows"].as_array().unwrap();
+                let states: Vec<_> = rows.iter().map(|r| r["state"].clone()).collect();
                 match *name {
-                    "shelf" => assert_eq!(
-                        record["state"]["rows"],
-                        serde_json::json!(["ready", "2 left to review", "Changed since review"]),
+                    "shelf" | "shelf-copied" => assert_eq!(
+                        states,
+                        ["ready", "ready", "2 left to review", "Changed since review"],
                         "{theme}/{name}"
                     ),
-                    "shelf-empty" => assert_eq!(rows(record), 0, "{theme}/{name}"),
-                    "shelf-locked" => assert_eq!(rows(record), 2, "{theme}/{name}"),
+                    "shelf-empty" => assert!(rows.is_empty(), "{theme}/{name}"),
+                    "shelf-locked" => assert_eq!(rows.len(), 3, "{theme}/{name}"),
                     _ => {}
                 }
+                for row in rows {
+                    let title = row["title"].as_str().unwrap();
+                    assert!(!title.ends_with(".md"), "{theme}/{name}: {title}");
+                    match row["preview"].as_str() {
+                        Some(preview) => {
+                            assert_eq!(row["state"], "ready", "{theme}/{name}");
+                            for hidden in ["**", "_notice_", "#", "Page 1", "Anna", "Northwind"] {
+                                assert!(!preview.contains(hidden), "{theme}/{name}: {preview}");
+                            }
+                        }
+                        None => assert_ne!(row["state"], "ready", "{theme}/{name}"),
+                    }
+                }
                 assert_eq!(
-                    record["state"]["clipboard_locked"],
+                    state["copied"],
+                    if *name == "shelf-copied" {
+                        serde_json::json!(0)
+                    } else {
+                        Value::Null
+                    },
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    state["clipboard_locked"],
                     *name == "shelf-locked",
                     "{theme}/{name}"
+                );
+            }
+            if *name == "shelf-note" {
+                assert_eq!(
+                    record["state"]["title"], "mdoc is still in the menu bar.",
+                    "{theme}"
                 );
             }
             if *name != "model-comparison" && !name.starts_with("shelf") {

@@ -198,7 +198,12 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         }
         // What the shelf shows is handed to anyone watching the screen.
         handed.push(row.title.clone());
+        handed.extend(row.case_label.clone());
         handed.extend(row.preview.iter().map(|line| line.text.clone()));
+        // The drag card shows under the pointer, in other apps too.
+        let card = row.drag_card();
+        assert_eq!(card.is_some(), row.readiness.is_ready(), "{:?}", row.key);
+        handed.extend(card.into_iter().flat_map(|(title, line)| [title, line]));
         handed.extend(copied);
     }
     assert!(handed.iter().any(|h| h == "PERSON_1 contract.md"));
@@ -435,13 +440,18 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
             crate::shelf_ui::row_label(&view.content().documents[pending_row])
         })
         .unwrap();
-    assert_eq!(label, "memo.md, Anna Petrova contract, 1 left to review");
+    // The case is named after its first document: masked too.
+    assert_eq!(label, "memo, PERSON_1 contract, 1 left to review");
+    let names_from = shelf
+        .read_with(cx, |view, _| view.source_line().unwrap())
+        .unwrap();
+    assert!(!names_from.contains("Anna"), "{names_from}");
 
     // Not ready: no copy, no drag.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
     shelf
         .update(cx, |view, window, cx| {
-            view.copy(pending_row, cx);
+            view.copy(pending_row, window, cx);
             view.drag(pending_row, window, cx);
             assert!(view.dragged.is_none());
         })
@@ -451,7 +461,7 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
     // Ready: the editor's Copy for AI bytes, on the clipboard and in a drag.
     shelf
         .update(cx, |view, window, cx| {
-            view.copy(ready_row, cx);
+            view.copy(ready_row, window, cx);
             view.drag(ready_row, window, cx);
         })
         .unwrap();
@@ -614,7 +624,8 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
             seen.push(now);
         }
     }
-    // 2 rows, 2 Copy for AI, Show all, 2 clipboard rows, 2 pickers, Quit.
+    // 2 rows, 2 Copy for AI, 2 clipboard buttons, the ▾, Open mdoc,
+    // Settings and Quit.
     assert!(seen.len() >= 10, "{} stops", seen.len());
 
     // The picker takes focus, ↑↓ move in it, Esc gives focus back to the ▾
@@ -622,7 +633,7 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
     let before = focus(&mut shelf_cx);
     shelf
         .update(&mut shelf_cx, |view, window, cx| {
-            view.toggle_picker(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+            view.toggle_picker(window, cx)
         })
         .unwrap();
     draw(&mut shelf_cx);
@@ -642,4 +653,260 @@ fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAp
             .read_with(&shelf_cx, |view, _| view.content().source.is_some())
             .unwrap()
     );
+}
+
+/// Polish (ADR 0084): ⌘1–⌘8 copy that row for AI, ✓ "Copied" shows and
+/// the shelf closes after about 0.8 s; a clipboard result shows on the
+/// source line for a few seconds; the first drag retires the drag hint for
+/// good, recorded in settings.
+#[gpui::test]
+fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let cased = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd about the lease renewal terms.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    save(&tabs, cased, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
+    cx.run_until_parked();
+    open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Clara Moss wrote to the landlord about the deposit.",
+        &[("Clara Moss", Person)],
+    );
+    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    let shelf = open_shelf(cx);
+    let open = |shelf: gpui::WindowHandle<crate::shelf_ui::ShelfView>,
+                cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            cx.windows()
+                .iter()
+                .any(|w| w.window_id() == shelf.window_id())
+        })
+    };
+    let (second, hint) = shelf
+        .read_with(cx, |view, _| {
+            let content = view.content();
+            assert!(content.documents.iter().all(|d| d.preview.is_some()));
+            (
+                content.documents[1].text_for_ai().unwrap().to_string(),
+                content.drag_hint,
+            )
+        })
+        .unwrap();
+    assert!(hint, "the hint shows before the first drag");
+    // A tab without a case is named without `.md` (GUI run of #280).
+    let sources = shelf
+        .read_with(cx, |view, _| view.content().sources.clone())
+        .unwrap();
+    assert!(
+        sources.iter().any(
+            |s| matches!(s, crate::workspace::ClipboardSource::Tab { title, .. } if title == "b")
+        ),
+        "{sources:?}"
+    );
+
+    // ⌘1–⌘8 are bound on macOS, where the shelf exists; elsewhere the
+    // action itself runs.
+    let copy_row = |row: usize, cx: &mut VisualTestContext| {
+        if cfg!(target_os = "macos") {
+            cx.simulate_keystrokes(&format!("cmd-{row}"));
+        } else {
+            cx.dispatch_action(crate::shelf_ui::ShelfCopyRow(row));
+        }
+    };
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    copy_row(2, &mut shelf_cx);
+    assert_eq!(
+        shelf_cx.read_from_clipboard().unwrap().text().unwrap(),
+        second
+    );
+    assert_eq!(
+        shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
+        Some(1)
+    );
+    assert!(open(shelf, cx), "Copied shows first");
+    cx.executor().advance_clock(crate::shelf_ui::COPIED_FOR);
+    cx.run_until_parked();
+    assert!(!open(shelf, cx), "then the shelf closes");
+
+    // A clipboard result stays a few seconds, then the source returns.
+    let shelf = open_shelf(cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "PERSON_1 called ORG_1.".into(),
+    ));
+    let source = shelf
+        .read_with(cx, |view, _| view.source_line().unwrap())
+        .unwrap();
+    assert!(source.starts_with("Names from "), "{source}");
+    shelf
+        .update(cx, |view, window, cx| {
+            view.clipboard(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+        })
+        .unwrap();
+    let line = |cx: &mut VisualTestContext| {
+        shelf
+            .read_with(cx, |view, _| view.source_line().unwrap())
+            .unwrap()
+    };
+    assert!(
+        line(cx).ends_with(" restored · 0 unrecognised"),
+        "{}",
+        line(cx)
+    );
+    cx.executor().advance_clock(crate::shelf_ui::RESULT_FOR);
+    cx.run_until_parked();
+    assert_eq!(line(cx), source);
+
+    // ⌘9 is no row. A drag shows the row's card; a cancelled one keeps the
+    // hint, and the first drop retires it for good.
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    copy_row(9, &mut shelf_cx);
+    assert_eq!(
+        shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
+        None
+    );
+    let hint = |cx: &mut VisualTestContext| {
+        shelf
+            .read_with(cx, |view, _| view.content().drag_hint)
+            .unwrap()
+    };
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            let card = view.dragged_card.clone().unwrap();
+            assert_eq!(Some(card), view.content().documents[0].drag_card());
+            view.drag_ended(false, cx);
+        })
+        .unwrap();
+    assert!(hint(cx), "a cancelled drag keeps the hint");
+    assert!(!cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
+    // Released over the shelf itself (GUI run of #280): AppKit reports a
+    // drop, but nothing left mdoc. (The shelf's drop handler calls
+    // `dropped_on_shelf`; the native event is a GUI check.)
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.dropped_on_shelf();
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    assert!(hint(cx), "a drop on the shelf keeps the hint");
+    assert!(!cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    assert!(!hint(cx));
+    assert!(cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
+    shelf
+        .update(cx, |_, window, _| window.remove_window())
+        .unwrap();
+    let again = open_shelf(cx);
+    assert!(
+        !again
+            .read_with(cx, |view, _| view.content().drag_hint)
+            .unwrap()
+    );
+}
+
+/// GUI run of #280: the popup follows its content's measured height, the
+/// picker and a retired hint included, never past the room under the item.
+#[gpui::test]
+fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let cased = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd about the lease renewal terms.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    save(&tabs, cased, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
+    cx.run_until_parked();
+    open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Clara Moss wrote to the landlord about the deposit.",
+        &[("Clara Moss", Person)],
+    );
+    let shelf = open_shelf(cx);
+    let estimate = shelf
+        .update(cx, |view, _, _| {
+            let estimate = view.content().height();
+            view.fit_to_screen(estimate, 10_000.);
+            estimate
+        })
+        .unwrap();
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    let asked = |cx: &mut VisualTestContext| {
+        draw(cx);
+        cx.run_until_parked();
+        shelf
+            .read_with(cx, |view, _| view.fit().unwrap().asked())
+            .unwrap()
+    };
+    let full = asked(&mut shelf_cx);
+    assert!(
+        (full - estimate).abs() <= 1.,
+        "measured {full}, estimated {estimate}"
+    );
+
+    // The picker replaces the list; closing it brings the list back.
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.toggle_picker(window, cx)
+        })
+        .unwrap();
+    let picking = asked(&mut shelf_cx);
+    assert!(picking < full, "{picking} < {full}");
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.toggle_picker(window, cx)
+        })
+        .unwrap();
+    assert_eq!(asked(&mut shelf_cx), full);
+
+    // A retired hint gives its row back.
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    let without_hint = asked(&mut shelf_cx);
+    assert!(without_hint < full, "{without_hint} < {full}");
+
+    // Never past the room under the item: the shelf scrolls instead.
+    shelf
+        .update(&mut shelf_cx, |view, _, _| view.fit_to_screen(full, 120.))
+        .unwrap();
+    assert_eq!(asked(&mut shelf_cx), 120.);
 }

@@ -80,9 +80,19 @@ green and leave desktop unchanged. Record:
    survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
    *Done when:* the after survey sits beside the before set and P12, P13
    and P16 pass in the Simulator.
-3. **[Mobile] Device UI tests.** *From the device grill.* `just
-   ios-device-test <udid>` runs the review flow and the long-jobs test on a
-   connected iPhone. *Done when:* it passes on the iPhone 17 Pro.
+3. **[Mobile] Device UI tests on Wi-Fi.** *From the device grill
+   (#295).* `just ios-device-test <udid>` is merged and its review flow
+   passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition
+   download, then 45 s away during Find names) stopped at its Wi-Fi check
+   on 5G. *Done when:* the whole run passes on the iPhone 17 Pro on Wi-Fi.
+4. **[Mobile] Device tests below the floor.** *From the device grill
+   ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).* The long-jobs test
+   needs the detector tier, so nothing checks a phone below the 8 GB floor:
+   the text-recognition download, a scan and a .docx import that survive
+   leaving the app, the below-floor note where Find names would be (and in
+   Settings), and marking a name by selecting it. *Done when:* `just
+   ios-device-test` runs a below-floor test on the iPhone 12 Pro and it
+   passes, with no new crash report.
 
 ## Android 0.1
 
@@ -206,6 +216,16 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   reads it as the name. The shelf preview and drag card mask it since #280;
   detection and Copy for AI need the same decoding. *From the 2026-10-31
   shelf polish review.*
+- **[Shelf]** Review the shelf preview's Markdown block reading (`src/shelf.rs`,
+  `preview_lines`) against CommonMark as a whole rather than case by case:
+  round after round of Codex review on #280 found another container or
+  fence edge.
+  Still open: leaving a nested list item drops the outer one too, so a fence
+  back in the outer item (`- Notes` / `  - More` / blank / `  ~~~`) hides a
+  later sibling's prose. The failure modes are a missing preview or code
+  shown as prose; originals stay masked (a preview that still spells a known
+  name is refused). Consider reusing a real block parser. *From the
+  2026-10-31 shelf polish review.*
 
 ## Ongoing tracks
 

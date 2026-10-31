@@ -2,13 +2,23 @@ import SwiftUI
 import UIKit
 
 /// One document: Text and Original switch on iPhone and sit side by side on
-/// iPad, with the Identities list beside the text there.
+/// iPad, with the Identities list beside the text there. In a narrow iPad
+/// window (portrait) Identities take the Original's place instead of a third
+/// column (ADR 0087).
 struct DocumentScreen: View {
     @Bindable var model: DocumentViewModel
     let setup: SetupViewModel
+    /// The window is too narrow for a third column (iPad portrait).
+    var isNarrow = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var isRegular: Bool { sizeClass == .regular }
+
+    /// iPad's right column: the original or the reply beside the text.
+    private var hasRightPane: Bool { model.hasOriginal || model.snapshot.reply != nil }
+
+    /// Identities show in the right column rather than as an inspector.
+    private var identitiesInPane: Bool { isRegular && isNarrow && hasRightPane }
 
     var body: some View {
         content
@@ -16,19 +26,10 @@ struct DocumentScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
             .safeAreaInset(edge: .bottom) { bottomBar }
-            .inspector(isPresented: $model.showsIdentities) {
-                IdentitiesView(
-                    identities: model.snapshot.identities,
-                    onOpen: { identity in
-                        if let first = model.snapshot.mentions(of: identity).first {
-                            if !isRegular { model.showsIdentities = false }
-                            model.open(first.id)
-                        }
-                    },
-                    onDecide: { identity, decision in model.decide(identity: identity, decision) },
-                    onClose: isRegular ? nil : { model.showsIdentities = false })
-                .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
-                .presentationDetents([.medium, .large])
+            .inspector(isPresented: inspectorBinding) {
+                identities
+                    .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
+                    .presentationDetents([.medium, .large])
             }
             .sheet(item: reviewingBinding) { item in
                 if let candidate = model.snapshot.candidate(item.id) {
@@ -48,6 +49,8 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsReplySheet) {
                 ReplySheet(caseName: model.snapshot.caseName) { reply in
                     model.restore(reply: reply)
+                    // Shown even when the Reply tab was already selected.
+                    if identitiesInPane && model.pane == .reply { model.showsIdentities = false }
                 }
             }
             .sheet(item: $model.share, onDismiss: nil) { items in
@@ -66,21 +69,59 @@ struct DocumentScreen: View {
             }
             .onAppear {
                 model.refresh()
-                if isRegular && model.snapshot.phase != .recognizing {
+                // In a narrow window the original shows first.
+                if isRegular && !identitiesInPane && model.snapshot.phase != .recognizing {
                     model.showsIdentities = true
                 }
             }
+            .onChange(of: identitiesInPane) { _, inPane in
+                // Rotating to portrait shows the original; to landscape, the list.
+                if isRegular { model.showsIdentities = !inPane }
+            }
+            .onChange(of: model.pane) { _, pane in
+                // A restored reply shows over the list.
+                if identitiesInPane && pane == .reply { model.showsIdentities = false }
+            }
+    }
+
+    private var identities: some View {
+        IdentitiesView(
+            identities: model.snapshot.identities,
+            onOpen: { identity in
+                if let first = model.snapshot.mentions(of: identity).first {
+                    if !isRegular { model.showsIdentities = false }
+                    model.open(first.id)
+                }
+            },
+            onDecide: { identity, decision in model.decide(identity: identity, decision) },
+            onClose: isRegular ? nil : { model.showsIdentities = false })
+    }
+
+    /// Identities in the right column cover the reply, so the hand-off bar
+    /// goes back to acting on the document, the text the user sees.
+    private func showIdentities(_ show: Bool) {
+        if show && identitiesInPane && model.pane == .reply { model.pane = .text }
+        model.showsIdentities = show
+    }
+
+    /// The inspector stays closed while Identities show in the right column.
+    private var inspectorBinding: Binding<Bool> {
+        Binding(
+            get: { model.showsIdentities && !identitiesInPane },
+            set: { model.showsIdentities = $0 })
     }
 
     // MARK: Panes
 
     @ViewBuilder
     private var content: some View {
-        if isRegular && (model.hasOriginal || model.snapshot.reply != nil) {
+        if isRegular && hasRightPane {
             HStack(spacing: 0) {
                 textPane
                 Divider()
-                if model.pane == .reply, let reply = model.snapshot.reply {
+                if identitiesInPane && model.showsIdentities {
+                    identities
+                } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
                 } else {
                     OriginalView(original: model.snapshot.original)
@@ -147,11 +188,20 @@ struct DocumentScreen: View {
         .ignoresSafeArea(.container, edges: .bottom)
     }
 
-    /// The panes a picker offers: on iPhone all of them, on iPad the right side.
-    private var panes: [DocumentViewModel.Pane] {
-        var panes: [DocumentViewModel.Pane] = isRegular ? [] : [.text]
-        if model.hasOriginal || isRegular { panes.append(.original) }
-        if model.snapshot.reply != nil { panes.append(.reply) }
+    /// What the picker switches between: a pane, or Identities in iPad's
+    /// right column.
+    private enum Shown: Hashable {
+        case pane(DocumentViewModel.Pane)
+        case identities
+    }
+
+    /// The panes a picker offers: on iPhone all of them, on iPad the right
+    /// side, with Identities there in a narrow window.
+    private var panes: [Shown] {
+        var panes: [Shown] = isRegular ? [] : [.pane(.text)]
+        if model.hasOriginal || isRegular { panes.append(.pane(.original)) }
+        if identitiesInPane { panes.append(.identities) }
+        if model.snapshot.reply != nil { panes.append(.pane(.reply)) }
         return panes
     }
 
@@ -160,11 +210,12 @@ struct DocumentScreen: View {
         if panes.count > 1 {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: paneBinding) {
-                    ForEach(panes, id: \.self) { pane in
-                        switch pane {
-                        case .text: Text("Text").tag(pane)
-                        case .original: Text("Original").tag(pane)
-                        case .reply: Text("Reply").tag(pane)
+                    ForEach(panes, id: \.self) { shown in
+                        switch shown {
+                        case .pane(.text): Text("Text").tag(shown)
+                        case .pane(.original): Text("Original").tag(shown)
+                        case .pane(.reply): Text("Reply").tag(shown)
+                        case .identities: Text("Identities").tag(shown)
                         }
                     }
                 }
@@ -175,7 +226,7 @@ struct DocumentScreen: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
-                model.showsIdentities.toggle()
+                showIdentities(!model.showsIdentities)
             } label: {
                 Label("Identities", systemImage: "person.text.rectangle")
             }
@@ -184,10 +235,21 @@ struct DocumentScreen: View {
         }
     }
 
-    private var paneBinding: Binding<DocumentViewModel.Pane> {
+    private var paneBinding: Binding<Shown> {
         Binding(
-            get: { isRegular && model.pane == .text ? .original : model.pane },
-            set: { model.pane = $0 })
+            get: {
+                if identitiesInPane && model.showsIdentities { return .identities }
+                return .pane(isRegular && model.pane == .text ? .original : model.pane)
+            },
+            set: { shown in
+                switch shown {
+                case .identities:
+                    showIdentities(true)
+                case .pane(let pane):
+                    if identitiesInPane { model.showsIdentities = false }
+                    model.pane = pane
+                }
+            })
     }
 
     // MARK: Bottom bar
@@ -302,7 +364,7 @@ private struct BelowFloorNote: View {
 }
 
 /// The primary action, as on desktop: Recognize, Find names, running with
-/// Cancel, Replace N, then Share, Copy and Paste reply.
+/// Cancel, Replace N, then Share, Copy and Paste (a reply).
 private struct ActionBar: View {
     @Bindable var model: DocumentViewModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -365,25 +427,29 @@ private struct ActionBar: View {
                 }
             }
         case .handOff where model.pane == .reply && model.snapshot.reply != nil:
-            // On the Reply tab the bar acts on the reply (ADR 0087).
+            // On the Reply tab the bar acts on the reply (ADR 0087). Short
+            // labels keep three buttons in one row on a phone; VoiceOver
+            // says what each acts on.
             layout {
                 Button {
                     model.shareReply()
                 } label: {
-                    Label("Share reply", systemImage: "square.and.arrow.up")
+                    Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel(Text("Share reply"))
                 .accessibilityIdentifier("share-reply")
                 Button {
                     model.copyReply { UIPasteboard.general.string = $0 }
                 } label: {
-                    Label("Copy reply", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel(Text("Copy reply"))
                 .accessibilityIdentifier("copy-reply")
-                pasteReply("Paste another")
+                pasteReply(accessibilityLabel: "Paste another reply")
             }
         case .handOff:
             layout {
@@ -415,19 +481,21 @@ private struct ActionBar: View {
                 .buttonStyle(.bordered)
                 .accessibilityHint(Text("Copies the text for an AI app, with the note about placeholders."))
                 .accessibilityIdentifier("copy-for-ai")
-                pasteReply("Paste reply")
+                pasteReply(accessibilityLabel: "Paste reply")
             }
         }
     }
 
-    private func pasteReply(_ title: LocalizedStringKey) -> some View {
+    /// Paste, which opens the reply sheet.
+    private func pasteReply(accessibilityLabel: LocalizedStringKey) -> some View {
         Button {
             model.showsReplySheet = true
         } label: {
-            Label(title, systemImage: "arrow.uturn.backward")
+            Label("Paste", systemImage: "arrow.uturn.backward")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+        .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier("paste-reply")
     }
 

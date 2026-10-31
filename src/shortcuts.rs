@@ -1335,6 +1335,20 @@ pub static SHORTCUTS: &[Shortcut] = &[
         "Copy a shelf document for AI",
         &[on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyForAi).mac(&["cmd-c"])],
     ),
+    row(
+        Popup,
+        "Copy shelf document 1–8 for AI",
+        &[
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(1)).mac(&["cmd-1"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(2)).mac(&["cmd-2"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(3)).mac(&["cmd-3"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(4)).mac(&["cmd-4"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(5)).mac(&["cmd-5"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(6)).mac(&["cmd-6"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(7)).mac(&["cmd-7"]),
+            on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyRow(8)).mac(&["cmd-8"]),
+        ],
+    ),
 ];
 
 #[cfg(test)]

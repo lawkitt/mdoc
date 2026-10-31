@@ -284,14 +284,35 @@ impl Default for CasesConfig {
     }
 }
 /// Settings › General choices with no section of their own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GeneralConfig {
     /// "Show mdoc in the menu bar" (ADR 0084, macOS): the shelf, and mdoc
-    /// keeps running after its last window closes. Off by default; turning
-    /// it on is the consent to keep running.
-    #[serde(default)]
+    /// keeps running after its last window closes. On by default; the
+    /// default, the first-close note and this switch are the consent to
+    /// keep running.
+    #[serde(default = "on")]
     pub menu_bar: bool,
+    /// The first-close note ("mdoc is still in the menu bar.") has shown;
+    /// it never shows again.
+    #[serde(default)]
+    pub menu_bar_note_shown: bool,
+    /// A shelf drag has dropped, so the hint "Drag a preview into any app"
+    /// is gone for good.
+    #[serde(default)]
+    pub shelf_drag_hint_shown: bool,
+}
+fn on() -> bool {
+    true
+}
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            menu_bar: true,
+            menu_bar_note_shown: false,
+            shelf_drag_hint_shown: false,
+        }
+    }
 }
 impl GeneralConfig {
     fn is_default(&self) -> bool {
@@ -349,8 +370,8 @@ pub struct Preferences {
     /// default file stay as they were.
     #[serde(default, skip_serializing_if = "CategoriesConfig::is_default")]
     pub categories: CategoriesConfig,
-    /// Absent while off, so older files and the default file stay as they
-    /// were.
+    /// Absent while every choice is the default, so older files and the
+    /// default file stay as they were.
     #[serde(default, skip_serializing_if = "GeneralConfig::is_default")]
     pub general: GeneralConfig,
 }
@@ -558,6 +579,35 @@ pub fn load(path: &Path) -> Result<Preferences, SettingsError> {
     prefs.validate()?;
     Ok(prefs)
 }
+/// Serializes settings writes made in order; a write older than the latest
+/// one started is skipped, since the later one holds newer choices.
+static PREFS_WRITE: Mutex<()> = Mutex::new(());
+static PREFS_LATEST: AtomicU64 = AtomicU64::new(0);
+
+/// A settings write's place in line: take it when the choice is made (on
+/// the UI thread), then [`save_in_order`] it, perhaps on another thread.
+pub fn next_write() -> u64 {
+    PREFS_LATEST.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// Whether `write` of [`next_write`] is still the latest started: a write
+/// that is not must not publish its choices, even in memory.
+pub fn is_latest_write(write: u64) -> bool {
+    PREFS_LATEST.load(Ordering::SeqCst) == write
+}
+
+/// Save `prefs` as write `write` of [`next_write`], unless a later write
+/// was started meanwhile; `Ok(false)` when skipped. An older Settings save
+/// still running can then never land over a newer choice (the menu bar
+/// shelf's notes save while the panel may be saving, ADR 0084).
+pub fn save_in_order(path: &Path, prefs: &Preferences, write: u64) -> Result<bool, SettingsError> {
+    let _guard = PREFS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    if PREFS_LATEST.load(Ordering::SeqCst) != write {
+        return Ok(false);
+    }
+    save(path, prefs).map(|()| true)
+}
+
 pub fn save(path: &Path, prefs: &Preferences) -> Result<(), SettingsError> {
     prefs.validate()?;
     let parent = path.parent().ok_or(SettingsError::NoParent)?;
@@ -684,16 +734,42 @@ mod tests {
         assert_eq!(prefs.categories.skip, ["EMAIL"]);
     }
     #[test]
-    fn the_menu_bar_is_off_by_default_and_absent_from_the_file_while_off() {
+    fn a_settings_write_older_than_the_latest_started_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        assert!(!Preferences::default().general.menu_bar);
+        let older = next_write();
+        let newer = next_write();
+        let mut off = Preferences::default();
+        off.general.menu_bar = false;
+        assert!(save_in_order(&path, &off, newer).unwrap());
+        // The older write finishes last: it does not land.
+        assert!(!save_in_order(&path, &Preferences::default(), older).unwrap());
+        assert_eq!(load(&path).unwrap(), off);
+    }
+    #[test]
+    fn the_menu_bar_is_on_by_default_and_absent_from_the_file_while_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        assert!(Preferences::default().general.menu_bar);
         save(&path, &Preferences::default()).unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("general"));
+        // Turned off, or a note shown: written, and read back.
         let mut prefs = Preferences::default();
-        prefs.general.menu_bar = true;
+        prefs.general.menu_bar = false;
+        prefs.general.menu_bar_note_shown = true;
         save(&path, &prefs).unwrap();
         assert_eq!(load(&path).unwrap(), prefs);
+        // A file from before the flags keeps its choice; a missing switch
+        // is on.
+        let mut stored = serde_json::to_value(Preferences::default()).unwrap();
+        stored["general"] = serde_json::json!({ "menu_bar": false });
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let loaded = load(&path).unwrap().general;
+        assert!(!loaded.menu_bar && !loaded.menu_bar_note_shown);
+        stored["general"] = serde_json::json!({ "shelf_drag_hint_shown": true });
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let loaded = load(&path).unwrap().general;
+        assert!(loaded.menu_bar && loaded.shelf_drag_hint_shown);
     }
     #[test]
     fn removed_models_require_explicit_reset_without_rewriting_preferences() {
