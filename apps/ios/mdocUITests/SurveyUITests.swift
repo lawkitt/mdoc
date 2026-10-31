@@ -16,6 +16,7 @@ final class SurveyUITests: XCTestCase {
 
     override func tearDown() {
         XCUIDevice.shared.appearance = .light
+        XCUIDevice.shared.orientation = .portrait
         super.tearDown()
     }
 
@@ -149,7 +150,21 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         if isPad {
             sleep(2)
-            shot("26-pdf-text-original-identities")
+            // A portrait iPad shows the original beside the text, Identities
+            // over it from the picker.
+            shot("26-pdf-text-original")
+            let segment = app.segmentedControls.buttons["Identities"].firstMatch
+            if segment.exists {
+                segment.tap()
+                sleep(1)
+                shot("26-pdf-text-identities")
+            }
+            // Landscape keeps Home, the text, the original and Identities
+            // side by side (ADR 0085).
+            XCUIDevice.shared.orientation = .landscapeLeft
+            defer { XCUIDevice.shared.orientation = .portrait }
+            sleep(2)
+            shot("26-pdf-landscape")
             return
         }
         shot("26-pdf-text")
@@ -229,7 +244,15 @@ final class SurveyUITests: XCTestCase {
 
     @MainActor
     private func goHome(_ app: XCUIApplication) {
-        if isPad { return }
+        if isPad {
+            // In portrait the sidebar hides once a document opens.
+            let show = app.buttons["show-sidebar"]
+            if show.waitForExistence(timeout: 2) {
+                show.tap()
+                sleep(1)
+            }
+            return
+        }
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
