@@ -2,7 +2,7 @@
 
 The iPhone and iPad app ([ADR 0085](../../docs/adr/0085-mobile-apps.md)):
 scan or open a document, review the names mdoc finds, share the
-pseudonymized text to an AI app and restore its reply. SwiftUI on iOS 17
+pseudonymized text to an AI app and restore its reply. SwiftUI on iOS 26
 and later over the Rust core (`crates/mdoc-ffi`); no third-party Swift
 packages.
 

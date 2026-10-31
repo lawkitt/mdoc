@@ -3,8 +3,8 @@ import Foundation
 import UIKit
 
 /// Keeps a user-started job alive when mdoc leaves the screen (ADR 0085):
-/// `BGContinuedProcessingTask` on iOS 26 and later, the short background
-/// grace before that. When the time runs out it calls `expire`, which
+/// `BGContinuedProcessingTask`, or the short background grace when the
+/// system refuses one. When the time runs out it calls `expire`, which
 /// cancels the job; the app offers to resume on return.
 protocol BackgroundContinuation: Sendable {
     @MainActor
@@ -19,10 +19,7 @@ protocol BackgroundLease: Sendable {
 enum BackgroundContinuations {
     @MainActor
     static func system() -> any BackgroundContinuation {
-        if #available(iOS 26, *) {
-            return ContinuedProcessing(fallback: GraceTime())
-        }
-        return GraceTime()
+        ContinuedProcessing(fallback: GraceTime())
     }
 }
 
@@ -39,7 +36,8 @@ struct NoBackgroundContinuation: BackgroundContinuation {
     }
 }
 
-/// iOS 17–25: the background grace `beginBackgroundTask` gives, then cancel.
+/// The background grace `beginBackgroundTask` gives, then cancel: the
+/// fallback when the system refuses a continued processing task.
 struct GraceTime: BackgroundContinuation {
     @MainActor
     func begin(title: String, expire: @escaping @Sendable () -> Void) -> any BackgroundLease {
@@ -86,10 +84,9 @@ private final class GraceLease: BackgroundLease, @unchecked Sendable {
     }
 }
 
-/// iOS 26: a continued processing task shows the job's progress while mdoc
-/// is in the background. If the system refuses the request, the grace time
+/// A continued processing task shows the job's progress while mdoc is in
+/// the background. If the system refuses the request, the grace time
 /// stands in.
-@available(iOS 26, *)
 struct ContinuedProcessing: BackgroundContinuation {
     /// Matches `BGTaskSchedulerPermittedIdentifiers` in Info.plist.
     static let prefix = "io.github.lawkitt.mdoc.job."
@@ -123,7 +120,6 @@ struct ContinuedProcessing: BackgroundContinuation {
     }
 }
 
-@available(iOS 26, *)
 private final class ContinuedLease: BackgroundLease, @unchecked Sendable {
     private let lock = NSLock()
     private var task: BGContinuedProcessingTask?

@@ -20,7 +20,7 @@ pdfium_base="https://github.com/bblanchon/pdfium-binaries/releases/download/chro
 pdfium_device_sha="cda317b85a6dd06fa8c2965f7108149f21296b3622352f0f29c78f0047ea380b"
 pdfium_simulator_sha="eaa56dacce4f0aa819d646199cfb84bf9e6eebd22a1d185394be5a3415d93455"
 
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 out=target/ios
 deps=$out/deps
 rm -rf "$out/MdocCore.xcframework" "$out/pdfium.xcframework" "$out/swift" "$out/stage"
