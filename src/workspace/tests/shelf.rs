@@ -700,8 +700,17 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         .unwrap();
     assert!(hint, "the hint shows before the first drag");
 
+    // ⌘1–⌘8 are bound on macOS, where the shelf exists; elsewhere the
+    // action itself runs.
+    let copy_row = |row: usize, cx: &mut VisualTestContext| {
+        if cfg!(target_os = "macos") {
+            cx.simulate_keystrokes(&format!("cmd-{row}"));
+        } else {
+            cx.dispatch_action(crate::shelf_ui::ShelfCopyRow(row));
+        }
+    };
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
-    shelf_cx.simulate_keystrokes("cmd-2");
+    copy_row(2, &mut shelf_cx);
     assert_eq!(
         shelf_cx.read_from_clipboard().unwrap().text().unwrap(),
         second
@@ -745,7 +754,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
 
     // ⌘9 is no row; the first drag retires the hint for good.
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
-    shelf_cx.simulate_keystrokes("cmd-9");
+    copy_row(9, &mut shelf_cx);
     assert_eq!(
         shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
         None
