@@ -277,6 +277,14 @@ and the design tree. Hub: the Windows PC (`windows`).
     offering the model download, and a phone too slow for the 20-page
     budget is treated as below the floor (the app says it cannot find
     names).
+36. **No phone of our own for now** (replaces 25). The emulator runs a real
+    Android image, so the foreground-service and background-start rules
+    that bit iOS (#290) hold there; Test Lab gives real-phone speed, memory,
+    heat and vendor background limits (Pixel and Samsung); the friend's
+    phone covers the camera and the hand checklist. A phone is bought only
+    if Test Lab proves too slow for chasing a device-only bug, or before
+    Test Lab shuts down. The personal Play account stays (paid); its device
+    check is done in person on any Android phone near the first release.
 
 The frontier is empty.
 
@@ -289,23 +297,21 @@ for them and kept in the password manager; never in chat or files.
 ### Now
 
 1. **Merge lawkitt/mdoc#291 (ADR 0088)** from the Mac.
-2. **Buy the phone**: a used, unlocked Pixel 7 Pro (12 GB) or Pixel 8
-   (8 GB), not rooted, with a USB-C data cable.
-3. **Make the Play developer account** (personal) at
+2. **Make the Play developer account** (personal) at
    <https://play.google.com/console/signup>: pay the $25 fee and finish the
-   identity check with your ID. The phone check waits for the phone (below).
-4. **Make the Firebase project for Test Lab**: at
+   identity check with your ID. The phone check waits (below).
+3. **Make the Firebase project for Test Lab**: at
    <https://console.firebase.google.com>, Create a project named
    `mdoc-test-lab`, Google Analytics off, Spark plan (no billing account).
    Note its project ID.
-5. **Install and sign in to `gcloud`**, in PowerShell:
+4. **Install and sign in to `gcloud`**, in PowerShell:
 
    ```powershell
    winget install --id Google.CloudSDK --exact
    ```
 
    Then in a new Git Bash window (the browser opens for the sign-in;
-   replace `<project-id>` with the ID from step 4):
+   replace `<project-id>` with the ID from step 3):
 
    ```bash
    gcloud auth login
@@ -324,25 +330,19 @@ for them and kept in the password manager; never in chat or files.
    ```
 
    The last command lists five lab phones when everything works.
-6. **Collect 12 testers**: the Google account email of each Android user
+5. **Collect 12 testers**: the Google account email of each Android user
    (the friend included) who agrees to stay opted in for 14 days.
 
-### When the phone arrives
+### Near the first release
 
-1. On the phone: Settings › About phone › tap **Build number** seven times;
-   then Settings › System › Developer options › **USB debugging** on.
-2. **Pass the Play device check**: in Play Console on the PC, open Home ›
-   "Verify that you have access to an Android mobile device", scan its QR
-   code with the phone, install the Play Console app, sign in as the
-   account owner and tap Verify.
-3. **Connect it to this PC** (after the toolchain PR lands), then accept
-   the "Allow USB debugging" prompt on the phone:
-
-   ```bash
-   /e/Android/Sdk/platform-tools/adb devices -l
-   ```
-
-   The phone shows as `device`, not `unauthorized`.
+**Pass the Play device check** in person, on any Android phone on Android
+10 or later (the friend's will do; Google lets one phone verify several
+accounts and it need not be kept). In Play Console open Home › "Verify that
+you have access to an Android mobile device", scan its QR code with the
+phone, install the Play Console app, sign in as the account owner, tap
+Verify, then sign out of the Play Console app. Never share the password to
+do this remotely. Start it at least three weeks before the release, so the
+14-day closed test fits.
 
 ### Before the first release
 

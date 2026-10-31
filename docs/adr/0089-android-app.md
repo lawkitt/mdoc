@@ -44,17 +44,18 @@ invariants or with Google Play's rules. Findings:
 - **Gradle dependencies are few and verified**: an exact-pinned version
   catalog, Gradle dependency verification with SHA-256, Dependabot weekly.
   No Firebase, Play services, OkHttp or analytics libraries in the app.
-- **Real devices in four tiers**: the emulator on the PC daily; a phone of
-  the maintainer's with 8 GB or more on the PC by USB; Firebase Test Lab
-  physical phones (free tier) for the spike and the device tests at 6, 8
-  and 12 GB or more; and the friend's phone weekly for the device checklist
+- **Real devices in three tiers**: the emulator on the PC daily (it runs a
+  real Android image, so foreground-service and background-start rules
+  hold there); Firebase Test Lab physical phones (free tier) for the spike,
+  long jobs and the device tests at 6, 8 and 12 GB or more; and the
+  friend's phone weekly for the device checklist
   by hand. Test Lab sees public fixtures only. This replaces the mobile
   grill's "no Firebase Test Lab for now"; Test Lab shuts down on 2027-09-30
   and is revisited before then. Every long job runs on a real phone in the
   first week of app work.
 - **The feasibility spike repeats on Android**: a throwaway
   instrumentation app in `tools/android-spike` runs `spike::run` and writes
-  the iOS report format, on the owned phone and Test Lab phones. Peak
+  the iOS report format, on Test Lab phones. Peak
   memory is the process's peak resident set (`VmHWM`) at 2 GiB or less;
   serious throttling is thermal status SEVERE or higher; the report adds
   total and available memory and whether the process was killed. Android
@@ -109,8 +110,8 @@ invariants or with Google Play's rules. Findings:
   goldens, including Copy for AI bytes against desktop; one emulator test
   walks open, review, share, restore. `just android-device-test [serial]`
   runs the review flow and long jobs (Home and a process kill during a
-  job) on a USB phone or Test Lab, by hand before every release after the
-  first. `just android-survey <out>` takes every screen, light, dark and
+  job) on Test Lab, or on a USB phone given its serial, by hand before
+  every release after the first. `just android-survey <out>` takes every screen, light, dark and
   the largest font, on emulator phone and tablet; not in local CI.
 - **Local CI**: `local/windows` runs the Android job after lint and test
   when a PR touches `crates/`, `Cargo.lock` or `apps/android/`: the core,
@@ -146,5 +147,5 @@ invariants or with Google Play's rules. Findings:
   P1–P17.
 - Without a 12-tester closed test, Play production slips and the GitHub
   APK carries 0.1.
-- Test Lab's shutdown in 2027 leaves the owned phone and the friend's as
-  the real devices unless a replacement is found.
+- Test Lab's shutdown in 2027 leaves the friend's phone as the only real
+  device unless a phone is bought or a replacement found.

@@ -105,8 +105,8 @@ Maintainer actions list the steps on the maintainer's side.
    bindings to `target/android/`, every download verified and every `.so`
    16 KB aligned.
 2. **[Android] Feasibility spike.** `tools/android-spike` and
-   `scripts/android-spike-device.sh` on the maintainer's phone and Test Lab
-   phones at 6, 8 and 12 GB or more. *Done when:* each row has pass or fail
+   `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
+   or more. *Done when:* each row has pass or fail
    against ADR 0085's budgets and Android's floor constant is set from them.
 3. **[Android] App scaffold and the Android job.** `apps/android` over
    `mdoc-ffi` with pinned, verified Gradle dependencies; JVM parity tests;
@@ -117,15 +117,16 @@ Maintainer actions list the steps on the maintainer's side.
    Scan), setup and downloads, review and Identities, the hand-off bar,
    Restore with mdoc, Settings. *Done when:* the emulator test walks open,
    review, share, restore, and TalkBack reads and acts on candidates.
-5. **[Android] Long jobs on a real phone.** The foreground service, the
-   Wi-Fi rule and resume. *Done when:* on the maintainer's phone a model
-   download, an import, OCR and Find names each survive leaving the app and
-   a process kill, with no crash or ANR in `ApplicationExitInfo`.
+5. **[Android] Long jobs on real phones.** The foreground service, the
+   Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
+   Pixel and Samsung phone an import, OCR and Find names each survive
+   leaving the app and a process kill, with no crash or ANR in
+   `ApplicationExitInfo`; and a model download does too on the emulator
+   and the friend's phone.
 6. **[Android] UI survey.** `just android-survey`. *Done when:* the before
    and after sets sit under `docs/evidence/android-app/`.
 7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
-   it passes on the maintainer's phone and on one Test Lab phone per RAM
-   class.
+   it passes on one Test Lab phone per RAM class.
 8. **[Android] Play closed test.** The Play account, the device check and
    12 testers. *Done when:* the closed test has had 12 testers opted in for
    14 days in a row.
