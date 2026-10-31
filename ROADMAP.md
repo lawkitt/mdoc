@@ -171,18 +171,12 @@ Maintainer actions list the steps on the maintainer's side.
    the Android job in `local/windows`. *Done when:* a PR touching
    `apps/android` gets a green `local/windows` with the Android job, and the
    parity tests match the desktop goldens, Copy for AI bytes included.
-4. **[Android] Screens in iOS order.** Home, intake (Paste, Files, Photos,
-   Scan), setup and downloads, review and Identities, the hand-off bar,
-   Restore with mdoc, Settings. *Done when:* the emulator test walks open,
-   review, share, restore, and TalkBack reads and acts on candidates.
 5. **[Android] Long jobs on real phones.** The foreground service, the
    Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
    Pixel and Samsung phone an import, OCR and Find names each survive
    leaving the app and a process kill, with no crash or ANR in
    `ApplicationExitInfo`; and a model download does too on the emulator
    and the friend's phone.
-6. **[Android] UI survey.** `just android-survey`. *Done when:* the before
-   and after sets sit under `docs/evidence/android-app/`.
 7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
    it passes on one Test Lab phone per RAM class.
 8. **[Android] Play closed test.** The Play account, the device check and

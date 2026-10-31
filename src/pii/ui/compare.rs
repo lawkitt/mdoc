@@ -183,12 +183,20 @@ impl SwitcherRest {
 }
 
 impl DocumentView {
+    /// ⌘\ and View › Side by Side: Side by side, from any view; from Side
+    /// by side, back to Edit.
     pub(crate) fn toggle_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.compare.is_some() || !self.has_applied_aliases() {
+        let side = self
+            .compare
+            .as_ref()
+            .is_some_and(|state| state.mode == CompareMode::Side);
+        if side || !self.has_applied_aliases() {
             self.close_compare(window, cx);
-            return;
+        } else if self.compare.is_some() {
+            self.set_view_mode(Some(CompareMode::Side), window, cx);
+        } else {
+            self.open_compare(CompareMode::Side, window, cx);
         }
-        self.open_compare(CompareMode::Side, window, cx);
     }
     fn open_compare(&mut self, mode: CompareMode, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme.get();

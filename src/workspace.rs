@@ -91,8 +91,16 @@ actions!(
         RetryDocument,
         PasteAiResponse,
         PseudonymizeClipboard,
+        RestoreClipboard,
+        CheckForUpdates,
+        ClearRecentFiles,
     ]
 );
+
+/// File › Open Recent: open this file again.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = mdoc, no_json)]
+pub(crate) struct OpenRecent(pub PathBuf);
 
 /// How a document reaches the window: one channel, grouped by the owner
 /// that handles it (ADR 0069). The window commands a document through its
@@ -531,11 +539,7 @@ impl Workspace {
                         this.open_comparison(*model, window, cx);
                     }
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
-                    settings_ui::Event::ClearRecents => {
-                        this.shell.recents.clear();
-                        crate::document_view::RecentFolders::share(Vec::new(), cx);
-                        cx.notify();
-                    }
+                    settings_ui::Event::ClearRecents => this.clear_recents(cx),
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
                     settings_ui::Event::CategoriesUnticked(categories) => {
                         for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
@@ -894,6 +898,7 @@ impl Workspace {
         self.sidebar
             .restore(session.sidebar_visible, session.sidebar_choice);
         self.theme_choice = session.theme_choice;
+        self.sync_app_appearance(cx);
         self.apply_theme(window, cx);
         self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
         self.case_coordinator
@@ -3274,6 +3279,15 @@ impl Render for Workspace {
                     }
                 }),
             )
+            .on_action(cx.listener(|this, action: &RestoreClipboard, window, cx| {
+                if let Some(view) = this.clipboard_document("Restore clipboard", window, cx) {
+                    view.update(cx, |view, cx| view.restore_clipboard(action, window, cx));
+                }
+            }))
+            .on_action(cx.listener(|this, action: &OpenRecent, window, cx| {
+                this.open_paths(vec![action.0.clone()], window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ClearRecentFiles, _, cx| this.clear_recents(cx)))
             .on_drag_move(cx.listener(
                 |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                     this.home_drag(event, cx)

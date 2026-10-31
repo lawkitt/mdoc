@@ -75,6 +75,14 @@ class SurveyTest {
             launch(dark = false) {
                 open(settlement)
                 shot("30-review-largest-font-light")
+                // The sheet's buttons and the hand-off bar stack rather than wrap (ADR 0087).
+                tapFirstCandidate()
+                waitFor("Alias", substring = true)
+                shot("32-candidate-sheet-largest-font-light")
+                back()
+                compose.onAllNodes(hasText("Replace ", substring = true)).onFirst().performClick()
+                waitFor("Copy")
+                shot("33-hand-off-largest-font-light")
                 back()
                 compose.onNodeWithContentDescriptionFirst("Settings").performClick()
                 waitFor("About mdoc")
@@ -122,14 +130,14 @@ class SurveyTest {
         shot("06-identities-$tone")
         back()
         compose.onAllNodes(hasText("Replace ", substring = true)).onFirst().performClick()
-        waitFor("Share as Markdown file")
+        waitFor("Copy")
         shot("07-review-replaced-$tone")
         click("Paste")
         waitFor("Paste AI reply")
         compose.onAllNodesWithText("AI reply").onFirst().performTextInput(reply())
         shot("08-reply-sheet-$tone")
         click("Restore")
-        waitFor("values restored", substring = true)
+        waitFor("restored", substring = true)
         shot("09-reply-pane-$tone")
         back()
 
@@ -149,7 +157,7 @@ class SurveyTest {
         val share = Intent(app, RestoreActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_TEXT, reply())
         ActivityScenario.launch<RestoreActivity>(share).use {
-            waitFor("values restored", substring = true)
+            waitFor("restored", substring = true)
             shot("13-restore-with-mdoc-$tone")
         }
     }

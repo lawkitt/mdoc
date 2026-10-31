@@ -79,7 +79,7 @@ class ReviewFlowTest {
         waitFor("Paste AI reply")
         compose.onNodeWithText("AI reply").performTextInput("Thank you, PERSON_1. The claim is filed.")
         compose.onNodeWithText("Restore").performClick()
-        waitFor("1 values restored")
+        waitFor("1 value restored")
         // The reply pane draws the restored text in a TextView; read it from the core.
         val document = app.core.documents.snapshot().documents.first { it.title == title }
         val reply = app.core.documents.session(document.id).snapshot().reply

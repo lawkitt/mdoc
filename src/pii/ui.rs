@@ -3,14 +3,6 @@ mod case_sync;
 mod chooser;
 mod compare;
 mod decisions;
-#[cfg(any(
-    test,
-    all(
-        debug_assertions,
-        feature = "headless-renders",
-        any(target_os = "macos", target_os = "windows")
-    )
-))]
 pub(crate) use compare::CompareMode;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;

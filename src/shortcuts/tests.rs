@@ -290,6 +290,18 @@ fn the_palette_and_hints_read_keys_from_the_table() {
         label(&shortcuts_ui::ShowShortcuts),
         Some(format!("{mod_}/"))
     );
-    // Copy for AI has no key.
-    assert_eq!(label(&pii::CopyForAi), None);
+    // Copy for AI and Copy Markdown have keys of their own (UI polish
+    // grill, decision 10).
+    let (for_ai, markdown) = if MAC {
+        ("⇧⌘C", "⇧⌘M")
+    } else {
+        ("Ctrl+Shift+C", "Ctrl+Shift+M")
+    };
+    assert_eq!(label(&pii::CopyForAi).as_deref(), Some(for_ai));
+    assert_eq!(
+        label(&document_view::CopyMarkdown).as_deref(),
+        Some(markdown)
+    );
+    // Restore Clipboard has none.
+    assert_eq!(label(&workspace::RestoreClipboard), None);
 }

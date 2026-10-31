@@ -4,7 +4,9 @@ Status: Accepted, 2026-10-28. Amends
 [ADR 0048](0048-workspace-shell-redesign.md) (Settings overlay) and the Settings
 layout of [ADR 0006](0006-local-model-settings.md). Amended 2026-10-29
 ([interview](../design/roadmap-grill-2026-10-29.md)): default categories,
-remembered model state, the per-document OCR note.
+remembered model state, the per-document OCR note. Amended 2026-11-01
+([UI polish grill](../design/ui-polish-grill-2026-11-01.md)): Appearance
+reaches the native panels on macOS.
 
 ## Problem
 
@@ -75,6 +77,10 @@ category list, then one row per setting.
 - Every current setting can be reached by keyboard and saves on change, in
   both themes.
 - A failed save restores the previous value and says so, as today.
+- **Appearance reaches native UI (macOS).** Light or Dark also sets the
+  app's `NSAppearance`, so the Save and Open panels, their alerts and the
+  menus match the app; System clears it, and they follow macOS. Windows is
+  unchanged.
 
 ## Consequences
 
