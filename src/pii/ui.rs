@@ -628,6 +628,30 @@ impl DocumentView {
         window.focus(&self.pii.focus, cx);
         cx.notify();
     }
+    /// Show the document's earliest pending proposal, as a shelf click on a
+    /// document that is not ready does (ADR 0084). Returns whether there
+    /// was one.
+    pub(crate) fn select_first_proposal(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(start) = self
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.range.start)
+            .min()
+        else {
+            return false;
+        };
+        self.pii.reviewing = true;
+        self.editor
+            .update(cx, |editor, cx| editor.set_cursor(start, cx));
+        self.step_pii_highlight(false, true, window, cx);
+        true
+    }
     pub(crate) fn step_pii_highlight(
         &mut self,
         backwards: bool,

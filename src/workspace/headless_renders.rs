@@ -17,6 +17,7 @@ mod restore;
 mod review;
 mod search;
 mod settings;
+mod shelf;
 mod shell;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
@@ -202,6 +203,10 @@ impl Driver {
                     }),
                 })
             })?
+        } else if let Some(stage) = self.window.downcast::<shelf::Stage>() {
+            self.cx
+                .update(|cx| stage.read(cx).map(|stage| stage.state(cx)))
+                .map_err(|e| e.to_string())?
         } else {
             json!({"model_comparison": true})
         };
@@ -314,7 +319,9 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     import::scenes(d)?;
     restore::restored_reply(d)?;
     comments::scenes(d)?;
-    review::merge_hint(d)
+    review::merge_hint(d)?;
+    // Last: it leaves cases locked.
+    shelf::scenes(d)
 }
 
 pub(crate) fn run(out: &Path) -> Result<()> {

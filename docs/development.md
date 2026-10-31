@@ -331,7 +331,8 @@ before/after, What you did with done and undone entries, Open Case, the unlocked
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,
-and a restored AI reply. The legal review uses
+a restored AI reply, and the menu bar shelf (ready, not-ready and
+changed-since-review rows, empty, and locked) on a stage window. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
 uses the captured `restore/claude-en` fixture. No detector runs. Platform file
 pickers and the OS Keychain password prompt are outside this app-owned set.

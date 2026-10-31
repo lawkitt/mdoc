@@ -3,12 +3,12 @@
 //! asks; and, on save, the fingerprint of a ready member's text, kept in its
 //! (encrypted) case.
 
-use super::Workspace;
+use super::{Workspace, navigation::Arrival};
 use crate::{
     document_view::DocumentView,
-    shelf::{self, ClosedMember, OpenTab, ShelfDocument},
+    shelf::{self, ClosedMember, OpenTab, ShelfDocument, ShelfKey},
 };
-use gpui::{App, Context};
+use gpui::{App, Context, Window};
 use mdoc_pii::restore::ExportedIdentity;
 use mdoc_store::session_store;
 use std::{path::PathBuf, time::SystemTime};
@@ -138,4 +138,173 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
 
 fn modified(path: Option<&PathBuf>) -> Option<SystemTime> {
     std::fs::metadata(path?).ok()?.modified().ok()
+}
+
+/// Whose names the shelf's clipboard rows use (ADR 0084): a case, or an
+/// open tab without one through its live mapping. Never mixed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ClipboardSource {
+    Case {
+        id: String,
+        name: String,
+    },
+    /// The tab's title, pseudonymized.
+    Tab {
+        id: u64,
+        title: String,
+    },
+}
+
+impl ClipboardSource {
+    /// The name the row and its picker show.
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Case { name, .. } => name,
+            Self::Tab { title, .. } => title,
+        }
+    }
+}
+
+/// The names a clipboard row may use.
+pub(crate) enum ClipboardNames {
+    Names(Vec<ExportedIdentity>),
+    /// The case's key is not open: "Unlock cases in mdoc…".
+    Locked,
+    /// The case or tab is gone.
+    Gone,
+}
+
+impl Workspace {
+    /// Every source the picker offers: open tabs without a case that have a
+    /// mapping, then every case, loaded or locked.
+    pub(crate) fn clipboard_sources(&self, cx: &App) -> Vec<ClipboardSource> {
+        let mut sources: Vec<_> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                let view = tab.view()?.read(cx);
+                if view.case.link().is_some() || view.pii.review().applied().is_empty() {
+                    return None;
+                }
+                let row = shelf_tab(tab.id(), view, cx)?;
+                Some(ClipboardSource::Tab {
+                    id: tab.id(),
+                    title: row.title,
+                })
+            })
+            .collect();
+        let mut cases = self.case_coordinator.summaries();
+        cases.sort_by_key(|case| case.name.to_lowercase());
+        sources.extend(cases.into_iter().map(|case| ClipboardSource::Case {
+            id: case.id,
+            name: case.name,
+        }));
+        sources
+    }
+
+    /// The document used last: the active tab's case, or its own mapping.
+    pub(crate) fn active_clipboard_source(&self, cx: &App) -> Option<ClipboardSource> {
+        let view = self.active_view()?;
+        let view = view.read(cx);
+        if let Some(link) = view.case.link() {
+            return Some(ClipboardSource::Case {
+                id: link.id.clone(),
+                name: link.name.clone(),
+            });
+        }
+        let id = self.tabs.active();
+        self.clipboard_sources(cx)
+            .into_iter()
+            .find(|source| matches!(source, ClipboardSource::Tab { id: tab, .. } if *tab == id))
+    }
+
+    /// The names `source` restores or pseudonymizes with. Never reads the
+    /// case key: a case that is not open is locked.
+    pub(crate) fn clipboard_names(&self, source: &ClipboardSource, cx: &App) -> ClipboardNames {
+        match source {
+            ClipboardSource::Case { id, .. } => match self.case_coordinator.case(id) {
+                Some(case) => ClipboardNames::Names(case.exported()),
+                None if self.case_coordinator.key_wait().is_some() => ClipboardNames::Locked,
+                None => ClipboardNames::Gone,
+            },
+            ClipboardSource::Tab { id, .. } => match self.tabs.get(*id).and_then(|t| t.view()) {
+                Some(view) => ClipboardNames::Names(view.read(cx).pii.review().export_identities()),
+                None => ClipboardNames::Gone,
+            },
+        }
+    }
+
+    /// A shelf row's click: the tab comes forward in its current view, a
+    /// closed member opens as a tab, and a document that is not ready
+    /// shows its first pending proposal once it has loaded.
+    pub(crate) fn open_from_shelf(
+        &mut self,
+        key: &ShelfKey,
+        ready: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (tab, path) = match key {
+            ShelfKey::Tab(id) => {
+                if !self.tabs.contains(*id) {
+                    return;
+                }
+                self.activate_as(*id, Arrival::Visit, window, cx);
+                (Some(*id), None)
+            }
+            ShelfKey::Member { path, .. } => {
+                self.open_paths(vec![path.clone()], window, cx);
+                (None, Some(path.clone()))
+            }
+        };
+        if ready {
+            if tab.is_some() {
+                self.focus_active(window, cx);
+            }
+            return;
+        }
+        // A closed member opens and loads asynchronously, and its proposals
+        // appear once it joins its case: wait a little for them.
+        cx.spawn_in(window, async move |this, cx| {
+            for _ in 0..50 {
+                let shown = this
+                    .update_in(cx, |this, window, cx| {
+                        let id = tab.or_else(|| this.find_path(path.as_deref()?, None, cx));
+                        let Some(view) = id
+                            .and_then(|id| this.tabs.get(id))
+                            .and_then(|tab| tab.view().cloned())
+                        else {
+                            return false;
+                        };
+                        if !view.read(cx).lifecycle.ready() {
+                            return false;
+                        }
+                        view.update(cx, |view, cx| view.select_first_proposal(window, cx))
+                    })
+                    .unwrap_or(true);
+                if shown {
+                    return;
+                }
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+            }
+        })
+        .detach();
+    }
+
+    /// "Show all in mdoc": Home lists every document.
+    pub(crate) fn show_all_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_home(window, cx);
+    }
+
+    /// "Unlock cases in mdoc…": the Keychain explainer, in the window.
+    pub(crate) fn unlock_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.unlock_cases(window, cx);
+    }
+
+    /// "Restart to update": the ordinary quit, prompts included (ADR 0040).
+    pub(crate) fn restart_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.restart_to_update(window, cx);
+    }
 }

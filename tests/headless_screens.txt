@@ -44,3 +44,6 @@ conversion-failed
 ocr-consent
 restored-reply
 comments
+shelf
+shelf-empty
+shelf-locked

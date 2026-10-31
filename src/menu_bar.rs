@@ -10,7 +10,10 @@
 //! effects with GPUI and the vendored macOS calls. Other platforms never
 //! turn it on (no tray yet).
 
-use crate::{shelf_ui::ShelfView, workspace::Workspace};
+use crate::{
+    shelf_ui::{ShelfContent, ShelfView},
+    workspace::Workspace,
+};
 use gpui::{
     App, AppContext as _, Bounds, Global, Pixels, Window, WindowBounds, WindowHandle, WindowKind,
     WindowOptions, point, px, size,
@@ -369,8 +372,14 @@ fn open_shelf(cx: &mut App) {
         return;
     };
     let workspace = cx.global::<MenuBar>().workspace;
-    let height = ShelfView::height(workspace, cx);
-    let bounds = shelf_bounds(anchor, display.bounds(), height);
+    // Member files are read now, while the shelf opens, and only kept in it.
+    let Ok(content) = workspace
+        .read(cx)
+        .map(|workspace| ShelfContent::of(workspace, cx))
+    else {
+        return;
+    };
+    let bounds = shelf_bounds(anchor, display.bounds(), content.height());
     let shelf = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -384,7 +393,7 @@ fn open_shelf(cx: &mut App) {
             display_id: Some(display_id),
             ..Default::default()
         },
-        |window, cx| cx.new(|cx| ShelfView::new(workspace, window, cx)),
+        |window, cx| cx.new(|cx| ShelfView::new(workspace, content, window, cx)),
     );
     if let Ok(shelf) = shelf {
         let bar = cx.global_mut::<MenuBar>();

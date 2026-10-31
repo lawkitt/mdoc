@@ -17,7 +17,7 @@
 use crate::{
     comparison_ui, confirm_dialog, document_view, markdown_search, menus,
     pii::ui as pii,
-    search_session as find, settings_ui, spelling,
+    search_session as find, settings_ui, shelf_ui, spelling,
     workspace::{self, shortcuts_ui},
 };
 use gpui::{Action, KeyBinding, KeyBindingContextPredicate};
@@ -70,6 +70,8 @@ pub enum Owner {
     Menus,
     /// The confirm dialog (`confirm_dialog::bind_keys`).
     Dialog,
+    /// The menu bar shelf (`shelf_ui::bind_keys`, ADR 0084).
+    Shelf,
 }
 
 type Make = fn() -> Box<dyn Action>;
@@ -1326,6 +1328,12 @@ pub static SHORTCUTS: &[Shortcut] = &[
             &["escape"],
             comparison_ui::CloseComparison
         )],
+    ),
+    // The menu bar shelf: macOS only (ADR 0084), ⌘C as a drag's counterpart.
+    row(
+        Popup,
+        "Copy a shelf document for AI",
+        &[on!(Shelf, Some("Shelf"), &[], shelf_ui::ShelfCopyForAi).mac(&["cmd-c"])],
     ),
 ];
 

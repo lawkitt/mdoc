@@ -56,9 +56,8 @@ mod quit_flow;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
 mod session_writer;
-// The shelf's view uses it from the next layer of ADR 0084's stack.
-#[cfg_attr(not(test), allow(dead_code))]
 mod shelf_source;
+pub(crate) use shelf_source::{ClipboardNames, ClipboardSource};
 mod shell;
 pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
