@@ -475,8 +475,9 @@ text editing.
 from another app and opens it restored.
 
 **Device floor**: the least physical RAM on which a phone gets the GLiNER2
-detector; below it the app offers OCR, the structured rules and manual
-marking only.
+detector, measured on real phones ([ADR 0088](docs/adr/0088-ios-on-real-devices.md));
+below it the app imports, recognizes text and lets you mark names by hand,
+and says it cannot find names. There is no rules-only scan.
 
 **Feasibility spike**: the device measurements of the mobile core (load,
 memory, scan time, heat, OCR output) that come before mobile UI work.
