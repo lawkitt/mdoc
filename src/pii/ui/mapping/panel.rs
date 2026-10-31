@@ -742,23 +742,7 @@ impl DocumentView {
             .count();
         let kept = self.kept_mention_count(cx);
         let applied = self.pii.review.applied().len();
-        let summary = {
-            let mut parts = Vec::new();
-            if pending > 0 {
-                parts.push(format!("{pending} to replace"));
-            }
-            if applied > 0 {
-                parts.push(format!("{applied} applied"));
-            }
-            if kept > 0 {
-                parts.push(format!("{kept} kept"));
-            }
-            if parts.is_empty() {
-                "Nothing to replace yet".to_string()
-            } else {
-                parts.join(" · ")
-            }
-        };
+        let summary = replacement_summary(busy, pending, applied, kept);
         let upgrade = self.pii.review.applied().iter().any(|a| {
             self.pii
                 .review
@@ -1057,6 +1041,9 @@ impl DocumentView {
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(|| "review-rescan".into())
                                     })
+                                    // A faded accent still reads as a link
+                                    // (#309): grey while a scan runs.
+                                    .when(busy, |v| v.text_color(palette.header_muted))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if !this.pii.scanning() {
                                             this.start_pii_scan(cx);
@@ -1111,5 +1098,33 @@ impl DocumentView {
                     ),
             );
         Some(self.panel_actions(panel, cx).into_any_element())
+    }
+}
+
+/// The Replacements footer's summary. A running scan has no counts to give
+/// yet, so it says so instead of "Nothing to replace yet" (#309).
+pub(super) fn replacement_summary(
+    scanning: bool,
+    pending: usize,
+    applied: usize,
+    kept: usize,
+) -> String {
+    if scanning {
+        return "Scanning…".into();
+    }
+    let mut parts = Vec::new();
+    if pending > 0 {
+        parts.push(format!("{pending} to replace"));
+    }
+    if applied > 0 {
+        parts.push(format!("{applied} applied"));
+    }
+    if kept > 0 {
+        parts.push(format!("{kept} kept"));
+    }
+    if parts.is_empty() {
+        "Nothing to replace yet".to_string()
+    } else {
+        parts.join(" · ")
     }
 }
