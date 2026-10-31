@@ -1947,8 +1947,16 @@ fn home_open_a_case_ends_under_the_local_note(cx: &mut TestAppContext) {
     draw(cx);
     let note = cx.debug_bounds("empty-page-local").unwrap();
     let link = cx.debug_bounds("home-open-case").unwrap();
+    let column = cx.debug_bounds("home-drop").unwrap();
+    let paste = cx.debug_bounds("home-paste").unwrap();
     assert!(link.top() > note.bottom(), "the link sits under the note");
-    assert_eq!(link.right() - px(8.), note.right());
+    // The text ends at Home's column edge.
+    assert_eq!(link.right() - px(8.), column.right());
+    // So does the note beside the buttons; Windows' longer "this computer"
+    // can wrap it onto a line of its own.
+    if note.center().y < paste.bottom() {
+        assert_eq!(link.right() - px(8.), note.right());
+    }
 }
 
 /// Tooltips name the key that does the same (U16): the sidebar's toggle,
