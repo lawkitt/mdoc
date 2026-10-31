@@ -11,6 +11,7 @@ just ios-app    # the core, then the app, extension and test targets for the Sim
 just ios-test   # unit, parity and UI tests on an iOS 26.1 Simulator
 just ios-test "<Simulator name>"   # another device, such as an iPad
 just mobile     # what local CI runs on the Mac, the iOS job included
+just ios-device-test <hardware UDID>   # the device UI tests on a connected iPhone
 ```
 
 They need Xcode with the iOS 26.1 platform. Both build the core first
@@ -39,6 +40,34 @@ The hardware UDID is the `00008150-…` id `xcodebuild` lists. The App Group
 Xcode once and let Signing & Capabilities register it (the command line
 cannot). A new developer certificate needs one tap of an installed app on the
 phone with `ppq.apple.com` reachable before iOS lets it launch.
+
+### Device UI tests
+
+The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
+long job through the real background task ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
+Before every TestFlight build after the first, with the phone connected,
+unlocked, on Wi-Fi, and with UI Automation on (Settings → Developer):
+
+```sh
+just ios-device-test <hardware UDID>
+```
+
+`scripts/ios-device-test.sh` builds for the phone, installs mdoc, copies the
+fixtures into its data container with `devicectl` (the app ships none), runs
+`ReviewFlowUITests` and `DeviceLongJobsUITests`, and fails on a new
+`mdoc-*.ips` crash report (or when it cannot list them). The fixtures are
+the demo .docx, the 37-page `legal-opinion.docx`, a text PDF and six camera
+pages it renders (`scripts/ios-scan-pages.swift`), in
+`Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
+a fixture there when its Mac path does not exist. The long-jobs test runs
+at the detector tier with real downloads: the scan's Download & continue
+fetches text recognition on Wi-Fi and recognizes the pages while the test
+leaves the app for ten seconds, and Find names underlines the tenant. Find
+names on the legal opinion takes over a minute; the test leaves for 45 s,
+past the grace iOS gives without a continued processing task, and mdoc must
+still be running (not suspended) and finish the job. The text PDF comes in
+last. The first run also downloads the name detector, which later runs
+keep; it skips on the Simulator. Results go to `target/ios/device-test-*.xcresult`.
 
 ## Layout
 
@@ -114,6 +143,10 @@ below the detector floor, so no model is needed. The app imports the file in
 `MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
 `tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
 JPEG pages as a scan) and scans it at launch with the structured rules alone:
-the only such scan, which gives the review candidates without a model. Tests that need the OCR model
-download it and run only with `MDOC_OCR_TESTS=1` (the UI test also sets
-`MDOC_REAL_DOWNLOADS=1` for the app).
+the only such scan, which gives the review candidates without a model. On a
+phone, where the Mac path does not exist, the seed reads the file of the same
+name that `just ios-device-test` copied into the app's container. Each launch
+clears the test library but keeps a downloaded name detector. Tests that need
+the OCR model download it and run only with `MDOC_OCR_TESTS=1` (the UI test
+also sets `MDOC_REAL_DOWNLOADS=1` for the app); the device long-jobs test sets
+it and `MDOC_UI_DETECTOR_TIER=1`.

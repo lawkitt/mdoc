@@ -58,7 +58,7 @@ final class AppModel {
                 downloader: testing && !Self.realDownloadsInUITests ? FakeModelDownloader(seconds: 0) : models,
                 network: NetworkMonitor(), defaults: defaults)
             if testing, let seed = ProcessInfo.processInfo.environment["MDOC_SEED_FILE"] {
-                app.seedForUITesting(URL(fileURLWithPath: seed))
+                app.seedForUITesting(uiTestingFixture(seed))
             }
             return app
         } catch {
@@ -88,6 +88,22 @@ final class AppModel {
     /// the case key unreadable; once mdoc is in front, it opens again.
     func reopened(isActive: Bool, open: () -> AppModel) -> AppModel {
         isActive && startupError != nil ? open() : self
+    }
+
+    /// Where `just ios-device-test` copies the UI tests' fixtures on a phone:
+    /// this folder in the app's data container (the app ships none).
+    static let deviceFixturesFolder = "Library/mdoc-ui-fixtures"
+
+    /// A UI test's fixture: its path on the Mac, which the Simulator reads,
+    /// or on a phone, the copy of the same name in `deviceFixturesFolder`.
+    static func uiTestingFixture(_ path: String) -> URL {
+        let mac = URL(fileURLWithPath: path)
+        if FileManager.default.fileExists(atPath: mac.path) {
+            return mac
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent(deviceFixturesFolder, isDirectory: true)
+            .appendingPathComponent(mac.lastPathComponent)
     }
 
     /// UI tests: import a fixture file through the core and scan it with
