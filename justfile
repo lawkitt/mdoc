@@ -47,9 +47,10 @@ test:
 test-release:
     bash scripts/test-release.sh
 
-# Local CI runner regressions; fake gh and just, no network or builds
+# Local CI runner and hosted fallback regressions; fake gh and just, no network or builds
 test-local-ci:
     bash scripts/test-local-ci.sh
+    bash scripts/test-local-ci-fallback.sh
 
 # Local CI runner (ADR 0082): run, once, install, start, stop, status, uninstall
 local-ci *args:
