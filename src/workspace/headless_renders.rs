@@ -324,8 +324,9 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::scanning(d)?;
-    // Last: it leaves cases locked.
-    shelf::scenes(d)
+    // Last: they leave cases locked.
+    shelf::scenes(d)?;
+    cases::locked_home(d)
 }
 
 pub(crate) fn run(out: &Path) -> Result<()> {
