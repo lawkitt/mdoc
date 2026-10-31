@@ -233,6 +233,203 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   name is refused). Consider reusing a real block parser. *From the
   2026-10-31 shelf polish review.*
 
+The 2026-10-31 UI/UX survey (build `84fafd3`, macOS, Light and Dark) adds
+the items below, bugs first, then polish, then ideas; each opens with its
+kind. Repro steps and screenshots:
+[evidence](docs/evidence/ui-ux-survey/2026-10-31/README.md) (IDs U1–U31).
+
+- **[UI] Bug: Paste text opens an empty tab.** Home › Paste text and the
+  palette's "Paste text as new tab" open `Untitled.md` with the clipboard
+  text missing; ⌘V there then works, and each try leaves an empty tab.
+  `paste_as_new_tab` (`src/workspace/shell.rs`) dispatches the editor's Paste
+  right after `new_tab`, likely before the new editor has focus. Insert the
+  text into the new buffer directly, and add a test. It is Home's first
+  button. ([U1](docs/evidence/ui-ux-survey/2026-10-31/README.md#u1-paste-text-opens-an-empty-tab))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Detection] Bug: the demos send addresses, dates of birth and a first
+  name to the AI.** After Apply, Copy for AI of the English demo keeps "Flat
+  3, 41 Larch Road, Bristol BS6 9ZY, born 14 March 1988"; the Russian one
+  keeps both street addresses, "дата рождения 14 марта 1988 г." and "Марина
+  обратилась", while Share says "Names in the text are aliases now". Date is
+  missing from Settings › Categories to detect (the popup has it), and the
+  readiness check passes "Марина" because only "Марина Сергеевна" is an
+  original. Detect street addresses and dates of birth, flag words of known
+  originals, and soften the "aliases now" line. Extends the claim-number item
+  above. ([U2](docs/evidence/ui-ux-survey/2026-10-31/README.md#u2-both-demos-send-addresses-dates-of-birth-and-a-first-name-to-the-ai))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Detection] Bug: the same text scans differently in a longer document.**
+  The English demo repeated 40 times under `## Section N` headings proposes
+  "Ms", "adviser" and "husband" as PERSON (40 each), "Employment Tribunal"
+  and "example.com", and only "Flat 3, 41" of an address; the single demo
+  proposes none of these. Applying writes "her PERSON_9". Find what changes
+  with context (chunk boundaries, headings), add the long fixture to the
+  qualification set, and drop titles and role words as names. Aliases also
+  skip ORG_5. ([U3](docs/evidence/ui-ux-survey/2026-10-31/README.md#u3-the-same-text-scans-differently-inside-a-longer-document))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Editor] Bug: an applied alias's selection ring keeps the original's
+  width.** Click ORG_1 in "ORG_1 denies the claim" after Apply (seen at the
+  minimum window): the ring spans "ORG_1 denies the", the width of "Harrow &
+  Finch Ltd". Measure the ring from the alias as drawn.
+  ([U4](docs/evidence/ui-ux-survey/2026-10-31/README.md#u4-the-selection-ring-of-an-applied-alias-keeps-the-originals-width))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Shelf] Bug: "N replaced" means two things.** The shelf says "14
+  replaced" for documents whose Share tab says "24 replaced" (English) and
+  "18 replaced" (Russian): the shelf counts identities, the editor mentions.
+  Use one count everywhere, or say "14 names · 24 replacements".
+  ([U5](docs/evidence/ui-ux-survey/2026-10-31/README.md#u5-the-shelfs-n-replaced-counts-something-else-than-the-editors))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Preview] Bug: the DOCX preview draws ₽ as an empty box.** The Russian
+  demo's Source shows "1 250 000 □" in its table and drops the sign in the
+  text, in both themes; the editor is fine. Add a fallback font with the
+  currency block to the preview renderer.
+  ([U6](docs/evidence/ui-ux-survey/2026-10-31/README.md#u6-the-docx-source-preview-draws--as-an-empty-box))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Bug: Recent marks files "pseudonymized" that aren't.** A scanned
+  but unapplied document gets the badge, and a conversion appears twice
+  (`.docx` and its `.md`), both badged. Badge only applied documents and
+  fold a source into its `.md`.
+  ([U7](docs/evidence/ui-ux-survey/2026-10-31/README.md#u7-recent-marks-files-pseudonymized-that-arent-and-lists-conversions-twice))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Cases] Bug: locked-case messages contradict Home.** Opening a file in no
+  case, right after launch, raises "Saved cases are locked…" while Home lists
+  no cases; Open a case… says "No saved cases yet" above "Unlock saved
+  cases…" and opens at the content's top left, not at its link. Say "N saved
+  cases are locked", raise the notice only for a case member, and anchor the
+  popover. ([U8](docs/evidence/ui-ux-survey/2026-10-31/README.md#u8-locked-case-messages-contradict-what-home-shows))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Bug: three-digit counts squeeze the Replacements chevron** to a dot
+  ("Ms Bennett 240"). Give the count column room for four digits.
+  ([U9](docs/evidence/ui-ux-survey/2026-10-31/README.md#u9-three-digit-counts-squeeze-the-row-chevron))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Bug: a running scan says "Nothing to replace yet".** The footer says
+  so under the skeleton rows (Rescan stays enabled on short documents), and
+  the only progress is "Finding names…"; an 80 KB document took about 75 s in
+  a debug build. Show "Scanning…" with a page or percentage count.
+  ([U10](docs/evidence/ui-ux-survey/2026-10-31/README.md#u10-a-running-scan-says-nothing-to-replace-yet))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Bug: a sidebar tab's tooltip hides its context menu.** Hover a tab
+  until the path tooltip shows, then right-click: the tooltip stays over the
+  menu until the pointer moves. Dismiss tooltips when a menu opens.
+  ([U11](docs/evidence/ui-ux-survey/2026-10-31/README.md#u11-a-tabs-tooltip-covers-its-context-menu))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Bug: a tab opened in the background shows a `.md` name it doesn't
+  have.** The second of two opened files reads `encrypted--errors.md` (and its
+  tooltip a nonexistent `.md` path) until activated, then
+  `encrypted--errors.odt`. Show the source name until a `.md` exists.
+  ([U12](docs/evidence/ui-ux-survey/2026-10-31/README.md#u12-a-tab-opened-in-the-background-shows-a-md-name-it-doesnt-have))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Editor] Polish: alias chips touch the next character.** The apostrophe
+  of "PERSON_2's" sits on the chip border; on italic text the ring covers
+  half of it ("ORG_4's"); the popup's alias field draws its pencil flush
+  against the alias. Add a hairline of outside spacing, slanted for italics.
+  ([U13](docs/evidence/ui-ux-survey/2026-10-31/README.md#u13-alias-chips-touch-or-cover-the-next-character))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: one action, several names.** Restore AI reply / Paste AI
+  Response / Paste AI reply…; Save as case / Save mapping as case; Before /
+  After / Side by side; UK and US spelling mixed ("unrecognised", "licence",
+  "organisations" beside "Organization", "License"). Pick one name and one
+  spelling ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and
+  buttons. ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: the menus miss common items.** No File › Open Recent, no
+  Restore Clipboard beside Pseudonymize Clipboard, no View items for Home,
+  Search, Original / Pseudonymized / Side by side or the Replacements panel,
+  no mdoc Help in Help, no Check for Updates…; Copy for AI and Copy Markdown
+  have no shortcut. Fits the 0.3.0 shortcut-discovery theme.
+  ([U15](docs/evidence/ui-ux-survey/2026-10-31/README.md#u15-menus))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: tooltips leave out shortcuts.** Sidebar tooltips (Collapse
+  sidebar, Back, Forward, New tab) show none though ⌃⌘S, ⌘[ and ⌘] exist;
+  the toolbar's Pseudonymize (⇧⌘P) and the popup's alias field have no
+  tooltip; "Documents stay on this Mac" opens its tooltip over the button
+  beside it; "Switch theme (Light)" in the palette reads as current or next.
+  ([U16](docs/evidence/ui-ux-survey/2026-10-31/README.md#u16-tooltips))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Settings] Polish: states that look alike.** An enabled "Remove…" looks
+  like the active model's disabled one; toggles don't share a column and off
+  toggles stay accent-tinted; the selected and the focused Appearance segment
+  look the same; About ends with a disabled Reset that has nothing to reset;
+  long pages cut a row with no scroll cue.
+  ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Import] Polish: error and OCR cards offer the wrong next step.** Damaged
+  and password-protected files offer only "Try again" while the Source pane
+  takes 60% to say there is no preview; the all-scanned card offers "Use
+  native text only" when no page has text, and draws it above "Run OCR";
+  OCR of blank pages returns stray "I"s with no "no text found"; "!" means
+  both "needs OCR" and "failed". Offer Close and Open another…, collapse the
+  empty pane, and reword.
+  ([U18](docs/evidence/ui-ux-survey/2026-10-31/README.md#u18-import-error-and-ocr-cards))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Cases] Polish: Save as case asks for the file first.** On an unsaved
+  conversion it shows the Save panel, then the Keychain explainer; Not now
+  leaves the file saved, no case and no message. Show the explainer first, or
+  say what happened. ([U19](docs/evidence/ui-ux-survey/2026-10-31/README.md#u19-save-as-case-asks-for-a-file-first-then-for-the-keychain))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: native panels ignore the app theme.** With Appearance on
+  Light under a Dark macOS, the Save panel, its alerts and the menus stay
+  dark; set the app's `NSAppearance` from the setting.
+  ([U20](docs/evidence/ui-ux-survey/2026-10-31/README.md#u20-native-panels-ignore-the-app-theme))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: narrow windows.** At 720×480 with the sidebar and
+  Replacements open the editor is about 270 pt (three or four words a line);
+  the sidebar is a fixed 180 pt, so names truncate early and shared prefixes
+  look alike. Collapse the sidebar below a width, let it be dragged, and
+  truncate names in the middle.
+  ([U21](docs/evidence/ui-ux-survey/2026-10-31/README.md#u21-narrow-windows))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: dialogs.** Save changes rings Save but doesn't fill it,
+  orders Save · Discard · Cancel unlike macOS, and has no scrim in Dark; the
+  Quit summary says "3 documents have unsaved changes or mappings" without
+  naming them. ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Shelf] Polish: small shelf details.** A converted document's preview
+  ends "1...."; the gear's tooltip is clipped at the shelf edge; the "Names
+  from … ▾" chooser replaces the document list at the top, far from its
+  trigger, and the shelf jumps in height. Beyond the 0.3.0 shelf polish item.
+  ([U23](docs/evidence/ui-ux-survey/2026-10-31/README.md#u23-shelf-details))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: the floating view bar.** It shows only near the bottom
+  edge or while scrolling, its zoom pill covers the line beneath, and a
+  hovered segment looks selected.
+  ([U24](docs/evidence/ui-ux-survey/2026-10-31/README.md#u24-the-floating-view-bar))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: small alignment and style items.** "Open a case…" ends 7 pt
+  short of the line above it; "Next unrecognised" is borderless beside
+  bordered buttons; the Reply view's chip and Close don't align; Home's
+  first Tab stop is the toolbar bell.
+  ([U25](docs/evidence/ui-ux-survey/2026-10-31/README.md#u25-small-alignment-and-style-items))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: Pseudonymize clipboard on Home looks broken.** It jumps to
+  the last document tab and replaces only that document's names, so new text
+  comes back "unchanged". Say on Home which names it uses, or let it pick a
+  source as the shelf does.
+  ([U26](docs/evidence/ui-ux-survey/2026-10-31/README.md#u26-pseudonymize-clipboard-from-home))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Detection] Idea: name and patronymic as a merge signal.** The Russian
+  demo gives one person six aliases with a single merge hint; "Марина
+  Сергеевна" next to "Павлова Марина Сергеевна" is near-certain. Would amend
+  [ADR 0080](docs/adr/0080-merge-hint.md).
+  ([U27](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Idea: keep the Source preview next to the editor.** The
+  Replacements panel sits between them; and hide Source when it has nothing
+  to show. ([U28](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Import] Idea: a cleaner demo import.** The demo `.docx` uses literal
+  "1." numbers and Heading 1 sections, so it imports as "1\." paragraphs and
+  only H1s; `text.pdf` imports `<s>` and `<sup>` as literal tags.
+  ([U29](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[A11y] Idea: zoom the whole window.** View › Zoom scales only the editor;
+  the sidebar, the 11–12 pt panel, dialogs and the shelf stay small.
+  ([U30](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Idea: a fuller tab menu.** Reveal in Finder, Copy path, Close
+  others beside Save mapping as case and Close tab.
+  ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
