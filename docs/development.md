@@ -111,6 +111,7 @@ dependency forks.
 | `src/shortcuts.rs`, `src/workspace/shortcuts_ui.rs` | The one table of user-facing key bindings, which every `bind_keys` and the palette read, and the Keyboard Shortcuts sheet that lists it ([ADR 0073](adr/0073-keyboard-shortcuts-panel.md)) |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
+| `src/workspace/tab_menu.rs` | The sidebar tab menu's file and close rows: Reveal in Finder (Show in Explorer), Copy path, Close tab and Close others |
 | `src/settings_ui.rs`, `src/settings_ui/` | Settings categories, save-on-change rows, model actions and the Spelling dictionary drill-in ([ADR 0076](adr/0076-settings-categories.md)) |
 | `src/workspace/folder_sheet.rs`, `src/workspace/folder_sheet_ui.rs` | The folder sheet: a dropped folder's files, ticks and 20-file cap, and the queue of folders waiting their turn; the dialog and its case actions ([ADR 0075](adr/0075-folder-sheet.md)) |
 | `src/workspace/case_page.rs` | The transient case page: cached overview, documents, names, colour, detection categories and case actions ([ADR 0077](adr/0077-case-page.md)) |

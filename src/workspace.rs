@@ -62,6 +62,7 @@ mod shell;
 pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
 mod sidebar;
+mod tab_menu;
 mod tab_set;
 pub(crate) use cases_ui::{
     AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
@@ -292,6 +293,8 @@ pub(super) struct Workspace {
     awaiting_prompt: bool,
     notices: notices::Notices,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
+    /// Reveal in Finder and Copy path in the tab menu.
+    file_actions: tab_menu::FileActions,
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
@@ -491,6 +494,7 @@ impl Workspace {
             awaiting_prompt: false,
             notices: Default::default(),
             tab_menu: None,
+            file_actions: Default::default(),
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
@@ -3554,29 +3558,15 @@ impl Render for Workspace {
                                         cx.notify();
                                     },
                                 ))
-                                .children(self.case_menu_items(id, cx))
-                                .child(
-                                    crate::ui::focus_ring("context-close-tab", self.theme.get())
-                                        .role(gpui::Role::Button)
-                                        .aria_label("Close tab")
-                                        .key_context("UiControl")
-                                        .tab_index(0)
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(|| "context-close-tab".into())
+                                .map(|menu| {
+                                    let cases = self.case_menu_items(id, cx);
+                                    let divider = !cases.is_empty();
+                                    menu.children(cases)
+                                        .when(divider, |v| {
+                                            v.child(ui::menu_divider(self.theme.get()))
                                         })
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_sm()
-                                        .cursor_pointer()
-                                        .hover(|v| {
-                                            v.bg(self.theme.get().pdf_style().placeholder_bg)
-                                        })
-                                        .child("Close tab")
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.tab_menu = None;
-                                            this.close_tab(id, window, cx);
-                                        })),
-                                ),
+                                        .children(self.tab_menu_rows(id, cx))
+                                }),
                         ),
                     )
                     // Above the sidebar reveal it was opened from.
