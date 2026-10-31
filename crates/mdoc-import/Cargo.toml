@@ -29,7 +29,7 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 libloading = "0.9"
 
 # The supervised DOCX preview worker is a child process: desktop only (ADR 0085).
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 # Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
 docxide-pdf = { version = "=0.18.0", default-features = false }
 roxmltree = "0.21"
