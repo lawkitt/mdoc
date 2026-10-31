@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English strings, word for word with the iOS String Catalog (ADR 0089). -->
+<resources>
+    <string name="app_name">mdoc</string>
+    <string name="home_empty_title">No documents yet</string>
+    <string name="home_empty_body">Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.</string>
+    <string name="home_empty_body_below_floor">Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.</string>
+    <string name="core_failed">mdoc could not open its documents: %1$s</string>
+</resources>
