@@ -74,6 +74,8 @@ rules and the before set:
   line; the reply sheet names the case whose names come back (03, 08).
 - On the tablet, Home, the text, the reply and the bar keep a 720 dp
   reading width, centred (tablet 01, 04, 07, 09).
+- A document with no text yet has iOS's states, with a title: here
+  "Import not finished" (10). The Identities rows open their first mention.
 
 Not visible here: the launcher icon is mdoc's M (`build/appicon.svg`) as an
 adaptive icon with a themed variant, and the long-job notification shows
