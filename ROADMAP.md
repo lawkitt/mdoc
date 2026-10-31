@@ -234,90 +234,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   2026-10-31 shelf polish review.*
 
 The 2026-10-31 UI/UX survey (build `84fafd3`, macOS, Light and Dark) adds
-the items below, bugs first, then polish, then ideas; each opens with its
-kind. Repro steps and screenshots:
-[evidence](docs/evidence/ui-ux-survey/2026-10-31/README.md) (IDs U1–U31).
+the items below, polish first, then ideas. Its twelve bugs are issues
+[#300](https://github.com/lawkitt/mdoc/issues/300)–[#311](https://github.com/lawkitt/mdoc/issues/311)
+in the [0.3.0 milestone](https://github.com/lawkitt/mdoc/milestone/4). Repro
+steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.md)
+(IDs U1–U31).
 
-- **[UI] Bug: Paste text opens an empty tab.** Home › Paste text and the
-  palette's "Paste text as new tab" open `Untitled.md` with the clipboard
-  text missing; ⌘V there then works, and each try leaves an empty tab.
-  `paste_as_new_tab` (`src/workspace/shell.rs`) dispatches the editor's Paste
-  right after `new_tab`, likely before the new editor has focus. Insert the
-  text into the new buffer directly, and add a test. It is Home's first
-  button. ([U1](docs/evidence/ui-ux-survey/2026-10-31/README.md#u1-paste-text-opens-an-empty-tab))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Detection] Bug: the demos send addresses, dates of birth and a first
-  name to the AI.** After Apply, Copy for AI of the English demo keeps "Flat
-  3, 41 Larch Road, Bristol BS6 9ZY, born 14 March 1988"; the Russian one
-  keeps both street addresses, "дата рождения 14 марта 1988 г." and "Марина
-  обратилась", while Share says "Names in the text are aliases now". Date is
-  missing from Settings › Categories to detect (the popup has it), and the
-  readiness check passes "Марина" because only "Марина Сергеевна" is an
-  original. Detect street addresses and dates of birth, flag words of known
-  originals, and soften the "aliases now" line. Extends the claim-number item
-  above. ([U2](docs/evidence/ui-ux-survey/2026-10-31/README.md#u2-both-demos-send-addresses-dates-of-birth-and-a-first-name-to-the-ai))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Detection] Bug: the same text scans differently in a longer document.**
-  The English demo repeated 40 times under `## Section N` headings proposes
-  "Ms", "adviser" and "husband" as PERSON (40 each), "Employment Tribunal"
-  and "example.com", and only "Flat 3, 41" of an address; the single demo
-  proposes none of these. Applying writes "her PERSON_9". Find what changes
-  with context (chunk boundaries, headings), add the long fixture to the
-  qualification set, and drop titles and role words as names. Aliases also
-  skip ORG_5. ([U3](docs/evidence/ui-ux-survey/2026-10-31/README.md#u3-the-same-text-scans-differently-inside-a-longer-document))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Editor] Bug: an applied alias's selection ring keeps the original's
-  width.** Click ORG_1 in "ORG_1 denies the claim" after Apply (seen at the
-  minimum window): the ring spans "ORG_1 denies the", the width of "Harrow &
-  Finch Ltd". Measure the ring from the alias as drawn.
-  ([U4](docs/evidence/ui-ux-survey/2026-10-31/README.md#u4-the-selection-ring-of-an-applied-alias-keeps-the-originals-width))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Shelf] Bug: "N replaced" means two things.** The shelf says "14
-  replaced" for documents whose Share tab says "24 replaced" (English) and
-  "18 replaced" (Russian): the shelf counts identities, the editor mentions.
-  Use one count everywhere, or say "14 names · 24 replacements".
-  ([U5](docs/evidence/ui-ux-survey/2026-10-31/README.md#u5-the-shelfs-n-replaced-counts-something-else-than-the-editors))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Preview] Bug: the DOCX preview draws ₽ as an empty box.** The Russian
-  demo's Source shows "1 250 000 □" in its table and drops the sign in the
-  text, in both themes; the editor is fine. Add a fallback font with the
-  currency block to the preview renderer.
-  ([U6](docs/evidence/ui-ux-survey/2026-10-31/README.md#u6-the-docx-source-preview-draws--as-an-empty-box))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Bug: Recent marks files "pseudonymized" that aren't.** A scanned
-  but unapplied document gets the badge, and a conversion appears twice
-  (`.docx` and its `.md`), both badged. Badge only applied documents and
-  fold a source into its `.md`.
-  ([U7](docs/evidence/ui-ux-survey/2026-10-31/README.md#u7-recent-marks-files-pseudonymized-that-arent-and-lists-conversions-twice))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Cases] Bug: locked-case messages contradict Home.** Opening a file in no
-  case, right after launch, raises "Saved cases are locked…" while Home lists
-  no cases; Open a case… says "No saved cases yet" above "Unlock saved
-  cases…" and opens at the content's top left, not at its link. Say "N saved
-  cases are locked", raise the notice only for a case member, and anchor the
-  popover. ([U8](docs/evidence/ui-ux-survey/2026-10-31/README.md#u8-locked-case-messages-contradict-what-home-shows))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Bug: three-digit counts squeeze the Replacements chevron** to a dot
-  ("Ms Bennett 240"). Give the count column room for four digits.
-  ([U9](docs/evidence/ui-ux-survey/2026-10-31/README.md#u9-three-digit-counts-squeeze-the-row-chevron))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Bug: a running scan says "Nothing to replace yet".** The footer says
-  so under the skeleton rows (Rescan stays enabled on short documents), and
-  the only progress is "Finding names…"; an 80 KB document took about 75 s in
-  a debug build. Show "Scanning…" with a page or percentage count.
-  ([U10](docs/evidence/ui-ux-survey/2026-10-31/README.md#u10-a-running-scan-says-nothing-to-replace-yet))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Bug: a sidebar tab's tooltip hides its context menu.** Hover a tab
-  until the path tooltip shows, then right-click: the tooltip stays over the
-  menu until the pointer moves. Dismiss tooltips when a menu opens.
-  ([U11](docs/evidence/ui-ux-survey/2026-10-31/README.md#u11-a-tabs-tooltip-covers-its-context-menu))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Bug: a tab opened in the background shows a `.md` name it doesn't
-  have.** The second of two opened files reads `encrypted--errors.md` (and its
-  tooltip a nonexistent `.md` path) until activated, then
-  `encrypted--errors.odt`. Show the source name until a `.md` exists.
-  ([U12](docs/evidence/ui-ux-survey/2026-10-31/README.md#u12-a-tab-opened-in-the-background-shows-a-md-name-it-doesnt-have))
-  *From the 2026-10-31 UI/UX survey.*
 - **[Editor] Polish: alias chips touch the next character.** The apostrophe
   of "PERSON_2's" sits on the chip border; on italic text the ring covers
   half of it ("ORG_4's"); the popup's alias field draws its pencil flush

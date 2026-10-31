@@ -2,8 +2,9 @@
 
 A hands-on bug hunt of the macOS desktop app by computer use, run while the
 maintainer was away. Findings are filed at the end of `## Later` in
-[ROADMAP.md](../../../../ROADMAP.md), most severe first; this page holds the
-repro steps and screenshots. IDs (U1–U31) match the order there.
+[ROADMAP.md](../../../../ROADMAP.md) (polish and ideas) and as issues
+#300–#311 (bugs U1–U12), most severe first; this page holds the repro steps
+and screenshots.
 
 ## Setup
 
@@ -41,6 +42,8 @@ repro steps and screenshots. IDs (U1–U31) match the order there.
 
 ### U1. Paste text opens an empty tab
 
+Issue: [#300](https://github.com/lawkitt/mdoc/issues/300).
+
 1. Copy any plain text (tried a two-line English and Russian sample).
 2. Home › **Paste text**, or ⌘K › "Paste text as new tab".
 3. An `Untitled.md` tab opens with the "Type here…" placeholder; the text
@@ -53,6 +56,8 @@ editor holds focus, so the action finds no handler. Defer the paste until the
 editor is focused, or insert the clipboard text into the new buffer directly.
 
 ### U2. Both demos send addresses, dates of birth and a first name to the AI
+
+Issue: [#301](https://github.com/lawkitt/mdoc/issues/301).
 
 English demo: Pseudonymize, Apply 24, Copy for AI. The clipboard still reads
 "Ms PERSON_1, of Flat 3, 41 Larch Road, Bristol BS6 9ZY, born 14 March 1988"
@@ -69,6 +74,8 @@ the readiness check passes it.
 
 ### U3. The same text scans differently inside a longer document
 
+Issue: [#302](https://github.com/lawkitt/mdoc/issues/302).
+
 `long-document.md` (the English demo repeated 40 times under `## Section N`)
 scans to 22 identities: "Ms", "adviser" and "husband" become PERSON_7–9 (40
 mentions each), "Employment Tribunal" ORG_6, "example.com" EMAIL_2, the claim
@@ -82,6 +89,8 @@ PERSON_9". Organisation aliases skip ORG_5.
 
 ### U4. The selection ring of an applied alias keeps the original's width
 
+Issue: [#303](https://github.com/lawkitt/mdoc/issues/303).
+
 Minimum window (720×480) with the sidebar and Replacements open; English demo
 after Apply; click ORG_1 in Background ("ORG_1 denies the claim"). The ring
 runs from ORG_1 to "denies the", about the width of "Harrow & Finch Ltd".
@@ -90,6 +99,8 @@ Not checked at other widths.
 ![Ring wider than ORG_1](ring-original-width.png)
 
 ### U5. The shelf's "N replaced" counts something else than the editor's
+
+Issue: [#304](https://github.com/lawkitt/mdoc/issues/304).
 
 The shelf lists the English demo as "14 replaced" and the Russian one as "14
 replaced"; their Share tabs say "24 replaced" and "18 replaced". The shelf
@@ -100,6 +111,8 @@ phone number · 1 ID"), the editor counts mentions.
 
 ### U6. The DOCX source preview draws ₽ as an empty box
 
+Issue: [#305](https://github.com/lawkitt/mdoc/issues/305).
+
 Open `Соглашение об урегулировании.docx`; in Source, the table reads "1 250
 000 □" and "50 000 □", and the text "1 250 000 в течение" loses the sign.
 The editor shows ₽. Light and Dark.
@@ -108,11 +121,15 @@ The editor shows ₽. Light and Dark.
 
 ### U7. Recent marks files "pseudonymized" that aren't, and lists conversions twice
 
+Issue: [#306](https://github.com/lawkitt/mdoc/issues/306).
+
 After scanning `long-document.md` without applying anything, Home › Recent
 shows it "pseudonymized". The Russian demo appears twice, as `.docx` and as
 the `.md` saved from it, both "pseudonymized"; the `.docx` itself never was.
 
 ### U8. Locked-case messages contradict what Home shows
+
+Issue: [#307](https://github.com/lawkitt/mdoc/issues/307).
 
 - First launch with an empty session, open the English demo: the toolbar bell
   shows "1 notice": "Saved cases are locked. Unlock them to restore
@@ -127,12 +144,16 @@ the `.md` saved from it, both "pseudonymized"; the `.docx` itself never was.
 
 ### U9. Three-digit counts squeeze the row chevron
 
+Issue: [#308](https://github.com/lawkitt/mdoc/issues/308).
+
 Replacements rows "Ms Bennett 240" and "Harrow & Finch Ltd 160" (long
 document) draw the chevron as a dot.
 
 ![Squeezed chevron](count-chevron.png)
 
 ### U10. A running scan says "Nothing to replace yet"
+
+Issue: [#309](https://github.com/lawkitt/mdoc/issues/309).
 
 During every scan the panel footer reads "Nothing to replace yet" under the
 skeleton rows (Rescan is enabled on the short demo). The only progress is the
@@ -141,11 +162,15 @@ seconds in the debug build with no percentage or page count.
 
 ### U11. A tab's tooltip covers its context menu
 
+Issue: [#310](https://github.com/lawkitt/mdoc/issues/310).
+
 Hover a sidebar tab until its path tooltip shows, then right-click: the
 tooltip stays on top of the new context menu and hides it until the pointer
 moves.
 
 ### U12. A tab opened in the background shows a `.md` name it doesn't have
+
+Issue: [#311](https://github.com/lawkitt/mdoc/issues/311).
 
 Open `truncated--errors.docx` and `encrypted--errors.odt` together. Before
 activation the second tab reads `encrypted--errors.md` in the sidebar and its
