@@ -8,8 +8,8 @@
 
 use cocoa::{
     appkit::{NSScreen, NSWindow},
-    base::{YES, id, nil},
-    foundation::{NSPoint, NSRect, NSSize},
+    base::{NO, YES, id, nil},
+    foundation::{NSPoint, NSRect, NSSize, NSUInteger},
 };
 use objc::{class, msg_send, runtime::BOOL, sel, sel_impl};
 
@@ -25,15 +25,23 @@ fn debug_assert_main_thread() {
     debug_assert!(main != objc::runtime::NO, "AppKit call off the main thread");
 }
 
-/// The `NSWindow` behind `window`, or nil.
-fn native_window(window: &gpui::Window) -> id {
+/// GPUI's view behind `window`, or nil.
+fn native_view(window: &gpui::Window) -> id {
     let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
         return nil;
     };
     let raw_window_handle::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
         return nil;
     };
-    let view: id = handle.ns_view.as_ptr().cast();
+    handle.ns_view.as_ptr().cast()
+}
+
+/// The `NSWindow` behind `window`, or nil.
+fn native_window(window: &gpui::Window) -> id {
+    let view = native_view(window);
+    if view.is_null() {
+        return nil;
+    }
     // SAFETY: the handle's view belongs to a live window on this thread.
     unsafe { msg_send![view, window] }
 }
@@ -53,11 +61,22 @@ pub fn hide_window(window: &gpui::Window) {
 
 /// Give `window` a content height of `height` points with its top edge
 /// where it is, at once (no animation), never past the bottom of its
-/// screen's visible frame. Main thread only.
-pub fn set_window_height_keeping_top(window: &gpui::Window, height: f32) {
+/// screen's visible frame. GPUI's view is then given the new size through
+/// its own `setFrameSize:`, which resizes its drawable, and the window
+/// re-reads its size (`Window::bounds_changed`): GPUI's own resize callback
+/// cannot update a window that is being updated, as it is here. The next
+/// frame is laid out at the new height rather than the old one stretched.
+/// Main thread only.
+pub fn set_window_height_keeping_top(window: &mut gpui::Window, cx: &mut gpui::App, height: f32) {
+    resize_keeping_top(window, height);
+    window.bounds_changed(cx);
+}
+
+fn resize_keeping_top(window: &gpui::Window, height: f32) {
     debug_assert_main_thread();
+    let view = native_view(window);
     let native_window = native_window(window);
-    if native_window.is_null() {
+    if view.is_null() || native_window.is_null() {
         return;
     }
     // SAFETY: main thread; a live window, its screen checked for nil.
@@ -80,7 +99,18 @@ pub fn set_window_height_keeping_top(window: &gpui::Window, height: f32) {
             NSPoint::new(frame.origin.x, top - frame_height),
             NSSize::new(frame.size.width, frame_height),
         );
-        native_window.setFrame_display_(resized, YES);
+        // GPUI's view learns a new size only through its `setFrameSize:`;
+        // autoresizing can change its frame around that, leaving GPUI's
+        // drawable and layout at the old size. So the view sits out the
+        // window's change and is then sized here, through GPUI's path.
+        let mask: NSUInteger = msg_send![view, autoresizingMask];
+        let _: () = msg_send![view, setAutoresizingMask: 0 as NSUInteger];
+        native_window.setFrame_display_(resized, NO);
+        let content = native_window.contentRectForFrameRect_(resized);
+        let _: () = msg_send![view, setFrameOrigin: NSPoint::new(0., 0.)];
+        let _: () = msg_send![view, setFrameSize: content.size];
+        let _: () = msg_send![view, setAutoresizingMask: mask];
+        let _: () = msg_send![view, setNeedsDisplay: YES];
     }
 }
 

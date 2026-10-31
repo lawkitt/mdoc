@@ -114,10 +114,10 @@ impl Fit {
         // After this frame, outside layout.
         let handle = window.window_handle();
         cx.defer(move |cx| {
-            let _ = handle.update(cx, |_, window, _| {
+            let _ = handle.update(cx, |_, window, cx| {
                 #[cfg(all(target_os = "macos", not(test)))]
-                gpui_macos::set_window_height_keeping_top(window, wanted);
-                let _ = window;
+                gpui_macos::set_window_height_keeping_top(window, cx, wanted);
+                let _ = (window, cx);
             });
         });
     }

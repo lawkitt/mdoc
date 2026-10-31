@@ -47,7 +47,12 @@ Local changes, marked `mdoc patch`:
   `set_window_height_keeping_top` gives a window a new content height with
   its top edge kept and no animation, clamped to its screen's visible frame
   (`setFrame:display:`; GPUI's `Window::resize` keeps the bottom edge), so
-  the shelf popup fits its content under the menu bar item.
+  the shelf popup fits its content under the menu bar item. GPUI's view sits
+  out that change (its autoresizing is off for it) and is then sized
+  through its own `setFrameSize:`, which resizes the drawable; then the
+  window re-reads its size with `Window::bounds_changed`, since GPUI's own
+  resize callback cannot update a window from inside that window's update.
+  The next frame is laid out at the new size.
   Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
   (`src/menu_bar.rs`); the native effect is a GUI check.
