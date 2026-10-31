@@ -631,15 +631,15 @@ impl DocumentView {
             Some(LifecycleEffect::AskToSave) => {}
             _ => return,
         }
-        // Save is the default, Discard ⌘D / Alt+D, Cancel Esc (ADR 0064).
+        // Save is the default, Don't Save ⌘D / Alt+D, Cancel Esc (ADR 0064).
         let question = format!("Save changes to “{}”?", self.display_name());
         let answer = window.prompt(
             PromptLevel::Warning,
             &question,
-            Some("Unsaved changes will be lost if you discard them."),
+            Some("Your changes will be lost if you don't save them."),
             &[
                 gpui::PromptButton::new("Save"),
-                gpui::PromptButton::new("Discard"),
+                gpui::PromptButton::new("Don't Save"),
                 gpui::PromptButton::cancel("Cancel"),
             ],
             cx,

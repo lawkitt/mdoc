@@ -7,7 +7,7 @@ use std::{
     collections::HashSet,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -17,6 +17,27 @@ pub(super) struct ScanJob {
     pub(super) revision: u64,
     pub(super) generation: u64,
     pub(super) config: settings::PiiConfig,
+    pub(super) progress: Arc<ScanCount>,
+}
+
+/// The running scan's model windows, done and in all, for the toolbar's
+/// count (#309). The scanning thread writes it; each frame reads it. One
+/// word, so a frame never reads a count from one report and a total from
+/// another. No windows yet: the scan has not split the source.
+#[derive(Default)]
+pub(super) struct ScanCount(AtomicU64);
+
+impl ScanCount {
+    pub(super) fn set(&self, done: usize, windows: usize) {
+        let pack = |n: usize| u32::try_from(n).unwrap_or(u32::MAX) as u64;
+        self.0
+            .store(pack(done) << 32 | pack(windows), Ordering::Relaxed);
+    }
+    /// `(done, windows)`.
+    pub(super) fn get(&self) -> (usize, usize) {
+        let word = self.0.load(Ordering::Relaxed);
+        ((word >> 32) as usize, (word & u64::from(u32::MAX)) as usize)
+    }
 }
 
 impl DocumentView {
@@ -88,15 +109,20 @@ impl DocumentView {
         let generation = self.pii.generation;
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
+        let progress = Arc::new(ScanCount::default());
         self.pii.scan_started = std::time::Instant::now();
         self.pii.job = Some(ScanJob {
             cancel: cancel.clone(),
             revision,
             generation,
             config: config.clone(),
+            progress: progress.clone(),
         });
         let task = cx.background_executor().spawn(async move {
-            mdoc_detect::scan_config(&source, &cancel, &config).map_err(|e| e.to_string())
+            mdoc_detect::scan_config_with_progress(&source, &cancel, &config, &|p| {
+                progress.set(p.done, p.windows)
+            })
+            .map_err(|e| e.to_string())
         });
         cx.spawn(async move |this, cx| {
             let result = task.await;

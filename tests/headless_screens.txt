@@ -38,8 +38,10 @@ folder-sheet-add-to-case
 confirm-delete-case
 home-locked-notice
 home-locked-open-case
+confirm-save-and-mapping
 confirm-keep-mapping
 confirm-unsaved
+confirm-quit-summary
 confirm-remove-model
 model-comparison
 conversion-failed
@@ -51,3 +53,4 @@ shelf-copied
 shelf-note
 shelf-empty
 shelf-locked
+review-scanning

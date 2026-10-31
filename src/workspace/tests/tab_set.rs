@@ -358,7 +358,7 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     assert_eq!(active(&tabs, cx), second);
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);

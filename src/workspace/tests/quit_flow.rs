@@ -44,7 +44,7 @@ fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut Te
     cx.run_until_parked();
     cx.simulate_prompt_answer("Review…");
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
@@ -173,7 +173,7 @@ fn system_quit_asks_like_quit_and_answers_appkit(cx: &mut TestAppContext) {
         Answer::Later
     );
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
     assert_eq!(*replies.borrow(), [false, true]);
