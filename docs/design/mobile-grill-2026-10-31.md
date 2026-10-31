@@ -106,11 +106,13 @@ Round 1, recorded in [ADR 0085](../adr/0085-mobile-apps.md):
 
 Round 2, recorded in ADR 0085 and [ADR 0086](../adr/0086-app-store-licence-permission.md):
 
-5. Detector budgets: peak ≤ 2 GB, cold load ≤ 10 s, 20 pages ≤ 60 s, no
+5. Detector budgets: peak ≤ 2 GB (made 2 GiB on 2026-10-31, after the
+   iPhone 17 Pro peaked at 1.97 GiB = 2.12 GB), cold load ≤ 10 s, 20 pages ≤ 60 s, no
    serious throttling; else INT8 if it matches FP16 on qualification; below
    the floor, OCR + structured rules + manual marking. Test phones: iPhone
    17 Pro (12 GB) and iPhone 12 Pro (6 GB); no Android phone yet.
-6. iOS 17+, Android 10 (API 29)+.
+6. iOS 17+, Android 10 (API 29)+. Changed to iOS 26+ on 2026-10-31: the
+   approved iOS PDFium build needs iOS 26 (maintainer's decision).
 7. PP-OCR everywhere; no ML Kit text recognition.
 8. Intake: camera scan, photos, PDF, DOCX (in-process AnyDoc, no DOCX
    preview), pasted text; picker and share sheet.

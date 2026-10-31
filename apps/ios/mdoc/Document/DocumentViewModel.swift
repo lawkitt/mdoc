@@ -75,7 +75,7 @@ final class DocumentViewModel {
         case .recognizing where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
         case .recognizing:
-            return .recognize(resume: snapshot.pagesDone > 0)
+            return .recognize(resume: snapshot.pagesDone > 0 || snapshot.resumesOCR)
         case .unscanned:
             return .findNames
         case .reviewing:
@@ -112,9 +112,20 @@ final class DocumentViewModel {
             return
         }
         finish(outcome)
+        // A scan that finds nothing says so, rather than going quietly to
+        // Share (ADR 0087).
+        if case .finished(let scanned) = outcome, scanned.candidates.isEmpty {
+            notice = String(localized: "No names found. Select text to mark one.")
+        }
     }
 
     /// Download & continue: the job that asked for setup runs again.
+    /// Not now on the document's setup card: Find names (or Recognize)
+    /// returns as the primary action.
+    func skipSetup() {
+        waitingForSetup = nil
+    }
+
     func continueAfterSetup() async {
         switch waitingForSetup {
         case .recognize: await recognize()
@@ -157,6 +168,16 @@ final class DocumentViewModel {
 
     func open(_ candidate: CandidateID) {
         reviewing = candidate
+    }
+
+    /// Whether a proposal is left once `candidate` is decided for `scope`:
+    /// All occurrences decides the identity's other mentions too.
+    func hasProposal(after candidate: CandidateID, scope: Scope) -> Bool {
+        guard let decided = snapshot.candidate(candidate) else { return false }
+        return snapshot.candidates.contains { other in
+            other.state == .proposed && other.id != decided.id
+                && (scope == .justThisOne || other.identityID != decided.identityID)
+        }
     }
 
     /// Opens the first proposal after the one under review, wrapping around.
@@ -221,7 +242,7 @@ final class DocumentViewModel {
                 let url = try storage.write(Data(handOff.text.utf8), named: Self.safeFileName(handOff.fileName), in: .handOff)
                 share = ShareItems(items: [url], temporaryFile: url)
             } else {
-                share = ShareItems(items: [handOff.text])
+                share = ShareItems(items: [TitledText(text: handOff.text, title: snapshot.title)])
             }
             onChange()
         } catch {
@@ -255,6 +276,18 @@ final class DocumentViewModel {
             showsReplySheet = false
             pane = .reply
         }
+    }
+
+    /// The restored reply, as the hand-off bar copies it on the Reply tab.
+    func copyReply(to pasteboard: (String) -> Void) {
+        guard let reply = snapshot.reply else { return }
+        pasteboard(reply.restored.text)
+        notice = String(localized: "Copied reply")
+    }
+
+    func shareReply() {
+        guard let reply = snapshot.reply else { return }
+        share = ShareItems(items: [TitledText(text: reply.restored.text, title: snapshot.title)])
     }
 
     func clearReply() {

@@ -1,11 +1,14 @@
 import SwiftUI
+import UIKit
 
 /// The first-use card: what downloads, its size, and that processing then
 /// stays on the device (ADR 0026).
 struct SetupCard: View {
     @Bindable var model: SetupViewModel
-    /// Shown on Home; inside a document "Not now" is left out.
+    /// Shows Not now.
     var dismissible = true
+    /// What Not now does; on Home it hides the card until next launch.
+    var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
     var then: (@MainActor () async -> Void)?
 
@@ -41,7 +44,11 @@ struct SetupCard: View {
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
-                            model.dismissCard()
+                            if let onDismiss {
+                                onDismiss()
+                            } else {
+                                model.dismissCard()
+                            }
                         }
                         .buttonStyle(.borderless)
                     }
@@ -55,7 +62,9 @@ struct SetupCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        // The grouped row colour: white on Home's grey list in light mode, a
+        // lifted grey in dark (the plain secondary background matched the list).
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .cellularQuestion(model: model, size: size)
     }
 
@@ -74,8 +83,10 @@ struct SetupCard: View {
         switch model.snapshot.tier {
         case .detector:
             String(localized: "mdoc downloads its name detector and text recognition once (\(size)). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
+        case .rulesOnly where UIDevice.current.userInterfaceIdiom == .pad:
+            String(localized: "This iPad has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
         case .rulesOnly:
-            String(localized: "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition downloads once (\(size)).")
+            String(localized: "This iPhone has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
         }
     }
 }
@@ -87,8 +98,14 @@ struct ModelRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(offer.name)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.plainName(offer.purpose))
+                    // The model's own name, for anyone who wants it.
+                    Text(offer.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text(offer.byteSize.formatted(.byteCount(style: .file)))
                     .foregroundStyle(.secondary)
@@ -120,6 +137,14 @@ struct ModelRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// What the model does, in the reader's words (ADR 0087).
+    static func plainName(_ purpose: ModelPurpose) -> String {
+        switch purpose {
+        case .detector: String(localized: "Name detector")
+        case .ocr: String(localized: "Text recognition, English and Russian")
+        }
     }
 }
 

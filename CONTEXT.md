@@ -475,8 +475,29 @@ text editing.
 from another app and opens it restored.
 
 **Device floor**: the least physical RAM on which a phone gets the GLiNER2
-detector; below it the app offers OCR, the structured rules and manual
-marking only.
+detector, measured on real phones ([ADR 0088](docs/adr/0088-ios-on-real-devices.md));
+below it the app imports, recognizes text and lets you mark names by hand,
+and says it cannot find names. There is no rules-only scan.
 
 **Feasibility spike**: the device measurements of the mobile core (load,
 memory, scan time, heat, OCR output) that come before mobile UI work.
+
+**Hand-off bar**: the bar under a reviewed document on mobile with Share,
+Copy and Paste reply; it replaces the review actions once nothing is left
+to decide.
+
+**UI survey**: light and dark screenshots of every mobile screen, taken by
+`ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
+under `docs/evidence/ios-app` and `docs/evidence/android-app` as before and
+after sets.
+
+**Device UI tests**: the review flow and long jobs run on a real phone
+(`just ios-device-test`, `just android-device-test`), by hand before each
+release after the first, to catch what simulators and emulators miss.
+
+**Real-device tiers** (Android): the emulator daily, Firebase Test Lab
+phones by RAM class, and a friend's phone weekly by hand ([ADR 0089](docs/adr/0089-android-app.md)).
+
+**Android job**: the part of a `local/windows` run that builds the Android
+core and app and runs the JVM parity tests and the emulator tests, when a
+PR touches the core or `apps/android` ([ADR 0089](docs/adr/0089-android-app.md)).

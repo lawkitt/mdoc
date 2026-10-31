@@ -27,8 +27,8 @@ struct SettingsView: View {
                     Text("Models")
                 } footer: {
                     Text(setup.snapshot.tier == .detector
-                        ? "Models download once, on Wi-Fi unless you allow cellular, and then run on this device."
-                        : "This device has too little memory for the name detector. Emails, phone numbers, IBANs and other structured details are still found, and you can mark names by hand.")
+                        ? String(localized: "Models download once, on Wi-Fi unless you allow cellular, and then run on this device.")
+                        : Self.rulesOnlyNote)
                 }
                 Section {
                     LabeledContent("Memory", value: Int64(setup.physicalMemory).formatted(.byteCount(style: .memory)))
@@ -51,6 +51,16 @@ struct SettingsView: View {
             .cellularQuestion(model: setup, size: setup.snapshot.missingBytes.formatted(.byteCount(style: .file)))
         }
         .onAppear { setup.refresh() }
+    }
+
+    /// What a device below the detector floor still finds (ADR 0087: no
+    /// promise the rules do not keep).
+    static var rulesOnlyNote: String {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            String(localized: "This iPad has too little memory for the name detector. Email addresses are still found, and phone numbers, IBANs and other details next to their labels; you can mark names by hand.")
+        } else {
+            String(localized: "This iPhone has too little memory for the name detector. Email addresses are still found, and phone numbers, IBANs and other details next to their labels; you can mark names by hand.")
+        }
     }
 
     /// A new phone starts empty, and Settings says so (ADR 0085).

@@ -8,16 +8,10 @@ struct PendingImport: Identifiable, Equatable {
     var suggestedTitle: String
 }
 
-/// Home: documents grouped by case, newest case first.
+/// Home: every document, newest first, each with its case (ADR 0087).
 @MainActor
 @Observable
 final class HomeViewModel {
-    struct Section: Identifiable, Equatable {
-        let caseSummary: CaseSummary
-        var documents: [DocumentSummary]
-        var id: CaseID { caseSummary.id }
-    }
-
     private let library: any Library
     private(set) var snapshot: LibrarySnapshot = .empty
     var pendingImport: PendingImport?
@@ -28,12 +22,13 @@ final class HomeViewModel {
         refresh()
     }
 
-    var sections: [Section] {
-        let sections = snapshot.cases.compactMap { item -> Section? in
-            let documents = snapshot.documents(in: item.id).sorted { $0.updated > $1.updated }
-            return documents.isEmpty ? nil : Section(caseSummary: item, documents: documents)
-        }
-        return sections.sorted { ($0.documents.first?.updated ?? .distantPast) > ($1.documents.first?.updated ?? .distantPast) }
+    /// Every document, most recently changed first.
+    var documents: [DocumentSummary] {
+        snapshot.documents.sorted { $0.updated > $1.updated }
+    }
+
+    func caseSummary(of document: DocumentSummary) -> CaseSummary? {
+        snapshot.cases.first { $0.id == document.caseID }
     }
 
     var isEmpty: Bool { snapshot.documents.isEmpty }
@@ -74,7 +69,19 @@ final class HomeViewModel {
         case .recognizing: String(localized: "Text not recognized yet")
         case .unscanned: String(localized: "Ready to find names")
         case .reviewing: String(localized: "\(document.pendingCount) to review")
+        case .ready where document.candidateCount == 0: String(localized: "Nothing found")
         case .ready: String(localized: "Ready to share")
+        }
+    }
+
+    /// The status's symbol: state is shown by symbol and words, never by a
+    /// colour, so the case colour stays the only colour on a row.
+    static func statusSymbol(of document: DocumentSummary) -> String {
+        switch document.phase {
+        case .recognizing: "text.viewfinder"
+        case .unscanned: "person.text.rectangle"
+        case .reviewing: "exclamationmark.circle"
+        case .ready: "checkmark.circle"
         }
     }
 }

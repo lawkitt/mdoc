@@ -22,10 +22,9 @@ struct MarkdownTextView: UIViewRepresentable {
         view.isSelectable = true
         view.dataDetectorTypes = []
         view.textDragInteraction?.isEnabled = false
-        if #available(iOS 18, *) {
-            view.writingToolsBehavior = .none
-        }
+        view.writingToolsBehavior = .none
         view.linkTextAttributes = [:]
+        view.textLayoutManager?.usesHyphenation = false
         view.backgroundColor = .systemBackground
         view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
         view.delegate = context.coordinator

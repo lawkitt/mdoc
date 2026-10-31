@@ -67,19 +67,73 @@ The review-first iPhone and iPad app on the shared Rust core
 green and leave desktop unchanged. Record:
 [mobile grill](docs/design/mobile-grill-2026-10-31.md).
 
-1. **[Mobile] Device measurements.** *From the feasibility spike
-   ([report](docs/evidence/mobile/2026-10-31/README.md)).* The core, harness
-   and Mac stand-in numbers are merged; run `scripts/ios-spike-device.sh` on
-   the iPhone 17 Pro and iPhone 12 Pro, then decide the minimum iOS: the only
-   approved iOS PDFium build needs iOS 26 (raise the minimum, or build PDFium
-   for iOS 17). *Done when:* both device rows have pass or fail and the
-   minimum iOS is settled in ADR 0085.
-2. **[Mobile] Review-first app.** *From the mobile grill.* SwiftUI app for
-   the review-first flow, Restore with mdoc share extension, parity tests,
-   local CI iOS job and the GPLv3 app-store permission
-   ([ADR 0086](docs/adr/0086-app-store-licence-permission.md)). *Done
-   when:* the iOS section of platform acceptance passes on a TestFlight
-   build.
+1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
+   (#269, #272, #275–#278).* The app runs on the real core in the Simulator
+   with parity, unit and UI tests in local CI; it has never been signed or
+   run on a phone. Sign in to Xcode with the team's Apple ID, upload a
+   TestFlight build, and run the iOS section of
+   [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
+   The first build waits for the measured floor and the device checklist
+   (P17). *Done when:* that section passes on a TestFlight build.
+2. **[Mobile] UI polish.** *From the [iOS polish grill](docs/design/ios-polish-grill-2026-10-31.md)
+   ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).* Four PRs: defects and the
+   survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
+   *Done when:* the after survey sits beside the before set and P12, P13
+   and P16 pass in the Simulator.
+3. **[Mobile] Device fixes.** *From the [device grill](docs/design/ios-device-grill-2026-10-31.md)
+   ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).* The cellular
+   question on any cellular interface, "Waiting for Wi-Fi", the interrupted
+   import's wording, the + menu's order, and the rules-only tier replaced by
+   the below-floor line. *Done when:* the device checklist (P17) passes on
+   the iPhone 17 Pro.
+4. **[Mobile] Device UI tests.** *From the device grill.* `just
+   ios-device-test <udid>` runs the review flow and the long-jobs test on a
+   connected iPhone. *Done when:* it passes on the iPhone 17 Pro.
+
+## Android 0.1
+
+The review-first Android app on the shared Rust core, built beside iOS 0.1
+on the Windows PC ([ADR 0089](docs/adr/0089-android-app.md)). Core-crate
+changes merge when green and leave desktop and iOS unchanged. Record:
+[Android grill](docs/design/android-grill-2026-10-31.md), whose
+Maintainer actions list the steps on the maintainer's side.
+
+1. **[Android] Toolchain on Windows.** Pinned SDK, NDK r29, Temurin 21 and
+   Gradle wrapper; `scripts/build-android-core.sh` with ONNX Runtime 1.27.0
+   and PDFium 7988; `just android-core`. *Done when:* on a fresh checkout
+   on `windows`, `just android-core` writes both ABIs and the Kotlin
+   bindings to `target/android/`, every download verified and every `.so`
+   16 KB aligned.
+2. **[Android] Feasibility spike.** `tools/android-spike` and
+   `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
+   or more. *Done when:* each row has pass or fail
+   against ADR 0085's budgets and Android's floor constant is set from them.
+3. **[Android] App scaffold and the Android job.** `apps/android` over
+   `mdoc-ffi` with pinned, verified Gradle dependencies; JVM parity tests;
+   the Android job in `local/windows`. *Done when:* a PR touching
+   `apps/android` gets a green `local/windows` with the Android job, and the
+   parity tests match the desktop goldens, Copy for AI bytes included.
+4. **[Android] Screens in iOS order.** Home, intake (Paste, Files, Photos,
+   Scan), setup and downloads, review and Identities, the hand-off bar,
+   Restore with mdoc, Settings. *Done when:* the emulator test walks open,
+   review, share, restore, and TalkBack reads and acts on candidates.
+5. **[Android] Long jobs on real phones.** The foreground service, the
+   Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
+   Pixel and Samsung phone an import, OCR and Find names each survive
+   leaving the app and a process kill, with no crash or ANR in
+   `ApplicationExitInfo`; and a model download does too on the emulator
+   and the friend's phone.
+6. **[Android] UI survey.** `just android-survey`. *Done when:* the before
+   and after sets sit under `docs/evidence/android-app/`.
+7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
+   it passes on one Test Lab phone per RAM class.
+8. **[Android] Play closed test.** The Play account, the device check and
+   12 testers. *Done when:* the closed test has had 12 testers opted in for
+   14 days in a row.
+9. **[Android] Acceptance and `android-v0.1.0`.** Platform acceptance
+   section 14 (A1–A17). *Done when:* the section passes on the release
+   build, the signed APK and its SHA-256 are on GitHub Releases, and the
+   Play production release is submitted (or the slip is recorded).
 
 ## Later
 
@@ -132,6 +186,32 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Windows]** An all-users `.msi` again when an admin or buyer asks; it and
   the `.exe` detect each other and stop with a message; reuse UpgradeCode
   `3D50EAE8-D339-41B6-82BC-126389601487` ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+- **[Mobile]** Resumed OCR joins pages with a blank line, so a list that
+  continues across a page break differs from desktop; exact joins need
+  pdf-inspector's page join made public in the fork (#276).
+- **[Detection]** The English settlement demo doesn't scan clean: the claim
+  number "6001842/2026" is not proposed (the captured-reply fixture treats it
+  as an identifier), and the role word "Employer" is replaced as an
+  organisation (ORG_2), which garbles the terms. The demos are the first thing
+  a new user scans; worth a grill on identifier coverage and role words.
+  *From the 2026-10-31 shelf GUI run.*
+- **[Spelling]** Russian name forms such as "Маришей" get a misspelling
+  underline; names, detected mentions and aliases shouldn't be spell-checked.
+  *From the 2026-10-31 shelf GUI run.*
+- **[A11y]** The shelf row is a button with its Copy for AI button nested
+  inside, so accessibility hit-testing lands on the row (an agent's click on
+  Copy opened the document instead); check with VoiceOver (M9) and make them
+  siblings if it can't reach the button. *From the 2026-10-31 shelf GUI run.*
+- **[Release]** Keep the macOS acceptance helpers (window list with layers,
+  AX dump and press by title, pressing the menu bar item) in `scripts/`
+  beside the Windows ones, so GUI runs don't rewrite them. *From the
+  2026-10-31 shelf GUI run.*
+- **[Detection]** A name written with an HTML entity (`Ann&#97; Petrova`)
+  is neither detected nor caught by the readiness check, which looks for
+  known originals in the raw text; Copy for AI then hands it to the AI, which
+  reads it as the name. The shelf preview and drag card mask it since #280;
+  detection and Copy for AI need the same decoding. *From the 2026-10-31
+  shelf polish review.*
 
 ## Ongoing tracks
 

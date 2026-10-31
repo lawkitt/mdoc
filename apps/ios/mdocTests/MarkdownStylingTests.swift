@@ -36,6 +36,8 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertTrue(spans(.strikethrough).contains("old"))
         XCTAssertTrue(spans(.highlight).contains("check"))
         XCTAssertTrue(spans(.marker).contains("| --- | ---: |"))
+        // A converter's `1\.`: only the backslash is a marker.
+        XCTAssertTrue(spans(.marker).contains("\\"))
         XCTAssertEqual(styling.spans.compactMap(\.color), [0xC039_2BFF])
         let kinds = styling.lines.map(\.kind)
         for kind: MarkdownLine.Kind in [.heading(level: 1), .heading(level: 2), .quote, .tableHeader, .tableRow, .codeBlock, .rule] {
@@ -62,8 +64,9 @@ final class MarkdownStylingTests: XCTestCase {
         }
         for line in styling.lines {
             switch line.kind {
-            case .heading, .tableHeader: mark(line.range) { $0.bold = true }
-            case .codeBlock: mark(line.range) { $0.monospaced = true }
+            case .heading: mark(line.range) { $0.bold = true }
+            case .tableHeader: mark(line.range) { $0.bold = true; $0.monospaced = true }
+            case .codeBlock, .tableRow: mark(line.range) { $0.monospaced = true }
             default: break
             }
         }
@@ -136,6 +139,33 @@ final class MarkdownStylingTests: XCTestCase {
         }
     }
 
+    /// A replaced alias in a table keeps the table's size, and a header's
+    /// bold (#286).
+    func testAReplacedAliasKeepsItsTablesFont() throws {
+        let text = "| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |"
+        let styling = MarkdownStyling(markdown: text)
+        func candidate(_ word: String, _ index: Int) throws -> Candidate {
+            let start = try XCTUnwrap(text.range(of: word)).lowerBound.utf16Offset(in: text)
+            return Candidate(
+                id: CandidateID(rawValue: "c\(index)"), identityID: IdentityID(rawValue: "i\(index)"),
+                range: SourceRange(start: start, end: start + word.utf8.count),
+                original: word, alias: "PERSON_\(index)", category: .person, state: .replaced)
+        }
+        let candidates = [try candidate("Name", 1), try candidate("Maya Bennett", 2)]
+        let plain = styler.attributedText(markdown: text, styling: styling, candidates: [])
+        let styled = styler.attributedText(markdown: text, styling: styling, candidates: candidates)
+        for word in ["Name", "Maya Bennett"] {
+            let at = (text as NSString).range(of: word).location
+            let before = try XCTUnwrap(plain.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            let after = try XCTUnwrap(styled.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            XCTAssertEqual(after.pointSize, before.pointSize, accuracy: 0.01, word)
+            XCTAssertEqual(
+                after.fontDescriptor.symbolicTraits.contains(.traitBold),
+                before.fontDescriptor.symbolicTraits.contains(.traitBold), word)
+            XCTAssertTrue(after.fontDescriptor.symbolicTraits.contains(.traitMonoSpace), word)
+        }
+    }
+
     /// A heading after a list marker (`- ## Notes`) is a heading: its size
     /// and VoiceOver's heading level, as on the desktop.
     func testAHeadingInAListItemIsAHeading() {
@@ -147,6 +177,64 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertGreaterThan(font?.pointSize ?? 0, body?.pointSize ?? 0)
         XCTAssertEqual(styled.attribute(.accessibilityTextHeadingLevel, at: heading, effectiveRange: nil) as? Int, 2)
         XCTAssertNil(styled.attribute(.accessibilityTextHeadingLevel, at: 0, effectiveRange: nil))
+    }
+
+    /// A hyphen inside a name or an email would read as part of it
+    /// (ADR 0087): no paragraph of the review text, or of a value label,
+    /// may hyphenate.
+    func testNothingIsHyphenated() {
+        let text = Self.fixture
+        let styled = styler.attributedText(markdown: text, styling: MarkdownStyling(markdown: text), candidates: [])
+        var paragraphs = 0
+        styled.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: styled.length)) { value, _, _ in
+            guard let style = value as? NSParagraphStyle else { return XCTFail("a range without a paragraph style") }
+            XCTAssertFalse(style.usesDefaultHyphenation)
+            XCTAssertEqual(style.hyphenationFactor, 0)
+            XCTAssertEqual(style.lineBreakStrategy, [])
+            paragraphs += 1
+        }
+        XCTAssertGreaterThan(paragraphs, 0)
+        // A text-style font hyphenates over-long words on iOS 26.
+        styled.enumerateAttribute(.font, in: NSRange(location: 0, length: styled.length)) { value, _, _ in
+            let style = (value as? UIFont)?.fontDescriptor.object(forKey: .textStyle) as? String
+            XCTAssertFalse(style?.hasPrefix("UICTFontTextStyle") ?? false, "a Dynamic Type text-style font")
+        }
+
+        let value = UnhyphenatedText.attributed("anna.smirnova@example.com", font: .systemFont(ofSize: 17), color: .label)
+        XCTAssertEqual(value.string.replacingOccurrences(of: "\u{200B}", with: ""), "anna.smirnova@example.com")
+        let style = value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        XCTAssertEqual(style?.usesDefaultHyphenation, false)
+        XCTAssertEqual(style?.hyphenationFactor, 0)
+        XCTAssertEqual(style?.lineBreakStrategy, [])
+    }
+
+    /// Dark mode (ADR 0087, P16): every category's underline reaches 3:1
+    /// against the background, and the fills are stronger than in light.
+    func testDarkHighlightsStandOut() {
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        let background = UIColor.systemBackground.resolvedColor(with: dark)
+        for category in Category.allCases {
+            let underline = category.uiColor.resolvedColor(with: dark)
+            XCTAssertGreaterThanOrEqual(Self.contrast(underline, background), 3, "\(category)")
+        }
+        let light = MarkdownStyler.fill(dark: false)
+        let strong = MarkdownStyler.fill(dark: true)
+        XCTAssertGreaterThan(strong.proposed, light.proposed)
+        XCTAssertGreaterThan(strong.replaced, light.replaced)
+    }
+
+    /// WCAG contrast ratio of two opaque colours.
+    static func contrast(_ first: UIColor, _ second: UIColor) -> CGFloat {
+        func luminance(_ colour: UIColor) -> CGFloat {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            func linear(_ value: CGFloat) -> CGFloat {
+                value <= 0.039_28 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        let (a, b) = (luminance(first), luminance(second))
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     func testDocumentColoursAreReadAsRGBA() {

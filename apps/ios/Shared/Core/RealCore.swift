@@ -172,7 +172,9 @@ final class RealLibrary: Library, @unchecked Sendable {
         // Imports not yet read when mdoc last stopped come back, ready to
         // recognize again.
         for entry in pending.all() {
-            let session = RealSession(id: entry.id, library: self, source: entry.source, title: entry.title, caseID: entry.caseID)
+            let session = RealSession(
+                id: entry.id, library: self, source: entry.source, title: entry.title, caseID: entry.caseID,
+                ocrStarted: entry.ocrStarted)
             sessions[entry.id] = session
         }
     }
@@ -234,12 +236,19 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     func deleteDocument(_ document: DocumentID) throws {
-        guard let session = lock.withLock({ sessions.removeValue(forKey: document) }) else { throw CoreError.notFound }
+        guard let session = lock.withLock({ sessions[document] }) else { throw CoreError.notFound }
         if let path = session.path {
+            // The core takes it out of its case (and the reply kept for it),
+            // then removes the file; a case it cannot save keeps it.
+            _ = try core { try ffi.deleteDocument(path: path) }
             lock.withLock { _ = ids.removeValue(forKey: path) }
-            try? FileManager.default.removeItem(atPath: path)
             originals.remove(for: path)
+        } else if let source = session.sourceFile {
+            // An import not yet read: OCR's kept pages go first, found by the
+            // source file's digest, then the file.
+            try core { try ffi.discardImport(source: source.path) }
         }
+        lock.withLock { _ = sessions.removeValue(forKey: document) }
         pending.remove(document)
     }
 
@@ -252,6 +261,11 @@ final class RealLibrary: Library, @unchecked Sendable {
             throw CoreError.noCase
         }
         try core { try ffi.saveReply(caseId: caseID, document: path, reply: reply) }
+    }
+
+    /// OCR began on an import: once stopped, it resumes with the pages left.
+    fileprivate func ocrStarted(_ session: RealSession) {
+        pending.markOCRStarted(session.id)
     }
 
     /// A saved document keeps its id for the rest of the run.
@@ -285,13 +299,20 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private var kind: SourceKind = .text
     private var original: OriginalSource = .none
     private var owned: [URL] = []
+    /// OCR began on this import and has not finished: the core keeps its
+    /// finished pages, so recognition resumes with the rest.
+    private var ocrStarted: Bool
 
-    fileprivate init(id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?) {
+    fileprivate init(
+        id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
+        ocrStarted: Bool = false
+    ) {
         self.id = id
         self.library = library
         self.source = source
         self.title = title
         self.caseID = caseID
+        self.ocrStarted = ocrStarted
         if let source {
             kind = source.kind
             original = source.original
@@ -313,16 +334,23 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         }
     }
 
+    /// The source file of an import not yet read.
+    fileprivate var sourceFile: URL? {
+        guard case .file(let url, _) = lock.withLock({ source?.input }) else { return nil }
+        return url
+    }
+
     fileprivate func summary(updated: Date) -> DocumentSummary {
         let snapshot = snapshot()
         return DocumentSummary(
             id: id, title: snapshot.title, caseID: snapshot.caseID, kind: snapshot.kind,
-            phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated)
+            phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated,
+            candidateCount: snapshot.candidates.count)
     }
 
     func snapshot() -> DocumentSnapshot {
-        let (review, scanned, caseID, path, title, kind, original) = lock.withLock {
-            (self.review, self.scanned, self.caseID, self.path, self.title, self.kind, self.original)
+        let (review, scanned, caseID, path, title, kind, original, ocrStarted) = lock.withLock {
+            (self.review, self.scanned, self.caseID, self.path, self.title, self.kind, self.original, self.ocrStarted)
         }
         let reply: ReplySnapshot? = {
             guard let caseID, let path,
@@ -334,7 +362,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             return DocumentSnapshot(
                 id: id, title: title, caseID: caseID.map(CaseID.init), caseName: library.caseName(caseID),
                 kind: kind, phase: .recognizing, markdown: "", styling: .empty, candidates: [], identities: [],
-                original: original, pagesDone: 0, pageCount: 0, reply: nil)
+                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted)
         }
         let candidates = review.mentions.map { mention in
             Candidate(
@@ -382,9 +410,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             if needsOcr && ocr == nil {
                 throw CoreError.modelMissing
             }
+            if ocr != nil && (needsOcr || source.kind == .pdf) && !lock.withLock({ ocrStarted }) {
+                lock.withLock { ocrStarted = true }
+                library.ocrStarted(self)
+            }
+            // OCR keeps its finished pages in the library (ADR 0085 Long
+            // jobs): after a cancel, or mdoc stopping, this resumes with the
+            // pages left.
             imported = try core {
-                try ffi.importFile(
-                    path: url.path, options: ImportOptions(ocr: ocr, nativeTextOnly: false), progress: reporter)
+                try ffi.importFileIn(
+                    library: library.ffi, path: url.path, options: ImportOptions(ocr: ocr, nativeTextOnly: false),
+                    progress: reporter)
             }
         }
         let caseID = lock.withLock { self.caseID }
@@ -394,6 +430,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         lock.withLock {
             review = imported
             self.source = nil
+            ocrStarted = false
         }
         try save()
         return snapshot()
@@ -754,6 +791,7 @@ final class PendingImports: @unchecked Sendable {
         var title: String
         var caseID: String
         var source: PreparedSource
+        var ocrStarted = false
     }
 
     private struct Stored: Codable {
@@ -766,6 +804,8 @@ final class PendingImports: @unchecked Sendable {
         var originalKind: String
         var originalFiles: [String]
         var owned: [String]
+        /// OCR began: the core keeps its finished pages. Older entries have none.
+        var ocrStarted: Bool?
     }
 
     private let storage: MdocStorage
@@ -825,7 +865,18 @@ final class PendingImports: @unchecked Sendable {
             let source = PreparedSource(
                 input: input, kind: SourceKind(rawValue: stored.kind) ?? .text, original: original,
                 owned: stored.owned.map { absolute($0) })
-            return Entry(id: DocumentID(rawValue: id), title: stored.title, caseID: stored.caseID, source: source)
+            return Entry(
+                id: DocumentID(rawValue: id), title: stored.title, caseID: stored.caseID, source: source,
+                ocrStarted: stored.ocrStarted ?? false)
+        }
+    }
+
+    func markOCRStarted(_ id: DocumentID) {
+        lock.withLock {
+            var entries = load()
+            guard entries[id.rawValue] != nil else { return }
+            entries[id.rawValue]?.ocrStarted = true
+            save(entries)
         }
     }
 

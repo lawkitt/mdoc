@@ -1,0 +1,135 @@
+{
+  "budgets" : [
+    {
+      "limit" : 2,
+      "measured" : 1.9591250494122505,
+      "name" : "detector peak memory (GiB)",
+      "pass" : true
+    },
+    {
+      "limit" : 10,
+      "measured" : 0.75198254099999995,
+      "name" : "cold load (s)",
+      "pass" : true
+    },
+    {
+      "limit" : 60,
+      "measured" : 34.962521375000001,
+      "name" : "20-page scan (s)",
+      "pass" : true
+    },
+    {
+      "limit" : "fair",
+      "measured" : "fair",
+      "name" : "thermal state below serious",
+      "pass" : true
+    }
+  ],
+  "core_version" : "0.1.0",
+  "document" : {
+    "conversion_seconds" : 0.016123999999999999,
+    "page_bytes" : 63354,
+    "page_words" : 9589,
+    "pages" : 20,
+    "source" : "\/private\/var\/containers\/Bundle\/Application\/02AEF680-BCC7-49A4-BE72-D0644EEE8833\/MdocSpike.app\/data\/fixtures\/legal-opinion.docx",
+    "words" : 17698
+  },
+  "memory_after_probe" : {
+    "footprint_bytes" : 286345944,
+    "peak_footprint_bytes" : 2103594504
+  },
+  "memory_after_scan" : {
+    "footprint_bytes" : 182717336,
+    "peak_footprint_bytes" : 2103594504
+  },
+  "memory_end" : {
+    "footprint_bytes" : 461818992,
+    "peak_footprint_bytes" : 2103594504
+  },
+  "memory_start" : {
+    "footprint_bytes" : 12437200,
+    "peak_footprint_bytes" : 12437200
+  },
+  "ocr" : [
+    {
+      "bundle" : "PP-OCRv6 Small",
+      "error" : null,
+      "fixture" : "english.pdf",
+      "markdown" : "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "matches_expected" : true,
+      "seconds" : 0.42572837499999999,
+      "warning" : null
+    },
+    {
+      "bundle" : "PP-OCRv5 Cyrillic + v6 detector",
+      "error" : null,
+      "fixture" : "russian.pdf",
+      "markdown" : "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "matches_expected" : true,
+      "seconds" : 0.38612612499999999,
+      "warning" : null
+    }
+  ],
+  "platform" : {
+    "available_memory_at_start_bytes" : 3527801136,
+    "device" : "iPhone18,1",
+    "physical_memory_bytes" : 12291735552,
+    "simulator" : false,
+    "system" : "iOS 27.0.1",
+    "thermal_samples" : [
+      {
+        "state" : "fair",
+        "t" : 9.5367431640625e-07
+      },
+      {
+        "state" : "fair",
+        "t" : 10.001130938529968
+      },
+      {
+        "state" : "fair",
+        "t" : 20.001037955284119
+      },
+      {
+        "state" : "fair",
+        "t" : 30.000996947288513
+      }
+    ],
+    "thermal_worst" : "fair",
+    "wall_seconds" : 39.341814041137695
+  },
+  "probe" : {
+    "bytes" : 1058,
+    "cold_load_seconds" : 0.75198254099999995,
+    "engine_load_seconds" : 0.75177795800000002,
+    "median_seconds" : 0.43284516699999998,
+    "run_seconds" : [
+      0.44341016700000002,
+      0.40926837500000002,
+      0.42412375000000002,
+      0.43284516699999998,
+      0.45164112499999998
+    ],
+    "runtime_seconds" : 0.00020458299999999999,
+    "tokens" : 502
+  },
+  "probe_error" : null,
+  "runtimes" : {
+    "onnx" : "\/private\/var\/containers\/Bundle\/Application\/02AEF680-BCC7-49A4-BE72-D0644EEE8833\/MdocSpike.app\/MdocSpike",
+    "pdfium" : "\/private\/var\/containers\/Bundle\/Application\/02AEF680-BCC7-49A4-BE72-D0644EEE8833\/MdocSpike.app\/Frameworks\/pdfium.framework\/pdfium"
+  },
+  "scan" : {
+    "detections" : 380,
+    "engine_load_seconds" : 0.716917417,
+    "inference_seconds" : 33.845509739999997,
+    "max_window_seconds" : 0.293008041,
+    "mean_window_seconds" : 0.25836266977099237,
+    "mean_window_tokens" : 268.6641221374046,
+    "structured_seconds" : 0.0037951669999999999,
+    "tokenizer_seconds" : 0.117816791,
+    "total_seconds" : 34.962521375000001,
+    "verify_seconds" : 0.23489825,
+    "windowing_seconds" : 0.043409125,
+    "windows" : 131
+  },
+  "scan_error" : null
+}

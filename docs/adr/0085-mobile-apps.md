@@ -1,8 +1,10 @@
 # Mobile apps
 
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
-when green, UI work runs beside the spike, and native runtimes ship inside
-the app bundle, statically linked or as an embedded framework.
+when green, UI work runs beside the spike, native runtimes ship inside the
+app bundle, statically linked or as an embedded framework, the minimum is
+iOS 26, and the detector floor is 8 GB, measured. Android's start, minimum,
+scanner and testing are replaced by [ADR 0089](0089-android-app.md).
 
 ## Problem
 
@@ -20,11 +22,11 @@ already lives in GUI-free Rust crates (ADR 0069).
   full Markdown editor. It is not a companion to the desktop app, so it
   needs no sync to be useful.
 - **Platforms: iOS first, then Android.** Both apps use the same core;
-  neither is a port of the other. Android starts after iOS 0.1 is on the
-  App Store and its first feedback has shaped the review screen; it is
-  tested on a borrowed recent Android phone. Until then the Mac's local
-  CI runs `just mobile`, a `cargo check` of `mdoc-ffi` for iOS and Android,
-  so desktop-only code does not creep into the core.
+  neither is a port of the other. Android starts beside iOS 0.1 and is
+  tested on real phones as [ADR 0089](0089-android-app.md) says (which
+  replaces "after iOS 0.1 ships", 2026-10-31). The Mac's
+  local CI runs `just mobile`, a `cargo check` of `mdoc-ffi` for iOS and
+  Android, so desktop-only code does not creep into the core.
 - **iPhone and iPad** in one app from v1. "Designed for iPad" on Apple
   silicon Macs is off; the desktop app covers the Mac.
 - **Shared Rust core, native UI.** The mobile apps call the existing
@@ -33,7 +35,10 @@ already lives in GUI-free Rust crates (ADR 0069).
   SwiftUI; the Android UI is Jetpack Compose. No Kotlin Multiplatform, no
   Compose Multiplatform, and no reimplementation of detection, replacement,
   case or restoration logic in Swift or Kotlin.
-- **Minimum OS: iOS 17 and Android 10 (API 29).**
+- **Minimum OS: iOS 26 and Android 10 (API 29).** iOS 26 because the
+  approved iOS PDFium build (bblanchon chromium/7988) requires it. This
+  drops the 2018 iPhones (XR, XS, XS Max), which run iOS 17 but not iOS 26;
+  iPhone 11 and later are supported.
 - **State across the bridge.** Rust owns document, review, case and restore
   state as ADR 0069 owners. UniFFI exposes three coarse objects:
   `Library` (cases, stored documents, storage paths), `DocumentSession`
@@ -54,8 +59,8 @@ already lives in GUI-free Rust crates (ADR 0069).
   switches Text / Original; iPad shows them side by side.
 - **Long jobs.** One model job at a time (ADR 0006), off the main thread,
   with progress and cooperative cancellation. Leaving the app continues a
-  user-started job through `BGContinuedProcessingTask` on iOS 26 and later;
-  on iOS 17–25 the job gets the short background grace, then cancels, and
+  user-started job through `BGContinuedProcessingTask`; when the system
+  refuses one, the job gets the short background grace, then cancels, and
   the app offers to resume on return (OCR keeps finished pages, the scan
   reruns). Nothing starts in the background on its own.
 - **Feasibility spike first.** Before any UI work, `mdoc-detect` and
@@ -66,21 +71,23 @@ already lives in GUI-free Rust crates (ADR 0069).
   on the existing fixtures. The spike keeps the real `crates/mdoc-ffi` and
   the core's platform features; its Swift harness app, which runs the core
   on fixtures and writes timings as JSON, is thrown away. The result is a
-  dated report under `docs/evidence/` with a pass or fail per device class.
-  UI work runs beside the spike; Simulator and Mac numbers stand in until
-  the device rows are measured, and the detector budgets still decide what
-  ships. Android repeats the spike
-  when its work starts.
+  dated report under `docs/evidence/` with a pass or fail per device class
+  ([2026-10-31](../evidence/mobile/2026-10-31/README.md): the iPhone 17 Pro
+  passes, the iPhone 12 Pro fails the scan budget). Android repeats the
+  spike when its work starts.
 - **Detector budgets.** GLiNER2 FP16 ships on a device class when it meets
-  all of: peak memory ≤ 2 GB, cold load ≤ 10 s, a 20-page document scanned
-  in ≤ 60 s, and no serious thermal throttling. If FP16 fails, an INT8
-  export is tried and ships only if it matches FP16 on the pseudonymization
-  qualification fixtures. Devices below the floor get OCR, the structured
-  rules (emails, phones, IBAN, INN/SNILS and the rest of `mdoc-detect`'s
-  rules) and manual marking, labelled as such. The floor is set by physical
-  RAM, not OS version: 6 GB if the iPhone 12 Pro meets every budget,
-  otherwise 8 GB; INT8 fills the gap if it passes where FP16 fails. Setup
-  checks RAM and offers only the models the device can run.
+  all of: peak memory (`phys_footprint`) ≤ 2 GiB, cold load ≤ 10 s, a 20-page document scanned
+  in ≤ 60 s, and no serious thermal throttling. An INT8 export ships only
+  if it matches FP16 on the pseudonymization qualification fixtures.
+  Devices below the floor get OCR and manual marking, with no rules-only
+  scan ([ADR 0088](0088-ios-on-real-devices.md), which replaces the
+  rules-only tier). The floor is set by physical RAM, not OS version, and
+  is **8 GB** (the iPhone 15 Pro and every iPhone from the 16 on),
+  measured: the iPhone 12 Pro (6 GB) met the memory, load and thermal
+  budgets but scanned 20 pages in about two minutes on FP16. INT8 was not
+  tried, by the maintainer's choice, since it would need 2 to 2.3 times
+  FP16's speed there. Setup checks RAM and offers only the models the
+  device can run.
 - **Model delivery.** Models come from the same pinned URLs and SHA-256
   checks as desktop, through a background download session, on Wi-Fi by
   default; cellular needs the user's yes. A first-use setup card names the
@@ -180,4 +187,6 @@ already lives in GUI-free Rust crates (ADR 0069).
   `load-dynamic` runtime loading, macOS Keychain access) move behind
   platform features.
 
-References: [interview](../design/mobile-grill-2026-10-31.md).
+References: [interview](../design/mobile-grill-2026-10-31.md). See also
+[ADR 0087](0087-ios-ui-polish.md) for the iOS screens' polish and
+[ADR 0088](0088-ios-on-real-devices.md) for what real devices changed.

@@ -28,6 +28,24 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .handOff)
     }
 
+    /// Next proposal counts what the chosen scope leaves undecided (#285).
+    func testNextProposalFollowsTheScope() throws {
+        let model = try model()
+        let candidates = model.snapshot.candidates
+        let repeated = try XCTUnwrap(candidates.first { candidate in
+            candidates.filter { $0.identityID == candidate.identityID }.count > 1
+        }, "the fixture needs a name mentioned twice")
+        let others = candidates.filter { $0.state == .proposed && $0.identityID != repeated.identityID }
+        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
+        XCTAssertEqual(model.hasProposal(after: repeated.id, scope: .allOccurrences), !others.isEmpty)
+        // Deciding every other identity leaves only the repeat's mentions.
+        for other in others {
+            model.decide(other.id, .keep, scope: .allOccurrences)
+        }
+        XCTAssertFalse(model.hasProposal(after: repeated.id, scope: .allOccurrences))
+        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
+    }
+
     func testCandidateSheetDecisionUpdatesTheSnapshot() throws {
         let model = try model()
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
@@ -63,9 +81,11 @@ final class DocumentViewModelTests: XCTestCase {
         model.errorMessage = nil
         model.replaceAllPending()
         model.share(asFile: false)
-        let text = try XCTUnwrap(model.share?.items.first as? String)
-        XCTAssertTrue(text.contains("PERSON_1"))
-        XCTAssertFalse(text.contains("Maya Ellison"))
+        // The text travels with the document's title as the share preview.
+        let item = try XCTUnwrap(model.share?.items.first as? TitledText)
+        XCTAssertEqual(item.title, model.snapshot.title)
+        XCTAssertTrue(item.text.contains("PERSON_1"))
+        XCTAssertFalse(item.text.contains("Maya Ellison"))
     }
 
     func testShareAsFileWritesAMarkdownFileAndRemovesIt() throws {
@@ -167,12 +187,15 @@ final class DocumentViewModelTests: XCTestCase {
 
 @MainActor
 final class HomeViewModelTests: XCTestCase {
-    func testDocumentsAreGroupedByCase() {
+    func testDocumentsAreNewestFirstWithTheirCase() {
         let home = HomeViewModel(library: Fixture.core().library)
-        let sections = home.sections
-        XCTAssertEqual(sections.map(\.id), [Fixture.ellison, Fixture.harbour])
-        XCTAssertEqual(Set(sections[0].documents.map(\.id)), [Fixture.letter, Fixture.quotation])
-        XCTAssertEqual(sections[1].documents.map(\.id), [Fixture.tenancy])
+        let documents = home.documents
+        XCTAssertEqual(Set(documents.map(\.id)), [Fixture.letter, Fixture.quotation, Fixture.tenancy])
+        XCTAssertEqual(documents.map(\.updated), documents.map(\.updated).sorted(by: >))
+        let tenancy = try? XCTUnwrap(documents.first { $0.id == Fixture.tenancy })
+        XCTAssertEqual(tenancy.flatMap(home.caseSummary(of:))?.id, Fixture.harbour)
+        let letter = try? XCTUnwrap(documents.first { $0.id == Fixture.letter })
+        XCTAssertEqual(letter.flatMap(home.caseSummary(of:))?.id, Fixture.ellison)
     }
 
     func testImportIntoAnExistingCase() throws {
@@ -183,7 +206,7 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertNil(home.pendingImport)
         XCTAssertEqual(session.snapshot().title, "Call note")
         XCTAssertEqual(session.snapshot().caseID, Fixture.harbour)
-        XCTAssertEqual(home.sections.first { $0.id == Fixture.harbour }?.documents.count, 2)
+        XCTAssertEqual(home.documents.filter { $0.caseID == Fixture.harbour }.count, 2)
     }
 
     func testImportStartsANewCaseByDefault() throws {
@@ -191,13 +214,24 @@ final class HomeViewModelTests: XCTestCase {
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
         _ = home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
         XCTAssertEqual(home.cases.count, 3)
-        XCTAssertEqual(home.sections.first?.caseSummary.name, "Note")
+        let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
+        XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
+    }
+
+    /// A scan that found nothing says so on Home (ADR 0087).
+    func testStatusSaysWhenNothingWasFound() {
+        var document = DocumentSummary(
+            id: Fixture.letter, title: "Letter", caseID: nil, kind: .text, phase: .ready,
+            pendingCount: 0, updated: .now, candidateCount: 0)
+        XCTAssertEqual(HomeViewModel.status(of: document), "Nothing found")
+        document.candidateCount = 3
+        XCTAssertEqual(HomeViewModel.status(of: document), "Ready to share")
     }
 
     func testDeleteRemovesTheDocument() {
         let home = HomeViewModel(library: Fixture.core().library)
         home.delete(Fixture.tenancy)
-        XCTAssertNil(home.sections.first { $0.id == Fixture.harbour })
+        XCTAssertFalse(home.documents.contains { $0.caseID == Fixture.harbour })
     }
 }
 

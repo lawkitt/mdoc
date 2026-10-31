@@ -6,15 +6,21 @@ struct CandidateSheet: View {
     let candidate: Candidate
     let identity: Identity?
     let onDone: (Decision, Scope) -> Void
+    /// Whether a proposal is left once this one is decided for a scope.
+    let hasNext: (Scope) -> Bool
     let onNext: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var replace: Bool
     @State private var scope: Scope = .allOccurrences
 
-    init(candidate: Candidate, identity: Identity?, onDone: @escaping (Decision, Scope) -> Void, onNext: @escaping () -> Void) {
+    init(
+        candidate: Candidate, identity: Identity?, hasNext: @escaping (Scope) -> Bool,
+        onDone: @escaping (Decision, Scope) -> Void, onNext: @escaping () -> Void
+    ) {
         self.candidate = candidate
         self.identity = identity
+        self.hasNext = hasNext
         self.onDone = onDone
         self.onNext = onNext
         _replace = State(initialValue: candidate.state != .kept)
@@ -26,13 +32,23 @@ struct CandidateSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Found") {
-                        Text(candidate.original)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Found")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        UnhyphenatedText(candidate.original)
                     }
-                    LabeledContent("Category") {
-                        Label(candidate.category.label, systemImage: candidate.category.symbol)
+                    .accessibilityElement(children: .combine)
+                    HStack {
+                        Text("Category")
+                        Spacer()
+                        Image(systemName: candidate.category.symbol)
+                            .foregroundStyle(candidate.category.color)
+                            .accessibilityHidden(true)
+                        Text(candidate.category.label)
                             .foregroundStyle(candidate.category.color)
                     }
+                    .accessibilityElement(children: .combine)
                 }
                 Section {
                     Picker("Decision", selection: $replace) {
@@ -67,15 +83,18 @@ struct CandidateSheet: View {
                         Text("Apply to")
                     }
                 }
-                Section {
-                    Button("Next proposal") {
-                        onDone(replace ? .replace : .keep, scope)
-                        onNext()
+                if hasNext(scope) {
+                    Section {
+                        Button("Next proposal") {
+                            onDone(replace ? .replace : .keep, scope)
+                            onNext()
+                        }
+                        .accessibilityHint(Text("Applies this decision and opens the next proposal."))
                     }
-                    .accessibilityHint(Text("Applies this decision and opens the next proposal."))
                 }
             }
-            .navigationTitle(candidate.original)
+            // The value is in Found; the title names what it is.
+            .navigationTitle(candidate.category.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

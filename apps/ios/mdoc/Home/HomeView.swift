@@ -17,29 +17,22 @@ struct HomeView: View {
     var body: some View {
         List(selection: $app.selection) {
             if app.setup.showsCard {
-                SetupCard(model: app.setup)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-            ForEach(home.sections) { section in
                 Section {
-                    ForEach(section.documents) { document in
-                        DocumentRow(document: document)
-                            .tag(document.id)
-                            .swipeActions {
-                                Button("Delete", role: .destructive) {
-                                    app.deleteDocument(document.id)
-                                }
+                    SetupCard(model: app.setup)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
+            // Its own section, so the setup card above reads apart from it.
+            Section {
+                ForEach(home.documents) { document in
+                    DocumentRow(document: document, caseSummary: home.caseSummary(of: document))
+                        .tag(document.id)
+                        .swipeActions {
+                            Button("Delete", role: .destructive) {
+                                app.deleteDocument(document.id)
                             }
-                    }
-                } header: {
-                    HStack(spacing: 6) {
-                        CaseDot(colour: section.caseSummary.colour)
-                        Text(section.caseSummary.name)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(Text("Case \(section.caseSummary.name)"))
-                    .accessibilityAddTraits(.isHeader)
+                        }
                 }
             }
         }
@@ -99,9 +92,9 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $showsPaste) {
-            PasteTextSheet { text in
+            PasteTextSheet(cases: home.cases) { text, title, caseChoice in
                 showsPaste = false
-                app.receiveText(text)
+                app.addText(text, title: title, into: caseChoice)
             }
         }
         .sheet(item: Bindable(home).pendingImport) { pending in
@@ -153,6 +146,7 @@ struct HomeView: View {
 
 private struct DocumentRow: View {
     let document: DocumentSummary
+    let caseSummary: CaseSummary?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -160,16 +154,48 @@ private struct DocumentRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(document.title)
                     .lineLimit(2)
-                Text(HomeViewModel.status(of: document))
+                // The case only when its name says something the title does not.
+                if let caseSummary, caseSummary.name != document.title {
+                    HStack(spacing: 6) {
+                        CaseDot(colour: caseSummary.colour)
+                        Text(caseSummary.name)
+                            .lineLimit(1)
+                    }
                     .font(.footnote)
-                    .foregroundStyle(document.phase == .reviewing ? .orange : .secondary)
+                    .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    // The case's dot, when its name line is left out.
+                    if let caseSummary, caseSummary.name == document.title {
+                        CaseDot(colour: caseSummary.colour)
+                    }
+                    Label {
+                        Text(HomeViewModel.status(of: document))
+                    } icon: {
+                        Image(systemName: HomeViewModel.statusSymbol(of: document))
+                    }
+                    .labelStyle(StatusLabelStyle())
+                    .fontWeight(document.phase == .reviewing ? .semibold : .regular)
+                    .foregroundStyle(document.phase == .reviewing ? .primary : .secondary)
+                }
+                .font(.footnote)
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(spoken))
         .accessibilityIdentifier("document-row")
+    }
+
+    /// "Settlement agreement, 1 to review, case Settlement agreement".
+    private var spoken: String {
+        var parts = [document.title, HomeViewModel.status(of: document)]
+        if let caseSummary {
+            parts.append(String(localized: "case \(caseSummary.name)"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var symbol: String {
@@ -179,6 +205,17 @@ private struct DocumentRow: View {
         case .image: "photo"
         case .scan: "doc.viewfinder"
         case .text: "text.alignleft"
+        }
+    }
+}
+
+/// A status line: a small icon (or the case's dot) before the words.
+private struct StatusLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon
+                .imageScale(.small)
+            configuration.title
         }
     }
 }
@@ -238,28 +275,55 @@ struct ImportSheet: View {
     }
 }
 
-/// Paste: text from the clipboard becomes a document.
+/// Paste: text from the clipboard, its title and its case in one sheet
+/// (ADR 0087); a new case named after the title is the default.
 struct PasteTextSheet: View {
-    let onAdd: (String) -> Void
+    let cases: [CaseSummary]
+    let onAdd: (String, String, CaseChoice) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var title = ""
+    @State private var existingCase: CaseID?
+
+    private var suggestedTitle: String { AppModel.suggestedTitle(for: text) }
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                PasteButton(payloadType: String.self) { strings in
-                    if let first = strings.first {
-                        text = first
+            Form {
+                Section {
+                    PasteButton(payloadType: String.self) { strings in
+                        if let first = strings.first {
+                            text = first
+                        }
                     }
+                    .labelStyle(.titleAndIcon)
+                    TextEditor(text: $text)
+                        .frame(minHeight: 180)
+                        .overlay(alignment: .topLeading) {
+                            if text.isEmpty {
+                                Text("Paste or type the text to check")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .accessibilityLabel(Text("Text"))
                 }
-                .labelStyle(.titleAndIcon)
-                TextEditor(text: $text)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel(Text("Text"))
+                Section {
+                    TextField("Title", text: $title, prompt: Text(suggestedTitle))
+                        .accessibilityIdentifier("import-title")
+                    Picker("Case", selection: $existingCase) {
+                        Text("New case").tag(CaseID?.none)
+                        ForEach(cases) { item in
+                            Text(item.name).tag(Optional(item.id))
+                        }
+                    }
+                } footer: {
+                    Text("A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.")
+                }
             }
-            .padding()
             .navigationTitle("Paste text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -267,8 +331,13 @@ struct PasteTextSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Next") { onAdd(text) }
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Add") {
+                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let chosen = name.isEmpty ? suggestedTitle : name
+                        onAdd(text, chosen, existingCase.map(CaseChoice.existing) ?? .newCase(name: chosen))
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("import-add")
                 }
             }
         }

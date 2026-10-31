@@ -320,7 +320,7 @@ private final class FakeState: @unchecked Sendable {
         return DocumentSummary(
             id: document.id, title: document.title, caseID: document.caseID, kind: document.kind,
             phase: snapshot?.phase ?? .recognizing, pendingCount: snapshot?.pendingCount ?? 0,
-            updated: document.updated)
+            updated: document.updated, candidateCount: snapshot?.candidates.count ?? 0)
     }
 
     // MARK: Restore

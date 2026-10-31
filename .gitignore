@@ -5,3 +5,7 @@
 /tools/pseudonymization/gliner2/target/
 .DS_Store
 /dist/
+
+# Xcode per-user state
+xcuserdata/
+**/*.xcodeproj/project.xcworkspace/

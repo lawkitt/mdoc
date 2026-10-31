@@ -101,6 +101,8 @@ struct DocumentSummary: Identifiable, Hashable, Sendable {
     var phase: DocumentPhase
     var pendingCount: Int
     var updated: Date
+    /// Every candidate, decided or not: none after a scan is "Nothing found".
+    var candidateCount = 0
 }
 
 struct LibrarySnapshot: Sendable, Equatable {
@@ -260,6 +262,9 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// The import's partial-result warning (pages OCR could not read, …),
     /// shown with the text.
     var warning: String? = nil
+    /// OCR stopped part-way (a cancel, or mdoc stopping): its finished pages
+    /// are kept and recognition resumes with the rest.
+    var resumesOCR = false
 
     var pendingCount: Int {
         candidates.filter { $0.state == .proposed }.count

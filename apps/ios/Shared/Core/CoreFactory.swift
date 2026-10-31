@@ -36,7 +36,13 @@ enum CoreFactory {
     static func appCore(storage: MdocStorage) throws -> Core {
         try RealCore.make(
             storage: storage, keys: keyStore(testing: isUITesting),
-            physicalMemory: isUITesting ? rulesOnlyMemory : ProcessInfo.processInfo.physicalMemory)
+            physicalMemory: isUITesting && !detectorTierInUITests ? rulesOnlyMemory : ProcessInfo.processInfo.physicalMemory)
+    }
+
+    /// The UI survey shows the detector tier's setup screens too; nothing
+    /// is downloaded, as UI tests use a fake downloader.
+    private static var detectorTierInUITests: Bool {
+        ProcessInfo.processInfo.environment["MDOC_UI_DETECTOR_TIER"] == "1"
     }
 
     /// The extension gets the library only: restoring needs no model.

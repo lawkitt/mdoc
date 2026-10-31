@@ -97,8 +97,8 @@ window.
   Keychain explainer in a window. The shelf never raises a system dialog
   itself.
 - **Look.** 360 pt wide; as tall as its rows, never past the screen, then
-  scrolling. A native blurred (vibrancy) background like macOS menus, a
-  12 pt corner radius and the system shadow. Title 13 pt semibold, preview
+  scrolling. A native blurred (vibrancy) background like macOS menus, with
+  the system's window corner radius and shadow. Title 13 pt semibold, preview
   12 pt, meta 11 pt muted. Alias chips in the editor's colours with a little
   more padding. It follows mdoc's theme setting.
 - **Accessibility.** A row reads "<title>, <case>, ready" (or "…, 3 left to
@@ -107,8 +107,10 @@ window.
 - **Rendering.** An `NSStatusItem` opens a borderless GPUI `PopUp` window
   anchored under it, closed by a click outside. The native patches in
   `vendor/gpui-pre-macos`, each listed in its `MDOC-PATCH.md`, are the status
-  item, the anchoring, the text drag, hiding and showing a window (so its
-  tabs and undo survive), and the activation policy (Regular / Accessory).
+  item, the anchoring, the text drag (with its card image and whether the
+  drop landed), hiding and showing a window (so its tabs and undo survive),
+  resizing the shelf to its content with its top edge kept, and the
+  activation policy (Regular / Accessory).
   The app crate takes no Objective-C dependency.
 
 ## Not adopted

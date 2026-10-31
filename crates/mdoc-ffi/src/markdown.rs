@@ -320,16 +320,11 @@ impl<'a> Styler<'a> {
                 _ => None,
             },
         };
-        if style.hide && !out.marker {
-            if style.replace.is_none() {
-                // A hard line break's backslash.
-                out.marker = true;
-            } else if self.text.as_bytes()[range.start] == b'\\' && range.len() > 1 {
-                // An escape (`\*`): the backslash is syntax, the character text.
-                self.marker(range.start..range.start + 1);
-                out.range = TextRange::of(&(range.start + 1..range.end));
-            }
-            // An entity (`&amp;`) shows as written.
+        // An escape's backslash (`1\.`) comes as a marker, its character as
+        // text. A hard line break's backslash is hidden syntax too; an entity
+        // (`&amp;`) shows as written.
+        if style.hide && !out.marker && style.replace.is_none() {
+            out.marker = true;
         }
         if out.marker || out != plain(out.range) {
             self.spans.push(out);
@@ -593,6 +588,64 @@ mod tests {
     #[test]
     fn an_escape_dims_only_its_backslash() {
         assert_eq!(described(r"a \* b"), pairs(&[(r"\", "marker")]));
+        // A converter's numbered paragraph: `1\.` is no list, and only the
+        // backslash dims.
+        let text = "1\\. **Harrow & Finch Ltd**, of\n2\\. Ms Maya Bennett";
+        assert_eq!(
+            described(text),
+            pairs(&[
+                (r"\", "marker"),
+                ("**", "marker"),
+                ("Harrow & Finch Ltd", "strong"),
+                ("**", "marker"),
+                (r"\", "marker"),
+            ])
+        );
+        // Escaped emphasis and a heading sign stay literal.
+        assert_eq!(
+            described(r"\*not\* \# no"),
+            pairs(&[(r"\", "marker"), (r"\", "marker"), (r"\", "marker")])
+        );
+        assert!(styling(r"\# no").lines.is_empty());
+        // A character the escape sits in keeps the construct's style.
+        assert_eq!(
+            described(r"**a\*b**"),
+            pairs(&[
+                ("**", "marker"),
+                ("a", "strong"),
+                (r"\", "marker"),
+                ("*", "strong"),
+                ("b", "strong"),
+                ("**", "marker"),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_escape_in_a_link_label_dims_its_backslash() {
+        assert_eq!(
+            described(r"[a\*](u)"),
+            pairs(&[
+                ("[", "marker"),
+                ("a", "link"),
+                (r"\", "marker"),
+                ("*", "link"),
+                ("](u)", "marker"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_backslash_in_code_or_before_a_letter_is_text() {
+        assert_eq!(
+            described(r"`a\*b` C:\Users"),
+            pairs(&[("`", "marker"), (r"a\*b", "code"), ("`", "marker")])
+        );
+        let text = "```\n1\\. code\n```";
+        assert_eq!(
+            described(text),
+            pairs(&[("```", "marker"), ("```", "marker")])
+        );
     }
 
     #[test]
@@ -639,6 +692,7 @@ mod tests {
             ("реестр", "link"),
             ("пункт 4.2", "code"),
             ("monthly", "strong"),
+            (r"\", "marker"),
         ] {
             assert!(
                 all.contains(&(text.to_owned(), kind.to_owned())),
