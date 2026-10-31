@@ -8,7 +8,6 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import kotlin.concurrent.thread
 
 /**
  * Runs the spike on launch and shows the report, with Share so a phone that
@@ -37,9 +36,11 @@ class SpikeActivity : Activity() {
                 addView(ScrollView(context).apply { addView(status) })
             },
         )
-        thread(name = "spike") {
-            val report = Harness.measure(applicationContext)
+        // A rotation recreates this activity; it joins the run already going.
+        Harness.shared(applicationContext).whenComplete { result, failure ->
+            val report = result ?: "The spike stopped: $failure"
             runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
                 status.text = report
                 share.isEnabled = true
                 share.setOnClickListener {

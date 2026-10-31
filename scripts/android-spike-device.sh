@@ -70,9 +70,33 @@ echo "android-spike: running on Test Lab: $* (several minutes)" >&2
   --directories-to-pull "$files" --results-dir "mdoc-spike-$stamp" 2>&1 | tee "$log" || true
 bucket=$(grep -o 'test-lab-[a-z0-9-]*' "$log" | head -n 1)
 [ -n "$bucket" ] || die "no results bucket in $log"
-"$gcloud" storage ls "gs://$bucket/mdoc-spike-$stamp/**/spike-report.json" | while read -r url; do
+"$gcloud" storage ls "gs://$bucket/mdoc-spike-$stamp/**/spike-report.json" 2>/dev/null | while read -r url; do
   # gs://<bucket>/<dir>/<model>-<api>-<locale>-<orientation>/artifacts/...
   name=$(cut -d/ -f5 <<<"$url")
   "$gcloud" storage cp "$url" "$reports/$name-$stamp.json" --quiet
   echo "$reports/$name-$stamp.json"
 done
+
+# Every phone asked for gets a row: one with no report (killed, timed out,
+# crashed before writing it) gets a failure row with Test Lab's outcome, as
+# ADR 0089 records whether the process was killed.
+json() { sed 's/\\/\\\\/g; s/"/\\"/g' <<<"$1"; }
+missing=0
+for device in "$@"; do
+  name=${device%%:*}-${device##*:}-en-portrait
+  [ -f "$reports/$name-$stamp.json" ] && continue
+  missing=$((missing + 1))
+  # The summary table: | OUTCOME | TEST_AXIS_VALUE | TEST_DETAILS |
+  row=$(grep -F "| $name " "$log" | head -n 1)
+  outcome=$(cut -d'|' -f2 <<<"$row" | sed 's/^ *//; s/ *$//')
+  details=$(cut -d'|' -f4 <<<"$row" | sed 's/^ *//; s/ *$//')
+  cat >"$reports/$name-$stamp.json" <<JSON
+{
+  "error": "no spike report: Test Lab says $(json "${outcome:-no outcome}"): $(json "${details:-see $log}")",
+  "platform": { "device": "$(json "${device%%:*}")", "system": "API $(json "${device##*:}")" },
+  "test_lab": { "outcome": "$(json "$outcome")", "details": "$(json "$details")" }
+}
+JSON
+  echo "$reports/$name-$stamp.json (no report: ${outcome:-no outcome}, ${details:-see $log})" >&2
+done
+[ "$missing" = 0 ] || die "$missing of $# phones left no report; see $log"

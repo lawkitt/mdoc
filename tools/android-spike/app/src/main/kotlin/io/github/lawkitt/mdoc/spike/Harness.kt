@@ -19,7 +19,9 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 import java.util.concurrent.TimeUnit
 import uniffi.mdoc_ffi.ModelId
 import uniffi.mdoc_ffi.Setup
@@ -31,28 +33,43 @@ import uniffi.mdoc_ffi.run as runSpike
 object Harness {
     const val REPORT = "spike-report.json"
 
+    private var running: CompletableFuture<String>? = null
+
+    /**
+     * The one run in this process: an activity recreated by a rotation joins
+     * it, rather than starting a second that would share its download file.
+     */
+    @Synchronized
+    fun shared(context: Context): CompletableFuture<String> = running ?: CompletableFuture<String>().also { run ->
+        running = run
+        thread(name = "spike") { runCatching { measure(context.applicationContext) }.fold(run::complete, run::completeExceptionally) }
+    }
+
     fun measure(context: Context): String {
-        // The core opens these by name; loading them first makes that certain.
-        System.loadLibrary("onnxruntime")
-        System.loadLibrary("pdfium")
-        // OCR's PDF reader wants a cache folder; Android has no platform one.
-        Os.setenv("PDF_INSPECTOR_MODEL_CACHE", File(context.cacheDir, "pdf-inspector").path, true)
-        val data = stage(context)
+        // Setup is inside the report too: a download that never finishes or a
+        // model file the core rejects still leaves a report to share.
         val downloadStarted = SystemClock.elapsedRealtime()
-        val setup = installModels(context)
+        val prepared = runCatching {
+            // The core opens these by name; loading them first makes that certain.
+            System.loadLibrary("onnxruntime")
+            System.loadLibrary("pdfium")
+            // OCR's PDF reader wants a cache folder; Android has no platform one.
+            Os.setenv("PDF_INSPECTOR_MODEL_CACHE", File(context.cacheDir, "pdf-inspector").path, true)
+            stage(context) to installModels(context)
+        }
         val downloadSeconds = (SystemClock.elapsedRealtime() - downloadStarted) / 1000.0
 
         val activity = context.getSystemService(ActivityManager::class.java)
         val memory = ActivityManager.MemoryInfo().also { activity.getMemoryInfo(it) }
         val thermal = ThermalRecorder(context.getSystemService(PowerManager::class.java))
         val started = SystemClock.elapsedRealtime()
-        val outcome = runCatching { reportJson(runSpike(input(data, setup))) }
+        val outcome = prepared.mapCatching { (data, setup) -> reportJson(runSpike(input(data, setup))) }
         val seconds = (SystemClock.elapsedRealtime() - started) / 1000.0
         val samples = thermal.stop()
 
         val report = outcome.fold(
             onSuccess = { JSONObject(it) },
-            onFailure = { JSONObject().put("error", it.toString()) },
+            onFailure = { JSONObject().put("error", it.toString()).put("failed_in", if (prepared.isFailure) "setup" else "run") },
         )
         val worst = samples.maxOfOrNull { it.second } ?: PowerManager.THERMAL_STATUS_NONE
         report.put(
