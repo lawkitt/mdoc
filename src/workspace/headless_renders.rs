@@ -340,6 +340,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
+    review::long_counts(d)?;
     review::scanning(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;
