@@ -43,8 +43,8 @@ if booted; then
   exit
 fi
 
-# The device, written by hand: avdmanager cannot place an image installed
-# without sdkmanager's package metadata. The emulator itself needs only this.
+# The device, written here rather than by avdmanager, which needs the JDK
+# and asks questions. The emulator itself needs only this.
 if [ ! -f "$avd/config.ini" ]; then
   mkdir -p "$avd"
   cat >"$home/avd/$name.ini" <<INI
