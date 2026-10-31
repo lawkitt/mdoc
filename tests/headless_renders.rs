@@ -220,6 +220,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 }
                 _ => {}
             }
+            assert_eq!(
+                record["state"]["scanning"] == true,
+                *name == "review-scanning",
+                "{theme}/{name}: only this screen shows a running scan"
+            );
             if *name == "merge-hint" {
                 assert_eq!(
                     record["state"]["merge_hints"], 1,

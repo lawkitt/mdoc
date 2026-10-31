@@ -47,6 +47,8 @@ ocr-consent
 restored-reply
 comments
 shelf
+shelf-demos
+shelf-demos-count
 shelf-copied
 shelf-note
 shelf-empty
@@ -55,3 +57,4 @@ narrow-sidebar-names
 sidebar-wide
 narrow-minimum
 narrow-minimum-sidebar
+review-scanning

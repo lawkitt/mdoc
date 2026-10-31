@@ -32,45 +32,31 @@ impl ReviewUi {
 
 impl DocumentView {
     /// While a scan runs: a spinner and a stage label beside Pseudonymize that
-    /// crossfades through the scan's stages (ADR 0032). The scan reports no
-    /// progress, so stages advance on a timer and settle on the last ones.
+    /// crossfades through the scan's stages (ADR 0032). A scan of several
+    /// model windows counts them instead once it knows how many (#309).
     pub(crate) fn scan_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        const STAGES: [&str; 4] = [
-            "Reading…",
-            "Analyzing…",
-            "Finding names…",
-            "Linking mentions…",
-        ];
-        const SLOT: f32 = 1.8;
-        if !self.pii.scanning() {
-            return None;
-        }
+        let job = self.pii.job.as_ref()?;
         let theme = self.theme.get();
         let elapsed = self.pii.scan_started.elapsed().as_secs_f32();
-        let slot = (elapsed / SLOT) as usize;
-        // After one pass, alternate between the last two stages.
-        let stage = if slot < STAGES.len() {
-            slot
-        } else {
-            STAGES.len() - 2 + (slot - STAGES.len()) % 2
-        };
+        let stage = scan_stage(elapsed, job.progress.get());
         let label = div()
-            .id(("scan-stage", stage))
+            .id(("scan-stage", stage.key))
             .when(cfg!(test), |v| v.debug_selector(|| "scan-status".into()))
-            // Wide enough for the longest stage, so the status keeps its size.
-            .w(px(112.))
+            // Wide enough for the longest stage, so the status keeps its
+            // size; a count can be wider.
+            .map(|v| match stage.fade {
+                Some(_) => v.w(px(112.)),
+                None => v.min_w(px(112.)),
+            })
             .whitespace_nowrap()
             .text_size(px(12.))
             .text_color(theme.pdf_style().header_muted)
-            .child(STAGES[stage]);
-        // Each stage fades in, holds, and fades out before the next. The
-        // spinner redraws every frame, so the fade follows the clock.
-        let t = (elapsed % SLOT) / SLOT;
-        let fade = 0.12;
-        let label = if cx.reduce_motion() {
-            label
-        } else {
-            label.opacity((t / fade).min((1. - t) / fade).clamp(0., 1.))
+            .child(stage.text.clone());
+        // Each timed stage fades in, holds, and fades out before the next.
+        // The spinner redraws every frame, so the fade follows the clock.
+        let label = match stage.fade {
+            Some(opacity) if !cx.reduce_motion() => label.opacity(opacity),
+            _ => label,
         };
         let palette = theme.pdf_style();
         // The status is also the way out: hovering swaps it for "Cancel"
@@ -82,7 +68,7 @@ impl DocumentView {
                 })
                 .group("scan-status")
                 .role(gpui::Role::Button)
-                .aria_label(format!("{} Cancel pseudonymization", STAGES[stage]))
+                .aria_label(format!("{} Cancel pseudonymization", stage.text))
                 .tab_index(0)
                 .relative()
                 .ml_1()
@@ -159,5 +145,50 @@ impl DocumentView {
                 .children(self.selection_menu(window, cx))
                 .into_any_element(),
         ]
+    }
+}
+
+/// What the toolbar says about a running scan.
+#[derive(Debug, PartialEq)]
+pub(super) struct ScanStage {
+    /// Changes with the text, so each stage is its own element.
+    pub(super) key: usize,
+    pub(super) text: gpui::SharedString,
+    /// A timed stage's opacity on its crossfade; a count holds still.
+    pub(super) fade: Option<f32>,
+}
+
+/// The scan's stage after `elapsed` seconds, from its `(done, windows)`
+/// count. Until a scan of several windows has split the source, stages
+/// advance on a timer and settle on the last ones (ADR 0032); then the label
+/// names the window being read, "Finding names… 3 of 12" (#309).
+pub(super) fn scan_stage(elapsed: f32, (done, windows): (usize, usize)) -> ScanStage {
+    const STAGES: [&str; 4] = [
+        "Reading…",
+        "Analyzing…",
+        "Finding names…",
+        "Linking mentions…",
+    ];
+    const SLOT: f32 = 1.8;
+    if windows > 1 {
+        return ScanStage {
+            key: STAGES.len(),
+            text: format!("Finding names… {} of {windows}", (done + 1).min(windows)).into(),
+            fade: None,
+        };
+    }
+    let slot = (elapsed / SLOT) as usize;
+    // After one pass, alternate between the last two stages.
+    let key = if slot < STAGES.len() {
+        slot
+    } else {
+        STAGES.len() - 2 + (slot - STAGES.len()) % 2
+    };
+    let t = (elapsed % SLOT) / SLOT;
+    let fade = 0.12;
+    ScanStage {
+        key,
+        text: STAGES[key].into(),
+        fade: Some((t / fade).min((1. - t) / fade).clamp(0., 1.)),
     }
 }

@@ -1,9 +1,13 @@
 package io.github.lawkitt.mdoc.document
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.os.PersistableBundle
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,10 +18,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,9 +43,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -52,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,12 +71,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -79,13 +91,13 @@ import io.github.lawkitt.mdoc.core.Decision
 import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.Identity
 import io.github.lawkitt.mdoc.core.MentionState
+import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.setup.SetupController
-import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.ui.OriginalView
 import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
@@ -131,7 +143,7 @@ fun DocumentScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(snapshot.title, maxLines = 1) },
+                title = { Text(snapshot.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
@@ -145,6 +157,18 @@ fun DocumentScreen(
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = null) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        // The hand-off's second way out (ADR 0087's long press on iOS).
+                        if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.share_as_file)) },
+                                onClick = {
+                                    menu = false
+                                    scope.launch {
+                                        model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, true, context)) }
+                                    }
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.delete)) },
                             onClick = {
@@ -186,7 +210,7 @@ fun DocumentScreen(
                 onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
                 onCopyReply = {
                     snapshot.reply?.let {
-                        copy(context, it.restored.text)
+                        copy(context, it.restored.text, sensitive = true)
                         model.notice(R.string.copied_reply)
                     }
                 },
@@ -204,7 +228,12 @@ fun DocumentScreen(
             if (model.isMine(interrupted?.documentId)) {
                 Notice(
                     stringResource(
-                        if (interrupted?.kind == JobKind.Scan) R.string.finding_stopped_background else R.string.recognition_stopped_background,
+                        when {
+                            interrupted?.kind == JobKind.Scan -> R.string.finding_stopped_background
+                            // A PDF or DOCX still importing, as on iOS.
+                            !snapshot.kind.needsRecognition -> R.string.import_stopped_background
+                            else -> R.string.recognition_stopped_background
+                        },
                     ),
                 )
             }
@@ -361,7 +390,11 @@ private fun ActionBar(
     onShowReply: (Boolean) -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Clear of the gesture bar: the bar's colour reaches the screen's edge, its buttons do not.
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp, 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             when (action) {
                 is PrimaryAction.Recognize -> Primary(
                     stringResource(if (action.resume) R.string.resume_recognition else R.string.recognize_text), onRecognize,
@@ -375,23 +408,50 @@ private fun ActionBar(
                 }
                 PrimaryAction.Waiting -> Text(stringResource(R.string.waiting_for_other), style = MaterialTheme.typography.bodyMedium)
                 is PrimaryAction.ReplaceAll -> Primary(stringResource(R.string.replace_count, action.count), onReplaceAll)
+                // On the Reply tab the bar acts on the reply (ADR 0087); TalkBack
+                // hears the full names, the buttons show the short ones.
                 PrimaryAction.HandOff -> if (showsReply) {
-                    // On the Reply tab the bar acts on the reply (ADR 0087).
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onShareReply, Modifier.weight(1f)) { Text(stringResource(R.string.share)) }
-                        FilledTonalButton(onCopyReply, Modifier.weight(1f)) { Text(stringResource(R.string.copy)) }
-                        OutlinedButton(onPasteReply, Modifier.weight(1f)) { Text(stringResource(R.string.paste)) }
-                    }
+                    HandOffRow(
+                        Triple(onShareReply, R.string.share, R.string.share_reply),
+                        Triple(onCopyReply, R.string.copy, R.string.copy_reply),
+                        Triple(onPasteReply, R.string.paste, R.string.paste_another_reply),
+                    )
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button({ onShare(false) }, Modifier.weight(1f)) { Text(stringResource(R.string.share)) }
-                        FilledTonalButton(onCopy, Modifier.weight(1f)) { Text(stringResource(R.string.copy)) }
-                        OutlinedButton(onPasteReply, Modifier.weight(1f)) { Text(stringResource(R.string.paste)) }
-                    }
-                    TextButton({ onShare(true) }) { Text(stringResource(R.string.share_as_file)) }
+                    HandOffRow(
+                        Triple({ onShare(false) }, R.string.share, R.string.share),
+                        Triple(onCopy, R.string.copy, R.string.copy),
+                        Triple(onPasteReply, R.string.paste, R.string.paste_reply),
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * Share, Copy, Paste: one row, or stacked when a label would not fit on one
+ * line, as at the largest text sizes (ADR 0087). Each is (action, label,
+ * what TalkBack reads).
+ */
+@Composable
+private fun HandOffRow(vararg buttons: Triple<() -> Unit, Int, Int>) {
+    val stacked = LocalDensity.current.fontScale > 1.3f
+    val items: @Composable (Modifier) -> Unit = { modifier ->
+        buttons.forEachIndexed { index, (onClick, label, spoken) ->
+            val name = stringResource(spoken)
+            val described = modifier.semantics { contentDescription = name }
+            val text: @Composable () -> Unit = { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            when (index) {
+                0 -> Button(onClick, described) { text() }
+                1 -> FilledTonalButton(onClick, described) { text() }
+                else -> OutlinedButton(onClick, described) { text() }
+            }
+        }
+    }
+    if (stacked) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(Modifier.fillMaxWidth()) }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(Modifier.weight(1f)) }
     }
 }
 
@@ -435,7 +495,8 @@ private fun CandidateSheet(
             Text(
                 "${stringResource(R.string.alias)}: ${candidate.alias}",
                 style = MaterialTheme.typography.bodyLarge,
-                color = androidx.compose.ui.graphics.Color(Palette.category(candidate.category, false)),
+                // The category's colour for this theme: the light one is too dim on dark.
+                color = androidx.compose.ui.graphics.Color(Palette.category(candidate.category, isSystemInDarkTheme())),
             )
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(replace, { replace = true }, SegmentedButtonDefaults.itemShape(0, 2)) {
@@ -455,13 +516,19 @@ private fun CandidateSheet(
                 Choice(stringResource(R.string.all_occurrences, mentionCount), scope == Scope.AllOccurrences) { scope = Scope.AllOccurrences }
                 Choice(stringResource(R.string.just_this_one), scope == Scope.JustThisOne) { scope = Scope.JustThisOne }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ onDecide(decision, scope, false) }, Modifier.weight(1f)) { Text(stringResource(R.string.done)) }
+            // Side by side, or stacked when the labels would not fit (ADR 0087).
+            val buttons: @Composable (Modifier) -> Unit = { modifier ->
+                Button({ onDecide(decision, scope, false) }, modifier) { Text(stringResource(R.string.done), maxLines = 1) }
                 if (hasNext) {
-                    OutlinedButton({ onDecide(decision, scope, true) }, Modifier.weight(1f)) {
-                        Text(stringResource(R.string.next_proposal))
+                    OutlinedButton({ onDecide(decision, scope, true) }, modifier) {
+                        Text(stringResource(R.string.next_proposal), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+            }
+            if (LocalDensity.current.fontScale > 1.3f) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { buttons(Modifier.fillMaxWidth()) }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { buttons(Modifier.weight(1f)) }
             }
         }
     }
@@ -520,7 +587,18 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
                     )
                 }
                 items(group, key = { it.id.raw }) { identity ->
+                    val dark = isSystemInDarkTheme()
                     ListItem(
+                        // On the sheet's own colour, not banded rows.
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        leadingContent = {
+                            Box(
+                                Modifier.size(10.dp).background(
+                                    androidx.compose.ui.graphics.Color(Palette.category(identity.category, dark)),
+                                    CircleShape,
+                                ),
+                            )
+                        },
                         headlineContent = { Text(identity.primaryWording) },
                         supportingContent = {
                             Text(
@@ -530,7 +608,7 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
                                         MentionState.Replaced -> R.string.replaced
                                         MentionState.Kept -> R.string.kept
                                     },
-                                )} · ${stringResource(R.string.mentions, identity.mentionCount)}",
+                                )} · ${pluralStringResource(R.plurals.mentions, identity.mentionCount, identity.mentionCount)}",
                             )
                         },
                     )
@@ -569,7 +647,7 @@ private fun ReplyPane(reply: ReplySnapshot, onRemove: () -> Unit) {
         Card {
             Text(
                 listOfNotNull(
-                    stringResource(R.string.values_restored, restored.restoredCount),
+                    pluralStringResource(R.plurals.values_restored, restored.restoredCount, restored.restoredCount),
                     if (restored.unresolvedCount > 0) stringResource(R.string.unrecognised, restored.unresolvedCount) else null,
                 ).joinToString(" · "),
                 modifier = Modifier.padding(12.dp),
@@ -601,8 +679,17 @@ fun shareIntent(text: String, fileName: String?, asFile: Boolean, context: Conte
     return Intent.createChooser(send, title)
 }
 
-private fun copy(context: Context, text: String) {
-    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("mdoc", text))
+/**
+ * Copies to the clipboard. Text holding originals (a restored reply) is
+ * marked sensitive, so Android's clipboard preview hides it (lawkitt/mdoc#321);
+ * Copy for AI holds aliases only and stays plain.
+ */
+internal fun copy(context: Context, text: String, sensitive: Boolean = false) {
+    val clip = ClipData.newPlainText("mdoc", text)
+    if (sensitive) {
+        clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+    }
+    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
 }
 
 private enum class Pane(val label: Int) {

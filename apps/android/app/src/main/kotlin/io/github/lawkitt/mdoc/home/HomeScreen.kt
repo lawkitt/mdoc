@@ -3,8 +3,6 @@ package io.github.lawkitt.mdoc.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,26 +14,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,11 +50,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.CaseChoice
@@ -103,6 +113,7 @@ fun HomeScreen(
                     AddOption.entries.reversed().forEach { option ->
                         DropdownMenuItem(
                             text = { Text(stringResource(option.label)) },
+                            leadingIcon = { Icon(painterResource(option.icon), contentDescription = null) },
                             onClick = {
                                 menu = false
                                 onAdd(option)
@@ -134,6 +145,15 @@ fun HomeScreen(
     }
 }
 
+/** iOS's symbols for the same four (ADR 0087), as Material Symbols. */
+private val AddOption.icon: Int
+    get() = when (this) {
+        AddOption.Paste -> R.drawable.ic_content_paste
+        AddOption.Files -> R.drawable.ic_folder_open
+        AddOption.Photos -> R.drawable.ic_photo_library
+        AddOption.Scan -> R.drawable.ic_document_scanner
+    }
+
 private val AddOption.label: Int
     get() = when (this) {
         AddOption.Paste -> R.string.paste
@@ -144,7 +164,8 @@ private val AddOption.label: Int
 
 @Composable
 private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNames: Boolean, onClick: () -> Unit) {
-    val status = when (val line = HomeViewModel.status(document, canFindNames)) {
+    val line = HomeViewModel.status(document, canFindNames)
+    val status = when (line) {
         StatusLine.NotRecognized -> stringResource(R.string.status_not_recognized)
         StatusLine.ImportNotFinished -> stringResource(R.string.status_import_not_finished)
         StatusLine.ReadyToFind -> stringResource(R.string.status_ready_to_find)
@@ -153,7 +174,11 @@ private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNa
         StatusLine.ReadyToShare -> stringResource(R.string.status_ready_to_share)
         StatusLine.NothingFound -> stringResource(R.string.status_nothing_found)
     }
-    // The case's name only when it differs from the title; the dot is the row's one colour.
+    // The status as a symbol and words (ADR 0087), never a colour of its own:
+    // the case's dot is the row's one colour. Something to review reads strongest.
+    val toReview = line is StatusLine.ToReview
+    val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    // The case's name only when it differs from the title.
     val caseName = case?.name?.takeIf { it != document.title }
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
@@ -162,11 +187,27 @@ private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNa
                 Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape))
             }
         },
-        headlineContent = { Text(document.title) },
+        headlineContent = { Text(document.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(listOfNotNull(caseName?.let { stringResource(R.string.case_named, it) }, status).joinToString(" · "))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                caseName?.let { Text(stringResource(R.string.case_named, it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(statusIcon(line), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
+                    Text(status, color = tone, fontWeight = if (toReview) FontWeight.SemiBold else null)
+                }
+            }
         },
     )
+}
+
+/** iOS's status symbols, in Material's core set. */
+private fun statusIcon(line: StatusLine): ImageVector = when (line) {
+    StatusLine.ImportNotFinished -> Icons.Outlined.Refresh
+    StatusLine.NotRecognized -> Icons.Outlined.Search
+    StatusLine.ReadyToFind -> Icons.Outlined.Person
+    StatusLine.ReadyToMark -> Icons.Outlined.Edit
+    is StatusLine.ToReview -> Icons.Outlined.Info
+    StatusLine.ReadyToShare, StatusLine.NothingFound -> Icons.Outlined.CheckCircle
 }
 
 @Composable
@@ -189,6 +230,12 @@ private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Icon(
+            painterResource(R.drawable.ic_find_in_page),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(48.dp),
+        )
         Text(stringResource(R.string.home_empty_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         Text(
             stringResource(if (canFindNames) R.string.home_empty_body else R.string.home_empty_body_below_floor),

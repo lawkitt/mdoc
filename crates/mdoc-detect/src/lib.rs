@@ -420,13 +420,42 @@ pub fn scan_config(
     cancel: &AtomicBool,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, DetectError> {
-    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
-    scan_reserved(source, cancel, config)
+    scan_config_with_progress(source, cancel, config, &|_| {})
 }
+
+/// [`scan_config`] that also reports which model windows are done, so a long
+/// document can show a count. `progress` runs on the scanning thread: once
+/// with no window done when the windows are known, then after each window.
+pub fn scan_config_with_progress(
+    source: &str,
+    cancel: &AtomicBool,
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
+) -> Result<Vec<Detection>, DetectError> {
+    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
+    scan_reserved_with(source, cancel, config, progress)
+}
+
+/// Model windows a scan has finished, out of all of the source's windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScanProgress {
+    pub done: usize,
+    pub windows: usize,
+}
+
 pub fn scan_reserved(
     source: &str,
     cancel: &AtomicBool,
     config: &mdoc_store::settings::PiiConfig,
+) -> Result<Vec<Detection>, DetectError> {
+    scan_reserved_with(source, cancel, config, &|_| {})
+}
+
+fn scan_reserved_with(
+    source: &str,
+    cancel: &AtomicBool,
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
 ) -> Result<Vec<Detection>, DetectError> {
     if !mdoc_store::settings::unit_interval(config.threshold) {
         return Err(DetectError::InvalidThreshold);
@@ -434,15 +463,18 @@ pub fn scan_reserved(
     if !SUPPORTED {
         return Err(DetectError::ScanUnsupported);
     }
-    scan_in(
+    scan_timed(
         source,
         cancel,
         &root_for(config.model)?,
-        mdoc_import::ocr::onnx_runtime(false).map_err(|_| DetectError::NotSetUp)?,
+        &mdoc_import::ocr::onnx_runtime(false).map_err(|_| DetectError::NotSetUp)?,
         config,
+        progress,
     )
+    .map(|(detections, _)| detections)
 }
 
+#[cfg(test)]
 fn scan_in(
     source: &str,
     cancel: &AtomicBool,
@@ -450,7 +482,7 @@ fn scan_in(
     runtime: PathBuf,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, DetectError> {
-    scan_timed(source, cancel, root, &runtime, config).map(|(detections, _)| detections)
+    scan_timed(source, cancel, root, &runtime, config, &|_| {}).map(|(detections, _)| detections)
 }
 
 /// Where one scan's time went. Only measurements read it (the mobile
@@ -506,7 +538,7 @@ pub fn scan_at(
         return Err(DetectError::InvalidThreshold);
     }
     let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
-    scan_timed(source, cancel, root, runtime, config)
+    scan_timed(source, cancel, root, runtime, config, &|_| {})
 }
 
 fn scan_timed(
@@ -515,6 +547,7 @@ fn scan_timed(
     root: &Path,
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
@@ -544,6 +577,11 @@ fn scan_timed(
     timings.tokenizer = split();
     let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
     timings.windowing = split();
+    let count = windows.len();
+    progress(ScanProgress {
+        done: 0,
+        windows: count,
+    });
     let mut engine = load_engine(root, config.model)?;
     timings.engine_load = split();
     let params = InferenceParams {
@@ -552,7 +590,7 @@ fn scan_timed(
         ..Default::default()
     };
     let mut detections = Vec::new();
-    for (range, tokens) in windows {
+    for (index, (range, tokens)) in windows.into_iter().enumerate() {
         checkpoint(cancel, started)?;
         let text = &source[range.clone()];
         split();
@@ -585,6 +623,10 @@ fn scan_timed(
                 recognizer: mdoc_pii::Recognizer::Model,
             });
         }
+        progress(ScanProgress {
+            done: index + 1,
+            windows: count,
+        });
     }
     checkpoint(cancel, started)?;
     split();
@@ -805,14 +847,23 @@ mod tests {
             .join("../../.qualification/models/gliner2-pii-fp16");
         let source = "Alice Morgan represents Northbridge Legal Ltd. Анна Ёлкина подписала договор. Contact alice@example.invalid.\n".repeat(64);
         let started = Instant::now();
-        let detected = scan_in(
+        let reports = std::cell::RefCell::new(Vec::new());
+        let (detected, timings) = scan_timed(
             &source,
             &AtomicBool::new(false),
             &root,
-            mdoc_import::ocr::onnx_runtime(false).unwrap(),
+            &mdoc_import::ocr::onnx_runtime(false).unwrap(),
             &mdoc_store::settings::PiiConfig::default(),
+            &|p| reports.borrow_mut().push(p),
         )
         .unwrap();
+        // The count starts at none done and steps once per window.
+        let windows = timings.windows.len();
+        assert!(windows > 1, "a long source spans several windows");
+        let expected: Vec<_> = (0..=windows)
+            .map(|done| ScanProgress { done, windows })
+            .collect();
+        assert_eq!(reports.into_inner(), expected);
         assert!(!detected.is_empty());
         assert!(
             detected

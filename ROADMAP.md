@@ -69,13 +69,6 @@ PR; a lane runs its items in order. *Done when* for every item: headless
 renders of what it changes in light and dark, tests where behavior changes,
 and the ADR it touches amended.
 
-1. **[UI] One name per action.** Restore AI reply / Paste AI Response / Paste
-   AI reply…; Save as case / Save mapping as case; Before / After / Side by
-   side; UK and US spelling mixed ("unrecognised", "licence", "organisations"
-   beside "Organization", "License"). Pick one name and one spelling
-   ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and buttons.
-   ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
-   Lane A, decisions 8–9.
 2. **[UI] Menus and copy shortcuts.** No File › Open Recent, no Restore
    Clipboard beside Pseudonymize Clipboard, no View items for Home, Search,
    Original / Pseudonymized / Side by side or the Replacements panel, no mdoc
@@ -97,11 +90,6 @@ and the ADR it touches amended.
    pages cut a row with no scroll cue.
    ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings)) Lane
    B.
-5. **[UI] Dialogs.** Save changes rings Save but doesn't fill it, orders Save
-   · Discard · Cancel unlike macOS, and has no scrim in Dark; the Quit summary
-   says "3 documents have unsaved changes or mappings" without naming them.
-   ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs)) Lane
-   C, decision 11.
 6. **[UI] Native panels follow the app theme.** With Appearance on Light under
    a Dark macOS, the Save panel, its alerts and the menus stay dark; set the
    app's `NSAppearance` from the setting.
@@ -183,18 +171,12 @@ Maintainer actions list the steps on the maintainer's side.
    the Android job in `local/windows`. *Done when:* a PR touching
    `apps/android` gets a green `local/windows` with the Android job, and the
    parity tests match the desktop goldens, Copy for AI bytes included.
-4. **[Android] Screens in iOS order.** Home, intake (Paste, Files, Photos,
-   Scan), setup and downloads, review and Identities, the hand-off bar,
-   Restore with mdoc, Settings. *Done when:* the emulator test walks open,
-   review, share, restore, and TalkBack reads and acts on candidates.
 5. **[Android] Long jobs on real phones.** The foreground service, the
    Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
    Pixel and Samsung phone an import, OCR and Find names each survive
    leaving the app and a process kill, with no crash or ANR in
    `ApplicationExitInfo`; and a model download does too on the emulator
    and the friend's phone.
-6. **[Android] UI survey.** `just android-survey`. *Done when:* the before
-   and after sets sit under `docs/evidence/android-app/`.
 7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
    it passes on one Test Lab phone per RAM class.
 8. **[Android] Play closed test.** The Play account, the device check and

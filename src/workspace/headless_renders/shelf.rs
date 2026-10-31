@@ -1,6 +1,7 @@
 //! The menu bar shelf (ADR 0084): ready, not-ready and changed-since-review
-//! rows with prose previews, case labels and the drag hint; a row's
-//! "Copied"; the first-close note; the empty shelf and the locked shelf.
+//! rows with prose previews, case labels and the drag hint; the applied
+//! demos and their "N replaced" hovered (#304); a row's "Copied"; the
+//! first-close note; the empty shelf and the locked shelf.
 //! The shelf is drawn on a stage window of the usual size, at the top right
 //! as it sits under the menu bar item; no status item or native popup (nor
 //! its blur) is involved.
@@ -19,6 +20,7 @@ use std::{
     cell::Cell,
     path::Path,
     rc::Rc,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -49,6 +51,7 @@ impl Stage {
                 "state": d.readiness.label(),
                 "preview": d.preview.as_ref().map(|p| p.text.clone()),
                 "replaced": d.replaced_count(),
+                "names": d.names_count(),
             })).collect::<Vec<_>>(),
             "copied": shelf.copied(),
             "drag_hint": content.drag_hint,
@@ -171,6 +174,64 @@ fn documents(locked: bool) -> (Vec<ShelfDocument>, ClipboardSource) {
     (documents, source)
 }
 
+/// The settlement demos as applied: the text their Copy for AI sent, without
+/// its note, and the mapping it was sent with (`tests/fixtures/restore`).
+fn demos() -> Result<Vec<ShelfDocument>> {
+    let demos = [
+        (
+            "Settlement agreement.md",
+            include_str!("../../../tests/fixtures/restore/claude-en/sent.md"),
+            include_str!("../../../tests/fixtures/restore/claude-en/identities.json"),
+        ),
+        (
+            "Соглашение об урегулировании.md",
+            include_str!("../../../tests/fixtures/restore/claude-ru/sent.md"),
+            include_str!("../../../tests/fixtures/restore/claude-ru/identities.json"),
+        ),
+    ];
+    let mut documents = Vec::new();
+    for (index, (title, sent, mapping)) in demos.into_iter().enumerate() {
+        let text = sent
+            .split_once("\n---\n")
+            .map(|(_, text)| text.trim_start())
+            .ok_or("demo note")?;
+        let mapping: Vec<Value> = serde_json::from_str(mapping).map_err(|e| e.to_string())?;
+        let names = mapping
+            .iter()
+            .map(|identity| {
+                Ok(ExportedIdentity {
+                    alias: identity["alias"].as_str().ok_or("demo alias")?.into(),
+                    previous: Vec::new(),
+                    custom: false,
+                    category: Category::ALL
+                        .into_iter()
+                        .find(|c| Some(c.token()) == identity["category"].as_str())
+                        .ok_or("demo category")?,
+                    originals: identity["originals"]
+                        .as_array()
+                        .ok_or("demo originals")?
+                        .iter()
+                        .map(|v| v.as_str().map(Arc::from).ok_or("demo original"))
+                        .collect::<std::result::Result<_, _>>()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let aliases = names.iter().map(|n| n.alias.as_str()).collect();
+        documents.extend(ShelfDocument::of_tab(OpenTab {
+            id: 10 + index as u64,
+            title,
+            text,
+            aliases,
+            pending: 0,
+            checking: false,
+            names: names.clone(),
+            case: None,
+            edited: at(14 - index as u64),
+        }));
+    }
+    Ok(documents)
+}
+
 fn content(documents: Vec<ShelfDocument>, source: ClipboardSource) -> ShelfContent {
     ShelfContent {
         documents,
@@ -186,6 +247,7 @@ fn stage(
     d: &mut Driver,
     name: &str,
     (width, height): (f32, f32),
+    hover: Option<usize>,
     popup: impl FnOnce(
         gpui::WindowHandle<Workspace>,
         Rc<Cell<Theme>>,
@@ -213,19 +275,56 @@ fn stage(
         .map_err(|e| e.to_string())?;
     let workspace_window = d.window;
     d.window = window.into();
-    let result = d.capture(name);
+    let result = hover_count(d, window, hover).and_then(|()| d.capture(name));
     d.cx.update_window(d.window, |_, window, _| window.remove_window())
         .map_err(|e| e.to_string())?;
     d.window = workspace_window;
     result
 }
 
+/// Rest the pointer on row `row`'s "N replaced" until its breakdown shows.
+fn hover_count(
+    d: &mut Driver,
+    window: gpui::WindowHandle<Stage>,
+    row: Option<usize>,
+) -> Result<()> {
+    let Some(row) = row else {
+        return Ok(());
+    };
+    // Paint once, so the count's place is known.
+    d.settle()?;
+    window
+        .update(&mut d.cx, |stage, window, cx| {
+            let center = stage
+                .shelf
+                .as_ref()
+                .and_then(|shelf| shelf.read(cx).count_center(row))
+                .ok_or("the row's count")?;
+            window.simulate_mouse_move(center, cx);
+            Ok::<_, String>(())
+        })
+        .map_err(|e| e.to_string())??;
+    d.cx.advance_clock(Duration::from_millis(600));
+    Ok(())
+}
+
 fn shelf(d: &mut Driver, name: &str, content: ShelfContent, copied: Option<usize>) -> Result<()> {
+    shelf_hovering(d, name, content, copied, None)
+}
+
+fn shelf_hovering(
+    d: &mut Driver,
+    name: &str,
+    content: ShelfContent,
+    copied: Option<usize>,
+    hover: Option<usize>,
+) -> Result<()> {
     let height = content.height();
     stage(
         d,
         name,
         (crate::menu_bar::SHELF_WIDTH, height),
+        hover,
         move |workspace, _, window, cx| {
             let shelf = cx.new(|cx| {
                 let mut view = ShelfView::new(workspace, content, window, cx);
@@ -242,6 +341,11 @@ fn shelf(d: &mut Driver, name: &str, content: ShelfContent, copied: Option<usize
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     let (rows, source) = documents(false);
     shelf(d, "shelf", content(rows, source.clone()), None)?;
+    for (name, hover) in [("shelf-demos", None), ("shelf-demos-count", Some(0))] {
+        let mut demos = content(demos()?, source.clone());
+        demos.drag_hint = false;
+        shelf_hovering(d, name, demos, None, hover)?;
+    }
     let (rows, _) = documents(false);
     let mut copied = content(rows, source.clone());
     copied.drag_hint = false;
@@ -250,6 +354,7 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         d,
         "shelf-note",
         (NOTE_WIDTH, NOTE_HEIGHT),
+        None,
         |workspace, theme, window, cx| {
             let note = cx.new(|cx| NoteView::new(workspace, theme, window, cx));
             (note.into(), None)
