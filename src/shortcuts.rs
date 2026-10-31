@@ -182,6 +182,16 @@ pub fn label(action: &dyn Action) -> Option<String> {
         .and_then(|row| row.key_labels().into_iter().next())
 }
 
+/// A tooltip that names its key when the table gives `action` one on this
+/// platform: "Back to Home (⌘[)". The accessible name stays the bare label.
+pub fn tip(label: impl Into<String>, action: &dyn Action) -> String {
+    let label = label.into();
+    match self::label(action) {
+        Some(key) => format!("{label} ({key})"),
+        None => label,
+    }
+}
+
 /// One binding the table makes on a platform.
 pub(crate) struct Spec {
     pub owner: Owner,

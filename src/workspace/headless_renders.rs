@@ -104,6 +104,17 @@ impl Driver {
         Ok(())
     }
 
+    /// Resize the window; each capture records the size it was taken at.
+    fn resize(&mut self, width: f32, height: f32) -> Result<()> {
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.resize(size(px(width), px(height)));
+                window.bounds_changed(cx);
+            })
+            .map_err(|e| e.to_string())?;
+        self.settle()
+    }
+
     fn key(&mut self, key: &str) -> Result<()> {
         self.cx
             .update_window(self.window, |_, window, cx| {
@@ -161,6 +172,7 @@ impl Driver {
                     "settings_category": w.settings.read(cx).category().label(),
                     "settings_theme_choice": w.settings.read(cx).selected_theme(),
                     "appearance_in_view": w.settings.read(cx).appearance_in_view(),
+                    "settings_scroll_cues": w.settings.read(cx).open.then(|| w.settings.read(cx).scroll_cues()),
                     "theme_choice": match w.theme_choice {
                         ThemeChoice::System => "system",
                         ThemeChoice::Light => "light",
@@ -212,6 +224,10 @@ impl Driver {
         } else {
             json!({"model_comparison": true})
         };
+        let viewport = self
+            .cx
+            .update_window(self.window, |_, window, _| window.viewport_size())
+            .map_err(|e| e.to_string())?;
         let raster_ms = self.png(&out.join(format!("{name}.png")))?;
         let tab_dir = out.join(name);
         std::fs::create_dir(&tab_dir).map_err(|e| e.to_string())?;
@@ -246,6 +262,7 @@ impl Driver {
         }
         self.records.push(
             json!({"screen": name, "state": state, "png": format!("{name}.png"), "raster_readback_ms": raster_ms,
+            "viewport": [f32::from(viewport.width), f32::from(viewport.height)],
             "tab_order": sequence, "cycle_to": cycle, "truncated": cycle.is_none(), "frames": self.frames}),
         );
         Ok(())
@@ -311,6 +328,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     shell::scenes(d)?;
     search::scenes(d, &view)?;
     review::before_after(d, &view)?;
+    review::applied_alias(d, &view)?;
     restore::reply_view(d, &view)?;
     decisions::scenes(d, &view)?;
     let case = cases::scenes(d, path)?;
@@ -323,6 +341,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
+    review::long_counts(d)?;
     review::scanning(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;

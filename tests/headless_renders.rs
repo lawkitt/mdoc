@@ -26,15 +26,23 @@ fn screens() -> Vec<&'static str> {
     screens
 }
 
-fn png(path: &Path) {
+/// A PNG of the window at the screen's viewport, at the test window's 2x.
+fn png(path: &Path, viewport: &Value) {
     let mut header = [0; 24];
     std::fs::File::open(path)
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         .read_exact(&mut header)
         .unwrap();
     assert_eq!(&header[..8], b"\x89PNG\r\n\x1a\n", "{}", path.display());
-    assert_eq!(u32::from_be_bytes(header[16..20].try_into().unwrap()), 2200);
-    assert_eq!(u32::from_be_bytes(header[20..24].try_into().unwrap()), 1520);
+    let size = |i: usize| (viewport[i].as_f64().unwrap() * 2.).round() as u32;
+    assert_eq!(
+        u32::from_be_bytes(header[16..20].try_into().unwrap()),
+        size(0)
+    );
+    assert_eq!(
+        u32::from_be_bytes(header[20..24].try_into().unwrap()),
+        size(1)
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -370,8 +378,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}/{name}"
                 );
                 let expected_category = match *name {
-                    "settings-general" => Some("General"),
-                    "settings-detection" | "settings-detection-categories" => Some("Detection"),
+                    "settings-general" | "settings-general-off" => Some("General"),
+                    "settings-detection"
+                    | "settings-detection-categories"
+                    | "settings-models-installed"
+                    | "settings-detection-end" => Some("Detection"),
                     "settings-recognition" => Some("Recognition"),
                     "settings-spelling" | "dictionary" => Some("Spelling"),
                     "settings-cases" => Some("Cases"),
@@ -389,6 +400,14 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     *name == "dictionary",
                     "stale dictionary on {theme}/{name}"
                 );
+                // ADR 0076: a page scrolled to its end fades only above.
+                if *name == "settings-detection-end" {
+                    assert_eq!(
+                        record["state"]["settings_scroll_cues"],
+                        serde_json::json!([true, false]),
+                        "{theme}/{name}"
+                    );
+                }
                 if *name == "settings-general" {
                     assert_eq!(record["state"]["theme_choice"], theme);
                     assert_eq!(
@@ -401,7 +420,18 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     );
                 }
             }
-            png(&out.join(theme).join(record["png"].as_str().unwrap()));
+            let viewport = &record["viewport"];
+            let expected = if *name == "applied-alias-selected" {
+                // The window's minimum size (#303).
+                [720., 480.]
+            } else {
+                [1100., 760.]
+            };
+            assert_eq!(viewport, &serde_json::json!(expected), "{theme}/{name}");
+            png(
+                &out.join(theme).join(record["png"].as_str().unwrap()),
+                viewport,
+            );
             let tabs = record["tab_order"].as_array().unwrap();
             assert!(!tabs.is_empty());
             assert_eq!(record["truncated"], false, "{theme}/{name}");
@@ -415,7 +445,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 assert!(!step["key_contexts"].as_str().unwrap().is_empty());
                 assert!(step["input_ms"].as_f64().unwrap() >= 0.);
                 assert!(step["raster_readback_ms"].as_f64().unwrap() > 0.);
-                png(&out.join(theme).join(step["png"].as_str().unwrap()));
+                png(
+                    &out.join(theme).join(step["png"].as_str().unwrap()),
+                    viewport,
+                );
             }
             let frames = record["frames"].as_array().unwrap();
             assert_eq!(frames.len(), tabs.len() * 4 + 3);
@@ -433,12 +466,13 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
     // only an accent outline; selected/on-state fills and labels stay intact.
     let rings = summary["focus_rings"].as_array().unwrap();
-    assert_eq!(rings.len(), 16);
+    assert_eq!(rings.len(), 18);
     for theme in ["light", "dark"] {
         for control in [
             "toggle-on",
             "sidebar-row",
             "settings-row",
+            "settings-appearance",
             "beside-selected-tab",
             "comments-toggle",
             "decision-row",

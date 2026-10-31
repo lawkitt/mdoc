@@ -63,6 +63,8 @@ pub(super) struct ShellState {
     home_scroll: gpui::ScrollHandle,
     /// Focus for each Recents row on Home, by position.
     pub recent_focus: std::cell::RefCell<Vec<gpui::FocusHandle>>,
+    /// The pointer is over Home's "Documents stay on this Mac".
+    pub local_note_hover: bool,
 }
 
 impl ShellState {
@@ -81,6 +83,7 @@ impl ShellState {
             drop_generation: 0,
             recent_focus: Default::default(),
             home_scroll: gpui::ScrollHandle::new(),
+            local_note_hover: false,
         }
     }
 }
@@ -1034,7 +1037,7 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn home_actions(&self, _cx: &mut Context<Self>) -> AnyElement {
+    fn home_actions(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let machine = if cfg!(target_os = "macos") {
@@ -1083,14 +1086,40 @@ impl Workspace {
                     .text_size(px(12.))
                     .text_color(p.header_muted)
                     .aria_label(format!("Documents stay on {machine}. {detail}"))
-                    .tooltip(style::tooltip(detail, theme))
+                    // Above the note, right-aligned with it: a pointer tooltip
+                    // at the window's edge would flip over the buttons beside
+                    // it (U16).
+                    .relative()
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        if this.shell.local_note_hover != *hovered {
+                            this.shell.local_note_hover = *hovered;
+                            cx.notify();
+                        }
+                    }))
                     .child(
                         gpui::svg()
                             .data(include_bytes!("../../resources/ui/lock.svg"))
                             .size(px(13.))
                             .text_color(p.header_muted),
                     )
-                    .child(format!("Documents stay on {machine}")),
+                    .child(format!("Documents stay on {machine}"))
+                    .when(self.shell.local_note_hover, |v| {
+                        v.child(
+                            gpui::deferred(
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .bottom(gpui::relative(1.))
+                                    .w(px(300.))
+                                    // Clear of the taller buttons in the row.
+                                    .pb(px(10.))
+                                    .flex()
+                                    .justify_end()
+                                    .child(style::tip_body(detail, theme)),
+                            )
+                            .with_priority(1),
+                        )
+                    }),
             )
             .into_any_element()
     }

@@ -29,6 +29,16 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>
         w.case_coordinator.finish_load(cases);
         cx.notify();
     })?;
+    // The local note's explanation, as hovering it shows it (U16).
+    d.change(|w, _, cx| {
+        w.shell.local_note_hover = true;
+        cx.notify();
+    })?;
+    d.capture("home-local-note")?;
+    d.change(|w, _, cx| {
+        w.shell.local_note_hover = false;
+        cx.notify();
+    })?;
     d.change(|w, _, cx| {
         w.sidebar.restore(false, Some(false));
         cx.notify();
