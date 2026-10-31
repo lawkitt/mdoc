@@ -1364,8 +1364,13 @@ impl Workspace {
                         ..TabRecord::default()
                     })
                 } else {
+                    // Named as its source until a `.md` exists, even before
+                    // it is first activated (#311).
                     self.push(TabRecord {
                         source_only: true,
+                        name: path
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned()),
                         attachment: Some(path),
                         preview_visible: true,
                         ..TabRecord::default()

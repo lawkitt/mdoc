@@ -588,6 +588,50 @@ fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_background_conversion_is_named_as_its_source(cx: &mut TestAppContext) {
+    // #311: before activation the second tab read `encrypted--errors.md`,
+    // a file that doesn't exist.
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
+    let docx = fixtures.join("truncated--errors.docx");
+    let odt = fixtures.join("encrypted--errors.odt");
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![docx, odt.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let (id, label) = cx.update(|_, cx| {
+        let tab = &tabs.read(cx).tabs[1];
+        assert!(tab.view().is_none(), "the second tab is not activated");
+        (tab.id(), tab_label(tab, cx))
+    });
+    assert_eq!(label.name, "encrypted--errors.odt");
+    assert_eq!(label.identity, odt);
+
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{id}").into_boxed_str()))
+        .unwrap();
+    cx.simulate_mouse_move(
+        gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.),
+        None,
+        gpui::Modifiers::none(),
+    );
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(600));
+    cx.run_until_parked();
+    draw(cx);
+    let tip = format!(
+        "tooltip-encrypted--errors.odt\n{}",
+        label.identity.parent().unwrap().display()
+    );
+    assert!(
+        cx.debug_bounds(Box::leak(tip.into_boxed_str())).is_some(),
+        "the tooltip names the source and its folder"
+    );
+}
+
+#[gpui::test]
 fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let [a, b, c, d] = ["a.md", "b.md", "c.md", "d.md"].map(|name| dir.path().join(name));
