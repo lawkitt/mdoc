@@ -45,8 +45,10 @@ struct CandidateSheet: View {
                         Image(systemName: candidate.category.symbol)
                             .foregroundStyle(candidate.category.color)
                             .accessibilityHidden(true)
+                        // The icon carries the category's colour; the words
+                        // stay in the text colour, which reads (a category
+                        // colour as text fails contrast on light grounds).
                         Text(candidate.category.label)
-                            .foregroundStyle(candidate.category.color)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -61,7 +63,6 @@ struct CandidateSheet: View {
                         LabeledContent("Alias") {
                             Text(candidate.alias)
                                 .font(.body.monospaced())
-                                .foregroundStyle(candidate.category.color)
                         }
                         .accessibilityIdentifier("candidate-alias")
                     }

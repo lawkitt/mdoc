@@ -48,12 +48,15 @@ struct IdentitiesView: View {
                     Button("Done", action: onClose)
                         .fontWeight(.semibold)
                         .fixedSize()
+                        // A full 44-point target, as the toolbar's Done has.
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityIdentifier("identities-done")
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.vertical, 2)
             .background(.bar)
         }
     }
@@ -65,7 +68,9 @@ struct IdentitiesView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     UnhyphenatedText(identity.primaryWording)
-                    UnhyphenatedText(identity.alias, style: .footnote, monospaced: true, color: identity.category.uiColor)
+                    // Secondary text, not the category's colour: as text that
+                    // colour fails contrast (the header's symbol carries it).
+                    UnhyphenatedText(identity.alias, style: .footnote, monospaced: true, color: .secondaryLabel)
                 }
                 Spacer()
                 stateBadge(identity)
@@ -113,7 +118,10 @@ struct IdentitiesView: View {
             Text("\(text) · \(identity.mentionCount)")
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(identity.state == .proposed ? .primary : .secondary)
+        // Text colour for every state: secondary text on the fill fails
+        // contrast, and the words already say which state it is. A concrete
+        // colour, so the row button's tint doesn't take it over.
+        .foregroundStyle(Color.primary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Color(uiColor: .tertiarySystemFill), in: Capsule())

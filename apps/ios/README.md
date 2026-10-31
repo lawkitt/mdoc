@@ -69,6 +69,17 @@ still be running (not suspended) and finish the job. The text PDF comes in
 last. The first run also downloads the name detector, which later runs
 keep; it skips on the Simulator. Results go to `target/ios/device-test-*.xcresult`.
 
+### Accessibility audit
+
+`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Home,
+the review, the candidate sheet, Identities, the replaced document and the
+reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
+failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
+`-only-testing:mdocUITests/AccessibilityAuditExploreUITests`. It is a guide,
+not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
+clipping on sheet text (and the system's Cancel and Done) that reads fine;
+missing labels, small targets and text in a category colour are real.
+
 ## Layout
 
 The project is written by hand (`objectVersion` 77): each folder below is a
