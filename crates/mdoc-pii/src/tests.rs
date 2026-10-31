@@ -904,3 +904,46 @@ fn manual_alias_says_what_an_addition_would_get() {
     assert_eq!(review.manual_alias("ANN", Category::Person), "Client");
     assert_eq!(review.manual_alias("ANN", Category::Organization), "ORG_1");
 }
+
+/// Issue #302: a window that cut "Harrow & Finch Ltd" short proposed
+/// "Harrow & Finch", which every occurrence of the full name contains. It
+/// must not take ORG_2 and leave the next organization as ORG_3.
+#[test]
+fn a_wording_found_only_inside_longer_ones_takes_no_alias() {
+    let source = "Harrow & Finch Ltd pays. Harrow & Finch Ltd agrees with Elm Row Legal LLP.";
+    let full = 0.."Harrow & Finch Ltd".len();
+    let second = source.rfind("Harrow").unwrap();
+    let elm = source.find("Elm").unwrap();
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(full, Category::Organization),
+                detection(
+                    second..second + "Harrow & Finch".len(),
+                    Category::Organization,
+                ),
+                detection(elm..elm + "Elm Row Legal LLP".len(), Category::Organization),
+            ],
+        )
+        .unwrap();
+    let proposed: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|v| {
+            (
+                v.original.as_ref(),
+                v.replacement.as_str(),
+                v.mentions.len(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        proposed,
+        [
+            ("Harrow & Finch Ltd", "ORG_1", 2),
+            ("Elm Row Legal LLP", "ORG_2", 1)
+        ]
+    );
+}

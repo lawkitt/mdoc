@@ -36,6 +36,15 @@ Ordinary dates, amounts, article/section/case references and category words are
 negative examples. Two long fixtures repeat legal clauses 64 times; two stress
 fixtures contain long compound words that produce many subwords.
 
+`en-settlement-long`, added after these measurements
+([#302](https://github.com/lawkitt/mdoc/issues/302)), repeats the English demo
+settlement 40 times under section headings (about 80 KB). The claim number and
+"Employment Tribunal" are not gold. The app's windows must give each repeat
+the proposals of one section alone: `mdoc-detect`'s ignored test
+`a_long_document_proposes_what_its_sections_do` checks it against the pinned
+model in `.qualification/models` (set `MDOC_ONNX_RUNTIME` to a verified ONNX
+Runtime library to keep the installed profile out of it).
+
 `⟦CATEGORY|source text⟧` annotations are removed before inference. The harness
 derives half-open UTF-8 byte ranges from the resulting immutable source, including
 all exact repeats. An exact boundary **and** category match earns one true

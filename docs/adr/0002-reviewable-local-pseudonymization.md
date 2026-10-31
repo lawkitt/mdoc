@@ -44,11 +44,17 @@ or Docker.
 
 GLiNER2 via gliner2-rs (Hub feature off) with the pinned privacy PII export,
 CPU only, sharing the app's ONNX Runtime. One scan at a time; each scan loads and
-drops its engine. Scans cover the full Markdown source in overlapping windows
-checked against actual token counts and reject, rather than truncate,
-pathological windows. Limits: 2 MiB source, 512 tokens per window, a two-minute
-cooperative deadline. Model load and a native inference call cannot be
-interrupted mid-call.
+drops its engine. Scans cover the full Markdown source in windows of whole
+paragraphs, so a section scans the same wherever it sits (#302): each heading
+starts a window, a paragraph too long for one is packed by its lines, and only
+a longer line gets overlapping windows. Windows are checked against actual
+token counts; pathological ones are rejected, not truncated. A window repeated
+word for word runs once. Model spans without their category's shape are
+dropped: titles and role words as names ("Ms", "husband", "the Employer"),
+the words for a category ("email", "phone number"), a bank number with `/`.
+Limits: 2 MiB source, 512 tokens per window, a two-minute cooperative
+deadline. Model load and a native inference call cannot be interrupted
+mid-call.
 
 Tokens start with a letter, end with a letter or digit, and use ASCII letters,
 digits, `_` and `-`. HTML tag and attribute names, attribute quotes, list

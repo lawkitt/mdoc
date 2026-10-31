@@ -146,6 +146,63 @@ fn name_shaped(text: &str) -> bool {
                 })
         })
 }
+/// Titles and role words: never a person's or organization's name on their
+/// own ("Ms", "her adviser", "the Employer"; issue #302), nor the words for
+/// people. Lowercase, matched whole or with a plural `s`.
+const TITLES_AND_ROLES: &str = "mr mrs ms miss mx dr prof professor sir dame lord lady \
+    madam madame mme mlle herr frau husband wife spouse partner father mother daughter \
+    adviser advisor solicitor barrister counsel lawyer attorney client employer employee \
+    claimant respondent applicant defendant plaintiff appellant party parties buyer seller \
+    landlord tenant lessor lessee licensor licensee contractor customer supplier company \
+    director witness judge people person individual \
+    г-н г-жа господин госпожа гражданин гражданка муж жена";
+/// Determiners around them name no one either ("The Employer", "Her Adviser").
+const DETERMINERS: &str = "the an her his their its our my your this that said";
+/// Russian role stems, matched with up to three letters of ending
+/// ("Заказчику", "Исполнителя", "Стороны").
+const RU_ROLE_STEMS: &str = "заказчик исполнител подрядчик арендатор арендодател \
+    покупател продав работник работодател истец истц ответчик заявител сторон \
+    представител доверител поверенн супруг адвокат юрист директор";
+
+/// Whether a model span has the shape of its category; the model also tags
+/// the words for things ("email", "phone number", "companies"). A person
+/// needs a capitalized word that is not a title or role ("Ms Bennett", not
+/// "Ms" or "husband"); an organization a word that is not one and a capital
+/// or digit; an email an `@`; an address a capital or digit; numbers a
+/// digit, and bank details no `/`.
+fn identifying(text: &str, category: Category) -> bool {
+    let role = |word: &str| {
+        let word = word.to_lowercase();
+        DETERMINERS.split_whitespace().any(|d| word == d)
+            || TITLES_AND_ROLES
+                .split_whitespace()
+                .any(|title| word == title || word.strip_suffix('s') == Some(title))
+            || RU_ROLE_STEMS.split_whitespace().any(|stem| {
+                word.strip_prefix(stem).is_some_and(|ending| {
+                    ending.chars().count() <= 3 && ending.chars().all(char::is_alphabetic)
+                })
+            })
+    };
+    let mut words = text
+        .split_whitespace()
+        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+        .filter(|word| !word.is_empty());
+    let capital_or_digit = || text.chars().any(|c| c.is_uppercase() || c.is_numeric());
+    match category {
+        Category::Person => {
+            words.any(|word| word.chars().next().is_some_and(char::is_uppercase) && !role(word))
+        }
+        Category::Organization => capital_or_digit() && words.any(|word| !role(word)),
+        Category::Email => text.contains('@'),
+        Category::Address => capital_or_digit(),
+        // Case and claim numbers ("6001842/2026") are not bank details.
+        Category::Bank => text.chars().any(|c| c.is_numeric()) && !text.contains('/'),
+        Category::Phone | Category::Identity | Category::Tax => {
+            text.chars().any(|c| c.is_numeric())
+        }
+        Category::Date | Category::Other => true,
+    }
+}
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUT_TOKENS: usize = 512;
 const MAX_SCAN_TIME: Duration = Duration::from_secs(120);
@@ -436,7 +493,8 @@ pub fn scan_config_with_progress(
     scan_reserved_with(source, cancel, config, progress)
 }
 
-/// Model windows a scan has finished, out of all of the source's windows.
+/// Model windows a scan has finished, out of all of the source's windows. A
+/// window repeated word for word runs and counts once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScanProgress {
     pub done: usize,
@@ -498,7 +556,7 @@ pub struct ScanTimings {
     pub windowing: Duration,
     /// Building the GLiNER2 sessions, which every scan does (ADR 0002).
     pub engine_load: Duration,
-    /// One entry per model window, in source order.
+    /// One entry per distinct model window, in source order.
     pub windows: Vec<WindowTiming>,
     /// The structured rules over the whole source.
     pub structured: Duration,
@@ -575,7 +633,18 @@ fn scan_timed(
     )
     .map_err(|e| DetectError::Engine(e.to_string()))?;
     timings.tokenizer = split();
-    let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
+    // A window's proposals depend only on its text, so a repeated paragraph
+    // runs once and its results land on every repeat.
+    let mut windows: Vec<(&str, usize, Vec<usize>)> = Vec::new();
+    let mut seen = std::collections::HashMap::new();
+    for (range, tokens) in bounded_windows(source, &transformer, &tasks, cancel, started)? {
+        let text = &source[range.clone()];
+        let index = *seen.entry(text).or_insert_with(|| {
+            windows.push((text, tokens, Vec::new()));
+            windows.len() - 1
+        });
+        windows[index].2.push(range.start);
+    }
     timings.windowing = split();
     let count = windows.len();
     progress(ScanProgress {
@@ -590,9 +659,8 @@ fn scan_timed(
         ..Default::default()
     };
     let mut detections = Vec::new();
-    for (index, (range, tokens)) in windows.into_iter().enumerate() {
+    for (index, (text, tokens, starts)) in windows.into_iter().enumerate() {
         checkpoint(cancel, started)?;
-        let text = &source[range.clone()];
         split();
         let output = engine
             .extract_with(text, &tasks, &params)
@@ -616,12 +684,15 @@ fn scan_timed(
             {
                 return Err(DetectError::InvalidOffsets);
             }
-            detections.push(Detection {
-                range: range.start + entity.char_start..range.start + entity.char_end,
+            if !identifying(&entity.text, category) {
+                continue;
+            }
+            detections.extend(starts.iter().map(|start| Detection {
+                range: start + entity.char_start..start + entity.char_end,
                 category,
                 score: entity.score,
                 recognizer: mdoc_pii::Recognizer::Model,
-            });
+            }));
         }
         progress(ScanProgress {
             done: index + 1,
@@ -805,6 +876,121 @@ mod tests {
             guess("Павлова М.С. agreed", "Павлова М.С."),
             Category::Person
         );
+    }
+    #[test]
+    fn titles_role_and_category_words_are_never_proposed() {
+        let person = |text| identifying(text, Category::Person);
+        let organization = |text| identifying(text, Category::Organization);
+        for text in [
+            "Ms",
+            "Mr.",
+            "adviser",
+            "husband",
+            "her husband",
+            "Husband",
+            "The Employer",
+            "Parties",
+            "г-жа",
+            "Заказчику",
+            "Исполнителя",
+            "maya",
+            "-",
+            "People",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Ms Bennett",
+            "Maya",
+            "A. Morgan",
+            "Daniel Bennett",
+            "Анна Ёлкина",
+            "Drew",
+            "Sonia",
+            "Peter Lord",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        for text in [
+            "Employer",
+            "the Employer",
+            "Company",
+            "Сторона",
+            "companies",
+        ] {
+            assert!(!organization(text), "{text}");
+        }
+        for text in [
+            "Harrow & Finch Ltd",
+            "Elm Row Legal LLP",
+            "eBay",
+            "ООО «Ромашка»",
+        ] {
+            assert!(organization(text), "{text}");
+        }
+        for (text, category, shaped) in [
+            ("email", Category::Email, false),
+            ("example.com", Category::Email, false),
+            ("maya.bennett@example.invalid", Category::Email, true),
+            ("phone number", Category::Phone, false),
+            ("+1 (2O2) 555-Ol47", Category::Phone, true),
+            ("addresses", Category::Address, false),
+            ("Flat 3, 41 Larch Road", Category::Address, true),
+            ("ул. Ленина", Category::Address, true),
+            ("passport", Category::Identity, false),
+            ("QQ 12 34 56 C", Category::Identity, true),
+            ("ИНН", Category::Tax, false),
+            ("account", Category::Bank, false),
+            ("6001842/2026", Category::Bank, false),
+            ("GB29 NWBK 6016 1331 9268 19", Category::Bank, true),
+            ("husband", Category::Other, true),
+        ] {
+            assert_eq!(identifying(text, category), shaped, "{text}");
+        }
+    }
+    /// Issue #302: a section scans the same alone and repeated 40 times.
+    #[test]
+    #[ignore = "requires preverified qualification cache and installed native runtime; no downloads"]
+    fn a_long_document_proposes_what_its_sections_do() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.qualification/models/gliner2-pii-fp16");
+        let runtime = std::env::var_os("MDOC_ONNX_RUNTIME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| mdoc_import::ocr::onnx_runtime(false).unwrap());
+        let scan = |source: &str| {
+            let (detected, timings) = scan_timed(
+                source,
+                &AtomicBool::new(false),
+                &root,
+                &runtime,
+                &mdoc_store::settings::PiiConfig::default(),
+                &|_| {},
+            )
+            .unwrap();
+            let found: std::collections::BTreeSet<_> = detected
+                .iter()
+                .map(|d| (source[d.range.clone()].to_owned(), d.category.token()))
+                .collect();
+            (found, detected.len(), timings)
+        };
+        let section = windows::tests::settlement_section();
+        let (alone, alone_count, _) = scan(&section);
+        let long = section.repeat(40);
+        let (repeated, repeated_count, timings) = scan(&long);
+        eprintln!(
+            "{} bytes: {} model windows, {:.2}s",
+            long.len(),
+            timings.windows.len(),
+            timings.total.as_secs_f64()
+        );
+        assert_eq!(repeated, alone);
+        assert_eq!(repeated_count, 40 * alone_count);
+        for (text, _) in &alone {
+            assert!(
+                !["Ms", "adviser", "husband"].contains(&text.as_str()),
+                "{text}"
+            );
+        }
     }
     fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
         mdoc_import::model_download::verify(path, artifact.bytes, &artifact.sha256)
