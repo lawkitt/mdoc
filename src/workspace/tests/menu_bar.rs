@@ -185,7 +185,10 @@ fn opening_a_file_from_the_os_shows_the_hidden_window(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_first_close_shows_the_note_once(cx: &mut TestAppContext) {
     let (tabs, cx) = unsaved(cx);
-    assert!(cx.update(|_, cx| tabs.read(cx).menu_bar_setting()), "on by default");
+    assert!(
+        cx.update(|_, cx| tabs.read(cx).menu_bar_setting()),
+        "on by default"
+    );
     assert!(!cx.update(|_, cx| tabs.read(cx).menu_bar_note_shown()));
     install_noting(&tabs, true, false, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
@@ -218,7 +221,9 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
     cx.run_until_parked();
     let shown = note(cx).unwrap();
     shown
-        .update(cx, |view, window, cx| view.quit_when_windows_close(window, cx))
+        .update(cx, |view, window, cx| {
+            view.quit_when_windows_close(window, cx)
+        })
         .unwrap();
     cx.run_until_parked();
     assert!(note(cx).is_none());

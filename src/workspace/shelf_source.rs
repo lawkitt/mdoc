@@ -318,12 +318,14 @@ impl Workspace {
 
     /// Whether the first-close note has shown (ADR 0084).
     pub(crate) fn menu_bar_note_shown(&self) -> bool {
-        self.general().is_some_and(|general| general.menu_bar_note_shown)
+        self.general()
+            .is_some_and(|general| general.menu_bar_note_shown)
     }
 
     /// Whether a shelf drag has dropped, retiring its hint (ADR 0084).
     pub(crate) fn shelf_drag_hint_shown(&self) -> bool {
-        self.general().is_some_and(|general| general.shelf_drag_hint_shown)
+        self.general()
+            .is_some_and(|general| general.shelf_drag_hint_shown)
     }
 
     fn general(&self) -> Option<settings::GeneralConfig> {

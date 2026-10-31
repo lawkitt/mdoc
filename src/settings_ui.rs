@@ -355,7 +355,11 @@ impl Panel {
     }
     /// A Settings › General choice changed outside the panel (the menu bar
     /// shelf's notes, ADR 0084): the draft follows, so the next save keeps it.
-    pub fn general_changed(&mut self, general: mdoc_store::settings::GeneralConfig, cx: &mut Context<Self>) {
+    pub fn general_changed(
+        &mut self,
+        general: mdoc_store::settings::GeneralConfig,
+        cx: &mut Context<Self>,
+    ) {
         self.draft.general = general;
         cx.notify();
     }

@@ -60,7 +60,10 @@ fn a_ready_tab_copies_the_editor_text_and_previews_aliases() {
     let preview = row.preview.as_ref().unwrap();
     assert_eq!(preview.text, "PERSON_1 signed it today.");
     assert_eq!(preview.aliases, vec![0..8; 1]);
-    assert_eq!(row.replaced, [(Category::Person, 1), (Category::Organization, 1)]);
+    assert_eq!(
+        row.replaced,
+        [(Category::Person, 1), (Category::Organization, 1)]
+    );
     assert_eq!(row.replaced_count(), 2);
     assert_eq!(row.words, 9, "Markdown markers are not words");
     assert_eq!(row.file_name(), "PERSON_1.md");
@@ -328,7 +331,10 @@ fn a_preview_skips_page_furniture_and_starts_at_the_first_prose() {
     let preview = preview_of(text).unwrap();
     assert_eq!(preview.text, "PERSON_1 agrees to pay ORG_1 the fee.");
     assert_eq!(preview.aliases, [0..8, 23..28]);
-    assert!(preview_of("23456\n\nPage 2 of 5\n").is_none(), "no prose, no preview");
+    assert!(
+        preview_of("23456\n\nPage 2 of 5\n").is_none(),
+        "no prose, no preview"
+    );
 }
 
 #[test]
@@ -387,7 +393,10 @@ fn replaced_counts_distinct_names_by_category_once_each() {
     open.names
         .push(identity("PERSON_1", Category::Person, &["Anna Petrova"]));
     let row = ShelfDocument::of_tab(open).unwrap();
-    assert_eq!(row.replaced, [(Category::Person, 1), (Category::Organization, 1)]);
+    assert_eq!(
+        row.replaced,
+        [(Category::Person, 1), (Category::Organization, 1)]
+    );
 }
 
 #[test]

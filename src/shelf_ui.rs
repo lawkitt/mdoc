@@ -12,6 +12,7 @@ mod note;
 mod row;
 
 pub(crate) use note::NoteView;
+pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
 #[cfg(any(
     test,
     all(
@@ -21,7 +22,6 @@ pub(crate) use note::NoteView;
     )
 ))]
 pub(crate) use note::{NOTE_TEXT, NOTE_TITLE};
-pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
 #[cfg(test)]
 pub(crate) use row::row_label;
 
@@ -34,8 +34,8 @@ use crate::{
 };
 use gpui::{
     AnyElement, App, ClipboardItem, Context, FocusHandle, Focusable, Global, Hsla, KeyBinding,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, Task,
-    Window, WindowHandle, actions, div, prelude::*, px,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, Task, Window,
+    WindowHandle, actions, div, prelude::*, px,
 };
 use mdoc_pii::restore::RestoreMap;
 use std::{cell::Cell, rc::Rc, time::Duration};
@@ -797,12 +797,18 @@ impl ShelfView {
             )
             .child(div().flex_1())
             .child(
-                ui::header_icon("shelf-settings", "Settings", ui::Icon::Settings, theme, false)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.in_mdoc(window, cx, |workspace, window, cx| {
-                            workspace.settings_from_shelf(window, cx)
-                        })
-                    })),
+                ui::header_icon(
+                    "shelf-settings",
+                    "Settings",
+                    ui::Icon::Settings,
+                    theme,
+                    false,
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.in_mdoc(window, cx, |workspace, window, cx| {
+                        workspace.settings_from_shelf(window, cx)
+                    })
+                })),
             )
             .child(
                 self.action_row("shelf-quit", "Quit", cx, |this, window, cx| {

@@ -268,7 +268,9 @@ impl ShelfDocument {
         [".md", ".markdown"]
             .iter()
             .find(|ext| lower.ends_with(*ext) && lower.len() > ext.len())
-            .map_or(&self.title, |ext| &self.title[..self.title.len() - ext.len()])
+            .map_or(&self.title, |ext| {
+                &self.title[..self.title.len() - ext.len()]
+            })
     }
 
     /// How many distinct names its text replaced.
@@ -484,7 +486,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         };
     }
     if let Some((cut, _)) = styled.text.char_indices().nth(PREVIEW_CHARS) {
-        let at_word = styled.text[..cut].rfind(' ').filter(|at| *at > 0).unwrap_or(cut);
+        let at_word = styled.text[..cut]
+            .rfind(' ')
+            .filter(|at| *at > 0)
+            .unwrap_or(cut);
         styled.truncate(at_word);
         more = true;
     }

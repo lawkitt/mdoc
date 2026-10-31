@@ -682,7 +682,11 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     let shelf = open_shelf(cx);
     let open = |shelf: gpui::WindowHandle<crate::shelf_ui::ShelfView>,
                 cx: &mut VisualTestContext| {
-        cx.update(|_, cx| cx.windows().iter().any(|w| w.window_id() == shelf.window_id()))
+        cx.update(|_, cx| {
+            cx.windows()
+                .iter()
+                .any(|w| w.window_id() == shelf.window_id())
+        })
     };
     let (second, hint) = shelf
         .read_with(cx, |view, _| {
@@ -730,7 +734,11 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
             .read_with(cx, |view, _| view.source_line().unwrap())
             .unwrap()
     };
-    assert!(line(cx).ends_with(" restored · 0 unrecognised"), "{}", line(cx));
+    assert!(
+        line(cx).ends_with(" restored · 0 unrecognised"),
+        "{}",
+        line(cx)
+    );
     cx.executor().advance_clock(crate::shelf_ui::RESULT_FOR);
     cx.run_until_parked();
     assert_eq!(line(cx), source);

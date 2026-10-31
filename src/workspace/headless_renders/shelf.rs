@@ -186,7 +186,12 @@ fn stage(
     d: &mut Driver,
     name: &str,
     (width, height): (f32, f32),
-    popup: impl FnOnce(gpui::WindowHandle<Workspace>, Rc<Cell<Theme>>, &mut Window, &mut App) -> (AnyView, Option<Entity<ShelfView>>)
+    popup: impl FnOnce(
+        gpui::WindowHandle<Workspace>,
+        Rc<Cell<Theme>>,
+        &mut Window,
+        &mut App,
+    ) -> (AnyView, Option<Entity<ShelfView>>)
     + 'static,
 ) -> Result<()> {
     let workspace = d

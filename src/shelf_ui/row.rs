@@ -1,7 +1,8 @@
 //! One shelf row (ADR 0084): the title without `.md`, the case as a tinted
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
-//! meta line "5 min ago · 1,297 words · 14 replaced".
+//! meta line "5 min ago · 1,297 words · 14 replaced". A row that is not
+//! ready starts its meta line with its state, so the title keeps its room.
 
 use super::ShelfView;
 use crate::{
@@ -17,11 +18,13 @@ use mdoc_pii::Category;
 use std::{ops::Range, time::SystemTime};
 
 /// Heights the shelf sums to size its window.
-pub(super) const READY_ROW: f32 = 90.;
-pub(super) const WAITING_ROW: f32 = 54.;
+pub(super) const READY_ROW: f32 = 92.;
+pub(super) const WAITING_ROW: f32 = 58.;
 const TITLE_LINE: f32 = 20.;
 const PREVIEW_LINE: f32 = 16.;
-const META_LINE: f32 = 15.;
+const META_LINE: f32 = 18.;
+/// A long case name gives way before the title does.
+const CASE_LABEL_MAX: f32 = 132.;
 const ROW_INNER_GAP: f32 = 3.;
 
 /// A row's height: a ready row with prose shows its two preview lines.
@@ -154,13 +157,12 @@ pub(crate) fn preview_runs(preview: &Preview, theme: Theme) -> Vec<(Range<usize>
 }
 
 /// A small label: the case in its colour, or a readiness state in amber.
-fn label(text: impl Into<SharedString>, color: Hsla) -> AnyElement {
+fn label(text: impl Into<SharedString>, color: Hsla) -> gpui::Div {
     div()
         .flex_shrink_0()
         .h(px(18.))
+        .line_height(px(18.))
         .px(px(6.))
-        .flex()
-        .items_center()
         .rounded(px(4.))
         .bg(color.opacity(0.14))
         .text_color(color)
@@ -168,7 +170,6 @@ fn label(text: impl Into<SharedString>, color: Hsla) -> AnyElement {
         .font_weight(FontWeight::MEDIUM)
         .whitespace_nowrap()
         .child(text.into())
-        .into_any_element()
 }
 
 impl ShelfView {
@@ -196,13 +197,14 @@ impl ShelfView {
                     .child(document.display_title().to_string()),
             )
             .when_some(document.case.as_ref(), |header, case| {
-                header.child(label(
-                    case.name.clone(),
-                    style::case_color(case.hue(), theme),
-                ))
-            })
-            .when(!ready, |header| {
-                header.child(label(document.readiness.label(), theme.proposed()))
+                header.child(
+                    label(case.name.clone(), style::case_color(case.hue(), theme))
+                        .flex_shrink(3.)
+                        .min_w(px(40.))
+                        .max_w(px(CASE_LABEL_MAX))
+                        .overflow_hidden()
+                        .text_ellipsis(),
+                )
             })
             .child(div().flex_1())
             .when(ready, |header| {
@@ -244,26 +246,22 @@ impl ShelfView {
                         })),
                 )
             });
-        let preview = document
-            .preview
-            .as_ref()
-            .filter(|_| ready)
-            .map(|preview| {
-                div()
-                    .id(("shelf-preview", index))
-                    .h(px(2. * PREVIEW_LINE))
-                    .text_size(px(12.))
-                    .line_height(px(PREVIEW_LINE))
-                    .text_color(p.header_fg.opacity(0.82))
-                    .line_clamp(2)
-                    .text_ellipsis()
-                    // A preview is what a drag picks up (ADR 0084).
-                    .cursor(CursorStyle::OpenHand)
-                    .child(
-                        StyledText::new(preview.text.clone())
-                            .with_highlights(preview_runs(preview, theme)),
-                    )
-            });
+        let preview = document.preview.as_ref().filter(|_| ready).map(|preview| {
+            div()
+                .id(("shelf-preview", index))
+                .h(px(2. * PREVIEW_LINE))
+                .text_size(px(12.))
+                .line_height(px(PREVIEW_LINE))
+                .text_color(p.header_fg.opacity(0.82))
+                .line_clamp(2)
+                .text_ellipsis()
+                // A preview is what a drag picks up (ADR 0084).
+                .cursor(CursorStyle::OpenHand)
+                .child(
+                    StyledText::new(preview.text.clone())
+                        .with_highlights(preview_runs(preview, theme)),
+                )
+        });
         let mut meta = format!(
             "{} · {}",
             ago(document.edited, SystemTime::now()),
@@ -287,6 +285,9 @@ impl ShelfView {
             .text_size(px(11.))
             .text_color(p.header_muted)
             .whitespace_nowrap()
+            .when(!ready, |line| {
+                line.child(label(document.readiness.label(), theme.proposed()).mr(px(6.)))
+            })
             .child(meta)
             .children(count);
         ui::focus_ring(("shelf-row", index), theme)
