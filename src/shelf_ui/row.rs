@@ -89,8 +89,8 @@ fn category_noun(category: Category, count: usize) -> &'static str {
     match category {
         Category::Person if one => "person",
         Category::Person => "people",
-        Category::Organization if one => "organisation",
-        Category::Organization => "organisations",
+        Category::Organization if one => "organization",
+        Category::Organization => "organizations",
         Category::Email if one => "email",
         Category::Email => "emails",
         Category::Phone if one => "phone number",
@@ -109,7 +109,7 @@ fn category_noun(category: Category, count: usize) -> &'static str {
     }
 }
 
-/// What hovering "14 replaced" lists: "6 people · 4 organisations · 4 IDs".
+/// What hovering "14 replaced" lists: "6 people · 4 organizations · 4 IDs".
 pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
     replaced
         .iter()
@@ -543,7 +543,7 @@ mod tests {
                 (Category::Organization, 4),
                 (Category::Identity, 4)
             ]),
-            "6 people · 4 organisations · 4 IDs"
+            "6 people · 4 organizations · 4 IDs"
         );
         assert_eq!(breakdown(&[(Category::Person, 1)]), "1 person");
     }

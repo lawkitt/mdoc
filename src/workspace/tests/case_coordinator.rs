@@ -242,7 +242,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
         assert_eq!(applied, ["Anna Petrova", "Northwind Traders Ltd"]);
         assert!(
             view.has_applied_aliases(),
-            "Copy for AI and Paste AI Response apply"
+            "Copy for AI and Paste AI Reply apply"
         );
     });
 

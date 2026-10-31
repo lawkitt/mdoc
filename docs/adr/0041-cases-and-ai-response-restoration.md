@@ -36,7 +36,7 @@ map, the better ones one map per case.
   verbatim. Copy Markdown still copies the text exactly.
 - **Case.** A named saved mapping, shown as a sidebar section. One case per
   document; tabs without a case keep memory-only mappings. Creating a case
-  (**Save mapping as case**, named after the document, renamed inline) is the
+  (**Save as Case**, named after the document, renamed inline) is the
   consent to store originals; changes then autosave. The unsaved-mapping
   question is asked on tab close and on quit ([ADR 0071](0071-one-close-and-quit-prompt.md)),
   and can be turned off in Settings → Saved cases. Closed cases open from **File → Open Case…**, which shows the case page
@@ -71,7 +71,7 @@ map, the better ones one map per case.
 - **Pseudonymize Clipboard** (File menu, ⌥⇧⌘C, mdoc focused) replaces exact
   whole-word originals of the active case (or live mapping), longest first,
   without detection. A system-wide hotkey is deferred.
-- **Before / after** shows original and pseudonymized text in two read-only
+- **Side by side** shows original and pseudonymized text in two read-only
   editors (ADR 0042).
 - **Categories to detect** are stored per case; member tabs filter scan results
   before ingesting. Manual additions are unaffected. A new case starts from

@@ -1504,7 +1504,7 @@ impl Workspace {
                 ]
             }
             None if self.can_create_case(tab, cx) => vec![
-                row("context-create-case", "Save mapping as case")
+                row("context-create-case", "Save as case")
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.tab_menu = None;
                         this.create_case(tab, window, cx);
@@ -1705,7 +1705,7 @@ impl Workspace {
                                         .text_color(palette.header_muted)
                                         .child(
                                             "No saved cases yet. Right-click a tab with applied \
-                                             replacements and choose Save mapping as case.",
+                                             replacements and choose Save as case.",
                                         ),
                                 )
                             })

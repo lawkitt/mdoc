@@ -18,7 +18,7 @@ that created it, so ad-hoc and dev builds prompt each other.
 
 ## Decision
 
-1. **Touch the key only for an action that needs it**: Save mapping as case
+1. **Touch the key only for an action that needs it**: Save as Case
    (including the save-on-close question), folder drop as a case, and Unlock.
    Browsing Open Case… and opening its page use cached metadata without reading
    the key ([ADR 0077](0077-case-page.md)); an explicit Unlock also discovers
@@ -35,7 +35,7 @@ that created it, so ad-hoc and dev builds prompt each other.
    documents." with **Unlock…**. The Notices bell counts it whenever cases
    are locked, because a document opened by hand is matched to its case by
    path. The notice opens by itself only when a locked case is needed: an
-   open tab carries a case link from the session, Paste AI Response or
+   open tab carries a case link from the session, Paste AI Reply or
    Pseudonymize clipboard finds no mapping in the tab (cases are checked
    quietly first), or the Keychain was declined after an action (Try again).
    Otherwise it waits behind the bell, so it never covers a plain document's
