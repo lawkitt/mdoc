@@ -579,6 +579,29 @@ pub fn load(path: &Path) -> Result<Preferences, SettingsError> {
     prefs.validate()?;
     Ok(prefs)
 }
+/// Serializes settings writes made in order; a write older than the latest
+/// one started is skipped, since the later one holds newer choices.
+static PREFS_WRITE: Mutex<()> = Mutex::new(());
+static PREFS_LATEST: AtomicU64 = AtomicU64::new(0);
+
+/// A settings write's place in line: take it when the choice is made (on
+/// the UI thread), then [`save_in_order`] it, perhaps on another thread.
+pub fn next_write() -> u64 {
+    PREFS_LATEST.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// Save `prefs` as write `write` of [`next_write`], unless a later write
+/// was started meanwhile; `Ok(false)` when skipped. An older Settings save
+/// still running can then never land over a newer choice (the menu bar
+/// shelf's notes save while the panel may be saving, ADR 0084).
+pub fn save_in_order(path: &Path, prefs: &Preferences, write: u64) -> Result<bool, SettingsError> {
+    let _guard = PREFS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    if PREFS_LATEST.load(Ordering::SeqCst) != write {
+        return Ok(false);
+    }
+    save(path, prefs).map(|()| true)
+}
+
 pub fn save(path: &Path, prefs: &Preferences) -> Result<(), SettingsError> {
     prefs.validate()?;
     let parent = path.parent().ok_or(SettingsError::NoParent)?;
@@ -703,6 +726,19 @@ mod tests {
         );
         prefs.categories.set(Category::Address, true);
         assert_eq!(prefs.categories.skip, ["EMAIL"]);
+    }
+    #[test]
+    fn a_settings_write_older_than_the_latest_started_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let older = next_write();
+        let newer = next_write();
+        let mut off = Preferences::default();
+        off.general.menu_bar = false;
+        assert!(save_in_order(&path, &off, newer).unwrap());
+        // The older write finishes last: it does not land.
+        assert!(!save_in_order(&path, &Preferences::default(), older).unwrap());
+        assert_eq!(load(&path).unwrap(), off);
     }
     #[test]
     fn the_menu_bar_is_on_by_default_and_absent_from_the_file_while_default() {

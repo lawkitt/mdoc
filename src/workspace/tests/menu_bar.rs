@@ -235,3 +235,35 @@ fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContex
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
 }
+
+/// Review of #280: Quit when windows close with nothing unsaved, whose
+/// final session save fails: the question shows in a window that shows,
+/// though the item is gone.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn a_failed_save_after_quit_when_windows_close_shows_the_window(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, "preserve").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.session_writer
+            .set_path(Some(blocked.join("session.json")))
+    });
+    install_noting(&tabs, true, false, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    let shown = note(cx).unwrap();
+    shown
+        .update(cx, |view, window, cx| {
+            view.quit_when_windows_close(window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt(), "the failed save asks");
+    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+}

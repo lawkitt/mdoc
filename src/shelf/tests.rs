@@ -355,6 +355,14 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(text).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: quoted headings and fences are what they are.
+    let quoted = "> # A heading long enough to read as prose\n>\n> ```\n\
+                  > quoted code that is long enough to read as prose\n> ```\n\n\
+                  > PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(quoted).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
     // An unclosed fence hides the rest.
     assert!(preview_of("```\nPERSON_1 signed the agreement today.\n").is_none());
 }
@@ -402,11 +410,16 @@ fn a_preview_never_shows_an_original_even_one_the_syntax_split() {
         "Signed by *Anna* Petrova for Northwind Ltd on the day.",
         // Review of #280: formatting inside a link's label.
         "PERSON_1 met [Anna **Petrova**](https://example.test) about the agreement today.",
+        // Review of #280: an entity inside a link's label.
+        "PERSON_1 met [Anna&#32;Petrova](https://example.test) about the agreement today.",
     ] {
         let preview = preview_of(text).unwrap();
         let map = RestoreMap::new(names());
         assert_eq!(map.known_names(&preview.text), 0, "{}", preview.text);
         assert!(!preview.text.contains("**"), "{}", preview.text);
+        for part in ["Anna", "Petrova", "&#"] {
+            assert!(!preview.text.contains(part), "{}", preview.text);
+        }
         assert!(preview.text.contains("PERSON_1"), "{}", preview.text);
     }
 }

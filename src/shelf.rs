@@ -427,7 +427,7 @@ fn plain_line(line: &str) -> Styled {
 }
 
 /// Characters that may open inline syntax inside a span's text.
-const INLINE_MARKERS: [char; 8] = ['*', '_', '~', '=', '`', '<', '[', '\\'];
+const INLINE_MARKERS: [char; 9] = ['*', '_', '~', '=', '`', '<', '[', '\\', '&'];
 
 /// Hide `text`'s syntax into `out`, under `(bold, italic)`. A link's label
 /// comes back as one span, so a span still holding markers is scanned
@@ -472,6 +472,14 @@ fn is_prose(text: &str) -> bool {
     words >= PROSE_WORDS && text.chars().filter(|c| c.is_alphabetic()).count() >= PROSE_LETTERS
 }
 
+/// `line` without its blockquote markers (`>`, nested `>>` too).
+fn unquoted(mut line: &str) -> &str {
+    while let Some(prefix) = lines::blockquote_prefix(line) {
+        line = line[prefix..].trim_start();
+    }
+    line
+}
+
 /// A code fence's character and length: three or more of `` ` `` or `~`.
 fn fence(line: &str) -> Option<(u8, usize)> {
     let c = *line.as_bytes().first()?;
@@ -494,25 +502,27 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let mut more = false;
     for line in text.lines() {
         let trimmed = line.trim();
+        // A block inside quotes is what it is without them.
+        let block = unquoted(trimmed);
         if let Some(open) = fenced {
             // Only a fence of the same character, at least as long, with
             // nothing after it, closes the block.
-            if fence(trimmed)
-                .is_some_and(|(c, n)| c == open.0 && n >= open.1 && trimmed[n..].trim().is_empty())
+            if fence(block)
+                .is_some_and(|(c, n)| c == open.0 && n >= open.1 && block[n..].trim().is_empty())
             {
                 fenced = None;
             }
             continue;
         }
-        if let Some(open) = fence(trimmed) {
+        if let Some(open) = fence(block) {
             fenced = Some(open);
             continue;
         }
-        if lines::heading_level(trimmed).is_some()
-            || lines::thematic_break(trimmed)
-            || tables::is_table_row(trimmed)
-            || trimmed.starts_with("<!--")
-            || trimmed.starts_with("![")
+        if lines::heading_level(block).is_some()
+            || lines::thematic_break(block)
+            || tables::is_table_row(block)
+            || block.starts_with("<!--")
+            || block.starts_with("![")
         {
             continue;
         }

@@ -358,7 +358,7 @@ impl Workspace {
             return;
         }
         if let Some(path) = path
-            && let Err(error) = settings::save(&path, &changed)
+            && let Err(error) = settings::save_in_order(&path, &changed, settings::next_write())
         {
             eprintln!("mdoc: could not save a menu bar choice: {error}");
         }

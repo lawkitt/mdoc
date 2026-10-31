@@ -17,7 +17,9 @@ use mdoc_import::{
 pub use mdoc_store::model_state::Status;
 use mdoc_store::model_state::{Files, ModelState};
 use mdoc_store::session_store::ThemeChoice;
-use mdoc_store::settings::{Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, save};
+use mdoc_store::settings::{
+    Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, next_write, save_in_order,
+};
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 mod categories;
@@ -794,6 +796,9 @@ impl Panel {
             })
             .unwrap_or_default();
         let path = self.shared.borrow().path.clone();
+        // Taken now: a later write (a shelf note's) skips this one if it
+        // finishes last.
+        let write = next_write();
         self.applying = true;
         #[cfg(test)]
         let save_gate = self.save_gate.take();
@@ -804,7 +809,9 @@ impl Panel {
                 if let Some(gate) = save_gate {
                     gate.await;
                 }
-                path.map_or(Ok(()), |path| save(&path, &prefs))
+                path.map_or(Ok(()), |path| {
+                    save_in_order(&path, &prefs, write).map(|_| ())
+                })
             }
         });
         cx.spawn(async move |this, cx| {
