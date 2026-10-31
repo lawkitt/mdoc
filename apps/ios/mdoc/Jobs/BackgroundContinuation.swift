@@ -96,16 +96,9 @@ struct ContinuedProcessing: BackgroundContinuation {
     func begin(title: String, expire: @escaping @Sendable () -> Void) -> any BackgroundLease {
         let identifier = Self.prefix + UUID().uuidString
         let lease = ContinuedLease()
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
-            guard let task = task as? BGContinuedProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            task.expirationHandler = {
-                expire()
-            }
-            lease.attach(task)
-        }
+        let registered = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: identifier, using: nil,
+            launchHandler: Self.launchHandler(lease: lease, expire: expire))
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier, title: title,
             subtitle: String(localized: "mdoc keeps working while you use other apps."))
@@ -116,6 +109,25 @@ struct ContinuedProcessing: BackgroundContinuation {
             return lease
         } catch {
             return fallback.begin(title: title, expire: expire)
+        }
+    }
+
+    /// The scheduler calls the launch and expiration handlers on its own
+    /// queue. Made here, outside the main actor, they are not main-actor
+    /// closures: one made inside `begin` was, and Swift's isolation check
+    /// stopped the app the moment a job started on a device.
+    private nonisolated static func launchHandler(
+        lease: ContinuedLease, expire: @escaping @Sendable () -> Void
+    ) -> @Sendable (BGTask) -> Void {
+        { task in
+            guard let task = task as? BGContinuedProcessingTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            task.expirationHandler = {
+                expire()
+            }
+            lease.attach(task)
         }
     }
 }
