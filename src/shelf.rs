@@ -473,10 +473,16 @@ fn is_prose(text: &str) -> bool {
 }
 
 /// `line` without its containers' markers: blockquotes (`>`, nested `>>`
-/// too) and list items (`-`, `1.`), however they nest.
+/// too, and an alert's `[!NOTE]`), list items (`-`, `1.`) and task boxes,
+/// however they nest.
 fn block_content(mut line: &str) -> &str {
     loop {
         if let Some(prefix) = lines::blockquote_prefix(line) {
+            line = line[prefix..].trim_start();
+            if let Some((_, alert, _)) = mdoc_markdown::syntax::alert_prefix(line) {
+                line = line[alert..].trim_start();
+            }
+        } else if let Some((prefix, ..)) = lines::task_prefix(line) {
             line = line[prefix..].trim_start();
         } else if let Some((prefix, ..)) = lines::list_prefix(line) {
             line = line[prefix..].trim_start();
@@ -484,6 +490,31 @@ fn block_content(mut line: &str) -> &str {
             return line;
         }
     }
+}
+
+/// `names` with each original also in the wording a preview shows it in:
+/// runs of whitespace (non-breaking spaces too) as one space, so a stored
+/// "Anna  Petrova" is masked once the preview has collapsed it.
+fn preview_names(names: &RestoreMap) -> RestoreMap {
+    RestoreMap::new(
+        names
+            .identities()
+            .iter()
+            .map(|identity| {
+                let mut identity = identity.clone();
+                let collapsed: Vec<_> = identity
+                    .originals
+                    .iter()
+                    .map(|original| original.split_whitespace().collect::<Vec<_>>().join(" "))
+                    .filter(|collapsed| !identity.originals.iter().any(|o| **o == **collapsed))
+                    .collect();
+                identity
+                    .originals
+                    .extend(collapsed.into_iter().map(Into::into));
+                identity
+            })
+            .collect(),
+    )
 }
 
 /// A code fence's character and length: three or more of `` ` `` or `~`.
@@ -533,7 +564,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         {
             continue;
         }
-        let plain = plain_line(trimmed);
+        let plain = plain_line(block);
         if !is_prose(&plain.text) {
             continue;
         }
@@ -546,6 +577,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     if styled.text.is_empty() {
         return None;
     }
+    let names = &preview_names(names);
     let (masked, _) = names.pseudonymize(&styled.text);
     if masked != styled.text {
         // Lengths moved: the masked text wins over bold and italic.

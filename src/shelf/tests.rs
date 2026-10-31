@@ -363,6 +363,19 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(quoted).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: nested containers show no markers.
+    for nested in [
+        "> - PERSON_1 signed the agreement today.",
+        "- > PERSON_1 signed the agreement today.",
+        "> [!NOTE]\n> PERSON_1 signed the agreement today.",
+        "- [x] PERSON_1 signed the agreement today.",
+    ] {
+        assert_eq!(
+            preview_of(nested).unwrap().text,
+            "PERSON_1 signed the agreement today.",
+            "{nested}"
+        );
+    }
     // Review of #280: a fence inside a list item, too.
     let listed = "- ```\n  example code long enough to read as prose\n  ```\n\n\
                   PERSON_1 signed the agreement today.\n";
@@ -419,6 +432,8 @@ fn a_preview_never_shows_an_original_even_one_the_syntax_split() {
         "PERSON_1 met [Anna **Petrova**](https://example.test) about the agreement today.",
         // Review of #280: an entity inside a link's label.
         "PERSON_1 met [Anna&#32;Petrova](https://example.test) about the agreement today.",
+        // Review of #280: whitespace the preview collapses.
+        "ORG_1 met Anna \u{a0}**Petrova** about the agreement today.",
     ] {
         let preview = preview_of(text).unwrap();
         let map = RestoreMap::new(names());
@@ -455,5 +470,26 @@ fn the_display_title_drops_only_a_markdown_extension() {
     ] {
         row.title = title.into();
         assert_eq!(row.display_title(), shown);
+    }
+}
+
+/// Review of #280: an original stored with a double space is masked once
+/// the preview has collapsed it.
+#[test]
+fn a_preview_masks_an_original_stored_with_odd_spacing() {
+    let names = RestoreMap::new(vec![identity(
+        "PERSON_1",
+        Category::Person,
+        &["Anna  Petrova", "Boris\u{a0}Ivanov"],
+    )]);
+    for text in [
+        "ORG_1 met Anna  **Petrova** about the agreement today.",
+        "ORG_1 met Boris\u{a0}Ivanov about the agreement today.",
+    ] {
+        let preview = preview_lines(text, &names).unwrap();
+        for part in ["Anna", "Petrova", "Boris", "Ivanov"] {
+            assert!(!preview.text.contains(part), "{}", preview.text);
+        }
+        assert!(preview.text.contains("PERSON_1"), "{}", preview.text);
     }
 }
