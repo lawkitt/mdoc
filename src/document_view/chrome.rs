@@ -254,12 +254,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let has_preview = self.preview.pdf().is_some() || self.preview.source().is_some();
-        let reviewable = !self.lifecycle.source_only()
-            && self.pii.restore().is_none()
-            && (self.pii.reviewing()
-                || self.replacements_open()
-                || !self.pii.review().variants().is_empty()
-                || !self.pii.review().applied().is_empty());
+        let reviewable = self.can_show_replacements();
         let name = self.display_name();
         let dirty = self.lifecycle.dirty();
         let crumb = div()
@@ -569,7 +564,7 @@ impl DocumentView {
                             row(
                                 "more-copy-markdown",
                                 "Copy Markdown".into(),
-                                None,
+                                Some(modifier("⇧⌘M", "Ctrl+Shift+M")),
                                 None,
                                 has_text,
                             )
@@ -579,7 +574,7 @@ impl DocumentView {
                             ui::menu_row_because(
                                 "more-copy-for-ai",
                                 "Copy for AI",
-                                None,
+                                Some(modifier("⇧⌘C", "Ctrl+Shift+C")),
                                 None,
                                 theme,
                                 aliases,

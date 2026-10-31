@@ -566,6 +566,23 @@ struct MappingChange {
     assignments: Vec<(Range<usize>, u64)>,
 }
 impl DocumentView {
+    /// Whether the Replacements panel has anything to show: a review is
+    /// under way or names were found or applied (the toolbar's panel button).
+    pub(crate) fn can_show_replacements(&self) -> bool {
+        !self.lifecycle.source_only()
+            && self.pii.restore().is_none()
+            && (self.pii.reviewing()
+                || self.replacements_open()
+                || !self.pii.review().variants().is_empty()
+                || !self.pii.review().applied().is_empty())
+    }
+    /// View › Show Replacements: open the panel when it can show; an open
+    /// panel stays as it is.
+    pub(crate) fn show_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.replacements_open() && self.can_show_replacements() {
+            self.toggle_replacements_panel(window, cx);
+        }
+    }
     pub(crate) fn toggle_replacements_panel(
         &mut self,
         window: &mut Window,

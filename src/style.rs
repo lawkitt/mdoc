@@ -54,6 +54,18 @@ pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme
     }
 }
 
+/// The appearance native panels, alerts and menus draw in (macOS, ADR 0076):
+/// Light or Dark as chosen; System clears the app's own, so they follow
+/// macOS.
+#[cfg(any(target_os = "macos", test))]
+pub fn app_appearance(choice: ThemeChoice) -> Option<gpui::WindowAppearance> {
+    match choice {
+        ThemeChoice::System => None,
+        ThemeChoice::Light => Some(gpui::WindowAppearance::Light),
+        ThemeChoice::Dark => Some(gpui::WindowAppearance::Dark),
+    }
+}
+
 /// The sidebar dot of a case with this hue (degrees).
 pub fn case_color(hue: u32, theme: Theme) -> Hsla {
     hsla(
@@ -644,6 +656,25 @@ mod contrast_tests {
             off.is_empty(),
             "sizes off the type ramp:\n{}",
             off.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::*;
+    use gpui::WindowAppearance;
+
+    #[test]
+    fn native_panels_follow_the_choice_and_system_follows_the_os() {
+        assert_eq!(app_appearance(ThemeChoice::System), None);
+        assert_eq!(
+            app_appearance(ThemeChoice::Light),
+            Some(WindowAppearance::Light)
+        );
+        assert_eq!(
+            app_appearance(ThemeChoice::Dark),
+            Some(WindowAppearance::Dark)
         );
     }
 }

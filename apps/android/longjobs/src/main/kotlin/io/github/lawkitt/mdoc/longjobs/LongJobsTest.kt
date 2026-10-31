@@ -87,7 +87,8 @@ class LongJobsTest {
         device.pressHome()
         kill()
         openDocument(title)
-        need(By.textStartsWith("Recognition stopped when mdoc left the screen"), 30_000)
+        // The scan is a PDF, so mdoc calls it an import (ADR 0087's wording).
+        need(By.textStartsWith("The import stopped when mdoc left the screen"), 30_000)
         need(By.text(Pattern.compile("Resume recognition|Finish import")), 10_000).click()
         recognized()
         resumedTitle = title

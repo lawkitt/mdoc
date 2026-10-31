@@ -9,6 +9,7 @@ mod comments;
 mod comparison;
 mod confirm;
 mod decisions;
+mod docx_source;
 mod encoder;
 mod folder_sheet;
 mod import;
@@ -321,6 +322,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     import::scenes(d)?;
     restore::restored_reply(d)?;
     comments::scenes(d)?;
+    docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::scanning(d)?;
     // Last: it leaves cases locked.

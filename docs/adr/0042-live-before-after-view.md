@@ -38,7 +38,10 @@ button named the next mode rather than the current one.
 7. **Panel → view navigation.** Selecting a Replacements row scrolls both
    columns to that identity's first occurrence and briefly highlights it; a
    pending mention, plain text in both columns, gets a fading gold ghost.
-8. **⌘\\ (Ctrl+\\) toggles** the view; it is also in the File menu.
+8. **⌘\\ (Ctrl+\\) toggles** Side by side: from Edit, Original or
+   Pseudonymized it switches to Side by side, and from Side by side back to
+   Edit. It is View › Side by Side, beside Edit, Original and Pseudonymized
+   ([ADR 0058](0058-standard-macos-menus.md)).
 9. **Esc closes innermost first**: a popup, then search, then the panel's own
    Esc; the view closes only when nothing else is open, including from inside
    its columns. Focus handed back to the hidden editor (e.g. by closing the

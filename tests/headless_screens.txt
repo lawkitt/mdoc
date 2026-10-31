@@ -49,6 +49,7 @@ conversion-failed
 ocr-consent
 restored-reply
 comments
+docx-source
 shelf
 shelf-demos
 shelf-demos-count
