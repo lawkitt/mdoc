@@ -5,12 +5,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -191,10 +194,13 @@ fun DocumentScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            // Notices and the setup card scroll on their own, so their buttons
-            // stay reachable on a short screen or at large text.
-            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
+        // The panes take the height the notices leave; the notices and the
+        // setup card take at most half of it and scroll on their own, so their
+        // buttons stay reachable on a short screen or at large text.
+        val noticesHeight = maxHeight / 2
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.heightIn(max = noticesHeight).verticalScroll(rememberScrollState())) {
             if (model.isMine(interrupted?.documentId)) {
                 Notice(
                     stringResource(
@@ -278,15 +284,18 @@ fun DocumentScreen(
                     )
                 }
             }
-            when {
-                pane == Pane.Reply -> ReplyPane(snapshot.reply!!, onRemove = model::clearReply)
-                pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
-                wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
-                    text(Modifier.weight(1f).fillMaxHeight())
-                    OriginalView(snapshot.original, Modifier.weight(1f).fillMaxHeight())
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    pane == Pane.Reply -> ReplyPane(snapshot.reply!!, onRemove = model::clearReply)
+                    pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
+                    wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
+                        text(Modifier.weight(1f).fillMaxHeight())
+                        OriginalView(snapshot.original, Modifier.weight(1f).fillMaxHeight())
+                    }
+                    else -> text(Modifier.fillMaxSize())
                 }
-                else -> text(Modifier.fillMaxSize())
             }
+        }
         }
     }
 
