@@ -821,6 +821,13 @@ mod tests {
             SearchIndex::from_markdown(r"\*").find("*", true)[0].source,
             vec![0..2]
         );
+        // A converter's `1\.` reads as `1.`.
+        assert_eq!(
+            SearchIndex::from_markdown(r"1\. a")
+                .find("1. a", true)
+                .len(),
+            1
+        );
     }
 
     #[test]

@@ -71,10 +71,15 @@ pub struct SpanStyle {
     /// share an id, so a host can pair them even with NESTED constructs
     /// between (adjacency no longer identifies the pair).
     pub pair_id: u16,
-    /// What a hidden marker paints in its place (an escape's character, an
-    /// entity's decoded text): every replacement byte maps back to the span's
-    /// start, so the display↔source maps stay consistent. `None` = plain
-    /// removal.
+    /// The backslash of a backslash escape (`1\.`, `\*`): a marker like any
+    /// other, and the escaped character is the next span, its own content
+    /// span. A host that hides the backslash paints that character in the
+    /// escape's place, mapped back to the backslash, so a click or a search
+    /// match covers the whole escape.
+    pub escape: bool,
+    /// What a hidden marker paints in its place (an entity's decoded text):
+    /// every replacement byte maps back to the span's start, so the
+    /// display↔source maps stay consistent. `None` = plain removal.
     pub replace: Option<String>,
     /// Decoded source text, unlike generated replacement labels.
     pub decoded: bool,
@@ -288,28 +293,40 @@ fn scan_inline(
 ) {
     let b = text.as_bytes();
     let mut i = start;
+    // End of the raw inline HTML tag or autolink the scan is inside: its
+    // bytes are literal, so a `\` there escapes nothing (CommonMark).
+    let mut raw_until = start;
     while i < end {
         let c = b[i];
-        // A backslash escape (`\*`, `\|`, `\\`, … — any ASCII punctuation):
-        // the backslash is a hideable marker (the reader consumes it), the
-        // escaped character is literal content — skip it so no construct
-        // opens on it. Reveal-on-caret shows the backslash for editing.
+        if i >= raw_until
+            && c == b'<'
+            && b.get(i + 1)
+                .is_some_and(|&n| n.is_ascii_alphabetic() || matches!(n, b'/' | b'!' | b'?'))
+            && let Some(len) = inline_tag_len(&text[i..end])
+        {
+            raw_until = i + len;
+        }
+        // A backslash escape (`\*`, `1\.`, `\\`, … — any ASCII punctuation):
+        // the backslash is a marker (the reader consumes it), dimmed when
+        // shown and hidden like the others; the escaped character is literal
+        // content in its own span, skipped so no construct opens on it.
+        // Reveal-on-caret shows the backslash for editing.
         if c == b'\\'
+            && i >= raw_until
             && i + 1 < end
             && b[i + 1].is_ascii_punctuation()
             && !is_backslash_escaped(b, i)
         {
-            push(
-                out,
-                i..i + 2,
-                SpanStyle {
+            out.push(Span {
+                range: i..i + 1,
+                style: SpanStyle {
+                    color: Some(Color::Marker),
                     hide: true,
-                    replace: Some(text[i + 1..i + 2].to_owned()),
-                    decoded: true,
+                    escape: true,
                     ..Default::default()
-                }
-                .over(base),
-            );
+                },
+            });
+            push(out, i + 1..i + 2, SpanStyle::default().over(base));
             i += 2;
             continue;
         }
@@ -1057,10 +1074,88 @@ mod tests {
         assert!(spans[1].style.code);
         assert_eq!(spans[0].style.pair_id, spans[2].style.pair_id);
         assert!(spans[0].style.always_hide && spans[2].style.always_hide);
-        // Entities and escapes decode to their replacement text.
-        let spans = scan(r"&amp; \*");
+        // An entity decodes to its replacement text.
+        let spans = scan("&amp;");
         assert_eq!(spans[0].style.replace.as_deref(), Some("&"));
-        assert_eq!(spans[1].style.replace.as_deref(), Some("*"));
-        assert!(spans.iter().all(|s| s.style.decoded && s.style.hide));
+        assert!(spans[0].style.decoded && spans[0].style.hide);
+    }
+
+    /// `(source text, is an escape's marker)` per span, in source order.
+    fn escape_spans(line: &str) -> Vec<(&str, bool)> {
+        let mut out = Vec::new();
+        scan_line(line, 0, line.len(), &mut out);
+        out.sort_by_key(|s| s.range.start);
+        out.iter()
+            .map(|s| {
+                let marker = s.style.escape;
+                if marker {
+                    assert_eq!(s.style.color, Some(Color::Marker), "{line:?}");
+                    assert!(s.style.hide && s.style.replace.is_none(), "{line:?}");
+                }
+                (&line[s.range.clone()], marker)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_escape_backslash_is_a_marker_and_its_character_content() {
+        // A converter's list number (`1\.`, so it is not a list): the
+        // backslash is a marker, the `.` plain content.
+        assert_eq!(
+            escape_spans(r"1\. Harrow"),
+            vec![(r"\", true), (".", false)]
+        );
+        // Escaped emphasis stays literal: two escapes, no italic.
+        let spans = escape_spans(r"\*not\*");
+        assert_eq!(
+            spans,
+            vec![(r"\", true), ("*", false), (r"\", true), ("*", false)]
+        );
+        // `\#` is not a heading; the backslash is the only marker.
+        assert_eq!(
+            escape_spans(r"\# not a heading"),
+            vec![(r"\", true), ("#", false)]
+        );
+        // Inside a construct the character keeps the construct's style.
+        let mut out = Vec::new();
+        scan_line(r"**a\*b**", 0, 8, &mut out);
+        let star = out.iter().find(|s| s.range == (4..5)).unwrap();
+        assert!(star.style.bold && !star.style.hide);
+        assert!(out.iter().any(|s| s.range == (3..4) && s.style.escape));
+        // `\\` escapes the second backslash.
+        assert_eq!(escape_spans(r"a\\b"), vec![(r"\", true), (r"\", false)]);
+    }
+
+    #[test]
+    fn a_backslash_that_escapes_nothing_is_text() {
+        // Before a letter, a digit, a space or non-ASCII punctuation, and at
+        // the end of a line with nothing before it.
+        for line in [r"C:\Users", r"a\1", r"a\ b", "a\\\u{ab}", r"\"] {
+            assert!(
+                escape_spans(line).iter().all(|&(_, marker)| !marker),
+                "{line:?}"
+            );
+        }
+        // Inside inline code a backslash is literal.
+        assert!(escape_spans(r"`a\*b` c").iter().all(|&(_, m)| !m));
+        // Inside a raw HTML tag or an autolink too, while the text after it
+        // still escapes.
+        for line in [
+            r#"<a title="x\*y">t</a> \*"#,
+            r"<https://example.com/a\_b> \*",
+            r"<!-- a\*b --> \*",
+        ] {
+            let markers: Vec<_> = escape_spans(line).into_iter().filter(|&(_, m)| m).collect();
+            assert_eq!(markers.len(), 1, "{line:?}");
+            let mut out = Vec::new();
+            scan_line(line, 0, line.len(), &mut out);
+            let at = out.iter().find(|s| s.style.escape).unwrap().range.start;
+            assert_eq!(at, line.len() - 2, "{line:?}");
+        }
+        // A `<` that starts no tag leaves later escapes alone.
+        assert_eq!(
+            escape_spans(r"1 < 2 \* 3 > 0"),
+            vec![(r"\", true), ("*", false)]
+        );
     }
 }

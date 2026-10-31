@@ -9,6 +9,8 @@ Write to anna.smirnova@example.com or call 01632 960 418. The terms are in the [
 
 > Note: the deposit 💷 is held in a protection scheme.
 
+1\. Keys are returned at the end of the tenancy.
+
 | Item | Сумма |
 | --- | ---: |
 | Rent, **monthly** | £1,150 |

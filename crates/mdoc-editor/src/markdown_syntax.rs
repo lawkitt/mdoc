@@ -266,7 +266,10 @@ pub(crate) fn hidden_runs(
     // the display.
     let mut segs: Vec<(Range<usize>, Option<&SpanStyle>, Option<&str>)> = Vec::new();
     let mut pos = 0;
-    for span in &spans {
+    let mut k = 0;
+    while k < spans.len() {
+        let span = &spans[k];
+        k += 1;
         if span.range.start > pos {
             segs.push((pos..span.range.start, None, None));
         }
@@ -282,6 +285,20 @@ pub(crate) fn hidden_runs(
             segs.push((span.range.clone(), Some(&span.style), None));
         } else if let Some(rep) = span.style.replace.as_deref() {
             segs.push((span.range.clone(), Some(&span.style), Some(rep)));
+        } else if let Some(ch) = spans
+            .get(k)
+            .filter(|ch| span.style.escape && ch.range.start == span.range.end)
+        {
+            // A hidden escape paints its character in the backslash's place,
+            // so a click before it lands before the whole escape.
+            segs.push((
+                span.range.start..ch.range.end,
+                Some(&ch.style),
+                Some(&line[ch.range.clone()]),
+            ));
+            pos = ch.range.end;
+            k += 1;
+            continue;
         }
         pos = span.range.end;
     }
@@ -366,16 +383,33 @@ pub(crate) struct SemanticSpan {
 pub(crate) fn semantic_spans_with(text: &str, start: usize, end: usize) -> Vec<SemanticSpan> {
     let mut spans = Vec::new();
     scan_line(text, start, end, &mut spans);
-    spans
-        .into_iter()
-        .map(|span| SemanticSpan {
+    spans.sort_by_key(|span| span.range.start);
+    let mut out: Vec<SemanticSpan> = Vec::with_capacity(spans.len());
+    let mut spans = spans.into_iter().peekable();
+    while let Some(span) = spans.next() {
+        // An escape reads as its character, mapped to the whole escape
+        // (`\*` matches `*`, and replacing it replaces the backslash too).
+        if span.style.escape
+            && let Some(ch) = spans.next_if(|ch| ch.range.start == span.range.end)
+        {
+            out.push(SemanticSpan {
+                range: span.range.start..ch.range.end,
+                hidden: true,
+                replacement: true,
+                decoded: Some(text[ch.range].to_owned()),
+                code: ch.style.code,
+            });
+            continue;
+        }
+        out.push(SemanticSpan {
             range: span.range,
             hidden: span.style.hide,
             replacement: span.style.replace.is_some(),
             decoded: span.style.replace.filter(|_| span.style.decoded),
             code: span.style.code,
-        })
-        .collect()
+        });
+    }
+    out
 }
 
 /// A color/font-neutral style, for tests and for widgets that need a style
@@ -1834,6 +1868,23 @@ mod tests {
         // CommonMark: \**bold** = literal *, italic "bold", literal *.
         let (disp, _, _) = hidden_runs(r"\**bold**", &font, c, &[], None, 0, 0, false, &st);
         assert_eq!(disp, "*bold*");
+        // A converter's `1\.`: hidden, the `.` stands in for the whole escape
+        // (it maps to the backslash) in the text's own colour.
+        let (disp, runs, map) = hidden_runs(r"1\. a", &font, c, &[], None, 0, 0, false, &st);
+        assert_eq!(disp, "1. a");
+        assert_eq!(&map[..3], &[0, 1, 3]);
+        assert!(runs.iter().all(|r| r.color == c));
+        // Revealed at the caret, the backslash dims like any marker and the
+        // `.` keeps the text colour.
+        let dim = hsla(0., 0., 0.5, 1.);
+        let (disp, runs, _) = hidden_runs(r"1\. a", &font, c, &[], Some(2), 0, 0, false, &st);
+        assert_eq!(disp, r"1\. a");
+        let colours: Vec<_> = runs.iter().map(|r| (r.len, r.color)).collect();
+        assert_eq!(colours, vec![(1, c), (1, dim), (1, c), (2, c)]);
+        // The full-source line dims it the same way.
+        let runs = styled_runs(r"1\. a", &font, c, &[], Some(&st));
+        let colours: Vec<_> = runs.iter().map(|r| (r.len, r.color)).collect();
+        assert_eq!(colours, vec![(1, c), (1, dim), (1, c), (2, c)]);
     }
 
     #[test]
