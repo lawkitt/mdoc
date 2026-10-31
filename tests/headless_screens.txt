@@ -23,6 +23,7 @@ command-palette
 keyboard-shortcuts
 find-replace
 before-after
+applied-alias-selected
 reply-view
 share-reply
 decision-history

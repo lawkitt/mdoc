@@ -1,9 +1,9 @@
 //! Pseudonymization review: the Replacements panel, the word popup, model
 //! setup, Before/After and the merge hint (ADR 0080).
-use super::{Driver, Result};
+use super::{Driver, HEIGHT, Result, WIDTH};
 use crate::{
     document_view::DocumentView,
-    pii::ui::{PiiApplyAll, PiiClosePopup},
+    pii::ui::{APPLIED_ID, PiiApplyAll, PiiClosePopup},
 };
 use gpui::{Entity, Focusable};
 use mdoc_store::settings;
@@ -188,6 +188,28 @@ pub(super) fn before_after(d: &mut Driver, view: &Entity<DocumentView>) -> Resul
     d.capture("before-after")?;
     d.change(|_, window, cx| view.update(cx, |v, cx| v.close_compare(window, cx)))?;
     Ok(())
+}
+
+/// #303: at the window's minimum size (`src/main.rs`), the applied alias
+/// that most shortened its original, selected: its ring hugs the alias.
+pub(super) fn applied_alias(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
+    d.resize(720., 480.)?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            let applied = v.pii.review().applied();
+            let shrunk = applied
+                .iter()
+                .max_by_key(|a| (a.step.before.len() - a.range.len(), std::cmp::Reverse(a.id)))
+                .expect("Apply all left aliases");
+            assert!(shrunk.range.len() < shrunk.step.before.len());
+            v.activate_annotation(APPLIED_ID | shrunk.id, window, cx);
+        })
+    })?;
+    d.capture("applied-alias-selected")?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| v.close_pii_popup(&PiiClosePopup, window, cx))
+    })?;
+    d.resize(WIDTH, HEIGHT)
 }
 
 /// ADR 0080: a synthetic proposal pair, rendered on both shipped targets
