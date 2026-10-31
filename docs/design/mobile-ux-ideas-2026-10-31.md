@@ -65,7 +65,7 @@ From [ADR 0085](../adr/0085-mobile-apps.md),
 the restored reply, with real names, to `UIPasteboard.general` with no
 expiry. Universal Clipboard can then hand it to the user's Mac. The
 reply view (`RestoredTextView`) also lacks the review view's Writing Tools
-opt-out.
+opt-out. Filed as [#321](https://github.com/lawkitt/mdoc/issues/321).
 
 ## Mobile field notes
 
@@ -113,7 +113,8 @@ Grouped by job. **(R)** marks the ones on the ROADMAP.
 
 ### Safety on a phone
 
-1. **(R) Restored text stays off the shared clipboard.**
+1. **Restored text stays off the shared clipboard**
+   ([#321](https://github.com/lawkitt/mdoc/issues/321)).
    - Copy reply and the extension's Copy write `localOnly` with an
      expiration (for example ten minutes) through `UIPasteboard.setItems`.
    - Copy for AI can stay shared: it carries aliases only.

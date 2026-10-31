@@ -449,15 +449,9 @@ some reopen a Deferred or ADR decision, as noted.
 Mobile ideas from the [2026-10-31 mobile UX ideas](docs/design/mobile-ux-ideas-2026-10-31.md)
 (the iOS survey's after set, the app's code and a scan of mobile
 redaction apps), roughly by expected value; each needs a grill, and
-Android takes what applies.
+Android takes what applies. Its clipboard finding is
+[#321](https://github.com/lawkitt/mdoc/issues/321).
 
-- **[Mobile] To grill: restored text stays off the shared clipboard.** Copy
-  reply and Restore with mdoc's Copy put the restored reply, real names
-  included, on `UIPasteboard.general` with no expiry, so Universal
-  Clipboard can carry it to the Mac. Write it local-only with an expiry;
-  Copy for AI (aliases only) can stay shared. Android 13+ marks the clip
-  sensitive. Also: `RestoredTextView` lacks the review view's Writing Tools
-  opt-out. *From the 2026-10-31 mobile UX ideas.*
 - **[Mobile] To grill: app switcher cover and an optional Face ID lock.**
   The app switcher's snapshot shows client names; a plain cover when the
   scene leaves the foreground, and an opt-in lock for the app and Restore
