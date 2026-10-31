@@ -74,12 +74,13 @@ green and leave desktop unchanged. Record:
    approved iOS PDFium build needs iOS 26 (raise the minimum, or build PDFium
    for iOS 17). *Done when:* both device rows have pass or fail and the
    minimum iOS is settled in ADR 0085.
-2. **[Mobile] Review-first app.** *From the mobile grill.* SwiftUI app for
-   the review-first flow, Restore with mdoc share extension, parity tests,
-   local CI iOS job and the GPLv3 app-store permission
-   ([ADR 0086](docs/adr/0086-app-store-licence-permission.md)). *Done
-   when:* the iOS section of platform acceptance passes on a TestFlight
-   build.
+2. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
+   (#269, #272, #275–#278).* The app runs on the real core in the Simulator
+   with parity, unit and UI tests in local CI; it has never been signed or
+   run on a phone. Sign in to Xcode with the team's Apple ID, upload a
+   TestFlight build, and run the iOS section of
+   [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
+   *Done when:* that section passes on a TestFlight build.
 
 ## Later
 
@@ -132,6 +133,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Windows]** An all-users `.msi` again when an admin or buyer asks; it and
   the `.exe` detect each other and stop with a message; reuse UpgradeCode
   `3D50EAE8-D339-41B6-82BC-126389601487` ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+- **[Mobile]** Resumed OCR joins pages with a blank line, so a list that
+  continues across a page break differs from desktop; exact joins need
+  pdf-inspector's page join made public in the fork (#276).
 
 ## Ongoing tracks
 
