@@ -415,6 +415,17 @@ fn on_item_click(cx: &gpui::AsyncApp) {
         .detach();
 }
 
+/// A popup's top under the item.
+fn popup_top(anchor: Bounds<Pixels>) -> f32 {
+    (anchor.origin.y + anchor.size.height).as_f32() + MARGIN / 2.
+}
+
+/// The most a popup under the item may grow: down to the display's edge;
+/// a taller shelf scrolls.
+fn popup_max_height(anchor: Bounds<Pixels>, display: Bounds<Pixels>) -> f32 {
+    (display.size.height.as_f32() - popup_top(anchor) - MARGIN).max(120.)
+}
+
 /// A popup's bounds under the item, kept on its display.
 fn popup_bounds(
     anchor: Bounds<Pixels>,
@@ -424,11 +435,9 @@ fn popup_bounds(
 ) -> Bounds<Pixels> {
     let max_x = (display.size.width.as_f32() - width - MARGIN).max(MARGIN);
     let x = anchor.origin.x.as_f32().clamp(MARGIN, max_x);
-    let y = (anchor.origin.y + anchor.size.height).as_f32() + MARGIN / 2.;
-    let max_height = (display.size.height.as_f32() - y - MARGIN).max(120.);
     Bounds {
-        origin: point(px(x), px(y)),
-        size: size(px(width), px(height.min(max_height))),
+        origin: point(px(x), px(popup_top(anchor))),
+        size: size(px(width), px(height.min(popup_max_height(anchor, display)))),
     }
 }
 
@@ -518,8 +527,14 @@ fn open_shelf(cx: &mut App) {
         return;
     };
     let bounds = popup_bounds(anchor, display.bounds(), SHELF_WIDTH, content.height());
+    let max_height = popup_max_height(anchor, display.bounds());
     let shelf = cx.open_window(popup_options(bounds, display_id), |window, cx| {
-        cx.new(|cx| ShelfView::new(workspace, content, window, cx))
+        cx.new(|cx| {
+            let mut shelf = ShelfView::new(workspace, content, window, cx);
+            // It follows its content from here, the picker and hint included.
+            shelf.fit_to_screen(bounds.size.height.as_f32(), max_height);
+            shelf
+        })
     });
     if let Ok(shelf) = shelf {
         let bar = cx.global_mut::<MenuBar>();

@@ -44,7 +44,11 @@ Local changes, marked `mdoc patch`:
   policy, Regular or Accessory), so with the menu bar item on, closing
   mdoc's window hides it and mdoc leaves the Dock until it shows again
   (ADR 0084); GPUI's `Window::activate_window` shows the window again.
-  Debug builds assert both run on the main thread and that AppKit accepts
+  `set_window_height_keeping_top` gives a window a new content height with
+  its top edge kept and no animation, clamped to its screen's visible frame
+  (`setFrame:display:`; GPUI's `Window::resize` keeps the bottom edge), so
+  the shelf popup fits its content under the menu bar item.
+  Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
   (`src/menu_bar.rs`); the native effect is a GUI check.
 - `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream

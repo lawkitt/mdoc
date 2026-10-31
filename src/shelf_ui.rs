@@ -68,6 +68,7 @@ const SOURCE_LINE: f32 = 24.;
 const SECTION_GAP: f32 = 4.;
 const CLIPBOARD: f32 = CLIPBOARD_HEADING + CLIPBOARD_BUTTONS + SOURCE_LINE + 2. * SECTION_GAP;
 const FOOTER: f32 = 30.;
+const PICKER_HEADING: f32 = 24.;
 /// A drag starts after the pointer moves this far with the button down.
 const DRAG_DISTANCE: f32 = 4.;
 /// "Copied" shows this long before the shelf closes.
@@ -79,6 +80,47 @@ pub(crate) const RESULT_FOR: Duration = Duration::from_secs(4);
 /// blur (vibrancy) the window draws behind it on macOS.
 pub(crate) fn surface(theme: Theme) -> Hsla {
     theme.pdf_style().bg.opacity(0.78)
+}
+
+/// The popup's height for content measured `measured` tall: the content's,
+/// whole points, never past `max` (the room under the item), so a long
+/// shelf scrolls.
+pub(crate) fn fitted_height(measured: f32, max: f32) -> f32 {
+    measured.ceil().min(max)
+}
+
+/// The shelf popup follows its content's height (ADR 0084): after each
+/// layout the content is measured and, when that changes the height, the
+/// window is resized with its top kept under the item. One path for every
+/// change: the picker, the hint, a result line.
+pub(crate) struct Fit {
+    max: f32,
+    /// The height last asked for.
+    asked: Cell<f32>,
+}
+
+impl Fit {
+    #[cfg(test)]
+    pub(crate) fn asked(&self) -> f32 {
+        self.asked.get()
+    }
+
+    fn measured(&self, height: f32, window: &mut Window, cx: &mut App) {
+        let wanted = fitted_height(height, self.max);
+        if (wanted - self.asked.get()).abs() < 0.5 {
+            return;
+        }
+        self.asked.set(wanted);
+        // After this frame, outside layout.
+        let handle = window.window_handle();
+        cx.defer(move |cx| {
+            let _ = handle.update(cx, |_, window, _| {
+                #[cfg(all(target_os = "macos", not(test)))]
+                gpui_macos::set_window_height_keeping_top(window, wanted);
+                let _ = window;
+            });
+        });
+    }
 }
 
 /// What the shelf shows, read from the workspace when it opens.
@@ -161,21 +203,30 @@ impl ShelfContent {
 
     /// The shelf's height for this content, before the screen limits it.
     pub(crate) fn height(&self) -> f32 {
-        let list = if self.documents.is_empty() {
-            EMPTY
-        } else {
-            self.documents
-                .iter()
-                .map(|d| ROW_GAP + row::height(d))
-                .sum::<f32>()
-                + if self.shows_hint() { HINT } else { 0. }
-        };
+        self.list_height() + self.chrome_height()
+    }
+
+    /// The document list's height, the hint included.
+    fn list_height(&self) -> f32 {
+        if self.documents.is_empty() {
+            return EMPTY;
+        }
+        self.documents
+            .iter()
+            .map(|d| ROW_GAP + row::height(d))
+            .sum::<f32>()
+            + if self.shows_hint() { HINT } else { 0. }
+    }
+
+    /// Everything but the list: padding, dividers, Restart to update, the
+    /// Clipboard section and the footer.
+    fn chrome_height(&self) -> f32 {
         let update = if self.update.is_some() {
             ACTION_ROW
         } else {
             0.
         };
-        2. * PADDING + list + DIVIDER + update + CLIPBOARD + DIVIDER + FOOTER
+        2. * PADDING + DIVIDER + update + CLIPBOARD + DIVIDER + FOOTER
     }
 }
 
@@ -210,6 +261,8 @@ pub(crate) struct ShelfView {
     pick_button: FocusHandle,
     /// The running drag was dropped on the shelf itself: not a drop.
     dropped_here: bool,
+    /// Set when the shelf is its own popup: it then follows its content.
+    fit: Option<Rc<Fit>>,
     /// The last clipboard action's result, on the source line for a while.
     result: Option<String>,
     result_clear: Option<Task<()>>,
@@ -283,6 +336,7 @@ impl ShelfView {
             picker_rows,
             pick_button: cx.focus_handle().tab_stop(true),
             dropped_here: false,
+            fit: None,
             result: None,
             result_clear: None,
             #[cfg(test)]
@@ -325,6 +379,21 @@ impl ShelfView {
     ))]
     pub(crate) fn show_copied(&mut self, index: usize) {
         self.copied = Some(index);
+    }
+
+    /// The shelf is its own popup, `height` tall with at most `max` under
+    /// the item: from now on it follows its content's height.
+    pub(crate) fn fit_to_screen(&mut self, height: f32, max: f32) {
+        self.fit = Some(Rc::new(Fit {
+            max,
+            asked: Cell::new(height),
+        }));
+    }
+
+    /// The popup's fitting, for tests.
+    #[cfg(test)]
+    pub(crate) fn fit(&self) -> Option<Rc<Fit>> {
+        self.fit.clone()
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -817,8 +886,10 @@ impl ShelfView {
             .flex_col()
             .child(
                 div()
+                    .h(px(PICKER_HEADING))
                     .px_2()
-                    .py_1()
+                    .flex()
+                    .items_center()
                     .text_size(px(11.))
                     .text_color(p.header_muted)
                     .child("Clipboard names from"),
@@ -924,7 +995,6 @@ impl Render for ShelfView {
                 .when(self.content.shows_hint(), |v| v.child(self.hint()))
                 .into_any_element()
         };
-        let update = self.content.update.clone();
         div()
             .id("shelf")
             .key_context("Shelf")
@@ -968,12 +1038,23 @@ impl Render for ShelfView {
             .on_drop(cx.listener(|this, _: &ExternalPaths, _, _| this.dropped_on_shelf()))
             .size_full()
             .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .p(px(PADDING))
             .bg(surface(theme))
             .text_color(p.header_fg)
             .text_size(px(13.))
+            .child(self.body(list, cx))
+    }
+}
+
+impl ShelfView {
+    /// Everything the shelf shows, in one column the popup measures.
+    fn body(&self, list: AnyElement, cx: &mut Context<Self>) -> AnyElement {
+        let update = self.content.update.clone();
+        div()
+            .relative()
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .p(px(PADDING))
             .child(list)
             .child(self.divider())
             .when_some(update, |v, version| {
@@ -991,5 +1072,20 @@ impl Render for ShelfView {
             .child(self.clipboard_section(cx))
             .child(self.divider())
             .child(self.footer(cx))
+            .when_some(self.fit.clone(), |body, fit| {
+                body.child(
+                    gpui::canvas(
+                        move |bounds, window, cx| {
+                            fit.measured(bounds.size.height.as_f32(), window, cx)
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
+            })
+            .into_any_element()
     }
 }

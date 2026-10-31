@@ -819,3 +819,88 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
             .unwrap()
     );
 }
+
+/// GUI run of #280: the popup follows its content's measured height, the
+/// picker and a retired hint included, never past the room under the item.
+#[gpui::test]
+fn the_shelf_popup_follows_its_content_height(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let cased = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd about the lease renewal terms.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    save(&tabs, cased, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
+    cx.run_until_parked();
+    open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Clara Moss wrote to the landlord about the deposit.",
+        &[("Clara Moss", Person)],
+    );
+    let shelf = open_shelf(cx);
+    let estimate = shelf
+        .update(cx, |view, _, _| {
+            let estimate = view.content().height();
+            view.fit_to_screen(estimate, 10_000.);
+            estimate
+        })
+        .unwrap();
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    let asked = |cx: &mut VisualTestContext| {
+        draw(cx);
+        cx.run_until_parked();
+        shelf
+            .read_with(cx, |view, _| view.fit().unwrap().asked())
+            .unwrap()
+    };
+    let full = asked(&mut shelf_cx);
+    assert!(
+        (full - estimate).abs() <= 1.,
+        "measured {full}, estimated {estimate}"
+    );
+
+    // The picker replaces the list; closing it brings the list back.
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.toggle_picker(window, cx)
+        })
+        .unwrap();
+    let picking = asked(&mut shelf_cx);
+    assert!(picking < full, "{picking} < {full}");
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.toggle_picker(window, cx)
+        })
+        .unwrap();
+    assert_eq!(asked(&mut shelf_cx), full);
+
+    // A retired hint gives its row back.
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    let without_hint = asked(&mut shelf_cx);
+    assert!(without_hint < full, "{without_hint} < {full}");
+
+    // Never past the room under the item: the shelf scrolls instead.
+    shelf
+        .update(&mut shelf_cx, |view, _, _| view.fit_to_screen(full, 120.))
+        .unwrap();
+    assert_eq!(asked(&mut shelf_cx), 120.);
+}

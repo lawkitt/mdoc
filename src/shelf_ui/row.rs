@@ -501,6 +501,13 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn the_popup_takes_its_content_height_up_to_the_room_under_the_item() {
+        use crate::shelf_ui::fitted_height;
+        assert_eq!(fitted_height(250.2, 400.), 251.);
+        assert_eq!(fitted_height(500., 400.), 400.);
+    }
+
+    #[test]
     fn word_counts_group_thousands() {
         assert_eq!(words(1), "1 word");
         assert_eq!(words(1240), "1,240 words");

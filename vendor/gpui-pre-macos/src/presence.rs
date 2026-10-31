@@ -2,9 +2,15 @@
 //! window hides it instead (its tabs and undo stay in memory) and mdoc
 //! leaves the Dock until a window shows again. GPUI shows a window with
 //! `Window::activate_window`, but has no way to hide one or to change the
-//! activation policy.
+//! activation policy. The shelf's popup also resizes to its content with
+//! its top kept under the menu bar item: GPUI's `Window::resize` keeps the
+//! bottom edge instead.
 
-use cocoa::base::{id, nil};
+use cocoa::{
+    appkit::{NSScreen, NSWindow},
+    base::{YES, id, nil},
+    foundation::{NSPoint, NSRect, NSSize},
+};
 use objc::{class, msg_send, runtime::BOOL, sel, sel_impl};
 
 /// `NSApplicationActivationPolicyRegular` and `…Accessory`.
@@ -19,23 +25,62 @@ fn debug_assert_main_thread() {
     debug_assert!(main != objc::runtime::NO, "AppKit call off the main thread");
 }
 
+/// The `NSWindow` behind `window`, or nil.
+fn native_window(window: &gpui::Window) -> id {
+    let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
+        return nil;
+    };
+    let raw_window_handle::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return nil;
+    };
+    let view: id = handle.ns_view.as_ptr().cast();
+    // SAFETY: the handle's view belongs to a live window on this thread.
+    unsafe { msg_send![view, window] }
+}
+
 /// Hide `window` (`orderOut:`) without closing it; `Window::activate_window`
 /// shows it again. Main thread only.
 pub fn hide_window(window: &gpui::Window) {
     debug_assert_main_thread();
-    let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
-        return;
-    };
-    let raw_window_handle::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-        return;
-    };
-    let view: id = handle.ns_view.as_ptr().cast();
-    // SAFETY: main thread; the view belongs to a live window, checked for nil.
+    let native_window = native_window(window);
+    // SAFETY: main thread; checked for nil.
     unsafe {
-        let native_window: id = msg_send![view, window];
         if !native_window.is_null() {
             let _: () = msg_send![native_window, orderOut: nil];
         }
+    }
+}
+
+/// Give `window` a content height of `height` points with its top edge
+/// where it is, at once (no animation), never past the bottom of its
+/// screen's visible frame. Main thread only.
+pub fn set_window_height_keeping_top(window: &gpui::Window, height: f32) {
+    debug_assert_main_thread();
+    let native_window = native_window(window);
+    if native_window.is_null() {
+        return;
+    }
+    // SAFETY: main thread; a live window, its screen checked for nil.
+    unsafe {
+        let frame = NSWindow::frame(native_window);
+        let content = native_window.contentRectForFrameRect_(frame);
+        let chrome = frame.size.height - content.size.height;
+        let top = frame.origin.y + frame.size.height;
+        let mut frame_height = height as f64 + chrome;
+        let screen = native_window.screen();
+        if !screen.is_null() {
+            let visible = NSScreen::visibleFrame(screen);
+            frame_height = frame_height.min(top - visible.origin.y);
+        }
+        let frame_height = frame_height.max(chrome + 1.);
+        if (frame_height - frame.size.height).abs() < 0.5 {
+            return;
+        }
+        let resized = NSRect::new(
+            NSPoint::new(frame.origin.x, top - frame_height),
+            NSSize::new(frame.size.width, frame_height),
+        );
+        native_window.setFrame_display_(resized, YES);
     }
 }
 
