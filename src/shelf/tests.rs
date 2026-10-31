@@ -509,6 +509,13 @@ fn a_preview_masks_a_name_split_over_the_lines_of_a_paragraph() {
             assert!(!preview.text.contains(part), "{text:?}: {}", preview.text);
         }
     }
+    // Emphasis running over two lines (review of #280).
+    let preview = preview_of("PERSON_1 met Anna **Petrova\nat the office** yesterday.").unwrap();
+    assert!(
+        !preview.text.contains("Anna") && !preview.text.contains("**"),
+        "{}",
+        preview.text
+    );
     // Page furniture in its own paragraph is still skipped.
     assert_eq!(
         preview_of("Page 1 of 5\n\nPERSON_1 signed the agreement today.")
@@ -516,4 +523,21 @@ fn a_preview_masks_a_name_split_over_the_lines_of_a_paragraph() {
             .text,
         "PERSON_1 signed the agreement today."
     );
+}
+
+/// Review of #280: quote or list markers written inside code are its text,
+/// not a closing fence.
+#[test]
+fn markers_inside_code_do_not_close_its_fence() {
+    for text in [
+        "```\n> ```\nliteral code that is long enough to read as prose\n```\n\nPERSON_1 signed the agreement today.",
+        "```\n- ```\nliteral code that is long enough to read as prose\n```\n\nPERSON_1 signed the agreement today.",
+        "> ```\n> code inside a quote that is long enough as prose\n> ```\n\nPERSON_1 signed the agreement today.",
+    ] {
+        assert_eq!(
+            preview_of(text).unwrap().text,
+            "PERSON_1 signed the agreement today.",
+            "{text:?}"
+        );
+    }
 }

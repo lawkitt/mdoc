@@ -477,11 +477,38 @@ fn is_prose(text: &str) -> bool {
 }
 
 /// `line` without its blockquote markers (`>`, nested `>>` too).
-fn unquoted(mut line: &str) -> &str {
-    while let Some(prefix) = lines::blockquote_prefix(line) {
+fn unquoted(line: &str) -> &str {
+    unquote(line, usize::MAX)
+}
+
+/// `line` without up to `levels` blockquote markers.
+fn unquote(mut line: &str, levels: usize) -> &str {
+    for _ in 0..levels {
+        let Some(prefix) = lines::blockquote_prefix(line) else {
+            break;
+        };
+        // One prefix may hold nested `>>`: count each `>`.
+        let markers = line[..prefix].matches('>').count();
+        if markers > 1 {
+            // Strip one `>` (and a following space) at a time.
+            let one = line.find('>').map_or(0, |at| at + 1);
+            line = line[one..].strip_prefix(' ').unwrap_or(&line[one..]);
+            continue;
+        }
         line = line[prefix..].trim_start();
     }
     line
+}
+
+/// How many blockquote levels `line` sits in.
+fn quote_depth(line: &str) -> usize {
+    let mut depth = 0;
+    let mut rest = line;
+    while let Some(prefix) = lines::blockquote_prefix(rest) {
+        depth += rest[..prefix].matches('>').count();
+        rest = rest[prefix..].trim_start();
+    }
+    depth
 }
 
 /// `line` without its containers' markers: blockquotes (`>`, nested `>>`
@@ -548,17 +575,22 @@ fn fence(line: &str) -> Option<(u8, usize)> {
 pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let names = &preview_names(names);
     let mut styled = Styled::default();
-    let mut paragraph = Styled::default();
-    let mut fenced: Option<(u8, usize)> = None;
+    // The paragraph's source, its lines joined by spaces.
+    let mut paragraph = String::new();
+    // An open fence: its character and length, and how many quote levels
+    // it sits in.
+    let mut fenced: Option<(u8, usize, usize)> = None;
     let mut more = false;
-    // A paragraph's lines read as one (Markdown joins them), so it is
-    // masked whole before it is judged: a name split over two lines, or
-    // written with an entity, is never left half shown.
-    let finish = |paragraph: &mut Styled, styled: &mut Styled| -> bool {
-        let mut done = std::mem::take(paragraph);
-        if done.text.is_empty() {
+    // A paragraph's lines read as one (Markdown joins them), so its syntax
+    // is hidden and it is masked whole before it is judged: a name split
+    // over two lines, by an entity or by emphasis running on, is never left
+    // half shown.
+    let finish = |paragraph: &mut String, styled: &mut Styled| -> bool {
+        let source = std::mem::take(paragraph);
+        if source.is_empty() {
             return false;
         }
+        let mut done = plain_line(&source);
         let (masked, _) = names.pseudonymize(&done.text);
         if masked != done.text {
             done = Styled {
@@ -579,11 +611,13 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
         let block = block_content(trimmed);
-        if let Some(open) = fenced {
+        if let Some((c, n, quotes)) = fenced {
             // Only a fence of the same character, at least as long, with
-            // nothing after it, closes the block.
-            if fence(block)
-                .is_some_and(|(c, n)| c == open.0 && n >= open.1 && block[n..].trim().is_empty())
+            // nothing after it and in the opener's quotes, closes the block;
+            // markers written inside the code are its text.
+            let inner = unquote(trimmed, quotes);
+            if fence(inner)
+                .is_some_and(|(cc, nn)| cc == c && nn >= n && inner[nn..].trim().is_empty())
             {
                 fenced = None;
             }
@@ -606,14 +640,17 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
                 break;
             }
         }
-        if let Some(open) = fence(block) {
-            fenced = Some(open);
+        if let Some((c, n)) = fence(block) {
+            fenced = Some((c, n, quote_depth(trimmed)));
             continue;
         }
         if structure {
             continue;
         }
-        paragraph.append(plain_line(block));
+        if !paragraph.is_empty() {
+            paragraph.push(' ');
+        }
+        paragraph.push_str(block);
     }
     if !more {
         more = finish(&mut paragraph, &mut styled);

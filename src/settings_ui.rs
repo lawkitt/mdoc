@@ -819,7 +819,9 @@ impl Panel {
             }
         });
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            // A later write (a shelf note's) may have landed since this one
+            // finished: then it is not the latest and publishes nothing.
+            let result = task.await.map(|saved| saved && is_latest_write(write));
             let _ = this.update(cx, |this, cx| {
                 this.applying = false;
                 match result {
