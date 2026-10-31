@@ -8,4 +8,4 @@
 
 # Xcode per-user state
 xcuserdata/
-*.xcodeproj/project.xcworkspace/
+**/*.xcodeproj/project.xcworkspace/
