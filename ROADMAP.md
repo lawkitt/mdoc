@@ -80,9 +80,11 @@ green and leave desktop unchanged. Record:
    survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
    *Done when:* the after survey sits beside the before set and P12, P13
    and P16 pass in the Simulator.
-3. **[Mobile] Device UI tests.** *From the device grill.* `just
-   ios-device-test <udid>` runs the review flow and the long-jobs test on a
-   connected iPhone. *Done when:* it passes on the iPhone 17 Pro.
+3. **[Mobile] Device UI tests on Wi-Fi.** *From the device grill
+   (#295).* `just ios-device-test <udid>` is merged and its review flow
+   passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition
+   download, then 45 s away during Find names) stopped at its Wi-Fi check
+   on 5G. *Done when:* the whole run passes on the iPhone 17 Pro on Wi-Fi.
 
 ## Android 0.1
 
