@@ -69,6 +69,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.jna.jar)
+    testImplementation(libs.org.json)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

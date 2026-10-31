@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Usage: scripts/android-emulator.sh [--window] [phone|tablet]
+# Usage: scripts/android-emulator.sh [--window] [phone|tablet|ci]
 # Boots an Android emulator from the pinned API 36 x86_64 image with 16 KB
 # pages (scripts/install-android-sdk.sh), headless unless --window, waits
 # until Android has booted and prints its adb serial (ADR 0089). The virtual
 # devices live in $(android_home)/avd and are written here on first use: a
-# Pixel 8-sized phone (emulator-5554) and a Pixel Tablet-sized tablet
-# (emulator-5556). Already running, it only prints the serial.
+# Pixel 8-sized phone (emulator-5554), a Pixel Tablet-sized tablet
+# (emulator-5556) and local CI's own phone (emulator-5560), so a CI run
+# never tests on an emulator someone is using. Already running, it only
+# prints the serial.
 # `adb -s <serial> emu kill` stops it. Windows x64.
 source "$(dirname "$0")/lib.sh"
 
@@ -19,7 +21,8 @@ kind=${1:-phone}
 case "$kind" in
   phone) port=5554 width=1080 height=2400 density=420 ram=6144 ;;
   tablet) port=5556 width=2560 height=1600 density=320 ram=6144 ;;
-  *) die "usage: $0 [--window] [phone|tablet]" ;;
+  ci) port=5560 width=1080 height=2400 density=420 ram=4096 ;;
+  *) die "usage: $0 [--window] [phone|tablet|ci]" ;;
 esac
 
 home=$(android_home)

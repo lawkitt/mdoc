@@ -88,6 +88,10 @@ android-setup:
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
+# The Android job: core, JVM parity tests, app, emulator tests, when they changed; Windows local CI runs it (ADR 0089)
+android:
+    scripts/android-check.sh
+
 # Android core into target/android: jniLibs for arm64-v8a and x86_64, Kotlin bindings (ADR 0089)
 android-core:
     scripts/build-android-core.sh
