@@ -1,13 +1,16 @@
 # One close and quit prompt
 
-Status: Accepted, 2026-10-27. Amends [ADR 0041](0041-cases-and-ai-response-restoration.md)
+Status: Accepted, 2026-10-27. Amended 2026-11-01 (button order, the
+summary names its documents;
+[UI polish grill](../design/ui-polish-grill-2026-11-01.md) decision 11).
+Amends [ADR 0041](0041-cases-and-ai-response-restoration.md)
 ("The unsaved-mapping question is asked on tab close, not on quit").
 
 ## Problem
 
 Closing a pseudonymized tab that has unsaved changes asks twice: "Keep the
 replacement mapping?" (Save as Case, Close, Cancel), then "Save changes?"
-(Save, Discard, Cancel). Quitting asks only about unsaved changes and drops
+(Save, Don't Save, Cancel). Quitting asks only about unsaved changes and drops
 every unsaved mapping without a word
 ([#119](https://github.com/lawkitt/mdoc/issues/119)). `session.json` stores
 paths only, so after a quit the saved file keeps its aliases and nothing can
@@ -25,12 +28,15 @@ restore AI replies to it.
   mapping?" with Save as Case (default, Enter: saves the file, then creates
   the case), Save (saves the file, forgets the mapping), Don't Save (⌘D /
   Alt+D: drops both) and Cancel (Esc). A tab with only one keeps today's
-  prompt for it. All use the shared in-app confirm dialog
-  ([ADR 0064](0064-dialog-and-role-semantics.md)).
+  prompt for it. All use the shared in-app confirm dialog in the platform's
+  order ([ADR 0064](0064-dialog-and-role-semantics.md)): on macOS Don't Save
+  … Cancel · Save · Save as Case; on Windows Save as Case · Save · Don't
+  Save · Cancel.
 - **Quit asks about mappings too.** With one at-risk tab, quit shows that
   tab's prompt. With two or more, a summary comes first: "<N> documents have
-  unsaved changes or mappings" with Review… (default: each at-risk tab's
-  prompt in turn, sidebar order), Discard All and Cancel. Cancel at any step
+  unsaved changes or mappings", naming up to five of them by tab title, one
+  per line in sidebar order, then "and N more"; with Review… (default: each
+  at-risk tab's prompt in turn, sidebar order), Discard All and Cancel. Cancel at any step
   cancels the quit, and so does Not now in the Keychain explainer when Save as
   Case needs it. Discard All asks no tab again; a failed save of an existing
   case still offers Retry, since that mapping was meant to be kept.

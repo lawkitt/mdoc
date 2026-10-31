@@ -124,6 +124,15 @@ impl Theme {
         }
     }
 
+    /// The dimmed window behind a modal dialog (ADR 0064): darker in Dark,
+    /// where a light one would barely separate the dialog from the editor.
+    pub fn scrim(self) -> Hsla {
+        match self {
+            Self::Dark => hsla(0., 0., 0., 0.5),
+            Self::Light => hsla(0., 0., 0., 0.25),
+        }
+    }
+
     /// The floating mention bar's edge: a step stronger than `border`, so it
     /// stays distinct over text in both themes (ADR 0055).
     pub fn popup_border(self) -> Hsla {

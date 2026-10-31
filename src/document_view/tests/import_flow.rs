@@ -373,7 +373,7 @@ fn import_waits_for_dialog_and_discards_result_after_document_change(cx: &mut Te
         app.resume_import(window, cx);
         assert!(app.import.job_mut().has_pending());
     });
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     // Deliver the delayed completion after the shell has released the tab.
     // The retained test handle lets us verify the old generation is rejected.
