@@ -57,7 +57,9 @@ class SetupController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val prefs = context.getSharedPreferences("setup", Context.MODE_PRIVATE)
-    private val mutable = MutableStateFlow(SetupState(models().snapshot(), dismissed = prefs.getBoolean(DISMISSED, false)))
+    // Empty until Home has opened the core in the background: opening it can
+    // fail (a damaged case key), and Home shows that, not setup.
+    private val mutable = MutableStateFlow(SetupState(EMPTY, dismissed = prefs.getBoolean(DISMISSED, false)))
     val state: StateFlow<SetupState> = mutable.asStateFlow()
 
     @Volatile private var allowsCellular = false
@@ -65,7 +67,9 @@ class SetupController(
     @Volatile private var cancelled = false
     private var continuation: (() -> Unit)? = null
 
-    fun refresh() = mutable.update { it.copy(snapshot = models().snapshot()) }
+    fun refresh() = mutable.update { it.copy(snapshot = snapshotOrEmpty()) }
+
+    private fun snapshotOrEmpty(): SetupSnapshot = runCatching { models().snapshot() }.getOrDefault(EMPTY)
 
     fun dismissCard() {
         prefs.edit().putBoolean(DISMISSED, true).apply()
@@ -115,7 +119,7 @@ class SetupController(
             continuation = null
             mutable.update {
                 it.copy(
-                    snapshot = models().snapshot(), working = false, progress = emptyMap(), waitingForWiFi = false,
+                    snapshot = snapshotOrEmpty(), working = false, progress = emptyMap(), waitingForWiFi = false,
                     installing = false, error = (outcome as? JobOutcome.Failed)?.error?.message,
                 )
             }
@@ -131,7 +135,7 @@ class SetupController(
             waiting = { held -> mutable.update { it.copy(waitingForWiFi = held) } },
         )
         for (offer in models.snapshot().offers.filter { !it.installed }) {
-            val files = models.missingFiles(offer.id)
+            val files = models.remainingFiles(offer.id)
             val total = files.sumOf { it.bytes.toLong() }.coerceAtLeast(1)
             var done = 0L
             mutable.update { it.copy(progress = it.progress + (offer.id to 0f)) }
@@ -143,8 +147,13 @@ class SetupController(
                 }
                 if (cancelled) throw AppError.Cancelled()
                 mutable.update { it.copy(installing = true) }
-                models.install(offer.id, file, part)
-                part.delete()
+                try {
+                    models.install(offer.id, file, part)
+                } finally {
+                    // Installed, it was moved; refused, it is thrown away so a
+                    // retry downloads fresh bytes rather than resuming bad ones.
+                    part.delete()
+                }
                 mutable.update { it.copy(installing = false) }
                 done += file.bytes.toLong()
             }
@@ -153,5 +162,6 @@ class SetupController(
 
     private companion object {
         const val DISMISSED = "cardDismissed"
+        val EMPTY = SetupSnapshot(io.github.lawkitt.mdoc.core.DeviceTier.BelowFloor, emptyList())
     }
 }

@@ -11,6 +11,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -23,7 +24,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CellularTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
-    private val app get() = instrumentation.targetContext.applicationContext as MdocApplication
+    @get:Rule
+    val core = TestCore()
+
+    private val app get() = core.app
 
     private fun shell(command: String) {
         instrumentation.uiAutomation.executeShellCommand(command).close()
@@ -35,8 +39,7 @@ class CellularTest {
     @Test
     fun cellularAsksFirstAndWaitingForWiFiSaysSo() = runBlocking {
         ActivityScenario.launch(MainActivity::class.java).use {
-            // Text recognition not installed, so there is something to download.
-            app.core.storage.dir(MdocStorage.Area.Models).resolve("ocr").deleteRecursively()
+            // A fresh core: text recognition is not installed, so there is something to download.
             app.setup.refresh()
             assertTrue(app.setup.state.value.needsSetup)
 

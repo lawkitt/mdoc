@@ -187,6 +187,9 @@ fun DocumentScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            // Notices and the setup card scroll on their own, so their buttons
+            // stay reachable on a short screen or at large text.
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             if (model.isMine(interrupted?.documentId)) {
                 Notice(
                     stringResource(
@@ -220,6 +223,7 @@ fun DocumentScreen(
                 )
             } else if (needs != null) {
                 Notice(stringResource(R.string.download_models_first))
+            }
             }
             when {
                 state.showsReply && snapshot.reply != null -> ReplyPane(snapshot.reply, onRemove = model::clearReply)

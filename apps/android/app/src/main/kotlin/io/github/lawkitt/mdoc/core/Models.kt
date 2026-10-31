@@ -25,7 +25,12 @@ data class SetupSnapshot(val tier: DeviceTier, val offers: List<ModelOffer>) {
  * `RealSetup`. The platform downloads each pinned file; Rust verifies and
  * installs it.
  */
-class Models(private val ffi: Setup, private val runtimes: () -> Runtimes) {
+class Models(
+    private val ffi: Setup,
+    private val runtimes: () -> Runtimes,
+    /** Files the core installed, by model, so a retry fetches only the rest. */
+    private val installedRecord: File,
+) {
     fun snapshot(): SetupSnapshot {
         val tier = if (ffi.offers(ModelId.GLINER2_FP16)) DeviceTier.Detector else DeviceTier.BelowFloor
         val offers = ffi.catalog()
@@ -41,15 +46,44 @@ class Models(private val ffi: Setup, private val runtimes: () -> Runtimes) {
         return SetupSnapshot(tier, offers)
     }
 
-    /** The files of `model` still to download. */
+    /** Every file of `model` when any is missing (the core reports only the bytes). */
     fun missingFiles(model: ModelId): List<ModelFile> {
         val info = ffi.catalog().first { it.id == model }
         return if (info.installed) emptyList() else info.files
     }
 
+    /**
+     * The files still to download: all but those recorded as installed by an
+     * earlier, interrupted run, unless the record disagrees with the bytes the
+     * core still misses (the twin of the iOS `RealSetup.remaining`).
+     */
+    @Synchronized
+    fun remainingFiles(model: ModelId): List<ModelFile> {
+        val info = ffi.catalog().first { it.id == model }
+        if (info.installed) return emptyList()
+        val done = recorded()[model.name].orEmpty()
+        val left = info.files.filter { it.path !in done }
+        return if (left.sumOf { it.bytes } == info.missingBytes) left else info.files
+    }
+
     /** Verifies a downloaded file against its pinned size and SHA-256, then moves it in place. */
-    fun install(model: ModelId, file: ModelFile, downloaded: File): ModelInfo =
-        core { ffi.install(model, file.path, downloaded.path) }
+    @Synchronized
+    fun install(model: ModelId, file: ModelFile, downloaded: File): ModelInfo {
+        val info = core { ffi.install(model, file.path, downloaded.path) }
+        val all = recorded().toMutableMap()
+        if (info.installed) all.remove(model.name) else all[model.name] = all[model.name].orEmpty() + file.path
+        installedRecord.parentFile?.mkdirs()
+        installedRecord.writeText(org.json.JSONObject(all.mapValues { org.json.JSONArray(it.value.toList()) }).toString())
+        return info
+    }
+
+    private fun recorded(): Map<String, Set<String>> = runCatching {
+        val json = org.json.JSONObject(installedRecord.readText())
+        json.keys().asSequence().associateWith { key ->
+            val array = json.getJSONArray(key)
+            (0 until array.length()).map(array::getString).toSet()
+        }
+    }.getOrDefault(emptyMap())
 
     fun detectorPaths(): DetectorPaths? = runCatching { ffi.detectorPaths(runtimes()) }.getOrNull()
 
