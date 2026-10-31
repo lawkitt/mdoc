@@ -7,6 +7,17 @@ plugins {
 // Kotlin bindings, plus a desktop build of the core for the JVM tests.
 val repo = rootDir.resolve("../..")
 val core = repo.resolve("target/android")
+val testAssets = layout.buildDirectory.dir("generated/test-assets").get().asFile
+
+// The OCR qualification fixtures, and the settlement agreement with its names
+// and an AI reply for the review flow and the survey.
+val copyTestAssets = tasks.register<Copy>("copyTestAssets") {
+    from(repo.resolve("tests/fixtures/ocr-qualification")) { include("english.pdf", "english.txt", "russian.pdf", "russian.txt") }
+    from(repo.resolve("docs/product-media")) { include("Settlement agreement.md") }
+    from(repo.resolve("tests/fixtures/restore/claude-en")) { include("identities.json", "reply.md") }
+    into(testAssets)
+}
+tasks.matching { it.name.endsWith("AndroidTestAssets") }.configureEach { dependsOn(copyTestAssets) }
 
 android {
     namespace = "io.github.lawkitt.mdoc"
@@ -39,12 +50,18 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets {
         getByName("main") {
             kotlin.directories += core.resolve("kotlin").path
             jniLibs.directories += core.resolve("jniLibs").path
+        }
+        // The OCR qualification fixtures, for the instrumented setup test.
+        // The fixtures the instrumented tests read, copied by copyTestAssets.
+        getByName("androidTest") {
+            assets.directories += testAssets.path
         }
     }
 

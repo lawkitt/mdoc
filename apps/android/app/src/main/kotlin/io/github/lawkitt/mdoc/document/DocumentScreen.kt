@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -78,6 +80,10 @@ import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.jobs.JobKind
+import io.github.lawkitt.mdoc.setup.SetupCard
+import io.github.lawkitt.mdoc.setup.SetupController
+import io.github.lawkitt.mdoc.core.OriginalSource
+import io.github.lawkitt.mdoc.ui.OriginalView
 import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.RestoredText
 import io.github.lawkitt.mdoc.ui.ReviewText
@@ -91,7 +97,13 @@ import uniffi.mdoc_ffi.JobStage
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modifier = Modifier, beforeJob: () -> Unit = {}) {
+fun DocumentScreen(
+    model: DocumentViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    beforeJob: () -> Unit = {},
+    setup: SetupController? = null,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
     val interrupted by model.interrupted.collectAsStateWithLifecycle()
@@ -100,6 +112,7 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var menu by remember { mutableStateOf(false) }
+    var showsOriginal by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.notice) {
         state.notice?.let {
@@ -179,6 +192,9 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            // Notices and the setup card scroll on their own, so their buttons
+            // stay reachable on a short screen or at large text.
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
             if (model.isMine(interrupted?.documentId)) {
                 Notice(
                     stringResource(
@@ -188,23 +204,88 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
             }
             if (!model.findsNames && snapshot.phase == DocumentPhase.Unscanned) Notice(stringResource(R.string.below_floor_note))
             snapshot.warning?.let { Notice(it) }
-            if (state.needsSetup != null) Notice(stringResource(R.string.download_models_first))
+            val needs = state.needsSetup
+            if (needs != null && setup != null) {
+                val setupState by setup.state.collectAsStateWithLifecycle()
+                // Download & continue: the job that asked for setup runs again (ADR 0085).
+                SetupCard(
+                    state = setupState,
+                    continues = true,
+                    onDownload = {
+                        beforeJob()
+                        setup.download {
+                            if (needs == JobKind.Scan) {
+                                model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                            } else {
+                                model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                            }
+                        }
+                    },
+                    onNotNow = model::skipSetup,
+                    onCancel = setup::cancel,
+                    onUseCellular = setup::askCellular,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else if (needs != null) {
+                Notice(stringResource(R.string.download_models_first))
+            }
+            }
+            // Text, Original and Reply: one at a time on a phone; on a wide
+            // screen the original sits beside the text (ADR 0085).
+            val wide = LocalConfiguration.current.screenWidthDp >= 840
+            val hasOriginal = snapshot.original != OriginalSource.None
+            val panes = buildList {
+                add(Pane.Text)
+                if (hasOriginal && !wide) add(Pane.Original)
+                if (snapshot.reply != null) add(Pane.Reply)
+            }
+            val pane = when {
+                state.showsReply && snapshot.reply != null -> Pane.Reply
+                showsOriginal && Pane.Original in panes -> Pane.Original
+                else -> Pane.Text
+            }
+            if (panes.size > 1) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
+                    panes.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = pane == option,
+                            onClick = {
+                                showsOriginal = option == Pane.Original
+                                model.showReply(option == Pane.Reply)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index, panes.size),
+                        ) { Text(stringResource(option.label)) }
+                    }
+                }
+            }
+            val text: @Composable (Modifier) -> Unit = { paneModifier ->
+                if (snapshot.phase == DocumentPhase.Recognizing) {
+                    RecognizingPane(
+                        stringResource(
+                            if (!snapshot.kind.needsRecognition) R.string.import_not_finished_body else R.string.status_not_recognized,
+                        ),
+                        paneModifier,
+                    )
+                } else {
+                    ReviewText(
+                        markdown = snapshot.markdown,
+                        styling = snapshot.styling,
+                        candidates = snapshot.candidates,
+                        selected = state.reviewing,
+                        onCandidate = model::open,
+                        onReplaceSelection = model::startManualReplace,
+                        modifier = paneModifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                    )
+                }
+            }
             when {
-                state.showsReply && snapshot.reply != null -> ReplyPane(snapshot.reply, onRemove = model::clearReply)
-                snapshot.phase == DocumentPhase.Recognizing -> RecognizingPane(
-                    stringResource(
-                        if (!snapshot.kind.needsRecognition) R.string.import_not_finished_body else R.string.status_not_recognized,
-                    ),
-                )
-                else -> ReviewText(
-                    markdown = snapshot.markdown,
-                    styling = snapshot.styling,
-                    candidates = snapshot.candidates,
-                    selected = state.reviewing,
-                    onCandidate = model::open,
-                    onReplaceSelection = model::startManualReplace,
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                )
+                pane == Pane.Reply -> ReplyPane(snapshot.reply!!, onRemove = model::clearReply)
+                pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
+                wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
+                    text(Modifier.weight(1f).fillMaxHeight())
+                    OriginalView(snapshot.original, Modifier.weight(1f).fillMaxHeight())
+                }
+                else -> text(Modifier.fillMaxSize())
             }
         }
     }
@@ -247,8 +328,8 @@ private fun Notice(text: String) {
 }
 
 @Composable
-private fun RecognizingPane(text: String) {
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
+private fun RecognizingPane(text: String, modifier: Modifier = Modifier.fillMaxSize()) {
+    Column(modifier.padding(32.dp), verticalArrangement = Arrangement.Center) {
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -272,16 +353,6 @@ private fun ActionBar(
 ) {
     Surface(tonalElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (hasReply) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(!showsReply, { onShowReply(false) }, SegmentedButtonDefaults.itemShape(0, 2)) {
-                        Text(stringResource(R.string.text))
-                    }
-                    SegmentedButton(showsReply, { onShowReply(true) }, SegmentedButtonDefaults.itemShape(1, 2)) {
-                        Text(stringResource(R.string.reply))
-                    }
-                }
-            }
             when (action) {
                 is PrimaryAction.Recognize -> Primary(
                     stringResource(if (action.resume) R.string.resume_recognition else R.string.recognize_text), onRecognize,
@@ -523,4 +594,10 @@ fun shareIntent(text: String, fileName: String?, asFile: Boolean, context: Conte
 
 private fun copy(context: Context, text: String) {
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("mdoc", text))
+}
+
+private enum class Pane(val label: Int) {
+    Text(R.string.text),
+    Original(R.string.original),
+    Reply(R.string.reply),
 }

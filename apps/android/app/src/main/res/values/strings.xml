@@ -46,6 +46,9 @@
     <!-- Document -->
     <string name="text">Text</string>
     <string name="reply">Reply</string>
+    <string name="original">Original</string>
+    <string name="no_original_page">No original page</string>
+    <string name="original_page">Original page %1$d of %2$d</string>
     <string name="recognize_text">Recognize text</string>
     <string name="resume_recognition">Resume recognition</string>
     <string name="finish_import">Finish import</string>
@@ -126,6 +129,51 @@
     <string name="values_restored">%1$d values restored</string>
     <string name="unrecognised">%1$d unrecognised</string>
     <string name="nothing_to_restore">Nothing to restore</string>
+
+    <!-- Setup -->
+    <string name="setup_names_title">Set up name finding</string>
+    <string name="setup_ocr_title">Set up text recognition</string>
+    <string name="setup_names_body">mdoc downloads its name detector and text recognition once (%1$s). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.</string>
+    <string name="setup_ocr_body">mdoc downloads text recognition once (%1$s). After that, scans and photos are read on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.</string>
+    <string name="name_detector">Name detector</string>
+    <string name="ocr_english_russian">Text recognition, English and Russian</string>
+    <string name="installed">Installed</string>
+    <string name="not_downloaded">Not downloaded</string>
+    <string name="downloading">Downloading</string>
+    <string name="checking_and_installing">Checking and installing</string>
+    <string name="waiting_for_wifi">Waiting for Wi-Fi</string>
+    <string name="use_cellular">Use cellular</string>
+    <string name="wait_for_wifi">Wait for Wi-Fi</string>
+    <string name="download_over_cellular">Download %1$s over cellular?</string>
+    <string name="carrier_may_charge">Your carrier may charge for the data.</string>
+    <string name="download_size">Download %1$s</string>
+    <string name="download_and_continue">Download %1$s &amp; continue</string>
+    <string name="cancel_download">Cancel download</string>
+    <string name="not_now">Not now</string>
+    <string name="downloading_models">Downloading models</string>
+
+    <!-- Restore with mdoc -->
+    <string name="restore_with_mdoc">Restore with mdoc</string>
+    <string name="share_reply_as_text">Share the AI\'s reply as text to restore it.</string>
+    <string name="no_cases_yet">No cases yet</string>
+    <string name="share_document_first">Share a document from mdoc first; replies restore with its case.</string>
+    <string name="not_restored">Not restored</string>
+    <string name="save_to_document">Save to document</string>
+    <string name="saved">Saved</string>
+    <string name="not_saved">The reply was not saved.</string>
+
+    <!-- Settings -->
+    <string name="models">Models</string>
+    <string name="models_explanation">Models download once, on Wi-Fi unless you allow cellular, and then run on this device.</string>
+    <string name="stays_on_phone">mdoc\'s documents stay on this phone and are not in backups.</string>
+    <string name="about_mdoc">About mdoc</string>
+    <string name="version">Version</string>
+    <string name="source_code">Source code</string>
+    <string name="no_data">mdoc is free, has no accounts and collects no data. Nothing you open leaves this device unless you share it.</string>
+    <string name="licence">Licence</string>
+    <string name="gpl_notice">mdoc is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</string>
+    <string name="app_store_permission">Additional permission under GNU GPL version 3 section 7: mdoc may be distributed through app stores whose terms add usage restrictions, provided the corresponding source stays available under the GPL.</string>
+    <string name="permission_text">Permission text (LICENSE-APP-STORES.md)</string>
 
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>

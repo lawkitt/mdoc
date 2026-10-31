@@ -1,6 +1,8 @@
 package io.github.lawkitt.mdoc
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -25,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -37,6 +40,9 @@ import io.github.lawkitt.mdoc.home.AddOption
 import io.github.lawkitt.mdoc.home.AddSheet
 import io.github.lawkitt.mdoc.home.HomeScreen
 import io.github.lawkitt.mdoc.home.HomeViewModel
+import io.github.lawkitt.mdoc.settings.SettingsScreen
+import io.github.lawkitt.mdoc.setup.CellularQuestion
+import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import io.github.lawkitt.mdoc.ui.MdocTheme
 import java.io.File
@@ -49,7 +55,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) receive(intent)
         setContent { MdocTheme { App(application as MdocApplication, home) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receive(intent)
+    }
+
+    /** "Open in mdoc": a PDF, DOCX or image shared or opened from another app. */
+    private fun receive(intent: Intent?) {
+        val uris = when (intent?.action) {
+            Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+            // IntentCompat: the typed getters are Android 13+; mdoc runs from 12.
+            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }
+        home.received(contentResolver, uris, null, getString(R.string.title))
     }
 
     override fun onStart() {
@@ -70,7 +94,11 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by home.state.collectAsStateWithLifecycle()
+    val setupState by app.setup.state.collectAsStateWithLifecycle()
+    // Setup reads the core's models once the library has opened.
+    LaunchedEffect(state.loaded, state.error) { if (state.loaded && state.error == null) app.setup.refresh() }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var settings by rememberSaveable { mutableStateOf(false) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
 
     // Notification permission is asked at the first long job; the job runs either way (ADR 0089).
@@ -108,8 +136,22 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     }
 
     val current = open
-    if (current == null) {
+    if (settings) {
+        BackHandler { settings = false }
+        SettingsScreen(
+            setup = setupState,
+            version = BuildConfig.VERSION_NAME,
+            onDownload = {
+                beforeJob()
+                app.setup.download { home.refresh() }
+            },
+            onCancel = app.setup::cancel,
+            onUseCellular = app.setup::askCellular,
+            onBack = { settings = false },
+        )
+    } else if (current == null) {
         HomeScreen(
+            onSettings = { settings = true },
             state = state,
             onOpen = { open = it.raw },
             onAdd = { option ->
@@ -124,6 +166,22 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 }
             },
             onRetry = home::refresh,
+            setupCard = if (setupState.showsCard || (setupState.working && state.loaded)) {
+                {
+                    SetupCard(
+                        state = setupState,
+                        onDownload = {
+                            beforeJob()
+                            app.setup.download { home.refresh() }
+                        },
+                        onNotNow = app.setup::dismissCard,
+                        onCancel = app.setup::cancel,
+                        onUseCellular = app.setup::askCellular,
+                    )
+                }
+            } else {
+                null
+            },
         )
     } else {
         BackHandler { open = null }
@@ -148,6 +206,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             DocumentScreen(
                 model = model,
                 beforeJob = ::beforeJob,
+                setup = app.setup,
                 onBack = {
                     open = null
                     home.refresh()
@@ -172,6 +231,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             onDismiss = home::cancelAdd,
         )
     }
+    CellularQuestion(setupState, app.setup::answerCellular)
     if (askNextPage) {
         AlertDialog(
             onDismissRequest = {},

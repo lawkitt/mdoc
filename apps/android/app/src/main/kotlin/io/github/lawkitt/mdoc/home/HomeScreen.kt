@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -42,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -70,15 +74,27 @@ fun HomeScreen(
     onAdd: (AddOption) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    setupCard: (@Composable () -> Unit)? = null,
+    onSettings: () -> Unit = {},
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(onSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) }
+                },
+            )
+        },
         floatingActionButton = {
             Box {
+                val addLabel = stringResource(R.string.add)
                 ExtendedFloatingActionButton(
                     onClick = { menu = true },
+                    // The button's own label: its text alone does not reach TalkBack.
+                    modifier = Modifier.semantics { contentDescription = addLabel },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.add)) },
                 )
@@ -101,8 +117,13 @@ fun HomeScreen(
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
-            state.documents.isEmpty() -> EmptyHome(state.canFindNames, inner)
+            // Scrolls, so the setup card's buttons stay reachable on a short screen or at large text.
+            state.documents.isEmpty() -> Column(inner.verticalScroll(rememberScrollState())) {
+                setupCard?.let { Box(Modifier.padding(16.dp)) { it() } }
+                EmptyHome(state.canFindNames, Modifier.heightIn(min = 320.dp))
+            }
             else -> LazyColumn(inner) {
+                setupCard?.let { card -> item(key = "setup") { Box(Modifier.padding(16.dp)) { card() } } }
                 items(state.documents, key = { it.id.raw }) { document ->
                     DocumentRow(document, state.cases.firstOrNull { it.id == document.caseId }, state.canFindNames) {
                         onOpen(document.id)
@@ -164,7 +185,7 @@ private fun CoreFailed(error: String, onRetry: () -> Unit, modifier: Modifier = 
 @Composable
 private fun EmptyHome(canFindNames: Boolean, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.fillMaxSize().padding(32.dp),
+        modifier = modifier.fillMaxWidth().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
