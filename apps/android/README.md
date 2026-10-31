@@ -26,11 +26,21 @@ headless.
 - `./gradlew testDebugUnitTest`: JVM tests on the PC, among them the parity
   tests, which call the desktop build of the core through the same Kotlin
   bindings and check the desktop goldens (Copy for AI bytes included).
-- `ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest`: the
-  instrumented tests on the emulator.
+- `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest`:
+  the instrumented tests on the emulator, each on its own isolated core.
 - `just android` runs both (with the builds) when a commit changes the core
   or the app: the Windows PC's local CI job, on its own emulator
   (`emulator-5560`).
+- `longjobs/` is the long-job test: a self-instrumenting UiAutomator test
+  that drives the debug app from its own process, so it can press Home and
+  kill mdoc mid-job (the model download, text recognition, Find names), then
+  checks mdoc's exit info for crashes and ANRs. It uses the app's real
+  storage and downloads the models, so it is not in local CI:
+  `ANDROID_SERIAL=<serial> ./gradlew :longjobs:connectedDebugAndroidTest`.
+- `just android-device-test [<serial> | <model>:<api> ...]` runs both suites
+  on a phone by its adb serial or on Firebase Test Lab phones.
+- `just android-survey <out> phone|tablet` takes the UI survey's
+  screenshots (`SurveyTest`, only with `mdoc.survey=1`).
 
 ## How it fits together
 
@@ -53,5 +63,5 @@ SHA-256 against `gradle/verification-metadata.xml`. After changing a
 dependency, regenerate it with the emulator running:
 
 ```sh
-ANDROID_SERIAL=emulator-5554 ./gradlew --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest connectedDebugAndroidTest
+ANDROID_SERIAL=emulator-5554 ./gradlew --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest :app:connectedDebugAndroidTest
 ```

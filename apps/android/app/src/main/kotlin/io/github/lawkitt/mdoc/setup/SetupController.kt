@@ -120,7 +120,13 @@ class SetupController(
             mutable.update {
                 it.copy(
                     snapshot = snapshotOrEmpty(), working = false, progress = emptyMap(), waitingForWiFi = false,
-                    installing = false, error = (outcome as? JobOutcome.Failed)?.error?.message,
+                    installing = false,
+                    // The one job slot is taken (ADR 0006): say so, as iOS does, rather than nothing.
+                    error = when (outcome) {
+                        is JobOutcome.Failed -> outcome.error.message
+                        JobOutcome.Busy -> context.getString(R.string.another_job_running)
+                        else -> null
+                    },
                 )
             }
             if (outcome is JobOutcome.Finished && !mutable.value.needsSetup) next?.invoke()

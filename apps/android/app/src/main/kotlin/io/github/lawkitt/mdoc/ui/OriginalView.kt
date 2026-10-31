@@ -7,6 +7,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -57,6 +59,13 @@ fun OriginalView(original: OriginalSource, modifier: Modifier = Modifier) {
         offset = if (scale == 1f) Offset.Zero else offset + pan
     }
     val zoomed = Modifier
+        // A double tap zooms in to twice the size, and out again, as photo viewers do.
+        .pointerInput(Unit) {
+            detectTapGestures(onDoubleTap = {
+                scale = if (scale > 1f) 1f else 2f
+                offset = Offset.Zero
+            })
+        }
         .transformable(zoom)
         .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -139,7 +141,11 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
                 }
                 val result = restored?.result
                 if (result != null) {
-                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    // A tablet keeps a reading width, as the document does.
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().wrapContentWidth().widthIn(max = 720.dp)
+                            .verticalScroll(rememberScrollState()).padding(16.dp),
+                    ) {
                         Text(
                             listOfNotNull(
                                 pluralStringResource(R.plurals.values_restored, result.restoredCount, result.restoredCount),
@@ -205,7 +211,10 @@ private fun Actions(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().wrapContentWidth().widthIn(max = 720.dp).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             notice?.let { Text(stringResource(it), style = MaterialTheme.typography.labelLarge) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Copy leads: most replies go back into a message (ADR 0087).

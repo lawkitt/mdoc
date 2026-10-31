@@ -155,6 +155,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             onSettings = { settings = true },
             state = state,
             onOpen = { open = it.raw },
+            onDelete = home::delete,
             onAdd = { option ->
                 when (option) {
                     AddOption.Paste -> home.startPaste(context.getString(R.string.pasted_text))

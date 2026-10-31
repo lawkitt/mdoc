@@ -63,8 +63,10 @@ class LongJobService : Service() {
             this, 1, Intent(this, LongJobService::class.java).setAction(ACTION_CANCEL), PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
+            // iOS's subtitle for the same job (BackgroundContinuation).
+            .setContentText(getString(R.string.keeps_working))
             .setProgress(0, 0, true)
             .setOngoing(true)
             .setContentIntent(open)

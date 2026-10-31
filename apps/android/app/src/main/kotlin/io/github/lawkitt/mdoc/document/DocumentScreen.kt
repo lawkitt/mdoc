@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.PersistableBundle
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -68,18 +72,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -95,6 +103,7 @@ import io.github.lawkitt.mdoc.core.OriginalSource
 import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
+import io.github.lawkitt.mdoc.home.PasteFromClipboard
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.setup.SetupController
@@ -128,6 +137,7 @@ fun DocumentScreen(
     val snackbar = remember { SnackbarHostState() }
     var menu by remember { mutableStateOf(false) }
     var showsOriginal by rememberSaveable { mutableStateOf(false) }
+    val reviewScroll = rememberScrollState()
 
     LaunchedEffect(state.notice) {
         state.notice?.let {
@@ -146,7 +156,7 @@ fun DocumentScreen(
                 title = { Text(snapshot.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -155,7 +165,7 @@ fun DocumentScreen(
                             Icon(Icons.Default.Person, contentDescription = stringResource(R.string.identities))
                         }
                     }
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = null) }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         // The hand-off's second way out (ADR 0087's long press on iOS).
                         if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
@@ -295,12 +305,18 @@ fun DocumentScreen(
             }
             val text: @Composable (Modifier) -> Unit = { paneModifier ->
                 if (snapshot.phase == DocumentPhase.Recognizing) {
-                    RecognizingPane(
-                        stringResource(
-                            if (!snapshot.kind.needsRecognition) R.string.import_not_finished_body else R.string.status_not_recognized,
-                        ),
-                        paneModifier,
-                    )
+                    // iOS's three states: a file being read, an import that
+                    // stopped, a scan or photo waiting for (or part through) OCR.
+                    val reading = job != null && model.isMine(job?.documentId)
+                    when {
+                        !snapshot.kind.needsRecognition && reading ->
+                            RecognizingPane(R.string.no_text_yet, R.string.reading_the_file_body, paneModifier)
+                        !snapshot.kind.needsRecognition ->
+                            RecognizingPane(R.string.status_import_not_finished, R.string.import_not_finished_body, paneModifier)
+                        snapshot.resumesOcr ->
+                            RecognizingPane(R.string.no_text_yet, R.string.recognition_resumes_body, paneModifier)
+                        else -> RecognizingPane(R.string.no_text_yet, R.string.recognition_runs_body, paneModifier)
+                    }
                 } else {
                     ReviewText(
                         markdown = snapshot.markdown,
@@ -309,19 +325,26 @@ fun DocumentScreen(
                         selected = state.reviewing,
                         onCandidate = model::open,
                         onReplaceSelection = model::startManualReplace,
-                        modifier = paneModifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                        // Room below the last line while a candidate's sheet is open, so
+                        // a mention at the very end can still scroll above the sheet.
+                        modifier = paneModifier.verticalScroll(reviewScroll).padding(16.dp)
+                            .padding(bottom = if (state.reviewing != null) noticesHeight else 0.dp),
+                        // Near the top, above the candidate's sheet.
+                        onSelectedTop = { top ->
+                            scope.launch { reviewScroll.animateScrollTo((top - reviewScroll.viewportSize / 6).coerceAtLeast(0)) }
+                        },
                     )
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    pane == Pane.Reply -> ReplyPane(snapshot.reply!!, onRemove = model::clearReply)
+                    pane == Pane.Reply -> Readable { ReplyPane(snapshot.reply!!, onRemove = model::clearReply) }
                     pane == Pane.Original -> OriginalView(snapshot.original, Modifier.fillMaxSize())
                     wide && hasOriginal -> Row(Modifier.fillMaxSize()) {
                         text(Modifier.weight(1f).fillMaxHeight())
                         OriginalView(snapshot.original, Modifier.weight(1f).fillMaxHeight())
                     }
-                    else -> text(Modifier.fillMaxSize())
+                    else -> Readable { text(Modifier.fillMaxSize()) }
                 }
             }
         }
@@ -343,10 +366,24 @@ fun DocumentScreen(
         ManualReplaceSheet(text, onReplace = model::replaceSelection, onDismiss = model::cancelManualReplace)
     }
     if (state.showsIdentities) {
-        IdentitiesSheet(snapshot.identities, onDismiss = { model.showIdentities(false) })
+        IdentitiesSheet(
+            snapshot.identities,
+            // An identity opens its first mention, as on iOS.
+            onOpen = { identity ->
+                snapshot.mentions(identity.id).firstOrNull()?.let {
+                    model.showIdentities(false)
+                    model.open(it.id)
+                }
+            },
+            // Replace all or Keep all of an identity, as iOS's swipe and VoiceOver actions do.
+            onDecide = { identity, decision ->
+                snapshot.mentions(identity.id).firstOrNull()?.let { model.decide(it.id, decision, Scope.AllOccurrences) }
+            },
+            onDismiss = { model.showIdentities(false) },
+        )
     }
     if (state.showsReplySheet) {
-        ReplySheet(onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
+        ReplySheet(snapshot.caseName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
     }
     state.error?.let { message ->
         AlertDialog(
@@ -365,10 +402,36 @@ private fun Notice(text: String) {
     }
 }
 
+/** About 90 characters: text that has a tablet's whole width keeps lines it can be read in. */
+private val ReadingWidth = 720.dp
+
+/** The pane at most [ReadingWidth] wide, centred; a phone is narrower anyway. */
 @Composable
-private fun RecognizingPane(text: String, modifier: Modifier = Modifier.fillMaxSize()) {
-    Column(modifier.padding(32.dp), verticalArrangement = Arrangement.Center) {
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Readable(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = ReadingWidth).fillMaxSize()) { content() }
+    }
+}
+
+@Composable
+private fun RecognizingPane(title: Int, body: Int, modifier: Modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier.padding(32.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(title),
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            stringResource(body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -392,7 +455,7 @@ private fun ActionBar(
     Surface(tonalElevation = 3.dp) {
         // Clear of the gesture bar: the bar's colour reaches the screen's edge, its buttons do not.
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp, 12.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().wrapContentWidth().widthIn(max = ReadingWidth).padding(16.dp, 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (action) {
@@ -570,7 +633,12 @@ private fun ManualReplaceSheet(text: String, onReplace: (Category) -> Unit, onDi
 /** Identities by category, with their aliases and how they were decided. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
+private fun IdentitiesSheet(
+    identities: List<Identity>,
+    onOpen: (Identity) -> Unit,
+    onDecide: (Identity, Decision) -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Text(
             stringResource(R.string.identities),
@@ -588,30 +656,58 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
                 }
                 items(group, key = { it.id.raw }) { identity ->
                     val dark = isSystemInDarkTheme()
-                    ListItem(
-                        // On the sheet's own colour, not banded rows.
-                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        leadingContent = {
-                            Box(
-                                Modifier.size(10.dp).background(
-                                    androidx.compose.ui.graphics.Color(Palette.category(identity.category, dark)),
-                                    CircleShape,
-                                ),
-                            )
-                        },
-                        headlineContent = { Text(identity.primaryWording) },
-                        supportingContent = {
-                            Text(
-                                "${identity.alias} · ${stringResource(
-                                    when (identity.state) {
-                                        MentionState.Proposed -> R.string.proposed
-                                        MentionState.Replaced -> R.string.replaced
-                                        MentionState.Kept -> R.string.kept
-                                    },
-                                )} · ${pluralStringResource(R.plurals.mentions, identity.mentionCount, identity.mentionCount)}",
-                            )
-                        },
-                    )
+                    var actions by remember { mutableStateOf(false) }
+                    val replaceAll = stringResource(R.string.replace_all)
+                    val keepAll = stringResource(R.string.keep_all)
+                    Box {
+                        ListItem(
+                            // A tap opens the first mention; a long press, or TalkBack's
+                            // actions, replace or keep all of them.
+                            modifier = Modifier
+                                .combinedClickable(
+                                    onClickLabel = stringResource(R.string.opens_first_mention),
+                                    onLongClick = { actions = true },
+                                ) { onOpen(identity) }
+                                .semantics {
+                                    customActions = listOf(
+                                        CustomAccessibilityAction(replaceAll) { onDecide(identity, Decision.Replace); true },
+                                        CustomAccessibilityAction(keepAll) { onDecide(identity, Decision.Keep); true },
+                                    )
+                                },
+                            // On the sheet's own colour, not banded rows.
+                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                            leadingContent = {
+                                Box(
+                                    Modifier.size(10.dp).background(
+                                        androidx.compose.ui.graphics.Color(Palette.category(identity.category, dark)),
+                                        CircleShape,
+                                    ),
+                                )
+                            },
+                            headlineContent = { Text(identity.primaryWording) },
+                            supportingContent = {
+                                Text(
+                                    "${identity.alias} · ${stringResource(
+                                        when (identity.state) {
+                                            MentionState.Proposed -> R.string.proposed
+                                            MentionState.Replaced -> R.string.replaced
+                                            MentionState.Kept -> R.string.kept
+                                        },
+                                    )} · ${pluralStringResource(R.plurals.mentions, identity.mentionCount, identity.mentionCount)}",
+                                )
+                            },
+                        )
+                        DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
+                            DropdownMenuItem(text = { Text(replaceAll) }, onClick = {
+                                actions = false
+                                onDecide(identity, Decision.Replace)
+                            })
+                            DropdownMenuItem(text = { Text(keepAll) }, onClick = {
+                                actions = false
+                                onDecide(identity, Decision.Keep)
+                            })
+                        }
+                    }
                 }
             }
         }
@@ -621,11 +717,20 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
 /** Paste AI reply: restored with this document's case and kept as its reply (ADR 0078). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReplySheet(onRestore: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ReplySheet(caseName: String?, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
     var reply by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp, 0.dp, 24.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.paste_ai_reply), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            // Which names come back, as on iOS: the case's, never another's.
+            Text(
+                caseName?.let { stringResource(R.string.puts_back_case, it) } ?: stringResource(R.string.puts_back_this_case),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+            )
+            PasteFromClipboard(onPaste = { reply = it })
             OutlinedTextField(
                 value = reply,
                 onValueChange = { reply = it },

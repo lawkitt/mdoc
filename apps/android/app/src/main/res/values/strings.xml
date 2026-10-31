@@ -16,6 +16,10 @@
     <string name="scan">Scan</string>
     <string name="settings">Settings</string>
     <string name="delete">Delete</string>
+    <!-- TalkBack names for icon-only buttons. -->
+    <string name="back">Back</string>
+    <string name="more_options">More options</string>
+    <string name="opens_first_mention">Opens the first mention.</string>
     <string name="case_named">case %1$s</string>
     <string name="status_ready_to_find">Ready to find names</string>
     <string name="status_ready_to_mark">Ready to mark names</string>
@@ -60,7 +64,12 @@
     <string name="finding_names_in">Finding names in %1$s</string>
     <string name="replace_all">Replace all</string>
     <string name="replace_count">Replace %1$d</string>
+    <string name="another_job_running">Another job is running. Try again when it finishes.</string>
     <string name="waiting_for_other">Waiting for another document to finish.</string>
+    <string name="no_text_yet">No text yet</string>
+    <string name="reading_the_file_body">mdoc is reading the file.</string>
+    <string name="recognition_runs_body">mdoc reads the text when recognition runs.</string>
+    <string name="recognition_resumes_body">Recognition stopped. Finished pages are kept, and resuming reads the rest.</string>
     <string name="import_not_finished_body">The import stopped before mdoc read the text. Finish import reads it now.</string>
     <string name="recognition_stopped_background">Recognition stopped when mdoc left the screen. Finished pages are kept.</string>
     <string name="finding_stopped_background">Finding names stopped when mdoc left the screen.</string>
@@ -119,6 +128,8 @@
     <string name="paste_another_reply">Paste another reply</string>
     <string name="paste_ai_reply">Paste AI reply</string>
     <string name="ai_reply">AI reply</string>
+    <string name="puts_back_case">mdoc puts back the names from the case “%1$s”.</string>
+    <string name="puts_back_this_case">mdoc puts back the names from this document\'s case.</string>
     <string name="restore">Restore</string>
     <string name="copy_reply">Copy reply</string>
     <string name="share_reply">Share reply</string>
@@ -174,6 +185,7 @@
 
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>
+    <string name="keeps_working">mdoc keeps working while you use other apps.</string>
     <string name="import_stopped_background">The import stopped when mdoc left the screen.</string>
 
     <!-- Counts, singular and plural as on iOS. -->

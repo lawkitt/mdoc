@@ -69,7 +69,16 @@ rules and the before set:
 - The candidate sheet's alias uses the dark palette in dark mode (05), and
   the Identities sheet shows each category's colour without banded rows (06).
 - Restore with mdoc's case reads as a picker (13).
+- Paste text and Paste AI reply have iOS's one-tap Paste button (off while
+  the clipboard holds no text); a pasted text's title follows its first
+  line; the reply sheet names the case whose names come back (03, 08).
+- On the tablet, Home, the text, the reply and the bar keep a 720 dp
+  reading width, centred (tablet 01, 04, 07, 09).
+- A document with no text yet has iOS's states, with a title: here
+  "Import not finished" (10). The Identities rows open their first mention.
 
-Not visible here: restored replies copied to the clipboard are marked
+Not visible here: the launcher icon is mdoc's M (`build/appicon.svg`) as an
+adaptive icon with a themed variant, and the long-job notification shows
+the M; restored replies copied to the clipboard are marked
 sensitive (lawkitt/mdoc#321), and an import interrupted off screen says
 "The import stopped when mdoc left the screen.", as on iOS.
