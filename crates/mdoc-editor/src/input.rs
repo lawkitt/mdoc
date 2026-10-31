@@ -885,44 +885,48 @@ impl EditorState {
                 .any(|e| matches!(e, gpui::ClipboardEntry::ExternalPaths(_)))
         });
         match item.and_then(|i| i.text()).filter(|_| !has_files) {
-            Some(text) => {
-                // Normalize foreign line endings — a Windows/browser copy
-                // carries \r\n (or bare \r), and a literal \r in the buffer
-                // garbles rendering + desyncs the \n-based column math.
-                let mut text = if text.contains('\r') {
-                    text.replace("\r\n", "\n").replace('\r', "\n")
-                } else {
-                    text
-                };
-                // Inside a table cell, a raw paste of newlines/pipes would
-                // break the `| … |` row markup (Enter is guarded the same
-                // way): flatten newlines and escape pipes so the paste stays
-                // one cell's content.
-                if self.plain {
-                    // A plain-text field keeps the paste exactly.
-                } else if self.caret_in_table() && text.contains(['\n', '|']) {
-                    // Unescape-then-escape so text already carrying `\|`
-                    // doesn't double up into `\\|` (an escaped backslash
-                    // followed by a live separator).
-                    text = text
-                        .trim_end_matches('\n')
-                        .replace('\n', " ")
-                        .replace("\\|", "|")
-                        .replace('|', "\\|");
-                } else if self.markdown_style.is_some() && text.contains("$$") {
-                    // Words-attached `$$` fences / words-mixed pairs in pasted
-                    // text split onto their own lines (issue #54) — same
-                    // normalization typing gets.
-                    if let std::borrow::Cow::Owned(n) =
-                        mdoc_markdown::syntax::normalize_math_fences(&text)
-                    {
-                        text = n;
-                    }
-                }
-                self.replace_text_in_range(None, &text, window, cx);
-            }
+            Some(text) => self.insert_pasted(text, window, cx),
             None => cx.propagate(),
         }
+    }
+
+    /// Insert `text` at the caret as a paste would, without the clipboard:
+    /// a host that already holds the text (mdoc's Paste text as new tab,
+    /// issue #300) needn't wait for this editor to take focus.
+    pub fn insert_pasted(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        // Normalize foreign line endings — a Windows/browser copy
+        // carries \r\n (or bare \r), and a literal \r in the buffer
+        // garbles rendering + desyncs the \n-based column math.
+        let mut text = if text.contains('\r') {
+            text.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            text
+        };
+        // Inside a table cell, a raw paste of newlines/pipes would
+        // break the `| … |` row markup (Enter is guarded the same
+        // way): flatten newlines and escape pipes so the paste stays
+        // one cell's content.
+        if self.plain {
+            // A plain-text field keeps the paste exactly.
+        } else if self.caret_in_table() && text.contains(['\n', '|']) {
+            // Unescape-then-escape so text already carrying `\|`
+            // doesn't double up into `\\|` (an escaped backslash
+            // followed by a live separator).
+            text = text
+                .trim_end_matches('\n')
+                .replace('\n', " ")
+                .replace("\\|", "|")
+                .replace('|', "\\|");
+        } else if self.markdown_style.is_some() && text.contains("$$") {
+            // Words-attached `$$` fences / words-mixed pairs in pasted
+            // text split onto their own lines (issue #54) — same
+            // normalization typing gets.
+            if let std::borrow::Cow::Owned(n) = mdoc_markdown::syntax::normalize_math_fences(&text)
+            {
+                text = n;
+            }
+        }
+        self.replace_text_in_range(None, &text, window, cx);
     }
 
     pub(super) fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
