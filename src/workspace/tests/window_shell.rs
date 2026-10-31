@@ -1437,6 +1437,32 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar.visible(), !visible));
 }
 
+/// The palette's theme row names the theme it switches to (U14), and running
+/// it moves the name on to the next one.
+#[gpui::test]
+fn command_palette_theme_row_names_its_target(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    for (now, row, next) in [
+        (ThemeChoice::System, "Switch to light theme", ThemeChoice::Light),
+        (ThemeChoice::Light, "Switch to dark theme", ThemeChoice::Dark),
+        (ThemeChoice::Dark, "Switch to system theme", ThemeChoice::System),
+    ] {
+        tabs.read_with(cx, |tabs, cx| {
+            assert_eq!(tabs.theme_choice, now);
+            let actions = tabs.palette_section("Actions", cx);
+            assert!(actions.iter().any(|label| label == row), "{actions:?}");
+            assert!(!actions.iter().any(|label| label.starts_with("Switch theme")));
+        });
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input(row);
+        draw(cx);
+        cx.simulate_keystrokes("enter");
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, next));
+    }
+}
+
 #[gpui::test]
 fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
     cx.update(shell::bind_keys);
