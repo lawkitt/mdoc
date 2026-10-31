@@ -7,7 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.CaseChoice
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
@@ -28,9 +27,12 @@ import uniffi.mdoc_ffi.JobStage
 @RunWith(AndroidJUnit4::class)
 class RestoreTest {
     @get:Rule
+    val core = TestCore()
+
+    @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val app get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MdocApplication
+    private val app get() = core.app
 
     @Test
     fun aSharedReplyRestoresWithTheLastSharedCase() {
