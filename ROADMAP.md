@@ -67,16 +67,7 @@ The review-first iPhone and iPad app on the shared Rust core
 green and leave desktop unchanged. Record:
 [mobile grill](docs/design/mobile-grill-2026-10-31.md).
 
-1. **[Mobile] Device measurements.** *From the feasibility spike
-   ([report](docs/evidence/mobile/2026-10-31/README.md)).* The core, harness
-   and Mac stand-in numbers are merged; run `scripts/ios-spike-device.sh` on
-   the iPhone 17 Pro and iPhone 12 Pro (both on iOS 26, the minimum).
-   FP16 first, INT8 if FP16 misses (counted only if it matches FP16 on the
-   qualification fixtures). *Done when:* both device rows have pass or fail
-   and the device floor is set from them
-   ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)): 6 GB if the 12 Pro
-   passes, else 8 GB.
-2. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
+1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
    (#269, #272, #275–#278).* The app runs on the real core in the Simulator
    with parity, unit and UI tests in local CI; it has never been signed or
    run on a phone. Sign in to Xcode with the team's Apple ID, upload a
@@ -84,18 +75,18 @@ green and leave desktop unchanged. Record:
    [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
    The first build waits for the measured floor and the device checklist
    (P17). *Done when:* that section passes on a TestFlight build.
-3. **[Mobile] UI polish.** *From the [iOS polish grill](docs/design/ios-polish-grill-2026-10-31.md)
+2. **[Mobile] UI polish.** *From the [iOS polish grill](docs/design/ios-polish-grill-2026-10-31.md)
    ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).* Four PRs: defects and the
    survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
    *Done when:* the after survey sits beside the before set and P12, P13
    and P16 pass in the Simulator.
-4. **[Mobile] Device fixes.** *From the [device grill](docs/design/ios-device-grill-2026-10-31.md)
+3. **[Mobile] Device fixes.** *From the [device grill](docs/design/ios-device-grill-2026-10-31.md)
    ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).* The cellular
    question on any cellular interface, "Waiting for Wi-Fi", the interrupted
    import's wording, the + menu's order, and the rules-only tier replaced by
    the below-floor line. *Done when:* the device checklist (P17) passes on
    the iPhone 17 Pro.
-5. **[Mobile] Device UI tests.** *From the device grill.* `just
+4. **[Mobile] Device UI tests.** *From the device grill.* `just
    ios-device-test <udid>` runs the review flow and the long-jobs test on a
    connected iPhone. *Done when:* it passes on the iPhone 17 Pro.
 
