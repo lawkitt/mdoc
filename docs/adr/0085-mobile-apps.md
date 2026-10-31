@@ -35,8 +35,9 @@ already lives in GUI-free Rust crates (ADR 0069).
   Compose Multiplatform, and no reimplementation of detection, replacement,
   case or restoration logic in Swift or Kotlin.
 - **Minimum OS: iOS 26 and Android 10 (API 29).** iOS 26 because the
-  approved iOS PDFium build (bblanchon chromium/7988) requires it; every
-  iPhone that runs iOS 17 also runs iOS 26.
+  approved iOS PDFium build (bblanchon chromium/7988) requires it. This
+  drops the 2018 iPhones (XR, XS, XS Max), which run iOS 17 but not iOS 26;
+  iPhone 11 and later are supported.
 - **State across the bridge.** Rust owns document, review, case and restore
   state as ADR 0069 owners. UniFFI exposes three coarse objects:
   `Library` (cases, stored documents, storage paths), `DocumentSession`
