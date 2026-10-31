@@ -109,7 +109,8 @@ window.
   `vendor/gpui-pre-macos`, each listed in its `MDOC-PATCH.md`, are the status
   item, the anchoring, the text drag (with its card image and whether the
   drop landed), hiding and showing a window (so its tabs and undo survive),
-  and the activation policy (Regular / Accessory).
+  resizing the shelf to its content with its top edge kept, and the
+  activation policy (Regular / Accessory).
   The app crate takes no Objective-C dependency.
 
 ## Not adopted
