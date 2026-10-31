@@ -42,6 +42,14 @@ android {
         }
     }
 
+    // The core opens PDFium and ONNX Runtime by file path beside itself
+    // (`linked_runtimes`), so the APK's libraries are extracted on install.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

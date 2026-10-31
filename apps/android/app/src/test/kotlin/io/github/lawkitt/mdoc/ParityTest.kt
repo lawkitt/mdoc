@@ -10,7 +10,7 @@ import uniffi.mdoc_ffi.Candidate
 import uniffi.mdoc_ffi.Category
 import uniffi.mdoc_ffi.DocumentSession
 import uniffi.mdoc_ffi.ImportOptions
-import uniffi.mdoc_ffi.Library
+import uniffi.mdoc_ffi.MdocLibrary
 import uniffi.mdoc_ffi.MentionState
 import uniffi.mdoc_ffi.ReviewSnapshot
 import uniffi.mdoc_ffi.TextRange
@@ -125,7 +125,7 @@ class ParityTest {
     fun libraryRestoreMatchesTheSession() {
         val root = Files.createTempDirectory("mdoc-parity").toFile()
         try {
-            Library(root.path, ByteArray(32) { 42 }).use { library ->
+            MdocLibrary(root.path, ByteArray(32) { 42 }).use { library ->
                 val markdown = read("docs/product-media/Settlement agreement.md")
                 DocumentSession().use { session ->
                     session.importText(markdown, "Settlement agreement")
