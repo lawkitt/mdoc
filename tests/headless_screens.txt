@@ -49,3 +49,4 @@ shelf-copied
 shelf-note
 shelf-empty
 shelf-locked
+review-scanning

@@ -338,7 +338,8 @@ before/after, What you did with done and undone entries, Open Case, the unlocked
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,
-a restored AI reply, and the menu bar shelf (ready, not-ready and
+a restored AI reply, a scan under way (skeleton rows, "Scanning…",
+Rescan off, a window count), and the menu bar shelf (ready, not-ready and
 changed-since-review rows, a row's "Copied", the first-close note, empty,
 and locked) on a stage window. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
