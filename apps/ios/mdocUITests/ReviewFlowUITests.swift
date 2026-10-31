@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Open → review → share → restore on the Rust core (ADR 0085's short
@@ -86,6 +87,35 @@ enum MdocUITest {
         app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path
         app.launch()
         return app
+    }
+
+    /// Rendered pages of a fictional tenancy, as the camera would give
+    /// them, in a folder the app's seed reads as a scan.
+    static func scanPages(named name: String, count: Int) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for number in 1...count {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 1240, height: 1754), format: format).image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1240, height: 1754))
+                let text = """
+                    Tenancy agreement, page \(number)
+
+                    Landlord: Harbour Street Lettings
+                    Tenant: Grace Whitlow
+                    The rent is 1,150 pounds a month, paid on day \(number).
+                    """
+                NSString(string: text).draw(
+                    in: CGRect(x: 120, y: 160, width: 1000, height: 1400),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 44), .foregroundColor: UIColor.black])
+            }
+            guard let data = image.jpegData(compressionQuality: 0.9) else { continue }
+            try data.write(to: folder.appendingPathComponent("page-\(number).jpg"))
+        }
+        return folder
     }
 
     @MainActor

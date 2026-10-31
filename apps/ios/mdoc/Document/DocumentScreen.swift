@@ -106,7 +106,9 @@ struct DocumentScreen: View {
             ContentUnavailableView(
                 "No text yet",
                 systemImage: "text.viewfinder",
-                description: Text("mdoc reads the text when recognition runs."))
+                description: model.snapshot.resumesOCR
+                    ? Text("Recognition stopped. Finished pages are kept, and resuming reads the rest.")
+                    : Text("mdoc reads the text when recognition runs."))
         } else {
             VStack(spacing: 0) {
                 if let warning = model.snapshot.warning {

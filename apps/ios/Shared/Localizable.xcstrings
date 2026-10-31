@@ -155,6 +155,7 @@
     "Ready to find names": {},
     "Ready to share": {},
     "Recognition stopped when mdoc left the screen. Finished pages are kept.": {},
+    "Recognition stopped. Finished pages are kept, and resuming reads the rest.": {},
     "Recognize text": {},
     "Recognizing %@": {},
     "Recognizing page %lld of %lld": {},

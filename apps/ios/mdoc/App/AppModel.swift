@@ -55,7 +55,7 @@ final class AppModel {
             let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
-                downloader: testing ? FakeModelDownloader(seconds: 0) : models,
+                downloader: testing && !Self.realDownloadsInUITests ? FakeModelDownloader(seconds: 0) : models,
                 network: NetworkMonitor(), defaults: defaults)
             if testing, let seed = ProcessInfo.processInfo.environment["MDOC_SEED_FILE"] {
                 app.seedForUITesting(URL(fileURLWithPath: seed))
@@ -68,6 +68,11 @@ final class AppModel {
                 background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
                 network: NetworkMonitor(), defaults: defaults, startupError: error.localizedDescription)
         }
+    }
+
+    /// UI tests that need a model (OCR) download it for real.
+    private static var realDownloadsInUITests: Bool {
+        ProcessInfo.processInfo.environment["MDOC_REAL_DOWNLOADS"] == "1"
     }
 
     /// The App Group storage and the real core.
@@ -87,12 +92,25 @@ final class AppModel {
 
     /// UI tests: import a fixture file through the core and scan it with
     /// the structured rules, as a user's import would. A Markdown file comes
-    /// in as pasted text.
+    /// in as pasted text, and a folder of JPEG pages as a camera scan.
     private func seedForUITesting(_ file: URL) {
         Task {
             let title = file.deletingPathExtension().lastPathComponent
             let source: ImportSource
-            if file.pathExtension.lowercased() == "md" {
+            var isFolder: ObjCBool = false
+            if FileManager.default.fileExists(atPath: file.path, isDirectory: &isFolder), isFolder.boolValue {
+                let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
+                let pages = ((try? FileManager.default.contentsOfDirectory(at: file, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { $0.pathExtension.lowercased() == "jpg" }
+                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+                      let copies = try? pages.map({ page in
+                          let copy = folder.appendingPathComponent(page.lastPathComponent)
+                          try FileManager.default.copyItem(at: page, to: copy)
+                          return copy
+                      }) else { return }
+                source = .scan(copies)
+            } else if file.pathExtension.lowercased() == "md" {
                 guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
                 source = .text(text)
             } else {
@@ -104,7 +122,10 @@ final class AppModel {
                     PendingImport(source: source, suggestedTitle: title), title: title, into: .newCase(name: title)),
                   let model = documentModel(for: session.id) else { return }
             await model.recognize()
-            await model.findNames()
+            // A scan waits here for its OCR model.
+            if model.snapshot.phase == .unscanned {
+                await model.findNames()
+            }
             home.refresh()
         }
     }
