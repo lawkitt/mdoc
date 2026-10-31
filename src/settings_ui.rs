@@ -825,12 +825,15 @@ impl Panel {
             let _ = this.update(cx, |this, cx| {
                 this.applying = false;
                 match result {
-                    // Skipped: publish nothing; the draft, which holds the
-                    // later change too, saves next.
+                    // Overtaken: publish nothing; the draft, which holds the
+                    // later change too, saves next, carrying a General
+                    // reset's theme change (a newer theme choice still wins).
                     Ok(false) => {
-                        if std::mem::take(&mut this.save_pending) {
-                            this.persist(cx);
+                        this.save_pending = false;
+                        if this.reset_theme.is_none() {
+                            this.reset_theme = reset_theme;
                         }
+                        this.persist(cx);
                     }
                     Ok(true) => {
                         this.shared.borrow_mut().current = Some(prefs);

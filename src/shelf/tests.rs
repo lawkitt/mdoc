@@ -516,6 +516,24 @@ fn a_preview_masks_a_name_split_over_the_lines_of_a_paragraph() {
         "{}",
         preview.text
     );
+    // A hard line break inside the name (review of #280).
+    for text in [
+        "ORG_1 met Anna\\\nPetrova about the agreement today.",
+        "ORG_1 met Anna<br>\nPetrova about the agreement today.",
+    ] {
+        let preview = preview_of(text).unwrap();
+        assert_eq!(
+            preview.text, "ORG_1 met PERSON_1 about the agreement today.",
+            "{text:?}"
+        );
+    }
+    // Furniture right above prose, without a blank line (review of #280).
+    assert_eq!(
+        preview_of("23456\nPage 1 of 5\nORG_1 signed the **agreement** today.")
+            .unwrap()
+            .text,
+        "ORG_1 signed the agreement today."
+    );
     // Page furniture in its own paragraph is still skipped.
     assert_eq!(
         preview_of("Page 1 of 5\n\nPERSON_1 signed the agreement today.")

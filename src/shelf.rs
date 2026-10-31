@@ -417,6 +417,124 @@ impl Styled {
             });
         }
     }
+
+    /// Remove the bytes `cut` (char boundaries), moving the ranges after it.
+    fn remove(&mut self, cut: Range<usize>) {
+        let len = cut.len();
+        self.text.replace_range(cut.clone(), "");
+        let moved = |at: usize| {
+            if at >= cut.end {
+                at - len
+            } else {
+                at.min(cut.start)
+            }
+        };
+        for ranges in [&mut self.bold, &mut self.italic] {
+            ranges.retain_mut(|r| {
+                *r = moved(r.start)..moved(r.end);
+                r.start < r.end
+            });
+        }
+    }
+}
+
+/// Marks where a paragraph's source lines met, while its syntax is hidden
+/// over them all; plain text never holds it.
+const LINE_MARK: char = '\u{1f}';
+
+/// One paragraph's text with its lines' furniture dropped: a line that
+/// is not prose and holds no word of a known name (page numbers, "Page 1
+/// of 5"). A short line with such a word stays, so a name split over lines
+/// is still masked whole.
+fn drop_furniture(mut paragraph: Styled, names: &RestoreMap) -> Styled {
+    let words: std::collections::HashSet<String> = names
+        .identities()
+        .iter()
+        .flat_map(|identity| identity.originals.iter())
+        .flat_map(|original| {
+            original
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|word| word.chars().count() > 1)
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let furniture = |line: &str| {
+        !is_prose(line)
+            && !line
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|word| words.contains(&word.to_lowercase()))
+    };
+    let marks: Vec<usize> = paragraph
+        .text
+        .match_indices(LINE_MARK)
+        .map(|(at, _)| at)
+        .collect();
+    let mark_len = LINE_MARK.len_utf8();
+    // Each line's bytes: from after the mark before it to its own mark.
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(marks.iter().map(|at| at + mark_len))
+        .collect();
+    let ends: Vec<usize> = marks
+        .iter()
+        .copied()
+        .chain(std::iter::once(paragraph.text.len()))
+        .collect();
+    // Each furniture line goes with one mark beside it; overlapping cuts
+    // merge, and they apply from the end so earlier offsets hold.
+    let mut cuts: Vec<Range<usize>> = (0..starts.len())
+        .filter(|&line| furniture(&paragraph.text[starts[line]..ends[line]]))
+        .map(|line| {
+            if line + 1 < starts.len() {
+                starts[line]..starts[line + 1]
+            } else if line > 0 {
+                ends[line - 1]..ends[line]
+            } else {
+                0..ends[line]
+            }
+        })
+        .collect();
+    cuts.sort_by_key(|cut| cut.start);
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for cut in cuts {
+        match merged.last_mut() {
+            Some(last) if cut.start <= last.end => last.end = last.end.max(cut.end),
+            _ => merged.push(cut),
+        }
+    }
+    for cut in merged.into_iter().rev() {
+        paragraph.remove(cut);
+    }
+    while let Some(at) = paragraph.text.find(LINE_MARK) {
+        let end = at + mark_len;
+        let end = if paragraph.text[end..].starts_with(' ') {
+            end + 1
+        } else {
+            end
+        };
+        paragraph.remove(at..end);
+    }
+    if paragraph.text.starts_with(' ') {
+        paragraph.remove(0..1);
+    }
+    let len = paragraph.text.trim_end().len();
+    paragraph.truncate(len);
+    paragraph
+}
+
+/// A line's source without a trailing hard break (`\\`, `<br>`): it joins
+/// its paragraph's next line like a space.
+fn without_hard_break(line: &str) -> &str {
+    for tag in ["<br>", "<br/>", "<br />"] {
+        if let Some(rest) = line.strip_suffix(tag) {
+            return rest.trim_end();
+        }
+    }
+    let slashes = line.len() - line.trim_end_matches('\\').len();
+    if slashes % 2 == 1 {
+        return &line[..line.len() - 1];
+    }
+    line
 }
 
 /// One source line with its Markdown syntax hidden: markers and line
@@ -590,7 +708,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         if source.is_empty() {
             return false;
         }
-        let mut done = plain_line(&source);
+        let mut done = drop_furniture(plain_line(&source), names);
         let (masked, _) = names.pseudonymize(&done.text);
         if masked != done.text {
             done = Styled {
@@ -649,8 +767,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         }
         if !paragraph.is_empty() {
             paragraph.push(' ');
+            paragraph.push(LINE_MARK);
+            paragraph.push(' ');
         }
-        paragraph.push_str(block);
+        paragraph.push_str(without_hard_break(block));
     }
     if !more {
         more = finish(&mut paragraph, &mut styled);

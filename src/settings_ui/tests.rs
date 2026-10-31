@@ -948,16 +948,30 @@ fn a_shelf_flag_saved_during_a_panel_save_survives_it(cx: &mut TestAppContext) {
     let shared = Store::in_memory();
     let (panel, cx) = cx
         .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    // A General reset is among the choices saving: it resets the theme.
+    let reset = Rc::new(Cell::new(false));
+    cx.update(|_, cx| {
+        let reset = reset.clone();
+        cx.subscribe(&panel, move |_, event: &Event, _| {
+            if matches!(event, Event::ThemeSelected(ThemeChoice::System)) {
+                reset.set(true);
+            }
+        })
+        .detach()
+    });
     panel.update(cx, |p, cx| {
         hold_next_save(p, cx);
         p.draft.updates.check_automatically = false;
         p.draft.general.menu_bar = false;
+        p.reset_theme = Some(p.theme_revision);
         p.persist(cx);
     });
     // The shelf records its note while that save waits, from preferences
-    // that still have the switch on.
+    // that still have the switch on; as `Workspace::update_general`, it is
+    // a later write.
     let note =
         |general: &mut mdoc_store::settings::GeneralConfig| general.menu_bar_note_shown = true;
+    mdoc_store::settings::next_write();
     note(&mut shared.borrow_mut().current.as_mut().unwrap().general);
     panel.update(cx, |p, cx| p.general_changed(note, cx));
     cx.executor().advance_clock(Duration::from_secs(1));
@@ -966,6 +980,7 @@ fn a_shelf_flag_saved_during_a_panel_save_survives_it(cx: &mut TestAppContext) {
     assert!(saved.general.menu_bar_note_shown);
     assert!(!saved.general.menu_bar, "the switch-off is not undone");
     assert!(!saved.updates.check_automatically);
+    assert!(reset.get(), "the reset's theme change is not lost");
 }
 
 /// Review of #280: a Settings save that a shelf note's save overtook
