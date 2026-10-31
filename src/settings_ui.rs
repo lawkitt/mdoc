@@ -354,15 +354,16 @@ impl Panel {
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the
-    /// menu bar shelf's notes, ADR 0084): the draft follows, so the next
-    /// save keeps it, and a save in flight, which captured the old choice,
-    /// is followed by one with the new.
+    /// menu bar shelf's notes, ADR 0084): the same change is made in the
+    /// draft, keeping its other choices, so the next save keeps it; a save
+    /// in flight, which captured the draft before it, is followed by one
+    /// with it.
     pub fn general_changed(
         &mut self,
-        general: mdoc_store::settings::GeneralConfig,
+        change: impl FnOnce(&mut mdoc_store::settings::GeneralConfig),
         cx: &mut Context<Self>,
     ) {
-        self.draft.general = general;
+        change(&mut self.draft.general);
         if self.applying {
             self.save_pending = true;
         }

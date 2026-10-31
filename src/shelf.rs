@@ -419,30 +419,48 @@ impl Styled {
 /// prefixes removed (escapes and entities as the editor shows them), bold
 /// and italic kept as ranges.
 fn plain_line(line: &str) -> Styled {
-    let mut found = Vec::new();
-    spans::scan_line(line, 0, line.len(), &mut found);
-    found.sort_by_key(|span| span.range.start);
     let mut out = Styled::default();
+    plain_into(&mut out, line, (false, false), 0);
+    let len = out.text.trim_end().len();
+    out.truncate(len);
+    out
+}
+
+/// Characters that may open inline syntax inside a span's text.
+const INLINE_MARKERS: [char; 8] = ['*', '_', '~', '=', '`', '<', '[', '\\'];
+
+/// Hide `text`'s syntax into `out`, under `(bold, italic)`. A link's label
+/// comes back as one span, so a span still holding markers is scanned
+/// again, a level or two deep, until none show.
+fn plain_into(out: &mut Styled, text: &str, (bold, italic): (bool, bool), depth: u8) {
+    let mut found = Vec::new();
+    spans::scan_line(text, 0, text.len(), &mut found);
+    found.sort_by_key(|span| span.range.start);
     let mut at = 0;
     for span in found {
         if span.range.start < at {
             continue;
         }
-        out.push(&line[at..span.range.start], false, false);
+        out.push(&text[at..span.range.start], bold, italic);
         let style = &span.style;
+        let styled = (bold || style.bold, italic || style.italic);
+        let piece = &text[span.range.clone()];
         if style.hide {
             if let Some(shown) = &style.replace {
-                out.push(shown, style.bold, style.italic);
+                out.push(shown, styled.0, styled.1);
             }
+        } else if depth < 2
+            && !style.code
+            && span.range != (0..text.len())
+            && piece.contains(INLINE_MARKERS)
+        {
+            plain_into(out, piece, styled, depth + 1);
         } else {
-            out.push(&line[span.range.clone()], style.bold, style.italic);
+            out.push(piece, styled.0, styled.1);
         }
         at = span.range.end;
     }
-    out.push(&line[at..], false, false);
-    let len = out.text.trim_end().len();
-    out.truncate(len);
-    out
+    out.push(&text[at..], bold, italic);
 }
 
 /// Whether a line reads as prose rather than page furniture.

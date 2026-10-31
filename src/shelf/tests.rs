@@ -400,10 +400,13 @@ fn a_preview_never_shows_an_original_even_one_the_syntax_split() {
         "Anna Petrova signed the agreement with Northwind Ltd today.",
         "Anna **Petrova** signed the agreement with Northwind Ltd today.",
         "Signed by *Anna* Petrova for Northwind Ltd on the day.",
+        // Review of #280: formatting inside a link's label.
+        "PERSON_1 met [Anna **Petrova**](https://example.test) about the agreement today.",
     ] {
         let preview = preview_of(text).unwrap();
         let map = RestoreMap::new(names());
         assert_eq!(map.known_names(&preview.text), 0, "{}", preview.text);
+        assert!(!preview.text.contains("**"), "{}", preview.text);
         assert!(preview.text.contains("PERSON_1"), "{}", preview.text);
     }
 }

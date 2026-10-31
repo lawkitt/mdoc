@@ -338,11 +338,11 @@ impl Workspace {
 
     /// Change a Settings › General choice from outside the panel (the
     /// shelf's notes): saved at once, kept in memory if the save fails, and
-    /// the panel's draft follows so its next save keeps it. Only flags and
-    /// switches; never document text.
+    /// made in the panel's draft too, so its next save keeps it beside any
+    /// choice still saving. Only flags and switches; never document text.
     pub(crate) fn update_general(
         &mut self,
-        change: impl FnOnce(&mut settings::GeneralConfig),
+        change: impl Fn(&mut settings::GeneralConfig) + 'static,
         cx: &mut Context<Self>,
     ) {
         let (prefs, path) = {
@@ -362,10 +362,9 @@ impl Workspace {
         {
             eprintln!("mdoc: could not save a menu bar choice: {error}");
         }
-        let general = changed.general;
         self.preferences.borrow_mut().current = Some(changed);
         self.settings
-            .update(cx, |panel, cx| panel.general_changed(general, cx));
+            .update(cx, |panel, cx| panel.general_changed(change, cx));
     }
 
     /// "Unlock cases in mdoc…": the Keychain explainer, in the window.
