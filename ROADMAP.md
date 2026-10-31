@@ -69,13 +69,6 @@ PR; a lane runs its items in order. *Done when* for every item: headless
 renders of what it changes in light and dark, tests where behavior changes,
 and the ADR it touches amended.
 
-1. **[UI] One name per action.** Restore AI reply / Paste AI Response / Paste
-   AI reply…; Save as case / Save mapping as case; Before / After / Side by
-   side; UK and US spelling mixed ("unrecognised", "licence", "organisations"
-   beside "Organization", "License"). Pick one name and one spelling
-   ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and buttons.
-   ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
-   Lane A, decisions 8–9.
 2. **[UI] Menus and copy shortcuts.** No File › Open Recent, no Restore
    Clipboard beside Pseudonymize Clipboard, no View items for Home, Search,
    Original / Pseudonymized / Side by side or the Replacements panel, no mdoc
@@ -97,11 +90,6 @@ and the ADR it touches amended.
    pages cut a row with no scroll cue.
    ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings)) Lane
    B.
-5. **[UI] Dialogs.** Save changes rings Save but doesn't fill it, orders Save
-   · Discard · Cancel unlike macOS, and has no scrim in Dark; the Quit summary
-   says "3 documents have unsaved changes or mappings" without naming them.
-   ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs)) Lane
-   C, decision 11.
 6. **[UI] Native panels follow the app theme.** With Appearance on Light under
    a Dark macOS, the Save panel, its alerts and the menus stay dark; set the
    app's `NSAppearance` from the setting.

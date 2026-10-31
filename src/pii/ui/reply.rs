@@ -182,14 +182,14 @@ impl ReplyBox {
         &self.restored
     }
 
-    /// "N values restored · M unrecognised": distinct identities restored
+    /// "N values restored · M unrecognized": distinct identities restored
     /// and distinct unknown tokens, as Anoni counts (ADR 0078). Next
     /// unrecognised still visits every occurrence.
     pub(crate) fn summary(&self) -> String {
         let restored = self.restored.values;
         let unresolved = self.unrecognised();
         format!(
-            "{restored} {} restored · {unresolved} unrecognised",
+            "{restored} {} restored · {unresolved} unrecognized",
             if restored == 1 { "value" } else { "values" }
         )
     }
@@ -540,7 +540,7 @@ mod tests {
         assert!(reply.refresh(1, map));
         assert!(!reply.refresh(1, || unreachable!("cached")));
         // One identity twice is one value; PERSON_8 twice is one unknown.
-        assert_eq!(reply.summary(), "1 value restored · 2 unrecognised");
+        assert_eq!(reply.summary(), "1 value restored · 2 unrecognized");
         let text = reply.restored().text.clone();
         let mut seen = Vec::new();
         for _ in 0..4 {
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(seen, ["PERSON_8", "PERSON_9", "PERSON_8", "PERSON_8"]);
         reply.edited("PERSON_1", false);
         reply.refresh(1, map);
-        assert_eq!(reply.summary(), "1 value restored · 0 unrecognised");
+        assert_eq!(reply.summary(), "1 value restored · 0 unrecognized");
         assert_eq!(reply.next_unresolved(), None);
     }
 }

@@ -50,7 +50,7 @@ fn close_cancel_and_discard_protect_edits(cx: &mut TestAppContext) {
     );
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
     let next = active_document(&app, cx);
     assert!(cx.update(|_, cx| next.read(cx).editor.read(cx).text().is_empty()));

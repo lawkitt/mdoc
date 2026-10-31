@@ -93,7 +93,7 @@ pub(crate) fn close_document(
     });
     cx.run_until_parked();
     if cx.has_pending_prompt() {
-        cx.simulate_prompt_answer("Discard");
+        cx.simulate_prompt_answer("Don't Save");
         cx.run_until_parked();
     }
     active_document(app, cx)
@@ -702,7 +702,7 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    cx.simulate_prompt_answer("Discard");
+    cx.simulate_prompt_answer("Don't Save");
     cx.run_until_parked();
 
     let app = active_document(&app, cx);

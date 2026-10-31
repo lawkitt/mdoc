@@ -118,7 +118,7 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
         assert_eq!(mode(&view, cx), Some(CompareMode::Reply), "{name}");
         assert_eq!(reply_view_text(&view, cx), read("expected.md"), "{name}");
         let summary = summary(&view, cx);
-        assert!(summary.ends_with(" · 0 unrecognised"), "{name}: {summary}");
+        assert!(summary.ends_with(" · 0 unrecognized"), "{name}: {summary}");
         assert!(!summary.starts_with("0 "), "{name}: {summary}");
         assert!(
             cx.debug_bounds("share-next-unrecognised").is_none(),
@@ -213,7 +213,7 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
                     disagree with PERSON_8.";
     assert_eq!(reply_view_text(&source, cx), restored);
     // Three mentions of two identities: two values.
-    assert_eq!(summary(&source, cx), "2 values restored · 2 unrecognised");
+    assert_eq!(summary(&source, cx), "2 values restored · 2 unrecognized");
     // Unresolved tokens are marked in the view, nothing guessed.
     cx.update(|_, cx| {
         let shown = source.read(cx).reply.restored().clone();
@@ -287,7 +287,7 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
         reply_view_text(&source, cx),
         "**PERSON_1** owes Northwind Traders Ltd; person 1 and PERSON_7 disagree with PERSON_8."
     );
-    assert_eq!(summary(&source, cx), "1 value restored · 3 unrecognised");
+    assert_eq!(summary(&source, cx), "1 value restored · 3 unrecognized");
 
     // Reply is independent of the document's before/after views. Removing
     // the last applied identity must leave the reply readable and editable.
@@ -367,7 +367,7 @@ fn a_case_member_keeps_its_reply_encrypted_across_reopening(cx: &mut TestAppCont
         let view = reopened.read(cx);
         assert_eq!(view.reply_box().unwrap().read(cx).text(), reply);
     });
-    assert_eq!(summary(&reopened, cx), "2 values restored · 0 unrecognised");
+    assert_eq!(summary(&reopened, cx), "2 values restored · 0 unrecognized");
     reopened.update_in(cx, |view, window, cx| {
         view.set_view_mode(Some(CompareMode::Reply), window, cx)
     });
