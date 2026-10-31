@@ -88,6 +88,8 @@ matrix() {
   if [ -n "$bucket" ]; then
     # gs://<bucket>/<dir>/<model>-<api>-<locale>-<orientation>/test_result_1.xml
     "$gcloud" storage ls "gs://$bucket/$dir/*/test_result_*.xml" 2>/dev/null | while read -r url; do
+      # gcloud on Windows ends its lines with CR, which no object name has.
+      url=${url%$'\r'}
       "$gcloud" storage cp "$url" "$out/$suite/$(cut -d/ -f5 <<<"$url" | sed 's/-en-portrait$//').xml" --quiet
     done
   fi

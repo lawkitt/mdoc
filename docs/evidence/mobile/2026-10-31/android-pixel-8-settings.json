@@ -1,0 +1,215 @@
+{
+  "core_version": "0.1.0",
+  "runtimes": {
+    "pdfium": "\/data\/app\/~~0C_1a924Gt0rHrYQsgOM4w==\/io.github.lawkitt.mdoc.spike-cCayBGWXJ8NNskE5wx4oUw==\/lib\/arm64\/libpdfium.so",
+    "onnx": "\/data\/app\/~~0C_1a924Gt0rHrYQsgOM4w==\/io.github.lawkitt.mdoc.spike-cCayBGWXJ8NNskE5wx4oUw==\/lib\/arm64\/libonnxruntime.so"
+  },
+  "memory_start": {
+    "footprint_bytes": 160858112,
+    "peak_footprint_bytes": 169377792
+  },
+  "document": {
+    "source": "\/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/spike-data\/fixtures\/legal-opinion.docx",
+    "conversion_seconds": 0.078561523,
+    "words": 17698,
+    "pages": 20,
+    "page_words": 9589,
+    "page_bytes": 63354
+  },
+  "probe": {
+    "tokens": 502,
+    "bytes": 1058,
+    "cold_load_seconds": 3.896066815,
+    "runtime_seconds": 6.65771E-4,
+    "engine_load_seconds": 3.8954010439999998,
+    "run_seconds": [
+      2.406941367,
+      2.252967124,
+      2.255657797,
+      2.293165529,
+      2.28786495
+    ],
+    "median_seconds": 2.28786495
+  },
+  "probe_error": null,
+  "memory_after_probe": {
+    "footprint_bytes": 542650368,
+    "peak_footprint_bytes": 1775972352
+  },
+  "scan": null,
+  "scan_error": "Scan exceeded two minutes. Review a smaller document or add selections manually.",
+  "memory_after_scan": {
+    "footprint_bytes": 545710080,
+    "peak_footprint_bytes": 1775972352
+  },
+  "ocr": [
+    {
+      "fixture": "english.pdf",
+      "bundle": "PP-OCRv6 Small",
+      "seconds": 1.828342123,
+      "markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    },
+    {
+      "fixture": "russian.pdf",
+      "bundle": "PP-OCRv5 Cyrillic + v6 detector",
+      "seconds": 1.760025391,
+      "markdown": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    }
+  ],
+  "memory_end": {
+    "footprint_bytes": 382976000,
+    "peak_footprint_bytes": 1775972352
+  },
+  "budgets": [
+    {
+      "name": "detector peak memory (GiB)",
+      "limit": 2,
+      "measured": 1.6540031433105469,
+      "pass": true
+    },
+    {
+      "name": "cold load (s)",
+      "limit": 10,
+      "measured": 3.896066815,
+      "pass": true
+    },
+    {
+      "name": "20-page scan (s)",
+      "limit": 60,
+      "measured": null,
+      "pass": false
+    },
+    {
+      "name": "thermal status below severe",
+      "limit": "moderate",
+      "measured": "none",
+      "pass": true
+    }
+  ],
+  "platform": {
+    "device": "Google Pixel 8 (shiba)",
+    "system": "Android 16 (API 36)",
+    "simulator": false,
+    "physical_memory_bytes": 7941107712,
+    "available_memory_at_start_bytes": 3436896256,
+    "low_memory_threshold_bytes": 226492416,
+    "abi": "arm64-v8a",
+    "wall_seconds": 142.404,
+    "model_download_seconds": 65.031,
+    "thermal_worst": "none",
+    "thermal_samples": [
+      {
+        "t": 0.001,
+        "state": "none"
+      },
+      {
+        "t": 10.004,
+        "state": "none"
+      },
+      {
+        "t": 20.004,
+        "state": "none"
+      },
+      {
+        "t": 30.005,
+        "state": "none"
+      },
+      {
+        "t": 40.004,
+        "state": "none"
+      },
+      {
+        "t": 50.004,
+        "state": "none"
+      },
+      {
+        "t": 60.005,
+        "state": "none"
+      },
+      {
+        "t": 70.005,
+        "state": "none"
+      },
+      {
+        "t": 80.004,
+        "state": "none"
+      },
+      {
+        "t": 90.004,
+        "state": "none"
+      },
+      {
+        "t": 100.004,
+        "state": "none"
+      },
+      {
+        "t": 110.005,
+        "state": "none"
+      },
+      {
+        "t": 120.005,
+        "state": "none"
+      },
+      {
+        "t": 130.004,
+        "state": "none"
+      },
+      {
+        "t": 140.004,
+        "state": "none"
+      }
+    ]
+  },
+  "detector_settings": [
+    {
+      "device": "cpu",
+      "threads": 2,
+      "median_seconds": 3.948324139,
+      "engine_load_seconds": 3.620780682
+    },
+    {
+      "device": "cpu",
+      "threads": 4,
+      "median_seconds": 2.437482627,
+      "engine_load_seconds": 3.6768273540000003
+    },
+    {
+      "device": "cpu",
+      "threads": 6,
+      "median_seconds": 3.435216758,
+      "engine_load_seconds": 3.776471519
+    },
+    {
+      "device": "cpu",
+      "threads": 8,
+      "median_seconds": 3.50617912,
+      "engine_load_seconds": 3.854988079
+    },
+    {
+      "device": "xnnpack",
+      "threads": 2,
+      "error": "uniffi.mdoc_ffi.CoreException$Detect: detail=while loading \/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/models\/pseudonymization\/gliner2-pii-fp16-e5948986\/fp16_v2\/encoder_fp16.onnx"
+    },
+    {
+      "device": "xnnpack",
+      "threads": 4,
+      "error": "uniffi.mdoc_ffi.CoreException$Detect: detail=while loading \/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/models\/pseudonymization\/gliner2-pii-fp16-e5948986\/fp16_v2\/encoder_fp16.onnx"
+    },
+    {
+      "device": "xnnpack",
+      "threads": 6,
+      "error": "uniffi.mdoc_ffi.CoreException$Detect: detail=while loading \/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/models\/pseudonymization\/gliner2-pii-fp16-e5948986\/fp16_v2\/encoder_fp16.onnx"
+    },
+    {
+      "device": "xnnpack",
+      "threads": 8,
+      "error": "uniffi.mdoc_ffi.CoreException$Detect: detail=while loading \/data\/user\/0\/io.github.lawkitt.mdoc.spike\/files\/models\/pseudonymization\/gliner2-pii-fp16-e5948986\/fp16_v2\/encoder_fp16.onnx"
+    }
+  ]
+}

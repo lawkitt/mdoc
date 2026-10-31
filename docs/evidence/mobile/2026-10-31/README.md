@@ -142,6 +142,30 @@ version and thread count, so the gap is in the Android CPU path rather than
 the core. Android's floor constant is not set: the next step is the
 maintainer's (see Findings).
 
+### Detector settings (2026-11-01)
+
+The spike's `detector_settings`: the same one-window probe under each
+setting, the median of five runs, on a Test Lab Pixel 8 (Tensor G3,
+Android 16), with `scripts/android-spike-device.sh --test-lab shiba:36`
+(lawkitt/mdoc#349). The apps use the CPU provider at 4 threads.
+
+| Threads | CPU provider, s per window | XNNPACK |
+| ---: | ---: | --- |
+| 2 | 3.95 | does not load |
+| 4 | **2.44** | does not load |
+| 6 | 3.44 | does not load |
+| 8 | 3.51 | does not load |
+
+- Four threads is already the fastest: two are slower, and six or eight
+  spill onto the small cores and lose time. Thread count does not close
+  the gap.
+- XNNPACK fails while loading the FP16 encoder
+  (`encoder_fp16.onnx`), so ONNX Runtime 1.27's XNNPACK provider cannot run
+  this export as it is. (On the x86_64 emulator it loaded, but emulator
+  times say nothing about phones.)
+- The run's own probe (2.29 s) matches the first measurement (2.53 s).
+  [json](android-pixel-8-settings.json)
+
 ## What is measured
 
 [`spike::run`](../../../crates/mdoc-ffi/src/spike.rs) does the same on every
@@ -284,10 +308,10 @@ What the Simulator does establish:
 - GLiNER2 FP16 runs on every Android phone tried, within the memory, load
   and thermal budgets, but scans 3.6 to 9 times slower than the iPhone 17
   Pro, so no phone meets the 60 s budget for 20 pages.
-- Not tried yet, cheapest first: more intra-op threads or pinning to the big
-  cores; ONNX Runtime's XNNPACK execution provider, which the Android AAR
-  ships and whose FP16 kernels use the ARMv8.2 FP16 units; the INT8 export
-  (ADR 0085's fallback), which ships only if it matches FP16 on the
-  qualification fixtures.
+- Tried on 2026-11-01 (Pixel 8, see Detector settings): 2, 6 and 8
+  intra-op threads are all slower than 4, and ONNX Runtime's XNNPACK
+  provider does not load the FP16 encoder. Not tried yet: pinning to the
+  big cores, and the INT8 export (ADR 0085's fallback), which ships only if
+  it matches FP16 on the qualification fixtures.
 - Each run on Test Lab's free tier costs one of five physical-device runs a
   day; the harness downloads about 680 MB on the phone.
