@@ -37,7 +37,7 @@ check "the stand-ins are ci.yml's shipped runners" \
 # Now is 16:00; "m20" is 20 minutes before.
 at() { printf '2026-10-31T%s:00Z' "$1"; }
 m5=$(at 15:55) m10=$(at 15:50) m20=$(at 15:40) m30=$(at 15:30) m60=$(at 15:00)
-old=$(at 09:00)
+m70=$(at 14:50) old=$(at 09:00)
 
 st() { # context state description created
   printf '{"context":"%s","state":"%s","description":"%s","createdAt":"%s"}' "$@"
@@ -83,6 +83,19 @@ nodes=(
   # 11: a runner took the head back from the fallback: left alone.
   "$(pr_node 11 false false User "$m60" "$(st local/macos PENDING "Running just lint on main@abc" "$m5")" \
     "$(st local/windows SUCCESS "Passed on main@abc" "$m5")")"
+  # 12: hosted passed, but the runner posted a failure after this pass read
+  # the PR list: the runner's result stays.
+  "$(pr_node 12 false false User "$m60" "$(st local/macos PENDING "$(fb 12 1)" "$m10")" \
+    "$(st local/windows SUCCESS Passed "$m10")")"
+  # 13: the Mac's hosted jobs were cancelled, the Windows ones still run: the
+  # retry waits for that run without spending an attempt.
+  "$(pr_node 13 false false User "$m60" "$(st local/macos PENDING "$(fb 13 1)" "$m30")" \
+    "$(st local/windows PENDING "$(fb 13 1)" "$m10")")"
+  # 14: hosted jobs queued for 70 min are retried; 15: queued for 30 are not.
+  "$(pr_node 14 false false User "$m60" "$(st local/macos PENDING "$(fb 14 1)" "$m70")" \
+    "$(st local/windows SUCCESS Passed "$m10")")"
+  "$(pr_node 15 false false User "$m60" "$(st local/macos SUCCESS Passed "$m10")" \
+    "$(st local/windows PENDING "$(fb 15 1)" "$m30")")"
 )
 printf '{"data":{"repository":{"pullRequests":{"nodes":[%s]}}}}' "$(
   IFS=,
@@ -113,6 +126,22 @@ runs head9000000 \
   "$(run 10 "clippy (macos-26)" completed '"success"')" \
   "$(run 11 "test (windows-latest)" in_progress null)" \
   "$(run 12 "clippy (windows-latest)" in_progress null)"
+runs head12000000 \
+  "$(run 15 "test (macos-26)" completed '"success"')" \
+  "$(run 16 "clippy (macos-26)" completed '"success"')"
+printf '{"statuses":[{"context":"local/macos","state":"failure","description":"Failed in just test on main@abc"}]}' \
+  >"$tmp/status-head12000000.json"
+runs head13000000 \
+  "$(run 17 "test (macos-26)" completed '"cancelled"')" \
+  "$(run 18 "clippy (macos-26)" completed '"cancelled"')" \
+  "$(run 19 "test (windows-latest)" in_progress null)" \
+  "$(run 20 "clippy (windows-latest)" completed '"success"')"
+runs head14000000 \
+  "$(run 21 "test (macos-26)" queued null)" \
+  "$(run 22 "clippy (macos-26)" queued null)"
+runs head15000000 \
+  "$(run 23 "test (windows-latest)" queued null)" \
+  "$(run 24 "clippy (windows-latest)" queued null)"
 runs head10000000 \
   "$(run 13 "test (windows-latest)" completed '"cancelled"')" \
   "$(run 14 "clippy (windows-latest)" completed '"cancelled"')"
@@ -121,6 +150,17 @@ runs head10000000 \
 fetch_prs() { cat "$tmp/prs.json"; }
 # shellcheck disable=SC2317,SC2329
 fetch_check_runs() { cat "$tmp/checks-$1.json" 2>/dev/null || echo '{"check_runs":[]}'; }
+# The live status: the PR list's, unless a runner posted since.
+# shellcheck disable=SC2317,SC2329
+fetch_status() {
+  if [ -f "$tmp/status-$1.json" ]; then
+    cat "$tmp/status-$1.json"
+  else
+    jq --arg sha "$1" '.data.repository.pullRequests.nodes[] | select(.headRefOid == $sha)
+      | {statuses: [.commits.nodes[0].commit.status.contexts[]
+          | {context, state: (.state | ascii_downcase), description}]}' "$tmp/prs.json"
+  fi
+}
 # shellcheck disable=SC2317,SC2329
 dispatch() { echo "$1" >>"$tmp/dispatched"; }
 # shellcheck disable=SC2317,SC2329
@@ -146,7 +186,7 @@ none() { [ -z "$(posted "$1" "$2")" ]; }
 dispatched() { grep -qx "$1" "$tmp/dispatched"; }
 
 check "dispatches once per PR that needs it" \
-  [ "$(sort "$tmp/dispatched" | tr '\n' ' ')" = "b1 b10 b2 b3 b8 " ]
+  [ "$(sort "$tmp/dispatched" | tr '\n' ' ')" = "b1 b10 b14 b2 b3 b8 " ]
 check "a head with no runner status is claimed" \
   has head1000000 local/macos "pending	Hosted fallback: hosted CI on head100 (attempt 1); no runner status after 20 min	https://github.com/example/mdoc/actions/workflows/ci.yml?query=branch%3Ab1"
 check "a finished context is left alone" none head1000000 local/windows
@@ -162,14 +202,20 @@ check "a hosted pass posts success, the newest run winning, and names the missin
 check "a hosted failure posts failure naming the job" \
   has head7000000 local/windows "failure	Hosted fallback: test (windows-latest) failed	https://gh/run/7"
 check "a PR with results is not dispatched again" eval '! dispatched b7'
-check "no hosted run in 25 min retries" has head8000000 local/macos "pending	Hosted fallback: * (attempt 2); no hosted result in 25 min	*"
+check "no hosted run in 25 min retries" has head8000000 local/macos "pending	Hosted fallback: * (attempt 2); hosted run missing after 30 min	*"
 check "the third attempt gives up with an error" has head8000000 local/windows "error	Hosted fallback: no hosted result after 3 dispatches*"
 check "a running hosted run is left alone" none head9000000 local/macos
-check "a newly stuck context joins a running hosted run" has head9000000 local/windows "pending	Hosted fallback: * (attempt 1); no runner status after 20 min	*"
+check "a newly stuck context joins a running hosted run" has head9000000 local/windows "pending	Hosted fallback: * (attempt 1); no runner status after 20 min; joins the running hosted run	*"
 check "joining a running hosted run does not dispatch" eval '! dispatched b9'
 check "a fresh head is not claimed" none head10000000 local/macos
-check "a cancelled hosted run is retried" has head10000000 local/windows "pending	* (attempt 2); no hosted result*"
+check "a cancelled hosted run is retried" has head10000000 local/windows "pending	* (attempt 2); hosted run missing after 30 min	*"
 check "a head a runner took back is left alone" eval "! grep -q '^head11000000' \"\$tmp/posted\""
+check "a runner result posted during the pass is never overwritten" none head12000000 local/macos
+check "the race is logged" grep -q "head120 local/macos: changed since read; left alone" "$tmp/log"
+check "a retry waits for the head's running hosted run" none head13000000 local/macos
+check "and spends no attempt or dispatch" eval '! dispatched b13'
+check "hosted jobs queued 70 min are retried" has head14000000 local/macos "pending	* (attempt 2); hosted run queued after 70 min	*"
+check "hosted jobs queued 30 min are left to start" none head15000000 local/windows
 
 # Each stuck rule on its own, at its edge.
 # shellcheck disable=SC2016 # the eval strings expand when eval runs them

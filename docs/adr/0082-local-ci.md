@@ -47,7 +47,9 @@ hub wait on CI.
   `test (windows-latest)` for `local/windows`, and nothing for
   `local/macos`, so with the Mac off nothing merged). The gate keeps its
   three contexts; a green fallback status counts. A runner that comes back
-  still tests the head and its status wins. The fallback runs `main`'s
+  still tests every head with a fallback status, finished or not, and its
+  result replaces the fallback's; the fallback re-reads a status before
+  writing over it. The fallback runs `main`'s
   script with `statuses: write` and `actions: write` and never checks out
   PR code. Accepted gaps: hosted CI tests the branch head, not the merge
   ref, and has no `just mobile`, which the status says.

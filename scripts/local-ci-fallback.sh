@@ -18,9 +18,11 @@
 #   other pending    45 min ("Queued": a long queue, or the runner is gone)
 #
 # The fallback's own statuses start with "Hosted fallback". A runner that
-# comes back still tests such a head and its status replaces the fallback's;
-# the fallback never overwrites a status it did not post. A dispatch with no
-# result in 25 min (cancelled or never started) is retried, 3 attempts in all.
+# comes back still tests such a head, pending or finished, and its status
+# replaces the fallback's. The fallback writes only over the status it read,
+# re-reading it right before each write, so a runner's result wins. A
+# dispatch with no result in 25 min (cancelled or missing) or still queued
+# after 60 min is retried, 3 dispatches in all, then the context gets error.
 # Hosted CI has no `just mobile`: a local/macos it posts says so.
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -33,6 +35,7 @@ waiting_min=${FALLBACK_WAITING_MIN:-15}
 running_min=${FALLBACK_RUNNING_MIN:-50}
 queued_min=${FALLBACK_QUEUED_MIN:-45}
 retry_min=${FALLBACK_RETRY_MIN:-25}
+queued_retry_min=${FALLBACK_QUEUED_RETRY_MIN:-60}
 max_attempts=${FALLBACK_MAX_ATTEMPTS:-3}
 
 # The hosted runner that stands in for each context: ci.yml's shipped matrix.
@@ -70,6 +73,9 @@ query='query($owner: String!, $name: String!) {
 fetch_prs() { gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -f query="$query"; }
 
 fetch_check_runs() { gh api "repos/$repo/commits/$1/check-runs?per_page=100"; }
+
+# The combined status: the latest status of each context on the commit.
+fetch_status() { gh api "repos/$repo/commits/$1/status"; }
 
 dispatch() { # branch
   gh workflow run ci.yml --repo "$repo" --ref "$1"
@@ -140,8 +146,9 @@ attempt_of() { # description
 }
 
 # The hosted result for a context from check-runs JSON on stdin, tab
-# separated: "success <url>", "failure <job> <url>", "running", or "missing"
-# (a job not there, or one that ended cancelled or skipped).
+# separated: "success <url>", "failure <job> <url>", "running", "queued" (no
+# job has started), or "missing" (a job not there, or one that ended
+# cancelled or skipped).
 hosted_result() { # context
   local runner
   runner=$(hosted_runner "$1")
@@ -154,7 +161,29 @@ hosted_result() { # context
       elif all($jobs[]; .status == "completed" and .conclusion == "success")
         then ([$jobs[] | select(.name | startswith("test"))] | first | "success\t\(.html_url)")
       elif any($jobs[]; .status == "completed" and .conclusion != "success") then "missing"
-      else "running" end'
+      elif any($jobs[]; .status == "in_progress") then "running"
+      else "queued" end'
+}
+
+# True when the context's latest status on the head is still the one this
+# pass read: a runner may have posted since.
+unchanged() { # head context state description
+  local now_seen
+  now_seen=$(fetch_status "$1" | jq -r --arg c "$2" '
+    ([.statuses[]? | select(.context == $c)] | first) as $s
+    | [($s.state // "none" | ascii_upcase), ($s.description // "" | gsub("[\t\n]"; " "))]
+    | join("\u001f")') || return 1
+  [ "$now_seen" = "$3"$'\x1f'"$4" ]
+}
+
+# Posts only over the status this pass read.
+post_over() { # head context old-state old-description state description url
+  if unchanged "$1" "$2" "$3" "$4"; then
+    post "$1" "$2" "$5" "$6" "$7"
+  else
+    log "${1:0:7} $2: changed since read; left alone"
+    return 1
+  fi
 }
 
 runs_url() { echo "https://github.com/$repo/actions/workflows/ci.yml?query=branch%3A$1"; }
@@ -171,18 +200,23 @@ tick() {
     return 0
   }
 
-  # Per PR: claims and retries to dispatch, then post; one dispatch serves
-  # both contexts (the full matrix), and a second one would cancel the first
-  # (ci.yml's concurrency group).
-  local pr branch head ctx state desc at seen reason result job url note attempt checks
-  local -A want=() active=() branch_of=() head_of=()
+  # Claims and retries are collected per PR, then dispatched once: one
+  # dispatch serves both contexts (the full matrix), and a second would
+  # cancel the first (ci.yml's concurrency group). A PR with a hosted run
+  # still going is not dispatched: a newly stuck context joins that run,
+  # and a retry waits for it, keeping its attempts.
+  local pr branch head ctx state desc at seen reason result job url note attempt checks age
+  local -A want=() active=() dispatched=() branch_of=() head_of=()
   local -a claims=()
+  local sep=$'\x1f'
   while IFS=$'\x1f' read -r pr branch head ctx state desc at seen; do
     branch_of[$pr]=$branch head_of[$pr]=$head
     if [ "$state" = PENDING ] && [[ $desc == "$prefix"* ]]; then
       attempt=$(attempt_of "$desc")
+      age=$(((t - at) / 60))
       checks=$(fetch_check_runs "$head") || {
         log "#$pr: could not read check runs"
+        active[$pr]=1
         continue
       }
       IFS=$'\t' read -r result job url <<<"$(hosted_result "$ctx" <<<"$checks")"
@@ -191,25 +225,27 @@ tick() {
           note=''
           [ "$ctx" != local/macos ] || note="; just mobile not run"
           # For success, the second field is the test job's URL.
-          post "$head" "$ctx" success "$prefix: clippy and test ($(hosted_runner "$ctx")) passed$note" "$job"
-          log "#$pr $ctx: hosted success"
+          post_over "$head" "$ctx" "$state" "$desc" success \
+            "$prefix: clippy and test ($(hosted_runner "$ctx")) passed$note" "$job" &&
+            log "#$pr $ctx: hosted success"
           ;;
         failure)
-          post "$head" "$ctx" failure "$prefix: $job failed" "$url"
-          log "#$pr $ctx: hosted failure ($job)"
+          post_over "$head" "$ctx" "$state" "$desc" failure "$prefix: $job failed" "$url" &&
+            log "#$pr $ctx: hosted failure ($job)"
           ;;
-        running)
-          active[$pr]=1
-          ;;
-        missing)
-          if [ $(((t - at) / 60)) -lt "$retry_min" ]; then
+        running) active[$pr]=1 ;;
+        queued | missing)
+          if [ "$result" = queued ] && [ "$age" -lt "$queued_retry_min" ]; then
+            active[$pr]=1
+          elif [ "$result" = missing ] && [ "$age" -lt "$retry_min" ]; then
             active[$pr]=1
           elif [ "$attempt" -ge "$max_attempts" ]; then
-            post "$head" "$ctx" error "$prefix: no hosted result after $attempt dispatches; dispatch ci.yml by hand" "$(runs_url "$branch")"
-            log "#$pr $ctx: gave up after $attempt attempts"
+            post_over "$head" "$ctx" "$state" "$desc" error \
+              "$prefix: no hosted result after $attempt dispatches; dispatch ci.yml by hand" "$(runs_url "$branch")" &&
+              log "#$pr $ctx: gave up after $attempt attempts"
           else
             want[$pr]=1
-            claims+=("$pr $ctx $((attempt + 1)) no hosted result in ${retry_min} min")
+            claims+=("$pr$sep$ctx${sep}retry$sep$((attempt + 1))${sep}hosted run $result after $age min$sep$state$sep$desc")
           fi
           ;;
       esac
@@ -217,27 +253,33 @@ tick() {
     fi
     reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t") || continue
     want[$pr]=1
-    claims+=("$pr $ctx 1 $reason")
+    claims+=("$pr$sep$ctx${sep}new${sep}1$sep$reason$sep$state$sep$desc")
   done <<<"$lines"
 
-  local claim n c a why
+  local claim n c kind a why old_state old_desc
   for n in "${!want[@]}"; do
-    # A run already serving this head's other context covers this one too.
-    [ -n "${active[$n]:-}" ] && continue
+    [ -z "${active[$n]:-}" ] || continue
     if dispatch "${branch_of[$n]}"; then
+      dispatched[$n]=1
       log "#$n: dispatched ci.yml on ${branch_of[$n]}"
     else
       log "#$n: could not dispatch ci.yml on ${branch_of[$n]}"
-      unset "want[$n]"
     fi
   done
   for claim in "${claims[@]}"; do
-    read -r n c a why <<<"$claim"
-    [ -n "${want[$n]:-}" ] || continue
-    post "${head_of[$n]}" "$c" pending \
-      "$prefix: hosted CI on ${head_of[$n]:0:7} (attempt $a); $why" "$(runs_url "${branch_of[$n]}")"
-    log "#$n $c: claimed (attempt $a): $why"
+    IFS=$'\x1f' read -r n c kind a why old_state old_desc <<<"$claim"
+    if [ -n "${dispatched[$n]:-}" ]; then
+      :
+    elif [ -n "${active[$n]:-}" ] && [ "$kind" = new ]; then
+      why="$why; joins the running hosted run"
+    else
+      continue
+    fi
+    post_over "${head_of[$n]}" "$c" "$old_state" "$old_desc" pending \
+      "$prefix: hosted CI on ${head_of[$n]:0:7} (attempt $a); $why" "$(runs_url "${branch_of[$n]}")" &&
+      log "#$n $c: claimed (attempt $a): $why"
   done
+  return 0
 }
 
 if [ -z "${FALLBACK_SOURCED:-}" ]; then

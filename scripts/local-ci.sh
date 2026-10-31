@@ -217,10 +217,13 @@ pr_line() { awk -F'\t' -v n="$1" '$1 == n' <<<"$prs"; }
 drop_pr() { prs=$(awk -F'\t' -v n="$1" '$1 != n' <<<"$prs"); }
 
 # PRs waiting for this runner, oldest status first: no status yet (posted
-# "Queued" by queue_new) or pending (queued, or left by a stopped runner).
+# "Queued" by queue_new), pending (queued, or left by a stopped runner), or
+# any status from the hosted fallback (scripts/local-ci-fallback.sh), which
+# a local result replaces.
 queue() {
   awk -F'\t' -v run="${run_pr:-}" '
-    $1 != run && ($8 == "NONE" || $8 == "PENDING")' <<<"$prs" | sort -t$'\t' -k9,9 -k1,1n
+    $1 != run && ($8 == "NONE" || $8 == "PENDING" || $10 ~ /^Hosted fallback/)' <<<"$prs" |
+    sort -t$'\t' -k9,9 -k1,1n
 }
 
 # What a queued head's status says: "Queued", or why nothing starts, so a
