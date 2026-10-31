@@ -1366,3 +1366,111 @@ fn a_failed_category_save_restores_the_previous_list_and_says_so(cx: &mut TestAp
         "nothing is withdrawn unless the save succeeds"
     );
 }
+
+fn draw_settings(cx: &mut gpui::VisualTestContext) {
+    for _ in 0..3 {
+        cx.update(|w, cx| {
+            w.refresh();
+            w.draw(cx).clear(cx);
+        });
+    }
+}
+
+/// ADR 0076: every switch shares the right-hand column, About has no Reset,
+/// and Remove… is offered only while it can run.
+#[gpui::test]
+fn settings_states_are_told_apart(cx: &mut TestAppContext) {
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::Light)), cx)
+    });
+    cx.simulate_resize(size(px(1100.), px(2400.)));
+    // Not shown: opening would check models through the global job slot.
+    panel.update(cx, |p, cx| {
+        p.open = true;
+        cx.notify();
+    });
+    draw_settings(cx);
+    let right =
+        |cx: &mut gpui::VisualTestContext, id: &'static str| cx.debug_bounds(id).unwrap().right();
+    let column = right(cx, "updates-automatic");
+    assert_eq!(right(cx, "updates-prereleases"), column);
+    if cfg!(target_os = "macos") {
+        assert_eq!(right(cx, "general-menu-bar"), column);
+    }
+    panel.update_in(cx, |p, w, cx| p.change_category(Category::Spelling, w, cx));
+    draw_settings(cx);
+    assert_eq!(right(cx, "spelling-enabled"), column);
+
+    panel.update_in(cx, |p, w, cx| p.change_category(Category::About, w, cx));
+    draw_settings(cx);
+    assert!(cx.debug_bounds("reset-settings").is_none());
+
+    let (fp16, fp32) = (
+        Panel::index(Model::Pii(PiiModel::Fp16)),
+        Panel::index(Model::Pii(PiiModel::Fp32)),
+    );
+    let remove = |cx: &mut gpui::VisualTestContext, index: usize| {
+        let ids = [
+            "settings-remove-0",
+            "settings-remove-1",
+            "settings-remove-2",
+            "settings-remove-3",
+        ];
+        cx.debug_bounds(ids[index]).is_some()
+    };
+    panel.update_in(cx, |p, w, cx| {
+        p.statuses.fill(Status::Ready);
+        p.change_category(Category::Detection, w, cx);
+    });
+    draw_settings(cx);
+    // The active model and an inactive one alike.
+    assert!(remove(cx, fp16) && remove(cx, fp32));
+    // Another model job holds the slot: no dimmed Remove… beside Details.
+    panel.update(cx, |p, cx| {
+        p.working = Some(Model::Ocr(OcrModel::Cyrillic));
+        cx.notify();
+    });
+    draw_settings(cx);
+    assert!(!remove(cx, fp16) && !remove(cx, fp32));
+    assert!(cx.debug_bounds("settings-details-fp16").is_some());
+    // An unconfirmed install offers no Remove… either.
+    panel.update(cx, |p, cx| {
+        p.working = None;
+        p.statuses[fp32] = Status::Unknown;
+        cx.notify();
+    });
+    draw_settings(cx);
+    assert!(remove(cx, fp16) && !remove(cx, fp32));
+}
+
+/// ADR 0076: a page taller than the overlay fades where rows continue and
+/// shows a scroll thumb.
+#[gpui::test]
+fn a_long_page_shows_where_it_continues(cx: &mut TestAppContext) {
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::Dark)), cx)
+    });
+    cx.simulate_resize(size(px(1100.), px(560.)));
+    panel.update_in(cx, |p, w, cx| {
+        p.open = true;
+        p.change_category(Category::Detection, w, cx);
+    });
+    draw_settings(cx);
+    assert!(cx.debug_bounds("settings-scrollbar").is_some());
+    assert!(cx.debug_bounds("settings-fade-bottom").is_some());
+    assert!(cx.debug_bounds("settings-fade-top").is_none());
+    panel.update(cx, |p, cx| {
+        let end = p.scroll.max_offset().y;
+        p.scroll.set_offset(gpui::point(px(0.), -end));
+        cx.notify();
+    });
+    draw_settings(cx);
+    assert!(cx.debug_bounds("settings-fade-top").is_some());
+    assert!(cx.debug_bounds("settings-fade-bottom").is_none());
+    // A page that fits shows neither.
+    panel.update_in(cx, |p, w, cx| p.change_category(Category::Cases, w, cx));
+    draw_settings(cx);
+    assert!(cx.debug_bounds("settings-scrollbar").is_none());
+    assert!(cx.debug_bounds("settings-fade-top").is_none());
+    assert!(cx.debug_bounds("settings-fade-bottom").is_none());
+}
