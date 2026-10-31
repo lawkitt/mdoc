@@ -101,6 +101,8 @@ struct DocumentSummary: Identifiable, Hashable, Sendable {
     var phase: DocumentPhase
     var pendingCount: Int
     var updated: Date
+    /// Every candidate, decided or not: none after a scan is "Nothing found".
+    var candidateCount = 0
 }
 
 struct LibrarySnapshot: Sendable, Equatable {

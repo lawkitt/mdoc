@@ -11,8 +11,8 @@ struct ReplySheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Text(caseName.map { String(localized: "Aliases are restored with the names in “\($0)”.") }
-                    ?? String(localized: "Aliases are restored with this document's names."))
+                Text(caseName.map { String(localized: "mdoc puts back the names from the case “\($0)”.") }
+                    ?? String(localized: "mdoc puts back the names from this document's case."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 PasteButton(payloadType: String.self) { strings in
@@ -48,35 +48,20 @@ struct ReplySheet: View {
     }
 }
 
-/// The document's restored reply with Copy and Share.
+/// The document's restored reply; the hand-off bar below shares and copies
+/// it (ADR 0087), so here is only its summary and Remove.
 struct ReplyPane: View {
     let reply: ReplySnapshot
     let onClear: () -> Void
-    @State private var share: ShareItems?
-    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 RestoreSummary(result: reply.restored)
                 Spacer()
-                Menu {
-                    Button {
-                        UIPasteboard.general.string = reply.restored.text
-                        copied = true
-                    } label: {
-                        Label("Copy reply", systemImage: "doc.on.doc")
-                    }
-                    Button {
-                        share = ShareItems(items: [reply.restored.text])
-                    } label: {
-                        Label("Share reply", systemImage: "square.and.arrow.up")
-                    }
-                    Button(role: .destructive, action: onClear) {
-                        Label("Remove reply", systemImage: "trash")
-                    }
-                } label: {
-                    Label(copied ? "Copied" : "Reply", systemImage: copied ? "checkmark" : "ellipsis.circle")
+                Button(role: .destructive, action: onClear) {
+                    Label("Remove reply", systemImage: "trash")
+                        .labelStyle(.iconOnly)
                 }
                 .accessibilityIdentifier("reply-actions")
             }
@@ -84,9 +69,6 @@ struct ReplyPane: View {
             .padding(.vertical, 8)
             Divider()
             RestoredTextView(result: reply.restored)
-        }
-        .sheet(item: $share) { items in
-            ActivityView(items: items.items)
         }
     }
 }

@@ -134,7 +134,6 @@ final class ScreenshotUITests: XCTestCase {
             primary.tap()
         }
         primary.tap()
-        app.buttons["Share text"].tap()
         let sheet = app.otherElements["ActivityListView"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
         // The app row names a share extension after its app.

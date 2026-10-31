@@ -1,3 +1,4 @@
+import LinkPresentation
 import SwiftUI
 import UIKit
 
@@ -15,6 +16,31 @@ struct ActivityView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// Text to share that the share sheet previews by a title (the document's)
+/// rather than by its first words, which are Copy for AI's placeholder note.
+/// The text itself is unchanged.
+final class TitledText: NSObject, UIActivityItemSource {
+    let text: String
+    let title: String
+
+    init(text: String, title: String) {
+        self.text = text
+        self.title = title
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { text }
+
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? { text }
+
+    func activityViewController(_ controller: UIActivityViewController, subjectForActivityType type: UIActivity.ActivityType?) -> String { title }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        return metadata
+    }
 }
 
 /// What a share sheet carries, so `.sheet(item:)` can present it.

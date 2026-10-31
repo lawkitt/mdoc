@@ -112,6 +112,11 @@ final class DocumentViewModel {
             return
         }
         finish(outcome)
+        // A scan that finds nothing says so, rather than going quietly to
+        // Share (ADR 0087).
+        if case .finished(let scanned) = outcome, scanned.candidates.isEmpty {
+            notice = String(localized: "No names found. Select text to mark one.")
+        }
     }
 
     /// Download & continue: the job that asked for setup runs again.
@@ -237,7 +242,7 @@ final class DocumentViewModel {
                 let url = try storage.write(Data(handOff.text.utf8), named: Self.safeFileName(handOff.fileName), in: .handOff)
                 share = ShareItems(items: [url], temporaryFile: url)
             } else {
-                share = ShareItems(items: [handOff.text])
+                share = ShareItems(items: [TitledText(text: handOff.text, title: snapshot.title)])
             }
             onChange()
         } catch {
@@ -271,6 +276,18 @@ final class DocumentViewModel {
             showsReplySheet = false
             pane = .reply
         }
+    }
+
+    /// The restored reply, as the hand-off bar copies it on the Reply tab.
+    func copyReply(to pasteboard: (String) -> Void) {
+        guard let reply = snapshot.reply else { return }
+        pasteboard(reply.restored.text)
+        notice = String(localized: "Copied reply")
+    }
+
+    func shareReply() {
+        guard let reply = snapshot.reply else { return }
+        share = ShareItems(items: [TitledText(text: reply.restored.text, title: snapshot.title)])
     }
 
     func clearReply() {
