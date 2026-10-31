@@ -557,9 +557,26 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
         assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
     });
 
-    // A completed scan counts even with no candidates, and survives closing review.
+    // A completed scan with nothing applied doesn't count (#306).
     view.update(cx, |view, cx| {
         view.pii.add_scan(settings::PiiConfig::default());
+        view.pii.set_reviewing(false);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(view.read(cx).pseudonymized());
+        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
+    });
+
+    // Applying a replacement does, and survives closing review.
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual("Alice needs review", 0..5, mdoc_pii::Category::Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
         view.pii.set_reviewing(false);
         cx.notify();
     });

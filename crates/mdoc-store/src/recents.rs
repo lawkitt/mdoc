@@ -11,6 +11,8 @@ pub struct Recent {
     pub path: PathBuf,
     /// Seconds since the Unix epoch.
     pub opened: u64,
+    /// The document had applied replacements; a scan alone doesn't count
+    /// (#306).
     #[serde(default)]
     pub pseudonymized: bool,
 }
@@ -57,14 +59,22 @@ impl Recents {
         }
     }
 
-    /// Move `path` to the front; returns whether the list changed.
-    pub fn touch(&mut self, path: &Path, pseudonymized: bool) -> bool {
+    /// Move `path` to the front; returns whether the list changed. `source`
+    /// is the file `path` was converted from: its row folds into this one,
+    /// so a conversion saved as `.md` is listed once (#306).
+    pub fn touch(&mut self, path: &Path, pseudonymized: bool, source: Option<&Path>) -> bool {
         if path.as_os_str().is_empty() {
             return false;
         }
+        let folded = source
+            .filter(|source| *source != path)
+            .and_then(|source| self.files.iter().position(|r| r.path == source));
+        if let Some(i) = folded {
+            self.files.remove(i);
+        }
         let previous = self.files.iter().position(|r| r.path == path);
         let pseudonymized = pseudonymized || previous.is_some_and(|i| self.files[i].pseudonymized);
-        if previous == Some(0) && self.files[0].pseudonymized == pseudonymized {
+        if folded.is_none() && previous == Some(0) && self.files[0].pseudonymized == pseudonymized {
             return false;
         }
         if let Some(i) = previous {
@@ -122,20 +132,47 @@ mod tests {
     #[test]
     fn touching_moves_a_file_to_the_front_and_keeps_its_badge() {
         let mut recents = Recents::default();
-        recents.touch(Path::new("/a.pdf"), true);
-        recents.touch(Path::new("/b.docx"), false);
-        recents.touch(Path::new("/a.pdf"), false);
+        recents.touch(Path::new("/a.pdf"), true, None);
+        recents.touch(Path::new("/b.docx"), false, None);
+        recents.touch(Path::new("/a.pdf"), false, None);
         let paths: Vec<_> = recents.files.iter().map(|r| r.path.clone()).collect();
         assert_eq!(paths, [PathBuf::from("/a.pdf"), PathBuf::from("/b.docx")]);
         assert!(recents.files[0].pseudonymized);
     }
 
     #[test]
+    fn a_saved_conversion_folds_its_source_into_its_row() {
+        let mut recents = Recents::default();
+        recents.touch(Path::new("/notes.md"), false, None);
+        recents.touch(Path::new("/demo.docx"), true, None);
+        assert!(recents.touch(Path::new("/demo.md"), true, Some(Path::new("/demo.docx"))));
+        let paths: Vec<_> = recents.files.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(
+            paths,
+            [PathBuf::from("/demo.md"), PathBuf::from("/notes.md")]
+        );
+        // Already in front with no source row left: nothing changes.
+        assert!(!recents.touch(Path::new("/demo.md"), true, Some(Path::new("/demo.docx"))));
+        // A source that is the file itself is not folded away.
+        assert!(!recents.touch(Path::new("/demo.md"), true, Some(Path::new("/demo.md"))));
+        assert_eq!(recents.files.len(), 2);
+    }
+
+    #[test]
+    fn folding_a_source_already_behind_the_front_row_still_counts() {
+        let mut recents = Recents::default();
+        recents.touch(Path::new("/demo.docx"), false, None);
+        recents.touch(Path::new("/demo.md"), false, None);
+        assert!(recents.touch(Path::new("/demo.md"), false, Some(Path::new("/demo.docx"))));
+        assert_eq!(recents.files.len(), 1);
+    }
+
+    #[test]
     fn folders_are_most_recent_first_without_repeats() {
         let mut recents = Recents::default();
-        recents.touch(Path::new("/a/1.pdf"), false);
-        recents.touch(Path::new("/b/2.md"), false);
-        recents.touch(Path::new("/a/3.docx"), false);
+        recents.touch(Path::new("/a/1.pdf"), false, None);
+        recents.touch(Path::new("/b/2.md"), false, None);
+        recents.touch(Path::new("/a/3.docx"), false, None);
         assert_eq!(
             recents.folders(),
             [PathBuf::from("/a"), PathBuf::from("/b")]
@@ -148,7 +185,7 @@ mod tests {
     fn the_list_is_capped() {
         let mut recents = Recents::default();
         for i in 0..20 {
-            recents.touch(Path::new(&format!("/{i}.md")), false);
+            recents.touch(Path::new(&format!("/{i}.md")), false, None);
         }
         assert_eq!(recents.files.len(), LIMIT);
         assert_eq!(recents.files[0].path, PathBuf::from("/19.md"));
