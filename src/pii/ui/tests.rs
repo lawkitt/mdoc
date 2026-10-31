@@ -2196,6 +2196,52 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
     assert!(cx.debug_bounds("replacement-filter").is_some());
 }
 
+/// #301: a lone word of a replaced full name keeps Share from saying the
+/// names are aliases, and the shelf from listing the tab as ready.
+#[gpui::test]
+fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, |app, cx| {
+        let source = "Павлова Марина Сергеевна подписала. Марина обратилась в суд.";
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+        app.pii.reviewing = true;
+        let full = "Павлова Марина Сергеевна".len();
+        let detection = mdoc_pii::Detection {
+            range: 0..full,
+            category: Category::Person,
+            score: 0.9,
+            recognizer: mdoc_pii::Recognizer::Model,
+        };
+        app.pii.review.ingest(source, vec![detection]).unwrap();
+        app.apply_replacements(cx);
+        assert_eq!(app.pii.review.remaining(), 0);
+        app.review_changed(cx);
+    });
+    cx.run_until_parked();
+    app.read_with(cx, |app, cx| {
+        assert!(app.editor.read(cx).text().contains("Марина обратилась"));
+        assert_eq!(app.names_not_replaced(cx), 1);
+        assert_eq!(app.share_status(cx), "1 replaced. 1 name not replaced.");
+    });
+    // Replacing the leftover by hand makes the line true again.
+    app.update(cx, |app, cx| {
+        let text = app
+            .editor
+            .read(cx)
+            .text()
+            .replace("Марина обратилась", "PERSON_1 обратилась");
+        app.editor.update(cx, |e, cx| e.set_text(&text, cx));
+    });
+    cx.run_until_parked();
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.names_not_replaced(cx), 0);
+        assert!(
+            app.share_status(cx)
+                .ends_with("Names in the text are aliases now.")
+        );
+    });
+}
+
 #[gpui::test]
 fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);

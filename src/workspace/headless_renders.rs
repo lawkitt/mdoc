@@ -346,6 +346,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
     review::long_counts(d)?;
+    restore::share_leftover(d)?;
     review::scanning(d)?;
     recents::scenes(d, path)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;

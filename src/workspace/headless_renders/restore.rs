@@ -1,7 +1,8 @@
-//! Restoring an AI reply: the Reply view beside Share (ADR 0078) and a
-//! restored reply from the public Claude fixture.
+//! Restoring an AI reply: the Reply view beside Share (ADR 0078), Share
+//! with a name left after Apply (#301) and a restored reply from the public
+//! Claude fixture.
 use super::{Driver, Result};
-use crate::document_view::DocumentView;
+use crate::{document_view::DocumentView, pii::ui::PiiApplyAll};
 use gpui::Entity;
 use serde_json::Value;
 use std::sync::Arc;
@@ -47,6 +48,55 @@ pub(super) fn reply_view(d: &mut Driver, view: &Entity<DocumentView>) -> Result<
         })
     })?;
     Ok(())
+}
+
+/// #301: after Apply, a lone first name of a replaced full name is left, as
+/// in the Russian demo, and Share counts it instead of saying the names are
+/// aliases now.
+pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
+    let text = "Павлова Марина Сергеевна работала аналитиком. Марина обратилась в суд.";
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.editor.update(cx, |e, cx| e.set_text(text, cx));
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            let name = "Павлова Марина Сергеевна";
+            v.pii
+                .review_mut()
+                .ingest(
+                    text,
+                    vec![mdoc_pii::Detection {
+                        range: 0..name.len(),
+                        category: mdoc_pii::Category::Person,
+                        score: 1.,
+                        recognizer: mdoc_pii::Recognizer::Model,
+                    }],
+                )
+                .expect("leftover fixture");
+            v.review_changed(cx);
+            if !v.replacements_open() {
+                v.toggle_replacements_panel(window, cx);
+            }
+            v.apply_all_pii(&PiiApplyAll, window, cx);
+            v.inspector_share = true;
+            window.focus(&v.replacements_focus(), cx);
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, _, cx| {
+        let view = w.active_view().unwrap().read(cx);
+        let text = view.editor.read(cx).text();
+        assert!(
+            text.contains("Марина обратилась") && !text.contains("Павлова"),
+            "{text}"
+        );
+        assert_eq!(view.names_not_replaced(cx), 1, "{text}");
+    })?;
+    d.capture("share-leftover")
 }
 
 /// A restored reply in a new tab, from the public Claude EN fixture.

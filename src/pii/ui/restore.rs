@@ -68,6 +68,27 @@ impl DocumentView {
     pub(crate) fn has_applied_aliases(&self) -> bool {
         !self.pii.review.applied().is_empty()
     }
+    /// Every name the tab knows: its mapping, its case's names and every
+    /// variant, pending and kept ones included. Any of them left in the
+    /// text keeps the tab from being ready (ADR 0084).
+    pub(crate) fn known_identities(&self) -> Vec<ExportedIdentity> {
+        let review = &self.pii.review;
+        let mut names = review.export_identities();
+        names.extend(self.case.names().iter().cloned());
+        names.extend(review.variants().iter().map(|variant| ExportedIdentity {
+            alias: variant.replacement.clone(),
+            previous: Vec::new(),
+            category: variant.category,
+            custom: false,
+            originals: vec![variant.original.clone()],
+        }));
+        names
+    }
+    /// How many known names the text still holds as written: what keeps an
+    /// applied tab from being ready, as the shelf counts it.
+    pub(crate) fn names_not_replaced(&self, cx: &App) -> usize {
+        RestoreMap::new(self.known_identities()).known_names(self.editor.read(cx).text())
+    }
     /// What Copy for AI copies: the current text after the placeholder note
     /// (ADR 0041). The shelf copies and drags the same bytes (ADR 0084).
     pub(crate) fn text_for_ai(&self, cx: &App) -> String {

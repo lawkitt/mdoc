@@ -70,9 +70,7 @@ impl DocumentView {
         let p = theme.pdf_style();
         let aliases = self.has_applied_aliases();
         let copied = self.copy_feedback.is_some();
-        let pending = self.pii.review.remaining();
         let applied = self.pii.review.applied().len();
-        let kept = self.kept_mention_count(cx);
         let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
             div()
@@ -89,20 +87,7 @@ impl DocumentView {
                 .text_color(p.header_muted)
                 .child(text)
         };
-        let status = if pending > 0 {
-            format!("{pending} still to replace — apply them first.")
-        } else if applied > 0 {
-            format!(
-                "{applied} replaced{}. Names in the text are aliases now.",
-                if kept > 0 {
-                    format!(" · {kept} kept")
-                } else {
-                    String::new()
-                }
-            )
-        } else {
-            "Nothing is replaced yet.".to_string()
-        };
+        let status = self.share_status(cx);
         let case = self.case.link().cloned();
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
@@ -214,6 +199,19 @@ impl DocumentView {
 }
 
 impl DocumentView {
+    /// The Share tab's status line. It says the names are aliases only
+    /// while readiness finds none left as written (#301).
+    pub(in crate::pii::ui) fn share_status(&self, cx: &App) -> String {
+        let pending = self.pii.review.remaining();
+        let applied = self.pii.review.applied().len();
+        let left = if pending == 0 && applied > 0 {
+            self.names_not_replaced(cx)
+        } else {
+            0
+        };
+        share_status(pending, applied, self.kept_mention_count(cx), left)
+    }
+
     /// The "AI reply" box under Copy for AI (ADR 0078): pasting restores at
     /// once into the Reply view; the summary counts what came back.
     fn reply_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -457,5 +455,52 @@ impl DocumentView {
             .with_priority(1)
             .into_any_element(),
         )
+    }
+}
+
+/// The Share status for `pending` proposals, `applied` replacements, `kept`
+/// mentions and `left` known names still in the text as written.
+fn share_status(pending: usize, applied: usize, kept: usize, left: usize) -> String {
+    if pending > 0 {
+        return format!("{pending} still to replace — apply them first.");
+    }
+    if applied == 0 {
+        return "Nothing is replaced yet.".to_string();
+    }
+    let kept = if kept > 0 {
+        format!(" · {kept} kept")
+    } else {
+        String::new()
+    };
+    match left {
+        0 => format!("{applied} replaced{kept}. Names in the text are aliases now."),
+        1 => format!("{applied} replaced{kept}. 1 name not replaced."),
+        n => format!("{applied} replaced{kept}. {n} names not replaced."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::share_status;
+
+    #[test]
+    fn the_share_line_says_aliases_only_without_leftovers() {
+        assert_eq!(
+            share_status(0, 18, 0, 0),
+            "18 replaced. Names in the text are aliases now."
+        );
+        assert_eq!(
+            share_status(0, 18, 0, 1),
+            "18 replaced. 1 name not replaced."
+        );
+        assert_eq!(
+            share_status(0, 18, 2, 3),
+            "18 replaced · 2 kept. 3 names not replaced."
+        );
+        assert_eq!(
+            share_status(4, 18, 0, 1),
+            "4 still to replace — apply them first."
+        );
+        assert_eq!(share_status(0, 0, 0, 0), "Nothing is replaced yet.");
     }
 }

@@ -119,6 +119,29 @@ fn a_kept_original_or_a_scan_in_progress_keeps_an_open_tab_from_leaving() {
 }
 
 #[test]
+fn a_lone_word_of_a_known_full_name_is_a_name_not_replaced() {
+    // #301: "Anna" alone is a word of "Anna Petrova"; "Northwind" of an
+    // organisation is no name.
+    let row = ShelfDocument::of_tab(tab(1, "a.md", "PERSON_1 signed. Anna paid ORG_1.", 0));
+    let row = row.unwrap();
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(row.readiness.label(), "1 name not replaced");
+    assert_eq!(row.text_for_ai(), None);
+    let row = ShelfDocument::of_tab(tab(2, "b.md", "PERSON_1 met Northwind staff.", 0));
+    assert_eq!(row.unwrap().readiness, Readiness::Ready);
+    // A closed member gains one the same way.
+    let path = Path::new("/cases/letter.md");
+    let case = case_with(path, Some("PERSON_1 paid ORG_1."));
+    let row = ShelfDocument::of_member(ClosedMember {
+        case: &case,
+        path,
+        text: Some("PERSON_1 paid ORG_1. Petrova agreed."),
+        edited: at(3),
+    });
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+}
+
+#[test]
 fn a_closed_member_names_the_aliases_its_editor_would() {
     let path = Path::new("/docs/a.md");
     // Only the exact alias is relinked as applied when it reopens.

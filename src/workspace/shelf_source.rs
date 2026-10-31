@@ -102,17 +102,7 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
     if review.applied().is_empty() || !view.lifecycle.ready() {
         return None;
     }
-    // Every name the tab knows: its mapping, its case's names and every
-    // variant, pending and kept ones included.
-    let mut names = review.export_identities();
-    names.extend(view.case.names().iter().cloned());
-    names.extend(review.variants().iter().map(|variant| ExportedIdentity {
-        alias: variant.replacement.clone(),
-        previous: Vec::new(),
-        category: variant.category,
-        custom: false,
-        originals: vec![variant.original.clone()],
-    }));
+    let names = view.known_identities();
     let edited = view
         .lifecycle
         .edited_at()
