@@ -187,3 +187,18 @@ behaviour decisions are in [ADR 0087](../adr/0087-ios-ui-polish.md).
   the maintainer.
 - **The rules-only gap** goes on the ROADMAP now and gets its own session
   and grill.
+
+## After the polish
+
+What the after survey still shows, for the next pass:
+
+- **iPad portrait is cramped** [after/ipad-26]: the sidebar, the text, the
+  original page and Identities share 1032 pt, leaving the text a narrow
+  column. Hiding the sidebar once a document opens, or showing Identities
+  over the original in portrait, would give the text room.
+- **The hand-off bar stacks at default text size** on a 402 pt iPhone
+  [after/16, after/24]: three equal-width buttons do not fit "Paste reply"
+  or "Paste another", so they stack, as decided, at the cost of height.
+  Shorter labels or an icon-only third button would keep one row.
+- **Converter escapes** (`1\.`) dim once #284 lands.
+- The rules-only gap is ROADMAP item 4.

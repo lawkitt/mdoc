@@ -137,9 +137,6 @@ final class SurveyUITests: XCTestCase {
         app.buttons["reply-restore"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["restore-summary"].waitForExistence(timeout: 10))
         shot("24-reply-pane")
-        app.buttons["reply-actions"].firstMatch.tap()
-        sleep(1)
-        shot("25-reply-actions-menu")
     }
 
     /// A PDF: its text and the original page.

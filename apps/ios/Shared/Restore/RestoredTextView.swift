@@ -1,40 +1,67 @@
 import SwiftUI
+import UIKit
 
-/// A restored reply with the values put back marked, and alias-shaped tokens
-/// no identity owns highlighted as unrecognised.
-struct RestoredTextView: View {
+/// A restored reply, styled as the review screen styles Markdown (the core's
+/// spans), with the values put back marked and alias-shaped tokens no
+/// identity owns highlighted as unrecognised (ADR 0087). Read-only and
+/// selectable.
+struct RestoredTextView: UIViewRepresentable {
     let result: RestoreResult
 
-    var body: some View {
-        ScrollView {
-            Text(Self.attributed(result))
-                .font(.body)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .accessibilityIdentifier("restored-text")
-        }
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView(usingTextLayoutManager: true)
+        view.isEditable = false
+        view.isSelectable = true
+        view.dataDetectorTypes = []
+        view.backgroundColor = .systemBackground
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
+        view.textLayoutManager?.usesHyphenation = false
+        view.accessibilityIdentifier = "restored-text"
+        return view
     }
 
-    static func attributed(_ result: RestoreResult) -> AttributedString {
-        var text = AttributedString()
+    func updateUIView(_ view: UITextView, context: Context) {
+        let traits = UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: context.environment.colorScheme == .dark ? .dark : .light),
+            UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize)),
+        ])
+        view.attributedText = Self.attributed(result, traits: traits)
+    }
+
+    static func attributed(_ result: RestoreResult, traits: UITraitCollection) -> NSAttributedString {
+        var text = ""
+        var restored: [NSRange] = []
+        var unresolved: [NSRange] = []
         for segment in result.segments {
+            let start = text.utf16.count
             switch segment {
             case .text(let plain):
-                text += AttributedString(plain)
+                text += plain
             case .restored(let value, _):
-                var piece = AttributedString(value)
-                piece.backgroundColor = Color.accentColor.opacity(0.15)
-                piece.underlineStyle = .single
-                text += piece
+                text += value
+                restored.append(NSRange(location: start, length: value.utf16.count))
             case .unresolved(let token):
-                var piece = AttributedString(token)
-                piece.backgroundColor = Color.orange.opacity(0.3)
-                piece.font = .body.monospaced()
-                text += piece
+                text += token
+                unresolved.append(NSRange(location: start, length: token.utf16.count))
             }
         }
-        return text
+        let styled = NSMutableAttributedString(attributedString: MarkdownStyler(traits: traits, selected: nil)
+            .attributedText(markdown: text, styling: MarkdownStyling(markdown: text), candidates: []))
+        let dark = traits.userInterfaceStyle == .dark
+        for range in restored {
+            styled.addAttributes([
+                .backgroundColor: UIColor.tintColor.withAlphaComponent(dark ? 0.3 : 0.15),
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: range)
+        }
+        let body = MarkdownStyler.font(.body, traits: traits)
+        for range in unresolved {
+            styled.addAttributes([
+                .backgroundColor: UIColor.systemOrange.withAlphaComponent(dark ? 0.4 : 0.3),
+                .font: UIFont.monospacedSystemFont(ofSize: body.pointSize * 0.92, weight: .regular),
+            ], range: range)
+        }
+        return styled
     }
 }
 

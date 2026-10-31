@@ -81,9 +81,11 @@ final class DocumentViewModelTests: XCTestCase {
         model.errorMessage = nil
         model.replaceAllPending()
         model.share(asFile: false)
-        let text = try XCTUnwrap(model.share?.items.first as? String)
-        XCTAssertTrue(text.contains("PERSON_1"))
-        XCTAssertFalse(text.contains("Maya Ellison"))
+        // The text travels with the document's title as the share preview.
+        let item = try XCTUnwrap(model.share?.items.first as? TitledText)
+        XCTAssertEqual(item.title, model.snapshot.title)
+        XCTAssertTrue(item.text.contains("PERSON_1"))
+        XCTAssertFalse(item.text.contains("Maya Ellison"))
     }
 
     func testShareAsFileWritesAMarkdownFileAndRemovesIt() throws {
@@ -214,6 +216,16 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(home.cases.count, 3)
         let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
         XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
+    }
+
+    /// A scan that found nothing says so on Home (ADR 0087).
+    func testStatusSaysWhenNothingWasFound() {
+        var document = DocumentSummary(
+            id: Fixture.letter, title: "Letter", caseID: nil, kind: .text, phase: .ready,
+            pendingCount: 0, updated: .now, candidateCount: 0)
+        XCTAssertEqual(HomeViewModel.status(of: document), "Nothing found")
+        document.candidateCount = 3
+        XCTAssertEqual(HomeViewModel.status(of: document), "Ready to share")
     }
 
     func testDeleteRemovesTheDocument() {

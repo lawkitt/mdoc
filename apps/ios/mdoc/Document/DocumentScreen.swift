@@ -318,24 +318,47 @@ private struct ActionBar: View {
                     model.replaceAllPending()
                 }
             }
+        case .handOff where model.pane == .reply && model.snapshot.reply != nil:
+            // On the Reply tab the bar acts on the reply (ADR 0087).
+            layout {
+                Button {
+                    model.shareReply()
+                } label: {
+                    Label("Share reply", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("share-reply")
+                Button {
+                    model.copyReply { UIPasteboard.general.string = $0 }
+                } label: {
+                    Label("Copy reply", systemImage: "doc.on.doc")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("copy-reply")
+                pasteReply("Paste another")
+            }
         case .handOff:
             layout {
-                Menu {
-                    Button {
-                        model.share(asFile: false)
-                    } label: {
-                        Label("Share text", systemImage: "text.alignleft")
-                    }
-                    Button {
-                        model.share(asFile: true)
-                    } label: {
-                        Label("Share as Markdown file", systemImage: "doc")
-                    }
+                // One tap shares the text; the file is a long press away.
+                Button {
+                    model.share(asFile: false)
                 } label: {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .contextMenu {
+                    Button {
+                        model.share(asFile: true)
+                    } label: {
+                        Label("Share as Markdown file", systemImage: "doc")
+                    }
+                }
+                .accessibilityAction(named: Text("Share as Markdown file")) {
+                    model.share(asFile: true)
+                }
                 .accessibilityIdentifier("primary-action")
                 Button {
                     model.copyForAI { UIPasteboard.general.string = $0 }
@@ -346,16 +369,20 @@ private struct ActionBar: View {
                 .buttonStyle(.bordered)
                 .accessibilityHint(Text("Copies the text for an AI app, with the note about placeholders."))
                 .accessibilityIdentifier("copy-for-ai")
-                Button {
-                    model.showsReplySheet = true
-                } label: {
-                    Label("Paste reply", systemImage: "arrow.uturn.backward")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("paste-reply")
+                pasteReply("Paste reply")
             }
         }
+    }
+
+    private func pasteReply(_ title: LocalizedStringKey) -> some View {
+        Button {
+            model.showsReplySheet = true
+        } label: {
+            Label(title, systemImage: "arrow.uturn.backward")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("paste-reply")
     }
 
     /// The buttons side by side when every label fits on one line, stacked

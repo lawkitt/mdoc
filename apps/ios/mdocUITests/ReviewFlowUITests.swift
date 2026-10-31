@@ -42,7 +42,6 @@ final class ReviewFlowUITests: XCTestCase {
         // Share: the share sheet opens with the pseudonymized text.
         XCTAssertTrue(primary.label.hasPrefix("Share"))
         primary.tap()
-        app.buttons["Share text"].tap()
         let sheet = app.otherElements["ActivityListView"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
         MdocUITest.closeShareSheet(app)
@@ -55,9 +54,9 @@ final class ReviewFlowUITests: XCTestCase {
         editor.typeText("Write to EMAIL_1 today. EMAIL_9 is new.")
         app.buttons["reply-restore"].tap()
 
-        let restored = app.staticTexts["restored-text"]
+        let restored = app.textViews["restored-text"]
         XCTAssertTrue(restored.waitForExistence(timeout: 10))
-        XCTAssertTrue(restored.label.contains("Write to \(MdocUITest.email) today."))
+        XCTAssertTrue((restored.value as? String)?.contains("Write to \(MdocUITest.email) today.") ?? false)
         let summary = app.staticTexts["restore-summary"]
         XCTAssertTrue(summary.label.contains("1 value restored"))
         XCTAssertTrue(summary.label.contains("1 unrecognised"))

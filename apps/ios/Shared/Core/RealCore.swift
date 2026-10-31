@@ -344,7 +344,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let snapshot = snapshot()
         return DocumentSummary(
             id: id, title: snapshot.title, caseID: snapshot.caseID, kind: snapshot.kind,
-            phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated)
+            phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated,
+            candidateCount: snapshot.candidates.count)
     }
 
     func snapshot() -> DocumentSnapshot {

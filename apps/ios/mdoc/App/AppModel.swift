@@ -221,13 +221,22 @@ final class AppModel {
     }
 
     func receiveText(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        home.pendingImport = PendingImport(source: .text(text), suggestedTitle: Self.suggestedTitle(for: text))
+    }
+
+    /// Paste's one sheet: the text, its title and its case at once (ADR 0087).
+    func addText(_ text: String, title: String, into caseChoice: CaseChoice) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        finishImport(PendingImport(source: .text(text), suggestedTitle: Self.suggestedTitle(for: text)), title: title, into: caseChoice)
+    }
+
+    /// The first line, without Markdown heading marks, up to 60 characters.
+    static func suggestedTitle(for text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
         let firstLine = trimmed.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
         let title = firstLine.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).prefix(60)
-        home.pendingImport = PendingImport(
-            source: .text(text),
-            suggestedTitle: title.isEmpty ? String(localized: "Pasted text") : String(title))
+        return title.isEmpty ? String(localized: "Pasted text") : String(title)
     }
 
     /// The system declares DOCX; the extension lookup never needs an import.

@@ -69,6 +69,7 @@ final class HomeViewModel {
         case .recognizing: String(localized: "Text not recognized yet")
         case .unscanned: String(localized: "Ready to find names")
         case .reviewing: String(localized: "\(document.pendingCount) to review")
+        case .ready where document.candidateCount == 0: String(localized: "Nothing found")
         case .ready: String(localized: "Ready to share")
         }
     }
