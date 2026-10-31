@@ -31,6 +31,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,13 +62,30 @@ import uniffi.mdoc_ffi.markdownStyling
  * same library and case key as the app and needs no model.
  */
 class RestoreActivity : ComponentActivity() {
+    /** The reply being restored; a new share replaces it (the activity is single-task). */
+    private var reply by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val reply = intent?.takeIf { it.action == Intent.ACTION_SEND }?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        reply = replyOf(intent)
         val documents = runCatching { (application as MdocApplication).core.documents }.getOrNull()
-        setContent { MdocTheme { RestoreScreen(reply?.takeIf { it.isNotBlank() }, documents, onDone = ::finish) } }
+        setContent {
+            MdocTheme {
+                // Keyed on the reply: a new one starts afresh, never showing the last.
+                key(reply) { RestoreScreen(reply, documents, onDone = ::finish) }
+            }
+        }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        reply = replyOf(intent)
+    }
+
+    private fun replyOf(intent: Intent?): String? =
+        intent?.takeIf { it.action == Intent.ACTION_SEND }?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.takeIf { it.isNotBlank() }
 }
 
 private data class Restored(val result: RestoreResult?, val error: String?)
@@ -109,22 +127,31 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
             snapshot == null -> Box(inner)
             snapshot.cases.isEmpty() -> Unavailable(R.string.no_cases_yet, R.string.share_document_first, inner)
             else -> Column(inner) {
-                CasePicker(snapshot, case) { case = it }
+                CasePicker(snapshot, case) {
+                    // Cleared at once: the last case's names never show under the new one.
+                    restored = null
+                    case = it
+                }
                 val result = restored?.result
                 if (result != null) {
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
                         Text(
-                            stringResource(R.string.values_restored, result.restoredCount),
+                            listOfNotNull(
+                                stringResource(R.string.values_restored, result.restoredCount),
+                                if (result.unresolvedCount > 0) stringResource(R.string.unrecognised, result.unresolvedCount) else null,
+                            ).joinToString(" · "),
                             style = MaterialTheme.typography.labelLarge,
                         )
                         RestoredText(result, markdownStyling(result.text), Modifier.fillMaxWidth().padding(top = 8.dp))
                     }
                     Actions(
                         result = result,
-                        saveTarget = snapshot.documents.firstOrNull { it.caseId == case },
+                        // The case's newest saved document: an import not yet read has nowhere to keep it.
+                        saveTarget = snapshot.documents.firstOrNull { it.caseId == case && it.saved },
                         notice = notice,
                         onSaved = { notice = R.string.saved },
                         onCopied = { notice = R.string.copied_reply },
+                        onFailed = { notice = R.string.not_saved },
                         save = { target -> documents.saveReply(reply, target) },
                     )
                 } else if (restored?.error != null) {
@@ -164,6 +191,7 @@ private fun Actions(
     notice: Int?,
     onSaved: () -> Unit,
     onCopied: () -> Unit,
+    onFailed: () -> Unit,
     save: (io.github.lawkitt.mdoc.core.DocumentId) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -183,7 +211,7 @@ private fun Actions(
             }
             if (saveTarget != null) {
                 OutlinedButton({
-                    runCatching { save(saveTarget.id) }.onSuccess { onSaved() }
+                    runCatching { save(saveTarget.id) }.onSuccess { onSaved() }.onFailure { onFailed() }
                 }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.save_to_document)) }
             }
         }

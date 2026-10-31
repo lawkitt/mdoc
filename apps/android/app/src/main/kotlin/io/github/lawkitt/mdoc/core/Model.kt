@@ -65,6 +65,8 @@ data class DocumentSummary(
     /** Milliseconds since the epoch. */
     val updated: Long,
     val candidateCount: Int = 0,
+    /** Saved into its case; an import not yet read is not. */
+    val saved: Boolean = true,
 )
 
 data class LibrarySnapshot(
