@@ -45,17 +45,22 @@ fun SetupCard(
     val context = LocalContext.current
     val size = Formatter.formatShortFileSize(context, state.missingBytes)
     val detector = state.snapshot.tier == DeviceTier.Detector
+    // Everything installed (Settings shows the card then): the models' rows
+    // alone, with nothing to set up or download, as on iOS.
+    val done = !state.needsSetup && !state.working
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                stringResource(if (detector) R.string.setup_names_title else R.string.setup_ocr_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                stringResource(if (detector) R.string.setup_names_body else R.string.setup_ocr_body, size),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            if (!done) {
+                Text(
+                    stringResource(if (detector) R.string.setup_names_title else R.string.setup_ocr_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    stringResource(if (detector) R.string.setup_names_body else R.string.setup_ocr_body, size),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             state.snapshot.offers.forEach { offer ->
                 val label = stringResource(if (offer.id == ModelId.GLINER2_FP16) R.string.name_detector else R.string.ocr_english_russian)
                 val progress = state.progress[offer.id]
@@ -78,7 +83,7 @@ fun SetupCard(
                     if (state.waitingForWiFi) OutlinedButton(onUseCellular) { Text(stringResource(R.string.use_cellular)) }
                     TextButton(onCancel) { Text(stringResource(R.string.cancel_download)) }
                 }
-            } else {
+            } else if (!done) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onDownload) {
                         Text(stringResource(if (continues) R.string.download_and_continue else R.string.download_size, size))
