@@ -150,7 +150,7 @@ fun DocumentScreen(
                 title = { Text(snapshot.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -159,7 +159,7 @@ fun DocumentScreen(
                             Icon(Icons.Default.Person, contentDescription = stringResource(R.string.identities))
                         }
                     }
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = null) }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         // The hand-off's second way out (ADR 0087's long press on iOS).
                         if (model.primaryAction(state, job) == PrimaryAction.HandOff && !state.showsReply) {
