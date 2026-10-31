@@ -46,7 +46,9 @@ install() {
     *) tar -xzf "$archive" -C "$tmp" ;;
   esac
   local top=("$tmp"/*)
-  [ "${#top[@]}" = 1 ] && [ -d "${top[0]}" ] || die "$archive: expected one top-level folder"
+  if [ "${#top[@]}" != 1 ] || [ ! -d "${top[0]}" ]; then
+    die "$archive: expected one top-level folder"
+  fi
   rm -rf "${dir:?}"
   mkdir -p "$(dirname "$dir")"
   mv "${top[0]}" "$dir"
