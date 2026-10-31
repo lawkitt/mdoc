@@ -51,6 +51,7 @@ mod session_writer;
 mod shelf;
 mod shortcuts_sheet;
 mod sidebar;
+mod tab_menu;
 mod tab_set;
 mod window_shell;
 

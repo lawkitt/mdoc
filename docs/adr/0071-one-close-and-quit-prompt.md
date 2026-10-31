@@ -1,8 +1,8 @@
 # One close and quit prompt
 
 Status: Accepted, 2026-10-27. Amended 2026-11-01 (button order, the
-summary names its documents;
-[UI polish grill](../design/ui-polish-grill-2026-11-01.md) decision 11).
+summary names its documents, Close others;
+[UI polish grill](../design/ui-polish-grill-2026-11-01.md) decisions 11 and 13).
 Amends [ADR 0041](0041-cases-and-ai-response-restoration.md)
 ("The unsaved-mapping question is asked on tab close, not on quit").
 
@@ -40,6 +40,11 @@ restore AI replies to it.
   cancels the quit, and so does Not now in the Keychain explainer when Save as
   Case needs it. Discard All asks no tab again; a failed save of an existing
   case still offers Retry, since that mapping was meant to be kept.
+- **Close others** (the sidebar tab menu) closes the other tabs in sidebar
+  order: a tab with nothing at risk closes at once, and each at-risk tab
+  asks its own prompt above, in front. Cancel at any prompt keeps that tab
+  and every tab after it
+  ([UI polish grill](../design/ui-polish-grill-2026-11-01.md) decision 13).
 - **No mapping survives quit without a case.** Creating a case stays the
   consent to store originals (ADR 0041); unsaved mappings are not written to
   the session.

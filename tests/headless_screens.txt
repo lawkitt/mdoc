@@ -5,6 +5,8 @@ document
 navigation-disabled
 navigation-enabled
 navigation-middle
+tab-menu-saved
+tab-menu-untitled
 more-menu
 review
 merge-hint
