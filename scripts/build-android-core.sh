@@ -5,6 +5,8 @@
 #   target/android/jniLibs/<abi>/  libmdoc_ffi.so, libonnxruntime.so, libpdfium.so
 #   target/android/kotlin/         the core's generated Kotlin bindings
 #   target/android/licenses/       ONNX Runtime's and PDFium's licences
+#   target/android/host/           the core built for this computer, which the
+#                                  app's JVM tests load
 # for arm64-v8a (phones) and x86_64 (the emulator), with the NDK's clang for
 # API 31, the apps' minimum. ONNX Runtime 1.27.0 (Microsoft's Maven AAR) and
 # PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
@@ -14,8 +16,8 @@
 source "$(dirname "$0")/lib.sh"
 
 case "$(platform)" in
-  windows-x64) host=windows-x86_64 exe=.exe ;;
-  macos-arm64) host=darwin-x86_64 exe= ;;
+  windows-x64) host=windows-x86_64 exe=.exe host_lib=mdoc_ffi.dll ;;
+  macos-arm64) host=darwin-x86_64 exe='' host_lib=libmdoc_ffi.dylib ;;
   *) die "the Android core builds on Windows x64 or Apple Silicon macOS" ;;
 esac
 
@@ -40,8 +42,8 @@ out=target/android
 # Cargo's own output, which CARGO_TARGET_DIR may move.
 cargo_target=${CARGO_TARGET_DIR:-target}
 deps=$out/deps
-rm -rf "$out/jniLibs" "$out/kotlin" "$out/licenses"
-mkdir -p "$deps" "$out/kotlin" "$out/licenses/pdfium"
+rm -rf "$out/jniLibs" "$out/kotlin" "$out/licenses" "$out/host"
+mkdir -p "$deps" "$out/kotlin" "$out/licenses/pdfium" "$out/host"
 
 fetch_sha256 "$ort_url" "$ort_sha" "$deps/onnxruntime-android.aar"
 fetch_sha256 "$ort_license_url" "$ort_license_sha" "$out/licenses/onnxruntime-LICENSE"
@@ -87,6 +89,12 @@ for so in "$out"/jniLibs/*/*.so; do
     [[ $allowed == *" $needed "* ]] || die "$so needs $needed, which the APK does not ship"
   done < <("$readelf" -dW "$so" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
 done
+
+# The same core for this computer: the app's JVM parity tests call it
+# through the same Kotlin bindings (ADR 0089).
+echo "build-android-core: mdoc-ffi for this computer" >&2
+cargo rustc --locked --profile mobile -p mdoc-ffi --lib --crate-type cdylib
+cp "$cargo_target/mobile/$host_lib" "$out/host/"
 
 # Kotlin bindings from the library's UniFFI metadata.
 cargo run --locked -p mdoc-ffi --features bindgen --bin uniffi-bindgen -- \

@@ -56,9 +56,11 @@ config() {
   poll_s=${LOCAL_CI_POLL:-60}
   tick_s=${LOCAL_CI_TICK:-5}
   # setup installs the merge ref's pinned tools, as hosted CI's setup step does.
-  # The Mac also checks the mobile core (ADR 0085).
+  # The Mac also checks the mobile core (ADR 0085); Windows runs the Android
+  # job (ADR 0089).
   case "$os" in
     macos) steps=${LOCAL_CI_STEPS:-setup lint test mobile} ;;
+    windows) steps=${LOCAL_CI_STEPS:-setup lint test android} ;;
     *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
   esac
   # The hosted job limits (ADR 0082): clippy 20 min, test 30 min. The
@@ -67,6 +69,9 @@ config() {
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
   mobile_s=${LOCAL_CI_MOBILE_TIMEOUT:-2400}
+  # The Android job builds the core for two ABIs and runs the emulator tests
+  # when a PR changes them (ADR 0089): 40 min.
+  android_s=${LOCAL_CI_ANDROID_TIMEOUT:-2400}
   keep_days=${LOCAL_CI_KEEP_DAYS:-7}
   # The Mac is a build slot beside two agent builders (ADR 0082): a job
   # starts at or under this kern.memorystatus_vm_pressure_level (1 normal,
@@ -298,6 +303,7 @@ timeout_for() {
   case "$1" in
     setup | lint) echo "$lint_s" ;;
     mobile) echo "$mobile_s" ;;
+    android) echo "$android_s" ;;
     *) echo "$test_s" ;;
   esac
 }
@@ -315,6 +321,11 @@ label() {
 # the step runs, so a PR that removes the script fails rather than skips.
 mobile_check_expected() {
   git cat-file -e HEAD^1:scripts/mobile-check.sh 2>/dev/null
+}
+
+# The same for the Android job (ADR 0089).
+android_check_expected() {
+  git cat-file -e HEAD^1:scripts/android-check.sh 2>/dev/null
 }
 
 # Runs in the background in its own process group; output goes to log.txt.
@@ -344,6 +355,13 @@ job() { # merge-ref dir
           just "$step" || rc=$?
         else
           echo "local-ci: this merge ref's main predates the mobile check; skipped"
+        fi
+        ;;
+      android)
+        if android_check_expected; then
+          just "$step" || rc=$?
+        else
+          echo "local-ci: this merge ref's main predates the Android job; skipped"
         fi
         ;;
       *) just "$step" || rc=$? ;;

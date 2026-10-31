@@ -134,6 +134,7 @@ dependency forks.
 | `crates/mdoc-markdown` | GUI-free Markdown recognition shared with the mobile apps: inline spans over source byte ranges and which bytes are markers, line prefixes (headings, quotes and alerts, lists and tasks) and GFM tables ([ADR 0085](adr/0085-mobile-apps.md)) |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `apps/ios` | The iOS app ([ADR 0085](adr/0085-mobile-apps.md)): SwiftUI screens over the Rust core through `mdoc-ffi`'s Swift bindings (the `MdocFFI` framework), and the Restore with mdoc share extension ([README](../apps/ios/README.md)) |
+| `apps/android` | The Android app ([ADR 0089](adr/0089-android-app.md)): Jetpack Compose over the Rust core through `mdoc-ffi`'s Kotlin bindings ([README](../apps/android/README.md)) |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
 | `src/system_quit.rs` | macOS: a quit from the Dock, an Apple Event or logout runs Quit's questions first and answers the vendored `applicationShouldTerminate:` hook when they end ([ADR 0071](adr/0071-one-close-and-quit-prompt.md)) |
 | `src/shelf.rs`, `src/shelf/` | The menu bar shelf's GPUI-free model: readiness, the list, pseudonymized rows, Copy for AI text, temporary exports and Restore Clipboard ([ADR 0084](adr/0084-menu-bar-shelf.md)) |
@@ -224,6 +225,8 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
 | `just android-setup` | Windows: the pinned Android SDK (command-line tools, `adb`, build-tools, platform 36, the emulator and an API 36 x86_64 image with 16 KB pages), Temurin 21 and NDK r29 under `E:\Android` (`MDOC_ANDROID_HOME` overrides), each archive checked against its published size and SHA-1 or SHA-256; accepts the SDK licences. About 4 GB, once ([ADR 0089](adr/0089-android-app.md)) |
 | `just android-emulator [--window] [phone\|tablet]` | Windows: boots a Pixel 8-sized phone (`emulator-5554`) or Pixel Tablet-sized tablet (`emulator-5556`) on the pinned API 36 image with 16 KB pages, headless unless `--window`, writing its virtual device on first use; prints the adb serial. `adb -s <serial> emu kill` stops it |
+| `just android` | Windows: the Android job when the commit changes `crates/`, `Cargo.lock`, `apps/android/` or the Android scripts: `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. Windows local CI runs it after `test`, with a 40-minute limit |
+| `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of local CI |
 | `just android-core` | Windows or macOS: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
 | `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android, then, when the commit changes `crates/`, `Cargo.lock` or `apps/`, the iOS job (`just ios-app ios-test`, shutting down the Simulator it booted); the Mac's local CI runs it after `test`, with a 40-minute limit |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
@@ -433,7 +436,12 @@ stopped. A job fetches
 (as hosted CI's setup step does) and runs `just lint` and `just test` with
 the hosted job limits (20 and 30 minutes); the Mac then runs `just mobile`
 (40 minutes), whose iOS job runs only when the merge changes `crates/`,
-`Cargo.lock` or `apps/`. The runner's `PATH` puts
+`Cargo.lock` or `apps/`, and the Windows PC runs `just android` (40
+minutes), whose Android job runs only when the merge changes `crates/`,
+`Cargo.lock`, `apps/android/` or the Android scripts
+([ADR 0089](adr/0089-android-app.md)). A runner reads its own copy of
+`local-ci.sh`, so a change to its steps takes effect after the runner is
+installed again. The runner's `PATH` puts
 `~/.cargo/bin` first, so the pinned tools win over other installs. The status, `success` or `failure`, names the base
 commit tested ("Passed on main@1a2b3c4 in 4m10s") and links to the job's
 folder. Without a build, a conflicting PR gets `failure` ("Conflicts with

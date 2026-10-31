@@ -89,6 +89,14 @@ android-setup:
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
+# The Android job: core, JVM parity tests, app, emulator tests, when they changed; Windows local CI runs it (ADR 0089)
+android:
+    scripts/android-check.sh
+
+# Take the Android UI survey (every screen, light and dark, largest font) into a folder; kind: phone or tablet (ADR 0087, 0089)
+android-survey out kind="phone":
+    scripts/android-survey.sh "{{out}}" "{{kind}}"
+
 # Android core into target/android: jniLibs for arm64-v8a and x86_64, Kotlin bindings (ADR 0089)
 android-core:
     scripts/build-android-core.sh

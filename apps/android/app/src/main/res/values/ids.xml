@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="review_replace" type="id" />
+    <item name="review_offsets" type="id" />
+    <item name="review_can_replace" type="id" />
+</resources>
