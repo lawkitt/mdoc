@@ -3,7 +3,9 @@
   view above its sheet. A document without text yet says, in iOS's words,
   whether mdoc is reading it, the import stopped, or recognition is waiting
   or part done. Download while another job runs says so. The long-job
-  notification says mdoc keeps working in other apps. Back and More options
+  notification says mdoc keeps working in other apps. A long press deletes
+  a document from Home, replaces or keeps all of an identity, and a double
+  tap zooms the original page. Back and More options
   have names for TalkBack
   ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
   [ADR 0089](docs/adr/0089-android-app.md)).
