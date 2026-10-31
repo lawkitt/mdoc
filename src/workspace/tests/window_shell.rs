@@ -1444,15 +1444,31 @@ fn command_palette_theme_row_names_its_target(cx: &mut TestAppContext) {
     cx.update(shell::bind_keys);
     let (tabs, cx) = boot_home(cx, Session::default());
     for (now, row, next) in [
-        (ThemeChoice::System, "Switch to light theme", ThemeChoice::Light),
-        (ThemeChoice::Light, "Switch to dark theme", ThemeChoice::Dark),
-        (ThemeChoice::Dark, "Switch to system theme", ThemeChoice::System),
+        (
+            ThemeChoice::System,
+            "Switch to light theme",
+            ThemeChoice::Light,
+        ),
+        (
+            ThemeChoice::Light,
+            "Switch to dark theme",
+            ThemeChoice::Dark,
+        ),
+        (
+            ThemeChoice::Dark,
+            "Switch to system theme",
+            ThemeChoice::System,
+        ),
     ] {
         tabs.read_with(cx, |tabs, cx| {
             assert_eq!(tabs.theme_choice, now);
             let actions = tabs.palette_section("Actions", cx);
             assert!(actions.iter().any(|label| label == row), "{actions:?}");
-            assert!(!actions.iter().any(|label| label.starts_with("Switch theme")));
+            assert!(
+                !actions
+                    .iter()
+                    .any(|label| label.starts_with("Switch theme"))
+            );
         });
         cx.simulate_keystrokes("secondary-k");
         cx.simulate_input(row);
