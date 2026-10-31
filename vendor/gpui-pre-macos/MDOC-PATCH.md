@@ -31,7 +31,14 @@ Local changes, marked `mdoc patch`:
 - `window.rs`: `start_text_and_file_drag` starts an outbound drag from a
   window's last left mouse down carrying one `NSPasteboardItem` with both
   plain text and a file URL (upstream's `start_external_drag` carries files
-  only). The shelf drags a document with it (ADR 0084).
+  only). The shelf drags a document with it (ADR 0084). It shows an optional
+  `DragCard` (title and first line, light or dark, drawn as a rounded
+  `NSImage`) in place of the `.md` icon, and calls `on_end(dropped)` exactly
+  once: from `draggingSession:endedAtPoint:operation:` (dropped when the
+  operation is not `NSDragOperationNone`), with `false` when a later drag
+  starts first, or at once when the drag cannot start. The source window and
+  the image are retained until the drag ends, so the end still arrives after
+  the window closes. `DragCard` is exported from `gpui_macos.rs`.
 - `presence.rs` (new), exported from `gpui_macos.rs`: `hide_window`
   (`orderOut:`, which GPUI lacks) and `set_dock_visible` (the activation
   policy, Regular or Accessory), so with the menu bar item on, closing

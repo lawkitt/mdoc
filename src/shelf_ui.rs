@@ -207,9 +207,12 @@ pub(crate) struct ShelfView {
     /// The last clipboard action's result, on the source line for a while.
     result: Option<String>,
     result_clear: Option<Task<()>>,
-    /// The last drag's payload, for tests (no native drag runs there).
+    /// The last drag's payload and card, for tests (no native drag runs
+    /// there).
     #[cfg(test)]
     pub(crate) dragged: Option<(String, std::path::PathBuf)>,
+    #[cfg(test)]
+    pub(crate) dragged_card: Option<(String, String)>,
 }
 
 impl ShelfView {
@@ -260,6 +263,8 @@ impl ShelfView {
             result_clear: None,
             #[cfg(test)]
             dragged: None,
+            #[cfg(test)]
+            dragged_card: None,
         }
     }
 
@@ -453,7 +458,8 @@ impl ShelfView {
     }
 
     /// Drag a ready document: its Copy for AI text and a fresh `.md` export
-    /// on one pasteboard item. A drag that starts retires the hint.
+    /// on one pasteboard item, under a card with its title and preview. The
+    /// first drop retires the hint.
     pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(document) = self.content.documents.get(index) else {
             return;
@@ -461,31 +467,62 @@ impl ShelfView {
         let Some(text) = document.text_for_ai().map(str::to_owned) else {
             return;
         };
+        let card = document.drag_card();
         let Some(path) = export(document, cx) else {
             return;
         };
         #[cfg(all(target_os = "macos", not(test)))]
-        let started = gpui_macos::start_text_and_file_drag(window, &text, &path);
+        {
+            let workspace = self.workspace;
+            let view = cx.entity().downgrade();
+            let async_cx = cx.to_async();
+            // AppKit reports the end inside its own event: finish on GPUI's
+            // executor. The shelf may have closed by then.
+            let on_end = Box::new(move |dropped: bool| {
+                let cx = async_cx.clone();
+                cx.foreground_executor()
+                    .clone()
+                    .spawn(async move {
+                        cx.update(|cx| match view.upgrade() {
+                            Some(view) => view.update(cx, |view, cx| view.drag_ended(dropped, cx)),
+                            None if dropped => {
+                                let _ = workspace.update(cx, |workspace, _, cx| {
+                                    workspace.update_general(
+                                        |general| general.shelf_drag_hint_shown = true,
+                                        cx,
+                                    )
+                                });
+                            }
+                            None => {}
+                        });
+                    })
+                    .detach();
+            });
+            let card = card.as_ref().map(|(title, line)| gpui_macos::DragCard {
+                title,
+                line,
+                dark: self.theme.get() == Theme::Dark,
+            });
+            gpui_macos::start_text_and_file_drag(window, &text, &path, card, on_end);
+        }
         #[cfg(not(all(target_os = "macos", not(test))))]
-        let started = {
-            let _ = window;
-            true
-        };
+        let _ = window;
         #[cfg(test)]
         {
             self.dragged = Some((text, path));
+            self.dragged_card = card;
         }
         #[cfg(not(any(target_os = "macos", test)))]
-        let _ = (text, path);
-        if started {
-            self.drag_hint_done(cx);
-        }
+        let _ = (text, path, card);
         self.used(index, cx);
     }
 
-    /// "Drag a preview into any app" is gone for good (ADR 0084).
-    fn drag_hint_done(&mut self, cx: &mut Context<Self>) {
-        if !std::mem::take(&mut self.content.drag_hint) {
+    /// A drag ended; a drop somewhere retires "Drag a preview into any app"
+    /// for good (ADR 0084).
+    // Only the macOS drag reports its end; elsewhere there is no shelf.
+    #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+    pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
+        if !dropped || !std::mem::take(&mut self.content.drag_hint) {
             return;
         }
         let _ = self.workspace.update(cx, |workspace, _, cx| {

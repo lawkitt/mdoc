@@ -273,6 +273,21 @@ impl ShelfDocument {
             })
     }
 
+    /// The card a drag shows under the pointer (ADR 0084): the title as the
+    /// row shows it and the preview, both pseudonymized; `None` unless
+    /// ready.
+    pub(crate) fn drag_card(&self) -> Option<(String, String)> {
+        self.readiness.is_ready().then(|| {
+            (
+                self.display_title().to_string(),
+                self.preview
+                    .as_ref()
+                    .map(|preview| preview.text.clone())
+                    .unwrap_or_default(),
+            )
+        })
+    }
+
     /// How many distinct names its text replaced.
     pub(crate) fn replaced_count(&self) -> usize {
         self.replaced.iter().map(|(_, n)| n).sum()

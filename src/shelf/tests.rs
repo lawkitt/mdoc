@@ -67,6 +67,13 @@ fn a_ready_tab_copies_the_editor_text_and_previews_aliases() {
     assert_eq!(row.replaced_count(), 2);
     assert_eq!(row.words, 9, "Markdown markers are not words");
     assert_eq!(row.file_name(), "PERSON_1.md");
+    assert_eq!(
+        row.drag_card(),
+        Some((
+            "PERSON_1".to_string(),
+            "PERSON_1 signed it today.".to_string()
+        ))
+    );
 }
 
 #[test]
@@ -85,6 +92,7 @@ fn a_tab_without_aliases_is_not_listed_and_one_with_proposals_is_not_ready() {
     assert_eq!(row.title, "PERSON_2.md");
     assert_eq!(row.text_for_ai(), None);
     assert!(row.preview.is_none(), "no text of a document not ready");
+    assert_eq!(row.drag_card(), None);
 }
 
 #[test]

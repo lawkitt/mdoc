@@ -199,6 +199,10 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         // What the shelf shows is handed to anyone watching the screen.
         handed.push(row.title.clone());
         handed.extend(row.preview.iter().map(|line| line.text.clone()));
+        // The drag card shows under the pointer, in other apps too.
+        let card = row.drag_card();
+        assert_eq!(card.is_some(), row.readiness.is_ready(), "{:?}", row.key);
+        handed.extend(card.into_iter().flat_map(|(title, line)| [title, line]));
         handed.extend(copied);
     }
     assert!(handed.iter().any(|h| h == "PERSON_1 contract.md"));
@@ -752,21 +756,36 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
     cx.run_until_parked();
     assert_eq!(line(cx), source);
 
-    // ⌘9 is no row; the first drag retires the hint for good.
+    // ⌘9 is no row. A drag shows the row's card; a cancelled one keeps the
+    // hint, and the first drop retires it for good.
     let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
     copy_row(9, &mut shelf_cx);
     assert_eq!(
         shelf.read_with(&shelf_cx, |view, _| view.copied()).unwrap(),
         None
     );
-    shelf
-        .update(cx, |view, window, cx| view.drag(0, window, cx))
-        .unwrap();
-    assert!(
-        !shelf
+    let hint = |cx: &mut VisualTestContext| {
+        shelf
             .read_with(cx, |view, _| view.content().drag_hint)
             .unwrap()
-    );
+    };
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            let card = view.dragged_card.clone().unwrap();
+            assert_eq!(Some(card), view.content().documents[0].drag_card());
+            view.drag_ended(false, cx);
+        })
+        .unwrap();
+    assert!(hint(cx), "a cancelled drag keeps the hint");
+    assert!(!cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    assert!(!hint(cx));
     assert!(cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
     shelf
         .update(cx, |_, window, _| window.remove_window())
