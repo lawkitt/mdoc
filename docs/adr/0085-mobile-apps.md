@@ -76,7 +76,7 @@ already lives in GUI-free Rust crates (ADR 0069).
   ships. Android repeats the spike
   when its work starts.
 - **Detector budgets.** GLiNER2 FP16 ships on a device class when it meets
-  all of: peak memory ≤ 2 GB, cold load ≤ 10 s, a 20-page document scanned
+  all of: peak memory (`phys_footprint`) ≤ 2 GiB, cold load ≤ 10 s, a 20-page document scanned
   in ≤ 60 s, and no serious thermal throttling. If FP16 fails, an INT8
   export is tried and ships only if it matches FP16 on the pseudonymization
   qualification fixtures. Devices below the floor get OCR, the structured
