@@ -57,6 +57,7 @@ pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme
 /// The appearance native panels, alerts and menus draw in (macOS, ADR 0076):
 /// Light or Dark as chosen; System clears the app's own, so they follow
 /// macOS.
+#[cfg(any(target_os = "macos", test))]
 pub fn app_appearance(choice: ThemeChoice) -> Option<gpui::WindowAppearance> {
     match choice {
         ThemeChoice::System => None,
