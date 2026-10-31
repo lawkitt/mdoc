@@ -25,7 +25,8 @@ struct DocumentScreen: View {
                             model.open(first.id)
                         }
                     },
-                    onDecide: { identity, decision in model.decide(identity: identity, decision) })
+                    onDecide: { identity, decision in model.decide(identity: identity, decision) },
+                    onClose: isRegular ? nil : { model.showsIdentities = false })
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
                 .presentationDetents([.medium, .large])
             }
@@ -197,16 +198,19 @@ struct DocumentScreen: View {
                     }
             }
             if model.needsSetup && setup.snapshot.needsSetup {
-                SetupCard(model: setup, dismissible: false) {
+                // The card's download is the one prominent button; Not now
+                // brings Find names back.
+                SetupCard(model: setup, dismissible: true, onDismiss: { model.skipSetup() }) {
                     await model.continueAfterSetup()
                 }
-            }
-            if let interruption = model.interruption {
-                InterruptionBanner(kind: interruption.kind) {
-                    Task { await model.resume() }
+            } else {
+                if let interruption = model.interruption {
+                    InterruptionBanner(kind: interruption.kind) {
+                        Task { await model.resume() }
+                    }
                 }
+                ActionBar(model: model)
             }
-            ActionBar(model: model)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

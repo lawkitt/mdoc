@@ -20,7 +20,7 @@ final class AppLaunchTests: XCTestCase {
         keys.locked = true
         let locked = AppModel.live(downloader: FakeModelDownloader(seconds: 0), open: open)
         XCTAssertNotNil(locked.startupError)
-        XCTAssertTrue(locked.home.sections.isEmpty)
+        XCTAssertTrue(locked.home.documents.isEmpty)
 
         // Still in the background, or still locked: nothing changes.
         XCTAssertTrue(locked.reopened(isActive: false) { AppModel.live(open: open) } === locked)

@@ -129,9 +129,10 @@ behaviour decisions are in [ADR 0087](../adr/0087-ios-ui-polish.md).
   escape's backslash as a marker span, so iOS and desktop both dim it.
 - **Table rows use a smaller monospaced font** so columns line up and wrap
   less; the source text is unchanged (no grid: that would re-render).
-- **Highlights get dark-mode colours** in `Palette.swift`, with at least
-  3:1 contrast for the candidate and alias fill and underline against the
-  background.
+- **Highlights get dark-mode colours**: every category's underline at
+  least 3:1 against the dark background, fills stronger than in light.
+  (Corrected while building: a fill cannot reach 3:1 on black for indigo or
+  purple without hiding the text over it, so the floor is the underline's.)
 - **Home is a flat list, newest first.** Each row shows the title, the
   case's dot and name, and the status. Status is a small symbol with
   secondary text, never a colour of its own, so case colours stay the

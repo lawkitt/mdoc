@@ -115,6 +115,12 @@ final class DocumentViewModel {
     }
 
     /// Download & continue: the job that asked for setup runs again.
+    /// Not now on the document's setup card: Find names (or Recognize)
+    /// returns as the primary action.
+    func skipSetup() {
+        waitingForSetup = nil
+    }
+
     func continueAfterSetup() async {
         switch waitingForSetup {
         case .recognize: await recognize()

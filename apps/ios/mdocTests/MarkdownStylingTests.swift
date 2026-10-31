@@ -64,8 +64,9 @@ final class MarkdownStylingTests: XCTestCase {
         }
         for line in styling.lines {
             switch line.kind {
-            case .heading, .tableHeader: mark(line.range) { $0.bold = true }
-            case .codeBlock: mark(line.range) { $0.monospaced = true }
+            case .heading: mark(line.range) { $0.bold = true }
+            case .tableHeader: mark(line.range) { $0.bold = true; $0.monospaced = true }
+            case .codeBlock, .tableRow: mark(line.range) { $0.monospaced = true }
             default: break
             }
         }
@@ -178,6 +179,35 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertEqual(style?.usesDefaultHyphenation, false)
         XCTAssertEqual(style?.hyphenationFactor, 0)
         XCTAssertEqual(style?.lineBreakStrategy, [])
+    }
+
+    /// Dark mode (ADR 0087, P16): every category's underline reaches 3:1
+    /// against the background, and the fills are stronger than in light.
+    func testDarkHighlightsStandOut() {
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        let background = UIColor.systemBackground.resolvedColor(with: dark)
+        for category in Category.allCases {
+            let underline = category.uiColor.resolvedColor(with: dark)
+            XCTAssertGreaterThanOrEqual(Self.contrast(underline, background), 3, "\(category)")
+        }
+        let light = MarkdownStyler.fill(dark: false)
+        let strong = MarkdownStyler.fill(dark: true)
+        XCTAssertGreaterThan(strong.proposed, light.proposed)
+        XCTAssertGreaterThan(strong.replaced, light.replaced)
+    }
+
+    /// WCAG contrast ratio of two opaque colours.
+    static func contrast(_ first: UIColor, _ second: UIColor) -> CGFloat {
+        func luminance(_ colour: UIColor) -> CGFloat {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            func linear(_ value: CGFloat) -> CGFloat {
+                value <= 0.039_28 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        let (a, b) = (luminance(first), luminance(second))
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     func testDocumentColoursAreReadAsRGBA() {

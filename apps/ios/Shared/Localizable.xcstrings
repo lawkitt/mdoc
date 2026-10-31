@@ -75,7 +75,6 @@
     "Cancel download": {},
     "Candidates": {},
     "Case": {},
-    "Case %@": {},
     "Case: %@": {},
     "Category": {},
     "Checking and installing": {},
@@ -119,6 +118,7 @@
     "Memory": {},
     "Models": {},
     "Models download once, on Wi-Fi unless you allow cellular, and then run on this device.": {},
+    "Name detector": {},
     "Name detector (GLiNER2)": {},
     "New case": {},
     "Next": {},
@@ -219,6 +219,7 @@
     "Text": {},
     "Text not recognized yet": {},
     "Text recognition (PP-OCR)": {},
+    "Text recognition, English and Russian": {},
     "The AI sees the alias; mdoc puts the original back when you restore its reply.": {},
     "The download failed (HTTP %lld).": {},
     "The original stays in the text you share.": {},
@@ -236,6 +237,7 @@
     "Wait for Wi-Fi": {},
     "Waiting for another document to finish.": {},
     "Your carrier may charge for the data.": {},
+    "case %@": {},
     "kept": {},
     "mdoc": {
       "shouldTranslate": false
