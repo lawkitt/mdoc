@@ -206,6 +206,16 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   reads it as the name. The shelf preview and drag card mask it since #280;
   detection and Copy for AI need the same decoding. *From the 2026-10-31
   shelf polish review.*
+- **[Shelf]** Review the shelf preview's Markdown block reading (`src/shelf.rs`,
+  `preview_lines`) against CommonMark as a whole rather than case by case:
+  round after round of Codex review on #280 found another container or
+  fence edge.
+  Still open: leaving a nested list item drops the outer one too, so a fence
+  back in the outer item (`- Notes` / `  - More` / blank / `  ~~~`) hides a
+  later sibling's prose. The failure modes are a missing preview or code
+  shown as prose; originals stay masked (a preview that still spells a known
+  name is refused). Consider reusing a real block parser. *From the
+  2026-10-31 shelf polish review.*
 
 ## Ongoing tracks
 

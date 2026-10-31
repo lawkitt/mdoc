@@ -9,8 +9,8 @@ use crate::{
     shelf::{self, ClosedMember, OpenTab, ShelfDocument, ShelfKey},
 };
 use gpui::{App, Context, Window};
-use mdoc_pii::restore::ExportedIdentity;
-use mdoc_store::session_store;
+use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
+use mdoc_store::{session_store, settings};
 use std::{path::PathBuf, time::SystemTime};
 
 impl Workspace {
@@ -148,7 +148,7 @@ pub(crate) enum ClipboardSource {
         id: String,
         name: String,
     },
-    /// The tab's title, pseudonymized.
+    /// The tab's title, pseudonymized, without `.md` (ADR 0084).
     Tab {
         id: u64,
         title: String,
@@ -189,17 +189,32 @@ impl Workspace {
                 let row = shelf_tab(tab.id(), view, cx)?;
                 Some(ClipboardSource::Tab {
                     id: tab.id(),
-                    title: row.title,
+                    title: row.display_title().to_string(),
                 })
             })
             .collect();
         let mut cases = self.case_coordinator.summaries();
         cases.sort_by_key(|case| case.name.to_lowercase());
-        sources.extend(cases.into_iter().map(|case| ClipboardSource::Case {
-            id: case.id,
-            name: case.name,
-        }));
+        sources.extend(
+            cases
+                .into_iter()
+                .map(|case| self.case_source(&case.id, &case.name)),
+        );
         sources
+    }
+
+    /// A case as a clipboard source, named as the shelf may show it: with
+    /// its own names pseudonymized (a case is often named after a person),
+    /// or "a locked case" while its names cannot be read (ADR 0084).
+    fn case_source(&self, id: &str, name: &str) -> ClipboardSource {
+        let name = match self.case_coordinator.case(id) {
+            Some(case) => RestoreMap::new(case.exported()).pseudonymize(name).0,
+            None => "a locked case".to_string(),
+        };
+        ClipboardSource::Case {
+            id: id.to_string(),
+            name,
+        }
     }
 
     /// The document used last: the active tab's case, or its own mapping.
@@ -207,10 +222,7 @@ impl Workspace {
         let view = self.active_view()?;
         let view = view.read(cx);
         if let Some(link) = view.case.link() {
-            return Some(ClipboardSource::Case {
-                id: link.id.clone(),
-                name: link.name.clone(),
-            });
+            return Some(self.case_source(&link.id, &link.name));
         }
         let id = self.tabs.active();
         self.clipboard_sources(cx)
@@ -293,9 +305,96 @@ impl Workspace {
         .detach();
     }
 
-    /// "Show all in mdoc": Home lists every document.
-    pub(crate) fn show_all_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// "Open mdoc": Home lists every document.
+    pub(crate) fn home_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_home(window, cx);
+    }
+
+    /// The shelf's Settings gear.
+    pub(crate) fn settings_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_settings(window, cx);
+    }
+
+    /// The first-close note's "Quit when windows close" (ADR 0084): the
+    /// switch goes off and mdoc quits, as it now would with its last window
+    /// closed. The hidden window shows only if the quit asks something; a
+    /// quit that cannot start brings it back, since no item is left to.
+    pub(crate) fn quit_when_windows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let saved = self.update_general(|general| general.menu_bar = false, cx);
+        crate::menu_bar::quit_when_windows_close(cx);
+        if let Err(error) = saved {
+            // Quitting now would bring the item back at the next launch with
+            // no note: show the window and say so instead.
+            crate::menu_bar::reveal_if_hidden(window, cx);
+            self.notices.post(format!(
+                "Could not save \u{201c}Quit when windows close\u{201d}: {error}. \
+                 Turn off Settings \u{203a} General \u{203a} Show mdoc in the menu bar to try again."
+            ));
+            cx.notify();
+            return;
+        }
+        self.quit(window, cx);
+        if !self.quit_flow.quitting() {
+            crate::menu_bar::reveal_if_hidden(window, cx);
+        }
+    }
+
+    /// Whether the first-close note has shown (ADR 0084).
+    pub(crate) fn menu_bar_note_shown(&self) -> bool {
+        self.general()
+            .is_some_and(|general| general.menu_bar_note_shown)
+    }
+
+    /// Whether a shelf drag has dropped, retiring its hint (ADR 0084).
+    pub(crate) fn shelf_drag_hint_shown(&self) -> bool {
+        self.general()
+            .is_some_and(|general| general.shelf_drag_hint_shown)
+    }
+
+    fn general(&self) -> Option<settings::GeneralConfig> {
+        self.preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map(|preferences| preferences.general)
+    }
+
+    /// Change a Settings › General choice from outside the panel (the
+    /// shelf's notes): saved at once, kept in memory if the save fails (the
+    /// error is returned), and made in the panel's draft too, so its next
+    /// save keeps it beside any choice still saving. Only flags and
+    /// switches; never document text.
+    pub(crate) fn update_general(
+        &mut self,
+        change: impl Fn(&mut settings::GeneralConfig) + 'static,
+        cx: &mut Context<Self>,
+    ) -> Result<(), settings::SettingsError> {
+        let (prefs, path) = {
+            let store = self.preferences.borrow();
+            let Some(current) = store.current.clone() else {
+                return Ok(());
+            };
+            (current, store.path.clone())
+        };
+        let mut changed = prefs.clone();
+        change(&mut changed.general);
+        if changed == prefs {
+            return Ok(());
+        }
+        // Taken even without a file, so a Settings save in flight knows it
+        // is older.
+        let write = settings::next_write();
+        let saved = match path {
+            Some(path) => settings::save_in_order(&path, &changed, write).map(|_| ()),
+            None => Ok(()),
+        };
+        if let Err(error) = &saved {
+            eprintln!("mdoc: could not save a menu bar choice: {error}");
+        }
+        self.preferences.borrow_mut().current = Some(changed);
+        self.settings
+            .update(cx, |panel, cx| panel.general_changed(change, cx));
+        saved
     }
 
     /// "Unlock cases in mdoc…": the Keychain explainer, in the window.
