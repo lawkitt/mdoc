@@ -85,6 +85,14 @@ green and leave desktop unchanged. Record:
    passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition
    download, then 45 s away during Find names) stopped at its Wi-Fi check
    on 5G. *Done when:* the whole run passes on the iPhone 17 Pro on Wi-Fi.
+4. **[Mobile] Device tests below the floor.** *From the device grill
+   ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).* The long-jobs test
+   needs the detector tier, so nothing checks a phone below the 8 GB floor:
+   the text-recognition download, a scan and a .docx import that survive
+   leaving the app, the below-floor note where Find names would be (and in
+   Settings), and marking a name by selecting it. *Done when:* `just
+   ios-device-test` runs a below-floor test on the iPhone 12 Pro and it
+   passes, with no new crash report.
 
 ## Android 0.1
 
