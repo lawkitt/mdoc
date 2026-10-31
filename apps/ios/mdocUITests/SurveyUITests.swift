@@ -103,10 +103,16 @@ final class SurveyUITests: XCTestCase {
         for _ in 0..<4 {
             text.swipeDown(velocity: .fast)
         }
-        text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04)).press(forDuration: 1.0)
+        let word = text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04))
+        word.press(forDuration: 1.0)
         let replace = app.menuItems["Replace…"].firstMatch
         XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
         shot("18-selection-edit-menu")
+        // Switching to dark and back closes the edit menu: open it again.
+        if !replace.waitForExistence(timeout: 1) {
+            word.press(forDuration: 1.0)
+            XCTAssertTrue(replace.waitForExistence(timeout: 5))
+        }
         replace.tap()
         XCTAssertTrue(app.navigationBars["Replace"].waitForExistence(timeout: 5))
         shot("19-manual-replace-sheet")
