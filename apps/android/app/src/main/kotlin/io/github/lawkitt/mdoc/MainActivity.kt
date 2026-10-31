@@ -1,6 +1,8 @@
 package io.github.lawkitt.mdoc
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,6 +39,7 @@ import io.github.lawkitt.mdoc.home.AddOption
 import io.github.lawkitt.mdoc.home.AddSheet
 import io.github.lawkitt.mdoc.home.HomeScreen
 import io.github.lawkitt.mdoc.home.HomeViewModel
+import io.github.lawkitt.mdoc.settings.SettingsScreen
 import io.github.lawkitt.mdoc.setup.CellularQuestion
 import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.storage.MdocStorage
@@ -51,7 +54,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) receive(intent)
         setContent { MdocTheme { App(application as MdocApplication, home) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receive(intent)
+    }
+
+    /** "Open in mdoc": a PDF, DOCX or image shared or opened from another app. */
+    private fun receive(intent: Intent?) {
+        val uris = when (intent?.action) {
+            Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }
+        home.received(contentResolver, uris, null, getString(R.string.title))
     }
 
     override fun onStart() {
@@ -74,6 +94,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val state by home.state.collectAsStateWithLifecycle()
     val setupState by app.setup.state.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var settings by rememberSaveable { mutableStateOf(false) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
 
     // Notification permission is asked at the first long job; the job runs either way (ADR 0089).
@@ -111,8 +132,22 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     }
 
     val current = open
-    if (current == null) {
+    if (settings) {
+        BackHandler { settings = false }
+        SettingsScreen(
+            setup = setupState,
+            version = BuildConfig.VERSION_NAME,
+            onDownload = {
+                beforeJob()
+                app.setup.download { home.refresh() }
+            },
+            onCancel = app.setup::cancel,
+            onUseCellular = app.setup::askCellular,
+            onBack = { settings = false },
+        )
+    } else if (current == null) {
         HomeScreen(
+            onSettings = { settings = true },
             state = state,
             onOpen = { open = it.raw },
             onAdd = { option ->

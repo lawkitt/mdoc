@@ -119,6 +119,14 @@ class Documents(
     /** Restores a reply with one case's mapping; needs no model. */
     fun restore(reply: String, case: CaseId): RestoreResult = restoreResult(core { ffi.restore(case.raw, reply) })
 
+    /** Keeps `reply`, in alias form, as the document's reply (ADR 0078). */
+    fun saveReply(reply: String, document: DocumentId) {
+        val session = session(document)
+        val path = session.path ?: throw AppError.NoCase()
+        val case = session.caseId ?: throw AppError.NoCase()
+        core { ffi.saveReply(case, path, reply) }
+    }
+
     /** The case of the most recently shared document, for Restore with mdoc. */
     fun currentCase(): CaseId? = ffi.currentCase()?.let { CaseId(it.id) }
 
