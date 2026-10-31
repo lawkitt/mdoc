@@ -714,6 +714,9 @@ impl Icon {
     }
 }
 
+/// The height of a [`floating_button`]; labels floating beside one center on it.
+pub const FLOATING_BUTTON_HEIGHT: f32 = 32.;
+
 /// An outlined icon-and-text control that floats over content; `label` is its
 /// tooltip and accessible name, `text` what it shows.
 pub fn floating_button(
@@ -727,7 +730,7 @@ pub fn floating_button(
     let p = theme.pdf_style();
     let label = label.into();
     outlined(control_base(id, label.clone(), theme, enabled), theme)
-        .h(px(32.))
+        .h(px(FLOATING_BUTTON_HEIGHT))
         .px_3()
         .py_0()
         .flex()

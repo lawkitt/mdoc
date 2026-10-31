@@ -15,6 +15,10 @@ use std::{
 
 /// Below this width the view shows one column at a time.
 const NARROW: f32 = 720.;
+/// Where the column labels and Close float from the view's top.
+const FLOAT_TOP: f32 = 12.;
+/// A column label's height: 11 pt text and its border.
+const LABEL_HEIGHT: f32 = 22.;
 
 /// Which columns an open before/after view shows (ADR 0046's view switcher).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -803,16 +807,20 @@ impl DocumentView {
         // A quiet floating label names each column; it dims once the column
         // scrolls under it. In a narrow window it switches columns.
         let switchable = narrow && state.mode == CompareMode::Side;
+        // The label centers on Close's line, which floats at the same top (U25).
+        let label_top = FLOAT_TOP + (ui::FLOATING_BUTTON_HEIGHT - LABEL_HEIGHT) / 2.;
         let label = |id: &'static str, text: &'static str, scroll: &gpui::ScrollHandle| {
             let scrolled = scroll.offset().y < px(-8.);
             div()
                 .id(id)
                 .when(cfg!(test), |v| v.debug_selector(move || id.into()))
                 .absolute()
-                .top(px(12.))
+                .top(px(label_top))
                 .left(px(16.))
+                .h(px(LABEL_HEIGHT))
+                .flex()
+                .items_center()
                 .px_2()
-                .py(px(2.))
                 .rounded_md()
                 .bg(palette.bg)
                 .border_1()
@@ -946,7 +954,13 @@ impl DocumentView {
                             )),
                     )
                 })
-                .child(div().absolute().top(px(12.)).right(px(20.)).child(close))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(FLOAT_TOP))
+                        .right(px(20.))
+                        .child(close),
+                )
                 .into_any_element(),
         )
     }

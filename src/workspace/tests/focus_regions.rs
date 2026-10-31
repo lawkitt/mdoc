@@ -305,6 +305,37 @@ fn tab_from_home_enters_its_controls(cx: &mut TestAppContext) {
     }));
 }
 
+/// Home's first Tab stop is Open files…, even with the header's bell
+/// showing (U25).
+#[gpui::test]
+fn home_first_tab_is_open_files_not_the_bell(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    std::fs::write(&file, "a").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update(cx, |tabs, cx| {
+        tabs.notices.post("Saved elsewhere");
+        cx.notify();
+    });
+    draw(cx);
+    // The new notice opened the bell's popover; close it and start from
+    // the window, as after a click on Home's background.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.title.notices_open.set(false);
+        window.focus(&tabs.focus, cx);
+        cx.notify();
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("header-notices").is_some());
+    key(cx, "tab");
+    activate_control(cx);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
+    cx.simulate_path_prompt_response(|_| Some(vec![file.clone()]));
+    cx.run_until_parked();
+    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+}
+
 #[gpui::test]
 fn sidebar_tab_list_moves_with_arrows_and_closes_with_backspace(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());

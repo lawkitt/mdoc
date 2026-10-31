@@ -839,15 +839,16 @@ impl Workspace {
                     ),
             );
         // Collapsed sidebar: the header sits in the title row and Home in its
-        // own card below (ADR 0048).
+        // own card below (ADR 0048). The header comes after the body in
+        // element order, shown on top by the reversed column, so Home's
+        // first Tab stop is Open files…, not the header's bell (U25).
         div()
             .id("home")
             .track_focus(self.focus_regions.home())
             .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
             .size_full()
             .flex()
-            .flex_col()
-            .child(header)
+            .flex_col_reverse()
             .map(|v| {
                 if detached {
                     v.child(ui::card_surface(body.ml(px(style::CARD_MARGIN)), theme))
@@ -855,6 +856,7 @@ impl Workspace {
                     v.child(body)
                 }
             })
+            .child(header)
             .into_any_element()
     }
 
@@ -1087,9 +1089,14 @@ impl Workspace {
                     .child(home_label("Cases", theme).pt_0())
                     .child(div().flex_1())
                     .child(
-                        ui::link_button("home-open-case", "Open a case…", theme, true).on_click(
-                            |_, window, cx| window.dispatch_action(Box::new(OpenCase), cx),
-                        ),
+                        // The link's text, not its padding, ends where the
+                        // local note above it ends (U25).
+                        ui::link_button("home-open-case", "Open a case…", theme, true)
+                            .mr(px(-8.))
+                            .when(cfg!(test), |v| v.debug_selector(|| "home-open-case".into()))
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(OpenCase), cx)
+                            }),
                     )
                     .into_any_element(),
             );

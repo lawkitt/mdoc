@@ -1907,3 +1907,16 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
 fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
     download_retains_card_focus(cx, settings::Model::Pii(settings::PiiModel::Fp16));
 }
+
+/// Home's "Open a case…" text ends where "Documents stay on this Mac" above
+/// it ends; only its hover padding runs past (U25).
+#[gpui::test]
+fn home_open_a_case_ends_under_the_local_note(cx: &mut TestAppContext) {
+    let (_tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    let note = cx.debug_bounds("empty-page-local").unwrap();
+    let link = cx.debug_bounds("home-open-case").unwrap();
+    assert!(link.top() > note.bottom(), "the link sits under the note");
+    assert_eq!(link.right() - px(8.), note.right());
+}
