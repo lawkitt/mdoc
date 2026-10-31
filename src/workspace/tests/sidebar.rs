@@ -504,6 +504,89 @@ fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext
     assert!(cx.debug_bounds(new_tip).is_some());
 }
 
+/// Opening a tab's context menu dismisses its tooltip, and none shows while
+/// the menu stays open (#310): whether the pointer rests on the row, has
+/// drifted onto the tooltip, or jitters off the menu onto the row again.
+#[gpui::test]
+fn sidebar_context_menu_dismisses_the_tab_tooltip(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.md");
+    std::fs::write(&path, "x").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let (id, tip) = cx.update(|_, cx| {
+        let tab = &tabs.read(cx).tabs[0];
+        let label = tab_label(tab, cx);
+        (
+            tab.id(),
+            Box::leak(
+                format!(
+                    "tooltip-{}\n{}",
+                    label.name,
+                    label.identity.as_path().parent().unwrap().display()
+                )
+                .into_boxed_str(),
+            ) as &'static str,
+        )
+    });
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{id}").into_boxed_str()))
+        .unwrap();
+    let rest = gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.);
+    for drift in [px(0.), px(3.)] {
+        cx.simulate_mouse_move(rest, None, gpui::Modifiers::none());
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(600));
+        cx.run_until_parked();
+        draw(cx);
+        assert!(cx.debug_bounds(tip).is_some(), "the tooltip shows on hover");
+        // A pointer that drifts down and right lands on the tooltip, drawn
+        // a pixel past where it showed.
+        let click = rest + gpui::point(drift, drift);
+        cx.simulate_mouse_move(click, None, gpui::Modifiers::none());
+        cx.run_until_parked();
+        draw(cx);
+        assert!(cx.debug_bounds(tip).is_some(), "drift={drift:?}");
+        cx.simulate_mouse_down(click, gpui::MouseButton::Right, Default::default());
+        cx.simulate_mouse_up(click, gpui::MouseButton::Right, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+        assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_some()));
+        assert!(
+            cx.debug_bounds(tip).is_none(),
+            "the menu's opening dismisses the tooltip (drift={drift:?})"
+        );
+        // Off the menu's corner, back on the row: no tooltip over the menu.
+        cx.simulate_mouse_move(
+            click - gpui::point(px(2.), px(2.)),
+            None,
+            gpui::Modifiers::none(),
+        );
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(600));
+        cx.run_until_parked();
+        draw(cx);
+        assert!(
+            cx.debug_bounds(tip).is_none(),
+            "no tooltip while the menu is open (drift={drift:?})"
+        );
+        // A click away closes the menu.
+        let away = gpui::point(px(850.), px(500.));
+        cx.simulate_mouse_move(away, None, gpui::Modifiers::none());
+        cx.simulate_mouse_down(away, gpui::MouseButton::Left, Default::default());
+        cx.simulate_mouse_up(away, gpui::MouseButton::Left, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+        assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_none()));
+    }
+}
+
 #[gpui::test]
 fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

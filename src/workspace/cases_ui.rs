@@ -1397,10 +1397,12 @@ impl Workspace {
                 })),
             )
             .when(count > 1, |v| v.child(div().child(count.to_string())))
-            .tooltip(style::tooltip(
-                format!("Case “{}” · its replacement mapping is saved", link.name),
-                theme,
-            ))
+            .when(!self.context_menu_open(), |v| {
+                v.tooltip(style::tooltip(
+                    format!("Case “{}” · its replacement mapping is saved", link.name),
+                    theme,
+                ))
+            })
             .on_mouse_down(
                 gpui::MouseButton::Right,
                 cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
