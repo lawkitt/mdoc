@@ -92,7 +92,9 @@ green and leave desktop unchanged. Record:
    leaving the app, the below-floor note where Find names would be (and in
    Settings), and marking a name by selecting it. *Done when:* `just
    ios-device-test` runs a below-floor test on the iPhone 12 Pro and it
-   passes, with no new crash report.
+   passes, with no new crash report. The test is in #296; on the 12 Pro the
+   runner timed out enabling automation, so turn on Settings → Developer →
+   UI Automation there first.
 
 ## Android 0.1
 
@@ -224,6 +226,283 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   shown as prose; originals stay masked (a preview that still spells a known
   name is refused). Consider reusing a real block parser. *From the
   2026-10-31 shelf polish review.*
+
+The 2026-10-31 UI/UX survey (build `84fafd3`, macOS, Light and Dark) adds
+the items below, polish first, then ideas. Its twelve bugs are issues
+[#300](https://github.com/lawkitt/mdoc/issues/300)–[#311](https://github.com/lawkitt/mdoc/issues/311)
+in the [0.3.0 milestone](https://github.com/lawkitt/mdoc/milestone/4). Repro
+steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.md)
+(IDs U1–U31).
+
+- **[Editor] Polish: alias chips touch the next character.** The apostrophe
+  of "PERSON_2's" sits on the chip border; on italic text the ring covers
+  half of it ("ORG_4's"); the popup's alias field draws its pencil flush
+  against the alias. Add a hairline of outside spacing, slanted for italics.
+  ([U13](docs/evidence/ui-ux-survey/2026-10-31/README.md#u13-alias-chips-touch-or-cover-the-next-character))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: one action, several names.** Restore AI reply / Paste AI
+  Response / Paste AI reply…; Save as case / Save mapping as case; Before /
+  After / Side by side; UK and US spelling mixed ("unrecognised", "licence",
+  "organisations" beside "Organization", "License"). Pick one name and one
+  spelling ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and
+  buttons. ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: the menus miss common items.** No File › Open Recent, no
+  Restore Clipboard beside Pseudonymize Clipboard, no View items for Home,
+  Search, Original / Pseudonymized / Side by side or the Replacements panel,
+  no mdoc Help in Help, no Check for Updates…; Copy for AI and Copy Markdown
+  have no shortcut. Fits the 0.3.0 shortcut-discovery theme.
+  ([U15](docs/evidence/ui-ux-survey/2026-10-31/README.md#u15-menus))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: tooltips leave out shortcuts.** Sidebar tooltips (Collapse
+  sidebar, Back, Forward, New tab) show none though ⌃⌘S, ⌘[ and ⌘] exist;
+  the toolbar's Pseudonymize (⇧⌘P) and the popup's alias field have no
+  tooltip; "Documents stay on this Mac" opens its tooltip over the button
+  beside it; "Switch theme (Light)" in the palette reads as current or next.
+  ([U16](docs/evidence/ui-ux-survey/2026-10-31/README.md#u16-tooltips))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Settings] Polish: states that look alike.** An enabled "Remove…" looks
+  like the active model's disabled one; toggles don't share a column and off
+  toggles stay accent-tinted; the selected and the focused Appearance segment
+  look the same; About ends with a disabled Reset that has nothing to reset;
+  long pages cut a row with no scroll cue.
+  ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Import] Polish: error and OCR cards offer the wrong next step.** Damaged
+  and password-protected files offer only "Try again" while the Source pane
+  takes 60% to say there is no preview; the all-scanned card offers "Use
+  native text only" when no page has text, and draws it above "Run OCR";
+  OCR of blank pages returns stray "I"s with no "no text found"; "!" means
+  both "needs OCR" and "failed". Offer Close and Open another…, collapse the
+  empty pane, and reword.
+  ([U18](docs/evidence/ui-ux-survey/2026-10-31/README.md#u18-import-error-and-ocr-cards))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Cases] Polish: Save as case asks for the file first.** On an unsaved
+  conversion it shows the Save panel, then the Keychain explainer; Not now
+  leaves the file saved, no case and no message. Show the explainer first, or
+  say what happened. ([U19](docs/evidence/ui-ux-survey/2026-10-31/README.md#u19-save-as-case-asks-for-a-file-first-then-for-the-keychain))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: native panels ignore the app theme.** With Appearance on
+  Light under a Dark macOS, the Save panel, its alerts and the menus stay
+  dark; set the app's `NSAppearance` from the setting.
+  ([U20](docs/evidence/ui-ux-survey/2026-10-31/README.md#u20-native-panels-ignore-the-app-theme))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: narrow windows.** At 720×480 with the sidebar and
+  Replacements open the editor is about 270 pt (three or four words a line);
+  the sidebar is a fixed 180 pt, so names truncate early and shared prefixes
+  look alike. Collapse the sidebar below a width, let it be dragged, and
+  truncate names in the middle.
+  ([U21](docs/evidence/ui-ux-survey/2026-10-31/README.md#u21-narrow-windows))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: dialogs.** Save changes rings Save but doesn't fill it,
+  orders Save · Discard · Cancel unlike macOS, and has no scrim in Dark; the
+  Quit summary says "3 documents have unsaved changes or mappings" without
+  naming them. ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Shelf] Polish: small shelf details.** A converted document's preview
+  ends "1...."; the gear's tooltip is clipped at the shelf edge; the "Names
+  from … ▾" chooser replaces the document list at the top, far from its
+  trigger, and the shelf jumps in height. Beyond the 0.3.0 shelf polish item.
+  ([U23](docs/evidence/ui-ux-survey/2026-10-31/README.md#u23-shelf-details))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: the floating view bar.** It shows only near the bottom
+  edge or while scrolling, its zoom pill covers the line beneath, and a
+  hovered segment looks selected.
+  ([U24](docs/evidence/ui-ux-survey/2026-10-31/README.md#u24-the-floating-view-bar))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: small alignment and style items.** "Open a case…" ends 7 pt
+  short of the line above it; "Next unrecognised" is borderless beside
+  bordered buttons; the Reply view's chip and Close don't align; Home's
+  first Tab stop is the toolbar bell.
+  ([U25](docs/evidence/ui-ux-survey/2026-10-31/README.md#u25-small-alignment-and-style-items))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Polish: Pseudonymize clipboard on Home looks broken.** It jumps to
+  the last document tab and replaces only that document's names, so new text
+  comes back "unchanged". Say on Home which names it uses, or let it pick a
+  source as the shelf does.
+  ([U26](docs/evidence/ui-ux-survey/2026-10-31/README.md#u26-pseudonymize-clipboard-from-home))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Detection] Idea: name and patronymic as a merge signal.** The Russian
+  demo gives one person six aliases with a single merge hint; "Марина
+  Сергеевна" next to "Павлова Марина Сергеевна" is near-certain. Would amend
+  [ADR 0080](docs/adr/0080-merge-hint.md).
+  ([U27](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Idea: keep the Source preview next to the editor.** The
+  Replacements panel sits between them; and hide Source when it has nothing
+  to show. ([U28](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[Import] Idea: a cleaner demo import.** The demo `.docx` uses literal
+  "1." numbers and Heading 1 sections, so it imports as "1\." paragraphs and
+  only H1s; `text.pdf` imports `<s>` and `<sup>` as literal tags.
+  ([U29](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[A11y] Idea: zoom the whole window.** View › Zoom scales only the editor;
+  the sidebar, the 11–12 pt panel, dialogs and the shelf stay small.
+  ([U30](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+- **[UI] Idea: a fuller tab menu.** Reveal in Finder, Copy path, Close
+  others beside Save mapping as case and Close tab.
+  ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
+  *From the 2026-10-31 UI/UX survey.*
+
+Ideas from the [2026-10-31 competitor scan](docs/design/competitor-scan-2026-10-31.md),
+roughly by expected value; each needs a grill before it is promoted, and
+some reopen a Deferred or ADR decision, as noted.
+
+- **[Detection] To grill: dates of birth and other sensitive dates.** Both
+  demos send a date of birth to the AI (#301); ADR 0002 leaves "ordinary
+  dates" alone, and Settings has no Date category though the popup does.
+  Anoni and Doczilla replace dates, Privatiser dates of birth, Tonic
+  synthesizes them. Questions: detect only dates in a birth context, offer
+  Date in Categories, or shift dates by one per-case offset so intervals
+  survive and restore is exact. *From the 2026-10-31 competitor scan.*
+- **[Detection] To grill: always and never lists.** Privatiser and Occlira
+  keep user-wide words to always replace (a project codename, a deal
+  amount) and never replace (the firm's own name, courts, statutes);
+  Doczilla also masks sums and deal terms. mdoc decides per document or
+  case. Overlaps the Deferred cross-case dictionary; decide scope (user,
+  case), storage (encrypted like cases) and how the panel shows a listed
+  hit. *From the 2026-10-31 competitor scan.*
+- **[Detection] To grill: role-aware aliases from defined terms.**
+  Contracts name parties once ("(the Employer)") and then use the role; the
+  English demo replaces "Employer" as ORG_2. Deußer et al. (arXiv
+  2609.11335) find unique placeholders cost the AI little while shared
+  labels cost a lot; HAQQ argues role labels (`LENDER_1`) read better.
+  Questions: never propose a defined term, suggest a custom alias from it
+  (`EMPLOYER_1`), and measure alias styles on captured legal replies
+  against ADR 0002's category tokens. *From the 2026-10-31 competitor
+  scan.*
+- **[Integrations] To grill: a browser companion for chat pages.** Hush,
+  Caviard, Velum Lite, Privatiser and LawRider restore inside
+  chatgpt.com and claude.ai (tinted real names, hover shows the alias, a
+  toggle), and Hush scans attachments before upload. mdoc's round trip is
+  Copy for AI, then paste the reply back. Options: an extension that asks
+  mdoc (native messaging) to pseudonymize on paste and restore in page with
+  the case's mapping; or keep the shelf. Trust model as for Agent access
+  (Deferred). *From the 2026-10-31 competitor scan.*
+- **[Integrations] To grill: Word add-in.** Occlira, Legora and LEGALFLY
+  pseudonymize inside Word, Occlira with review; lawyers live in Word.
+  Weigh against the Deferred DOCX export and restore-into-DOCX: an Office
+  add-in talking to the local app could do both without rewriting the
+  file format. *From the 2026-10-31 competitor scan.*
+- **[Integrations] To grill: revisit Agent access (Deferred).** Anoni,
+  Occlira (Claude Desktop connector), Velum, anonym.plus and PII Shield now
+  ship MCP servers that hand agents only pseudonymized files. Decide
+  whether mdoc's reviewed-text-only rule can hold over MCP (serve only
+  reviewed, ready documents of a case; restore through the case) and
+  whether that comes before or after the browser companion. *From the
+  2026-10-31 competitor scan.*
+- **[Import] To grill: e-mail import.** Anoni reads e-mail; lawyers'
+  facts often arrive as `.eml` or Outlook `.msg` threads with attachments.
+  Questions: headers (From/To are personal data), quoted history,
+  attachments as separate tabs of one case. *From the 2026-10-31
+  competitor scan.*
+- **[Import] To grill: hidden content in Office files.** Hush scans DOCX
+  comments, headers, footers and deleted tracked changes; ДоксДодыр strips
+  metadata and revision history. Check what AnyDoc carries into the
+  Markdown (comments, deleted text, document properties), then decide:
+  drop, include and scan, or warn on import. A missed author name in a
+  comment is a leak the panel never shows. *From the 2026-10-31 competitor
+  scan.*
+- **[Cases] To grill: firm-managed settings.** Doczilla lets a firm make
+  pseudonymization mandatory; Harvey enforces ethical walls on every AI
+  call; Velum and Anoni keep audit logs. A managed profile (macOS
+  configuration profile, Windows policy) could lock categories, require
+  review before Copy for AI, turn off update checks and set the model.
+  Pairs with the Deferred audit journal. *From the 2026-10-31 competitor
+  scan.*
+- **[Restore] To grill: Russian case forms on restore.** ADRs 0041 and 0078
+  decided no automatic inflection, so "с PERSON_1" restores as "с Павлова
+  Марина Сергеевна". Doczilla and Amaze already match names across cases
+  on detection. Revisit as a suggestion only (the inflected form shown,
+  one click to accept), with a morphology dictionary, after measuring how
+  often captured replies put aliases in oblique cases. *From the 2026-10-31
+  competitor scan.*
+- **[Detection] To grill: the next detection language.** Rivals cover
+  7–46 languages and court a market each: Occlira German, Anoni and
+  Lexanon French, Amaze Polish. mdoc covers EN/RU. Pick by demand with the
+  Localized UI item, and price the cost: a model, identifier patterns,
+  spelling, fixtures and qualification. *From the 2026-10-31 competitor
+  scan.*
+- **[Import] To grill: spreadsheet columns.** XLSX and CSV of clients
+  (Limina and anonym.plus handle tabular data) are one name per cell;
+  "replace this whole column" with one alias per distinct value would beat
+  reviewing cells one by one. *From the 2026-10-31 competitor scan.*
+- **[Platform] To grill: Linux.** Anoni ships macOS, Windows and Linux;
+  GPUI runs on Linux. Cost: packaging, keyring (Secret Service), OCR and
+  model runtimes, CI and acceptance. *From the 2026-10-31 competitor
+  scan.*
+- **[Product] To grill: what a paid tier would hold.** Seen: €450/yr
+  (Lexanon), $159 once (Occlira), $149/yr (Velum), free plus Pro (Anoni);
+  mdoc is free under the GPL. Firm features above (managed settings, Word
+  add-in, audit) are what rivals charge for. Decide whether mdoc stays
+  free, sells support, or offers a firm edition. *From the 2026-10-31
+  competitor scan.*
+
+Mobile ideas from the [2026-10-31 mobile UX ideas](docs/design/mobile-ux-ideas-2026-10-31.md)
+(the iOS survey's after set, the app's code and a scan of mobile
+redaction apps), roughly by expected value; each needs a grill, and
+Android takes what applies. Its clipboard finding is
+[#321](https://github.com/lawkitt/mdoc/issues/321).
+
+- **[Mobile] To grill: app switcher cover and an optional Face ID lock.**
+  The app switcher's snapshot shows client names; a plain cover when the
+  scene leaves the foreground, and an opt-in lock for the app and Restore
+  with mdoc (Android: `FLAG_SECURE`, biometric lock). *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: one proposal at a time.** A full-screen review card
+  (the proposal in its sentence, category, alias), Replace and Keep at
+  thumb height or by swipe, "3 of 12", haptics, undo the last; today the
+  candidate sheet covers half the text. *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: undo.** Replace, Keep, Replace all, Keep all,
+  Remove reply and Delete document have no undo on iOS; an Undo toast plus
+  `UndoManager` (shake, three-finger swipe). *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: merge hint and Same as… on mobile.** ADR 0080's hint
+  on Identities rows and Same as… in the candidate sheet; without them
+  "Ms Bennett", "Maya" and "Mia" reach the AI as three people. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: "As the AI sees it".** A read-only view of the Copy
+  for AI text with any original still in it highlighted, so the user sees
+  what leaves before sharing; it could also be the default while the screen
+  is recorded or mirrored. Desktop has no such view either. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: text from any app becomes a document.** Shared text,
+  web pages and Mail selections open as a pasted document (the extension
+  hands over; the app does the work); Android's `ACTION_PROCESS_TEXT` puts
+  mdoc in every app's selection menu. Today only files arrive by share.
+  *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: a demo document before the download.** "Try a
+  sample" on the empty Home: the settlement letter with stored proposals,
+  so review, share and restore work before the 649.5 MB download. *From
+  the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: Shortcuts and Siri.** App Intents for Restore text
+  with a case, Get a reviewed document's text for AI, and Add text to mdoc
+  (opens for review), so iOS 26's Use Model action can chain share, ask and
+  restore; no intent hides names without review. *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: find, and mark every match.** `UIFindInteraction`
+  (⌘F on iPad) and Replace all matches as one identity, for a surname the
+  detector missed. *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: share a selection.** "Share for AI" in the selection
+  menu sends one clause through Copy for AI's export path. *From the
+  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: remove documents after a while.** Settings: never, 7,
+  30 or 90 days; documents and replies go, cases stay so replies still
+  restore; storage per kind shown. *From the 2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: iPad as a work surface.** Drop files in, drag the
+  text for AI out to an AI app in Split View and the reply back in, keyboard
+  shortcuts (⌘F, R/K, arrows), two windows. *From the 2026-10-31 mobile UX
+  ideas.*
+- **[Mobile] To grill: highlights on the original page.** Found names boxed
+  on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
+  mobile UX ideas.*
+- **[Mobile] To grill: hints, haptics and quick actions.** TipKit for
+  select-to-mark, long-press Share and the Restore extension; haptics on
+  decisions; Home Screen quick actions Scan, Paste, Paste reply. *From the
+  2026-10-31 mobile UX ideas.*
 
 ## Ongoing tracks
 

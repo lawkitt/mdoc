@@ -148,6 +148,12 @@ final class AppModel {
         }
     }
 
+    /// The open document shows the setup card itself (it asked for setup),
+    /// so Home leaves its own out: on iPad both are on screen.
+    var openDocumentShowsSetup: Bool {
+        selection.flatMap { documents[$0] }?.needsSetup ?? false
+    }
+
     func documentModel(for id: DocumentID) -> DocumentViewModel? {
         if let model = documents[id] {
             return model

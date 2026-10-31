@@ -411,8 +411,10 @@ minutes for `just test`). Edits alone grow the cache only slowly.
 Local CI is the pre-merge test gate
 ([ADR 0082](adr/0082-local-ci.md)): `scripts/local-ci.sh` runs on the Mac
 and on the Windows PC and posts the `local/macos` and `local/windows` commit
-statuses on each PR head. `scripts/test-local-ci.sh` (part of `just test`)
-checks it against a fake `gh` and `just`.
+statuses on each PR head. When a runner is stuck, the hosted fallback posts
+those statuses from a hosted CI run instead (below).
+`scripts/test-local-ci.sh` and `scripts/test-local-ci-fallback.sh` (part of
+`just test`) check both against fakes.
 
 **Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
 runs only `lint (ubuntu)` on `pull_request`; its `clippy` and `test` jobs show
@@ -425,7 +427,10 @@ machines before review. `main` runs the full matrix after each merge, and
 **What a runner does.** Every 60 s it lists the open PRs with the machine's
 `gh` login, skipping drafts, forks and bot PRs (Dependabot). A head without
 this machine's status gets `pending` "Queued", linked to the runner's
-`status.txt`; one job runs at a time, oldest first. A job fetches
+`status.txt`; one job runs at a time, oldest first. Each step of a running
+job posts `pending` "Running just test on main@1a2b3c4", so GitHub shows the
+step and a status older than the longest step limit means the runner
+stopped. A job fetches
 `refs/pull/N/merge`, checks it out in the CI checkout (keeping its
 `target/`), installs the merge ref's pinned tools with `scripts/setup.sh`
 (as hosted CI's setup step does) and runs `just lint` and `just test` with
@@ -444,8 +449,21 @@ main") and a PR that touches only files in `ci.yml`'s `paths-ignore` list
 gets `success` ("Docs only, not tested"); the runner reads that list from
 the merge ref's own `ci.yml`. A newer head ends its PR's queued or running
 job (`error`, "Superseded by …"); a pending status left by a stopped runner
-runs again when it starts. On the Mac a job starts only while swap is under
-2 GB and 40 GB is free.
+runs again when it starts. On the Mac a job starts only while memory
+pressure is normal (`kern.memorystatus_vm_pressure_level` 1) and 40 GB is
+free. Not swap in use: macOS keeps swap after memory is free again, and a
+2 GB swap limit held every job from 11:58 to 15:49 UTC on 2026-10-31 with
+nothing on GitHub to say why. While the Mac waits, queued heads say so
+("Queued; waiting for memory pressure to drop (now warning)"), as do
+`status.txt` and the log.
+
+**Machine settings** go in the runner home's `runner.env` (`~/ci/runner.env`,
+`E:\ci\runner.env`), after the three lines install writes; install and the
+setup script keep them. Never in the launchd plist or the task, which they
+rewrite. The settings are the `LOCAL_CI_*` variables in `config()` in
+`scripts/local-ci.sh`, for example `LOCAL_CI_MIN_FREE_GB=30` or
+`LOCAL_CI_MAX_PRESSURE=2` (start at warning pressure too). Restart the runner
+after a change.
 
 | | Mac | Windows PC |
 |---|---|---|
@@ -496,12 +514,44 @@ pending head it is not running:
 gh api -X POST repos/lawkitt/mdoc/statuses/<sha> -f state=pending -f context=local/macos -f description=Queued
 ```
 
-**A machine off.** With the PC off, the hub runs the full hosted matrix on
-the PR branch, and a green `test (windows-latest)` at the PR head stands in
-for `local/windows`. With the Mac off nothing merges. A dispatched run is not
-in the PR's checks (`gh pr checks`, `statusCheckRollup`, checked on #253), so
-read it from the head commit's check runs, which only a full run names
-`test (windows-latest)`:
+**Hosted fallback.** `.github/workflows/local-ci-fallback.yml` runs
+`scripts/local-ci-fallback.sh` every 10 minutes and after each CI run. It
+looks at the heads the runners test (branches in `lawkitt/mdoc`, opened by a
+user, not drafts) and calls a context stuck when it has
+
+| Status on the head | for at least | which means |
+|---|---|---|
+| none | 15 min after the head's `lint (ubuntu)` started | the runner is off or asleep |
+| "Queued; waiting for …" | 15 min | the runner is up but out of capacity |
+| "Running …" | 50 min (the longest step limit is 40) | the runner stopped mid-job |
+| any other `pending` ("Queued") | 45 min | a long queue, or the runner is gone |
+
+For a stuck head it dispatches the full `ci.yml` on the PR branch (one
+dispatch serves both contexts) and posts `pending` "Hosted fallback: hosted
+CI on 1a2b3c4 (attempt 1); …", linked to the branch's CI runs. When that
+run's `clippy` and `test` jobs for the same OS finish, it posts their result
+under the context: "Hosted fallback: clippy and test (macos-26) passed; just
+mobile not run" (hosted CI has no `just mobile`), or `failure` naming the
+job. A dispatch with no result in 25 minutes (cancelled or missing), or
+whose jobs are still queued after 60, is retried, three dispatches in all,
+then the context gets `error`; a retry waits while the head's hosted run is
+still going, and a newly stuck context joins that run. The merge gate does
+not change: a green fallback status counts like a local one. A runner that
+comes back queues every head with a fallback status, pending or finished,
+and its own result replaces the fallback's. The fallback writes only over
+the status it read, re-reading it right before each write, so a runner's
+result wins (a runner posting in that same second is the one window left). The workflow runs
+`main`'s script with its own token (`statuses: write`, `actions: write`) and
+never checks out PR code; the dispatched `ci.yml` run tests the branch head,
+not the merge ref, with its read-only permissions.
+
+**Run the fallback now.** `gh workflow run local-ci-fallback.yml --repo
+lawkitt/mdoc` runs one pass; it still waits for the times above.
+
+**Dispatch by hand.** Run the full hosted matrix on the PR branch and read
+the result from the head commit's check runs: a dispatched run is not in the
+PR's checks (`gh pr checks`, `statusCheckRollup`, checked on #253), and only
+a full run names `test (windows-latest)` and `test (macos-26)`:
 
 ```sh
 gh workflow run ci.yml --repo lawkitt/mdoc --ref <branch>
@@ -563,9 +613,9 @@ skill) read this section for mdoc's needs.
   the lane waits for them and fixes failures, and the hub merges on the same
   three. They run the full suite on both shipped OSes, so a lane's gate is
   the fast subset under [Build from source](#build-from-source): `just lint`
-  and the changed crates' tests (`wsl` keeps its own gate). With the PC off,
-  a dispatched hosted run stands in for `local/windows`
-  ([Local CI](#local-ci)).
+  and the changed crates' tests (`wsl` keeps its own gate). When a runner
+  is stuck or its machine is off, the hosted fallback posts its status
+  ("Hosted fallback: …", [Local CI](#local-ci)); a green one counts.
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings

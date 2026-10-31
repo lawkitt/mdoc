@@ -115,7 +115,7 @@ final class SurveyUITests: XCTestCase {
             XCTAssertTrue(replace.waitForExistence(timeout: 5))
         }
         replace.tap()
-        XCTAssertTrue(app.navigationBars["Replace"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Person"].waitForExistence(timeout: 5))
         shot("19-manual-replace-sheet")
         app.buttons["Cancel"].firstMatch.tap()
 
