@@ -2,7 +2,8 @@ import Foundation
 
 /// mdoc's on-device folders (ADR 0085). Everything lives in the App Group
 /// container so the Restore extension reads the same cases. The core's
-/// `Library` keeps Markdown in `documents/` and cases in `cases/`; the app
+/// `Library` keeps Markdown in `documents/`, cases in `cases/` and the OCR
+/// pages of unfinished imports in `imports/`; the app
 /// keeps the source files in `originals/`. All of it is excluded from iCloud
 /// and device backups, and everything but models and their downloads uses
 /// Data Protection Complete. Models keep the default class so a background
@@ -15,6 +16,9 @@ struct MdocStorage: Sendable {
         case documents
         /// The core's sealed cases.
         case cases
+        /// The core's finished OCR pages of imports not yet complete
+        /// (`imports/` under the library root, where `mdoc-ffi` keeps them).
+        case imports
         /// Imported PDFs, DOCX files and page images, for the Original view.
         case originals
         case models

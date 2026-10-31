@@ -75,7 +75,7 @@ final class DocumentViewModel {
         case .recognizing where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
         case .recognizing:
-            return .recognize(resume: snapshot.pagesDone > 0)
+            return .recognize(resume: snapshot.pagesDone > 0 || snapshot.resumesOCR)
         case .unscanned:
             return .findNames
         case .reviewing:

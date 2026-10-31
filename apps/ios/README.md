@@ -55,10 +55,17 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
 - **One long job at a time**, with progress and cancel. iOS 26 keeps it
   running in the background through `BGContinuedProcessingTask`; earlier
   versions get the short grace, then cancel and offer to resume.
+- **OCR keeps finished pages.** Recognition imports through
+  `import_file_in`, which keeps each recognized page in the core's
+  `imports/` folder; after a cancel, or mdoc stopping, Resume recognition
+  reads only the pages left. Dropping an import discards its pages
+  (`discard_import`), and deleting a saved document goes through the core
+  (`delete_document`), so it also leaves its case.
 - **Storage.** Everything lives in the App Group container
   (`group.io.github.lawkitt.mdoc`), excluded from backups: the core's
   `documents/` and `cases/`, the source files in `originals/`, models and
-  their downloads. All but models use Data Protection Complete. The case key
+  their downloads, and the core's kept OCR pages (`imports/`). All but
+  models use Data Protection Complete. The case key
   is 32 random bytes in the Keychain (the shared access group, this device
   only, readable while unlocked).
 - **Intake.** PDF, DOCX and pasted text go to the core as they are; camera
@@ -75,6 +82,8 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
 UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
 in the App Group (the extension follows it), its own case key, and the
 structured rules instead of the detector, so no model is needed. The app
-imports the file in `MDOC_SEED_FILE` (the demo DOCX, or the Markdown-rich
-`tests/fixtures/mobile-markdown/review.md` as pasted text) and scans it at
-launch.
+imports the file in `MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
+`tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
+JPEG pages as a scan) and scans it at launch. Tests that need the OCR model
+download it and run only with `MDOC_OCR_TESTS=1` (the UI test also sets
+`MDOC_REAL_DOWNLOADS=1` for the app).

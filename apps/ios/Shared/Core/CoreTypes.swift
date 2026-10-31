@@ -260,6 +260,9 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// The import's partial-result warning (pages OCR could not read, …),
     /// shown with the text.
     var warning: String? = nil
+    /// OCR stopped part-way (a cancel, or mdoc stopping): its finished pages
+    /// are kept and recognition resumes with the rest.
+    var resumesOCR = false
 
     var pendingCount: Int {
         candidates.filter { $0.state == .proposed }.count

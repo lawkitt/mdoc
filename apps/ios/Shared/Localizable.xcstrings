@@ -154,7 +154,8 @@
     "Reading the file": {},
     "Ready to find names": {},
     "Ready to share": {},
-    "Recognition stopped when mdoc left the screen.": {},
+    "Recognition stopped when mdoc left the screen. Finished pages are kept.": {},
+    "Recognition stopped. Finished pages are kept, and resuming reads the rest.": {},
     "Recognize text": {},
     "Recognizing %@": {},
     "Recognizing page %lld of %lld": {},
@@ -169,6 +170,7 @@
     "Restore": {},
     "Restore with mdoc": {},
     "Restores the reply with another case's names.": {},
+    "Resume": {},
     "Resume recognition": {},
     "Review": {},
     "Review %lld proposals before sharing.": {
