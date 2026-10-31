@@ -112,6 +112,9 @@ pub(crate) struct PrepaintState {
     annotations: Vec<PaintQuad>,
     /// Host outlines (review scope), painted over annotation fills.
     outlines: Vec<PaintQuad>,
+    /// Each host outline's painted rings, by source range.
+    #[cfg(test)]
+    outline_rings: Vec<(Range<usize>, Bounds<Pixels>)>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     hidden_annotation_hits: Vec<(Vec<u64>, Hitbox)>,
     annotation_counts: Vec<(SharedString, Bounds<Pixels>, Hsla)>,
@@ -1261,9 +1264,14 @@ impl Element for EditorElement {
                             ),
                             color,
                         ));
-                        // Full middle wrap rows.
-                        let mut yy = pa.y + lh;
-                        while yy < pb.y {
+                        // Full middle wrap rows, by index: a sum of row
+                        // heights can fall just short of the last row's
+                        // `lh * k` and band that row whole (#303).
+                        let row_of = |y: Pixels| {
+                            (f32::from(y) / f32::from(lh).max(1.0)).round().max(0.) as usize
+                        };
+                        for k in row_of(pa.y) + 1..row_of(pb.y) {
+                            let yy = lh * k;
                             sels.push(fill(
                                 Bounds::from_corners(
                                     to_screen(top, point(px(0.), yy)),
@@ -1271,7 +1279,6 @@ impl Element for EditorElement {
                                 ),
                                 color,
                             ));
-                            yy += lh;
                         }
                         // Last wrap row: left edge → end x.
                         sels.push(fill(
@@ -1378,6 +1385,31 @@ impl Element for EditorElement {
                 }
                 quads
             };
+        // A bordered chip's quads, which outlines also ring. On a row with the
+        // shared geometry, a start on a soft wrap resolves to the end of the
+        // previous row; a chip would show that empty first band. It is
+        // spurious when skipping the first character removes a row. Per-row
+        // geometry has no such band.
+        let chip_quads = |s: usize, e: usize, color: Hsla, window: &mut Window| {
+            let mut quads = annotation_quads(s, e, color, window);
+            quads.retain(|q| q.bounds.size.width > px(1.));
+            if quads.len() > 1 && shared_geometry(row_col(s).0) {
+                let next = editor.content[s..]
+                    .chars()
+                    .next()
+                    .map_or(s, |c| s + c.len_utf8());
+                if next < e
+                    && annotation_quads(next, e, color, window)
+                        .iter()
+                        .filter(|q| q.bounds.size.width > px(1.))
+                        .count()
+                        < quads.len()
+                {
+                    quads.remove(0);
+                }
+            }
+            quads
+        };
 
         // Find-match highlights (host-set): the reader's browser-style find
         // colors — soft yellow everywhere, stronger orange on the active
@@ -1511,38 +1543,14 @@ impl Element for EditorElement {
                         now,
                     );
                     animating |= active;
-                    let mut quads = annotation_quads(
-                        annotation.range.start.max(visible.start),
-                        annotation.range.end.min(visible.end),
-                        color,
-                        window,
-                    );
-                    quads.retain(|q| q.bounds.size.width > px(1.));
                     let start = annotation.range.start.max(visible.start);
-                    if annotation.border.a > 0.
-                        && quads.len() > 1
-                        && shared_geometry(row_col(start).0)
-                    {
-                        // On a row with the shared geometry, a start on a soft
-                        // wrap resolves to the end of the previous row; a
-                        // bordered chip would show that empty first band. It
-                        // is spurious when skipping the first character
-                        // removes a row. Per-row geometry has no such band.
-                        let next = editor.content[start..]
-                            .chars()
-                            .next()
-                            .map_or(start, |c| start + c.len_utf8());
-                        let end = annotation.range.end.min(visible.end);
-                        if next < end
-                            && annotation_quads(next, end, color, window)
-                                .iter()
-                                .filter(|q| q.bounds.size.width > px(1.))
-                                .count()
-                                < quads.len()
-                        {
-                            quads.remove(0);
-                        }
-                    }
+                    let end = annotation.range.end.min(visible.end);
+                    let mut quads = if annotation.border.a > 0. {
+                        chip_quads(start, end, color, window)
+                    } else {
+                        annotation_quads(start, end, color, window)
+                    };
+                    quads.retain(|q| q.bounds.size.width > px(1.));
                     if annotation.border.a > 0. {
                         // A chip: rounded and bordered, painted around the
                         // glyphs without moving them.
@@ -1643,6 +1651,8 @@ impl Element for EditorElement {
             }
         }
         let mut outlines = Vec::new();
+        #[cfg(test)]
+        let mut outline_rings = Vec::new();
         for (start, flash) in &editor.range_flashes {
             let t = now.saturating_duration_since(*start).as_secs_f32()
                 / flash.duration.as_secs_f32().max(0.001);
@@ -1778,47 +1788,30 @@ impl Element for EditorElement {
                 {
                     continue;
                 }
-                let mut quads: Vec<_> = range_quads(range.start, range.end, *color, window)
+                // A ring around the chip's own quads with an even 2 px gap, so
+                // it hugs the text the chip covers (#303).
+                let rings: Vec<_> = chip_quads(range.start, range.end, *color, window)
                     .into_iter()
-                    .filter(|q| q.bounds.size.width > px(1.))
+                    .filter(|q| q.bounds.bottom() > low && q.bounds.top() < high)
+                    .map(|q| {
+                        let b = q.bounds;
+                        let inset = (b.size.height * 0.1).min(px(3.));
+                        gpui::quad(
+                            Bounds::from_corners(
+                                point(b.left() - px(4.), b.top() + inset - px(2.)),
+                                point(b.right() + px(4.), b.bottom() - inset + px(2.)),
+                            ),
+                            px(5.),
+                            gpui::transparent_black(),
+                            px(1.5),
+                            *color,
+                            BorderStyle::Solid,
+                        )
+                    })
                     .collect();
-                // Like chips: a start on a soft wrap yields an empty first band.
-                if quads.len() > 1 {
-                    let next = editor.content[range.start..]
-                        .chars()
-                        .next()
-                        .map_or(range.start, |c| range.start + c.len_utf8());
-                    if next < range.end
-                        && range_quads(next, range.end, *color, window)
-                            .iter()
-                            .filter(|q| q.bounds.size.width > px(1.))
-                            .count()
-                            < quads.len()
-                    {
-                        quads.remove(0);
-                    }
-                }
-                // A ring that follows the chip's shape with an even 2 px gap.
-                outlines.extend(
-                    quads
-                        .into_iter()
-                        .filter(|q| q.bounds.bottom() > low && q.bounds.top() < high)
-                        .map(|q| {
-                            let b = q.bounds;
-                            let inset = (b.size.height * 0.1).min(px(3.));
-                            gpui::quad(
-                                Bounds::from_corners(
-                                    point(b.left() - px(4.), b.top() + inset - px(2.)),
-                                    point(b.right() + px(4.), b.bottom() - inset + px(2.)),
-                                ),
-                                px(5.),
-                                gpui::transparent_black(),
-                                px(1.5),
-                                *color,
-                                BorderStyle::Solid,
-                            )
-                        }),
-                );
+                #[cfg(test)]
+                outline_rings.extend(rings.iter().map(|q| (range.clone(), q.bounds)));
+                outlines.extend(rings);
             }
         }
         for ((row, visual_row), mut markers) in hidden_annotations {
@@ -1986,6 +1979,8 @@ impl Element for EditorElement {
             search_bounds,
             annotations,
             outlines,
+            #[cfg(test)]
+            outline_rings,
             annotation_bounds,
             hidden_annotation_hits,
             annotation_counts,
@@ -2026,6 +2021,7 @@ impl Element for EditorElement {
             #[cfg(test)]
             {
                 editor.visible_link_hitboxes = prepaint.link_grips.len();
+                editor.outline_rings = std::mem::take(&mut prepaint.outline_rings);
             }
             let moved = editor.selection_bounds != selection_bounds;
             editor.selection_bounds = selection_bounds;
@@ -5062,5 +5058,130 @@ mod link_geometry_tests {
                 2000
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod outline_ring_tests {
+    use super::*;
+    use crate::{EditorState, SourceAnnotation, markdown_syntax};
+    use gpui::rgba;
+
+    /// #303: a review outline rings its chip at every width: an alias that
+    /// starts a wrap row, a list item's indented rows, a long line's cached
+    /// positions (over 256 bytes, more than 8 annotations).
+    #[gpui::test]
+    fn outline_rings_hug_their_chips_at_every_width(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let source = "## Background\n\n\
+            Ms PERSON_1, known to colleagues as PERSON_2, was employed by ORG_1 as a \
+            Senior Analyst from 2 May 2019 until 30 September 2026. PERSON_3 brought the \
+            claim above, alleging unfair dismissal. ORG_1 denies the claim. The parties \
+            have agreed to settle it on the terms below.\n\n\
+            1. **Payment.** ORG_1 will pay Ms PERSON_1 £18,500 as compensation for loss \
+            of employment within 14 days of receiving this agreement.\n\
+            2. **Withdrawal.** Ms PERSON_1 will withdraw the claim within seven days.\n\n\
+            > A note from PERSON_4 of ADDRESS_1 on the terms above.\n";
+        let ranges: Vec<_> = alias_ranges(source);
+        assert!(ranges.len() > 8, "the cached-position path");
+        editor.update(cx, |editor, cx| {
+            editor.set_text(source, cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+            let revision = editor.revision();
+            let blue: Hsla = rgba(0x2a62c0ff).into();
+            editor.set_annotations(
+                revision,
+                ranges
+                    .iter()
+                    .enumerate()
+                    .map(|(id, range)| SourceAnnotation {
+                        id: id as u64,
+                        range: range.clone(),
+                        color: rgba(0x2a62c022).into(),
+                        active_color: rgba(0x2a62c044).into(),
+                        border: blue,
+                        text_color: None,
+                        underline: None,
+                        dotted: false,
+                    })
+                    .collect(),
+                cx,
+            );
+            editor.set_outlines(
+                revision,
+                ranges.iter().map(|r| (r.clone(), blue)).collect(),
+                cx,
+            );
+            // From the paragraph's start to the alias after "dismissal.".
+            let paragraph = source.find("Ms PERSON_1").unwrap();
+            let alias = source.find("ORG_1 denies").unwrap();
+            editor.set_selection(paragraph..alias + "ORG_1".len(), cx);
+        });
+        for width in (240..900).step_by(4) {
+            cx.simulate_resize(size(px(width as f32), px(2400.)));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            editor.read_with(cx, |editor, _| {
+                for (id, range) in ranges.iter().enumerate() {
+                    let chips: Vec<_> = editor
+                        .annotation_bounds
+                        .iter()
+                        .filter(|(key, _)| *key == id as u64)
+                        .map(|(_, b)| b.dilate(px(2.)))
+                        .collect();
+                    let rings: Vec<_> = editor
+                        .outline_rings
+                        .iter()
+                        .filter(|(r, _)| r == range)
+                        .map(|(_, b)| *b)
+                        .collect();
+                    assert!(
+                        !chips.is_empty(),
+                        "{width}: {:?} painted",
+                        &source[range.clone()]
+                    );
+                    let close = |a: &Bounds<Pixels>, b: &Bounds<Pixels>| {
+                        (a.left() - b.left()).abs() < px(0.01)
+                            && (a.right() - b.right()).abs() < px(0.01)
+                            && (a.top() - b.top()).abs() < px(0.01)
+                            && (a.bottom() - b.bottom()).abs() < px(0.01)
+                    };
+                    assert!(
+                        rings.len() == chips.len()
+                            && rings.iter().zip(&chips).all(|(r, c)| close(r, c)),
+                        "{width}: ring {rings:?} around chip {chips:?} of {:?}",
+                        &source[range.clone()]
+                    );
+                }
+                // One band per visual row: summed row heights once fell
+                // short of the last row and banded it whole.
+                let mut tops: Vec<_> = editor
+                    .selection_bounds
+                    .iter()
+                    .map(|b| (f32::from(b.top()) * 10.).round() as i64)
+                    .collect();
+                let rows = tops.len();
+                tops.dedup();
+                assert_eq!(tops.len(), rows, "{width}: {:?}", editor.selection_bounds);
+            });
+        }
+    }
+
+    /// `ORG_n`, `PERSON_n` and `ADDRESS_n` tokens, in order.
+    fn alias_ranges(source: &str) -> Vec<Range<usize>> {
+        let mut ranges = Vec::new();
+        for prefix in ["ORG_", "PERSON_", "ADDRESS_"] {
+            for (at, _) in source.match_indices(prefix) {
+                let digits = source[at + prefix.len()..]
+                    .bytes()
+                    .take_while(u8::is_ascii_digit)
+                    .count();
+                ranges.push(at..at + prefix.len() + digits);
+            }
+        }
+        ranges.sort_by_key(|r| r.start);
+        ranges
     }
 }

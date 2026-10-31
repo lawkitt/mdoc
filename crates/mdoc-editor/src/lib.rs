@@ -651,6 +651,8 @@ pub struct EditorState {
         std::cell::RefCell<std::collections::HashMap<usize, search_geometry::CachedLinePositions>>,
     #[cfg(test)]
     visible_link_hitboxes: usize,
+    #[cfg(test)]
+    outline_rings: Vec<(Range<usize>, Bounds<Pixels>)>,
     hidden_annotation_ids: std::collections::HashSet<u64>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     annotation_hover: Option<u64>,
@@ -924,6 +926,8 @@ impl EditorState {
             position_cache: Default::default(),
             #[cfg(test)]
             visible_link_hitboxes: 0,
+            #[cfg(test)]
+            outline_rings: Vec::new(),
             hidden_annotation_ids: std::collections::HashSet::new(),
             annotation_bounds: Vec::new(),
             annotation_hover: None,
