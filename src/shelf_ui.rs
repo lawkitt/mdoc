@@ -123,6 +123,14 @@ impl Fit {
     }
 }
 
+/// Case `id` among the sources, named as the shelf shows it.
+fn case_source(sources: &[ClipboardSource], id: &str) -> Option<ClipboardSource> {
+    sources
+        .iter()
+        .find(|s| matches!(s, ClipboardSource::Case { id: case, .. } if case == id))
+        .cloned()
+}
+
 /// What the shelf shows, read from the workspace when it opens.
 pub(crate) struct ShelfContent {
     pub documents: Vec<ShelfDocument>,
@@ -171,12 +179,10 @@ impl ShelfContent {
         let source = picked
             .or_else(|| workspace.active_clipboard_source(cx))
             .or_else(|| {
-                documents.iter().find_map(|d| {
-                    d.case.as_ref().map(|case| ClipboardSource::Case {
-                        id: case.id.clone(),
-                        name: case.name.clone(),
-                    })
-                })
+                documents
+                    .iter()
+                    .find_map(|d| d.case.as_ref())
+                    .and_then(|case| case_source(&sources, &case.id))
             })
             .or_else(|| sources.first().cloned());
         let update = match crate::updater::state(cx).install {
@@ -435,10 +441,7 @@ impl ShelfView {
             return;
         };
         let source = match (&document.case, &document.key) {
-            (Some(case), _) => Some(ClipboardSource::Case {
-                id: case.id.clone(),
-                name: case.name.clone(),
-            }),
+            (Some(case), _) => case_source(&self.content.sources, &case.id),
             (None, ShelfKey::Tab(id)) => self
                 .content
                 .sources

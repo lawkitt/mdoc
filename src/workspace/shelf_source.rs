@@ -9,7 +9,7 @@ use crate::{
     shelf::{self, ClosedMember, OpenTab, ShelfDocument, ShelfKey},
 };
 use gpui::{App, Context, Window};
-use mdoc_pii::restore::ExportedIdentity;
+use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
 use mdoc_store::{session_store, settings};
 use std::{path::PathBuf, time::SystemTime};
 
@@ -195,11 +195,26 @@ impl Workspace {
             .collect();
         let mut cases = self.case_coordinator.summaries();
         cases.sort_by_key(|case| case.name.to_lowercase());
-        sources.extend(cases.into_iter().map(|case| ClipboardSource::Case {
-            id: case.id,
-            name: case.name,
-        }));
+        sources.extend(
+            cases
+                .into_iter()
+                .map(|case| self.case_source(&case.id, &case.name)),
+        );
         sources
+    }
+
+    /// A case as a clipboard source, named as the shelf may show it: with
+    /// its own names pseudonymized (a case is often named after a person),
+    /// or "a locked case" while its names cannot be read (ADR 0084).
+    fn case_source(&self, id: &str, name: &str) -> ClipboardSource {
+        let name = match self.case_coordinator.case(id) {
+            Some(case) => RestoreMap::new(case.exported()).pseudonymize(name).0,
+            None => "a locked case".to_string(),
+        };
+        ClipboardSource::Case {
+            id: id.to_string(),
+            name,
+        }
     }
 
     /// The document used last: the active tab's case, or its own mapping.
@@ -207,10 +222,7 @@ impl Workspace {
         let view = self.active_view()?;
         let view = view.read(cx);
         if let Some(link) = view.case.link() {
-            return Some(ClipboardSource::Case {
-                id: link.id.clone(),
-                name: link.name.clone(),
-            });
+            return Some(self.case_source(&link.id, &link.name));
         }
         let id = self.tabs.active();
         self.clipboard_sources(cx)
@@ -369,10 +381,11 @@ impl Workspace {
         if changed == prefs {
             return Ok(());
         }
+        // Taken even without a file, so a Settings save in flight knows it
+        // is older.
+        let write = settings::next_write();
         let saved = match path {
-            Some(path) => {
-                settings::save_in_order(&path, &changed, settings::next_write()).map(|_| ())
-            }
+            Some(path) => settings::save_in_order(&path, &changed, write).map(|_| ()),
             None => Ok(()),
         };
         if let Err(error) = &saved {

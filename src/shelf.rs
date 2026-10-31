@@ -100,6 +100,9 @@ pub(crate) struct ShelfDocument {
     /// The title with known originals pseudonymized.
     pub title: String,
     pub case: Option<CaseLink>,
+    /// The case's name as the row shows it, pseudonymized with the names
+    /// the document knows: a case is often named after a person.
+    pub case_label: Option<String>,
     pub readiness: Readiness,
     pub edited: SystemTime,
     pub words: usize,
@@ -249,6 +252,7 @@ impl ShelfDocument {
         Self {
             key,
             title: names.pseudonymize(title).0,
+            case_label: case.as_ref().map(|case| names.pseudonymize(&case.name).0),
             case,
             readiness,
             edited,

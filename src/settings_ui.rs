@@ -18,7 +18,8 @@ pub use mdoc_store::model_state::Status;
 use mdoc_store::model_state::{Files, ModelState};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::settings::{
-    Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, next_write, save_in_order,
+    Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, is_latest_write, next_write,
+    save_in_order,
 };
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
@@ -809,9 +810,12 @@ impl Panel {
                 if let Some(gate) = save_gate {
                     gate.await;
                 }
-                path.map_or(Ok(()), |path| {
-                    save_in_order(&path, &prefs, write).map(|_| ())
-                })
+                // `Ok(false)`: a later write (a shelf note's) started, and
+                // this one's choices are not the latest.
+                match path {
+                    Some(path) => save_in_order(&path, &prefs, write),
+                    None => Ok(is_latest_write(write)),
+                }
             }
         });
         cx.spawn(async move |this, cx| {
@@ -819,7 +823,14 @@ impl Panel {
             let _ = this.update(cx, |this, cx| {
                 this.applying = false;
                 match result {
-                    Ok(()) => {
+                    // Skipped: publish nothing; the draft, which holds the
+                    // later change too, saves next.
+                    Ok(false) => {
+                        if std::mem::take(&mut this.save_pending) {
+                            this.persist(cx);
+                        }
+                    }
+                    Ok(true) => {
                         this.shared.borrow_mut().current = Some(prefs);
                         this.shared.borrow_mut().error = None;
                         this.error = None;

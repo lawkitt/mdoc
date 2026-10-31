@@ -968,6 +968,41 @@ fn a_shelf_flag_saved_during_a_panel_save_survives_it(cx: &mut TestAppContext) {
     assert!(!saved.updates.check_automatically);
 }
 
+/// Review of #280: a Settings save that a shelf note's save overtook
+/// publishes nothing, so even when the save after it fails, the older
+/// choice (the menu bar switch on) never comes back.
+#[gpui::test]
+fn an_overtaken_settings_save_never_brings_an_older_choice_back(cx: &mut TestAppContext) {
+    use mdoc_store::settings::{GeneralConfig, load, next_write, save_in_order};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let shared = Store::in_memory();
+    shared.borrow_mut().path = Some(path.clone());
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    panel.update(cx, |p, cx| {
+        hold_next_save(p, cx);
+        p.draft.updates.check_automatically = false;
+        p.persist(cx);
+    });
+    // The note's Quit when windows close, as `Workspace::update_general`.
+    let off = |general: &mut GeneralConfig| general.menu_bar = false;
+    let mut changed = shared.borrow().current.clone().unwrap();
+    off(&mut changed.general);
+    assert!(save_in_order(&path, &changed, next_write()).unwrap());
+    shared.borrow_mut().current = Some(changed);
+    panel.update(cx, |p, cx| p.general_changed(off, cx));
+    // The save after the overtaken one fails.
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(blocked.join("settings.json"));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+    panel.update(cx, |p, _| assert!(!p.draft.general.menu_bar));
+    assert!(!load(&path).unwrap().general.menu_bar, "on disk too");
+}
+
 fn hold_next_save(panel: &mut Panel, cx: &mut Context<Panel>) {
     let gate = cx.background_executor().timer(Duration::from_secs(1));
     panel.save_gate = Some(cx.background_executor().spawn(gate));

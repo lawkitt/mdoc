@@ -590,6 +590,12 @@ pub fn next_write() -> u64 {
     PREFS_LATEST.fetch_add(1, Ordering::SeqCst) + 1
 }
 
+/// Whether `write` of [`next_write`] is still the latest started: a write
+/// that is not must not publish its choices, even in memory.
+pub fn is_latest_write(write: u64) -> bool {
+    PREFS_LATEST.load(Ordering::SeqCst) == write
+}
+
 /// Save `prefs` as write `write` of [`next_write`], unless a later write
 /// was started meanwhile; `Ok(false)` when skipped. An older Settings save
 /// still running can then never land over a newer choice (the menu bar

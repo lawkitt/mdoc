@@ -198,6 +198,7 @@ fn the_shelf_hands_off_only_ready_documents_and_never_an_original(cx: &mut TestA
         }
         // What the shelf shows is handed to anyone watching the screen.
         handed.push(row.title.clone());
+        handed.extend(row.case_label.clone());
         handed.extend(row.preview.iter().map(|line| line.text.clone()));
         // The drag card shows under the pointer, in other apps too.
         let card = row.drag_card();
@@ -439,7 +440,12 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
             crate::shelf_ui::row_label(&view.content().documents[pending_row])
         })
         .unwrap();
-    assert_eq!(label, "memo, Anna Petrova contract, 1 left to review");
+    // The case is named after its first document: masked too.
+    assert_eq!(label, "memo, PERSON_1 contract, 1 left to review");
+    let names_from = shelf
+        .read_with(cx, |view, _| view.source_line().unwrap())
+        .unwrap();
+    assert!(!names_from.contains("Anna"), "{names_from}");
 
     // Not ready: no copy, no drag.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));

@@ -121,9 +121,9 @@ pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
 /// What VoiceOver reads for a row: "<title>, <case>, ready".
 pub(crate) fn row_label(document: &ShelfDocument) -> String {
     let mut label = document.display_title().to_string();
-    if let Some(case) = &document.case {
+    if let Some(case) = &document.case_label {
         label.push_str(", ");
-        label.push_str(&case.name);
+        label.push_str(case);
     }
     label.push_str(", ");
     label.push_str(&document.readiness.label());
@@ -368,11 +368,14 @@ impl ShelfView {
             )
             .when_some(document.case.as_ref(), |header, case| {
                 header.child(
-                    label(case.name.clone(), style::case_color(case.hue(), theme))
-                        .flex_shrink(1.)
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis(),
+                    label(
+                        document.case_label.clone().unwrap_or_default(),
+                        style::case_color(case.hue(), theme),
+                    )
+                    .flex_shrink(1.)
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis(),
                 )
             })
             .child(div().flex_1())
