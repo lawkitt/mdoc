@@ -60,7 +60,7 @@ so delete the app, restart the phone and reinstall), then rerun the script.
 PDFium 7988, both runs 2026-10-31 with the phone on its USB-C cable
 (charging). Run 1: core `a41003f`, launched by hand on the phone after the
 certificate check, at 100 %. Run 2: core `0ba7486`, launched by
-`scripts/ios-spike-device.sh` five minutes after the iPhone 12 Pro run. Raw
+`scripts/ios-spike-device.sh` three minutes after the iPhone 12 Pro run. Raw
 reports: [run 1](iphone-17-pro.json), [run 2](iphone-17-pro-run2.json).
 
 | Measurement | Run 1 | Run 2 | Budget |
