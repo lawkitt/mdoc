@@ -90,6 +90,51 @@ green and leave desktop unchanged. Record:
    ios-device-test <udid>` runs the review flow and the long-jobs test on a
    connected iPhone. *Done when:* it passes on the iPhone 17 Pro.
 
+## Android 0.1
+
+The review-first Android app on the shared Rust core, built beside iOS 0.1
+on the Windows PC ([ADR 0089](docs/adr/0089-android-app.md)). Core-crate
+changes merge when green and leave desktop and iOS unchanged. Record:
+[Android grill](docs/design/android-grill-2026-10-31.md), whose
+Maintainer actions list the steps on the maintainer's side.
+
+1. **[Android] Toolchain on Windows.** Pinned SDK, NDK r29, Temurin 21 and
+   Gradle wrapper; `scripts/build-android-core.sh` with ONNX Runtime 1.27.0
+   and PDFium 7988; `just android-core`. *Done when:* on a fresh checkout
+   on `windows`, `just android-core` writes both ABIs and the Kotlin
+   bindings to `target/android/`, every download verified and every `.so`
+   16 KB aligned.
+2. **[Android] Feasibility spike.** `tools/android-spike` and
+   `scripts/android-spike-device.sh` on Test Lab phones at 6, 8 and 12 GB
+   or more. *Done when:* each row has pass or fail
+   against ADR 0085's budgets and Android's floor constant is set from them.
+3. **[Android] App scaffold and the Android job.** `apps/android` over
+   `mdoc-ffi` with pinned, verified Gradle dependencies; JVM parity tests;
+   the Android job in `local/windows`. *Done when:* a PR touching
+   `apps/android` gets a green `local/windows` with the Android job, and the
+   parity tests match the desktop goldens, Copy for AI bytes included.
+4. **[Android] Screens in iOS order.** Home, intake (Paste, Files, Photos,
+   Scan), setup and downloads, review and Identities, the hand-off bar,
+   Restore with mdoc, Settings. *Done when:* the emulator test walks open,
+   review, share, restore, and TalkBack reads and acts on candidates.
+5. **[Android] Long jobs on real phones.** The foreground service, the
+   Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
+   Pixel and Samsung phone an import, OCR and Find names each survive
+   leaving the app and a process kill, with no crash or ANR in
+   `ApplicationExitInfo`; and a model download does too on the emulator
+   and the friend's phone.
+6. **[Android] UI survey.** `just android-survey`. *Done when:* the before
+   and after sets sit under `docs/evidence/android-app/`.
+7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
+   it passes on one Test Lab phone per RAM class.
+8. **[Android] Play closed test.** The Play account, the device check and
+   12 testers. *Done when:* the closed test has had 12 testers opted in for
+   14 days in a row.
+9. **[Android] Acceptance and `android-v0.1.0`.** Platform acceptance
+   section 14 (A1–A17). *Done when:* the section passes on the release
+   build, the signed APK and its SHA-256 are on GitHub Releases, and the
+   Play production release is submitted (or the slip is recorded).
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
