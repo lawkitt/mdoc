@@ -894,6 +894,7 @@ impl Workspace {
         self.sidebar
             .restore(session.sidebar_visible, session.sidebar_choice);
         self.theme_choice = session.theme_choice;
+        self.sync_app_appearance(cx);
         self.apply_theme(window, cx);
         self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
         self.case_coordinator
