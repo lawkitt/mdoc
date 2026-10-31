@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -72,15 +75,26 @@ fun HomeScreen(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     setupCard: (@Composable () -> Unit)? = null,
+    onSettings: () -> Unit = {},
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(onSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) }
+                },
+            )
+        },
         floatingActionButton = {
             Box {
+                val addLabel = stringResource(R.string.add)
                 ExtendedFloatingActionButton(
                     onClick = { menu = true },
+                    // The button's own label: its text alone does not reach TalkBack.
+                    modifier = Modifier.semantics { contentDescription = addLabel },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.add)) },
                 )

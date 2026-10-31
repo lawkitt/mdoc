@@ -119,6 +119,14 @@ class Documents(
     /** Restores a reply with one case's mapping; needs no model. */
     fun restore(reply: String, case: CaseId): RestoreResult = restoreResult(core { ffi.restore(case.raw, reply) })
 
+    /** Keeps `reply`, in alias form, as the document's reply (ADR 0078). */
+    fun saveReply(reply: String, document: DocumentId) {
+        val session = session(document)
+        val path = session.path ?: throw AppError.NoCase()
+        val case = session.caseId ?: throw AppError.NoCase()
+        core { ffi.saveReply(case, path, reply) }
+    }
+
     /** The case of the most recently shared document, for Restore with mdoc. */
     fun currentCase(): CaseId? = ffi.currentCase()?.let { CaseId(it.id) }
 
@@ -159,13 +167,14 @@ class Documents(
             caseId = opened.caseId
             scanned = opened.mentions.isNotEmpty() || originals.scanned(path)
             kind = originals.kind(path)
+            originalFile = originals.file(path)
         }
 
         internal fun summary(updated: Long): DocumentSummary {
             val current = snapshot()
             return DocumentSummary(
                 id, current.title, current.caseId, current.kind, current.phase,
-                current.pendingCount, updated, current.candidates.size,
+                current.pendingCount, updated, current.candidates.size, saved = path != null,
             )
         }
 
@@ -175,6 +184,7 @@ class Documents(
                 ?: return DocumentSnapshot(
                     id, title, caseId?.let(::CaseId), caseName(caseId), kind, DocumentPhase.Recognizing,
                     "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted,
+                    original = OriginalSource.of(source?.file ?: originalFile),
                 )
             val candidates = review.mentions.map(::candidate)
             val identities = review.identities.map { row ->
@@ -208,6 +218,7 @@ class Documents(
                 id, review.title, (review.caseId ?: caseId)?.let(::CaseId), caseName(review.caseId ?: caseId),
                 kind, phase, review.text, markdownStyling(review.text), candidates, identities, reply,
                 warning = review.warning,
+                original = OriginalSource.of(source?.file ?: originalFile),
             )
         }
 
@@ -271,6 +282,15 @@ class Documents(
         }
 
         fun replaceAllPending(): DocumentSnapshot = change { ffi.replaceAll() }
+
+        /**
+         * Proposals as a scan would give them, for UI tests and the survey on
+         * an emulator with no detector (the iOS app's seedForUITesting).
+         */
+        internal fun seedProposals(candidates: List<uniffi.mdoc_ffi.Candidate>): DocumentSnapshot {
+            synchronized(this) { scanned = true }
+            return change { ffi.addCandidates(candidates) }
+        }
 
         /** Replace…: a manual identity for the selected text, replaced in every exact repeat. */
         fun addReplacement(range: SourceRange, category: Category): DocumentSnapshot {

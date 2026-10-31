@@ -46,6 +46,9 @@
     <!-- Document -->
     <string name="text">Text</string>
     <string name="reply">Reply</string>
+    <string name="original">Original</string>
+    <string name="no_original_page">No original page</string>
+    <string name="original_page">Original page %1$d of %2$d</string>
     <string name="recognize_text">Recognize text</string>
     <string name="resume_recognition">Resume recognition</string>
     <string name="finish_import">Finish import</string>
@@ -148,6 +151,29 @@
     <string name="cancel_download">Cancel download</string>
     <string name="not_now">Not now</string>
     <string name="downloading_models">Downloading models</string>
+
+    <!-- Restore with mdoc -->
+    <string name="restore_with_mdoc">Restore with mdoc</string>
+    <string name="share_reply_as_text">Share the AI\'s reply as text to restore it.</string>
+    <string name="no_cases_yet">No cases yet</string>
+    <string name="share_document_first">Share a document from mdoc first; replies restore with its case.</string>
+    <string name="not_restored">Not restored</string>
+    <string name="save_to_document">Save to document</string>
+    <string name="saved">Saved</string>
+    <string name="not_saved">The reply was not saved.</string>
+
+    <!-- Settings -->
+    <string name="models">Models</string>
+    <string name="models_explanation">Models download once, on Wi-Fi unless you allow cellular, and then run on this device.</string>
+    <string name="stays_on_phone">mdoc\'s documents stay on this phone and are not in backups.</string>
+    <string name="about_mdoc">About mdoc</string>
+    <string name="version">Version</string>
+    <string name="source_code">Source code</string>
+    <string name="no_data">mdoc is free, has no accounts and collects no data. Nothing you open leaves this device unless you share it.</string>
+    <string name="licence">Licence</string>
+    <string name="gpl_notice">mdoc is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</string>
+    <string name="app_store_permission">Additional permission under GNU GPL version 3 section 7: mdoc may be distributed through app stores whose terms add usage restrictions, provided the corresponding source stays available under the GPL.</string>
+    <string name="permission_text">Permission text (LICENSE-APP-STORES.md)</string>
 
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>
