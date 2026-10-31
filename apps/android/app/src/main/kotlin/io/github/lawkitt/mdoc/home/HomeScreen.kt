@@ -4,6 +4,7 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,7 +64,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +99,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     setupCard: (@Composable () -> Unit)? = null,
     onSettings: () -> Unit = {},
+    onDelete: (DocumentId) -> Unit = {},
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     Scaffold(
@@ -147,7 +151,12 @@ fun HomeScreen(
             else -> LazyColumn(inner) {
                 setupCard?.let { card -> item(key = "setup") { Box(Modifier.padding(16.dp)) { card() } } }
                 items(state.documents, key = { it.id.raw }) { document ->
-                    DocumentRow(document, state.cases.firstOrNull { it.id == document.caseId }, state.canFindNames) {
+                    DocumentRow(
+                        document,
+                        state.cases.firstOrNull { it.id == document.caseId },
+                        state.canFindNames,
+                        onDelete = { onDelete(document.id) },
+                    ) {
                         onOpen(document.id)
                     }
                 }
@@ -174,7 +183,16 @@ private val AddOption.label: Int
     }
 
 @Composable
-private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNames: Boolean, onClick: () -> Unit) {
+private fun DocumentRow(
+    document: DocumentSummary,
+    case: CaseSummary?,
+    canFindNames: Boolean,
+    onDelete: () -> Unit,
+    onClick: () -> Unit,
+) {
+    // A long press offers Delete (iOS's swipe); TalkBack has it as an action.
+    var actions by remember { mutableStateOf(false) }
+    val deleteLabel = stringResource(R.string.delete)
     val line = HomeViewModel.status(document, canFindNames)
     val status = when (line) {
         StatusLine.NotRecognized -> stringResource(R.string.status_not_recognized)
@@ -191,24 +209,37 @@ private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNa
     val tone = if (toReview) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     // The case's name only when it differs from the title.
     val caseName = case?.name?.takeIf { it != document.title }
-    ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        leadingContent = case?.let {
-            {
-                Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape))
-            }
-        },
-        headlineContent = { Text(document.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                caseName?.let { Text(stringResource(R.string.case_named, it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(statusIcon(line), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
-                    Text(status, color = tone, fontWeight = if (toReview) FontWeight.SemiBold else null)
+    Box {
+        ListItem(
+            modifier = Modifier
+                .combinedClickable(onClick = onClick, onLongClick = { actions = true }, onLongClickLabel = deleteLabel)
+                .semantics { customActions = listOf(CustomAccessibilityAction(deleteLabel) { onDelete(); true }) },
+            leadingContent = case?.let {
+                {
+                    Box(Modifier.size(10.dp).background(Color(Palette.case(it.colour)), CircleShape))
                 }
-            }
-        },
-    )
+            },
+            headlineContent = { Text(document.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    caseName?.let { Text(stringResource(R.string.case_named, it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(statusIcon(line), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
+                        Text(status, color = tone, fontWeight = if (toReview) FontWeight.SemiBold else null)
+                    }
+                }
+            },
+        )
+        DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
+            DropdownMenuItem(
+                text = { Text(deleteLabel) },
+                onClick = {
+                    actions = false
+                    onDelete()
+                },
+            )
+        }
+    }
 }
 
 /** iOS's status symbols, in Material's core set. */

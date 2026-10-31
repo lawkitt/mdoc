@@ -17,12 +17,15 @@ import io.github.lawkitt.mdoc.core.DocumentPhase
 import io.github.lawkitt.mdoc.core.DocumentSummary
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.SourceKind
+import io.github.lawkitt.mdoc.jobs.CancelReason
+import io.github.lawkitt.mdoc.jobs.Jobs
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,9 +53,24 @@ data class HomeState(
     val refused: String? = null,
 )
 
-class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
+class HomeViewModel(private val core: () -> AppCore, private val jobs: Jobs? = null) : ViewModel() {
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
+
+    /**
+     * Deletes a document from Home, as iOS's swipe does. A job on it stops
+     * first, so it cannot save the document again.
+     */
+    fun delete(id: DocumentId) = viewModelScope.launch {
+        val jobs = jobs
+        if (jobs != null && jobs.current.value?.documentId == id) {
+            jobs.cancel(CancelReason.User)
+            jobs.current.first { it == null }
+        }
+        withContext(Dispatchers.IO) { runCatching { core().documents.delete(id) } }
+            .onFailure { error -> mutable.update { it.copy(refused = error.message) } }
+        refresh()
+    }
 
     /** Reads the library off the main thread; a core that failed to open is tried again. */
     fun refresh() {
@@ -158,7 +176,7 @@ class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
         }
 
         fun factory(app: MdocApplication): ViewModelProvider.Factory = viewModelFactory {
-            initializer { HomeViewModel { app.core } }
+            initializer { HomeViewModel({ app.core }, app.jobs) }
         }
 
         /** The status line under a document's title. */

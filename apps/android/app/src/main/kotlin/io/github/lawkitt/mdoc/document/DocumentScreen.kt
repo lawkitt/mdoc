@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.PersistableBundle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,7 +79,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -372,6 +375,10 @@ fun DocumentScreen(
                     model.open(it.id)
                 }
             },
+            // Replace all or Keep all of an identity, as iOS's swipe and VoiceOver actions do.
+            onDecide = { identity, decision ->
+                snapshot.mentions(identity.id).firstOrNull()?.let { model.decide(it.id, decision, Scope.AllOccurrences) }
+            },
             onDismiss = { model.showIdentities(false) },
         )
     }
@@ -626,7 +633,12 @@ private fun ManualReplaceSheet(text: String, onReplace: (Category) -> Unit, onDi
 /** Identities by category, with their aliases and how they were decided. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IdentitiesSheet(identities: List<Identity>, onOpen: (Identity) -> Unit, onDismiss: () -> Unit) {
+private fun IdentitiesSheet(
+    identities: List<Identity>,
+    onOpen: (Identity) -> Unit,
+    onDecide: (Identity, Decision) -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Text(
             stringResource(R.string.identities),
@@ -644,31 +656,58 @@ private fun IdentitiesSheet(identities: List<Identity>, onOpen: (Identity) -> Un
                 }
                 items(group, key = { it.id.raw }) { identity ->
                     val dark = isSystemInDarkTheme()
-                    ListItem(
-                        modifier = Modifier.clickable(onClickLabel = stringResource(R.string.opens_first_mention)) { onOpen(identity) },
-                        // On the sheet's own colour, not banded rows.
-                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        leadingContent = {
-                            Box(
-                                Modifier.size(10.dp).background(
-                                    androidx.compose.ui.graphics.Color(Palette.category(identity.category, dark)),
-                                    CircleShape,
-                                ),
-                            )
-                        },
-                        headlineContent = { Text(identity.primaryWording) },
-                        supportingContent = {
-                            Text(
-                                "${identity.alias} · ${stringResource(
-                                    when (identity.state) {
-                                        MentionState.Proposed -> R.string.proposed
-                                        MentionState.Replaced -> R.string.replaced
-                                        MentionState.Kept -> R.string.kept
-                                    },
-                                )} · ${pluralStringResource(R.plurals.mentions, identity.mentionCount, identity.mentionCount)}",
-                            )
-                        },
-                    )
+                    var actions by remember { mutableStateOf(false) }
+                    val replaceAll = stringResource(R.string.replace_all)
+                    val keepAll = stringResource(R.string.keep_all)
+                    Box {
+                        ListItem(
+                            // A tap opens the first mention; a long press, or TalkBack's
+                            // actions, replace or keep all of them.
+                            modifier = Modifier
+                                .combinedClickable(
+                                    onClickLabel = stringResource(R.string.opens_first_mention),
+                                    onLongClick = { actions = true },
+                                ) { onOpen(identity) }
+                                .semantics {
+                                    customActions = listOf(
+                                        CustomAccessibilityAction(replaceAll) { onDecide(identity, Decision.Replace); true },
+                                        CustomAccessibilityAction(keepAll) { onDecide(identity, Decision.Keep); true },
+                                    )
+                                },
+                            // On the sheet's own colour, not banded rows.
+                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                            leadingContent = {
+                                Box(
+                                    Modifier.size(10.dp).background(
+                                        androidx.compose.ui.graphics.Color(Palette.category(identity.category, dark)),
+                                        CircleShape,
+                                    ),
+                                )
+                            },
+                            headlineContent = { Text(identity.primaryWording) },
+                            supportingContent = {
+                                Text(
+                                    "${identity.alias} · ${stringResource(
+                                        when (identity.state) {
+                                            MentionState.Proposed -> R.string.proposed
+                                            MentionState.Replaced -> R.string.replaced
+                                            MentionState.Kept -> R.string.kept
+                                        },
+                                    )} · ${pluralStringResource(R.plurals.mentions, identity.mentionCount, identity.mentionCount)}",
+                                )
+                            },
+                        )
+                        DropdownMenu(expanded = actions, onDismissRequest = { actions = false }) {
+                            DropdownMenuItem(text = { Text(replaceAll) }, onClick = {
+                                actions = false
+                                onDecide(identity, Decision.Replace)
+                            })
+                            DropdownMenuItem(text = { Text(keepAll) }, onClick = {
+                                actions = false
+                                onDecide(identity, Decision.Keep)
+                            })
+                        }
+                    }
                 }
             }
         }
