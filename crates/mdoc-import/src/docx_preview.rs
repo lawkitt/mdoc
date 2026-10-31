@@ -15,6 +15,7 @@ use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
 
 mod comments;
+mod glyph_fallback;
 pub use comments::DocxComment;
 
 const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
@@ -294,7 +295,13 @@ fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
     }
     let warnings = inspect_package(&bytes)?;
     let (render_input, comments) = comments::prepare(&bytes)?;
-    render_bytes(render_input.as_deref().unwrap_or(&bytes), output)?;
+    let mut render_input = render_input.unwrap_or(bytes);
+    if let Some(fallback) = glyph_fallback::platform_fallback()
+        && let Some(copy) = glyph_fallback::prepare(&render_input, fallback)?
+    {
+        render_input = copy;
+    }
+    render_bytes(&render_input, output)?;
     fs::write(
         output.with_extension("comments.json"),
         serde_json::to_vec(&comments).map_err(|e| PreviewError::Render(e.to_string()))?,
@@ -310,6 +317,43 @@ fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
         _ => PreviewError::Rejected,
     })?;
     Ok(())
+}
+
+fn word(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
+    node.tag_name().name() == name
+        && matches!(
+            node.tag_name().namespace(),
+            Some(
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                    | "http://purl.oclc.org/ooxml/wordprocessingml/main"
+            )
+        )
+}
+
+/// The package with the parts at the given entry indexes replaced.
+fn replace_parts(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    replacements: &std::collections::HashMap<usize, String>,
+) -> Result<Vec<u8>, PreviewError> {
+    use std::io::Write;
+    let invalid = |e: zip::result::ZipError| PreviewError::Package(e.to_string());
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(invalid)?;
+        if let Some(xml) = replacements.get(&i) {
+            output
+                .start_file(
+                    entry.name().map_err(invalid)?,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(invalid)?;
+            output.write_all(xml.as_bytes())?;
+        } else {
+            output.raw_copy_file(entry).map_err(invalid)?;
+        }
+    }
+    Ok(output.finish().map_err(invalid)?.into_inner())
 }
 
 // Auxiliary OOXML parts (for example customXml) can legally use UTF-16.
@@ -531,7 +575,7 @@ mod tests {
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 
-    fn package(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    pub(super) fn package(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut output = Cursor::new(Vec::new());
         let mut zip = zip::ZipWriter::new(&mut output);
         for (name, contents) in entries {
