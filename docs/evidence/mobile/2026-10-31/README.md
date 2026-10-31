@@ -109,6 +109,39 @@ or run 1: 123 s or 135 s), which the maintainer judged too far for INT8 to
 be worth an export, a new pinned model and a qualification run; the floor
 is 8 GB.
 
+## Android (ADR 0089)
+
+Measured 2026-10-31 on Firebase Test Lab phones through
+[`tools/android-spike`](../../../../tools/android-spike/README.md): the same
+`spike::run`, core `0.1.0` built by `scripts/build-android-core.sh` (ONNX
+Runtime 1.27.0 CPU from Microsoft's Android AAR, PDFium 7988), the models
+downloaded on the phone through the core's `Setup` (as the app does), four
+intra-op threads as on iOS. Peak memory is the process's resident high-water
+mark (`VmHWM`); the thermal budget fails at status SEVERE or worse
+(ADR 0089). Run with
+`scripts/android-spike-device.sh --test-lab blazer:36 shiba:36 a55xzh:36 bluejay:32`.
+
+| Phone | RAM (reported) | Peak memory | Cold load | s per 512-token window | 20-page scan | Thermal | OCR | Report |
+| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- |
+| Pixel 10 Pro (Tensor G5), Android 16 | 16 GB (15.2 GiB) | 1.68 GiB | 3.1 s | 1.76 | **Fail**: over 2 min (about 155 s est.) | none | both exact | [json](android-pixel-10-pro.json) |
+| Galaxy A55 (Exynos 1480), Android 16 | 8 GB (7.3 GiB) | 1.65 GiB | 3.8 s | 2.01 | **Fail**: over 2 min (about 180 s est.) | none | both exact | [json](android-galaxy-a55.json) |
+| Pixel 8 (Tensor G3), Android 16 | 8 GB (7.4 GiB) | 1.66 GiB | 3.9 s | 2.53 | **Fail**: over 2 min (about 225 s est.) | none | both exact | [json](android-pixel-8.json) |
+| Pixel 6a (Tensor), Android 12 | 6 GB (5.5 GiB) | 1.62 GiB | 4.9 s | 4.55 | **Fail**: over 2 min (about 400 s est.) | none | both exact | [json](android-pixel-6a.json) |
+| *Stand-in*: API 36 emulator, x86_64 | 6 GB | 1.81 GiB | 5.2 s | 1.58 | over 2 min | n/a | both exact | [json](android-emulator.json) |
+
+The scan stops itself at two minutes, so its time is estimated from the
+window time: the iPhone 17 Pro scanned the same 20 pages as 131 windows in
+43 s at 0.49 s per probe window; each phone's estimate scales that by its
+own window time. Peak memory covers the probe and two minutes of the scan.
+
+**No Android phone meets the 60 s scan budget with GLiNER2 FP16 on ONNX
+Runtime's CPU provider.** Memory, cold load, heat and OCR pass everywhere,
+the 6 GB Pixel 6a included. A window takes 3.6 (Pixel 10 Pro) to 9 times
+(Pixel 6a) as long as on the iPhone 17 Pro, with the same model, runtime
+version and thread count, so the gap is in the Android CPU path rather than
+the core. Android's floor constant is not set: the next step is the
+maintainer's (see Findings).
+
 ## What is measured
 
 [`spike::run`](../../../crates/mdoc-ffi/src/spike.rs) does the same on every
@@ -245,3 +278,16 @@ What the Simulator does establish:
 - **Open for later items**, not changed here: `ocr::SUPPORTED` stays false on
   iOS (the runtime download table is desktop's; `Setup` defines iOS's), and
   saved cases report no key store on iOS until `Library` adds the Keychain.
+
+### Android (2026-10-31)
+
+- GLiNER2 FP16 runs on every Android phone tried, within the memory, load
+  and thermal budgets, but scans 3.6 to 9 times slower than the iPhone 17
+  Pro, so no phone meets the 60 s budget for 20 pages.
+- Not tried yet, cheapest first: more intra-op threads or pinning to the big
+  cores; ONNX Runtime's XNNPACK execution provider, which the Android AAR
+  ships and whose FP16 kernels use the ARMv8.2 FP16 units; the INT8 export
+  (ADR 0085's fallback), which ships only if it matches FP16 on the
+  qualification fixtures.
+- Each run on Test Lab's free tier costs one of five physical-device runs a
+  day; the harness downloads about 680 MB on the phone.
