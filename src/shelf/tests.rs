@@ -582,7 +582,9 @@ fn a_long_wrapped_paragraph_previews_in_linear_time() {
     let started = std::time::Instant::now();
     let preview = preview_of(&text).unwrap();
     assert!(
-        preview.text.starts_with("PERSON_1 signed the agreement with ORG_1 today PERSON_1"),
+        preview
+            .text
+            .starts_with("PERSON_1 signed the agreement with ORG_1 today PERSON_1"),
         "{}",
         preview.text
     );
