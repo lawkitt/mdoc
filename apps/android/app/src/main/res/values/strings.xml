@@ -36,7 +36,6 @@
     <string name="pasted_text">Pasted text</string>
     <string name="photo">Photo</string>
     <string name="add_page">Add page</string>
-    <string name="pages_scanned">%1$d pages scanned.</string>
     <string name="opens_files">mdoc opens PDF, DOCX and image files.</string>
     <string name="could_not_open">mdoc could not open this file: %1$s</string>
     <string name="cancel">Cancel</string>
@@ -70,7 +69,6 @@
     <string name="no_names_found">No names found. Select text to mark one.</string>
     <string name="find_or_select">Find names, or select words in the text and choose Replace….</string>
     <string name="below_floor_note">This phone can\'t find names: the name detector needs 8 GB of memory. Select text to mark a name.</string>
-    <string name="review_before_sharing">Review %1$d proposals before sharing.</string>
     <string name="something_went_wrong">Something went wrong</string>
     <string name="document_gone">This document is no longer in mdoc.</string>
     <string name="download_models_first">Download the models first.</string>
@@ -92,7 +90,6 @@
     <string name="proposed">Proposed</string>
     <string name="replaced">Replaced</string>
     <string name="kept">Kept</string>
-    <string name="mentions">%1$d mentions</string>
     <string name="alias_explanation">The AI sees the alias; mdoc puts the original back when you restore its reply.</string>
     <string name="keep_explanation">The original stays in the text you share.</string>
     <string name="repeats_replaced">Every exact repeat in this document is replaced too.</string>
@@ -119,6 +116,7 @@
     <string name="share_as_file">Share as Markdown file</string>
     <string name="copied_for_ai">Copied for AI</string>
     <string name="paste_reply">Paste reply</string>
+    <string name="paste_another_reply">Paste another reply</string>
     <string name="paste_ai_reply">Paste AI reply</string>
     <string name="ai_reply">AI reply</string>
     <string name="restore">Restore</string>
@@ -126,7 +124,6 @@
     <string name="share_reply">Share reply</string>
     <string name="remove_reply">Remove reply</string>
     <string name="copied_reply">Copied reply</string>
-    <string name="values_restored">%1$d values restored</string>
     <string name="unrecognised">%1$d unrecognised</string>
     <string name="nothing_to_restore">Nothing to restore</string>
 
@@ -177,4 +174,19 @@
 
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>
+    <string name="import_stopped_background">The import stopped when mdoc left the screen.</string>
+
+    <!-- Counts, singular and plural as on iOS. -->
+    <plurals name="mentions">
+        <item quantity="one">%1$d mention</item>
+        <item quantity="other">%1$d mentions</item>
+    </plurals>
+    <plurals name="values_restored">
+        <item quantity="one">%1$d value restored</item>
+        <item quantity="other">%1$d values restored</item>
+    </plurals>
+    <plurals name="pages_scanned">
+        <item quantity="one">%1$d page scanned.</item>
+        <item quantity="other">%1$d pages scanned.</item>
+    </plurals>
 </resources>

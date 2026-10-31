@@ -1,7 +1,5 @@
 package io.github.lawkitt.mdoc.restore
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,14 +11,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -37,10 +39,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.lawkitt.mdoc.MdocApplication
 import io.github.lawkitt.mdoc.R
@@ -48,6 +52,7 @@ import io.github.lawkitt.mdoc.core.CaseId
 import io.github.lawkitt.mdoc.core.Documents
 import io.github.lawkitt.mdoc.core.LibrarySnapshot
 import io.github.lawkitt.mdoc.core.RestoreResult
+import io.github.lawkitt.mdoc.document.copy
 import io.github.lawkitt.mdoc.ui.MdocTheme
 import io.github.lawkitt.mdoc.ui.RestoredText
 import kotlinx.coroutines.Dispatchers
@@ -137,7 +142,7 @@ private fun RestoreScreen(reply: String?, documents: Documents?, onDone: () -> U
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
                         Text(
                             listOfNotNull(
-                                stringResource(R.string.values_restored, result.restoredCount),
+                                pluralStringResource(R.plurals.values_restored, result.restoredCount, result.restoredCount),
                                 if (result.unresolvedCount > 0) stringResource(R.string.unrecognised, result.unresolvedCount) else null,
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.labelLarge,
@@ -170,7 +175,11 @@ private fun CasePicker(library: LibrarySnapshot, selected: CaseId?, onSelect: (C
         Row(Modifier.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.case_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
             Box {
-                TextButton({ open = true }) { Text(name) }
+                // A picker, and it looks like one.
+                TextButton({ open = true }) {
+                    Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                }
                 DropdownMenu(open, { open = false }) {
                     library.cases.forEach { option ->
                         DropdownMenuItem(text = { Text(option.name) }, onClick = {
@@ -196,12 +205,13 @@ private fun Actions(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             notice?.let { Text(stringResource(it), style = MaterialTheme.typography.labelLarge) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Copy leads: most replies go back into a message (ADR 0087).
                 Button({
-                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("mdoc", result.text))
+                    // The restored reply holds originals: marked sensitive (lawkitt/mdoc#321).
+                    copy(context, result.text, sensitive = true)
                     onCopied()
                 }, Modifier.weight(1f)) { Text(stringResource(R.string.copy)) }
                 FilledTonalButton({
