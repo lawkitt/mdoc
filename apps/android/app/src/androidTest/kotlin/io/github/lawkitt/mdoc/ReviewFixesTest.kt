@@ -89,7 +89,7 @@ class ReviewFixesTest {
         val handOff = session.copyForAi()
         for (asFile in listOf(false, true)) {
             val chooser = shareIntent(handOff.text, handOff.fileName, asFile, context)
-            val send = chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)!!
+            val send = androidx.core.content.IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_INTENT, Intent::class.java)!!
             val extras = listOfNotNull(
                 chooser.getCharSequenceExtra(Intent.EXTRA_TITLE), send.getStringExtra(Intent.EXTRA_TITLE),
                 send.getStringExtra(Intent.EXTRA_TEXT),

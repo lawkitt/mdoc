@@ -173,7 +173,7 @@ class Documents(
             val current = snapshot()
             return DocumentSummary(
                 id, current.title, current.caseId, current.kind, current.phase,
-                current.pendingCount, updated, current.candidates.size,
+                current.pendingCount, updated, current.candidates.size, saved = path != null,
             )
         }
 

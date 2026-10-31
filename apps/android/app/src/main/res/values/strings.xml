@@ -157,6 +157,7 @@
     <string name="not_restored">Not restored</string>
     <string name="save_to_document">Save to document</string>
     <string name="saved">Saved</string>
+    <string name="not_saved">The reply was not saved.</string>
 
     <!-- Settings -->
     <string name="models">Models</string>
