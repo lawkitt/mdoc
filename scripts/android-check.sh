@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# Usage: scripts/android-check.sh
+# Usage: scripts/android-check.sh [--paths]
 # The Android job (ADR 0089), run by the Windows PC's local CI after lint and
 # test when the commit changes crates/, Cargo.lock, apps/android/ or the
 # Android scripts (on a merge ref, against its main): the Android core, the
 # app's JVM parity and unit tests, the app and its instrumented tests built,
 # then those tests on CI's own emulator (emulator-5560), which is stopped
 # afterwards if this run booted it. MDOC_ANDROID_JOB=always or never
-# overrides the path check. Windows x64.
+# overrides the path check; --paths prints the paths it watches. Windows x64.
 source "$(dirname "$0")/lib.sh"
+
+# What the Android job checks: the core, the app and every script it runs.
+ANDROID_JOB_PATHS='^(crates/|Cargo\.lock$|apps/android/|scripts/(lib\.sh|build-android-core\.sh|install-android-(sdk|ndk)\.sh|android-[a-z-]+\.(sh|py))$)'
+[ "${1:-}" = --paths ] && {
+  echo "$ANDROID_JOB_PATHS"
+  exit
+}
 
 [ "$(platform)" = windows-x64 ] || die "the Android job runs on Windows x64"
 
@@ -20,7 +27,7 @@ android_changed() {
   # Not piped into grep -q: an early exit would fail the pipeline.
   local changed
   changed=$(git diff --name-only HEAD^1 HEAD)
-  grep -qE '^(crates/|Cargo\.lock$|apps/android/|scripts/(lib\.sh|build-android-core\.sh|install-android-(sdk|ndk)\.sh|android-(check|emulator)\.sh)$)' <<<"$changed"
+  grep -qE "$ANDROID_JOB_PATHS" <<<"$changed"
 }
 
 if ! android_changed; then

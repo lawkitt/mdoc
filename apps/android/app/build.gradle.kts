@@ -22,6 +22,12 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The core is built for these two only (scripts/build-android-core.sh);
+        // JNA's AAR would otherwise bring 32-bit libraries a phone could
+        // install but not load the core with. Release drops x86_64 below.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -87,4 +93,11 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.core)
+}
+
+// Release ships arm64-v8a only (ADR 0089); x86_64 is for the emulator.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.add("lib/x86_64/**")
+    }
 }

@@ -19,10 +19,13 @@ data class HomeState(
     val rows: List<HomeRow> = emptyList(),
     /** Above the detector floor: Find names is offered (ADR 0088, 0089). */
     val canFindNames: Boolean = true,
+    /** The library has been read at least once. */
+    val loaded: Boolean = false,
     val error: String? = null,
 )
 
 class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
+    // A core that failed to open is retried on the next refresh.
     private val mutable = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = mutable.asStateFlow()
 
@@ -37,8 +40,9 @@ class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
                         .map { HomeRow(path = it.path, title = it.title) },
                     canFindNames = core.setup.catalog()
                         .any { it.id == ModelId.GLINER2_FP16 && it.offered },
+                    loaded = true,
                 )
-            }.getOrElse { HomeState(error = it.message ?: it.toString()) }
+            }.getOrElse { HomeState(loaded = true, error = it.message ?: it.toString()) }
         }
     }
 

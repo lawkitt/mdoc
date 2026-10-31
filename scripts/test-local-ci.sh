@@ -50,6 +50,16 @@ check() { # description command...
   check "setup shares lint's limit" [ "$(timeout_for setup)" = 1200 ]
   check "the mobile step has its own limit" [ "$(timeout_for mobile)" = 2400 ]
   check "the Android job has its own limit" [ "$(timeout_for android)" = 2400 ]
+  # The Android job runs for the core, the app and every script it runs.
+  android_paths=$(bash scripts/android-check.sh --paths)
+  # shellcheck disable=SC2317,SC2329 # called through check
+  android_watches() { grep -qE "$android_paths" <<<"$1"; }
+  for path in crates/mdoc-ffi/src/lib.rs Cargo.lock apps/android/app/build.gradle.kts scripts/android-package-xml.py scripts/android-emulator.sh scripts/install-android-sdk.sh scripts/lib.sh; do
+    check "the Android job watches $path" android_watches "$path"
+  done
+  for path in docs/adr/0089-android-app.md apps/ios/mdoc/App/MdocApp.swift scripts/release.sh; do
+    check "the Android job skips $path" eval "! android_watches $path"
+  done
   check "test keeps its limit" [ "$(timeout_for test)" = 1800 ]
   # The mobile step follows the merge's main.
   repo=$(mktemp -d)

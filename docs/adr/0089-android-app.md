@@ -84,7 +84,10 @@ invariants or with Google Play's rules. Findings:
   verifies and installs. Not `DownloadManager`.
 - **Case key**: 32 random bytes wrapped by an Android Keystore AES key that
   needs an unlocked device, in StrongBox when present, without user
-  authentication; the wrapped key sits in no-backup app storage. Documents
+  authentication; the wrapped key sits in no-backup app storage. Amended
+  2026-10-31: "needs an unlocked device" applies from Android 15 only;
+  Android 12 to 14 delete such keys when the screen lock is removed (every
+  case would become unreadable) and refuse them on a phone without a lock. Documents
   stay in app-private credential-encrypted storage.
 - **Nothing in backups**: backups are off, and `dataExtractionRules`
   excludes every domain from cloud backup and device-to-device transfer.
