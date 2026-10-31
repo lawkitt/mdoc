@@ -80,6 +80,17 @@ green and leave desktop unchanged. Record:
    TestFlight build, and run the iOS section of
    [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
    *Done when:* that section passes on a TestFlight build.
+3. **[Mobile] UI polish.** *From the [iOS polish grill](docs/design/ios-polish-grill-2026-10-31.md)
+   ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).* Four PRs: defects and the
+   survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
+   *Done when:* the after survey sits beside the before set and P12, P13
+   and P16 pass in the Simulator.
+4. **[Detect] Rules-only phones and IBANs.** *From the iOS UI survey.*
+   Below the detector floor the structured rules found emails but not
+   `07700 900461`, `01632 960 418` or `GB82 WEST 1234 5698 7654 32` in the
+   public fixtures, because those rules need a label word nearby. Grill
+   whether unlabelled phones and IBANs (with checksum) count on their own.
+   *Done when:* the rules-only tier finds what its setup card promises.
 
 ## Later
 

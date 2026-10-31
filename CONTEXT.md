@@ -480,3 +480,11 @@ marking only.
 
 **Feasibility spike**: the device measurements of the mobile core (load,
 memory, scan time, heat, OCR output) that come before mobile UI work.
+
+**Hand-off bar**: the bar under a reviewed document on mobile with Share,
+Copy and Paste reply; it replaces the review actions once nothing is left
+to decide.
+
+**UI survey**: light and dark screenshots of every mobile screen, taken by
+`ScreenshotUITests` and kept under `docs/evidence/ios-app` as before and
+after sets.

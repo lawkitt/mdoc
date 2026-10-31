@@ -34,6 +34,7 @@ struct DocumentScreen: View {
                     CandidateSheet(
                         candidate: candidate,
                         identity: model.snapshot.identities.first { $0.id == candidate.identityID },
+                        hasNext: model.snapshot.candidates.contains { $0.state == .proposed && $0.id != candidate.id },
                         onDone: { decision, scope in model.decide(candidate.id, decision, scope: scope) },
                         onNext: { model.reviewNext() })
                 }
@@ -353,11 +354,17 @@ private struct ActionBar: View {
         }
     }
 
+    /// The buttons side by side when every label fits on one line, stacked
+    /// otherwise: a label never wraps inside its button (ADR 0087).
     private func layout<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
-        return layout(content)
+        let buttons = content()
+        return ViewThatFits(in: .horizontal) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 8) { buttons }
+                    .lineLimit(1)
+            }
+            VStack(spacing: 8) { buttons }
+        }
     }
 
     private func primary(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {

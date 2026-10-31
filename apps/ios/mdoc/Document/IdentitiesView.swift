@@ -50,11 +50,8 @@ struct IdentitiesView: View {
         } label: {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(identity.primaryWording)
-                        .foregroundStyle(.primary)
-                    Text(identity.alias)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(identity.category.color)
+                    UnhyphenatedText(identity.primaryWording)
+                    UnhyphenatedText(identity.alias, style: .footnote, monospaced: true, color: identity.category.uiColor)
                 }
                 Spacer()
                 stateBadge(identity)

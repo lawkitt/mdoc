@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The first-use card: what downloads, its size, and that processing then
 /// stays on the device (ADR 0026).
@@ -55,7 +56,9 @@ struct SetupCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        // The grouped row colour: white on Home's grey list in light mode, a
+        // lifted grey in dark (the plain secondary background matched the list).
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .cellularQuestion(model: model, size: size)
     }
 
@@ -74,8 +77,10 @@ struct SetupCard: View {
         switch model.snapshot.tier {
         case .detector:
             String(localized: "mdoc downloads its name detector and text recognition once (\(size)). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
+        case .rulesOnly where UIDevice.current.userInterfaceIdiom == .pad:
+            String(localized: "This iPad has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
         case .rulesOnly:
-            String(localized: "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition downloads once (\(size)).")
+            String(localized: "This iPhone has too little memory for the name detector. mdoc still finds email addresses, and phone numbers, IBANs and other details next to their labels; you mark names by selecting them. Text recognition downloads once (\(size)).")
         }
     }
 }
