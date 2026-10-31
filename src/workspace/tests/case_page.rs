@@ -396,6 +396,7 @@ fn names_filter_add_binding_and_every_page_control_are_keyboard_reachable(cx: &m
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
     cx.simulate_resize(size(px(720.), px(480.)));
+    expand_sidebar(&tabs, cx);
     draw(cx);
     assert!(cx.debug_bounds("case-page-filter").is_some());
     let (filter, add) = cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().test_inputs());

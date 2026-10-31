@@ -282,6 +282,7 @@ fn settings_theme_segments_follow_category_and_activate_with_enter_and_space(
         },
     );
     cx.simulate_resize(size(px(640.), px(480.)));
+    expand_sidebar(&tabs, cx);
     click_toolbar(cx, "Settings");
     draw(cx);
     for (key, choice) in [
@@ -876,6 +877,7 @@ fn settings_keyboard_traversal_stays_in_dialog_and_restores_opener(cx: &mut Test
     cx.update(settings_ui::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(640.), px(480.)));
+    expand_sidebar(&tabs, cx);
     let opener = cx.update(|window, cx| {
         let opener = tabs.read(cx).settings_focus.clone();
         window.focus(&opener, cx);
@@ -1008,6 +1010,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
     let ratio = cx.update(|_, cx| view.read(cx).preview.split_ratio().unwrap());
     assert!(ratio > 0.5);
     cx.simulate_resize(size(px(640.), px(480.)));
+    expand_sidebar(&tabs, cx);
     cx.update(|window, cx| {
         window.refresh();
         window.draw(cx).clear(cx);

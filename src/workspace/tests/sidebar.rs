@@ -843,3 +843,160 @@ fn restored_source_tabs_keep_their_names_when_opened(cx: &mut TestAppContext) {
     assert!(snapshot.tabs[2].source_only);
     assert_eq!(snapshot.tabs[2].name.as_deref(), Some("english.pdf"));
 }
+
+/// Drag the expanded sidebar's edge to `x` and let go.
+fn drag_sidebar_edge(cx: &mut VisualTestContext, x: f32) {
+    draw(cx);
+    let grip = cx
+        .debug_bounds("sidebar-resize")
+        .expect("the expanded sidebar's edge")
+        .center();
+    cx.simulate_mouse_down(grip, gpui::MouseButton::Left, Default::default());
+    let to = gpui::point(px(x), grip.y);
+    for position in [grip + gpui::point(px(4.), px(0.)), to, to] {
+        cx.simulate_mouse_move(position, Some(gpui::MouseButton::Left), Default::default());
+        draw(cx);
+    }
+    cx.simulate_mouse_up(to, gpui::MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    draw(cx);
+}
+
+fn saved_sidebar_width(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Option<u16> {
+    cx.update(|_, cx| {
+        tabs.read(cx)
+            .preferences
+            .borrow()
+            .current
+            .as_ref()
+            .and_then(|preferences| preferences.general.sidebar_width)
+    })
+}
+
+#[gpui::test]
+fn dragging_the_sidebar_edge_resizes_it_within_its_range_and_saves_the_width(
+    cx: &mut TestAppContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    let edge = |cx: &mut VisualTestContext| cx.debug_bounds("sidebar-resize").unwrap().center().x;
+    assert_eq!(edge(cx), px(PANEL_WIDTH));
+    assert_eq!(saved_sidebar_width(&tabs, cx), None);
+    drag_sidebar_edge(cx, 300.);
+    assert_eq!(edge(cx), px(300.));
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.sidebar.width(), 300.);
+        assert!(!tabs.sidebar.resizing());
+        // The list is as wide as the sidebar.
+        assert!(tabs.sidebar_scroll.bounds().size.width > px(280.));
+    });
+    assert_eq!(saved_sidebar_width(&tabs, cx), Some(300));
+    // Past either end it stops at the range.
+    drag_sidebar_edge(cx, 900.);
+    assert_eq!(edge(cx), px(crate::workspace::sidebar::MAX_WIDTH));
+    assert_eq!(saved_sidebar_width(&tabs, cx), Some(320));
+    drag_sidebar_edge(cx, 20.);
+    assert_eq!(edge(cx), px(crate::workspace::sidebar::MIN_WIDTH));
+    assert_eq!(saved_sidebar_width(&tabs, cx), Some(160));
+    // Collapsing and expanding keeps the dragged width.
+    click_toolbar(cx, "sidebar-toggle");
+    assert!(cx.debug_bounds("sidebar-resize").is_none());
+    click_toolbar(cx, "sidebar-toggle");
+    draw(cx);
+    assert_eq!(edge(cx), px(crate::workspace::sidebar::MIN_WIDTH));
+}
+
+#[gpui::test]
+fn a_window_narrower_than_900_collapses_the_sidebar_until_it_widens(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let resize = |cx: &mut VisualTestContext, width: f32| {
+        cx.simulate_resize(size(px(width), px(700.)));
+        draw(cx);
+        cx.update(|_, cx| tabs.read(cx).sidebar.visible())
+    };
+    assert!(resize(cx, 1000.));
+    assert!(!resize(cx, 899.));
+    // Collapsed by itself: the rail shows, and nothing is saved as a pick.
+    assert!(cx.debug_bounds("sidebar-new-collapsed").is_some());
+    let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
+    assert_eq!(saved.sidebar_choice, None);
+    assert!(resize(cx, 900.));
+    assert!(cx.debug_bounds("sidebar-resize").is_some());
+
+    // Keyboard focus in the list moves to the rail's toggle when the
+    // window narrows, and does not reveal the list.
+    let row = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        tabs.sidebar_row_focus.borrow()[&tabs.tabs.active()].clone()
+    });
+    cx.update(|window, cx| window.focus(&row, cx));
+    assert!(!resize(cx, 800.));
+    cx.update(|window, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.rail_toggle_focus.is_focused(window));
+        assert_eq!(tabs.sidebar.reveal(), Reveal::Hidden);
+    });
+    assert!(resize(cx, 1000.));
+
+    // Collapsed by the user, it stays collapsed when the window widens.
+    click_toolbar(cx, "sidebar-toggle");
+    assert!(!resize(cx, 720.));
+    assert!(!resize(cx, 1200.));
+    let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
+    assert_eq!(saved.sidebar_choice, Some(false));
+
+    // Expanded by the user in a narrow window, it stays while the window is
+    // narrow; once the window has widened, narrowing collapses it again.
+    click_toolbar(cx, "sidebar-toggle");
+    assert!(!resize(cx, 720.));
+    click_toolbar(cx, "sidebar-toggle");
+    draw(cx);
+    assert!(cx.update(|_, cx| tabs.read(cx).sidebar.visible()));
+    assert!(resize(cx, 800.));
+    assert!(resize(cx, 1000.));
+    assert!(!resize(cx, 720.));
+}
+
+#[test]
+fn tab_names_keep_their_extension_when_truncated() {
+    assert_eq!(
+        split_extension("Settlement agreement draft 2.docx"),
+        ("Settlement agreement draft 2", ".docx")
+    );
+    assert_eq!(split_extension("Notes.md"), ("Notes", ".md"));
+    assert_eq!(split_extension("Untitled"), ("Untitled", ""));
+    // A leading dot, a trailing dot, a long or spaced last part: no extension.
+    assert_eq!(split_extension(".env"), (".env", ""));
+    assert_eq!(split_extension("Draft."), ("Draft.", ""));
+    assert_eq!(
+        split_extension("v1.final version"),
+        ("v1.final version", "")
+    );
+    assert_eq!(split_extension("Brief.markdown"), ("Brief.markdown", ""));
+    assert_eq!(split_extension("Отчёт.pdf"), ("Отчёт", ".pdf"));
+}
+
+#[test]
+fn a_cut_name_keeps_its_start_and_gives_its_end_the_rest() {
+    // Ten-point characters: "Settlement draft 2" is 180 wide.
+    let stem = "Settlement draft 2";
+    let x = |index: usize| index as f32 * 10.;
+    let width = x(stem.len());
+    let cut = |room| {
+        let (front, back) = middle_cut(stem, x, width, room);
+        format!("{}…{}", &stem[..front], &stem[back..])
+    };
+    assert_eq!(cut(90.), "Settle…t 2");
+    // Slack is under one character: the end takes what the start left.
+    assert_eq!(cut(95.), "Settle…t 2");
+    assert_eq!(cut(100.), "Settle…ft 2");
+    assert_eq!(cut(0.), "…");
+    assert_eq!(cut(-20.), "…");
+    // Multibyte characters are cut at their boundaries.
+    let stem = "Отчёт за квартал";
+    let x = |index: usize| stem[..index].chars().count() as f32 * 10.;
+    let (front, back) = middle_cut(stem, x, x(stem.len()), 60.);
+    assert_eq!(format!("{}…{}", &stem[..front], &stem[back..]), "Отчё…ал");
+}

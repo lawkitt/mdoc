@@ -190,6 +190,19 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 .collect();
             assert_eq!(matches.len(), 1, "{theme}/{name}");
             let record = matches[0];
+            // Below 900 points the sidebar collapses by itself; expanded by
+            // the user it stays; a drag widens it up to 320 (ADR 0027).
+            match *name {
+                "narrow-minimum" => assert_eq!(record["state"]["sidebar_expanded"], false),
+                "narrow-sidebar-names" | "narrow-minimum-sidebar" => {
+                    assert_eq!(record["state"]["sidebar_expanded"], true, "{theme}/{name}");
+                    assert_eq!(record["state"]["sidebar_width"], 240.0, "{theme}/{name}");
+                }
+                "sidebar-wide" => {
+                    assert_eq!(record["state"]["sidebar_width"], 320.0, "{theme}/{name}")
+                }
+                _ => {}
+            }
             assert_eq!(
                 record["state"]["scanning"] == true,
                 *name == "review-scanning",
@@ -421,11 +434,14 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 }
             }
             let viewport = &record["viewport"];
-            let expected = if *name == "applied-alias-selected" {
-                // The window's minimum size (#303).
-                [720., 480.]
-            } else {
-                [1100., 760.]
+            let expected = match *name {
+                // The window's minimum size (#303, ADR 0027).
+                "applied-alias-selected" | "narrow-minimum" | "narrow-minimum-sidebar" => {
+                    [720., 480.]
+                }
+                // Under the 1100 points other screens use, still over 900.
+                "narrow-sidebar-names" | "sidebar-wide" => [1000., 700.],
+                _ => [1100., 760.],
             };
             assert_eq!(viewport, &serde_json::json!(expected), "{theme}/{name}");
             png(

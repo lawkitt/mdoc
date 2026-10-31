@@ -13,6 +13,7 @@ mod docx_source;
 mod encoder;
 mod folder_sheet;
 mod import;
+mod narrow;
 mod navigation;
 mod recents;
 mod restore;
@@ -163,6 +164,8 @@ impl Driver {
                     }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
+                    "sidebar_expanded": w.sidebar.visible(),
+                    "sidebar_width": w.sidebar.width(),
                     "back_enabled": w.navigation_target(true, cx).is_some(),
                     "forward_enabled": w.navigation_target(false, cx).is_some(),
                     "back_label": w.navigation_label(true, cx),
@@ -345,6 +348,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::long_counts(d)?;
     review::scanning(d)?;
     recents::scenes(d, path)?;
+    narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;
     cases::locked_home(d)

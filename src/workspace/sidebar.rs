@@ -1,6 +1,7 @@
 //! The sidebar's state (ADR 0048, 0027, 0028): expanded or collapsed to the
-//! rail, the collapsed rail's reveal of the full list, OS files dragged over
-//! it, and the list's roving Tab stop. Generic over the focus handle, so its
+//! rail, collapsed by itself in a narrow window, its dragged width, the
+//! collapsed rail's reveal of the full list, OS files dragged over it, and
+//! the list's roving Tab stop. Generic over the focus handle, so its
 //! rules run without a window; the workspace view renders it and carries out
 //! the returned effects (timers, focus).
 
@@ -8,6 +9,13 @@ use std::time::{Duration, Instant};
 
 /// How long a collapse or reveal slides.
 pub(super) const SLIDE: Duration = Duration::from_millis(150);
+
+/// The expanded sidebar's width range and default, in points (ADR 0027).
+pub(super) const MIN_WIDTH: f32 = 160.;
+pub(super) const MAX_WIDTH: f32 = 320.;
+pub(super) const DEFAULT_WIDTH: f32 = 240.;
+/// Below this window width the sidebar collapses by itself (ADR 0027).
+pub(super) const NARROW_WINDOW: f32 = 900.;
 
 /// The collapsed rail's hover reveal of the full document list (ADR 0027).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,6 +45,15 @@ pub(super) struct Sidebar<H> {
     visible: bool,
     /// The user's pick, saved with the session; none: expanded.
     choice: Option<bool>,
+    /// The window is narrower than `NARROW_WINDOW`.
+    narrow: bool,
+    /// Expanded by the user while the window is narrow; the window widening
+    /// ends it, so narrowing again collapses it by itself.
+    held_open: bool,
+    /// The expanded width, within `MIN_WIDTH..=MAX_WIDTH`.
+    width: f32,
+    /// A drag of the edge: the width it started from, and whether it moved.
+    resize: Option<(f32, bool)>,
     /// Bumped by explicit toggles so only they animate the sidebar width.
     generation: u64,
     /// When the current toggle's slide ends (ADR 0048).
@@ -71,6 +88,10 @@ impl<H> Default for Sidebar<H> {
         Self {
             visible: true,
             choice: None,
+            narrow: false,
+            held_open: false,
+            width: DEFAULT_WIDTH,
+            resize: None,
             generation: 0,
             slide: None,
             reveal: Reveal::Hidden,
@@ -130,30 +151,96 @@ impl<H: Clone + PartialEq> Sidebar<H> {
         self.choice = choice;
     }
 
-    /// Set the user's pick; it takes effect at the next `settle`.
+    /// Set the user's pick; it takes effect at the next `settle`. Expanded,
+    /// it holds in a narrow window, as a toggle there does.
     #[cfg(test)]
     pub(super) fn choose(&mut self, expanded: Option<bool>) {
         self.choice = expanded;
+        self.held_open = expanded == Some(true);
     }
 
-    /// Each frame: expanded unless the user collapsed it.
-    pub(super) fn settle(&mut self) {
-        self.visible = self.choice.unwrap_or(true);
+    /// Each frame, for a window `window_width` wide: expanded unless the
+    /// user collapsed it, or the window is narrow and the user has not
+    /// expanded it since it narrowed. Collapsing or expanding by itself
+    /// does not slide and leaves the user's pick alone. Returns whether it
+    /// collapsed now.
+    pub(super) fn settle(&mut self, window_width: f32) -> bool {
+        self.narrow = window_width < NARROW_WINDOW;
+        if !self.narrow {
+            self.held_open = false;
+        }
+        let visible = match self.choice {
+            Some(false) => false,
+            _ => !self.narrow || self.held_open,
+        };
+        if visible && !self.visible {
+            self.end_reveal();
+        }
+        let collapsed = self.visible && !visible;
+        self.visible = visible;
+        collapsed
     }
 
-    /// Expand or collapse at `now`; any reveal ends at once.
+    /// Expand or collapse at `now`; any reveal ends at once. Expanding in a
+    /// narrow window holds it open until the window widens.
     pub(super) fn toggle(&mut self, now: Instant) -> SidebarEffect {
         self.visible = !self.visible;
         self.choice = Some(self.visible);
+        self.held_open = self.visible && self.narrow;
         self.generation += 1;
         // Only the sidebar layer animates; one repaint ends it.
         self.slide = Some(now + SLIDE);
+        self.end_reveal();
+        SidebarEffect::EndSlide
+    }
+
+    fn end_reveal(&mut self) {
         self.reveal = Reveal::Hidden;
         self.pending = None;
         self.hover = (false, false);
         self.keyboard = false;
         self.opener = None;
-        SidebarEffect::EndSlide
+    }
+
+    /// The expanded width in points.
+    pub(super) fn width(&self) -> f32 {
+        self.width
+    }
+
+    /// The width saved in settings; none or out of range is clamped.
+    pub(super) fn restore_width(&mut self, saved: Option<u16>) {
+        self.width = saved.map_or(DEFAULT_WIDTH, |width| clamp_width(f32::from(width)));
+    }
+
+    /// A drag of the expanded sidebar's edge began.
+    pub(super) fn begin_resize(&mut self) {
+        self.resize = Some((self.width, false));
+    }
+
+    pub(super) fn resizing(&self) -> bool {
+        self.resize.is_some()
+    }
+
+    /// The edge moved to `width` points from the sidebar's left; whether the
+    /// sidebar looks different now.
+    pub(super) fn resize_to(&mut self, width: f32) -> bool {
+        let Some((_, moved)) = &mut self.resize else {
+            return false;
+        };
+        let width = clamp_width(width);
+        if width == self.width {
+            return false;
+        }
+        *moved = true;
+        self.width = width;
+        true
+    }
+
+    /// The drag ended: the whole-point width to save, if it changed.
+    pub(super) fn end_resize(&mut self) -> Option<u16> {
+        let (start, moved) = self.resize.take()?;
+        self.width = self.width.round();
+        (moved && self.width != start).then_some(self.width as u16)
     }
 
     /// Whether a toggle's slide is still running at `now`.
@@ -370,9 +457,20 @@ impl<H: Clone + PartialEq> Sidebar<H> {
     }
 }
 
+fn clamp_width(width: f32) -> f32 {
+    if width.is_finite() {
+        width.clamp(MIN_WIDTH, MAX_WIDTH)
+    } else {
+        DEFAULT_WIDTH
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const WIDE: f32 = 1000.;
+    const NARROW: f32 = 720.;
 
     fn collapsed() -> Sidebar<u8> {
         let mut sidebar = Sidebar::default();
@@ -395,8 +493,115 @@ mod tests {
         // Expanded, the pointer never reveals.
         assert_eq!(sidebar.hover(false, true), None);
         sidebar.choose(None);
-        sidebar.settle();
+        sidebar.settle(WIDE);
         assert!(sidebar.visible());
+    }
+
+    #[test]
+    fn a_narrow_window_collapses_it_and_widening_brings_it_back() {
+        let mut sidebar = Sidebar::<u8>::default();
+        sidebar.settle(WIDE);
+        assert!(sidebar.visible());
+        assert!(sidebar.settle(NARROW_WINDOW - 1.));
+        assert!(!sidebar.visible());
+        assert!(!sidebar.settle(NARROW));
+        // Collapsed by itself: no slide, and the user's pick is untouched.
+        assert_eq!(sidebar.generation(), 0);
+        assert_eq!(sidebar.choice(), None);
+        sidebar.settle(NARROW_WINDOW);
+        assert!(sidebar.visible());
+        // A reveal open while narrow ends when the window widens.
+        sidebar.settle(NARROW);
+        sidebar.show(false);
+        sidebar.settle(WIDE);
+        assert!(sidebar.visible());
+        assert_eq!(sidebar.reveal(), Reveal::Hidden);
+        // An explicit expand earlier in the session does not stop it.
+        let now = Instant::now();
+        sidebar.toggle(now);
+        sidebar.toggle(now);
+        assert_eq!(sidebar.choice(), Some(true));
+        sidebar.settle(NARROW);
+        assert!(!sidebar.visible());
+        sidebar.settle(WIDE);
+        assert!(sidebar.visible());
+    }
+
+    #[test]
+    fn collapsed_by_the_user_it_stays_collapsed_when_the_window_widens() {
+        let mut sidebar = Sidebar::<u8>::default();
+        sidebar.settle(WIDE);
+        sidebar.toggle(Instant::now());
+        sidebar.settle(NARROW);
+        sidebar.settle(WIDE);
+        assert!(!sidebar.visible());
+        assert_eq!(sidebar.choice(), Some(false));
+        // Collapsed by the user while it was already narrow: the same.
+        let mut sidebar = Sidebar::<u8>::default();
+        sidebar.settle(NARROW);
+        sidebar.toggle(Instant::now());
+        sidebar.settle(NARROW);
+        assert!(sidebar.visible());
+        sidebar.toggle(Instant::now());
+        sidebar.settle(WIDE);
+        assert!(!sidebar.visible());
+    }
+
+    #[test]
+    fn expanded_in_a_narrow_window_it_stays_until_the_window_widens() {
+        let mut sidebar = Sidebar::<u8>::default();
+        sidebar.settle(NARROW);
+        assert!(!sidebar.visible());
+        assert_eq!(sidebar.toggle(Instant::now()), SidebarEffect::EndSlide);
+        sidebar.settle(NARROW);
+        sidebar.settle(NARROW - 100.);
+        assert!(sidebar.visible());
+        // Widening ends the hold; narrowing again collapses it by itself.
+        sidebar.settle(WIDE);
+        assert!(sidebar.visible());
+        sidebar.settle(NARROW);
+        assert!(!sidebar.visible());
+    }
+
+    #[test]
+    fn dragging_the_edge_resizes_within_its_range_and_saves_once() {
+        let mut sidebar = Sidebar::<u8>::default();
+        assert_eq!(sidebar.width(), DEFAULT_WIDTH);
+        // Without a drag, a move does nothing.
+        assert!(!sidebar.resize_to(300.));
+        assert_eq!(sidebar.end_resize(), None);
+        sidebar.begin_resize();
+        assert!(sidebar.resizing());
+        assert!(sidebar.resize_to(280.4));
+        assert!(!sidebar.resize_to(280.4));
+        assert!(sidebar.resize_to(1000.));
+        assert_eq!(sidebar.width(), MAX_WIDTH);
+        assert!(sidebar.resize_to(10.));
+        assert_eq!(sidebar.width(), MIN_WIDTH);
+        assert!(sidebar.resize_to(280.4));
+        assert_eq!(sidebar.end_resize(), Some(280));
+        assert!(!sidebar.resizing());
+        assert_eq!(sidebar.width(), 280.);
+        // A drag that ends where it began saves nothing.
+        sidebar.begin_resize();
+        assert!(sidebar.resize_to(200.));
+        assert!(sidebar.resize_to(280.));
+        assert_eq!(sidebar.end_resize(), None);
+        sidebar.begin_resize();
+        assert_eq!(sidebar.end_resize(), None);
+    }
+
+    #[test]
+    fn a_saved_width_is_clamped_to_the_range() {
+        let mut sidebar = Sidebar::<u8>::default();
+        sidebar.restore_width(Some(300));
+        assert_eq!(sidebar.width(), 300.);
+        sidebar.restore_width(Some(40));
+        assert_eq!(sidebar.width(), MIN_WIDTH);
+        sidebar.restore_width(Some(u16::MAX));
+        assert_eq!(sidebar.width(), MAX_WIDTH);
+        sidebar.restore_width(None);
+        assert_eq!(sidebar.width(), DEFAULT_WIDTH);
     }
 
     #[test]

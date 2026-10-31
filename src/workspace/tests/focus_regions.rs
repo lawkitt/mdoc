@@ -645,6 +645,7 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
         cx.notify();
     });
     cx.simulate_resize(size(px(640.), px(480.)));
+    expand_sidebar(&tabs, cx);
     draw(cx);
     view.update_in(cx, |view, window, cx| {
         window.focus(&view.toolbar_region, cx)

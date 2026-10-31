@@ -229,6 +229,15 @@ impl Render for TabDrag {
     }
 }
 
+/// A drag of the expanded sidebar's edge; the sidebar itself follows it.
+#[derive(Clone)]
+struct SidebarResize;
+impl Render for SidebarResize {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
 pub(super) struct Workspace {
     focus: gpui::FocusHandle,
     /// F6 regions the workspace owns, and the control last focused in each
@@ -425,6 +434,14 @@ impl Workspace {
         };
         let theme = Rc::new(Cell::new(Theme::default()));
         let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
+        let mut sidebar = sidebar::Sidebar::default();
+        sidebar.restore_width(
+            preferences
+                .borrow()
+                .current
+                .as_ref()
+                .and_then(|preferences| preferences.general.sidebar_width),
+        );
         let mut this = Self {
             focus: cx.focus_handle(),
             focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
@@ -436,7 +453,7 @@ impl Workspace {
             back_focus: cx.focus_handle().tab_stop(true),
             forward_focus: cx.focus_handle().tab_stop(true),
             tab_subscriptions: std::collections::HashMap::new(),
-            sidebar: sidebar::Sidebar::default(),
+            sidebar,
             reveal_focus: cx.focus_handle(),
             rail_toggle_focus: cx.focus_handle().tab_stop(true),
             rail_new_focus: cx.focus_handle().tab_stop(true),
@@ -2295,6 +2312,7 @@ impl Workspace {
         let palette = theme.pdf_style();
         let expanded = self.sidebar.visible();
         let revealed = !expanded && self.sidebar.reveal() != Reveal::Hidden;
+        let panel_width = self.sidebar.width();
         let home = self.showing_overview(cx);
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
         // One Tab stop for the list: the active tab, else the first listed.
@@ -2534,7 +2552,7 @@ impl Workspace {
                                 .min_w_0()
                                 .flex()
                                 .flex_col()
-                                .child(div().truncate().child(name.clone()))
+                                .child(middle_truncated(&name))
                                 .when(duplicate, |v| {
                                     v.child(
                                         div()
@@ -2711,7 +2729,7 @@ impl Workspace {
         let mut panel = (expanded || revealed || collapsing).then(|| {
             div()
                 .id("sidebar-panel")
-                .w(px(PANEL_WIDTH - 1.))
+                .w(px(panel_width - 1.))
                 .h_full()
                 .flex()
                 .flex_col()
@@ -2781,11 +2799,13 @@ impl Workspace {
                         div()
                             .h_full()
                             .overflow_hidden()
-                            .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
+                            .child(div().w(px(panel_width)).h_full().child(list))
                             .with_animation(
                                 ("sidebar-open", self.sidebar.generation()),
                                 Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
-                                |v, delta| v.w(px(RAIL_WIDTH + (PANEL_WIDTH - RAIL_WIDTH) * delta)),
+                                move |v, delta| {
+                                    v.w(px(RAIL_WIDTH + (panel_width - RAIL_WIDTH) * delta))
+                                },
                             ),
                     )
                     .into_any_element()
@@ -2891,7 +2911,7 @@ impl Workspace {
                 .child(self.rail_foot(cx))
                 .into_any_element()
         };
-        let width = |open: bool| if open { PANEL_WIDTH } else { RAIL_WIDTH };
+        let width = |open: bool| if open { panel_width } else { RAIL_WIDTH };
         let mut sidebar = div()
             .id("sidebar")
             .track_focus(self.focus_regions.sidebar())
@@ -2922,6 +2942,36 @@ impl Workspace {
                 ))
             })
             .child(div().size_full().overflow_hidden().child(content))
+            // The expanded sidebar's edge drags its width (ADR 0027); the
+            // grip straddles the gap beside the content card.
+            .when(expanded && !sliding, |v| {
+                v.child(
+                    div()
+                        .id("sidebar-resize")
+                        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-resize".into()))
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right(px(-RESIZE_GRIP))
+                        .w(px(2. * RESIZE_GRIP))
+                        .cursor_col_resize()
+                        .on_drag(SidebarResize, |drag, _, _, cx| {
+                            cx.stop_propagation();
+                            cx.new(|_| drag.clone())
+                        }),
+                )
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<SidebarResize>, _, cx| {
+                        if !this.sidebar.resizing() {
+                            this.sidebar.begin_resize();
+                        }
+                        let width = (event.event.position.x - event.bounds.left()) / px(1.);
+                        if this.sidebar.resize_to(width) {
+                            cx.notify();
+                        }
+                    },
+                ))
+            })
             .when(!expanded, |v| {
                 v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
                     this.hover_sidebar(false, *hovered, window, cx)
@@ -2942,9 +2992,9 @@ impl Workspace {
             });
         if revealed && let Some(panel) = panel.take() {
             let (from, to) = if self.sidebar.reveal() == Reveal::Shown {
-                (RAIL_WIDTH, PANEL_WIDTH)
+                (RAIL_WIDTH, panel_width)
             } else {
-                (PANEL_WIDTH, RAIL_WIDTH)
+                (panel_width, RAIL_WIDTH)
             };
             sidebar = sidebar.child(gpui::deferred(
                 div()
@@ -2998,11 +3048,11 @@ impl Workspace {
                     .h_full()
                     .overflow_hidden()
                     .bg(theme.sidebar_bg())
-                    .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
+                    .child(div().w(px(panel_width)).h_full().child(list))
                     .with_animation(
                         ("sidebar-close", self.sidebar.generation()),
                         Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
-                        |v, delta| v.w(px(PANEL_WIDTH - (PANEL_WIDTH - RAIL_WIDTH) * delta)),
+                        move |v, delta| v.w(px(panel_width - (panel_width - RAIL_WIDTH) * delta)),
                     ),
             ));
         }
@@ -3013,9 +3063,106 @@ impl Workspace {
 /// The collapsed rail. Narrow: the traffic lights and the expand toggle sit
 /// in the title row beside the document header, above it (ADR 0048).
 const RAIL_WIDTH: f32 = 44.;
-const PANEL_WIDTH: f32 = 240.;
+/// The expanded sidebar's width until it is dragged.
+#[cfg(test)]
+const PANEL_WIDTH: f32 = sidebar::DEFAULT_WIDTH;
+/// How far either side of the expanded sidebar's edge a drag can start.
+const RESIZE_GRIP: f32 = 3.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
+
+/// A tab name that fits by losing its middle, never its extension, so
+/// names with a shared start still differ (ADR 0027). Drawn whole, so the
+/// slack a cut leaves falls after the extension rather than before it.
+fn middle_truncated(name: &str) -> gpui::Div {
+    let name = gpui::SharedString::from(name.to_string());
+    div()
+        .w_full()
+        .relative()
+        .overflow_hidden()
+        // A line's height for the row; the canvas draws the name over it.
+        .child("\u{200b}")
+        .child(
+            gpui::canvas(
+                move |bounds, window, _| {
+                    let style = window.text_style();
+                    let size = style.font_size.to_pixels(window.rem_size());
+                    let shape = |text: gpui::SharedString, window: &mut Window| {
+                        let run = style.to_run(text.len());
+                        window.text_system().shape_line(text, size, &[run], None)
+                    };
+                    let (stem, extension) = split_extension(&name);
+                    let whole = shape(name.clone(), window);
+                    if whole.width() <= bounds.size.width {
+                        return whole;
+                    }
+                    let stem_line = shape(stem.to_string().into(), window);
+                    let tail = shape(format!("\u{2026}{extension}").into(), window);
+                    let room = (bounds.size.width - tail.width()) / px(1.);
+                    let (front, back) = middle_cut(
+                        stem,
+                        |index| stem_line.x_for_index(index) / px(1.),
+                        stem_line.width() / px(1.),
+                        room,
+                    );
+                    let cut = format!("{}\u{2026}{}{extension}", &stem[..front], &stem[back..]);
+                    shape(cut.into(), window)
+                },
+                |bounds, line, window, cx| {
+                    line.paint(
+                        bounds.origin,
+                        bounds.size.height,
+                        gpui::TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    )
+                    .ok();
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
+}
+
+/// Where to cut `stem`, whose characters start at `x` and which is `width`
+/// wide, to fit `room`: its start gets up to two thirds, its end whatever
+/// the start left, at character boundaries. Returns the start's end and the
+/// end's start.
+fn middle_cut(stem: &str, x: impl Fn(usize) -> f32, width: f32, room: f32) -> (usize, usize) {
+    let room = room.max(0.);
+    let front = stem
+        .char_indices()
+        .map(|(index, _)| index)
+        .chain([stem.len()])
+        .take_while(|&index| x(index) <= room * 2. / 3.)
+        .last()
+        .unwrap_or(0);
+    let left = room - x(front);
+    let back = stem[front..]
+        .char_indices()
+        .map(|(index, _)| front + index)
+        .chain([stem.len()])
+        .find(|&index| width - x(index) <= left)
+        .unwrap_or(stem.len());
+    (front, back)
+}
+
+/// A name's stem and its extension with the dot: a short final part
+/// without spaces after a dot that does not start the name.
+fn split_extension(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(dot)
+            if dot > 0
+                && dot + 1 < name.len()
+                && name.len() - dot <= 6
+                && !name[dot..].contains(char::is_whitespace) =>
+        {
+            name.split_at(dot)
+        }
+        _ => (name, ""),
+    }
+}
 
 /// A small mark on a sidebar tab for work done in it (OCR, pseudonymization).
 fn tab_badge(icon: ui::Icon, color: gpui::Hsla) -> gpui::Svg {
@@ -3125,6 +3272,17 @@ fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
     }
 }
 
+impl Workspace {
+    /// The sidebar's edge drag ended: keep the width it left in settings.
+    fn end_sidebar_resize(&mut self, cx: &mut Context<Self>) {
+        if let Some(width) = self.sidebar.end_resize() {
+            // Kept for this window when the save fails; the error is logged.
+            let _ = self.update_general(move |general| general.sidebar_width = Some(width), cx);
+        }
+        cx.notify();
+    }
+}
+
 /// Show the shortest parent suffix that distinguishes this document's
 /// location; `None` when a peer shares its folder.
 fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> Option<String> {
@@ -3144,7 +3302,18 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> Option<St
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.sidebar.settle();
+        // Collapsed by a narrowing window, the list's focus moves to the
+        // rail's toggle, as a collapse by the toggle does.
+        if self.sidebar.settle(window.viewport_size().width / px(1.))
+            && self.focus_regions.sidebar().contains_focused(window, cx)
+        {
+            window.focus(&self.rail_toggle_focus, cx);
+            self.sidebar.escape_to(self.rail_toggle_focus.clone());
+        }
+        // A finished edge drag saves the width it left (ADR 0027).
+        if !cx.has_active_drag() && self.sidebar.resizing() {
+            self.end_sidebar_resize(cx);
+        }
         self.note_region_focus(window, cx);
         self.reveal_for_keyboard(window, cx);
         // A finished or abandoned OS drag leaves no insertion line or reveal.
