@@ -3,4 +3,5 @@
     <item name="review_replace" type="id" />
     <item name="review_offsets" type="id" />
     <item name="review_can_replace" type="id" />
+    <item name="review_selected" type="id" />
 </resources>

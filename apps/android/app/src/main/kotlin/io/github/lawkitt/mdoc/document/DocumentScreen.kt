@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.PersistableBundle
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -133,6 +134,7 @@ fun DocumentScreen(
     val snackbar = remember { SnackbarHostState() }
     var menu by remember { mutableStateOf(false) }
     var showsOriginal by rememberSaveable { mutableStateOf(false) }
+    val reviewScroll = rememberScrollState()
 
     LaunchedEffect(state.notice) {
         state.notice?.let {
@@ -320,7 +322,14 @@ fun DocumentScreen(
                         selected = state.reviewing,
                         onCandidate = model::open,
                         onReplaceSelection = model::startManualReplace,
-                        modifier = paneModifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                        // Room below the last line while a candidate's sheet is open, so
+                        // a mention at the very end can still scroll above the sheet.
+                        modifier = paneModifier.verticalScroll(reviewScroll).padding(16.dp)
+                            .padding(bottom = if (state.reviewing != null) noticesHeight else 0.dp),
+                        // Near the top, above the candidate's sheet.
+                        onSelectedTop = { top ->
+                            scope.launch { reviewScroll.animateScrollTo((top - reviewScroll.viewportSize / 6).coerceAtLeast(0)) }
+                        },
                     )
                 }
             }
@@ -354,7 +363,17 @@ fun DocumentScreen(
         ManualReplaceSheet(text, onReplace = model::replaceSelection, onDismiss = model::cancelManualReplace)
     }
     if (state.showsIdentities) {
-        IdentitiesSheet(snapshot.identities, onDismiss = { model.showIdentities(false) })
+        IdentitiesSheet(
+            snapshot.identities,
+            // An identity opens its first mention, as on iOS.
+            onOpen = { identity ->
+                snapshot.mentions(identity.id).firstOrNull()?.let {
+                    model.showIdentities(false)
+                    model.open(it.id)
+                }
+            },
+            onDismiss = { model.showIdentities(false) },
+        )
     }
     if (state.showsReplySheet) {
         ReplySheet(snapshot.caseName, onRestore = model::restoreReply, onDismiss = { model.showReplySheet(false) })
@@ -607,7 +626,7 @@ private fun ManualReplaceSheet(text: String, onReplace: (Category) -> Unit, onDi
 /** Identities by category, with their aliases and how they were decided. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
+private fun IdentitiesSheet(identities: List<Identity>, onOpen: (Identity) -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Text(
             stringResource(R.string.identities),
@@ -626,6 +645,7 @@ private fun IdentitiesSheet(identities: List<Identity>, onDismiss: () -> Unit) {
                 items(group, key = { it.id.raw }) { identity ->
                     val dark = isSystemInDarkTheme()
                     ListItem(
+                        modifier = Modifier.clickable(onClickLabel = stringResource(R.string.opens_first_mention)) { onOpen(identity) },
                         // On the sheet's own colour, not banded rows.
                         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         leadingContent = {

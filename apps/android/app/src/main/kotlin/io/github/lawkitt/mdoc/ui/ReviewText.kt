@@ -62,8 +62,11 @@ fun ReviewText(
     onCandidate: (CandidateId) -> Unit,
     onReplaceSelection: ((SourceRange, String) -> Unit)?,
     modifier: Modifier = Modifier,
+    /** Where a newly selected candidate's line starts, in pixels from the view's top. */
+    onSelectedTop: ((Int) -> Unit)? = null,
 ) {
     val colours = ReviewColours.current()
+    val selectedTop = rememberUpdatedState(onSelectedTop)
     val tap = rememberUpdatedState(onCandidate)
     val replace = rememberUpdatedState(onReplaceSelection)
     AndroidView(
@@ -78,6 +81,20 @@ fun ReviewText(
                     TextView.BufferType.SPANNABLE,
                 )
                 view.tag = key
+            }
+            // A candidate opened from elsewhere (Next proposal, Identities) is
+            // scrolled to: report its line once laid out.
+            if (selected != null && view.getTag(R.id.review_selected) != selected.raw) {
+                view.setTag(R.id.review_selected, selected.raw)
+                view.post {
+                    val text = view.text as? Spanned ?: return@post
+                    val span = text.getSpans(0, text.length, CandidateSpan::class.java).firstOrNull { it.id == selected } ?: return@post
+                    val layout = view.layout ?: return@post
+                    val top = layout.getLineTop(layout.getLineForOffset(text.getSpanStart(span))) + view.totalPaddingTop
+                    selectedTop.value?.invoke(top)
+                }
+            } else if (selected == null) {
+                view.setTag(R.id.review_selected, null)
             }
             view.setTextColor(colours.text)
             view.setTag(R.id.review_offsets, TextOffsets(markdown))
