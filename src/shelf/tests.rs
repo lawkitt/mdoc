@@ -383,6 +383,15 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(listed).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: a quoted fence ends with its quote, and a fence
+    // outside the quote opens a block of its own.
+    let quote_ends = "> ```\n> quoted code that is long enough as prose\n```\n\
+                      This is code, not the document prose.\n```\n\n\
+                      PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(quote_ends).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
     // Review of #280: a quoted fence inside a list item closes in its quote.
     let quoted_in_list = "- > ```\n  > example code long enough to read as prose\n  > ```\n\n\
                           PERSON_1 signed the agreement today.\n";
@@ -611,4 +620,21 @@ fn a_paragraph_cut_short_never_shows_its_end() {
     // paragraph before it does, and the preview says there is more.
     let preview = preview_of(&text).unwrap();
     assert_eq!(preview.text, "PERSON_1 signed the agreement today.…");
+}
+
+/// Review of #280: the limit holds within one line too, cut at a character
+/// boundary, so a line of many thousand spans never reaches the scanner whole.
+#[test]
+fn a_single_huge_line_is_read_only_up_to_the_limit() {
+    let mut text = String::from("PERSON_1 agrees ");
+    for _ in 0..65_536 {
+        text.push_str("**слово** ");
+    }
+    let preview = preview_of(&text).unwrap();
+    assert!(
+        preview.text.starts_with("PERSON_1 agrees слово"),
+        "{}",
+        preview.text
+    );
+    assert!(preview.text.ends_with('…'));
 }

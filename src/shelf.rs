@@ -749,17 +749,23 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
         let (block, quotes) = containers(trimmed);
-        if let Some((c, n, quotes)) = fenced {
-            // Only a fence of the same character, at least as long, with
-            // nothing after it and in the opener's quotes, closes the block;
-            // markers written inside the code are its text.
-            let inner = unquote(trimmed, quotes);
-            if fence(inner)
-                .is_some_and(|(cc, nn)| cc == c && nn >= n && inner[nn..].trim().is_empty())
-            {
+        if let Some((c, n, opened_in)) = fenced {
+            if quotes < opened_in {
+                // The opener's quote has ended, and its code with it: this
+                // line is read for what it is outside.
                 fenced = None;
+            } else {
+                // Only a fence of the same character, at least as long, with
+                // nothing after it and in the opener's quotes, closes the
+                // block; markers written inside the code are its text.
+                let inner = unquote(trimmed, opened_in);
+                if fence(inner)
+                    .is_some_and(|(cc, nn)| cc == c && nn >= n && inner[nn..].trim().is_empty())
+                {
+                    fenced = None;
+                }
+                continue;
             }
-            continue;
         }
         let structure = fence(block).is_some()
             || block.is_empty()
@@ -790,11 +796,19 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             paragraph.push(LINE_MARK);
             paragraph.push(' ');
         }
-        paragraph.push_str(without_hard_break(block));
-        if paragraph.len() >= PARAGRAPH_BYTES {
+        let block = without_hard_break(block);
+        let room = PARAGRAPH_BYTES.saturating_sub(paragraph.len());
+        if block.len() >= room {
+            // Up to the limit, at a character boundary.
+            let mut cut = room;
+            while !block.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            paragraph.push_str(&block[..cut]);
             more = finish(&mut paragraph, &mut styled, true);
             break;
         }
+        paragraph.push_str(block);
     }
     if !more {
         more = finish(&mut paragraph, &mut styled, false);
