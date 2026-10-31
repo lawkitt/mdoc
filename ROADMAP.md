@@ -89,6 +89,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
+- **[Detect]** Labelled Russian account (расчётный счёт) and БИК rules; the
+  account's check digit is keyed on the БИК. *From ADR 0088.*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
 - **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
   caret and selection events); promote when a user asks or a buyer needs it

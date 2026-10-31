@@ -1,7 +1,8 @@
 # Reuse selected Rust Presidio components through mdoc's detector adapter
 
 Status: Accepted, 2026-10-08. Extended by
-[ADR 0018](0018-document-local-identity-review.md) (labelled ОГРН/ОГРНИП).
+[ADR 0018](0018-document-local-identity-review.md) (labelled ОГРН/ОГРНИП) and
+[ADR 0088](0088-phone-and-iban-rules.md) (phone and IBAN rules).
 
 ## Decision
 

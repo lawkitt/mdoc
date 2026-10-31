@@ -175,6 +175,11 @@ document; a case stores its mapping encrypted on disk.
 changes, an unsaved mapping, or both; each gets one prompt
 ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
 
+**Structured rules**: the detector's pattern-and-checksum recognizers
+(email, phone, IBAN, INN, OGRN/OGRNIP, SNILS) in `mdoc-detect`. They run on
+every tier and alone below the device floor; their hits win conflicts with
+model hits ([ADR 0088](docs/adr/0088-phone-and-iban-rules.md)).
+
 **Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
 in the sidebar. One case per document. Avoid "matter" and "project".
 

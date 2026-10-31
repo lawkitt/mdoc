@@ -3,7 +3,9 @@
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
 when green, UI work runs beside the spike, native runtimes ship inside the
 app bundle, statically linked or as an embedded framework, and the minimum is
-iOS 26.
+iOS 26. [ADR 0088](0088-phone-and-iban-rules.md) adds the phone and IBAN
+rules this ADR listed; until then the structured rules were email, INN, OGRN
+and SNILS only.
 
 ## Problem
 

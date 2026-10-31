@@ -3,7 +3,8 @@
 Status: Accepted, 2026-10-07. Superseded in part by
 [ADR 0022](0022-remove-anonymization-mode.md) (no shared markers),
 [ADR 0023](0023-pseudonymization-ui-polish.md) (Keep original replaces Restore)
-and [ADR 0041](0041-cases-and-ai-response-restoration.md) (cases store originals).
+[ADR 0041](0041-cases-and-ai-response-restoration.md) (cases store originals)
+and [ADR 0088](0088-phone-and-iban-rules.md) (phone and IBAN rules).
 
 ## Problem
 
