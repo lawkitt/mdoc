@@ -2662,7 +2662,10 @@ impl Workspace {
         let new_row = ui::control("sidebar-new", "", theme, true)
             .track_focus(&self.panel_new_focus)
             .aria_label("New Markdown tab")
-            .tooltip(style::tooltip("New Markdown tab".into(), theme))
+            .tooltip(style::tooltip(
+                crate::shortcuts::tip("New Markdown tab", &New),
+                theme,
+            ))
             .when(cfg!(test), |v| v.debug_selector(|| "sidebar-new".into()))
             .flex()
             .items_center()
@@ -2846,13 +2849,17 @@ impl Workspace {
                         .pb_1()
                         .children(compact_rows)
                         .child(
-                            ui::header_icon(
+                            ui::header_icon_untipped(
                                 "sidebar-new-collapsed",
                                 "New Markdown tab",
                                 ui::Icon::Plus,
                                 theme,
                                 false,
                             )
+                            .tooltip(style::tooltip(
+                                crate::shortcuts::tip("New Markdown tab", &New),
+                                theme,
+                            ))
                             .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "sidebar-new-collapsed".into())
@@ -3006,7 +3013,11 @@ fn sidebar_toggle(focus: &gpui::FocusHandle, expanded: bool, theme: Theme) -> ui
         "Expand sidebar"
     };
     // Quiet, like every other rail and title-bar icon (ADR 0048).
-    ui::header_icon("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
+    ui::header_icon_untipped("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
+        .tooltip(style::tooltip(
+            crate::shortcuts::tip(label, &ToggleSidebar),
+            theme,
+        ))
         .size(px(32.))
         .track_focus(focus)
         .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))

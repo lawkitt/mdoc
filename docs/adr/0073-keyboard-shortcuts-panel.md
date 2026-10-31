@@ -1,6 +1,6 @@
 # Keyboard shortcuts panel
 
-Status: Accepted, 2026-10-28.
+Status: Accepted, 2026-10-28. Amended 2026-11-01: tooltips name their key (U16).
 
 ## Problem
 
@@ -32,6 +32,10 @@ context.
   macOS) stay bound; a row with no key on this platform is not shown.
 - **Palette.** Its shortcut labels, the sidebar's ⌘K and Home hints and
   Home's Open hint come from the table.
+- **Tooltips** of controls with a key name it from the table
+  (`shortcuts::tip`): "Collapse sidebar (⌃⌘S)", "Back to Home (⌘[)", "New
+  Markdown tab (⌘N)", the toolbar's "Find names to replace (⇧⌘P)". The
+  accessible name stays the bare label.
 - **Panel.** A read-only modal sheet, like the confirm dialog
   ([ADR 0064](0064-dialog-and-role-semantics.md)): a filter field, then the
   rows grouped by context. The filter matches every word against the label,
