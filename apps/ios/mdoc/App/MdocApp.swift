@@ -56,6 +56,7 @@ struct RootView: View {
     @State private var columns: NavigationSplitViewVisibility = .automatic
     @State private var windowWidth: CGFloat = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Narrower than every iPad in landscape, wider than every iPad in portrait.
     static let narrowWindow: CGFloat = 1100
@@ -71,6 +72,9 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             HomeView(app: app)
+                // At accessibility sizes a wider sidebar keeps titles whole.
+                .navigationSplitViewColumnWidth(
+                    min: 280, ideal: dynamicTypeSize.isAccessibilitySize ? 420 : 320, max: 480)
         } detail: {
             if let error = app.startupError {
                 ContentUnavailableView(

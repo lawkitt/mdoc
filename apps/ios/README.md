@@ -50,11 +50,12 @@ unlocked, on Wi-Fi, and with UI Automation on (Settings → Developer):
 
 ```sh
 just ios-device-test <hardware UDID>
+just ios-device-test <hardware UDID> below-floor   # or detector: not by the phone's model
 ```
 
 `scripts/ios-device-test.sh` builds for the phone, installs mdoc, copies the
 fixtures into its data container with `devicectl` (the app ships none), runs
-`ReviewFlowUITests` and `DeviceLongJobsUITests`, and fails on a new
+`ReviewFlowUITests` and the tier's test, and fails on a new
 `mdoc-*.ips` crash report (or when it cannot list them). The fixtures are
 the demo .docx, the 37-page `legal-opinion.docx`, a text PDF and six camera
 pages it renders (`scripts/ios-scan-pages.swift`), in
@@ -67,7 +68,33 @@ names on the legal opinion takes over a minute; the test leaves for 45 s,
 past the grace iOS gives without a continued processing task, and mdoc must
 still be running (not suspended) and finish the job. The text PDF comes in
 last. The first run also downloads the name detector, which later runs
-keep; it skips on the Simulator. Results go to `target/ios/device-test-*.xcresult`.
+keep; it skips on the Simulator.
+
+The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
+every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
+`DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
+UI tests take the tier from a stand-in memory size. Below the floor, Settings
+says the phone cannot find names and Home has no setup card; the scan's
+Download & continue fetches text recognition on Wi-Fi and recognizes the pages
+while the test leaves for ten seconds; where Find names would be, the
+document says so; a word selected and replaced as a person becomes
+`PERSON_1`, and the text shares. Then the legal opinion comes in (in about
+40 ms, too fast to leave during it) and is whole after the test leaves for
+15 s. Results go to `target/ios/device-test-*.xcresult`.
+
+### Accessibility audit
+
+`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Home,
+the review, the candidate sheet, Identities, the replaced document and the
+reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
+failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
+`-only-testing:mdocUITests/AccessibilityAuditExploreUITests`. It is a guide,
+not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
+clipping on sheet text (and the system's Cancel and Done) that reads fine;
+missing labels, small targets and text in a category colour are real.
+`LargeTextExploreUITests` saves the main screens at the largest accessibility
+text size as PNGs into the folder in `TEST_RUNNER_MDOC_SHOTS_DIR` (it skips
+without it), for checking that rows stack instead of breaking words.
 
 ## Layout
 

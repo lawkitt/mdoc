@@ -73,9 +73,12 @@ config() {
   # when a PR changes them (ADR 0089): 40 min.
   android_s=${LOCAL_CI_ANDROID_TIMEOUT:-2400}
   keep_days=${LOCAL_CI_KEEP_DAYS:-7}
-  # The Mac is a build slot beside two agent builders (ADR 0082).
+  # The Mac is a build slot beside two agent builders (ADR 0082): a job
+  # starts at or under this kern.memorystatus_vm_pressure_level (1 normal,
+  # 2 warning, 4 critical) and with this much disk free. Not swap in use:
+  # macOS keeps swap after the memory is free, which held jobs for hours.
   min_free_gb=${LOCAL_CI_MIN_FREE_GB:-40}
-  max_swap_mb=${LOCAL_CI_MAX_SWAP_MB:-2048}
+  max_pressure=${LOCAL_CI_MAX_PRESSURE:-1}
 }
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
@@ -165,8 +168,8 @@ docs_only() {
 # --- GitHub -----------------------------------------------------------------
 
 # One line per open PR: number, draft, cross-repository, author type,
-# mergeable, base, head, this runner's status state on the head (or NONE) and
-# when it was posted.
+# mergeable, base, head, this runner's status state on the head (or NONE),
+# when it was posted and its description.
 # shellcheck disable=SC2016 # GraphQL variables, not shell ones
 poll_query='query($owner: String!, $name: String!, $context: String!) {
   repository(owner: $owner, name: $name) {
@@ -174,7 +177,7 @@ poll_query='query($owner: String!, $name: String!, $context: String!) {
       nodes {
         number isDraft isCrossRepository mergeable baseRefName headRefOid
         author { __typename }
-        commits(last: 1) { nodes { commit { status { context(name: $context) { state createdAt } } } } }
+        commits(last: 1) { nodes { commit { status { context(name: $context) { state createdAt description } } } } }
       }
     }
   }
@@ -182,7 +185,8 @@ poll_query='query($owner: String!, $name: String!, $context: String!) {
 poll_jq='.data.repository.pullRequests.nodes[] | [.number, .isDraft, .isCrossRepository,
   (.author.__typename // "None"), .mergeable, .baseRefName, .headRefOid,
   (.commits.nodes[0].commit.status.context.state // "NONE"),
-  (.commits.nodes[0].commit.status.context.createdAt // "")] | @tsv'
+  (.commits.nodes[0].commit.status.context.createdAt // ""),
+  (.commits.nodes[0].commit.status.context.description // "")] | @tsv'
 
 # Sets prs to the PRs this runner tests: not drafts, from branches in the
 # repository, opened by a user (Dependabot is a bot).
@@ -218,40 +222,81 @@ pr_line() { awk -F'\t' -v n="$1" '$1 == n' <<<"$prs"; }
 drop_pr() { prs=$(awk -F'\t' -v n="$1" '$1 != n' <<<"$prs"); }
 
 # PRs waiting for this runner, oldest status first: no status yet (posted
-# "Queued" by queue_new) or pending (queued, or left by a stopped runner).
+# "Queued" by queue_new), pending (queued, or left by a stopped runner), or
+# any status from the hosted fallback (scripts/local-ci-fallback.sh), which
+# a local result replaces.
 queue() {
   awk -F'\t' -v run="${run_pr:-}" '
-    $1 != run && ($8 == "NONE" || $8 == "PENDING")' <<<"$prs" | sort -t$'\t' -k9,9 -k1,1n
+    $1 != run && ($8 == "NONE" || $8 == "PENDING" || $10 ~ /^Hosted fallback/)' <<<"$prs" |
+    sort -t$'\t' -k9,9 -k1,1n
 }
 
+# What a queued head's status says: "Queued", or why nothing starts, so a
+# stalled runner shows on GitHub, and the hosted fallback acts sooner
+# (scripts/local-ci-fallback.sh). Stable while the reason lasts, so it is
+# posted once, not at every poll.
+queued_text() {
+  case "${waiting_kind:-}" in
+    memory) echo "Queued; waiting for memory pressure to drop (now $(pressure_name "$pressure"))" ;;
+    disk) echo "Queued; waiting for disk space (starts at $min_free_gb GB free)" ;;
+    *) echo "Queued" ;;
+  esac
+}
+
+# Posts a pending status on each new head, and the current queued text on
+# queued heads whose status says otherwise. Heads the hosted fallback has
+# taken ("Hosted fallback: ...") keep their status.
 queue_new() {
-  local now n head
+  local now n head text
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  while IFS=$'\t' read -r n _ _ _ _ _ head _ _; do
-    post "$head" pending "Queued" "${url:+$url/status.txt}"
-    prs=$(awk -F'\t' -v OFS='\t' -v n="$n" -v t="$now" \
-      '$1 == n { $8 = "PENDING"; $9 = t } { print }' <<<"$prs")
-  done < <(awk -F'\t' -v run="${run_pr:-}" '$1 != run && $8 == "NONE"' <<<"$prs")
+  text=$(queued_text)
+  while IFS=$'\t' read -r n _ _ _ _ _ head _; do
+    post "$head" pending "$text" "${url:+$url/status.txt}"
+    prs=$(awk -F'\t' -v OFS='\t' -v n="$n" -v t="$now" -v d="$text" \
+      '$1 == n { $8 = "PENDING"; $9 = t; $10 = d } { print }' <<<"$prs")
+  done < <(awk -F'\t' -v run="${run_pr:-}" -v text="$text" '$1 != run &&
+    ($8 == "NONE" || ($8 == "PENDING" && $10 ~ /^Queued/ && $10 != text))' <<<"$prs")
 }
 
 # --- the job ----------------------------------------------------------------
 
+memory_pressure() { sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null || echo 1; }
+
+disk_free_gb() { df -Pk "$LOCAL_CI_HOME" | awk 'NR == 2 { print int($4 / 1048576) }'; }
+
+pressure_name() {
+  case "$1" in
+    1) echo normal ;;
+    2) echo warning ;;
+    4) echo critical ;;
+    *) echo "level $1" ;;
+  esac
+}
+
+# Sets waiting (for status.txt) and waiting_kind (memory, disk or empty);
+# logs when the reason changes. The next poll posts it on queued heads.
 capacity_ok() {
-  waiting=
-  [ "$os" = macos ] || return 0
-  local swap_mb free_gb
-  swap_mb=$(sysctl -n vm.swapusage | awk '{
-    for (i = 1; i < NF; i++) if ($i == "used") {
-      v = $(i + 2); u = substr(v, length(v)); v = substr(v, 1, length(v) - 1)
-      print int(u == "G" ? v * 1024 : v); exit
-    } }')
-  free_gb=$(df -Pk "$LOCAL_CI_HOME" | awk 'NR == 2 { print int($4 / 1048576) }')
-  if [ "${swap_mb:-0}" -ge "$max_swap_mb" ]; then
-    waiting="swap ${swap_mb} MB in use (starts under $max_swap_mb MB)"
-  elif [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
-    waiting="${free_gb} GB free (starts at $min_free_gb GB)"
+  local was=${waiting_kind:-} free_gb
+  waiting='' waiting_kind=''
+  if [ "$os" = macos ]; then
+    pressure=$(memory_pressure)
+    free_gb=$(disk_free_gb)
+    if [ "${pressure:-1}" -gt "$max_pressure" ]; then
+      waiting_kind=memory
+      waiting="memory pressure $(pressure_name "$pressure") (starts at $(pressure_name "$max_pressure") or lower)"
+    elif [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
+      waiting_kind=disk
+      waiting="${free_gb} GB free (starts at $min_free_gb GB)"
+    fi
   fi
-  [ -z "$waiting" ]
+  if [ "$waiting_kind" != "$was" ]; then
+    if [ -n "$waiting_kind" ]; then
+      log "waiting: $waiting"
+    else
+      log "capacity back: $was no longer holds jobs"
+    fi
+  fi
+  [ -z "$waiting_kind" ]
 }
 
 timeout_for() {
@@ -379,7 +424,7 @@ finish() { # state description
   post "$run_head" "$1" "$2" "$run_url"
   echo "result: $1, $2" >>"$run_dir/summary.txt"
   rm -f "$state/job.pid" "$run_dir/.step"
-  run_pr='' run_head='' run_pid=''
+  run_pr='' run_head='' run_pid='' run_step=''
   # Statuses changed: read them again before starting the next job.
   prs=
   next_poll=0
@@ -390,6 +435,13 @@ check_job() {
   on="$run_base@$(short "$run_base_sha")"
   if kill -0 "$run_pid" 2>/dev/null; then
     read -r step since 2>/dev/null <"$run_dir/.step" || return 0
+    # Each step posts its own pending status: GitHub shows the step, and a
+    # status older than the longest step limit means this runner stopped
+    # (scripts/local-ci-fallback.sh).
+    if [ "$step" != "${run_step:-}" ]; then
+      run_step=$step
+      post "$run_head" pending "Running $(label "$step") on $on" "$run_url"
+    fi
     limit=$(timeout_for "$step")
     if [ $(($(date +%s) - since)) -gt "$limit" ]; then
       log "#$run_pr: $(label "$step") passed its $((limit / 60)) min limit"
@@ -543,7 +595,7 @@ cmd_run() { # [once]
   trap 'exit 0' TERM INT HUP
   log "runner started: $context for $repo, checkout $checkout"
   kill_stale_job
-  prs='' polled=false run_pr='' run_pid='' waiting='' next_poll=0
+  prs='' polled=false run_pr='' run_pid='' run_step='' waiting='' waiting_kind='' next_poll=0
   local now
   while :; do
     [ -z "$run_pr" ] || check_job
@@ -664,6 +716,21 @@ cmd_stop() {
   echo "stopped $agent and $web_agent"
 }
 
+# runner.env: install's two lines, then the machine's own settings (say
+# LOCAL_CI_MIN_FREE_GB=30), which a re-install keeps. Never edit the plist:
+# install rewrites it.
+write_runner_env() { # url
+  local file=$LOCAL_CI_HOME/runner.env kept=''
+  [ ! -f "$file" ] || kept=$(grep -vE '^(# Written by scripts/local-ci|LOCAL_CI_URL=|LOCAL_CI_PORT=)' "$file" || true)
+  {
+    echo "# Written by scripts/local-ci.sh install, which keeps the lines after these three."
+    printf 'LOCAL_CI_URL=%q\n' "$1"
+    printf 'LOCAL_CI_PORT=%q\n' "$port"
+    [ -z "$kept" ] || printf '%s\n' "$kept"
+  } >"$file.new"
+  mv -f "$file.new" "$file"
+}
+
 cmd_install() {
   require_macos install
   local tool dns
@@ -682,11 +749,7 @@ cmd_install() {
   # Stop first: the running runner reads its copy of this script.
   cmd_stop >/dev/null
   cp scripts/local-ci.sh scripts/lib.sh "$LOCAL_CI_HOME/runner/scripts/"
-  {
-    echo "# Written by scripts/local-ci.sh install; re-run it to change."
-    printf 'LOCAL_CI_URL=%q\n' "https://$dns/ci"
-    printf 'LOCAL_CI_PORT=%q\n' "$port"
-  } >"$LOCAL_CI_HOME/runner.env"
+  write_runner_env "https://$dns/ci"
   url=https://$dns/ci
   write_plists
   cmd_start

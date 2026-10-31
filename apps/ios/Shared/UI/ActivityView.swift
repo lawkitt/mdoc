@@ -39,8 +39,23 @@ final class TitledText: NSObject, UIActivityItemSource {
     func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
         let metadata = LPLinkMetadata()
         metadata.title = title
+        // A document symbol in place of the sheet's blank placeholder. A
+        // template symbol draws as nothing there, so it is drawn into an
+        // image of its own, in a grey that reads on light and dark sheets.
+        metadata.iconProvider = NSItemProvider(object: Self.documentIcon)
         return metadata
     }
+
+    private static let documentIcon: UIImage = {
+        let size = CGSize(width: 120, height: 120)
+        let symbol = UIImage(
+            systemName: "doc.text", withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
+        )?.withTintColor(.systemGray, renderingMode: .alwaysOriginal)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            guard let symbol else { return }
+            symbol.draw(at: CGPoint(x: (size.width - symbol.size.width) / 2, y: (size.height - symbol.size.height) / 2))
+        }
+    }()
 }
 
 /// What a share sheet carries, so `.sheet(item:)` can present it.

@@ -47,9 +47,10 @@ test:
 test-release:
     bash scripts/test-release.sh
 
-# Local CI runner regressions; fake gh and just, no network or builds
+# Local CI runner and hosted fallback regressions; fake gh and just, no network or builds
 test-local-ci:
     bash scripts/test-local-ci.sh
+    bash scripts/test-local-ci-fallback.sh
 
 # Local CI runner (ADR 0082): run, once, install, start, stop, status, uninstall
 local-ci *args:
@@ -126,10 +127,10 @@ ios-app: ios-core
 ios-test device="iPhone 17": ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'platform=iOS Simulator,OS=26.1,name={{device}}' -derivedDataPath target/ios/DerivedData -quiet test
 
-# The device UI tests on a connected iPhone: the review flow and the long jobs (ADR 0088)
+# The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]
-ios-device-test udid: ios-core
-    scripts/ios-device-test.sh "{{udid}}"
+ios-device-test udid tier="auto": ios-core
+    scripts/ios-device-test.sh "{{udid}}" "{{tier}}"
 
 # Take the iOS UI survey (every screen, light and dark) into a folder (ADR 0087)
 [macos]

@@ -1,6 +1,6 @@
 # Local CI
 
-Status: Accepted, 2026-10-29; amended 2026-10-30. Amends
+Status: Accepted, 2026-10-29; amended 2026-10-30 and 2026-10-31. Amends
 [ADR 0070](0070-ci-speed-and-script-hygiene.md) (runners, test runner,
 cache) and [ADR 0037](0037-ci-and-release-pipeline.md) (where CI runs).
 
@@ -36,9 +36,23 @@ hub wait on CI.
   `lint (ubuntu)` green. The agent waits for them and fixes failures; the
   hub merges one PR at a time and checks the same three. A PR that is
   behind `main` but merges cleanly is not re-tested; no GitHub merge queue
-  and no ruleset (`just release` pushes to `main` directly). With the PC
-  off, a green hosted `test (windows-latest)` from a dispatched run stands
-  in for `local/windows`.
+  and no ruleset (`just release` pushes to `main` directly).
+- **Hosted fallback** (2026-10-31). When a head's `local/macos` or
+  `local/windows` is stuck (no status 15 minutes after the head appeared,
+  a capacity wait for 15, a step running for 50, otherwise pending for 45),
+  a scheduled workflow (`local-ci-fallback.yml`, every 10 minutes and after
+  each CI run) dispatches the full hosted `ci.yml` on the PR branch and
+  posts that OS's `clippy` and `test` result under the stuck context,
+  prefixed "Hosted fallback". It replaces the manual stand-in (a dispatched
+  `test (windows-latest)` for `local/windows`, and nothing for
+  `local/macos`, so with the Mac off nothing merged). The gate keeps its
+  three contexts; a green fallback status counts. A runner that comes back
+  still tests every head with a fallback status, finished or not, and its
+  result replaces the fallback's; the fallback re-reads a status before
+  writing over it. The fallback runs `main`'s
+  script with `statuses: write` and `actions: write` and never checks out
+  PR code. Accepted gaps: hosted CI tests the branch head, not the merge
+  ref, and has no `just mobile`, which the status says.
 - **Runner.** `scripts/local-ci.sh` behind `just local-ci`: polls open
   non-draft PRs every 60 s with the machine's `gh` login, one queue per
   machine, a newer head of a PR replaces its older one, statuses `pending`
@@ -49,8 +63,12 @@ hub wait on CI.
   `success` without a build. A launchd agent on the Mac; a Task Scheduler
   task at logon on Windows, with its own clone at `D:\ci\mdoc`. The Mac
   runner is a build slot beside the two agent builders and starts a run
-  only while swap is under 2 GB and 40 GB is free. Job limits match the
-  hosted ones.
+  only while memory pressure is normal and 40 GB is free (2026-10-31: was
+  swap under 2 GB, but macOS keeps swap after memory frees, and that limit
+  held every job for four hours with nothing on GitHub to say why). Queued
+  heads say what the runner waits for, and each step posts its own
+  `pending` status. Machine settings live in the runner home's
+  `runner.env`, which install keeps. Job limits match the hosted ones.
 - **Logs and renders** stay on the machine that ran them for 7 days, served
   to the tailnet only (`tailscale serve`); each status links there. The hub
   views renders there instead of downloading the hosted artifacts.
@@ -96,8 +114,10 @@ hub wait on CI.
 
 - A PR's tests finish in minutes instead of 10–15, and a merge of `main`
   into a PR costs one local run, not a hosted matrix.
-- Pre-merge Windows and macOS testing depends on the maintainer's PC and Mac
-  being on; with the PC off, a dispatched hosted run takes about 15 minutes.
+- Pre-merge Windows and macOS testing is fast while the maintainer's PC and
+  Mac are on. When either is off or stuck, the hosted fallback gives a
+  result in about 30–45 minutes (the stuck time, a scheduled run that may
+  start late, then about 15 minutes of hosted CI), without the hub.
 - Local results are not in GitHub's checks UI beyond the statuses, and their
   logs and renders are reachable only inside the tailnet and only for 7 days.
   Hosted `main` runs still keep 7 days of renders on GitHub.

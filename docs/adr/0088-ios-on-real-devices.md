@@ -53,7 +53,10 @@ Findings: [device grill](../design/ios-device-grill-2026-10-31.md).
   connected iPhone with `devicectl` (the app ships none) and runs the review
   flow and a long-jobs test: .docx and text-PDF import, a scan with a real
   text-recognition download on Wi-Fi, Find names, and leaving the app during
-  a job, all through the real background task. They run by hand before
+  a job, all through the real background task. A phone below the floor runs
+  a below-floor test instead: the same download and scan, the note where
+  Find names would be and in Settings, marking by selection, and a .docx
+  import that is whole after leaving the app. They run by hand before
   every TestFlight build after the first.
 - **The first TestFlight build waits** for the measured floor and the device
   checklist (P17) on the phones that run the detector.
