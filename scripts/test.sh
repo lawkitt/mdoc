@@ -3,14 +3,14 @@
 #
 # The workspace tests through cargo-nextest (.config/nextest.toml), then
 # doctests, which nextest does not run (ADR 0082). The script suites (release,
-# CI cache cleanup, local CI runner) need no build and mostly wait on fakes and
+# CI cache cleanup, local CI runner and its hosted fallback) need no build and mostly wait on fakes and
 # timers, so they run beside the Rust tests instead of after them: about a
 # minute off a Windows run (#240). Each suite's output is printed after the
 # Rust tests, in order; any failure fails the run.
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 tmp=$(mktemp -d)
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh)
 pids=()
 # shellcheck disable=SC2317,SC2329 # runs from the trap
 cleanup() {

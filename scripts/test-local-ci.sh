@@ -84,6 +84,73 @@ check() { # description command...
   g checkout --quiet --detach "$new_main" && g merge --quiet --no-ff -m merge pr-new
   check "a PR that removes the check still runs it" in_repo
   rm -rf "${repo:?}"
+  # The Mac's start gate: memory pressure and disk, never swap in use.
+  # shellcheck disable=SC2034 # read by capacity_ok and queued_text
+  os=macos max_pressure=1 min_free_gb=40 waiting_kind=''
+  fake_pressure=1 fake_free=100
+  # shellcheck disable=SC2317,SC2329 # replace the real probes
+  memory_pressure() { echo "$fake_pressure"; }
+  # shellcheck disable=SC2317,SC2329
+  disk_free_gb() { echo "$fake_free"; }
+  capacity_ok >/dev/null
+  check "normal pressure and room on disk start a job" [ -z "$waiting_kind" ]
+  check "a free Mac's queued status is plain" [ "$(queued_text)" = Queued ]
+  fake_pressure=2
+  capacity_ok >/dev/null || true
+  check "warning pressure holds jobs" [ "$waiting_kind" = memory ]
+  check "the queued status says why" [ "$(queued_text)" = "Queued; waiting for memory pressure to drop (now warning)" ]
+  fake_pressure=1 fake_free=39
+  capacity_ok >/dev/null || true
+  check "too little disk holds jobs" [ "$waiting_kind" = disk ]
+  check "and says so, without a number that changes" [ "$(queued_text)" = "Queued; waiting for disk space (starts at 40 GB free)" ]
+  # shellcheck disable=SC2016 # expands when eval runs it
+  check "a new reason is logged" eval 'waiting_kind=""; [[ $(capacity_ok || true) == *"waiting: 39 GB free (starts at 40 GB)"* ]]'
+  # shellcheck disable=SC2034
+  max_pressure=2 fake_pressure=2 fake_free=100
+  check "LOCAL_CI_MAX_PRESSURE=2 starts at warning" eval 'capacity_ok >/dev/null'
+  check "other runners have no gate" eval 'os=windows fake_pressure=4 fake_free=0; capacity_ok >/dev/null'
+  # Queued heads get the current text; running, fallback and final heads do not.
+  posts=$(mktemp)
+  # shellcheck disable=SC2317,SC2329
+  post() { printf '%s\t%s\n' "$1" "$3" >>"$posts"; }
+  # shellcheck disable=SC2034
+  os=macos max_pressure=1 fake_pressure=2 run_pr=5 url=''
+  capacity_ok >/dev/null || true
+  line() { printf '%s\tfalse\tfalse\tUser\tMERGEABLE\tmain\th%s\t%s\t%s\t%s\n' "$1" "$1" "$2" "${3:-}" "${4:-}"; }
+  prs=$(
+    line 1 NONE
+    line 2 PENDING 2026-01-01T00:00:00Z Queued
+    line 3 PENDING 2026-01-01T00:00:00Z "Queued; waiting for memory pressure to drop (now warning)"
+    line 4 PENDING 2026-01-01T00:00:00Z "Hosted fallback: hosted CI on h4 (attempt 1); x"
+    line 5 PENDING 2026-01-01T00:00:00Z "Running just test on main@abc"
+    line 6 SUCCESS 2026-01-01T00:00:00Z Passed
+  )
+  queue_new
+  check "new and outdated queued heads get the waiting text" \
+    [ "$(cut -f1 "$posts" | tr '\n' ' ')" = "h1 h2 " ]
+  check "with the reason" grep -q "^h1	Queued; waiting for memory pressure" "$posts"
+  check "the queue keeps the posted text" [ "$(awk -F'\t' '$1 == 2 { print $10 }' <<<"$prs")" = "$(queued_text)" ]
+  # A runner that comes back tests heads the fallback holds or finished.
+  prs=$(
+    line 1 SUCCESS 2026-01-01T00:00:01Z "Hosted fallback: clippy and test (macos-26) passed; just mobile not run"
+    line 2 ERROR 2026-01-01T00:00:02Z "Hosted fallback: no hosted result after 3 dispatches; dispatch ci.yml by hand"
+    line 3 PENDING 2026-01-01T00:00:03Z "Hosted fallback: hosted CI on h3 (attempt 1); x"
+    line 4 SUCCESS 2026-01-01T00:00:04Z "Passed on main@abc in 3m00s"
+    line 6 FAILURE 2026-01-01T00:00:06Z "Failed in just test on main@abc"
+  )
+  check "fallback heads, finished or not, are queued; local results are not" \
+    [ "$(queue | cut -f1 | tr '\n' ' ')" = "1 2 3 " ]
+  rm -f "$posts"
+  # install keeps the machine's own settings in runner.env.
+  LOCAL_CI_HOME=$(mktemp -d) port=8787
+  printf '%s\n' "# Written by scripts/local-ci.sh install; re-run it to change." \
+    "LOCAL_CI_URL=https://old/ci" "LOCAL_CI_PORT=1" "LOCAL_CI_MIN_FREE_GB=30" >"$LOCAL_CI_HOME/runner.env"
+  write_runner_env https://new/ci
+  write_runner_env https://new/ci
+  check "runner.env gets the new URL" grep -qx "LOCAL_CI_URL=https://new/ci" "$LOCAL_CI_HOME/runner.env"
+  check "a machine setting survives re-installs" grep -qx "LOCAL_CI_MIN_FREE_GB=30" "$LOCAL_CI_HOME/runner.env"
+  check "without duplicates" [ "$(wc -l <"$LOCAL_CI_HOME/runner.env" | tr -d ' ')" = 4 ]
+  rm -rf "${LOCAL_CI_HOME:?}"
   exit "$failures"
 ) || failures=$((failures + $?))
 
@@ -102,7 +169,7 @@ cat >"$tmp/bin/gh" <<'EOF'
 set -eu
 if [ "$1 $2" = "api graphql" ]; then
   while IFS=$'\t' read -r n draft cross author mergeable base head; do
-    latest=$(awk -F'\t' -v h="$head" '$1 == h { s = toupper($2); t = $5 } END { print s "\t" t }' "$FAKE/statuses.tsv")
+    latest=$(awk -F'\t' -v h="$head" '$1 == h { s = toupper($2); t = $5; d = $3 } END { print s "\t" t "\t" d }' "$FAKE/statuses.tsv")
     state=${latest%%$'\t'*}
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$draft" "$cross" "$author" \
       "$mergeable" "$base" "$head" "${state:-NONE}" "${latest#*$'\t'}"
@@ -124,7 +191,7 @@ if [ "$1 $2 $3" = "api -X POST" ]; then
   done
   [ "$context" = "$FAKE_CONTEXT" ] || exit 7
   seq=$(($(wc -l <"$FAKE/statuses.tsv") + 1))
-  printf '%s\t%s\t%s\t%s\t2026-01-01T00:00:%02dZ\n' "$sha" "$state" "$desc" "$url" "$seq" >>"$FAKE/statuses.tsv"
+  printf '%s\t%s\t%s\t%s\t2026-01-01T00:%02d:%02dZ\n' "$sha" "$state" "$desc" "$url" $((seq / 60)) $((seq % 60)) >>"$FAKE/statuses.tsv"
   exit 0
 fi
 echo "fake gh: unexpected $*" >&2
@@ -250,7 +317,7 @@ export LOCAL_CI_REPO=example/mdoc LOCAL_CI_URL=https://ci.example/ci
 # A 15 s test limit: room for a passing fake step while just test runs this
 # beside nextest (scripts/test.sh); the slow one sleeps 60 s.
 export LOCAL_CI_POLL=1 LOCAL_CI_TICK=1 LOCAL_CI_TEST_TIMEOUT=15
-export LOCAL_CI_MIN_FREE_GB=0 LOCAL_CI_MAX_SWAP_MB=999999999
+export LOCAL_CI_MIN_FREE_GB=0 LOCAL_CI_MAX_PRESSURE=4
 export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
@@ -314,6 +381,7 @@ short_base=${base:0:7}
 
 check "a passing PR gets success naming the base" has "$pass" "success	Passed on main@$short_base in *	https://ci.example/ci/pr-1/${pass:0:7}/"
 check "it was queued, then ran" grep -q "^$pass	pending	Running on main@$short_base	https://ci.example/ci/pr-1/" "$FAKE/statuses.tsv"
+check "a step the runner sees running posts its own status" grep -q "^$slow	pending	Running just test on main@$short_base	https://ci.example/ci/pr-8/" "$FAKE/statuses.tsv"
 check "queued statuses link the runner's status" grep -q "^$pass	pending	Queued	https://ci.example/ci/status.txt" "$FAKE/statuses.tsv"
 steps_run() { grep "^$1 " "$FAKE/just.log" | head -3 | cut -d' ' -f2 | tr '\n' ' '; }
 check "setup, lint, then test" [ "$(steps_run pass)" = "setup lint test " ]

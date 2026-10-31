@@ -105,6 +105,8 @@ struct RestoreExtensionView: View {
 
     @ViewBuilder
     private func buttons(_ model: RestoreViewModel, result: RestoreResult) -> some View {
+        // Copy is what most replies need (back into the chat or a document),
+        // so it is the one prominent button.
         Button {
             UIPasteboard.general.string = result.text
             copied = true
@@ -112,6 +114,7 @@ struct RestoreExtensionView: View {
             Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 .frame(maxWidth: .infinity)
         }
+        .buttonStyle(.borderedProminent)
         Button {
             share = ShareItems(items: [result.text])
         } label: {

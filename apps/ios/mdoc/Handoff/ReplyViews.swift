@@ -15,6 +15,10 @@ struct ReplySheet: View {
                     ?? String(localized: "mdoc puts back the names from this document's case."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    // Its full height up to six lines (a case is named after a
+                    // title, which can be long), so the editor keeps its room.
+                    .lineLimit(6)
+                    .fixedSize(horizontal: false, vertical: true)
                 PasteButton(payloadType: String.self) { strings in
                     if let text = strings.first {
                         reply = text
@@ -23,9 +27,20 @@ struct ReplySheet: View {
                 .labelStyle(.titleAndIcon)
                 TextEditor(text: $reply)
                     .font(.body)
+                    .frame(minHeight: 120)
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topLeading) {
+                        if reply.isEmpty {
+                            Text("Paste the AI's reply here")
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 16)
+                                .padding(.leading, 13)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .accessibilityLabel(Text("AI reply"))
                     .accessibilityIdentifier("reply-editor")
             }

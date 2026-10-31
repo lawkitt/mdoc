@@ -117,10 +117,17 @@ enum BelowFloor {
 struct ModelRow: View {
     let offer: ModelOffer
     let state: ModelState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // At accessibility sizes the size goes under the names, which then
+        // have the row's width (beside it they broke a word a line).
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let header = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
+            header {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.plainName(offer.purpose))
                     // The model's own name, for anyone who wants it.
@@ -128,7 +135,9 @@ struct ModelRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+                if !stacked {
+                    Spacer()
+                }
                 Text(offer.byteSize.formatted(.byteCount(style: .file)))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
