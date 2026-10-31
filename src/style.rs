@@ -72,6 +72,15 @@ pub fn theme_label(choice: ThemeChoice) -> &'static str {
     }
 }
 
+/// The palette row that cycles the theme names the choice it switches to.
+pub fn theme_switch_label(next: ThemeChoice) -> &'static str {
+    match next {
+        ThemeChoice::System => "Switch to system theme",
+        ThemeChoice::Light => "Switch to light theme",
+        ThemeChoice::Dark => "Switch to dark theme",
+    }
+}
+
 impl Theme {
     /// The icon names the theme the button will switch to.
     pub fn pdf_style(self) -> PdfStyle {

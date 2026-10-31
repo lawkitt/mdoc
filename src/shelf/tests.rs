@@ -321,9 +321,9 @@ fn restore_clipboard_uses_one_case_and_counts_what_it_did() {
         restored.text,
         "Anna Petrova and Anna Petrova thank Northwind Ltd and PERSON_9."
     );
-    assert_eq!(restored.summary(), "2 names restored · 1 unrecognised");
+    assert_eq!(restored.summary(), "2 names restored · 1 unrecognized");
     let one = restore_clipboard("PERSON_1", names());
-    assert_eq!(one.summary(), "1 name restored · 0 unrecognised");
+    assert_eq!(one.summary(), "1 name restored · 0 unrecognized");
 }
 
 fn preview_of(text: &str) -> Option<Preview> {

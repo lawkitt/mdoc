@@ -43,7 +43,7 @@ category list, then one row per setting.
   - **Cases:** Ask before closing an unsaved mapping.
   - **About:** version and build identity (Release, Protected or Dev,
     [ADR 0045](0045-prompt-free-case-key.md)), Help, Website, Report an issue,
-    the privacy note and the app licence. The **About mdoc** menu item opens it
+    the privacy note and the app license. The **About mdoc** menu item opens it
     on every platform.
 - **One row per setting.** Title and description on the left, the control on
   the right, hairline dividers. Switches replace checkboxes; segmented

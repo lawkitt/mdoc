@@ -882,7 +882,7 @@ impl DocumentView {
             if reply {
                 "Close reply (Esc)"
             } else {
-                "Close before / after (Esc)"
+                "Close side by side (Esc)"
             },
             ui::Icon::Close,
             "Close",
