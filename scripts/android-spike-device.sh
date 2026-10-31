@@ -66,7 +66,7 @@ echo "android-spike: running on Test Lab: $* (several minutes)" >&2
 # A failed test still leaves its report to fetch; the log says which.
 "$gcloud" firebase test android run --type instrumentation \
   --app "$apk" --test "$test_apk" "${devices[@]}" \
-  --timeout 30m --no-record-video --no-performance-metrics \
+  --timeout 45m --no-record-video --no-performance-metrics \
   --directories-to-pull "$files" --results-dir "mdoc-spike-$stamp" 2>&1 | tee "$log" || true
 bucket=$(grep -o 'test-lab-[a-z0-9-]*' "$log" | head -n 1)
 [ -n "$bucket" ] || die "no results bucket in $log"
