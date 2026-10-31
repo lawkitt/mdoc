@@ -1370,6 +1370,74 @@ fn chrome_history_targets_the_active_tab_and_leaves_home_and_settings_alone(
     cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
 }
 
+/// Paste text puts the clipboard straight into the new tab (issue #300):
+/// a dispatched Paste reached no editor and left an empty Untitled tab.
+#[gpui::test]
+fn paste_text_fills_the_new_tab(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let texts = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .tabs
+                .iter()
+                .map(|tab| {
+                    tab.view()
+                        .unwrap()
+                        .read(cx)
+                        .editor
+                        .read(cx)
+                        .text()
+                        .to_owned()
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    // From Home's button, with a Windows line ending to normalize.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Two lines
+Вторая строка"
+            .into(),
+    ));
+    click_toolbar(cx, "home-paste");
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| !tabs.read(cx).showing_home(cx)));
+    assert_eq!(
+        texts(&tabs, cx),
+        ["Two lines
+Вторая строка"]
+    );
+    // From the palette over that document: a second tab, the first untouched.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("Second paste".into()));
+    cx.simulate_keystrokes("secondary-k");
+    cx.simulate_input("paste text as new tab");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(
+        texts(&tabs, cx),
+        [
+            "Two lines
+Вторая строка",
+            "Second paste"
+        ]
+    );
+    assert_eq!(
+        active(&tabs, cx).read_with(cx, |view, cx| view.editor.read(cx).text().to_owned()),
+        "Second paste"
+    );
+    // A blank clipboard opens no tab and says why.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "  
+"
+        .into(),
+    ));
+    tabs.update_in(cx, |tabs, window, cx| tabs.paste_as_new_tab(window, cx));
+    cx.run_until_parked();
+    assert_eq!(texts(&tabs, cx).len(), 2);
+}
+
 #[gpui::test]
 fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

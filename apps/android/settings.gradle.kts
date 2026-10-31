@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "mdoc"
 include(":app")
+// The long-job device test: its own process, so it can kill mdoc mid-job.
+include(":longjobs")
