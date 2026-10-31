@@ -15,16 +15,18 @@ Markdown.
 ## Decision
 
 - **Home is a flat list, newest first.** Each row shows the title, the
-  case's dot and name, and the status as a symbol with secondary text.
+  case's dot, the case's name when it differs from the title, and the
+  status as a symbol with secondary text.
   Status never has a colour of its own, so the case colour is the only
   colour on a row.
 - **Review text keeps its source and styles it closer to reading.** Blank
   lines draw at about a third of a line, Markdown escapes dim as markers
   (in `mdoc-markdown`, so desktop gets them too), table rows use a smaller
   monospaced font, and no text is hyphenated.
-- **Highlights meet 3:1 in dark mode.** Candidate and alias fills and
-  underlines have their own dark colours with at least 3:1 contrast
-  against the background.
+- **Highlights stand out in dark mode.** Every category's underline
+  reaches at least 3:1 against the dark background, and candidate and alias
+  fills are stronger in dark than in light. (A fill itself cannot reach 3:1
+  on black for the darker hues without hiding the text over it.)
 - **Button bars never wrap a label.** A bar whose labels do not fit on one
   line stacks its buttons, as at accessibility text sizes.
 - **Paste is one sheet** (text, title, case). **Share is one tap** to the

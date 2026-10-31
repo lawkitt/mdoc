@@ -64,8 +64,9 @@ final class MarkdownStylingTests: XCTestCase {
         }
         for line in styling.lines {
             switch line.kind {
-            case .heading, .tableHeader: mark(line.range) { $0.bold = true }
-            case .codeBlock: mark(line.range) { $0.monospaced = true }
+            case .heading: mark(line.range) { $0.bold = true }
+            case .tableHeader: mark(line.range) { $0.bold = true; $0.monospaced = true }
+            case .codeBlock, .tableRow: mark(line.range) { $0.monospaced = true }
             default: break
             }
         }
@@ -138,6 +139,33 @@ final class MarkdownStylingTests: XCTestCase {
         }
     }
 
+    /// A replaced alias in a table keeps the table's size, and a header's
+    /// bold (#286).
+    func testAReplacedAliasKeepsItsTablesFont() throws {
+        let text = "| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |"
+        let styling = MarkdownStyling(markdown: text)
+        func candidate(_ word: String, _ index: Int) throws -> Candidate {
+            let start = try XCTUnwrap(text.range(of: word)).lowerBound.utf16Offset(in: text)
+            return Candidate(
+                id: CandidateID(rawValue: "c\(index)"), identityID: IdentityID(rawValue: "i\(index)"),
+                range: SourceRange(start: start, end: start + word.utf8.count),
+                original: word, alias: "PERSON_\(index)", category: .person, state: .replaced)
+        }
+        let candidates = [try candidate("Name", 1), try candidate("Maya Bennett", 2)]
+        let plain = styler.attributedText(markdown: text, styling: styling, candidates: [])
+        let styled = styler.attributedText(markdown: text, styling: styling, candidates: candidates)
+        for word in ["Name", "Maya Bennett"] {
+            let at = (text as NSString).range(of: word).location
+            let before = try XCTUnwrap(plain.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            let after = try XCTUnwrap(styled.attribute(.font, at: at, effectiveRange: nil) as? UIFont)
+            XCTAssertEqual(after.pointSize, before.pointSize, accuracy: 0.01, word)
+            XCTAssertEqual(
+                after.fontDescriptor.symbolicTraits.contains(.traitBold),
+                before.fontDescriptor.symbolicTraits.contains(.traitBold), word)
+            XCTAssertTrue(after.fontDescriptor.symbolicTraits.contains(.traitMonoSpace), word)
+        }
+    }
+
     /// A heading after a list marker (`- ## Notes`) is a heading: its size
     /// and VoiceOver's heading level, as on the desktop.
     func testAHeadingInAListItemIsAHeading() {
@@ -178,6 +206,35 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertEqual(style?.usesDefaultHyphenation, false)
         XCTAssertEqual(style?.hyphenationFactor, 0)
         XCTAssertEqual(style?.lineBreakStrategy, [])
+    }
+
+    /// Dark mode (ADR 0087, P16): every category's underline reaches 3:1
+    /// against the background, and the fills are stronger than in light.
+    func testDarkHighlightsStandOut() {
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        let background = UIColor.systemBackground.resolvedColor(with: dark)
+        for category in Category.allCases {
+            let underline = category.uiColor.resolvedColor(with: dark)
+            XCTAssertGreaterThanOrEqual(Self.contrast(underline, background), 3, "\(category)")
+        }
+        let light = MarkdownStyler.fill(dark: false)
+        let strong = MarkdownStyler.fill(dark: true)
+        XCTAssertGreaterThan(strong.proposed, light.proposed)
+        XCTAssertGreaterThan(strong.replaced, light.replaced)
+    }
+
+    /// WCAG contrast ratio of two opaque colours.
+    static func contrast(_ first: UIColor, _ second: UIColor) -> CGFloat {
+        func luminance(_ colour: UIColor) -> CGFloat {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            func linear(_ value: CGFloat) -> CGFloat {
+                value <= 0.039_28 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        let (a, b) = (luminance(first), luminance(second))
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
     func testDocumentColoursAreReadAsRGBA() {

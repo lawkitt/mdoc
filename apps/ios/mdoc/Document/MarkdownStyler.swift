@@ -44,11 +44,29 @@ struct MarkdownStyler {
             .paragraphStyle: paragraph,
         ])
         let length = text.length
+        // A blank source line draws about a third of a line high: the text,
+        // and so every offset, stays the same (ADR 0087).
+        let blank = NSMutableParagraphStyle()
+        blank.setParagraphStyle(paragraph)
+        blank.lineSpacing = 0
+        blank.paragraphSpacing = 0
+        let blankFont = UIFont.systemFont(ofSize: max(body.pointSize / 3, 4))
+        let source = markdown as NSString
+        var index = 0
+        while index < source.length {
+            let line = source.lineRange(for: NSRange(location: index, length: 0))
+            if source.substring(with: line).trimmingCharacters(in: .newlines).isEmpty {
+                text.addAttributes([.font: blankFont, .paragraphStyle: blank], range: line)
+            }
+            index = NSMaxRange(line)
+        }
         func clamp(_ range: SourceRange) -> NSRange? {
             let clipped = NSIntersectionRange(offsets.nsRange(range), NSRange(location: 0, length: length))
             return clipped.length > 0 ? clipped : nil
         }
 
+        let tableFont = UIFont.monospacedSystemFont(
+            ofSize: Self.font(.footnote, traits: traits).pointSize, weight: .regular)
         // A line's block role sets its font and colour.
         for line in styling.lines {
             guard let range = clamp(line.range) else { continue }
@@ -61,8 +79,12 @@ struct MarkdownStyler {
             case .codeBlock:
                 text.addAttribute(.font, value: monospaced(size: body.pointSize), range: range)
             case .tableHeader:
-                text.addAttribute(.font, value: body.withTraits(.traitBold), range: range)
-            case .tableRow, .rule:
+                // Table rows in a smaller monospaced font, so columns line up
+                // and wrap less; the source is unchanged.
+                text.addAttribute(.font, value: tableFont.withTraits(.traitBold), range: range)
+            case .tableRow:
+                text.addAttribute(.font, value: tableFont, range: range)
+            case .rule:
                 break
             }
         }
@@ -121,23 +143,34 @@ struct MarkdownStyler {
                 .underlineColor: colour,
                 .accessibilityTextCustom: [Self.spokenState(of: candidate)],
             ]
+            let fill = Self.fill(dark: traits.userInterfaceStyle == .dark)
             switch candidate.state {
             case .proposed:
                 // A light tint and a thick underline while proposed.
                 attributes[.underlineStyle] = NSUnderlineStyle.thick.rawValue
-                attributes[.backgroundColor] = colour.withAlphaComponent(0.12)
+                attributes[.backgroundColor] = colour.withAlphaComponent(fill.proposed)
             case .replaced:
                 // An alias chip once replaced.
                 attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                attributes[.backgroundColor] = colour.withAlphaComponent(0.24)
-                attributes[.font] = monospaced(size: body.pointSize)
+                attributes[.backgroundColor] = colour.withAlphaComponent(fill.replaced)
+                // Monospaced at the size and weight of what it sits in: a
+                // table cell's smaller font, a heading's bold.
+                text.enumerateAttribute(.font, in: range) { value, part, _ in
+                    let font = value as? UIFont ?? body
+                    let traits = font.fontDescriptor.symbolicTraits
+                    var alias = traits.contains(.traitMonoSpace) ? font : monospaced(size: font.pointSize)
+                    if traits.contains(.traitBold) {
+                        alias = alias.withTraits(.traitBold)
+                    }
+                    text.addAttribute(.font, value: alias, range: part)
+                }
             case .kept:
                 // A muted dotted underline for a kept original.
                 attributes[.underlineStyle] = NSUnderlineStyle.single.union(.patternDot).rawValue
                 attributes[.underlineColor] = UIColor.secondaryLabel
             }
             if candidate.id == selected {
-                attributes[.backgroundColor] = colour.withAlphaComponent(0.4)
+                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected)
             }
             text.addAttributes(attributes, range: range)
         }
@@ -175,6 +208,12 @@ struct MarkdownStyler {
     /// Monospaced, a little smaller than the text it sits in.
     private func monospaced(size: CGFloat) -> UIFont {
         UIFont.monospacedSystemFont(ofSize: size * 0.92, weight: .regular)
+    }
+
+    /// Candidate fills: stronger on a dark background, where a light tint
+    /// of a category colour all but disappears (ADR 0087).
+    static func fill(dark: Bool) -> (proposed: CGFloat, replaced: CGFloat, selected: CGFloat) {
+        dark ? (0.26, 0.42, 0.6) : (0.12, 0.24, 0.4)
     }
 
     /// Dimmed syntax.

@@ -185,12 +185,15 @@ final class DocumentViewModelTests: XCTestCase {
 
 @MainActor
 final class HomeViewModelTests: XCTestCase {
-    func testDocumentsAreGroupedByCase() {
+    func testDocumentsAreNewestFirstWithTheirCase() {
         let home = HomeViewModel(library: Fixture.core().library)
-        let sections = home.sections
-        XCTAssertEqual(sections.map(\.id), [Fixture.ellison, Fixture.harbour])
-        XCTAssertEqual(Set(sections[0].documents.map(\.id)), [Fixture.letter, Fixture.quotation])
-        XCTAssertEqual(sections[1].documents.map(\.id), [Fixture.tenancy])
+        let documents = home.documents
+        XCTAssertEqual(Set(documents.map(\.id)), [Fixture.letter, Fixture.quotation, Fixture.tenancy])
+        XCTAssertEqual(documents.map(\.updated), documents.map(\.updated).sorted(by: >))
+        let tenancy = try? XCTUnwrap(documents.first { $0.id == Fixture.tenancy })
+        XCTAssertEqual(tenancy.flatMap(home.caseSummary(of:))?.id, Fixture.harbour)
+        let letter = try? XCTUnwrap(documents.first { $0.id == Fixture.letter })
+        XCTAssertEqual(letter.flatMap(home.caseSummary(of:))?.id, Fixture.ellison)
     }
 
     func testImportIntoAnExistingCase() throws {
@@ -201,7 +204,7 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertNil(home.pendingImport)
         XCTAssertEqual(session.snapshot().title, "Call note")
         XCTAssertEqual(session.snapshot().caseID, Fixture.harbour)
-        XCTAssertEqual(home.sections.first { $0.id == Fixture.harbour }?.documents.count, 2)
+        XCTAssertEqual(home.documents.filter { $0.caseID == Fixture.harbour }.count, 2)
     }
 
     func testImportStartsANewCaseByDefault() throws {
@@ -209,13 +212,14 @@ final class HomeViewModelTests: XCTestCase {
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
         _ = home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
         XCTAssertEqual(home.cases.count, 3)
-        XCTAssertEqual(home.sections.first?.caseSummary.name, "Note")
+        let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
+        XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
     }
 
     func testDeleteRemovesTheDocument() {
         let home = HomeViewModel(library: Fixture.core().library)
         home.delete(Fixture.tenancy)
-        XCTAssertNil(home.sections.first { $0.id == Fixture.harbour })
+        XCTAssertFalse(home.documents.contains { $0.caseID == Fixture.harbour })
     }
 }
 

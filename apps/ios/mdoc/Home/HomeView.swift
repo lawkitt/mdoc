@@ -17,29 +17,22 @@ struct HomeView: View {
     var body: some View {
         List(selection: $app.selection) {
             if app.setup.showsCard {
-                SetupCard(model: app.setup)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-            ForEach(home.sections) { section in
                 Section {
-                    ForEach(section.documents) { document in
-                        DocumentRow(document: document)
-                            .tag(document.id)
-                            .swipeActions {
-                                Button("Delete", role: .destructive) {
-                                    app.deleteDocument(document.id)
-                                }
+                    SetupCard(model: app.setup)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
+            // Its own section, so the setup card above reads apart from it.
+            Section {
+                ForEach(home.documents) { document in
+                    DocumentRow(document: document, caseSummary: home.caseSummary(of: document))
+                        .tag(document.id)
+                        .swipeActions {
+                            Button("Delete", role: .destructive) {
+                                app.deleteDocument(document.id)
                             }
-                    }
-                } header: {
-                    HStack(spacing: 6) {
-                        CaseDot(colour: section.caseSummary.colour)
-                        Text(section.caseSummary.name)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(Text("Case \(section.caseSummary.name)"))
-                    .accessibilityAddTraits(.isHeader)
+                        }
                 }
             }
         }
@@ -153,6 +146,7 @@ struct HomeView: View {
 
 private struct DocumentRow: View {
     let document: DocumentSummary
+    let caseSummary: CaseSummary?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -160,16 +154,48 @@ private struct DocumentRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(document.title)
                     .lineLimit(2)
-                Text(HomeViewModel.status(of: document))
+                // The case only when its name says something the title does not.
+                if let caseSummary, caseSummary.name != document.title {
+                    HStack(spacing: 6) {
+                        CaseDot(colour: caseSummary.colour)
+                        Text(caseSummary.name)
+                            .lineLimit(1)
+                    }
                     .font(.footnote)
-                    .foregroundStyle(document.phase == .reviewing ? .orange : .secondary)
+                    .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    // The case's dot, when its name line is left out.
+                    if let caseSummary, caseSummary.name == document.title {
+                        CaseDot(colour: caseSummary.colour)
+                    }
+                    Label {
+                        Text(HomeViewModel.status(of: document))
+                    } icon: {
+                        Image(systemName: HomeViewModel.statusSymbol(of: document))
+                    }
+                    .labelStyle(StatusLabelStyle())
+                    .fontWeight(document.phase == .reviewing ? .semibold : .regular)
+                    .foregroundStyle(document.phase == .reviewing ? .primary : .secondary)
+                }
+                .font(.footnote)
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(spoken))
         .accessibilityIdentifier("document-row")
+    }
+
+    /// "Settlement agreement, 1 to review, case Settlement agreement".
+    private var spoken: String {
+        var parts = [document.title, HomeViewModel.status(of: document)]
+        if let caseSummary {
+            parts.append(String(localized: "case \(caseSummary.name)"))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var symbol: String {
@@ -179,6 +205,17 @@ private struct DocumentRow: View {
         case .image: "photo"
         case .scan: "doc.viewfinder"
         case .text: "text.alignleft"
+        }
+    }
+}
+
+/// A status line: a small icon (or the case's dot) before the words.
+private struct StatusLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon
+                .imageScale(.small)
+            configuration.title
         }
     }
 }

@@ -5,6 +5,8 @@ struct IdentitiesView: View {
     let identities: [Identity]
     let onOpen: (IdentityID) -> Void
     let onDecide: (IdentityID, Decision) -> Void
+    /// Done, where the list is a sheet (iPhone); nil beside the text.
+    var onClose: (() -> Void)?
 
     private var groups: [(Category, [Identity])] {
         Category.allCases.compactMap { category in
@@ -35,12 +37,24 @@ struct IdentitiesView: View {
         // Its own title row: a navigation title here would replace the
         // document's in the bar on iPhone, where the inspector is a sheet.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Text("Identities")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(.bar)
-                .accessibilityAddTraits(.isHeader)
+            // Title and Done side by side, the title wrapping first, so they
+            // never overlap at large text sizes.
+            HStack(alignment: .firstTextBaseline) {
+                Text("Identities")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: onClose == nil ? .center : .leading)
+                    .accessibilityAddTraits(.isHeader)
+                if let onClose {
+                    Button("Done", action: onClose)
+                        .fontWeight(.semibold)
+                        .fixedSize()
+                        .accessibilityIdentifier("identities-done")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            .background(.bar)
         }
     }
 
@@ -84,7 +98,7 @@ struct IdentitiesView: View {
         switch identity.state {
         case .proposed:
             text = String(localized: "Proposed")
-            symbol = "circle.dashed"
+            symbol = "questionmark.circle"
         case .replaced:
             text = String(localized: "Replaced")
             symbol = "checkmark.circle.fill"
@@ -92,13 +106,17 @@ struct IdentitiesView: View {
             text = String(localized: "Kept")
             symbol = "minus.circle"
         }
-        return Label {
-            Text("\(text) · \(identity.mentionCount)")
-        } icon: {
+        // A labelled chip; the words carry the state, not the colour.
+        return HStack(spacing: 4) {
             Image(systemName: symbol)
+                .imageScale(.small)
+            Text("\(text) · \(identity.mentionCount)")
         }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(identity.state == .proposed ? .primary : .secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
     }
 
     /// "Maya Ellison, Person, PERSON_1, 4 mentions, proposed".

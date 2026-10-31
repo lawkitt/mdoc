@@ -5,8 +5,10 @@ import UIKit
 /// stays on the device (ADR 0026).
 struct SetupCard: View {
     @Bindable var model: SetupViewModel
-    /// Shown on Home; inside a document "Not now" is left out.
+    /// Shows Not now.
     var dismissible = true
+    /// What Not now does; on Home it hides the card until next launch.
+    var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
     var then: (@MainActor () async -> Void)?
 
@@ -42,7 +44,11 @@ struct SetupCard: View {
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
-                            model.dismissCard()
+                            if let onDismiss {
+                                onDismiss()
+                            } else {
+                                model.dismissCard()
+                            }
                         }
                         .buttonStyle(.borderless)
                     }
@@ -92,8 +98,14 @@ struct ModelRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(offer.name)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.plainName(offer.purpose))
+                    // The model's own name, for anyone who wants it.
+                    Text(offer.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text(offer.byteSize.formatted(.byteCount(style: .file)))
                     .foregroundStyle(.secondary)
@@ -125,6 +137,14 @@ struct ModelRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// What the model does, in the reader's words (ADR 0087).
+    static func plainName(_ purpose: ModelPurpose) -> String {
+        switch purpose {
+        case .detector: String(localized: "Name detector")
+        case .ocr: String(localized: "Text recognition, English and Russian")
+        }
     }
 }
 
