@@ -193,6 +193,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Mobile]** Resumed OCR joins pages with a blank line, so a list that
   continues across a page break differs from desktop; exact joins need
   pdf-inspector's page join made public in the fork (#276).
+- **[Mobile]** A Markdown table row wider than an iPhone wraps mid-row in
+  the review text (the 2026-10-31 survey's settlement table), so columns no
+  longer line up. The source is shown as is (ADR 0085), so a fix needs a
+  table block that scrolls sideways without re-rendering or moving offsets.
 - **[Detection]** The English settlement demo doesn't scan clean: the claim
   number "6001842/2026" is not proposed (the captured-reply fixture treats it
   as an identifier), and the role word "Employer" is replaced as an
