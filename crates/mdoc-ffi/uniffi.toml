@@ -1,0 +1,14 @@
+# UniFFI binding settings (ADR 0085, 0089). Swift needs none.
+# Names that clash in Kotlin: `Library` with JNA's `com.sun.jna.Library`,
+# which the bindings import, and an error variant's `message` with
+# `Throwable.message`.
+[bindings.kotlin.rename]
+Library = "MdocLibrary"
+"CoreError.Import.message" = "detail"
+"CoreError.Ocr.message" = "detail"
+"CoreError.Detect.message" = "detail"
+"CoreError.Review.message" = "detail"
+"CoreError.Case.message" = "detail"
+"CoreError.Setup.message" = "detail"
+"CoreError.Invalid.message" = "detail"
+"CoreError.Io.message" = "detail"
