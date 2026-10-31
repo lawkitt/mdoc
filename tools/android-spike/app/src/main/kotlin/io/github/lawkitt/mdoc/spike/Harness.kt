@@ -28,6 +28,7 @@ import uniffi.mdoc_ffi.Setup
 import uniffi.mdoc_ffi.SpikeInput
 import uniffi.mdoc_ffi.linkedRuntimes
 import uniffi.mdoc_ffi.reportJson
+import uniffi.mdoc_ffi.probe as probeWindow
 import uniffi.mdoc_ffi.run as runSpike
 
 object Harness {
@@ -104,6 +105,9 @@ object Harness {
                 .put("pass", !isEmulator && worst < PowerManager.THERMAL_STATUS_SEVERE),
         )
         report.put("budgets", budgets)
+        // What the scan budget might gain from settings (roadmap Android 0.1
+        // item 2): the same window under other thread counts and XNNPACK.
+        prepared.getOrNull()?.let { (data, setup) -> report.put("detector_settings", detectorSettings(input(data, setup))) }
 
         val text = report.toString(2)
         val out = context.getExternalFilesDir(null) ?: context.filesDir
@@ -111,6 +115,31 @@ object Harness {
         text.lineSequence().forEach { Log.i("MdocSpike", it) }
         Log.i("MdocSpike", "MDOC_SPIKE_REPORT_WRITTEN ${File(out, REPORT)}")
         return text
+    }
+
+    /**
+     * The one-window probe under each detector setting: ONNX Runtime's CPU
+     * provider or XNNPACK (`GLINER2_DEVICE`), at 2, 4, 6 and 8 threads
+     * (`MDOC_DETECT_THREADS`). The app ships with CPU at 4. A setting that
+     * fails is recorded with its error; the environment is restored after.
+     */
+    private fun detectorSettings(input: SpikeInput): JSONArray {
+        val results = JSONArray()
+        for (device in listOf("cpu", "xnnpack")) {
+            for (threads in listOf(2, 4, 6, 8)) {
+                Os.setenv("GLINER2_DEVICE", device, true)
+                Os.setenv("MDOC_DETECT_THREADS", threads.toString(), true)
+                val row = JSONObject().put("device", device).put("threads", threads)
+                runCatching { probeWindow(input) }
+                    .onSuccess { row.put("median_seconds", it.medianSeconds).put("engine_load_seconds", it.engineLoadSeconds) }
+                    .onFailure { row.put("error", it.toString()) }
+                Log.i("MdocSpike", "detector setting $row")
+                results.put(row)
+            }
+        }
+        Os.unsetenv("GLINER2_DEVICE")
+        Os.unsetenv("MDOC_DETECT_THREADS")
+        return results
     }
 
     private fun input(data: File, setup: Setup): SpikeInput {

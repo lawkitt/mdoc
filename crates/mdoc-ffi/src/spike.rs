@@ -209,6 +209,24 @@ pub struct Budget {
     pub pass: bool,
 }
 
+/// Only the one-window probe, on the same 20 pages, under whatever detector
+/// settings the platform set in the environment (`GLINER2_DEVICE`,
+/// `MDOC_DETECT_THREADS`): the Android spike times threads and XNNPACK with it.
+#[uniffi::export]
+pub fn probe(input: SpikeInput) -> Result<Probe, CoreError> {
+    let fixtures = PathBuf::from(&input.fixtures);
+    let (_, text) = twenty_pages(&fixtures.join("legal-opinion.docx"))?;
+    let config = mdoc_store::settings::PiiConfig::default();
+    let probe = mdoc_detect::probe_window(
+        &text,
+        &PathBuf::from(&input.model_root),
+        &PathBuf::from(&input.runtimes.onnx),
+        &config,
+        PROBE_RUNS,
+    )?;
+    Ok(probe_report(&probe))
+}
+
 /// Runs the whole spike once. Only conversion failing stops it; a detector
 /// or OCR failure is recorded in the report.
 #[uniffi::export]

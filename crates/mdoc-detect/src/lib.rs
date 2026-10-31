@@ -359,7 +359,7 @@ fn check_engine_in(
         SpanConfig::new(root)
             .with_precision(precision(model))
             .with_execution(ExecutionMode::Standard)
-            .with_intra_threads(4),
+            .with_intra_threads(intra_threads()),
     )
     .map_err(|e| DetectError::Engine(e.to_string()))?;
     Ok(())
@@ -646,6 +646,17 @@ fn schema_tasks() -> Vec<SchemaTask> {
         .collect()
 }
 
+/// ONNX Runtime's threads for the detector: 4, unless `MDOC_DETECT_THREADS`
+/// names another count. The Android spike times other counts with it
+/// (ADR 0089); nothing else sets it.
+fn intra_threads() -> usize {
+    std::env::var("MDOC_DETECT_THREADS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|&threads| threads > 0)
+        .unwrap_or(4)
+}
+
 fn load_engine(
     root: &Path,
     model: mdoc_store::settings::PiiModel,
@@ -654,7 +665,7 @@ fn load_engine(
         SpanConfig::new(root)
             .with_precision(precision(model))
             .with_execution(ExecutionMode::Standard)
-            .with_intra_threads(4),
+            .with_intra_threads(intra_threads()),
     )
     .map_err(|e| DetectError::Engine(e.to_string()))
 }
