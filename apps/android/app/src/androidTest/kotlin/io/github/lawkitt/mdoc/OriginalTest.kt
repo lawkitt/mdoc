@@ -5,6 +5,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.CaseChoice
@@ -45,5 +47,13 @@ class OriginalTest {
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasContentDescription("Original page 1 of 1")).fetchSemanticsNodes().isNotEmpty()
         }
+        // A double tap zooms in to twice the size.
+        val page = compose.onNode(hasContentDescription("Original page 1 of 1"))
+        // Its left edge, which zooming about the centre moves off screen (bounds are clipped; position is not).
+        val before = page.fetchSemanticsNode().positionInRoot.x
+        page.performTouchInput { doubleClick() }
+        compose.waitForIdle()
+        val after = compose.onNode(hasContentDescription("Original page 1 of 1")).fetchSemanticsNode().positionInRoot.x
+        assertTrue("zoomed in: left edge $before -> $after", after < before - 100f)
     }
 }
