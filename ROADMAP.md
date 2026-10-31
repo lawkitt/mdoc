@@ -152,6 +152,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
   2026-10-31 shelf GUI run.*
+- **[Detection]** A name written with an HTML entity (`Ann&#97; Petrova`)
+  is neither detected nor caught by the readiness check, which looks for
+  known originals in the raw text; Copy for AI then hands it to the AI, which
+  reads it as the name. The shelf preview and drag card mask it since #280;
+  detection and Copy for AI need the same decoding. *From the 2026-10-31
+  shelf polish review.*
 
 ## Ongoing tracks
 
