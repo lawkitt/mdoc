@@ -966,10 +966,16 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             }
         }
         if let Some(mark) = fence(block) {
-            fenced = Some(Fence {
-                mark,
-                containers: containers_of(line),
-            });
+            let mut containers = containers_of(line);
+            // A fence on a list item's later line is in that item too.
+            let raw = without_quotes(line);
+            if item_content > 0
+                && !containers.iter().any(|c| matches!(c, Container::Item(_)))
+                && width(&raw[..raw.len() - raw.trim_start().len()]) >= item_content
+            {
+                containers.push(Container::Item(item_content));
+            }
+            fenced = Some(Fence { mark, containers });
             continue;
         }
         if structure {
