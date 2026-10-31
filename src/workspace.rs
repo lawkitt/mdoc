@@ -1757,16 +1757,18 @@ impl Workspace {
         }
         // Two or more to lose: one question first (ADR 0071).
         self.quit_summary = true;
+        let names: Vec<String> = at_risk
+            .iter()
+            .filter_map(|&id| self.tabs.get(id)?.view())
+            .map(|view| view.read(cx).display_name())
+            .collect();
         let answer = window.prompt(
             PromptLevel::Warning,
             &format!(
                 "{} documents have unsaved changes or mappings",
                 at_risk.len()
             ),
-            Some(
-                "Review each one, or discard them all and quit. A mapping not saved as a \
-                 case can't be recovered, so AI replies to its document can't be restored.",
-            ),
+            Some(&quit_flow::summary_detail(&names)),
             &[
                 gpui::PromptButton::new("Review…"),
                 gpui::PromptButton::new("Discard All"),
@@ -3257,7 +3259,7 @@ impl Render for Workspace {
             }))
             // Home's clipboard actions need a document; documents handle them first.
             .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
-                if let Some(view) = this.clipboard_document("Restore AI reply", window, cx) {
+                if let Some(view) = this.clipboard_document("Paste AI reply", window, cx) {
                     view.update(cx, |view, cx| view.paste_ai_response(action, window, cx));
                 }
             }))

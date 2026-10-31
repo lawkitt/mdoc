@@ -13,6 +13,8 @@ struct RestoredTextView: UIViewRepresentable {
         view.isEditable = false
         view.isSelectable = true
         view.dataDetectorTypes = []
+        // Writing Tools would act on the originals (#321).
+        view.writingToolsBehavior = .none
         view.backgroundColor = .systemBackground
         view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
         view.textLayoutManager?.usesHyphenation = false

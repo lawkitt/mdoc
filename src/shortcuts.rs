@@ -552,7 +552,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Before / After",
+        "Side by side",
         &[on!(App, None, &["mod-\\"], document_view::ToggleCompare)],
     ),
     row(
@@ -567,7 +567,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
-        "Paste AI response",
+        "Paste AI reply",
         &[on!(
             App,
             None,
@@ -976,10 +976,10 @@ pub static SHORTCUTS: &[Shortcut] = &[
             pii::PiiAddCandidateAs
         )],
     ),
-    // Esc leaves before/after, also from inside its read-only columns.
+    // Esc leaves side by side, also from inside its read-only columns.
     row(
         Editor,
-        "Leave Before / After",
+        "Leave side by side",
         &[
             on!(Pii, Some("CompareView"), &["escape"], pii::CloseCompare),
             on!(
@@ -1249,7 +1249,7 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Popup,
-        "Discard, in a save prompt",
+        "Don't Save, in a save prompt",
         &[on!(
             Dialog,
             Some(confirm_dialog::DIALOG),

@@ -233,6 +233,32 @@ impl ReviewUi {
         self.setup = setup;
     }
 
+    /// Show a scan running with `done` of `windows` model windows read, or
+    /// stop it, for renders of it (#309). No detector runs.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_scan(&mut self, count: Option<(usize, usize)>) {
+        self.cancel();
+        let Some((done, windows)) = count else {
+            return;
+        };
+        let progress = std::sync::Arc::new(scan::ScanCount::default());
+        progress.set(done, windows);
+        self.reviewing = true;
+        self.mapping.begin_review();
+        self.scan_started = std::time::Instant::now();
+        self.job = Some(ScanJob {
+            cancel: Default::default(),
+            revision: 0,
+            generation: self.generation,
+            config: Default::default(),
+            progress,
+        });
+    }
+
     pub(crate) fn scans(&self) -> &[settings::PiiConfig] {
         &self.scans
     }

@@ -1,5 +1,6 @@
 package io.github.lawkitt.mdoc
 
+import android.telephony.TelephonyManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -11,6 +12,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,6 +40,9 @@ class CellularTest {
 
     @Test
     fun cellularAsksFirstAndWaitingForWiFiSaysSo() = runBlocking {
+        // It needs cellular data: the emulator has it, Test Lab's phones (no SIM) do not.
+        val telephony = app.getSystemService(TelephonyManager::class.java)
+        assumeTrue("no SIM, so no cellular to test", telephony?.simState == TelephonyManager.SIM_STATE_READY)
         ActivityScenario.launch(MainActivity::class.java).use {
             // A fresh core: text recognition is not installed, so there is something to download.
             app.setup.refresh()

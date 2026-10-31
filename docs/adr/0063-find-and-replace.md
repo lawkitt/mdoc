@@ -32,7 +32,7 @@ the link between an applied alias and its original value.
 - **Status** after Replace all: "Replaced 12 · skipped 2 (formatting) · 1
   (alias)", or just "Replaced 12"; screen readers announce it.
 - **No Markdown, no Replace.** In a source-only tab the Replace chord opens
-  the preview's find, as ⌘F does there. In Before / After, Find and Replace
+  the preview's find, as ⌘F does there. In Side by side, Find and Replace
   close the comparison and work in the editor, as Find does (ADR 0042).
 - **Undo from the find bar.** ⌘Z / Ctrl+Z (and Redo) in the Find or Replace
   field undo the document, so Replace all is undone without leaving the bar.

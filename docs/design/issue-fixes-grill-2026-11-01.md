@@ -8,7 +8,7 @@ goal run while they are away. This records what was agreed before the run.
 | Issue | In | Fix |
 |---|---|---|
 | #300 Paste text opens an empty tab | Yes | The clipboard text goes straight into the new buffer instead of a `Paste` dispatch; a test covers it. |
-| #321 iOS restored replies on the shared clipboard | Yes | Both restored-text copies use `.localOnly` and a ten-minute expiry; `RestoredTextView` turns Writing Tools off. A matching desktop flag goes to the roadmap's Later section. |
+| #321 iOS restored replies on the shared clipboard | Yes | Both restored-text copies use `.localOnly` and a ten-minute expiry; `RestoredTextView` turns Writing Tools off. A matching desktop flag goes to the roadmap's Later section ([Cases]). |
 | #304 Shelf counts identities, editor counts mentions | Yes | The shelf shows mentions ("24 replaced"), the editor's number; the hover reads "14 names: 8 people · 3 organisations · …". |
 | #303 Selection ring keeps the original's width | Yes | The ring follows the applied alias's width. |
 | #308 Three-digit counts squeeze the chevron | Yes | The count column fits four digits and the chevron keeps its width. |
@@ -18,7 +18,7 @@ goal run while they are away. This records what was agreed before the run.
 | #309 Scan footer says "Nothing to replace yet" | Yes | "Scanning…" in the footer, Rescan off during a scan, a chunk count on long documents. |
 | #306 Recent badges unapplied files, lists conversions twice | Yes | The badge only with applied replacements; a source folds into the `.md` saved from it. |
 | #307 Locked-case messages contradict Home | Partly | "N saved cases are locked"; the popover anchored to its link; the hint names Share › Save as case. The bell rule stays as [ADR 0043](../adr/0043-deferred-keychain-access.md) has it, since a locked case's members can't be known. |
-| #301 Copy for AI keeps addresses, dates of birth, a first name | Partly | Readiness flags single words of known multi-word originals ("Марина"); Share stops saying "aliases now" while leftovers remain. Address and date-of-birth detection gets its own grill; the issue stays open (`Refs`). |
+| #301 Copy for AI keeps addresses, dates of birth, a first name | Partly | Readiness flags single words of known multi-word originals ("Марина"); Share stops saying "aliases now" while leftovers remain. Address and date-of-birth detection joins the ROADMAP's [Detection] identifier-coverage grill item (no separate issue); #301 stays open (`Refs`). |
 | #302 Same text scans differently in a longer document | Yes, last, time-boxed | Find what changes with context and fix it; filter titles and role words; a long fixture joins the qualification set. |
 | #254 GUI rows pending (maintainer) | No | Maintainer-only rows (Windows, clipboard menu items computer use refuses). |
 

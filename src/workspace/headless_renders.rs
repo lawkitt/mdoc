@@ -198,6 +198,7 @@ impl Driver {
                         })
                     }),
                     "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
+                    "scanning": w.active_view().is_some_and(|v| v.read(cx).pii.scanning()),
                     "ocr_consent": w.active_view().is_some_and(|v| {
                         let v = v.read(cx);
                         v.lifecycle.source_only() && v.import.ocr_required().is_some()
@@ -321,6 +322,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     restore::restored_reply(d)?;
     comments::scenes(d)?;
     review::merge_hint(d)?;
+    review::scanning(d)?;
     recents::scenes(d, path)?;
     // Last: it leaves cases locked.
     shelf::scenes(d)

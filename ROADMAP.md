@@ -69,13 +69,6 @@ PR; a lane runs its items in order. *Done when* for every item: headless
 renders of what it changes in light and dark, tests where behavior changes,
 and the ADR it touches amended.
 
-1. **[UI] One name per action.** Restore AI reply / Paste AI Response / Paste
-   AI reply…; Save as case / Save mapping as case; Before / After / Side by
-   side; UK and US spelling mixed ("unrecognised", "licence", "organisations"
-   beside "Organization", "License"). Pick one name and one spelling
-   ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and buttons.
-   ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
-   Lane A, decisions 8–9.
 2. **[UI] Menus and copy shortcuts.** No File › Open Recent, no Restore
    Clipboard beside Pseudonymize Clipboard, no View items for Home, Search,
    Original / Pseudonymized / Side by side or the Replacements panel, no mdoc
@@ -97,11 +90,6 @@ and the ADR it touches amended.
    pages cut a row with no scroll cue.
    ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings)) Lane
    B.
-5. **[UI] Dialogs.** Save changes rings Save but doesn't fill it, orders Save
-   · Discard · Cancel unlike macOS, and has no scrim in Dark; the Quit summary
-   says "3 documents have unsaved changes or mappings" without naming them.
-   ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs)) Lane
-   C, decision 11.
 6. **[UI] Native panels follow the app theme.** With Appearance on Light under
    a Dark macOS, the Save panel, its alerts and the menus stay dark; set the
    app's `NSAppearance` from the setting.
@@ -268,7 +256,16 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   as an identifier), and the role word "Employer" is replaced as an
   organisation (ORG_2), which garbles the terms. The demos are the first thing
   a new user scans; worth a grill on identifier coverage and role words.
-  *From the 2026-10-31 shelf GUI run.*
+  *From the 2026-10-31 shelf GUI run.* The same grill takes street addresses
+  and dates of birth, which neither demo's Copy for AI replaces (Date is in
+  the popup's category menu but not in Settings › Detection); the readiness
+  and Share-line parts of [#301](https://github.com/lawkitt/mdoc/issues/301)
+  land in the 2026-11-01 fix run.
+- **[Cases]** Desktop copy of a restored reply and Restore Clipboard mark the
+  clipboard as transient or concealed, so Universal Clipboard and clipboard
+  managers don't carry originals off the Mac, as iOS does from
+  [#321](https://github.com/lawkitt/mdoc/issues/321). *From the 2026-11-01
+  fix run.*
 - **[Spelling]** Russian name forms such as "Маришей" get a misspelling
   underline; names, detected mentions and aliases shouldn't be spell-checked.
   *From the 2026-10-31 shelf GUI run.*

@@ -537,7 +537,7 @@ impl Workspace {
                     .items_start()
                     .justify_center()
                     .pt(px(64.))
-                    .bg(gpui::hsla(0., 0., 0., 0.25))
+                    .bg(theme.scrim())
                     // A modal: nothing behind it takes the pointer or a drop.
                     .occlude()
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())

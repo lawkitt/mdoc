@@ -266,7 +266,7 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
             .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
             .count()
     });
-    // The keyboard path also works without focus; Discard completes shutdown.
+    // The keyboard path also works without focus; Don't Save completes shutdown.
     cx.update(|window, cx| window.blur(cx));
     draw(cx);
     cx.simulate_keystrokes(if cfg!(target_os = "macos") {
@@ -282,7 +282,7 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     } else {
         assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
         for _ in 0..dirty {
-            cx.simulate_prompt_answer("Discard");
+            cx.simulate_prompt_answer("Don't Save");
             cx.run_until_parked();
         }
     }

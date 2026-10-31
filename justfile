@@ -97,6 +97,10 @@ android:
 android-survey out kind="phone":
     scripts/android-survey.sh "{{out}}" "{{kind}}"
 
+# The app's tests and the long-job test on a phone by adb serial, or on Test Lab phones named model:api (default: one per RAM class) (ADR 0089)
+android-device-test *devices:
+    scripts/android-device-test.sh {{devices}}
+
 # Android core into target/android: jniLibs for arm64-v8a and x86_64, Kotlin bindings (ADR 0089)
 android-core:
     scripts/build-android-core.sh
