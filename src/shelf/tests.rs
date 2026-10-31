@@ -47,18 +47,22 @@ fn case_with(member: &Path, text: Option<&str>) -> Case {
 
 #[test]
 fn a_ready_tab_copies_the_editor_text_and_previews_aliases() {
-    let text = "# PERSON_1 and ORG_1\n\n> PERSON_1 signed.\n\nThird.\nFourth.";
+    let text = "# PERSON_1 and ORG_1\n\n> PERSON_1 signed it today.\n\nThird.\nFourth.";
     let row = ShelfDocument::of_tab(tab(1, "Anna Petrova.md", text, 0)).unwrap();
     assert_eq!(row.readiness, Readiness::Ready);
     assert_eq!(row.title, "PERSON_1.md");
+    assert_eq!(row.display_title(), "PERSON_1");
     assert_eq!(
         row.text_for_ai(),
         Some(mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]).as_str())
     );
-    let lines: Vec<_> = row.preview.iter().map(|l| l.text.as_str()).collect();
-    assert_eq!(lines, ["PERSON_1 and ORG_1", "PERSON_1 signed.", "Third."]);
-    assert_eq!(row.preview[0].aliases, [0..8, 13..18]);
-    assert_eq!(row.words, 7, "Markdown markers are not words");
+    // The heading and the one-word lines are not prose.
+    let preview = row.preview.as_ref().unwrap();
+    assert_eq!(preview.text, "PERSON_1 signed it today.");
+    assert_eq!(preview.aliases, vec![0..8; 1]);
+    assert_eq!(row.replaced, [(Category::Person, 1), (Category::Organization, 1)]);
+    assert_eq!(row.replaced_count(), 2);
+    assert_eq!(row.words, 9, "Markdown markers are not words");
     assert_eq!(row.file_name(), "PERSON_1.md");
 }
 
@@ -77,7 +81,7 @@ fn a_tab_without_aliases_is_not_listed_and_one_with_proposals_is_not_ready() {
     assert_eq!(row.readiness.label(), "2 left to review");
     assert_eq!(row.title, "PERSON_2.md");
     assert_eq!(row.text_for_ai(), None);
-    assert!(row.preview.is_empty(), "no text of a document not ready");
+    assert!(row.preview.is_none(), "no text of a document not ready");
 }
 
 #[test]
@@ -86,7 +90,7 @@ fn a_kept_original_or_a_scan_in_progress_keeps_an_open_tab_from_leaving() {
     let kept = ShelfDocument::of_tab(tab(1, "a.md", "PERSON_1 thanks Anna Petrova.", 0)).unwrap();
     assert_eq!(kept.readiness, Readiness::NamesNotReplaced(1));
     assert_eq!(kept.text_for_ai(), None);
-    assert!(kept.preview.is_empty());
+    assert!(kept.preview.is_none());
     // Just edited: pending mentions are being found again.
     let mut checking = tab(2, "b.md", "PERSON_1 met ORG_1.", 0);
     checking.checking = true;
@@ -165,7 +169,7 @@ fn a_closed_member_is_ready_only_while_it_matches_its_reviewed_text() {
     assert_eq!(row.readiness, Readiness::NamesNotReplaced(2));
     assert_eq!(row.readiness.label(), "2 names not replaced");
     assert_eq!(row.text_for_ai(), None);
-    assert!(row.preview.is_empty());
+    assert!(row.preview.is_none());
 }
 
 #[test]
@@ -309,4 +313,93 @@ fn restore_clipboard_uses_one_case_and_counts_what_it_did() {
     assert_eq!(restored.summary(), "2 names restored · 1 unrecognised");
     let one = restore_clipboard("PERSON_1", names());
     assert_eq!(one.summary(), "1 name restored · 0 unrecognised");
+}
+
+fn preview_of(text: &str) -> Option<Preview> {
+    preview_lines(text, &RestoreMap::new(names()))
+}
+
+#[test]
+fn a_preview_skips_page_furniture_and_starts_at_the_first_prose() {
+    let text = "—\n\n23456\n\nСтраница **1** из **5**\n\nPage 1 of 5\n\n---\n\n\
+                | a | b |\n|---|---|\n\n```\ncode that is long enough to be prose\n```\n\n\
+                ## A heading that is long enough\n\n\
+                1. PERSON_1 agrees to pay ORG_1 the fee.\n";
+    let preview = preview_of(text).unwrap();
+    assert_eq!(preview.text, "PERSON_1 agrees to pay ORG_1 the fee.");
+    assert_eq!(preview.aliases, [0..8, 23..28]);
+    assert!(preview_of("23456\n\nPage 2 of 5\n").is_none(), "no prose, no preview");
+}
+
+#[test]
+fn a_preview_hides_markdown_syntax_and_keeps_bold_and_italic() {
+    let preview =
+        preview_of("> **Important:** PERSON_1 must _sign_ the [agreement](https://x.test) today.")
+            .unwrap();
+    assert_eq!(
+        preview.text,
+        "Important: PERSON_1 must sign the agreement today."
+    );
+    assert!(!preview.text.contains("**") && !preview.text.contains("]("));
+    assert_eq!(&preview.text[preview.bold[0].clone()], "Important:");
+    assert_eq!(&preview.text[preview.italic[0].clone()], "sign");
+    assert_eq!(&preview.text[preview.aliases[0].clone()], "PERSON_1");
+}
+
+#[test]
+fn a_preview_joins_prose_into_one_paragraph_cut_at_a_word_with_an_ellipsis() {
+    let sentence = "PERSON_1 and ORG_1 agree on every term below.";
+    let text = [sentence; 12].join("\n\n");
+    let preview = preview_of(&text).unwrap();
+    assert!(preview.text.ends_with('…'));
+    let body = preview.text.trim_end_matches('…');
+    assert!(body.chars().count() <= PREVIEW_CHARS);
+    assert!(
+        [sentence; 12].join(" ").starts_with(body),
+        "lines join with one space: {body}"
+    );
+    assert!(!body.ends_with(' ') && !body.ends_with("PERSON_"));
+    // Short text ends where it ends.
+    assert_eq!(preview_of(sentence).unwrap().text, sentence);
+    // More prose after a full preview still shows the ellipsis.
+    let long = format!("{}\n\nMore prose follows here.", "word ".repeat(60));
+    assert!(preview_of(&long).unwrap().text.ends_with('…'));
+}
+
+#[test]
+fn a_preview_never_shows_an_original_even_one_the_syntax_split() {
+    for text in [
+        "Anna Petrova signed the agreement with Northwind Ltd today.",
+        "Anna **Petrova** signed the agreement with Northwind Ltd today.",
+        "Signed by *Anna* Petrova for Northwind Ltd on the day.",
+    ] {
+        let preview = preview_of(text).unwrap();
+        let map = RestoreMap::new(names());
+        assert_eq!(map.known_names(&preview.text), 0, "{}", preview.text);
+        assert!(preview.text.contains("PERSON_1"), "{}", preview.text);
+    }
+}
+
+#[test]
+fn replaced_counts_distinct_names_by_category_once_each() {
+    let mut open = tab(1, "a.md", "PERSON_1 met ORG_1, then PERSON_1 left.", 0);
+    // The case lists the same person again.
+    open.names
+        .push(identity("PERSON_1", Category::Person, &["Anna Petrova"]));
+    let row = ShelfDocument::of_tab(open).unwrap();
+    assert_eq!(row.replaced, [(Category::Person, 1), (Category::Organization, 1)]);
+}
+
+#[test]
+fn the_display_title_drops_only_a_markdown_extension() {
+    let mut row = ShelfDocument::of_tab(tab(1, "a.md", "PERSON_1", 0)).unwrap();
+    for (title, shown) in [
+        ("PERSON_1 notice.md", "PERSON_1 notice"),
+        ("Notes.MARKDOWN", "Notes"),
+        ("report.txt", "report.txt"),
+        (".md", ".md"),
+    ] {
+        row.title = title.into();
+        assert_eq!(row.display_title(), shown);
+    }
 }

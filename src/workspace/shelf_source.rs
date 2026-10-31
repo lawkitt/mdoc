@@ -10,7 +10,7 @@ use crate::{
 };
 use gpui::{App, Context, Window};
 use mdoc_pii::restore::ExportedIdentity;
-use mdoc_store::session_store;
+use mdoc_store::{session_store, settings};
 use std::{path::PathBuf, time::SystemTime};
 
 impl Workspace {
@@ -293,9 +293,77 @@ impl Workspace {
         .detach();
     }
 
-    /// "Show all in mdoc": Home lists every document.
-    pub(crate) fn show_all_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// "Open mdoc": Home lists every document.
+    pub(crate) fn home_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_home(window, cx);
+    }
+
+    /// The shelf's Settings gear.
+    pub(crate) fn settings_from_shelf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_settings(window, cx);
+    }
+
+    /// The first-close note's "Quit when windows close" (ADR 0084): the
+    /// switch goes off and mdoc quits, as it now would with its last window
+    /// closed. The hidden window shows only if the quit asks something; a
+    /// quit that cannot start brings it back, since no item is left to.
+    pub(crate) fn quit_when_windows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_general(|general| general.menu_bar = false, cx);
+        crate::menu_bar::quit_when_windows_close(cx);
+        self.quit(window, cx);
+        if !self.quit_flow.quitting() {
+            crate::menu_bar::reveal_if_hidden(window, cx);
+        }
+    }
+
+    /// Whether the first-close note has shown (ADR 0084).
+    pub(crate) fn menu_bar_note_shown(&self) -> bool {
+        self.general().is_some_and(|general| general.menu_bar_note_shown)
+    }
+
+    /// Whether a shelf drag has dropped, retiring its hint (ADR 0084).
+    pub(crate) fn shelf_drag_hint_shown(&self) -> bool {
+        self.general().is_some_and(|general| general.shelf_drag_hint_shown)
+    }
+
+    fn general(&self) -> Option<settings::GeneralConfig> {
+        self.preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map(|preferences| preferences.general)
+    }
+
+    /// Change a Settings › General choice from outside the panel (the
+    /// shelf's notes): saved at once, kept in memory if the save fails, and
+    /// the panel's draft follows so its next save keeps it. Only flags and
+    /// switches; never document text.
+    pub(crate) fn update_general(
+        &mut self,
+        change: impl FnOnce(&mut settings::GeneralConfig),
+        cx: &mut Context<Self>,
+    ) {
+        let (prefs, path) = {
+            let store = self.preferences.borrow();
+            let Some(current) = store.current.clone() else {
+                return;
+            };
+            (current, store.path.clone())
+        };
+        let mut changed = prefs.clone();
+        change(&mut changed.general);
+        if changed == prefs {
+            return;
+        }
+        if let Some(path) = path
+            && let Err(error) = settings::save(&path, &changed)
+        {
+            eprintln!("mdoc: could not save a menu bar choice: {error}");
+        }
+        let general = changed.general;
+        self.preferences.borrow_mut().current = Some(changed);
+        self.settings
+            .update(cx, |panel, cx| panel.general_changed(general, cx));
     }
 
     /// "Unlock cases in mdoc…": the Keychain explainer, in the window.

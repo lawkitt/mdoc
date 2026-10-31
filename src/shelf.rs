@@ -13,7 +13,11 @@ mod exports;
 mod tests;
 
 pub(crate) use exports::ShelfExports;
-use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
+use mdoc_markdown::{lines, spans, tables};
+use mdoc_pii::{
+    Category,
+    restore::{ExportedIdentity, RestoreMap},
+};
 use mdoc_store::cases::{Case, CaseLink};
 use sha2::Digest;
 use std::{
@@ -22,12 +26,16 @@ use std::{
     time::SystemTime,
 };
 
-/// The shelf lists at most this many documents, then "Show all in mdoc".
+/// The shelf lists at most this many documents (ADR 0084).
 pub(crate) const MAX_DOCUMENTS: usize = 8;
-/// Preview lines under a ready document's title.
-const PREVIEW_LINES: usize = 3;
-/// A preview line is cut after this many characters.
-const PREVIEW_CHARS: usize = 160;
+/// A preview is cut after about this many characters: more than two
+/// wrapped lines of the shelf hold, so the view's clamp ends it.
+const PREVIEW_CHARS: usize = 220;
+/// A line is prose, and may start a preview, with at least this many
+/// words and letters; shorter ones are page furniture (page numbers,
+/// rules, "Page 1 of 5").
+const PROSE_WORDS: usize = 3;
+const PROSE_LETTERS: usize = 12;
 /// A closed member larger than this is not read; it lists as changed.
 pub(crate) const MAX_MEMBER_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -73,11 +81,16 @@ pub(crate) enum ShelfKey {
     Member { case: String, path: PathBuf },
 }
 
-/// One preview line, pseudonymized, with its aliases' byte ranges for chips.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PreviewLine {
+/// A ready document's preview: its first real prose as one paragraph,
+/// Markdown syntax hidden and pseudonymized, ending in "…" when the text
+/// goes on. Byte ranges mark what the view draws as alias chips, bold and
+/// italic.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Preview {
     pub text: String,
     pub aliases: Vec<Range<usize>>,
+    pub bold: Vec<Range<usize>>,
+    pub italic: Vec<Range<usize>>,
 }
 
 /// One row of the shelf.
@@ -90,8 +103,11 @@ pub(crate) struct ShelfDocument {
     pub readiness: Readiness,
     pub edited: SystemTime,
     pub words: usize,
-    /// Up to three lines; only a ready document shows any.
-    pub preview: Vec<PreviewLine>,
+    /// Only a ready document with prose has one.
+    pub preview: Option<Preview>,
+    /// Distinct names its text holds by an alias, per category, in
+    /// [`Category::ALL`] order: "14 replaced" and its breakdown.
+    pub replaced: Vec<(Category, usize)>,
     /// Copy for AI's text; only a ready document has it.
     for_ai: Option<String>,
 }
@@ -226,11 +242,10 @@ impl ShelfDocument {
         edited: SystemTime,
         for_ai: Option<String>,
     ) -> Self {
-        let preview = if readiness.is_ready() {
-            preview_lines(text, names)
-        } else {
-            Vec::new()
-        };
+        let preview = readiness
+            .is_ready()
+            .then(|| preview_lines(text, names))
+            .flatten();
         Self {
             key,
             title: names.pseudonymize(title).0,
@@ -242,8 +257,23 @@ impl ShelfDocument {
                 .filter(|word| word.chars().any(char::is_alphanumeric))
                 .count(),
             preview,
+            replaced: replaced(text, names),
             for_ai,
         }
+    }
+
+    /// The title as the row shows it: without `.md` (ADR 0084).
+    pub(crate) fn display_title(&self) -> &str {
+        let lower = self.title.to_ascii_lowercase();
+        [".md", ".markdown"]
+            .iter()
+            .find(|ext| lower.ends_with(*ext) && lower.len() > ext.len())
+            .map_or(&self.title, |ext| &self.title[..self.title.len() - ext.len()])
+    }
+
+    /// How many distinct names its text replaced.
+    pub(crate) fn replaced_count(&self) -> usize {
+        self.replaced.iter().map(|(_, n)| n).sum()
     }
 
     /// The text Copy for AI and a drag carry; `None` unless ready.
@@ -283,28 +313,197 @@ pub(crate) fn title_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// The first lines with text, plain and pseudonymized, with alias ranges.
-fn preview_lines(text: &str, names: &RestoreMap) -> Vec<PreviewLine> {
-    text.lines()
-        .map(|line| {
-            line.trim()
-                .trim_start_matches(['#', '>', '-', '*', '+'])
-                .trim()
-        })
-        .filter(|line| !line.is_empty())
-        .take(PREVIEW_LINES)
-        .map(|line| {
-            let line: String = line.chars().take(PREVIEW_CHARS).collect();
-            let text = names.pseudonymize(&line).0;
-            let aliases = names
-                .tokens(&text)
-                .into_iter()
-                .filter(|t| t.identity.is_some())
-                .map(|t| t.range)
-                .collect();
-            PreviewLine { text, aliases }
-        })
+/// Distinct names `text` holds by an alias, per category.
+fn replaced(text: &str, names: &RestoreMap) -> Vec<(Category, usize)> {
+    let identities = names.identities();
+    let mut seen: Vec<&str> = Vec::new();
+    let mut counts = [0usize; Category::ALL.len()];
+    for token in names.tokens(text) {
+        let Some(identity) = token.identity.and_then(|i| identities.get(i)) else {
+            continue;
+        };
+        // The tab's names list one person in its mapping and its case.
+        if seen.contains(&identity.alias.as_str()) {
+            continue;
+        }
+        seen.push(&identity.alias);
+        if let Some(at) = Category::ALL.iter().position(|c| *c == identity.category) {
+            counts[at] += 1;
+        }
+    }
+    Category::ALL
+        .into_iter()
+        .zip(counts)
+        .filter(|(_, n)| *n > 0)
         .collect()
+}
+
+/// Text with byte ranges for bold and italic, built a piece at a time:
+/// runs of whitespace collapse to one space and nothing leads with one.
+#[derive(Default)]
+struct Styled {
+    text: String,
+    bold: Vec<Range<usize>>,
+    italic: Vec<Range<usize>>,
+}
+
+fn add_range(ranges: &mut Vec<Range<usize>>, range: Range<usize>) {
+    match ranges.last_mut() {
+        Some(last) if last.end == range.start => last.end = range.end,
+        _ => ranges.push(range),
+    }
+}
+
+impl Styled {
+    fn push(&mut self, piece: &str, bold: bool, italic: bool) {
+        let start = self.text.len();
+        for c in piece.chars() {
+            if !c.is_whitespace() {
+                self.text.push(c);
+            } else if !self.text.is_empty() && !self.text.ends_with(' ') {
+                self.text.push(' ');
+            }
+        }
+        let end = self.text.len();
+        if end > start {
+            if bold {
+                add_range(&mut self.bold, start..end);
+            }
+            if italic {
+                add_range(&mut self.italic, start..end);
+            }
+        }
+    }
+
+    fn append(&mut self, other: Styled) {
+        if !self.text.is_empty() && !self.text.ends_with(' ') {
+            self.text.push(' ');
+        }
+        let shift = self.text.len();
+        self.text.push_str(&other.text);
+        let moved = |r: Range<usize>| r.start + shift..r.end + shift;
+        self.bold.extend(other.bold.into_iter().map(moved));
+        self.italic.extend(other.italic.into_iter().map(moved));
+    }
+
+    /// Keep the first `len` bytes (a char boundary), clipping the ranges.
+    fn truncate(&mut self, len: usize) {
+        self.text.truncate(len);
+        for ranges in [&mut self.bold, &mut self.italic] {
+            ranges.retain_mut(|r| {
+                r.end = r.end.min(len);
+                r.start < r.end
+            });
+        }
+    }
+}
+
+/// One source line with its Markdown syntax hidden: markers and line
+/// prefixes removed (escapes and entities as the editor shows them), bold
+/// and italic kept as ranges.
+fn plain_line(line: &str) -> Styled {
+    let mut found = Vec::new();
+    spans::scan_line(line, 0, line.len(), &mut found);
+    found.sort_by_key(|span| span.range.start);
+    let mut out = Styled::default();
+    let mut at = 0;
+    for span in found {
+        if span.range.start < at {
+            continue;
+        }
+        out.push(&line[at..span.range.start], false, false);
+        let style = &span.style;
+        if style.hide {
+            if let Some(shown) = &style.replace {
+                out.push(shown, style.bold, style.italic);
+            }
+        } else {
+            out.push(&line[span.range.clone()], style.bold, style.italic);
+        }
+        at = span.range.end;
+    }
+    out.push(&line[at..], false, false);
+    let len = out.text.trim_end().len();
+    out.truncate(len);
+    out
+}
+
+/// Whether a line reads as prose rather than page furniture.
+fn is_prose(text: &str) -> bool {
+    let words = text
+        .split_whitespace()
+        .filter(|word| word.chars().any(char::is_alphanumeric))
+        .count();
+    words >= PROSE_WORDS && text.chars().filter(|c| c.is_alphabetic()).count() >= PROSE_LETTERS
+}
+
+/// A ready document's preview (ADR 0084): its first prose lines, skipping
+/// headings, tables, code, rules and lines too short to be prose, with the
+/// Markdown syntax hidden, pseudonymized with every name the document knows,
+/// cut after about [`PREVIEW_CHARS`] at a word and ending in "…" when the
+/// text goes on. `None` without prose. Never an original: a name the
+/// syntax split, which only shows once it is hidden, is replaced too.
+pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
+    let mut styled = Styled::default();
+    let mut fenced = false;
+    let mut more = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced
+            || lines::heading_level(trimmed).is_some()
+            || lines::thematic_break(trimmed)
+            || tables::is_table_row(trimmed)
+            || trimmed.starts_with("<!--")
+            || trimmed.starts_with("![")
+        {
+            continue;
+        }
+        let plain = plain_line(trimmed);
+        if !is_prose(&plain.text) {
+            continue;
+        }
+        if styled.text.chars().count() >= PREVIEW_CHARS {
+            more = true;
+            break;
+        }
+        styled.append(plain);
+    }
+    if styled.text.is_empty() {
+        return None;
+    }
+    let (masked, _) = names.pseudonymize(&styled.text);
+    if masked != styled.text {
+        // Lengths moved: the masked text wins over bold and italic.
+        styled = Styled {
+            text: masked,
+            ..Styled::default()
+        };
+    }
+    if let Some((cut, _)) = styled.text.char_indices().nth(PREVIEW_CHARS) {
+        let at_word = styled.text[..cut].rfind(' ').filter(|at| *at > 0).unwrap_or(cut);
+        styled.truncate(at_word);
+        more = true;
+    }
+    let mut text = styled.text;
+    if more {
+        text.push('…');
+    }
+    let aliases = names
+        .tokens(&text)
+        .into_iter()
+        .filter(|token| token.identity.is_some())
+        .map(|token| token.range)
+        .collect();
+    Some(Preview {
+        text,
+        aliases,
+        bold: styled.bold,
+        italic: styled.italic,
+    })
 }
 
 /// The shelf's list: open tabs, most recently edited first, then closed

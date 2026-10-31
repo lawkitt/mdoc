@@ -3,20 +3,22 @@
 //! borderless popup under it, closed by a click outside. With the item on,
 //! closing the workspace window hides it (tabs, undo, mappings and unsaved
 //! text stay in memory) and mdoc leaves the Dock until the window shows
-//! again. Quit and Restart to update still go through the quit flow
-//! (ADR 0071). Off, mdoc quits with its last window as before.
+//! again. The first time that happens, a note under the icon says mdoc
+//! is still there, once. Quit and Restart to update still go through the
+//! quit flow (ADR 0071). Off, mdoc quits with its last window as before.
+//! The setting is on by default.
 //!
 //! `MenuBarState` holds the rules, GPUI-free; this module carries out its
 //! effects with GPUI and the vendored macOS calls. Other platforms never
 //! turn it on (no tray yet).
 
 use crate::{
-    shelf_ui::{ShelfContent, ShelfView},
+    shelf_ui::{NOTE_HEIGHT, NOTE_WIDTH, NoteView, ShelfContent, ShelfView},
     workspace::Workspace,
 };
 use gpui::{
-    App, AppContext as _, Bounds, Global, Pixels, Window, WindowBounds, WindowHandle, WindowKind,
-    WindowOptions, point, px, size,
+    App, AppContext as _, Bounds, DisplayId, Global, Pixels, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, point, px, size,
 };
 use std::time::{Duration, Instant};
 
@@ -44,6 +46,8 @@ pub(crate) enum MenuBarEffect {
     ShowWindow,
     /// Show mdoc in the Dock, or leave it.
     Dock(bool),
+    /// The first-close note under the item, once ever.
+    ShowNote,
 }
 
 #[derive(Debug, Default)]
@@ -52,9 +56,16 @@ pub(crate) struct MenuBarState {
     window_hidden: bool,
     shelf_open: bool,
     shelf_closed_at: Option<Instant>,
+    /// The first-close note has not shown yet.
+    note_pending: bool,
 }
 
 impl MenuBarState {
+    /// The first-close note shows at the next close (it has never shown).
+    pub(crate) fn note_pending(&mut self, pending: bool) {
+        self.note_pending = pending;
+    }
+
     /// The setting changed (or was read at launch).
     pub(crate) fn set_enabled(&mut self, enabled: bool) -> Vec<MenuBarEffect> {
         if enabled == self.enabled {
@@ -92,10 +103,29 @@ impl MenuBarState {
             return Vec::new();
         }
         self.window_hidden = true;
-        vec![MenuBarEffect::HideWindow, MenuBarEffect::Dock(false)]
+        let mut effects = vec![MenuBarEffect::HideWindow, MenuBarEffect::Dock(false)];
+        if std::mem::take(&mut self.note_pending) {
+            effects.push(MenuBarEffect::ShowNote);
+        }
+        effects
     }
 
-    /// Bring the workspace window forward: a shelf row, Show all, a reopen
+    /// The first-close note's "Quit when windows close": the item goes and
+    /// the quit that follows decides about the hidden window (it shows to
+    /// ask, or mdoc ends).
+    pub(crate) fn quit_when_windows_close(&mut self) -> Vec<MenuBarEffect> {
+        if !std::mem::take(&mut self.enabled) {
+            return Vec::new();
+        }
+        let mut effects = Vec::new();
+        if self.shelf_open {
+            effects.push(MenuBarEffect::CloseShelf);
+        }
+        effects.push(MenuBarEffect::RemoveItem);
+        effects
+    }
+
+    /// Bring the workspace window forward: a shelf row, Open mdoc, a reopen
     /// or a quit that has a question to ask.
     pub(crate) fn reveal(&mut self) -> Vec<MenuBarEffect> {
         let mut effects = vec![MenuBarEffect::ShowWindow];
@@ -143,21 +173,32 @@ impl MenuBarState {
     }
 }
 
-/// The app's menu bar state, the workspace window and the open shelf.
+/// The app's menu bar state, the workspace window, the open shelf and the
+/// first-close note.
 struct MenuBar {
     state: MenuBarState,
     workspace: WindowHandle<Workspace>,
     shelf: Option<WindowHandle<ShelfView>>,
+    note: Option<WindowHandle<NoteView>>,
 }
 
 impl Global for MenuBar {}
 
-/// Start following the setting for `workspace`, the app's one workspace.
-pub(crate) fn install(workspace: WindowHandle<Workspace>, enabled: bool, cx: &mut App) {
+/// Start following the setting for `workspace`, the app's one workspace;
+/// `note_shown` says the first-close note has shown before.
+pub(crate) fn install(
+    workspace: WindowHandle<Workspace>,
+    enabled: bool,
+    note_shown: bool,
+    cx: &mut App,
+) {
+    let mut state = MenuBarState::default();
+    state.note_pending(!note_shown);
     cx.set_global(MenuBar {
-        state: MenuBarState::default(),
+        state,
         workspace,
         shelf: None,
+        note: None,
     });
     set_enabled(enabled, cx);
 }
@@ -204,6 +245,7 @@ pub(crate) fn reveal_window(window: &mut Window, cx: &mut App) {
     for effect in effects {
         match effect {
             MenuBarEffect::ShowWindow => {
+                close_note(cx);
                 cx.activate(true);
                 window.activate_window();
             }
@@ -263,6 +305,32 @@ pub(crate) fn close_shelf(cx: &mut App) {
     carry_out(MenuBarEffect::CloseShelf, cx);
 }
 
+/// Close the first-close note if it shows.
+pub(crate) fn close_note(cx: &mut App) {
+    let Some(note) = cx
+        .try_global::<MenuBar>()
+        .is_some()
+        .then(|| cx.global_mut::<MenuBar>().note.take())
+        .flatten()
+    else {
+        return;
+    };
+    let _ = note.update(cx, |_, window, _| window.remove_window());
+}
+
+/// The first-close note closed itself.
+pub(crate) fn note_closed(cx: &mut App) {
+    if cx.try_global::<MenuBar>().is_some() {
+        cx.global_mut::<MenuBar>().note = None;
+    }
+}
+
+/// The first-close note's "Quit when windows close": the item goes; the
+/// caller runs the quit.
+pub(crate) fn quit_when_windows_close(cx: &mut App) {
+    update(cx, MenuBarState::quit_when_windows_close);
+}
+
 fn update(cx: &mut App, transition: impl FnOnce(&mut MenuBarState) -> Vec<MenuBarEffect>) {
     if cx.try_global::<MenuBar>().is_none() {
         return;
@@ -277,10 +345,17 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
     match effect {
         MenuBarEffect::ShowItem => show_item(cx),
         MenuBarEffect::RemoveItem => {
+            close_note(cx);
             #[cfg(all(target_os = "macos", not(test)))]
             gpui_macos::set_status_item(None);
         }
-        MenuBarEffect::OpenShelf => open_shelf(cx),
+        MenuBarEffect::OpenShelf => {
+            close_note(cx);
+            open_shelf(cx)
+        }
+        // The window is being hidden from inside its own update: open the
+        // note once that is done.
+        MenuBarEffect::ShowNote => cx.defer(open_note),
         MenuBarEffect::CloseShelf => {
             let shelf = cx.global_mut::<MenuBar>().shelf.take();
             if let Some(shelf) = shelf {
@@ -295,6 +370,7 @@ fn carry_out(effect: MenuBarEffect, cx: &mut App) {
             let _ = workspace.update(cx, |_, window, _| hide(window));
         }
         MenuBarEffect::ShowWindow => {
+            close_note(cx);
             let workspace = cx.global::<MenuBar>().workspace;
             cx.activate(true);
             let _ = workspace.update(cx, |_, window, _| window.activate_window());
@@ -339,22 +415,31 @@ fn on_item_click(cx: &gpui::AsyncApp) {
         .detach();
 }
 
-/// The shelf's bounds under the item, kept on its display.
-fn shelf_bounds(anchor: Bounds<Pixels>, display: Bounds<Pixels>, height: f32) -> Bounds<Pixels> {
-    let max_x = (display.size.width.as_f32() - SHELF_WIDTH - MARGIN).max(MARGIN);
+/// A popup's bounds under the item, kept on its display.
+fn popup_bounds(
+    anchor: Bounds<Pixels>,
+    display: Bounds<Pixels>,
+    width: f32,
+    height: f32,
+) -> Bounds<Pixels> {
+    let max_x = (display.size.width.as_f32() - width - MARGIN).max(MARGIN);
     let x = anchor.origin.x.as_f32().clamp(MARGIN, max_x);
     let y = (anchor.origin.y + anchor.size.height).as_f32() + MARGIN / 2.;
     let max_height = (display.size.height.as_f32() - y - MARGIN).max(120.);
     Bounds {
         origin: point(px(x), px(y)),
-        size: size(px(SHELF_WIDTH), px(height.min(max_height))),
+        size: size(px(width), px(height.min(max_height))),
     }
 }
 
-fn open_shelf(cx: &mut App) {
+/// The status item's display and bounds.
+fn item_anchor(cx: &App) -> Option<(DisplayId, Bounds<Pixels>)> {
     #[cfg(all(target_os = "macos", not(test)))]
-    let anchor = gpui_macos::status_item_bounds();
-    // Tests open the shelf under a pretend item on the primary display.
+    let anchor = {
+        let _ = cx;
+        gpui_macos::status_item_bounds()
+    };
+    // Tests open popups under a pretend item on the primary display.
     #[cfg(test)]
     let anchor = cx.primary_display().map(|display| {
         let item = Bounds {
@@ -364,8 +449,61 @@ fn open_shelf(cx: &mut App) {
         (display.id(), item)
     });
     #[cfg(all(not(target_os = "macos"), not(test)))]
-    let anchor: Option<(gpui::DisplayId, Bounds<Pixels>)> = None;
-    let Some((display_id, anchor)) = anchor else {
+    let anchor = {
+        let _ = cx;
+        None
+    };
+    anchor
+}
+
+/// A borderless popup under the item with the native blurred background
+/// (vibrancy, ADR 0084); the system draws its corners and shadow.
+fn popup_options(bounds: Bounds<Pixels>, display_id: DisplayId) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        display_id: Some(display_id),
+        window_background: WindowBackgroundAppearance::Blurred,
+        ..Default::default()
+    }
+}
+
+/// The first-close note under the item; recorded as shown at once, so it
+/// never shows again.
+fn open_note(cx: &mut App) {
+    let Some(workspace) = cx.try_global::<MenuBar>().map(|bar| bar.workspace) else {
+        return;
+    };
+    let _ = workspace.update(cx, |workspace, _, cx| {
+        workspace.update_general(|general| general.menu_bar_note_shown = true, cx)
+    });
+    let Some((display_id, anchor)) = item_anchor(cx) else {
+        return;
+    };
+    let Some(display) = cx.find_display(display_id) else {
+        return;
+    };
+    let Ok(theme) = workspace.read(cx).map(|workspace| workspace.theme_cell()) else {
+        return;
+    };
+    close_note(cx);
+    let bounds = popup_bounds(anchor, display.bounds(), NOTE_WIDTH, NOTE_HEIGHT);
+    let note = cx.open_window(popup_options(bounds, display_id), |window, cx| {
+        cx.new(|cx| NoteView::new(workspace, theme, window, cx))
+    });
+    if let Ok(note) = note {
+        cx.global_mut::<MenuBar>().note = Some(note);
+    }
+}
+
+fn open_shelf(cx: &mut App) {
+    let Some((display_id, anchor)) = item_anchor(cx) else {
         return;
     };
     let Some(display) = cx.find_display(display_id) else {
@@ -379,22 +517,10 @@ fn open_shelf(cx: &mut App) {
     else {
         return;
     };
-    let bounds = shelf_bounds(anchor, display.bounds(), content.height());
-    let shelf = cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: None,
-            focus: true,
-            show: true,
-            kind: WindowKind::PopUp,
-            is_movable: false,
-            is_resizable: false,
-            is_minimizable: false,
-            display_id: Some(display_id),
-            ..Default::default()
-        },
-        |window, cx| cx.new(|cx| ShelfView::new(workspace, content, window, cx)),
-    );
+    let bounds = popup_bounds(anchor, display.bounds(), SHELF_WIDTH, content.height());
+    let shelf = cx.open_window(popup_options(bounds, display_id), |window, cx| {
+        cx.new(|cx| ShelfView::new(workspace, content, window, cx))
+    });
     if let Ok(shelf) = shelf {
         let bar = cx.global_mut::<MenuBar>();
         bar.shelf = Some(shelf);
@@ -408,7 +534,34 @@ mod tests {
     use MenuBarEffect::*;
 
     #[test]
-    fn off_by_default_closing_quits_as_before() {
+    fn the_first_close_shows_the_note_once_and_never_again() {
+        let mut state = MenuBarState::default();
+        state.note_pending(true);
+        state.set_enabled(true);
+        assert_eq!(state.close_window(), [HideWindow, Dock(false), ShowNote]);
+        state.reveal();
+        assert_eq!(state.close_window(), [HideWindow, Dock(false)]);
+        // Shown in an earlier run: never.
+        let mut seen = MenuBarState::default();
+        seen.set_enabled(true);
+        assert_eq!(seen.close_window(), [HideWindow, Dock(false)]);
+    }
+
+    #[test]
+    fn quit_when_windows_close_removes_the_item_and_keeps_the_window_hidden() {
+        let mut state = MenuBarState::default();
+        state.set_enabled(true);
+        state.close_window();
+        assert_eq!(state.quit_when_windows_close(), [RemoveItem]);
+        assert!(!state.keeps_running());
+        assert!(state.window_hidden(), "the quit decides");
+        assert_eq!(state.quit_when_windows_close(), []);
+        // A quit that asks shows the window and mdoc returns to the Dock.
+        assert_eq!(state.reveal(), [ShowWindow, Dock(true)]);
+    }
+
+    #[test]
+    fn off_closing_quits_as_before() {
         let mut state = MenuBarState::default();
         assert!(!state.keeps_running());
         assert_eq!(state.close_window(), []);
@@ -473,12 +626,12 @@ mod tests {
             origin: point(px(x), px(0.)),
             size: size(px(30.), px(24.)),
         };
-        let shelf = shelf_bounds(item(1000.), display, 400.);
+        let shelf = popup_bounds(item(1000.), display, SHELF_WIDTH, 400.);
         assert_eq!(shelf.origin, point(px(1000.), px(27.)));
         assert_eq!(shelf.size, size(px(SHELF_WIDTH), px(400.)));
-        let right = shelf_bounds(item(1420.), display, 400.);
+        let right = popup_bounds(item(1420.), display, SHELF_WIDTH, 400.);
         assert_eq!(right.origin.x, px(1440. - SHELF_WIDTH - MARGIN));
-        let tall = shelf_bounds(item(10.), display, 5000.);
+        let tall = popup_bounds(item(10.), display, SHELF_WIDTH, 5000.);
         assert_eq!(
             tall.size.height,
             px(900. - 27. - MARGIN),

@@ -4,9 +4,28 @@ use super::*;
 use crate::menu_bar;
 
 fn install(tabs: &Entity<Workspace>, enabled: bool, cx: &mut VisualTestContext) {
+    install_noting(tabs, enabled, true, cx);
+}
+
+fn install_noting(
+    tabs: &Entity<Workspace>,
+    enabled: bool,
+    note_shown: bool,
+    cx: &mut VisualTestContext,
+) {
     let handle = cx.window_handle().downcast::<Workspace>().unwrap();
     let _ = tabs;
-    cx.cx.update(|cx| menu_bar::install(handle, enabled, cx));
+    cx.cx
+        .update(|cx| menu_bar::install(handle, enabled, note_shown, cx));
+}
+
+#[cfg(target_os = "macos")]
+fn note(cx: &mut VisualTestContext) -> Option<gpui::WindowHandle<crate::shelf_ui::NoteView>> {
+    cx.update(|_, cx| {
+        cx.windows()
+            .iter()
+            .find_map(|window| window.downcast::<crate::shelf_ui::NoteView>())
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -157,4 +176,57 @@ fn opening_a_file_from_the_os_shows_the_hidden_window(cx: &mut TestAppContext) {
             .find_path(&session_store::identity(&path), None, cx))
             .is_some()
     );
+}
+
+/// The first-close note (ADR 0084): the first close with the item on shows
+/// it under the icon and records it, so it never shows again; Got it
+/// closes it and leaves mdoc in the menu bar.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn the_first_close_shows_the_note_once(cx: &mut TestAppContext) {
+    let (tabs, cx) = unsaved(cx);
+    assert!(cx.update(|_, cx| tabs.read(cx).menu_bar_setting()), "on by default");
+    assert!(!cx.update(|_, cx| tabs.read(cx).menu_bar_note_shown()));
+    install_noting(&tabs, true, false, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    let shown = note(cx).expect("the note shows under the icon");
+    assert!(cx.update(|_, cx| tabs.read(cx).menu_bar_note_shown()));
+    shown
+        .update(cx, |view, window, cx| view.got_it(window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert!(note(cx).is_none());
+    assert!(cx.update(|_, cx| menu_bar::keeps_running(cx)));
+    assert!(cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    // Back and closed again: no note.
+    cx.cx.update(|cx| menu_bar::reveal(cx, |_, _, _| {}));
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    assert!(note(cx).is_none());
+}
+
+/// "Quit when windows close" turns the switch off and runs the ordinary
+/// quit: unsaved work shows the window and asks.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn quit_when_windows_close_turns_the_switch_off_and_quits(cx: &mut TestAppContext) {
+    let (tabs, cx) = unsaved(cx);
+    install_noting(&tabs, true, false, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    let shown = note(cx).unwrap();
+    shown
+        .update(cx, |view, window, cx| view.quit_when_windows_close(window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert!(note(cx).is_none());
+    assert!(!cx.update(|_, cx| tabs.read(cx).menu_bar_setting()));
+    assert!(!cx.update(|_, cx| menu_bar::keeps_running(cx)));
+    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+    assert!(cx.has_pending_prompt(), "the unsaved tab asks");
+    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
 }

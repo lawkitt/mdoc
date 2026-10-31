@@ -353,6 +353,12 @@ impl Panel {
             dictionary: None,
         }
     }
+    /// A Settings › General choice changed outside the panel (the menu bar
+    /// shelf's notes, ADR 0084): the draft follows, so the next save keeps it.
+    pub fn general_changed(&mut self, general: mdoc_store::settings::GeneralConfig, cx: &mut Context<Self>) {
+        self.draft.general = general;
+        cx.notify();
+    }
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.open {
             return;
@@ -722,7 +728,8 @@ impl Panel {
         match self.category {
             Category::General => {
                 self.draft.updates = defaults.updates;
-                self.draft.general = defaults.general;
+                // Notes already seen stay seen (ADR 0084).
+                self.draft.general.menu_bar = defaults.general.menu_bar;
             }
             Category::Detection => {
                 self.draft.pseudonymization = defaults.pseudonymization;

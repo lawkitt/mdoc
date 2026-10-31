@@ -1,32 +1,55 @@
 //! The shelf's view (ADR 0084): the borderless popup under the menu bar
 //! item. Pseudonymized documents as small previews to open, drag out or
-//! Copy for AI; then "Show all in mdoc", Restart to update, the clipboard
-//! rows for the current case, and Quit. It closes on a click outside (the
-//! panel loses key status), Esc, or an action that brings mdoc forward.
+//! Copy for AI; Restart to update; the Clipboard section with Pseudonymize
+//! and Restore for one source; and one footer row: Open mdoc, Settings and
+//! Quit. It closes on a click outside (the panel loses key status), Esc, a
+//! Copy for AI after its "Copied", or an action that brings mdoc forward.
 //!
 //! Only ready documents copy or drag; previews and exports hold
 //! pseudonymized text only (the menu bar shows in screen shares).
 
+mod note;
+mod row;
+
+pub(crate) use note::NoteView;
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
+pub(crate) use note::{NOTE_TEXT, NOTE_TITLE};
+pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
+#[cfg(test)]
+pub(crate) use row::row_label;
+
 use crate::{
     menu_bar,
-    shelf::{self, Readiness, ShelfDocument, ShelfExports, ShelfKey},
-    style::{self, Theme},
+    shelf::{self, ShelfDocument, ShelfExports, ShelfKey},
+    style::Theme,
     ui,
     workspace::{ClipboardNames, ClipboardSource, Quit, Workspace},
 };
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, FocusHandle, Focusable, Global, KeyBinding,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, Window,
-    WindowHandle, actions, div, prelude::*, px,
+    AnyElement, App, ClipboardItem, Context, FocusHandle, Focusable, Global, Hsla, KeyBinding,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, Task,
+    Window, WindowHandle, actions, div, prelude::*, px,
 };
 use mdoc_pii::restore::RestoreMap;
-use std::{cell::Cell, ops::Range, rc::Rc, time::SystemTime};
+use std::{cell::Cell, rc::Rc, time::Duration};
 
 actions!(shelf, [CloseShelf, ShelfUp, ShelfDown, ShelfCopyForAi]);
 
+/// ⌘1–⌘8: Copy for AI on that row, numbered from 1 (ADR 0084).
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = shelf, no_json)]
+pub(crate) struct ShelfCopyRow(pub usize);
+
 /// Keys inside the shelf: ↑↓ and Esc are plumbing (moving inside a list,
-/// ADR 0073); ⌘C is the table's Copy for AI row; Enter activates the
-/// focused row like any control.
+/// ADR 0073); ⌘C and ⌘1–⌘8 are the table's Copy for AI rows; Enter
+/// activates the focused row like any control.
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseShelf, Some("Shelf")),
@@ -36,17 +59,30 @@ pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Shelf));
 }
 
-const PADDING: f32 = 6.;
+const PADDING: f32 = 8.;
 const ROW_GAP: f32 = 2.;
-const READY_ROW: f32 = 104.;
-const WAITING_ROW: f32 = 50.;
+const HINT: f32 = 22.;
 const ACTION_ROW: f32 = 30.;
 const EMPTY: f32 = 44.;
 const DIVIDER: f32 = 9.;
-/// Titles longer than this many characters are cut in the middle.
-const TITLE_CHARS: usize = 42;
+const CLIPBOARD_HEADING: f32 = 20.;
+const CLIPBOARD_BUTTONS: f32 = 28.;
+const SOURCE_LINE: f32 = 24.;
+const SECTION_GAP: f32 = 4.;
+const CLIPBOARD: f32 = CLIPBOARD_HEADING + CLIPBOARD_BUTTONS + SOURCE_LINE + 2. * SECTION_GAP;
+const FOOTER: f32 = 30.;
 /// A drag starts after the pointer moves this far with the button down.
 const DRAG_DISTANCE: f32 = 4.;
+/// "Copied" shows this long before the shelf closes.
+pub(crate) const COPIED_FOR: Duration = Duration::from_millis(800);
+/// A clipboard result stays on the source line this long.
+pub(crate) const RESULT_FOR: Duration = Duration::from_secs(4);
+
+/// The shelf's ground: the theme's background, translucent over the native
+/// blur (vibrancy) the window draws behind it on macOS.
+pub(crate) fn surface(theme: Theme) -> Hsla {
+    theme.pdf_style().bg.opacity(0.78)
+}
 
 /// What the shelf shows, read from the workspace when it opens.
 pub(crate) struct ShelfContent {
@@ -54,6 +90,8 @@ pub(crate) struct ShelfContent {
     pub sources: Vec<ClipboardSource>,
     pub source: Option<ClipboardSource>,
     pub update: Option<String>,
+    /// "Drag a preview into any app" shows until a drag has dropped.
+    pub drag_hint: bool,
 }
 
 /// The clipboard rows' case, as last picked on the shelf this session.
@@ -111,38 +149,41 @@ impl ShelfContent {
             sources,
             source,
             update,
+            drag_hint: !workspace.shelf_drag_hint_shown(),
         }
+    }
+
+    /// Whether the drag hint shows: before the first drop, over a preview.
+    fn shows_hint(&self) -> bool {
+        self.drag_hint
+            && self
+                .documents
+                .iter()
+                .any(|d| d.readiness.is_ready() && d.preview.is_some())
     }
 
     /// The shelf's height for this content, before the screen limits it.
     pub(crate) fn height(&self) -> f32 {
-        let rows: f32 = if self.documents.is_empty() {
+        let list = if self.documents.is_empty() {
             EMPTY
         } else {
             self.documents
                 .iter()
-                .map(|d| {
-                    ROW_GAP
-                        + if d.readiness.is_ready() {
-                            READY_ROW
-                        } else {
-                            WAITING_ROW
-                        }
-                })
+                .map(|d| ROW_GAP + row::height(d))
                 .sum::<f32>()
-                + ACTION_ROW
+                + if self.shows_hint() { HINT } else { 0. }
         };
         let update = if self.update.is_some() {
             ACTION_ROW
         } else {
             0.
         };
-        2. * PADDING + rows + 2. * DIVIDER + update + 3. * ACTION_ROW
+        2. * PADDING + list + DIVIDER + update + CLIPBOARD + DIVIDER + FOOTER
     }
 }
 
-/// What a clipboard row last did, shown on the row.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// A clipboard action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClipboardRow {
     Pseudonymize,
     Restore,
@@ -157,17 +198,18 @@ pub(crate) struct ShelfView {
     rows: Vec<FocusHandle>,
     /// A press on a ready row that may become a drag: its row and place.
     press: Option<(usize, Point<Pixels>)>,
-    /// The row whose Copy for AI just ran.
+    /// The row whose Copy for AI just ran; the shelf closes after it.
     copied: Option<usize>,
-    /// The case picker replaces the list while open.
+    closing: Option<Task<()>>,
+    /// The source picker replaces the list while open.
     picking: bool,
     /// One focus handle per picker entry, for ↑↓.
     picker_rows: Vec<FocusHandle>,
-    /// The two ▾ that open the picker; focus returns to the one used.
-    pick_buttons: [FocusHandle; 2],
-    picker_return: Option<ClipboardRow>,
-    /// The last clipboard action's result, on its row.
-    result: Option<(ClipboardRow, String)>,
+    /// The ▾ that opens the picker; focus returns to it.
+    pick_button: FocusHandle,
+    /// The last clipboard action's result, on the source line for a while.
+    result: Option<String>,
+    result_clear: Option<Task<()>>,
     /// The last drag's payload, for tests (no native drag runs there).
     #[cfg(test)]
     pub(crate) dragged: Option<(String, std::path::PathBuf)>,
@@ -213,14 +255,12 @@ impl ShelfView {
             rows,
             press: None,
             copied: None,
+            closing: None,
             picking: false,
             picker_rows,
-            pick_buttons: [
-                cx.focus_handle().tab_stop(true),
-                cx.focus_handle().tab_stop(true),
-            ],
-            picker_return: None,
+            pick_button: cx.focus_handle().tab_stop(true),
             result: None,
+            result_clear: None,
             #[cfg(test)]
             dragged: None,
         }
@@ -236,6 +276,29 @@ impl ShelfView {
     ))]
     pub(crate) fn content(&self) -> &ShelfContent {
         &self.content
+    }
+
+    /// The row whose "Copied" shows, for tests and renders.
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
+    pub(crate) fn copied(&self) -> Option<usize> {
+        self.copied
+    }
+
+    /// Show "Copied" on `index` without copying or closing, for renders.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_copied(&mut self, index: usize) {
+        self.copied = Some(index);
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -271,7 +334,7 @@ impl ShelfView {
         });
     }
 
-    /// The row is the document used last: the clipboard rows follow it.
+    /// The row is the document used last: the clipboard source follows it.
     fn used(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(document) = self.content.documents.get(index) else {
             return;
@@ -294,7 +357,9 @@ impl ShelfView {
         }
     }
 
-    pub(crate) fn copy(&mut self, index: usize, cx: &mut Context<Self>) {
+    /// Copy for AI on a ready row: the text a drag carries, then ✓ "Copied"
+    /// and the shelf closes after [`COPIED_FOR`].
+    pub(crate) fn copy(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(text) = self
             .content
             .documents
@@ -306,6 +371,10 @@ impl ShelfView {
         cx.write_to_clipboard(ClipboardItem::new_string(text.to_owned()));
         self.copied = Some(index);
         self.used(index, cx);
+        self.closing = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(COPIED_FOR).await;
+            let _ = this.update_in(cx, |this, window, cx| this.close(window, cx));
+        }));
         cx.notify();
     }
 
@@ -335,20 +404,14 @@ impl ShelfView {
         window.focus(&targets[at], cx);
     }
 
-    /// Open the picker from `row`'s ▾ on the current case, or close it,
-    /// returning focus to that ▾.
-    pub(crate) fn toggle_picker(
-        &mut self,
-        row: ClipboardRow,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// Open the picker on the current source, or close it, returning focus
+    /// to the ▾.
+    pub(crate) fn toggle_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.picking {
             self.close_picker(window, cx);
             return;
         }
         self.picking = true;
-        self.picker_return = Some(row);
         let at = self
             .content
             .sources
@@ -363,11 +426,7 @@ impl ShelfView {
 
     fn close_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.picking = false;
-        let target = match self.picker_return.take() {
-            Some(row) => &self.pick_buttons[row as usize],
-            None => &self.focus,
-        };
-        window.focus(target, cx);
+        window.focus(&self.pick_button, cx);
         cx.notify();
     }
 
@@ -397,7 +456,7 @@ impl ShelfView {
     }
 
     /// Drag a ready document: its Copy for AI text and a fresh `.md` export
-    /// on one pasteboard item.
+    /// on one pasteboard item. A drag that starts retires the hint.
     pub(crate) fn drag(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(document) = self.content.documents.get(index) else {
             return;
@@ -409,16 +468,33 @@ impl ShelfView {
             return;
         };
         #[cfg(all(target_os = "macos", not(test)))]
-        gpui_macos::start_text_and_file_drag(window, &text, &path);
+        let started = gpui_macos::start_text_and_file_drag(window, &text, &path);
         #[cfg(not(all(target_os = "macos", not(test))))]
-        let _ = window;
+        let started = {
+            let _ = window;
+            true
+        };
         #[cfg(test)]
         {
             self.dragged = Some((text, path));
         }
         #[cfg(not(any(target_os = "macos", test)))]
         let _ = (text, path);
+        if started {
+            self.drag_hint_done(cx);
+        }
         self.used(index, cx);
+    }
+
+    /// "Drag a preview into any app" is gone for good (ADR 0084).
+    fn drag_hint_done(&mut self, cx: &mut Context<Self>) {
+        if !std::mem::take(&mut self.content.drag_hint) {
+            return;
+        }
+        let _ = self.workspace.update(cx, |workspace, _, cx| {
+            workspace.update_general(|general| general.shelf_drag_hint_shown = true, cx)
+        });
+        cx.notify();
     }
 
     fn pick(&mut self, source: ClipboardSource, cx: &mut Context<Self>) {
@@ -436,7 +512,8 @@ impl ShelfView {
         self.close_picker(window, cx);
     }
 
-    /// Run a clipboard row with the current case's names.
+    /// Run a clipboard action with the current source's names; its result
+    /// shows on the source line for [`RESULT_FOR`].
     pub(crate) fn clipboard(
         &mut self,
         row: ClipboardRow,
@@ -460,33 +537,48 @@ impl ShelfView {
             }
             _ => return,
         };
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            self.result = Some((row, "The clipboard has no text".into()));
-            cx.notify();
-            return;
+        let summary = match cx.read_from_clipboard().and_then(|item| item.text()) {
+            None => "The clipboard has no text".to_string(),
+            Some(text) => match row {
+                ClipboardRow::Restore => {
+                    let restored = shelf::restore_clipboard(&text, names);
+                    if restored.text != text {
+                        cx.write_to_clipboard(ClipboardItem::new_string(restored.text.clone()));
+                    }
+                    restored.summary()
+                }
+                ClipboardRow::Pseudonymize => {
+                    let (replaced, count) = RestoreMap::new(names).pseudonymize(&text);
+                    if count > 0 {
+                        cx.write_to_clipboard(ClipboardItem::new_string(replaced));
+                    }
+                    match count {
+                        0 => "No known names found".to_string(),
+                        1 => "1 name replaced".to_string(),
+                        n => format!("{n} names replaced"),
+                    }
+                }
+            },
         };
-        let summary = match row {
-            ClipboardRow::Restore => {
-                let restored = shelf::restore_clipboard(&text, names);
-                if restored.text != text {
-                    cx.write_to_clipboard(ClipboardItem::new_string(restored.text.clone()));
-                }
-                restored.summary()
-            }
-            ClipboardRow::Pseudonymize => {
-                let (replaced, count) = RestoreMap::new(names).pseudonymize(&text);
-                if count > 0 {
-                    cx.write_to_clipboard(ClipboardItem::new_string(replaced));
-                }
-                match count {
-                    0 => "No known names found".to_string(),
-                    1 => "1 name replaced".to_string(),
-                    n => format!("{n} names replaced"),
-                }
-            }
-        };
-        self.result = Some((row, summary));
+        self.result = Some(summary);
+        self.result_clear = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(RESULT_FOR).await;
+            let _ = this.update(cx, |this, cx| {
+                this.result = None;
+                cx.notify();
+            });
+        }));
         cx.notify();
+    }
+
+    /// The source line: a recent result, or "Names from Ivanov".
+    pub(crate) fn source_line(&self) -> Option<String> {
+        self.result.clone().or_else(|| {
+            self.content
+                .source
+                .as_ref()
+                .map(|source| format!("Names from {}", source.name()))
+        })
     }
 
     pub(crate) fn clipboard_locked(&self, cx: &App) -> bool {
@@ -508,187 +600,7 @@ impl Focusable for ShelfView {
     }
 }
 
-/// `title`, cut in the middle when long (ADR 0084).
-fn middle(title: &str) -> String {
-    let count = title.chars().count();
-    if count <= TITLE_CHARS {
-        return title.to_string();
-    }
-    let head = (TITLE_CHARS - 1) / 2;
-    let tail = TITLE_CHARS - 1 - head;
-    let start: String = title.chars().take(head).collect();
-    let end: String = title.chars().skip(count - tail).collect();
-    format!("{start}…{end}")
-}
-
-/// "edited 14:32" today, "edited 12 Oct" before.
-fn edited(time: SystemTime) -> String {
-    let time = chrono::DateTime::<chrono::Local>::from(time);
-    let today = chrono::Local::now().date_naive();
-    if time.date_naive() == today {
-        format!("edited {}", time.format("%H:%M"))
-    } else {
-        format!("edited {}", time.format("%-d %b"))
-    }
-}
-
-/// "1,240 words".
-fn words(count: usize) -> String {
-    let digits = count.to_string();
-    let mut grouped = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    format!("{grouped} {}", if count == 1 { "word" } else { "words" })
-}
-
-/// What VoiceOver reads for a row: "<title>, <case>, ready".
-pub(crate) fn row_label(document: &ShelfDocument) -> String {
-    let mut label = document.title.clone();
-    if let Some(case) = &document.case {
-        label.push_str(", ");
-        label.push_str(&case.name);
-    }
-    label.push_str(", ");
-    label.push_str(&document.readiness.label());
-    label
-}
-
-/// A preview line with its aliases as chips, in the editor's colours.
-fn preview_line(text: &str, aliases: &[Range<usize>], theme: Theme) -> AnyElement {
-    let p = theme.pdf_style();
-    let mut line = div()
-        .flex()
-        .flex_row()
-        .overflow_hidden()
-        .whitespace_nowrap()
-        .h(px(18.))
-        .items_center()
-        .text_size(px(12.))
-        .text_color(p.header_muted);
-    let mut at = 0;
-    for range in aliases {
-        if range.start > at {
-            line = line.child(SharedString::from(text[at..range.start].to_string()));
-        }
-        line = line.child(
-            div()
-                .px(px(3.))
-                .rounded(px(3.))
-                .bg(theme.applied().opacity(0.14))
-                .text_color(theme.applied_text())
-                .child(SharedString::from(text[range.clone()].to_string())),
-        );
-        at = range.end;
-    }
-    if at < text.len() {
-        line = line.child(SharedString::from(text[at..].to_string()));
-    }
-    line.into_any_element()
-}
-
 impl ShelfView {
-    fn document_row(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme.get();
-        let p = theme.pdf_style();
-        let document = &self.content.documents[index];
-        let ready = document.readiness.is_ready();
-        let dot = document
-            .case
-            .as_ref()
-            .map_or(p.border, |case| style::case_color(case.hue(), theme));
-        let state = match document.readiness {
-            Readiness::Ready => format!("{} · {}", edited(document.edited), words(document.words)),
-            other => other.label(),
-        };
-        let header = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .child(div().size(px(8.)).rounded_full().flex_shrink_0().bg(dot))
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .child(middle(&document.title)),
-            )
-            .when(ready, |header| {
-                let copied = self.copied == Some(index);
-                header.child(
-                    ui::control(
-                        ("shelf-copy", index),
-                        if copied { "Copied" } else { "Copy for AI" },
-                        theme,
-                        true,
-                    )
-                    .aria_label("Copy for AI")
-                    .text_size(px(12.))
-                    .py(px(2.))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.copy(index, cx);
-                    })),
-                )
-            });
-        let body = div()
-            .pl(px(16.))
-            .flex()
-            .flex_col()
-            .children(
-                document
-                    .preview
-                    .iter()
-                    .map(|line| preview_line(&line.text, &line.aliases, theme)),
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(if ready {
-                        p.header_muted
-                    } else {
-                        theme.proposed()
-                    })
-                    .child(state),
-            );
-        ui::focus_ring(("shelf-row", index), theme)
-            .track_focus(&self.rows[index])
-            .role(gpui::Role::Button)
-            .aria_label(row_label(document))
-            .key_context("UiControl")
-            .w_full()
-            .h(px(if ready { READY_ROW } else { WAITING_ROW }))
-            .px_2()
-            .py(px(6.))
-            .rounded_md()
-            .flex()
-            .flex_col()
-            .gap(px(2.))
-            .cursor_pointer()
-            .hover(move |s| s.bg(p.placeholder_bg))
-            .child(header)
-            .child(body)
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, _| {
-                    this.mouse_down(index, event)
-                }),
-            )
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                this.mouse_move(event, window, cx)
-            }))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.press = None;
-                this.open(index, window, cx)
-            }))
-            .into_any_element()
-    }
-
     fn action_row(
         &self,
         id: &'static str,
@@ -698,7 +610,6 @@ impl ShelfView {
     ) -> ui::Control {
         let theme = self.theme.get();
         ui::control(id, label, theme, true)
-            .w_full()
             .h(px(ACTION_ROW))
             .flex()
             .items_center()
@@ -711,67 +622,124 @@ impl ShelfView {
             .h(px(DIVIDER))
             .flex()
             .items_center()
+            .px(px(4.))
             .child(div().w_full().h(px(1.)).bg(p.border))
             .into_any_element()
     }
 
-    fn clipboard_row(&self, row: ClipboardRow, cx: &mut Context<Self>) -> AnyElement {
+    /// One of the two equal clipboard buttons.
+    fn clipboard_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        enabled: bool,
+        cx: &mut Context<Self>,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> ui::Control {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let (id, action) = match row {
-            ClipboardRow::Pseudonymize => ("shelf-pseudonymize", "Pseudonymize Clipboard"),
-            ClipboardRow::Restore => ("shelf-restore", "Restore Clipboard"),
-        };
-        if self.content.source.is_some() && self.clipboard_locked(cx) {
-            return self
-                .action_row(
-                    id,
-                    "Unlock cases in mdoc…",
-                    cx,
-                    move |this, window, cx| this.clipboard(row, window, cx),
-                )
-                .into_any_element();
-        }
-        let result = self
-            .result
-            .as_ref()
-            .filter(|(done, _)| *done == row)
-            .map(|(_, text)| text.clone());
+        ui::control(id, label, theme, enabled)
+            .flex_1()
+            .h(px(CLIPBOARD_BUTTONS))
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_1()
+            .border_color(p.border)
+            .text_size(px(12.))
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
+    }
+
+    /// "Clipboard", Pseudonymize and Restore (or one Unlock button for a
+    /// locked case), then the quiet source line with its ▾.
+    fn clipboard_section(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
         let enabled = self.content.source.is_some();
-        let label = match (&result, &self.content.source) {
-            (Some(result), _) => result.clone(),
-            (None, Some(source)) => format!("{action} · “{}”", source.name()),
-            (None, None) => action.to_string(),
+        let buttons = if enabled && self.clipboard_locked(cx) {
+            div().flex().flex_row().child(self.clipboard_button(
+                "shelf-unlock",
+                "Unlock cases in mdoc…",
+                true,
+                cx,
+                |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),
+            ))
+        } else {
+            div()
+                .flex()
+                .flex_row()
+                .gap(px(6.))
+                .child(self.clipboard_button(
+                    "shelf-pseudonymize",
+                    "Pseudonymize",
+                    enabled,
+                    cx,
+                    |this, window, cx| this.clipboard(ClipboardRow::Pseudonymize, window, cx),
+                ))
+                .child(self.clipboard_button(
+                    "shelf-restore",
+                    "Restore",
+                    enabled,
+                    cx,
+                    |this, window, cx| this.clipboard(ClipboardRow::Restore, window, cx),
+                ))
         };
-        div()
+        let line = self
+            .source_line()
+            .unwrap_or_else(|| "Names appear once a document is pseudonymized".into());
+        let source = div()
+            .h(px(SOURCE_LINE))
+            .px(px(4.))
             .flex()
             .flex_row()
             .items_center()
-            .gap_1()
+            .gap(px(2.))
+            .text_size(px(11.))
+            .text_color(p.header_muted)
             .child(
-                ui::control(id, label, theme, enabled)
-                    .aria_label(action)
-                    .flex_1()
-                    .h(px(ACTION_ROW))
-                    .flex()
-                    .items_center()
+                div()
+                    .id("shelf-source-line")
+                    .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.clipboard(row, window, cx)),
-                    ),
+                    .text_ellipsis()
+                    .when(self.result.is_some(), |v| v.text_color(p.header_fg))
+                    .child(line),
             )
             .when(self.content.sources.len() > 1, |v| {
                 v.child(
-                    ui::control(("shelf-pick", row as usize), "▾", theme, true)
-                        .track_focus(&self.pick_buttons[row as usize])
-                        .aria_label("Choose the case")
+                    ui::control("shelf-pick", "▾", theme, true)
+                        .track_focus(&self.pick_button)
+                        .aria_label("Choose whose names to use")
+                        .px(px(4.))
+                        .py_0()
+                        .text_size(px(11.))
                         .text_color(p.header_muted)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.toggle_picker(row, window, cx)
-                        })),
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.toggle_picker(window, cx)),
+                        ),
                 )
-            })
+            });
+        div()
+            .h(px(CLIPBOARD))
+            .px(px(4.))
+            .flex()
+            .flex_col()
+            .gap(px(SECTION_GAP))
+            .child(
+                div()
+                    .h(px(CLIPBOARD_HEADING))
+                    .flex()
+                    .items_end()
+                    .px(px(4.))
+                    .text_size(px(11.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(p.header_muted)
+                    .child("Clipboard"),
+            )
+            .child(buttons)
+            .child(source)
             .into_any_element()
     }
 
@@ -811,6 +779,53 @@ impl ShelfView {
             }))
             .into_any_element()
     }
+
+    /// Open mdoc at the left; Settings and Quit at the right.
+    fn footer(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        div()
+            .h(px(FOOTER))
+            .flex()
+            .flex_row()
+            .items_center()
+            .child(
+                self.action_row("shelf-open-mdoc", "Open mdoc", cx, |this, window, cx| {
+                    this.in_mdoc(window, cx, |workspace, window, cx| {
+                        workspace.home_from_shelf(window, cx)
+                    })
+                }),
+            )
+            .child(div().flex_1())
+            .child(
+                ui::header_icon("shelf-settings", "Settings", ui::Icon::Settings, theme, false)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.in_mdoc(window, cx, |workspace, window, cx| {
+                            workspace.settings_from_shelf(window, cx)
+                        })
+                    })),
+            )
+            .child(
+                self.action_row("shelf-quit", "Quit", cx, |this, window, cx| {
+                    this.close(window, cx);
+                    // The quit flow asks about unsaved work as ⌘Q does (ADR 0071).
+                    cx.defer(|cx| cx.dispatch_action(&Quit));
+                }),
+            )
+            .into_any_element()
+    }
+
+    fn hint(&self) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        div()
+            .h(px(HINT))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(px(11.))
+            .text_color(p.header_muted)
+            .child("Drag a preview into any app")
+            .into_any_element()
+    }
 }
 
 impl Render for ShelfView {
@@ -834,16 +849,7 @@ impl Render for ShelfView {
                 .flex_col()
                 .gap(px(ROW_GAP))
                 .children((0..self.content.documents.len()).map(|i| self.document_row(i, cx)))
-                .child(self.action_row(
-                    "shelf-show-all",
-                    "Show all in mdoc",
-                    cx,
-                    |this, window, cx| {
-                        this.in_mdoc(window, cx, |workspace, window, cx| {
-                            workspace.show_all_from_shelf(window, cx)
-                        })
-                    },
-                ))
+                .when(self.content.shows_hint(), |v| v.child(self.hint()))
                 .into_any_element()
         };
         let update = self.content.update.clone();
@@ -858,8 +864,8 @@ impl Render for ShelfView {
                     this.close(window, cx)
                 }
             }))
-            // Tab reaches every control: rows, Copy for AI, Show all, the
-            // clipboard rows and their picker, Restart and Quit.
+            // Tab reaches every control: rows, Copy for AI, Restart, the
+            // clipboard buttons and the ▾, Open mdoc, Settings and Quit.
             .on_action(
                 cx.listener(|_, _: &ui::NextControl, window, cx| {
                     ui::cycle(window, cx, None, false)
@@ -874,7 +880,12 @@ impl Render for ShelfView {
             )
             .on_action(cx.listener(|this, _: &ShelfCopyForAi, window, cx| {
                 if let Some(index) = this.focused_row(window) {
-                    this.copy(index, cx)
+                    this.copy(index, window, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, row: &ShelfCopyRow, window, cx| {
+                if !this.picking && row.0 >= 1 {
+                    this.copy(row.0 - 1, window, cx)
                 }
             }))
             .on_mouse_up(
@@ -886,7 +897,7 @@ impl Render for ShelfView {
             .flex()
             .flex_col()
             .p(px(PADDING))
-            .bg(p.bg)
+            .bg(surface(theme))
             .text_color(p.header_fg)
             .text_size(px(13.))
             .child(list)
@@ -903,40 +914,8 @@ impl Render for ShelfView {
                     },
                 ))
             })
-            // A locked case's clipboard rows are one: "Unlock cases in mdoc…".
-            .child(self.clipboard_row(ClipboardRow::Pseudonymize, cx))
-            .when(!self.clipboard_locked(cx), |v| {
-                v.child(self.clipboard_row(ClipboardRow::Restore, cx))
-            })
+            .child(self.clipboard_section(cx))
             .child(self.divider())
-            .child(
-                self.action_row("shelf-quit", "Quit mdoc", cx, |this, window, cx| {
-                    this.close(window, cx);
-                    // The quit flow asks about unsaved work as ⌘Q does (ADR 0071).
-                    cx.defer(|cx| cx.dispatch_action(&Quit));
-                }),
-            )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn long_titles_are_cut_in_the_middle() {
-        assert_eq!(middle("PERSON_1 settlement.md"), "PERSON_1 settlement.md");
-        let long = "PERSON_1 v ORG_1 — the very long settlement agreement draft 3.md";
-        let cut = middle(long);
-        assert_eq!(cut.chars().count(), TITLE_CHARS);
-        assert!(cut.starts_with("PERSON_1 v ORG_1") && cut.ends_with("draft 3.md"));
-        assert!(cut.contains('…'));
-    }
-
-    #[test]
-    fn word_counts_group_thousands() {
-        assert_eq!(words(1), "1 word");
-        assert_eq!(words(1240), "1,240 words");
-        assert_eq!(words(1_000_000), "1,000,000 words");
+            .child(self.footer(cx))
     }
 }

@@ -475,9 +475,9 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
 }
 
 /// Settings › General › "Show mdoc in the menu bar" (ADR 0084): macOS
-/// only, off by default, saved on change.
+/// only, on by default, saved on change.
 #[gpui::test]
-fn the_menu_bar_switch_is_off_by_default_and_saves_at_once(cx: &mut TestAppContext) {
+fn the_menu_bar_switch_is_on_by_default_and_saves_at_once(cx: &mut TestAppContext) {
     let shared = Store::in_memory();
     let (panel, cx) = cx.add_window_view(|_, cx| {
         Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
@@ -493,10 +493,10 @@ fn the_menu_bar_switch_is_off_by_default_and_saves_at_once(cx: &mut TestAppConte
         assert!(switch.is_none(), "no tray outside macOS yet");
         return;
     }
-    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
     cx.simulate_click(switch.unwrap().center(), gpui::Modifiers::none());
     cx.run_until_parked();
-    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
 }
 
 #[gpui::test]
@@ -722,7 +722,10 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
     custom.updates.check_automatically = false;
     custom.cases.ask_before_closing = false;
     custom.categories.set(mdoc_pii::Category::Person, false);
-    custom.general.menu_bar = true;
+    custom.general.menu_bar = false;
+    // Notes already seen stay seen through a reset.
+    custom.general.menu_bar_note_shown = true;
+    custom.general.shelf_drag_hint_shown = true;
     for category in Category::ALL {
         shared.borrow_mut().current = Some(custom.clone());
         let (panel, cx) = cx.add_window_view(|_, cx| {
@@ -738,7 +741,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
         match category {
             Category::General => {
                 expected.updates = defaults.updates;
-                expected.general = defaults.general;
+                expected.general.menu_bar = defaults.general.menu_bar;
             }
             Category::Detection => {
                 expected.pseudonymization = defaults.pseudonymization;
