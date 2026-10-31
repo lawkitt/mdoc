@@ -1,7 +1,7 @@
 //! One shelf row (ADR 0084): the title without `.md`, the case as a tinted
 //! label (readiness in the same style, amber), an outlined Copy for AI on
 //! ready rows, the preview of two wrapped lines with alias chips, and the
-//! meta line "5 min ago · 1,297 words · 14 replaced". A row that is not
+//! meta line "5 min ago · 1,297 words · 24 replaced". A row that is not
 //! ready starts its meta line with its state, so the title keeps its room.
 
 use super::ShelfView;
@@ -109,13 +109,20 @@ fn category_noun(category: Category, count: usize) -> &'static str {
     }
 }
 
-/// What hovering "14 replaced" lists: "6 people · 4 organizations · 4 IDs".
+/// What hovering "24 replaced" lists: the distinct names those mentions
+/// are, "14 names: 6 people · 4 organizations · 4 IDs". Each count keeps
+/// its noun on its line ("1 phone number"): a long list wraps at the dots.
 pub(crate) fn breakdown(replaced: &[(Category, usize)]) -> String {
-    replaced
+    let names: usize = replaced.iter().map(|(_, n)| n).sum();
+    let categories = replaced
         .iter()
-        .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)))
+        .map(|(category, n)| format!("{n} {}", category_noun(*category, *n)).replace(' ', "\u{a0}"))
         .collect::<Vec<_>>()
-        .join(" · ")
+        .join(" · ");
+    match names {
+        1 => format!("1\u{a0}name: {categories}"),
+        n => format!("{n}\u{a0}names: {categories}"),
+    }
 }
 
 /// What VoiceOver reads for a row: "<title>, <case>, ready".
@@ -442,10 +449,33 @@ impl ShelfView {
         );
         let replaced = document.replaced_count();
         let count = (ready && replaced > 0).then(|| {
-            div()
+            let count = div()
                 .id(("shelf-replaced", index))
                 .child(format!("{replaced} replaced"))
-                .tooltip(style::tooltip(breakdown(&document.replaced), theme))
+                .tooltip(style::tooltip(breakdown(&document.replaced), theme));
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
+            let count = {
+                let counts = self.counts.clone();
+                count.relative().child(
+                    gpui::canvas(
+                        move |bounds, _, _| {
+                            let mut counts = counts.borrow_mut();
+                            counts.retain(|(row, _)| *row != index);
+                            counts.push((index, bounds));
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
+            };
+            count
         });
         if count.is_some() {
             meta.push_str(" · ");
@@ -537,15 +567,21 @@ mod tests {
 
     #[test]
     fn the_replaced_count_breaks_down_by_category() {
+        let shown = |replaced: &[(Category, usize)]| breakdown(replaced).replace('\u{a0}', " ");
         assert_eq!(
-            breakdown(&[
+            shown(&[
                 (Category::Person, 6),
                 (Category::Organization, 4),
                 (Category::Identity, 4)
             ]),
-            "6 people · 4 organizations · 4 IDs"
+            "14 names: 6 people · 4 organizations · 4 IDs"
         );
-        assert_eq!(breakdown(&[(Category::Person, 1)]), "1 person");
+        assert_eq!(shown(&[(Category::Person, 1)]), "1 name: 1 person");
+        // A wrap falls between categories, never inside one.
+        assert_eq!(
+            breakdown(&[(Category::Email, 1), (Category::Phone, 1)]),
+            "2\u{a0}names: 1\u{a0}email · 1\u{a0}phone\u{a0}number"
+        );
     }
 
     /// GUI run of #280: bold and chips wrap wider than plain text, so the
