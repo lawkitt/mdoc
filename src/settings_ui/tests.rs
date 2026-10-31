@@ -940,6 +940,33 @@ fn resetting_another_category_preserves_number_text_and_its_error(cx: &mut TestA
     });
 }
 
+/// Review of #280: a shelf flag saved while a panel save is in flight
+/// survives that save's completion.
+#[gpui::test]
+fn a_shelf_flag_saved_during_a_panel_save_survives_it(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    panel.update(cx, |p, cx| {
+        hold_next_save(p, cx);
+        p.draft.updates.check_automatically = false;
+        p.persist(cx);
+    });
+    // The shelf records its note while that save waits.
+    let general = {
+        let mut store = shared.borrow_mut();
+        let current = store.current.as_mut().unwrap();
+        current.general.menu_bar_note_shown = true;
+        current.general
+    };
+    panel.update(cx, |p, cx| p.general_changed(general, cx));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    let saved = shared.borrow().snapshot().unwrap();
+    assert!(saved.general.menu_bar_note_shown);
+    assert!(!saved.updates.check_automatically);
+}
+
 fn hold_next_save(panel: &mut Panel, cx: &mut Context<Panel>) {
     let gate = cx.background_executor().timer(Duration::from_secs(1));
     panel.save_gate = Some(cx.background_executor().spawn(gate));

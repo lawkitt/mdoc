@@ -439,6 +439,16 @@ fn is_prose(text: &str) -> bool {
     words >= PROSE_WORDS && text.chars().filter(|c| c.is_alphabetic()).count() >= PROSE_LETTERS
 }
 
+/// A code fence's character and length: three or more of `` ` `` or `~`.
+fn fence(line: &str) -> Option<(u8, usize)> {
+    let c = *line.as_bytes().first()?;
+    if c != b'`' && c != b'~' {
+        return None;
+    }
+    let n = line.bytes().take_while(|b| *b == c).count();
+    (n >= 3).then_some((c, n))
+}
+
 /// A ready document's preview (ADR 0084): its first prose lines, skipping
 /// headings, tables, code, rules and lines too short to be prose, with the
 /// Markdown syntax hidden, pseudonymized with every name the document knows,
@@ -447,16 +457,25 @@ fn is_prose(text: &str) -> bool {
 /// syntax split, which only shows once it is hidden, is replaced too.
 pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let mut styled = Styled::default();
-    let mut fenced = false;
+    let mut fenced: Option<(u8, usize)> = None;
     let mut more = false;
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fenced = !fenced;
+        if let Some(open) = fenced {
+            // Only a fence of the same character, at least as long, with
+            // nothing after it, closes the block.
+            if fence(trimmed)
+                .is_some_and(|(c, n)| c == open.0 && n >= open.1 && trimmed[n..].trim().is_empty())
+            {
+                fenced = None;
+            }
             continue;
         }
-        if fenced
-            || lines::heading_level(trimmed).is_some()
+        if let Some(open) = fence(trimmed) {
+            fenced = Some(open);
+            continue;
+        }
+        if lines::heading_level(trimmed).is_some()
             || lines::thematic_break(trimmed)
             || tables::is_table_row(trimmed)
             || trimmed.starts_with("<!--")

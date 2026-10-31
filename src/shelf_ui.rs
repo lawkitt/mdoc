@@ -13,13 +13,10 @@ mod row;
 
 pub(crate) use note::NoteView;
 pub(crate) use note::{NOTE_HEIGHT, NOTE_WIDTH};
-#[cfg(any(
-    test,
-    all(
-        debug_assertions,
-        feature = "headless-renders",
-        any(target_os = "macos", target_os = "windows")
-    )
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
 ))]
 pub(crate) use note::{NOTE_TEXT, NOTE_TITLE};
 #[cfg(test)]

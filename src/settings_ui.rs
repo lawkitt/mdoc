@@ -353,14 +353,19 @@ impl Panel {
             dictionary: None,
         }
     }
-    /// A Settings › General choice changed outside the panel (the menu bar
-    /// shelf's notes, ADR 0084): the draft follows, so the next save keeps it.
+    /// A Settings › General choice changed and saved outside the panel (the
+    /// menu bar shelf's notes, ADR 0084): the draft follows, so the next
+    /// save keeps it, and a save in flight, which captured the old choice,
+    /// is followed by one with the new.
     pub fn general_changed(
         &mut self,
         general: mdoc_store::settings::GeneralConfig,
         cx: &mut Context<Self>,
     ) {
         self.draft.general = general;
+        if self.applying {
+            self.save_pending = true;
+        }
         cx.notify();
     }
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {

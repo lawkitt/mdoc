@@ -337,6 +337,20 @@ fn a_preview_skips_page_furniture_and_starts_at_the_first_prose() {
     );
 }
 
+/// Review of #280: a fence closes only on its own kind and length.
+#[test]
+fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
+    let text = "~~~~\n```\nexample code that is long enough to read as prose\n```\n~~~~\n\n\
+                ````md\n```\nnested example that is long enough as prose\n````\n\n\
+                PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(text).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
+    // An unclosed fence hides the rest.
+    assert!(preview_of("```\nPERSON_1 signed the agreement today.\n").is_none());
+}
+
 #[test]
 fn a_preview_hides_markdown_syntax_and_keeps_bold_and_italic() {
     let preview =
