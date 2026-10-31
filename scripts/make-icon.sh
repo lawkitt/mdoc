@@ -4,7 +4,9 @@
 #   - macOS .icns: the shape at 824 of 1024 px, centred on a transparent
 #     canvas, as Apple's icon grid expects (a full-bleed icon looks oversized
 #     in the Dock and Finder);
-#   - Windows .ico and resources/icons/icon.png: full-bleed.
+#   - Windows .ico and resources/icons/icon.png: full-bleed;
+#   - iOS AppIcon: 1024 px, opaque, the drawing enlarged so its rounded
+#     corners fall outside the square (iOS applies its own mask).
 # Requires macOS's sips and iconutil, plus Python 3 (standard library only).
 set -euo pipefail
 cd "$(dirname "$0")/.." # repo root
@@ -78,11 +80,19 @@ for size, data in zip(sizes, images):
                                + b''.join(entries) + b''.join(images))
 PY
 
+# iOS: render 1260 px, keep the middle 1024 px (past the rounded corners),
+# and drop the alpha channel, which App Store icons must not have.
+render "$SOURCE" 1260 "$TMP/ios-large.png"
+sips -c 1024 1024 "$TMP/ios-large.png" --out "$TMP/ios-crop.png" >/dev/null
+sips -s format jpeg -s formatOptions 100 "$TMP/ios-crop.png" --out "$TMP/ios.jpg" >/dev/null
+sips -s format png "$TMP/ios.jpg" --out "$TMP/ios.png" >/dev/null
+
 # Publish only after every format has been generated successfully.
 mkdir -p build/windows resources/icons
 cp "$TMP/1024.png" resources/icons/icon.png
 cp "$TMP/icon.ico" build/windows/icon.ico
 cp "$TMP/icon.ico" resources/icons/icon.ico
 cp "$TMP/icon.icns" resources/icons/icon.icns
+cp "$TMP/ios.png" apps/ios/mdoc/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 
-echo "Regenerated: build/windows/icon.ico, resources/icons/icon.{png,ico,icns}"
+echo "Regenerated: build/windows/icon.ico, resources/icons/icon.{png,ico,icns}, the iOS AppIcon"

@@ -34,6 +34,7 @@ struct DocumentScreen: View {
                     CandidateSheet(
                         candidate: candidate,
                         identity: model.snapshot.identities.first { $0.id == candidate.identityID },
+                        hasNext: { scope in model.hasProposal(after: candidate.id, scope: scope) },
                         onDone: { decision, scope in model.decide(candidate.id, decision, scope: scope) },
                         onNext: { model.reviewNext() })
                 }
@@ -353,11 +354,13 @@ private struct ActionBar: View {
         }
     }
 
+    /// The buttons side by side when every label fits on one line, stacked
+    /// otherwise: a label never wraps inside its button (ADR 0087).
     private func layout<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
-        return layout(content)
+        ButtonRow(forceColumn: dynamicTypeSize.isAccessibilitySize) {
+            content()
+        }
+        .lineLimit(1)
     }
 
     private func primary(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -385,6 +388,51 @@ private struct ActionBar: View {
             case .scan: return String(localized: "Finding names")
             case .install: return String(localized: "Installing")
             }
+        }
+    }
+}
+
+/// Buttons of equal width in a row when the widest label fits its share, a
+/// column otherwise, so a label never wraps or truncates (ADR 0087).
+struct ButtonRow: Layout {
+    var spacing: CGFloat = 8
+    var forceColumn = false
+
+    private func rowShare(_ width: CGFloat?, _ subviews: Subviews) -> CGFloat? {
+        guard !forceColumn, !subviews.isEmpty else { return nil }
+        let count = CGFloat(subviews.count)
+        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        guard let width else { return widest }
+        let share = (width - spacing * (count - 1)) / count
+        return widest <= share ? share : nil
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        if let share = rowShare(proposal.width, subviews) {
+            let count = CGFloat(subviews.count)
+            let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: share, height: nil)).height }.max() ?? 0
+            return CGSize(width: proposal.width ?? share * count + spacing * (count - 1), height: height)
+        }
+        let width = proposal.width ?? ideal
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(subviews.count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if let share = rowShare(bounds.width, subviews) {
+            var x = bounds.minX
+            for subview in subviews {
+                subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: share, height: bounds.height))
+                x += share + spacing
+            }
+            return
+        }
+        var y = bounds.minY
+        for subview in subviews {
+            let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+            subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height + spacing
         }
     }
 }

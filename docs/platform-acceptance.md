@@ -300,3 +300,4 @@ fixtures only.
 | P13 | *Simulator*: light and dark mode, and the largest Dynamic Type size, keep every screen readable with nothing clipped | | |
 | P14 | *Device*: VoiceOver reads each underlined candidate with its alias, and its actions (Keep, Replace) work from the rotor; the sheets announce their title and buttons | | |
 | P15 | *Device*: after locking the phone, documents and cases are unreadable to a backup or file browser (Data Protection Complete); a restored backup on another phone starts empty | | |
+| P16 | *Simulator*: at every text size no word in the review text, Identities or a restored reply is hyphenated, and dark-mode candidate and alias highlights reach 3:1 contrast (ADR 0087) | | |

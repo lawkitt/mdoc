@@ -184,4 +184,5 @@ already lives in GUI-free Rust crates (ADR 0069).
   `load-dynamic` runtime loading, macOS Keychain access) move behind
   platform features.
 
-References: [interview](../design/mobile-grill-2026-10-31.md).
+References: [interview](../design/mobile-grill-2026-10-31.md). See also
+[ADR 0087](0087-ios-ui-polish.md) for the iOS screens' polish.

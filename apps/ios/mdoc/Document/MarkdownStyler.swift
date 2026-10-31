@@ -30,10 +30,14 @@ struct MarkdownStyler {
 
     func attributedText(markdown: String, styling: MarkdownStyling, candidates: [Candidate]) -> NSAttributedString {
         let offsets = TextOffsets(markdown)
-        let body = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits)
+        let body = Self.font(.body, traits: traits)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
         paragraph.paragraphSpacing = 4
+        // A hyphen inside a name or an email reads as part of it (ADR 0087).
+        paragraph.usesDefaultHyphenation = false
+        paragraph.hyphenationFactor = 0
+        paragraph.lineBreakStrategy = []
         let text = NSMutableAttributedString(string: markdown, attributes: [
             .font: body,
             .foregroundColor: UIColor.label,
@@ -158,7 +162,14 @@ struct MarkdownStyler {
         case 2: .title3
         default: .headline
         }
-        return UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).withTraits(.traitBold)
+        return Self.font(style, traits: traits, weight: .bold)
+    }
+
+    /// The text style's size for the reader's text size, as a plain system
+    /// font: a text-style font makes iOS 26 hyphenate a word too long for
+    /// its line, such as an email at large sizes (ADR 0087).
+    static func font(_ style: UIFont.TextStyle, traits: UITraitCollection, weight: UIFont.Weight = .regular) -> UIFont {
+        UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
     }
 
     /// Monospaced, a little smaller than the text it sits in.

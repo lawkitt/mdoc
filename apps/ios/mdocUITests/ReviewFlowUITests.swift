@@ -68,6 +68,8 @@ final class ReviewFlowUITests: XCTestCase {
 enum MdocUITest {
     static let email = "maya.bennett@example.com"
     static let title = "Settlement agreement"
+    /// The demo agreement the review tests import.
+    static let defaultSeed = "docs/product-media/Settlement agreement.docx"
 
     /// The repository, from this file's path (the Simulator reads the Mac's files).
     static let repo = URL(fileURLWithPath: #filePath)
@@ -81,7 +83,7 @@ enum MdocUITest {
 
     /// Launches with a fresh library that imports `seed` from the repository.
     @MainActor
-    static func launch(seed: String = "docs/product-media/Settlement agreement.docx") -> XCUIApplication {
+    static func launch(seed: String = defaultSeed) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path

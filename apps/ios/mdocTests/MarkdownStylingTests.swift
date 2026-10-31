@@ -151,6 +151,35 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertNil(styled.attribute(.accessibilityTextHeadingLevel, at: 0, effectiveRange: nil))
     }
 
+    /// A hyphen inside a name or an email would read as part of it
+    /// (ADR 0087): no paragraph of the review text, or of a value label,
+    /// may hyphenate.
+    func testNothingIsHyphenated() {
+        let text = Self.fixture
+        let styled = styler.attributedText(markdown: text, styling: MarkdownStyling(markdown: text), candidates: [])
+        var paragraphs = 0
+        styled.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: styled.length)) { value, _, _ in
+            guard let style = value as? NSParagraphStyle else { return XCTFail("a range without a paragraph style") }
+            XCTAssertFalse(style.usesDefaultHyphenation)
+            XCTAssertEqual(style.hyphenationFactor, 0)
+            XCTAssertEqual(style.lineBreakStrategy, [])
+            paragraphs += 1
+        }
+        XCTAssertGreaterThan(paragraphs, 0)
+        // A text-style font hyphenates over-long words on iOS 26.
+        styled.enumerateAttribute(.font, in: NSRange(location: 0, length: styled.length)) { value, _, _ in
+            let style = (value as? UIFont)?.fontDescriptor.object(forKey: .textStyle) as? String
+            XCTAssertFalse(style?.hasPrefix("UICTFontTextStyle") ?? false, "a Dynamic Type text-style font")
+        }
+
+        let value = UnhyphenatedText.attributed("anna.smirnova@example.com", font: .systemFont(ofSize: 17), color: .label)
+        XCTAssertEqual(value.string.replacingOccurrences(of: "\u{200B}", with: ""), "anna.smirnova@example.com")
+        let style = value.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        XCTAssertEqual(style?.usesDefaultHyphenation, false)
+        XCTAssertEqual(style?.hyphenationFactor, 0)
+        XCTAssertEqual(style?.lineBreakStrategy, [])
+    }
+
     func testDocumentColoursAreReadAsRGBA() {
         let colour = UIColor(rgba: 0xC039_2BFF)
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
