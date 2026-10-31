@@ -2,8 +2,8 @@
 
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
 when green, UI work runs beside the spike, native runtimes ship inside the
-app bundle, statically linked or as an embedded framework, and the minimum is
-iOS 26.
+app bundle, statically linked or as an embedded framework, the minimum is
+iOS 26, and the detector floor is 8 GB, measured.
 
 ## Problem
 
@@ -70,21 +70,23 @@ already lives in GUI-free Rust crates (ADR 0069).
   on the existing fixtures. The spike keeps the real `crates/mdoc-ffi` and
   the core's platform features; its Swift harness app, which runs the core
   on fixtures and writes timings as JSON, is thrown away. The result is a
-  dated report under `docs/evidence/` with a pass or fail per device class.
-  UI work runs beside the spike; Simulator and Mac numbers stand in until
-  the device rows are measured, and the detector budgets still decide what
-  ships. Android repeats the spike
-  when its work starts.
+  dated report under `docs/evidence/` with a pass or fail per device class
+  ([2026-10-31](../evidence/mobile/2026-10-31/README.md): the iPhone 17 Pro
+  passes, the iPhone 12 Pro fails the scan budget). Android repeats the
+  spike when its work starts.
 - **Detector budgets.** GLiNER2 FP16 ships on a device class when it meets
   all of: peak memory (`phys_footprint`) ≤ 2 GiB, cold load ≤ 10 s, a 20-page document scanned
-  in ≤ 60 s, and no serious thermal throttling. If FP16 fails, an INT8
-  export is tried and ships only if it matches FP16 on the pseudonymization
-  qualification fixtures. Devices below the floor get OCR and manual
-  marking, with no rules-only scan ([ADR 0088](0088-ios-on-real-devices.md),
-  which replaces the rules-only tier). The floor is set by physical
-  RAM, not OS version: 6 GB if the iPhone 12 Pro meets every budget,
-  otherwise 8 GB; INT8 fills the gap if it passes where FP16 fails. Setup
-  checks RAM and offers only the models the device can run.
+  in ≤ 60 s, and no serious thermal throttling. An INT8 export ships only
+  if it matches FP16 on the pseudonymization qualification fixtures.
+  Devices below the floor get OCR and manual marking, with no rules-only
+  scan ([ADR 0088](0088-ios-on-real-devices.md), which replaces the
+  rules-only tier). The floor is set by physical RAM, not OS version, and
+  is **8 GB** (the iPhone 15 Pro and every iPhone from the 16 on),
+  measured: the iPhone 12 Pro (6 GB) met the memory, load and thermal
+  budgets but scanned 20 pages in about two minutes on FP16. INT8 was not
+  tried, by the maintainer's choice, since it would need 2 to 2.3 times
+  FP16's speed there. Setup checks RAM and offers only the models the
+  device can run.
 - **Model delivery.** Models come from the same pinned URLs and SHA-256
   checks as desktop, through a background download session, on Wi-Fi by
   default; cellular needs the user's yes. A first-use setup card names the

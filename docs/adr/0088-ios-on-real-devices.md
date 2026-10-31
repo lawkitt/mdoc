@@ -1,6 +1,6 @@
 # iOS on real devices
 
-Status: Accepted, 2026-10-31.
+Status: Accepted, 2026-10-31. Amended 2026-10-31: the floor is 8 GB, measured.
 
 ## Problem
 
@@ -27,13 +27,16 @@ Findings: [device grill](../design/ios-device-grill-2026-10-31.md).
   (the name detector's memory floor and the phones that meet it) and that
   selecting text marks a name; Settings says the same. There is no detector
   setup card on such a phone.
-- **The floor is measured.** The iPhone 12 Pro is measured against ADR
-  0085's detector budgets with GLiNER2 FP16, then INT8 if FP16 misses; INT8
-  counts only if it matches FP16 on the pseudonymization qualification
-  fixtures. The floor is the lowest RAM class that meets every budget at
-  desktop quality: 6 GB if the 12 Pro passes, else 8 GB (iPhone 15 Pro and
-  later). `DETECTOR_FLOOR_BYTES` and the below-floor wording follow the
-  result.
+- **The floor is 8 GB, measured.** The floor is the lowest RAM class that
+  meets every one of ADR 0085's detector budgets at desktop quality. On
+  GLiNER2 FP16 the iPhone 12 Pro (6 GB) met memory, load and heat but its
+  20-page scan ran past the two-minute deadline (budget 60 s), while the
+  iPhone 17 Pro met all four
+  ([evidence](../evidence/mobile/2026-10-31/README.md)). INT8 was not
+  tried, by the maintainer's choice: it would need 2 to 2.3 times FP16's
+  speed on the 12 Pro. So the floor is 8 GB (the iPhone 15 Pro and every
+  iPhone from the 16 on); `DETECTOR_FLOOR_BYTES` (7 GiB, between the two
+  classes) and the below-floor wording follow it.
 - **"On cellular, mdoc asks first" means any cellular interface**, whatever
   iOS's expensive flag says: unlimited 5G with "Allow More Data" is not
   marked expensive. The Wi-Fi session never uses cellular; only a yes to the
