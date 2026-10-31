@@ -101,14 +101,14 @@ struct SetupCard: View {
 /// What a device below the detector floor says where Find names would be,
 /// and in Settings (ADR 0088). The floor is 8 GB (`DETECTOR_FLOOR_BYTES`
 /// sits between the 6 GB and 8 GB classes): iPhone 15 Pro and later, and
-/// every iPad with an M-series chip.
+/// every iPad with an M-series chip. "8 GB" keeps to one line.
 @MainActor
 enum BelowFloor {
     static var note: String {
         if UIDevice.current.userInterfaceIdiom == .pad {
-            String(localized: "This iPad can't find names: the name detector needs 8 GB of memory (an iPad with M1 or later). Select text to mark a name.")
+            String(localized: "This iPad can't find names: the name detector needs 8\u{00A0}GB of memory (an iPad with M1 or later). Select text to mark a name.")
         } else {
-            String(localized: "This iPhone can't find names: the name detector needs 8 GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
+            String(localized: "This iPhone can't find names: the name detector needs 8\u{00A0}GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
         }
     }
 }

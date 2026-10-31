@@ -49,11 +49,12 @@ final class DocumentViewModel {
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
 
-    /// An import that stopped before its text was read, of a file that needs
-    /// no recognition: the document says "Import not finished".
+    /// An import that stopped before its text was read, of a file that is
+    /// not a scan or photo: the document says "Import not finished". A PDF
+    /// counts even when recognition began on it, since the core starts it
+    /// for every PDF once the model is in; Finish import keeps its pages.
     var importNotFinished: Bool {
-        snapshot.phase == .recognizing && !snapshot.kind.needsRecognition
-            && snapshot.pagesDone == 0 && !snapshot.resumesOCR
+        snapshot.phase == .recognizing && !snapshot.kind.needsRecognition && runningJob == nil
     }
 
     /// Recognition or the scan needs a model the device has not downloaded.
@@ -95,7 +96,8 @@ final class DocumentViewModel {
         switch snapshot.phase {
         case .unscanned where !findsNames:
             // Nothing to find here: marking by selection, then the hand-off.
-            return .handOff
+            // A case's names can still come in as proposals on import.
+            return snapshot.pendingCount > 0 ? .replaceAll(snapshot.pendingCount) : .handOff
         case .recognizing where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
         case .recognizing where importNotFinished:

@@ -109,6 +109,11 @@ struct DocumentScreen: View {
                 "Import not finished",
                 systemImage: "doc.badge.clock",
                 description: Text("The import stopped before mdoc read the text. Finish import reads it now."))
+        } else if model.snapshot.markdown.isEmpty && !model.snapshot.kind.needsRecognition {
+            ContentUnavailableView(
+                "No text yet",
+                systemImage: "doc.text",
+                description: Text("mdoc is reading the file."))
         } else if model.snapshot.markdown.isEmpty {
             ContentUnavailableView(
                 "No text yet",
