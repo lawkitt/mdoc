@@ -346,7 +346,7 @@ impl Panel {
                 "about-help",
                 "Help",
                 "Learn how to prepare and review documents.",
-                "https://github.com/lawkitt/mdoc#readme",
+                crate::menus::HELP_URL,
             ),
             (
                 "about-website",

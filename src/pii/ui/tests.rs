@@ -2003,6 +2003,25 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
     // The toolbar toggle still opens Side by side.
     app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
     assert_eq!(mode(&app, cx), Some(CompareMode::Side));
+    // The View menu's items reach the same views; Side by Side (⌘\) from
+    // another view switches to it, and from itself goes back to Edit.
+    use crate::document_view::{
+        ShowEditView, ShowOriginalView, ShowPseudonymizedView, ToggleCompare,
+    };
+    let focus = app.read_with(cx, |app, cx| app.editor.read(cx).focus_handle(cx));
+    cx.update(|window, cx| window.focus(&focus, cx));
+    cx.dispatch_action(ShowOriginalView);
+    assert_eq!(mode(&app, cx), Some(CompareMode::Original));
+    cx.dispatch_action(ToggleCompare);
+    assert_eq!(mode(&app, cx), Some(CompareMode::Side));
+    cx.dispatch_action(ShowPseudonymizedView);
+    assert_eq!(mode(&app, cx), Some(CompareMode::Pseudonymized));
+    cx.dispatch_action(ShowEditView);
+    assert_eq!(mode(&app, cx), None);
+    cx.dispatch_action(ToggleCompare);
+    assert_eq!(mode(&app, cx), Some(CompareMode::Side));
+    cx.dispatch_action(ToggleCompare);
+    assert_eq!(mode(&app, cx), None);
 }
 
 #[gpui::test]
