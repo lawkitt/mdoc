@@ -135,6 +135,23 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Mobile]** Resumed OCR joins pages with a blank line, so a list that
   continues across a page break differs from desktop; exact joins need
   pdf-inspector's page join made public in the fork (#276).
+- **[Detection]** The English settlement demo doesn't scan clean: the claim
+  number "6001842/2026" is not proposed (the captured-reply fixture treats it
+  as an identifier), and the role word "Employer" is replaced as an
+  organisation (ORG_2), which garbles the terms. The demos are the first thing
+  a new user scans; worth a grill on identifier coverage and role words.
+  *From the 2026-10-31 shelf GUI run.*
+- **[Spelling]** Russian name forms such as "Маришей" get a misspelling
+  underline; names, detected mentions and aliases shouldn't be spell-checked.
+  *From the 2026-10-31 shelf GUI run.*
+- **[A11y]** The shelf row is a button with its Copy for AI button nested
+  inside, so accessibility hit-testing lands on the row (an agent's click on
+  Copy opened the document instead); check with VoiceOver (M9) and make them
+  siblings if it can't reach the button. *From the 2026-10-31 shelf GUI run.*
+- **[Release]** Keep the macOS acceptance helpers (window list with layers,
+  AX dump and press by title, pressing the menu bar item) in `scripts/`
+  beside the Windows ones, so GUI runs don't rewrite them. *From the
+  2026-10-31 shelf GUI run.*
 
 ## Ongoing tracks
 
