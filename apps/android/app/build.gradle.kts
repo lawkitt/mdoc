@@ -10,7 +10,7 @@ val core = repo.resolve("target/android")
 
 android {
     namespace = "io.github.lawkitt.mdoc"
-    compileSdk = 36
+    compileSdk = 37
     // The build-tools scripts/install-android-sdk.sh pins; AGP would
     // otherwise fetch its own default.
     buildToolsVersion = "36.1.0"
@@ -37,8 +37,8 @@ android {
 
     sourceSets {
         getByName("main") {
-            kotlin.srcDir(core.resolve("kotlin"))
-            jniLibs.srcDir(core.resolve("jniLibs"))
+            kotlin.directories += core.resolve("kotlin").path
+            jniLibs.directories += core.resolve("jniLibs").path
         }
     }
 
