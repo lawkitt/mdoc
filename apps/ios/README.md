@@ -19,6 +19,27 @@ They need Xcode with the iOS 26.1 platform. Both build the core first
 `target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
 Simulator builds exclude x86_64.
 
+## On a phone
+
+The project signs with the maintainer's team (`DEVELOPMENT_TEAM =
+F33DLM8K53`, automatic signing). With that Apple ID in Xcode, the phone
+connected, unlocked, trusted and in Developer Mode:
+
+```sh
+just ios-core
+xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -configuration Release \
+  -destination id=<hardware UDID> -derivedDataPath target/ios/DeviceBuild \
+  -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+xcrun devicectl device install app --device <hardware UDID> \
+  target/ios/DeviceBuild/Build/Products/Release-iphoneos/mdoc.app
+```
+
+The hardware UDID is the `00008150-…` id `xcodebuild` lists. The App Group
+`group.io.github.lawkitt.mdoc` must exist in the team: open the project in
+Xcode once and let Signing & Capabilities register it (the command line
+cannot). A new developer certificate needs one tap of an installed app on the
+phone with `ppq.apple.com` reachable before iOS lets it launch.
+
 ## Layout
 
 The project is written by hand (`objectVersion` 77): each folder below is a
