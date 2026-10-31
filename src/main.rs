@@ -11,6 +11,7 @@ mod crash;
 mod document_view;
 mod images;
 mod markdown_search;
+mod menu_bar;
 mod menus;
 mod models;
 #[cfg(test)]
@@ -20,9 +21,8 @@ mod preview;
 mod search_session;
 mod self_test;
 mod settings_ui;
-// The shelf's view uses it from the next layer of ADR 0084's stack.
-#[allow(dead_code, unused_imports)]
 mod shelf;
+mod shelf_ui;
 mod shortcuts;
 mod single_instance;
 mod spelling;
@@ -137,6 +137,8 @@ fn main() {
             }
         }
     });
+    // Launching mdoc again while its window is hidden (ADR 0084) shows it.
+    application.on_reopen(|cx| menu_bar::reveal(cx, |_, _, _| {}));
     // macOS: a quit from the Dock, an Apple Event or logout asks first.
     #[cfg(target_os = "macos")]
     let quit_gate = {
@@ -147,6 +149,8 @@ fn main() {
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             mdoc_import::model_work::shutdown();
+            // Shelf drags' temporary exports live until quit (ADR 0084).
+            shelf_ui::clear_exports(cx);
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
             updater::apply_at_quit(cx);
@@ -205,6 +209,10 @@ fn main() {
         let _ = handle.update(cx, |workspace, _, cx| {
             workspace.check_for_updates_at_launch(cx)
         });
+        let menu_bar = handle
+            .read(cx)
+            .is_ok_and(|workspace| workspace.menu_bar_setting());
+        menu_bar::install(handle, menu_bar, cx);
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         if let Some(launches) = later_launches {
             // Polled: the listener is a plain thread, and a launch is rare.
@@ -224,7 +232,14 @@ fn main() {
             .detach();
         }
         cx.on_window_closed(move |cx, _| {
-            if cx.windows().is_empty() {
+            // The shelf or a comparison window may outlive the workspace's:
+            // mdoc quits once the workspace window is gone.
+            let workspace_open = cx
+                .windows()
+                .iter()
+                .any(|window| window.downcast::<workspace::Workspace>().is_some());
+            if !workspace_open {
+                menu_bar::close_shelf(cx);
                 // A system quit waiting on the quit flow terminates now.
                 #[cfg(target_os = "macos")]
                 if quit_gate.last_window_closed() {
@@ -255,7 +270,7 @@ fn open_paths_from_os(
         .clone()
         .spawn(async move {
             let _ = handle.update(&mut cx, |workspace, window, cx| {
-                workspace.open_paths(paths, window, cx)
+                workspace.open_paths_from_os(paths, window, cx)
             });
         })
         .detach();
@@ -279,6 +294,7 @@ pub(crate) fn bind_all_keys(cx: &mut App) {
     markdown_search::bind_keys(cx);
     pii::ui::bind_keys(cx);
     workspace::bind_case_keys(cx);
+    shelf_ui::bind_keys(cx);
     workspace::bind_shell_keys(cx);
     settings_ui::bind_keys(cx);
     ui::bind_keys(cx);

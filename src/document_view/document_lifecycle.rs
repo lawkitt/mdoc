@@ -129,7 +129,6 @@ impl DocumentLifecycle {
     }
 
     /// When the user last edited the text in this session.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn edited_at(&self) -> Option<std::time::SystemTime> {
         self.edited_at
     }

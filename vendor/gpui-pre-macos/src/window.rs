@@ -3414,7 +3414,7 @@ where
     }
 }
 
-fn display_id_for_screen(screen: id) -> Option<CGDirectDisplayID> {
+pub(crate) fn display_id_for_screen(screen: id) -> Option<CGDirectDisplayID> {
     if screen.is_null() {
         return None;
     }
@@ -3574,6 +3574,101 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
             callback();
             window_state.lock().toggle_tab_bar_callback = Some(callback);
         }
+    }
+}
+
+/// mdoc patch (ADR 0084): start an outbound drag from `window` carrying one
+/// pasteboard item with both `text` (plain text) and `file`'s URL, so a chat
+/// box takes the text and Finder takes the file. Starts from the window's
+/// last left mouse down, like `start_external_drag`. Returns whether AppKit
+/// started the drag.
+pub fn start_text_and_file_drag(
+    window: &gpui::Window,
+    text: &str,
+    file: &std::path::Path,
+) -> bool {
+    let Ok(handle) = rwh::HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let rwh::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return false;
+    };
+    let native_view: id = handle.ns_view.as_ptr().cast();
+    // SAFETY: the handle's view is the GPUIView of a live window on the main
+    // thread, which holds WINDOW_STATE_IVAR; nil results are checked.
+    unsafe {
+        let window_state = get_window_state(&*native_view);
+        let (native_window, last_left_mouse_down_event) = {
+            let state = window_state.lock();
+            (state.native_window, state.last_left_mouse_down_event.clone())
+        };
+        let Some(last_left_mouse_down_event) = last_left_mouse_down_event else {
+            log::warn!("start_text_and_file_drag declined: no retained left mouse down event");
+            return false;
+        };
+        let event: id = Retained::as_ptr(&last_left_mouse_down_event)
+            .cast_mut()
+            .cast();
+        let Ok(path_bytes) = CString::new(file.as_os_str().as_bytes()) else {
+            return false;
+        };
+        let url: id = msg_send![
+            class!(NSURL),
+            fileURLWithFileSystemRepresentation: path_bytes.as_ptr()
+            isDirectory: NO
+            relativeToURL: nil
+        ];
+        if url.is_null() {
+            return false;
+        }
+        let item: id = msg_send![class!(NSPasteboardItem), alloc];
+        let item: id = msg_send![item, init];
+        let url_string: id = msg_send![url, absoluteString];
+        let plain_text = ns_string("public.utf8-plain-text");
+        let file_url = ns_string("public.file-url");
+        let _: BOOL = msg_send![item, setString: ns_string(text) forType: plain_text];
+        let _: BOOL = msg_send![item, setString: url_string forType: file_url];
+        let dragging_item: id = msg_send![class!(NSDraggingItem), alloc];
+        let dragging_item: id = msg_send![dragging_item, initWithPasteboardWriter: item];
+        let _: () = msg_send![item, release];
+        if dragging_item.is_null() {
+            return false;
+        }
+        let location: NSPoint = msg_send![event, locationInWindow];
+        let frame = NSRect::new(
+            NSPoint::new(location.x - 16., location.y - 16.),
+            NSSize::new(32., 32.),
+        );
+        let provider = ConcreteBlock::new(move || -> id {
+            let component: id = msg_send![
+                class!(NSDraggingImageComponent),
+                draggingImageComponentWithKey: NSDraggingImageComponentIconKey
+            ];
+            let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
+            let icon: id = msg_send![workspace, iconForFileType: ns_string("md")];
+            let _: () = msg_send![component, setContents: icon];
+            let _: () = msg_send![
+                component,
+                setFrame: NSRect::new(NSPoint::new(0., 0.), NSSize::new(32., 32.))
+            ];
+            msg_send![class!(NSArray), arrayWithObject: component]
+        });
+        let provider = provider.copy();
+        let _: () = msg_send![dragging_item, setDraggingFrame: frame];
+        let _: () = msg_send![dragging_item, setImageComponentsProvider: provider];
+        let items: id = msg_send![class!(NSArray), arrayWithObject: dragging_item];
+        let _: () = msg_send![dragging_item, release];
+        let session: id = msg_send![
+            native_view,
+            beginDraggingSessionWithItems: items
+            event: event
+            source: native_window
+        ];
+        let started = !session.is_null();
+        if started {
+            window_state.lock().synthetic_drag_counter += 1;
+        }
+        started
     }
 }
 

@@ -188,7 +188,27 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}: live merge hint"
                 );
             }
-            if *name != "model-comparison" {
+            // The shelf (ADR 0084): only ready rows copy or drag; locked
+            // cases hide closed members and ask to unlock.
+            if name.starts_with("shelf") {
+                let rows = |r: &Value| r["state"]["rows"].as_array().unwrap().len();
+                match *name {
+                    "shelf" => assert_eq!(
+                        record["state"]["rows"],
+                        serde_json::json!(["ready", "2 left to review", "Changed since review"]),
+                        "{theme}/{name}"
+                    ),
+                    "shelf-empty" => assert_eq!(rows(record), 0, "{theme}/{name}"),
+                    "shelf-locked" => assert_eq!(rows(record), 2, "{theme}/{name}"),
+                    _ => {}
+                }
+                assert_eq!(
+                    record["state"]["clipboard_locked"],
+                    *name == "shelf-locked",
+                    "{theme}/{name}"
+                );
+            }
+            if *name != "model-comparison" && !name.starts_with("shelf") {
                 if matches!(
                     *name,
                     "home" | "document" | "navigation-disabled" | "navigation-enabled"

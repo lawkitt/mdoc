@@ -153,6 +153,9 @@ const PLUMBING: &[&str] = &[
     "mdoc_shell::PaletteConfirm",
     "pdf_view::MenuNext",
     "pdf_view::MenuPrevious",
+    "shelf::CloseShelf",
+    "shelf::ShelfUp",
+    "shelf::ShelfDown",
 ];
 
 /// A binding as GPUI parsed it: keystroke, action and context.

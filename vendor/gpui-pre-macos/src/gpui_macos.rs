@@ -31,6 +31,9 @@ mod open_type;
 mod text_system;
 
 mod platform;
+// mdoc patch (ADR 0084): the menu bar item, and hiding the last window.
+mod presence;
+mod status_item;
 mod window;
 mod window_appearance;
 
@@ -59,6 +62,10 @@ pub use platform::{
     MacPlatform, TerminateReply, reply_to_should_terminate, set_next_save_prompt_message,
     set_should_terminate_handler,
 };
+// mdoc patch (ADR 0084): the menu bar shelf.
+pub use presence::{hide_window, set_dock_visible};
+pub use status_item::{StatusItem, set_status_item, status_item_bounds};
+pub use window::start_text_and_file_drag;
 
 trait BoolExt {
     fn to_objc(self) -> BOOL;

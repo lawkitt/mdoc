@@ -21,12 +21,32 @@ Local changes, marked `mdoc patch`:
   Without a handler it terminates now, as upstream. mdoc sets it in
   `src/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
   asks about unsaved work like ⌘Q (ADR 0071).
+- `status_item.rs` (new), exported from `gpui_macos.rs`: `set_status_item`
+  shows one `NSStatusItem` whose button draws an SF Symbol as a template
+  image and calls back on click, or removes it; `status_item_bounds` gives
+  the button's display and bounds (top-left origin) so a
+  `WindowKind::PopUp` window can open under it. `window.rs`'s
+  `display_id_for_screen` is `pub(crate)` for it. mdoc uses them in
+  `src/menu_bar.rs` for the menu bar shelf (ADR 0084).
+- `window.rs`: `start_text_and_file_drag` starts an outbound drag from a
+  window's last left mouse down carrying one `NSPasteboardItem` with both
+  plain text and a file URL (upstream's `start_external_drag` carries files
+  only). The shelf drags a document with it (ADR 0084).
+- `presence.rs` (new), exported from `gpui_macos.rs`: `hide_window`
+  (`orderOut:`, which GPUI lacks) and `set_dock_visible` (the activation
+  policy, Regular or Accessory), so with the menu bar item on, closing
+  mdoc's window hides it and mdoc leaves the Dock until it shows again
+  (ADR 0084); GPUI's `Window::activate_window` shows the window again.
+  Debug builds assert both run on the main thread and that AppKit accepts
+  the policy. mdoc's tests cover the rules that call them
+  (`src/menu_bar.rs`); the native effect is a GUI check.
 - `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream
   still calls the deprecated `cocoa` crate (716 warnings). Cargo hides
   warnings from registry crates, but prints them for this one because it is
   patched in from a local path.
 
 Drop this directory, the patch entry and the `gpui_macos` dependency once the
-adopted GPUI family's `prompt_for_new_path` takes a message and the app can
-answer `applicationShouldTerminate:`. When updating GPUI, re-vendor the
+adopted GPUI family's `prompt_for_new_path` takes a message, the app can
+answer `applicationShouldTerminate:`, and GPUI offers a status item, a
+text drag, window hiding and the activation policy. When updating GPUI, re-vendor the
 adopted version and reapply only these changes.
