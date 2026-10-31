@@ -140,7 +140,7 @@ data class RestoreResult(
         }
 }
 
-data class ReplySnapshot(val aliasText: String, val restored: RestoreResult)
+data class ReplySnapshot(val aliasText: String, val restored: RestoreResult, val styling: MarkdownStyling? = null)
 
 data class HandOff(val text: String, val fileName: String)
 

@@ -14,6 +14,7 @@ import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.ImportSource
 import io.github.lawkitt.mdoc.core.JobObserver
 import io.github.lawkitt.mdoc.core.SourceRange
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -78,8 +79,11 @@ class ReviewFlowTest {
         waitFor("Paste AI reply")
         compose.onNodeWithText("AI reply").performTextInput("Thank you, PERSON_1. The claim is filed.")
         compose.onNodeWithText("Restore").performClick()
-        waitFor("Thank you, Maya Bennett. The claim is filed.")
         waitFor("1 values restored")
+        // The reply pane draws the restored text in a TextView; read it from the core.
+        val document = app.core.documents.snapshot().documents.first { it.title == title }
+        val reply = app.core.documents.session(document.id).snapshot().reply
+        assertEquals("Thank you, Maya Bennett. The claim is filed.", reply?.restored?.text)
         compose.onAllNodesWithText("Reply")[0].assertExists()
     }
 }

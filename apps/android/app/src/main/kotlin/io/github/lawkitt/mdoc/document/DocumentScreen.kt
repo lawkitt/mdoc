@@ -79,6 +79,7 @@ import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.jobs.JobKind
 import io.github.lawkitt.mdoc.ui.Palette
+import io.github.lawkitt.mdoc.ui.RestoredText
 import io.github.lawkitt.mdoc.ui.ReviewText
 import kotlinx.coroutines.launch
 import uniffi.mdoc_ffi.JobStage
@@ -155,7 +156,7 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
                 onCancel = model::cancelJob,
                 onReplaceAll = model::replaceAll,
                 onShare = { asFile ->
-                    scope.launch { model.handOff()?.let { share(context, snapshot.title, it.text, it.fileName, asFile) } }
+                    scope.launch { model.handOff()?.let { context.startActivity(shareIntent(it.text, it.fileName, asFile, context)) } }
                 },
                 onCopy = {
                     scope.launch {
@@ -166,7 +167,7 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
                     }
                 },
                 onPasteReply = { model.showReplySheet(true) },
-                onShareReply = { snapshot.reply?.let { share(context, snapshot.title, it.restored.text, null, false) } },
+                onShareReply = { snapshot.reply?.let { context.startActivity(shareIntent(it.restored.text, null, false, context)) } },
                 onCopyReply = {
                     snapshot.reply?.let {
                         copy(context, it.restored.text)
@@ -178,7 +179,7 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (interrupted?.documentId == snapshot.id) {
+            if (model.isMine(interrupted?.documentId)) {
                 Notice(
                     stringResource(
                         if (interrupted?.kind == JobKind.Scan) R.string.finding_stopped_background else R.string.recognition_stopped_background,
@@ -495,30 +496,19 @@ private fun ReplyPane(reply: ReplySnapshot, onRemove: () -> Unit) {
                 style = MaterialTheme.typography.labelLarge,
             )
         }
-        val highlight = MaterialTheme.colorScheme.tertiaryContainer
-        val unresolved = MaterialTheme.colorScheme.errorContainer
-        SelectionContainer {
-            Text(
-                buildAnnotatedString {
-                    restored.segments.forEach { segment ->
-                        when (segment) {
-                            is RestoredSegment.Text -> append(segment.text)
-                            is RestoredSegment.Restored -> withStyle(SpanStyle(background = highlight, fontWeight = FontWeight.Medium)) {
-                                append(segment.value)
-                            }
-                            is RestoredSegment.Unresolved -> withStyle(SpanStyle(background = unresolved)) { append(segment.token) }
-                        }
-                    }
-                },
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
+        RestoredText(restored, reply.styling, Modifier.fillMaxWidth())
         TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_reply)) }
     }
 }
 
-private fun share(context: Context, title: String, text: String, fileName: String?, asFile: Boolean) {
-    val intent = if (asFile && fileName != null) {
+/**
+ * The share sheet for Copy for AI's text (or a restored reply). Its title
+ * and file name come from the core's pseudonymized export name, never the
+ * document's own title, which can hold a name the text no longer shows.
+ */
+fun shareIntent(text: String, fileName: String?, asFile: Boolean, context: Context): Intent {
+    val title = fileName?.removeSuffix(".md")
+    val send = if (asFile && fileName != null) {
         val dir = java.io.File(context.cacheDir, "hand-off").apply { deleteRecursively(); mkdirs() }
         val file = java.io.File(dir, fileName).apply { writeText(text) }
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
@@ -527,7 +517,8 @@ private fun share(context: Context, title: String, text: String, fileName: Strin
     } else {
         Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
     }
-    context.startActivity(Intent.createChooser(intent.putExtra(Intent.EXTRA_TITLE, title), title))
+    title?.let { send.putExtra(Intent.EXTRA_TITLE, it) }
+    return Intent.createChooser(send, title)
 }
 
 private fun copy(context: Context, text: String) {

@@ -28,11 +28,14 @@ class Originals(private val storage: MdocStorage) {
     /** Names a received file after its title (the core titles a document by its file). */
     fun prepare(source: ImportSource, title: String): Prepared = when (source) {
         is ImportSource.Text -> Prepared(Input.Text(source.text), SourceKind.Text)
-        is ImportSource.File ->
-            Prepared(Input.File(rename(source.file, title), source.kind == SourceKind.Image), source.kind)
+        is ImportSource.File -> if (source.kind == SourceKind.Image) {
+            Prepared(Input.File(jpeg(source.file, title), needsOcr = true), source.kind)
+        } else {
+            Prepared(Input.File(rename(source.file, title), needsOcr = false), source.kind)
+        }
         is ImportSource.Pages -> {
             val first = source.pages.firstOrNull() ?: throw AppError.EmptySelection()
-            val file = if (source.pages.size == 1) rename(first, title) else pagesPdf(source.pages, title, first.parentFile!!)
+            val file = if (source.pages.size == 1) jpeg(first, title) else pagesPdf(source.pages, title, first.parentFile!!)
             Prepared(Input.File(file, needsOcr = true), source.kind)
         }
     }
@@ -42,6 +45,20 @@ class Originals(private val storage: MdocStorage) {
         if (target == file) return file
         target.delete()
         check(file.renameTo(target)) { "mdoc could not keep ${file.name}." }
+        return target
+    }
+
+    /**
+     * One page as the JPEG the core reads: a PNG or HEIC photo is decoded and
+     * written again, a JPEG only renamed.
+     */
+    private fun jpeg(file: File, title: String): File {
+        if (file.extension.lowercase() in setOf("jpg", "jpeg")) return rename(file, title)
+        val bitmap = BitmapFactory.decodeFile(file.path) ?: throw AppError.Failed("The scanned pages could not be read.")
+        val target = File(file.parentFile, MdocStorage.safeFileName("$title.jpg"))
+        target.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
+        bitmap.recycle()
+        file.delete()
         return target
     }
 
@@ -68,9 +85,22 @@ class Originals(private val storage: MdocStorage) {
     @Synchronized
     fun record(path: String, kind: SourceKind, file: File?) {
         val entries = load()
-        entries.put(relative(path), JSONObject().put("kind", kind.name).put("file", file?.let { relative(it.path) }))
+        val entry = entries.optJSONObject(relative(path)) ?: JSONObject()
+        entries.put(relative(path), entry.put("kind", kind.name).put("file", file?.let { relative(it.path) }))
         save(entries)
     }
+
+    /** Find names ran on the document, even if it found nothing. */
+    @Synchronized
+    fun markScanned(path: String) {
+        val entries = load()
+        val entry = entries.optJSONObject(relative(path)) ?: JSONObject().put("kind", SourceKind.Text.name)
+        entries.put(relative(path), entry.put("scanned", true))
+        save(entries)
+    }
+
+    @Synchronized
+    fun scanned(path: String): Boolean = load().optJSONObject(relative(path))?.optBoolean("scanned") == true
 
     @Synchronized
     fun kind(path: String): SourceKind = runCatching {
@@ -86,9 +116,17 @@ class Originals(private val storage: MdocStorage) {
     @Synchronized
     fun remove(path: String) {
         val entries = load()
-        file(path)?.parentFile?.takeIf { it.parentFile == storage.dir(MdocStorage.Area.Originals) }?.deleteRecursively()
+        file(path)?.let(::importFolder)?.deleteRecursively()
         entries.remove(relative(path))
         save(entries)
+    }
+
+    /** The folder an import owns: the one directly under `originals/` that holds `file`. */
+    fun importFolder(file: File): File? {
+        val originals = storage.dir(MdocStorage.Area.Originals).canonicalFile
+        var folder = file.canonicalFile.parentFile
+        while (folder != null && folder.parentFile != originals) folder = folder.parentFile
+        return folder
     }
 
     private fun relative(path: String): String = File(path).relativeTo(storage.root).path.replace('\\', '/')

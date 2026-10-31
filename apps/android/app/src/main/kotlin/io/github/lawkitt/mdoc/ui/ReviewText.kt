@@ -24,6 +24,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -36,6 +37,8 @@ import io.github.lawkitt.mdoc.R
 import io.github.lawkitt.mdoc.core.Candidate
 import io.github.lawkitt.mdoc.core.CandidateId
 import io.github.lawkitt.mdoc.core.MentionState
+import io.github.lawkitt.mdoc.core.RestoreResult
+import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.SourceRange
 import io.github.lawkitt.mdoc.core.TextOffsets
 import uniffi.mdoc_ffi.MarkdownLineKind
@@ -71,7 +74,7 @@ fun ReviewText(
             val key = listOf(markdown, styling, candidates, selected, colours).hashCode()
             if (view.tag != key) {
                 view.setText(
-                    styledReviewText(view.context, markdown, styling, candidates, selected, colours),
+                    styledReviewText(view.context, markdown, styling, candidates, selected, colours) { tap.value(it) },
                     TextView.BufferType.SPANNABLE,
                 )
                 view.tag = key
@@ -109,7 +112,7 @@ private fun reviewTextView(
     context: Context,
     onCandidate: (CandidateId) -> Unit,
     onReplace: (SourceRange, String) -> Unit,
-): TextView = TextView(context).apply {
+): TextView = NoCopyTextView(context).apply {
     setTextIsSelectable(true)
     textSize = 17f
     setLineSpacing(4f, 1f)
@@ -120,6 +123,35 @@ private fun reviewTextView(
     customSelectionActionModeCallback = ReplaceOnlyActions(this, onReplace)
     // Long-press opens the selection; nothing to copy is offered (see ReplaceOnlyActions).
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+}
+
+/**
+ * The review text's view: Copy, Cut, Paste and Share are refused however
+ * they are asked for (a keyboard's Ctrl+C, the menu, TalkBack's actions),
+ * so an original cannot reach the clipboard or another app from here.
+ */
+class NoCopyTextView(context: Context) : TextView(context) {
+    override fun onTextContextMenuItem(id: Int): Boolean =
+        if (id in BLOCKED) true else super.onTextContextMenuItem(id)
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COPY)
+        info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CUT)
+        info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PASTE)
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when (action) {
+        AccessibilityNodeInfo.ACTION_COPY, AccessibilityNodeInfo.ACTION_CUT, AccessibilityNodeInfo.ACTION_PASTE -> false
+        else -> super.performAccessibilityAction(action, arguments)
+    }
+
+    private companion object {
+        val BLOCKED = setOf(
+            android.R.id.copy, android.R.id.cut, android.R.id.paste, android.R.id.pasteAsPlainText,
+            android.R.id.shareText, android.R.id.textAssist,
+        )
+    }
 }
 
 /**
@@ -296,3 +328,53 @@ private fun rgba(value: UInt): Int {
 }
 
 private fun withAlpha(colour: Int, alpha: Float): Int = (colour and 0x00FFFFFF) or ((alpha * 255).toInt() shl 24)
+
+/**
+ * A restored reply, styled with the review text's spans and colours, its
+ * restored values highlighted (ADR 0087). The reply holds the user's own
+ * names again, so it is selectable and copyable as ordinary text.
+ */
+@Composable
+fun RestoredText(result: RestoreResult, styling: MarkdownStyling?, modifier: Modifier = Modifier) {
+    val colours = ReviewColours.current()
+    val restoredFill = MaterialTheme.colorScheme.tertiaryContainer.toArgb()
+    val unresolvedFill = MaterialTheme.colorScheme.errorContainer.toArgb()
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            TextView(context).apply {
+                setTextIsSelectable(true)
+                textSize = 17f
+                setLineSpacing(4f, 1f)
+                hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
+                breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
+            }
+        },
+        update = { view ->
+            val key = listOf(result, styling, colours).hashCode()
+            if (view.tag == key) return@AndroidView
+            val markdown = result.text
+            val text = styledReviewText(view.context, markdown, styling, emptyList(), null, colours)
+            var at = 0
+            for (segment in result.segments) {
+                val piece = when (segment) {
+                    is RestoredSegment.Text -> segment.text
+                    is RestoredSegment.Restored -> segment.value
+                    is RestoredSegment.Unresolved -> segment.token
+                }
+                val fill = when (segment) {
+                    is RestoredSegment.Restored -> restoredFill
+                    is RestoredSegment.Unresolved -> unresolvedFill
+                    is RestoredSegment.Text -> null
+                }
+                if (fill != null && piece.isNotEmpty()) {
+                    text.setSpan(BackgroundColorSpan(fill), at, at + piece.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                at += piece.length
+            }
+            view.setText(text, TextView.BufferType.SPANNABLE)
+            view.setTextColor(colours.text)
+            view.tag = key
+        },
+    )
+}

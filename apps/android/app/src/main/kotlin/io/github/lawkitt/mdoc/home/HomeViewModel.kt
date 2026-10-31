@@ -81,9 +81,10 @@ class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
                 runCatching {
                     val storage = core().storage
                     val folder = File(storage.dir(MdocStorage.Area.Originals), java.util.UUID.randomUUID().toString()).apply { mkdirs() }
-                    val files = uris.map { uri ->
+                    val files = uris.mapIndexed { index, uri ->
                         val name = displayName(resolver, uri) ?: "${fallbackTitle}.${extension(resolver, uri)}"
-                        val target = File(folder, MdocStorage.safeFileName(name))
+                        // Each in a folder of its own: two photos may share a name.
+                        val target = File(File(folder, "${index + 1}").apply { mkdirs() }, MdocStorage.safeFileName(name))
                         checkNotNull(resolver.openInputStream(uri)).use { input -> target.outputStream().use(input::copyTo) }
                         target
                     }
@@ -159,7 +160,8 @@ class HomeViewModel(private val core: () -> AppCore) : ViewModel() {
                 if (document.kind.needsRecognition) StatusLine.NotRecognized else StatusLine.ImportNotFinished
             DocumentPhase.Unscanned -> if (canFindNames) StatusLine.ReadyToFind else StatusLine.ReadyToMark
             DocumentPhase.Reviewing -> StatusLine.ToReview(document.pendingCount)
-            DocumentPhase.Ready -> StatusLine.ReadyToShare
+            // Find names ran and found nothing (ADR 0087).
+            DocumentPhase.Ready -> if (document.candidateCount == 0) StatusLine.NothingFound else StatusLine.ReadyToShare
         }
     }
 }
@@ -176,4 +178,6 @@ sealed interface StatusLine {
     data class ToReview(val count: Int) : StatusLine
 
     data object ReadyToShare : StatusLine
+
+    data object NothingFound : StatusLine
 }
