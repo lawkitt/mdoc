@@ -167,6 +167,7 @@ class Documents(
             caseId = opened.caseId
             scanned = opened.mentions.isNotEmpty() || originals.scanned(path)
             kind = originals.kind(path)
+            originalFile = originals.file(path)
         }
 
         internal fun summary(updated: Long): DocumentSummary {
@@ -183,6 +184,7 @@ class Documents(
                 ?: return DocumentSnapshot(
                     id, title, caseId?.let(::CaseId), caseName(caseId), kind, DocumentPhase.Recognizing,
                     "", null, emptyList(), emptyList(), null, resumesOcr = ocrStarted,
+                    original = OriginalSource.of(source?.file ?: originalFile),
                 )
             val candidates = review.mentions.map(::candidate)
             val identities = review.identities.map { row ->
@@ -216,6 +218,7 @@ class Documents(
                 id, review.title, (review.caseId ?: caseId)?.let(::CaseId), caseName(review.caseId ?: caseId),
                 kind, phase, review.text, markdownStyling(review.text), candidates, identities, reply,
                 warning = review.warning,
+                original = OriginalSource.of(source?.file ?: originalFile),
             )
         }
 
@@ -279,6 +282,15 @@ class Documents(
         }
 
         fun replaceAllPending(): DocumentSnapshot = change { ffi.replaceAll() }
+
+        /**
+         * Proposals as a scan would give them, for UI tests and the survey on
+         * an emulator with no detector (the iOS app's seedForUITesting).
+         */
+        internal fun seedProposals(candidates: List<uniffi.mdoc_ffi.Candidate>): DocumentSnapshot {
+            synchronized(this) { scanned = true }
+            return change { ffi.addCandidates(candidates) }
+        }
 
         /** Replace…: a manual identity for the selected text, replaced in every exact repeat. */
         fun addReplacement(range: SourceRange, category: Category): DocumentSnapshot {

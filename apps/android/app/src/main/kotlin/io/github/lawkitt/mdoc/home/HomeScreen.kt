@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -89,8 +90,11 @@ fun HomeScreen(
         },
         floatingActionButton = {
             Box {
+                val addLabel = stringResource(R.string.add)
                 ExtendedFloatingActionButton(
                     onClick = { menu = true },
+                    // The button's own label: its text alone does not reach TalkBack.
+                    modifier = Modifier.semantics { contentDescription = addLabel },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.add)) },
                 )
