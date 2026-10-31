@@ -83,6 +83,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -299,12 +300,18 @@ fun DocumentScreen(
             }
             val text: @Composable (Modifier) -> Unit = { paneModifier ->
                 if (snapshot.phase == DocumentPhase.Recognizing) {
-                    RecognizingPane(
-                        stringResource(
-                            if (!snapshot.kind.needsRecognition) R.string.import_not_finished_body else R.string.status_not_recognized,
-                        ),
-                        paneModifier,
-                    )
+                    // iOS's three states: a file being read, an import that
+                    // stopped, a scan or photo waiting for (or part through) OCR.
+                    val reading = job != null && model.isMine(job?.documentId)
+                    when {
+                        !snapshot.kind.needsRecognition && reading ->
+                            RecognizingPane(R.string.no_text_yet, R.string.reading_the_file_body, paneModifier)
+                        !snapshot.kind.needsRecognition ->
+                            RecognizingPane(R.string.status_import_not_finished, R.string.import_not_finished_body, paneModifier)
+                        snapshot.resumesOcr ->
+                            RecognizingPane(R.string.no_text_yet, R.string.recognition_resumes_body, paneModifier)
+                        else -> RecognizingPane(R.string.no_text_yet, R.string.recognition_runs_body, paneModifier)
+                    }
                 } else {
                     ReviewText(
                         markdown = snapshot.markdown,
@@ -381,9 +388,24 @@ private fun Readable(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun RecognizingPane(text: String, modifier: Modifier = Modifier.fillMaxSize()) {
-    Column(modifier.padding(32.dp), verticalArrangement = Arrangement.Center) {
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun RecognizingPane(title: Int, body: Int, modifier: Modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier.padding(32.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(title),
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            stringResource(body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

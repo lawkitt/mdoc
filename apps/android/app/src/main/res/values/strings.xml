@@ -63,7 +63,12 @@
     <string name="finding_names_in">Finding names in %1$s</string>
     <string name="replace_all">Replace all</string>
     <string name="replace_count">Replace %1$d</string>
+    <string name="another_job_running">Another job is running. Try again when it finishes.</string>
     <string name="waiting_for_other">Waiting for another document to finish.</string>
+    <string name="no_text_yet">No text yet</string>
+    <string name="reading_the_file_body">mdoc is reading the file.</string>
+    <string name="recognition_runs_body">mdoc reads the text when recognition runs.</string>
+    <string name="recognition_resumes_body">Recognition stopped. Finished pages are kept, and resuming reads the rest.</string>
     <string name="import_not_finished_body">The import stopped before mdoc read the text. Finish import reads it now.</string>
     <string name="recognition_stopped_background">Recognition stopped when mdoc left the screen. Finished pages are kept.</string>
     <string name="finding_stopped_background">Finding names stopped when mdoc left the screen.</string>
@@ -179,6 +184,7 @@
 
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>
+    <string name="keeps_working">mdoc keeps working while you use other apps.</string>
     <string name="import_stopped_background">The import stopped when mdoc left the screen.</string>
 
     <!-- Counts, singular and plural as on iOS. -->
