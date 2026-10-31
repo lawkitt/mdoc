@@ -467,6 +467,61 @@ impl Panel {
         }
         cx.notify();
     }
+    /// Show these model statuses, as if a check had found them, for the
+    /// installed-model renders; returns the previous ones to restore.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn render_statuses(
+        &mut self,
+        statuses: Vec<Status>,
+        cx: &mut Context<Self>,
+    ) -> Vec<Status> {
+        self.row_statuses = None;
+        cx.notify();
+        std::mem::replace(&mut self.statuses, statuses)
+    }
+    /// Show the saved preferences with `change` applied, unsaved, for the
+    /// switch renders; `|_| {}` shows the saved ones again.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn render_draft(
+        &mut self,
+        change: impl FnOnce(&mut Preferences),
+        cx: &mut Context<Self>,
+    ) {
+        self.draft = self.shared.borrow().current.clone().unwrap_or_default();
+        change(&mut self.draft);
+        cx.notify();
+    }
+    /// Scroll the page to its end, for the long-page render.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn render_scroll_to_end(&mut self, cx: &mut Context<Self>) {
+        let end = self.scroll.max_offset().y;
+        self.scroll.set_offset(gpui::point(px(0.), -end));
+        cx.notify();
+    }
+    /// The focus handle of the Settings control `id`, once it has drawn.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn control_focus(&self, id: &'static str) -> Option<FocusHandle> {
+        self.controls
+            .borrow()
+            .get(&gpui::ElementId::from(id))
+            .cloned()
+    }
     /// Geometry from the three actual segments, cleared before each render:
     /// an omitted section or a choice below the fold cannot pass the contract.
     #[cfg(all(
@@ -1080,15 +1135,6 @@ impl Panel {
             .justify_end()
             .items_center()
             .gap_2()
-            .child(self.switch(
-                "updates-automatic",
-                "Check when mdoc starts",
-                updates.check_automatically,
-                true,
-                |p| p.updates.check_automatically = !p.updates.check_automatically,
-                theme,
-                cx,
-            ))
             .when(!busy, |v| {
                 v.child(
                     self.scrolled_quiet("updates-check", "Check now", theme, !state.checking, cx)
@@ -1143,9 +1189,25 @@ impl Panel {
                         .on_click(move |_, _, cx| cx.open_url(&url)),
                 )
             });
+        // The switch has a row of its own, so every Settings switch shares
+        // the right-hand column; the status and its actions follow (ADR 0076).
         div()
             .flex()
             .flex_col()
+            .child(self.setting_row(
+                "Automatic updates",
+                "Check when mdoc starts.",
+                self.switch(
+                    "updates-automatic",
+                    "Check when mdoc starts",
+                    updates.check_automatically,
+                    true,
+                    |p| p.updates.check_automatically = !p.updates.check_automatically,
+                    theme,
+                    cx,
+                ),
+                theme,
+            ))
             .child(
                 div()
                     .flex()
@@ -1156,27 +1218,11 @@ impl Panel {
                     .border_color(p.border)
                     .child(
                         div()
+                            .when(cfg!(test), |v| v.debug_selector(|| "updates-status".into()))
                             .flex_1()
                             .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child("Automatic updates")
-                            .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .text_color(p.header_muted)
-                                    .child("Check when mdoc starts"),
-                            )
-                            .child(
-                                div()
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "updates-status".into())
-                                    })
-                                    .text_size(px(11.))
-                                    .text_color(p.header_muted)
-                                    .child(status),
-                            ),
+                            .text_size(px(13.))
+                            .child(status),
                     )
                     .child(div().max_w(px(260.)).child(actions)),
             )
@@ -1309,8 +1355,11 @@ impl Panel {
                         .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
                     .when(matches!(status, Status::Damaged(_)) && !working, |v| v.child(self.scrolled_control(("repair-now", index), "Repair", theme, idle && ocr::SUPPORTED, cx)
                         .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
-                    .when(!missing && !working && !checking, |v| v.child(self.scrolled_quiet(("remove-model", index), "Remove…", theme, removable, cx).on_click(cx.listener(move |_, _, window, cx| {
-                        if !removable { return; }
+                    // Remove… is a bordered button like Download and Repair, and is
+                    // absent rather than dimmed while it can't run (ADR 0076).
+                    .when(!missing && !working && !checking && removable, |v| v.child(self.scrolled_control(("remove-model", index), "Remove…", theme, true, cx)
+                        .when(cfg!(test), move |v| v.debug_selector(move || format!("settings-remove-{index}")))
+                        .on_click(cx.listener(move |_, _, window, cx| {
                         let prompt = window.prompt(PromptLevel::Warning, &format!("Remove {} model files?", model.name()), Some("Shared runtimes and documents are retained."), &["Remove", "Cancel"], cx);
                         cx.spawn(async move |this, cx| { if prompt.await.ok() == Some(0) { let _ = this.update(cx, |this, cx| this.setup(model, true, cx)); } }).detach();
                     }))))
@@ -1398,17 +1447,10 @@ impl Panel {
                     .into_iter()
                     .map(|(choice, label, id)| {
                         let selected = self.theme_choice == choice;
-                        self.scrolled_control(id, "", theme, true, cx)
+                        self.segment(id, label, selected, theme, cx)
                             .flex_1()
                             .flex()
                             .justify_center()
-                            .role(gpui::Role::RadioButton)
-                            .aria_label(label)
-                            .aria_toggled(if selected {
-                                gpui::Toggled::True
-                            } else {
-                                gpui::Toggled::False
-                            })
                             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
                             .child(
                                 div()
@@ -1417,11 +1459,6 @@ impl Panel {
                                     })
                                     .child(label),
                             )
-                            .when(selected, |v| {
-                                v.border_color(theme.search_accent())
-                                    .bg(theme.sidebar_selected())
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                            })
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.theme_revision += 1;
                                 this.reset_theme = None;

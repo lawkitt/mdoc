@@ -4,7 +4,9 @@ Status: Accepted, 2026-10-28. Amends
 [ADR 0048](0048-workspace-shell-redesign.md) (Settings overlay) and the Settings
 layout of [ADR 0006](0006-local-model-settings.md). Amended 2026-10-29
 ([interview](../design/roadmap-grill-2026-10-29.md)): default categories,
-remembered model state, the per-document OCR note.
+remembered model state, the per-document OCR note. Amended 2026-11-01
+([UI polish](../design/ui-polish-grill-2026-11-01.md), U17): states that
+looked alike.
 
 ## Problem
 
@@ -22,10 +24,11 @@ category list, then one row per setting.
   about 640 px; names may wrap). The selected category's rows fill the right.
 - **Categories.**
   - **General:** Appearance; Automatic updates (the "Check when mdoc starts"
-    switch, a status line such as "Up to date · just now" or "Version X ready",
-    and Check now / Restart now on the right, with ADR 0038/0040 behaviour
-    unchanged); Recent files (Clear); and a Keyboard shortcuts row that opens
-    the [ADR 0073](0073-keyboard-shortcuts-panel.md) sheet.
+    switch on its own row, then a status row such as "mdoc X is the latest
+    version" or "mdoc X is ready" with Check now / Restart now on the right,
+    then Include pre-releases, with ADR 0038/0040 behaviour unchanged); Recent
+    files (Clear); and a Keyboard shortcuts row that opens the
+    [ADR 0073](0073-keyboard-shortcuts-panel.md) sheet.
   - **Detection:** model, threshold, **Categories to detect** (chips, all
     on by default, Other not listed), Compare pseudonymization. The
     categories filter scans of documents without a case and seed each new
@@ -51,10 +54,19 @@ category list, then one row per setting.
   left, the radio and its action (Download, Repair, Cancel, Remove) on the
   right, and the model's source and licence stay on its row. The Advanced
   fold goes; its rows move into their categories.
+- **States that can't be confused.** A switch is the only control on its
+  row, so every switch shares the right-hand column; on is the accent, off is
+  neutral grey. A segmented control (Appearance, Resolution) fills the
+  selected choice with the accent; keyboard focus only adds the outside ring,
+  so a focused choice never reads as selected. Remove… is a bordered button
+  like Download and Repair, on the active model and an inactive one alike, and
+  is left out rather than dimmed while it can't run (another model job, a
+  check running or not yet confirming the files). A page taller than the
+  overlay shows a scroll thumb and fades at an edge where rows continue.
 - **Saving.** Everything saves on change. Numbers save on Enter or blur; an
   invalid value shows an inline error and keeps the last good one. There is no
-  Save button. Each category ends with a quiet **Reset** row that resets only
-  that category. Done becomes a corner ×; Esc and an outside click also close.
+  Save button. Each category with preferences ends with a quiet **Reset** row
+  that resets only that category; About has none. Done becomes a corner ×; Esc and an outside click also close.
 - **Navigation.** The category list is a tab list: ↑/↓ move between categories
   and show each at once, and Tab moves into the content. There are no ⌘-digit
   jumps. The palette lists every category ("Settings › Detection"). Existing
