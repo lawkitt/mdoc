@@ -1,5 +1,6 @@
 package io.github.lawkitt.mdoc.storage
 
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
@@ -20,9 +21,12 @@ fun interface CaseKeyStore {
 /**
  * The case key as 32 random bytes wrapped by an Android Keystore AES key
  * (ADR 0089): the wrapping key never leaves the Keystore (StrongBox when the
- * phone has one), works only while the phone is unlocked and needs no
- * fingerprint; the wrapped bytes live in no-backup storage, so a backup or a
- * new phone never has them.
+ * phone has one) and needs no fingerprint; the wrapped bytes live in
+ * no-backup storage, so a backup or a new phone never has them. From Android
+ * 15 it also works only while the phone is unlocked. On Android 12 to 14 that
+ * flag cannot be used: those versions delete such keys when the screen lock
+ * is removed, which would make every case unreadable, and refuse to make
+ * one on a phone without a lock.
  */
 class KeystoreCaseKeyStore(
     private val file: File,
@@ -77,7 +81,7 @@ class KeystoreCaseKeyStore(
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
-            .setUnlockedDeviceRequired(true)
+            .setUnlockedDeviceRequired(Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM)
             .setIsStrongBoxBacked(strongBox)
             .build()
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)

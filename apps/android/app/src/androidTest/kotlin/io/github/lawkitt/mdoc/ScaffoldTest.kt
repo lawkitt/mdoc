@@ -1,7 +1,10 @@
 package io.github.lawkitt.mdoc
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.activity.compose.setContent
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import io.github.lawkitt.mdoc.home.HomeScreen
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.lawkitt.mdoc.core.AppCore
@@ -26,8 +29,20 @@ class ScaffoldTest {
 
     @Test
     fun homeOpensOnTheCore() {
-        // The app's own library is empty on a fresh install.
-        compose.onNodeWithText("No documents yet").assertExists()
+        // The app's own library is empty on a fresh install; it shows once read.
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("No documents yet").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun aLibraryThatFailsToOpenSaysSo() {
+        compose.activity.setContent {
+            HomeScreen(rows = emptyList(), canFindNames = true, error = "The stored case key is damaged.")
+        }
+        compose.onNodeWithText("mdoc could not open its documents").assertExists()
+        compose.onNodeWithText("The stored case key is damaged.").assertExists()
+        compose.onNodeWithText("No documents yet").assertDoesNotExist()
     }
 
     @Test

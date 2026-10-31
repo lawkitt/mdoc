@@ -20,7 +20,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             MdocTheme {
                 val state by home.state.collectAsStateWithLifecycle()
-                HomeScreen(rows = state.rows, canFindNames = state.canFindNames)
+                HomeScreen(
+                    rows = state.rows,
+                    canFindNames = state.canFindNames,
+                    loaded = state.loaded,
+                    error = state.error,
+                    onRetry = home::refresh,
+                )
             }
         }
     }
