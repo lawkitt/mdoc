@@ -25,7 +25,7 @@ structured rules and manual marking.
 
 | Device | RAM | Result | Report |
 | --- | --- | --- | --- |
-| iPhone 17 Pro (top) | 12 GB | **Pass** (memory at the limit: 1.97 of 2 GiB) | [iphone-17-pro.json](iphone-17-pro.json) |
+| iPhone 17 Pro (top) | 12 GB | **Borderline**: every budget passes except memory, which depends on the unit (2.12 GB = 1.97 GiB against "2 GB") | [iphone-17-pro.json](iphone-17-pro.json) |
 | iPhone 12 Pro (floor) | 6 GB | **Pending (maintainer)** | — |
 
 To measure a device, on the Apple Silicon Mac with both OCR bundles and the
@@ -59,14 +59,17 @@ cable (charging) and at 100 %. Raw report: [iphone-17-pro.json](iphone-17-pro.js
 | Cold load (runtime + GLiNER2 sessions) | 0.91 s | ≤ 10 s |
 | Seconds per 512-token window (median of 5) | 0.489 s | |
 | 20-page scan | 43.2 s | ≤ 60 s |
-| Detector peak memory (`phys_footprint`) | 1.97 GiB | ≤ 2 GiB |
+| Detector peak memory (`phys_footprint`) | 2,116,783,624 bytes: 2.12 GB, 1.97 GiB | ADR 0085: ≤ 2 GB |
 | Memory available to the app at start | 3.29 GiB | |
 | Thermal state | nominal, then fair from 20 s | below serious |
 | OCR `english.pdf` / `russian.pdf` | 0.46 s / 0.40 s, both exact | |
 
-All four budgets pass, but peak memory has 3 % headroom, and the app may use
-only about 3.3 GiB of the phone's 12 GB without the increased-memory-limit
-entitlement. On the 6 GB iPhone 12 Pro the same 1.97 GiB peak is likely to
+Load, scan time and heat pass with room to spare. Memory does not settle on
+its own: ADR 0085 says 2 GB, the harness checks 2 GiB (its JSON says pass),
+and the peak falls between the two, 6 % over 2 GB and 1.5 % under 2 GiB. The
+maintainer decides which limit the ADR means; until then this row is
+borderline, not a pass. Either way the app may use only about 3.3 GiB of the
+phone's 12 GB without the increased-memory-limit entitlement. On the 6 GB iPhone 12 Pro the same 1.97 GiB peak is likely to
 exceed what the app may use, which points the floor at 8 GB with INT8 for
 smaller phones; the 12 Pro row decides.
 
