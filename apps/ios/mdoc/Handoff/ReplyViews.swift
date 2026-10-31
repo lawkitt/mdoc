@@ -15,6 +15,8 @@ struct ReplySheet: View {
                     ?? String(localized: "mdoc puts back the names from this document's case."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    // The editor below takes the rest; this line never cuts short.
+                    .fixedSize(horizontal: false, vertical: true)
                 PasteButton(payloadType: String.self) { strings in
                     if let text = strings.first {
                         reply = text

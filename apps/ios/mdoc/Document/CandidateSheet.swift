@@ -10,6 +10,7 @@ struct CandidateSheet: View {
     let hasNext: (Scope) -> Bool
     let onNext: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var replace: Bool
     @State private var scope: Scope = .allOccurrences
@@ -39,16 +40,24 @@ struct CandidateSheet: View {
                         UnhyphenatedText(candidate.original)
                     }
                     .accessibilityElement(children: .combine)
-                    HStack {
+                    // At accessibility sizes the value goes under the label;
+                    // beside it, "Category" broke over three lines.
+                    (dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout())) {
                         Text("Category")
-                        Spacer()
-                        Image(systemName: candidate.category.symbol)
-                            .foregroundStyle(candidate.category.color)
-                            .accessibilityHidden(true)
-                        // The icon carries the category's colour; the words
-                        // stay in the text colour, which reads (a category
-                        // colour as text fails contrast on light grounds).
-                        Text(candidate.category.label)
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer()
+                        }
+                        HStack {
+                            Image(systemName: candidate.category.symbol)
+                                .foregroundStyle(candidate.category.color)
+                                .accessibilityHidden(true)
+                            // The icon carries the category's colour; the
+                            // words stay in the text colour, which reads (a
+                            // category colour as text fails contrast).
+                            Text(candidate.category.label)
+                        }
                     }
                     .accessibilityElement(children: .combine)
                 }

@@ -79,6 +79,9 @@ failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
 not a gate: iOS 26 sheets are translucent, so the audit reports contrast and
 clipping on sheet text (and the system's Cancel and Done) that reads fine;
 missing labels, small targets and text in a category colour are real.
+`LargeTextExploreUITests` saves the main screens at the largest accessibility
+text size as PNGs into the folder in `TEST_RUNNER_MDOC_SHOTS_DIR` (it skips
+without it), for checking that rows stack instead of breaking words.
 
 ## Layout
 

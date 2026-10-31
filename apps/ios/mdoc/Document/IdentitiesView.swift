@@ -7,6 +7,7 @@ struct IdentitiesView: View {
     let onDecide: (IdentityID, Decision) -> Void
     /// Done, where the list is a sheet (iPhone); nil beside the text.
     var onClose: (() -> Void)?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var groups: [(Category, [Identity])] {
         Category.allCases.compactMap { category in
@@ -65,14 +66,20 @@ struct IdentitiesView: View {
         Button {
             onOpen(identity.id)
         } label: {
-            HStack(alignment: .firstTextBaseline) {
+            // At accessibility sizes the chip goes under the value, which
+            // then has the row's width.
+            (dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                : AnyLayout(HStackLayout(alignment: .firstTextBaseline))) {
                 VStack(alignment: .leading, spacing: 2) {
                     UnhyphenatedText(identity.primaryWording)
                     // Secondary text, not the category's colour: as text that
                     // colour fails contrast (the header's symbol carries it).
                     UnhyphenatedText(identity.alias, style: .footnote, monospaced: true, color: .secondaryLabel)
                 }
-                Spacer()
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer()
+                }
                 stateBadge(identity)
             }
         }
