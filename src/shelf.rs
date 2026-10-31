@@ -616,6 +616,22 @@ fn spells_an_original(text: &str, names: &RestoreMap) -> bool {
         .any(|original| original.chars().count() >= 4 && text.contains(&original))
 }
 
+/// `line` without its leading blockquote markers (each with one space
+/// after it), keeping the indentation after them. Four spaces or more
+/// before a `>` make code, not a quote.
+fn without_quotes(mut line: &str) -> &str {
+    loop {
+        let rest = line.trim_start_matches(' ');
+        if line.len() - rest.len() >= 4 {
+            return line;
+        }
+        let Some(rest) = rest.strip_prefix('>') else {
+            return line;
+        };
+        line = rest.strip_prefix(' ').unwrap_or(rest);
+    }
+}
+
 /// The columns `text` takes, a tab as four.
 fn width(text: &str) -> usize {
     text.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum()
@@ -854,6 +870,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     // A paragraph cut at [`PARAGRAPH_BYTES`] (`capped`) may end in half a
     // name, so it shows only when its text runs well past the preview's
     // length, which keeps that end out of sight; either way it is the last.
+    //
+    // A paragraph that still spells out a known name once masked, whole
+    // and before any cut, gives no preview at all (`refused`).
+    let refused = std::cell::Cell::new(false);
     let finish = |paragraph: &mut String, styled: &mut Styled, capped: bool| -> bool {
         let source = std::mem::take(paragraph);
         if source.is_empty() {
@@ -867,6 +887,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
                 ..Styled::default()
             };
         }
+        if spells_an_original(&done.text, names) {
+            refused.set(true);
+            return true;
+        }
         if !is_prose(&done.text) {
             return capped;
         }
@@ -879,6 +903,9 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         styled.append(done);
         capped
     };
+    // The content column of the list item the text is in, 0 outside lists:
+    // code is indented four columns past it.
+    let mut item_content = 0;
     for line in text.lines() {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
@@ -904,6 +931,21 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
                     }
                     continue;
                 }
+            }
+        }
+        if fenced.is_none() && !trimmed.is_empty() {
+            // Indented code starts only where no paragraph runs on.
+            let raw = without_quotes(line);
+            let indent = width(&raw[..raw.len() - raw.trim_start().len()]);
+            if paragraph.is_empty() && indent < item_content {
+                // Back out of the list.
+                item_content = 0;
+            }
+            if paragraph.is_empty() && indent >= item_content + 4 {
+                continue;
+            }
+            if let Some(Container::Item(content)) = containers_of(raw).first() {
+                item_content = *content;
             }
         }
         let structure = fence(block).is_some()
@@ -954,6 +996,9 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     }
     if !more {
         more = finish(&mut paragraph, &mut styled, false);
+    }
+    if refused.get() {
+        return None;
     }
     if styled.text.is_empty() {
         return None;

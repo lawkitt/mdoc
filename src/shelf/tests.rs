@@ -698,3 +698,43 @@ fn a_break_inside_a_line_never_shows_an_original() {
         "a split the masking misses spells the name: no preview"
     );
 }
+
+/// Review of #280: a name the masking missed is caught before the preview
+/// is cut, not only in what is left after the cut.
+#[test]
+fn a_missed_name_at_the_cut_gives_no_preview() {
+    let text = "ill ".repeat(51) + "Anna <wbr>Petrova signed the agreement with PERSON_1 today.";
+    assert!(preview_of(&text).is_none());
+}
+
+/// Review of #280: indented code is code, after headings, in quotes, with
+/// tabs; an indented line running on a paragraph, or a paragraph indented
+/// within its list item, is prose.
+#[test]
+fn indented_code_is_not_prose() {
+    for code in [
+        "    This literal code example must never become preview prose.\n\n",
+        "\tThis literal code example must never become preview prose.\n\n",
+        "# Title\n    This literal code example must never become preview prose.\n\n",
+        ">     This literal code example must never become preview prose.\n\n",
+    ] {
+        let text = format!("{code}PERSON_1 signed the agreement today.\n");
+        assert_eq!(
+            preview_of(&text).unwrap().text,
+            "PERSON_1 signed the agreement today.",
+            "{code:?}"
+        );
+    }
+    assert_eq!(
+        preview_of("PERSON_1 signed the agreement\n    with ORG_1 today.\n")
+            .unwrap()
+            .text,
+        "PERSON_1 signed the agreement with ORG_1 today."
+    );
+    assert_eq!(
+        preview_of("- PERSON_1 signed the agreement.\n\n    ORG_1 paid the agreed fee today.\n")
+            .unwrap()
+            .text,
+        "PERSON_1 signed the agreement. ORG_1 paid the agreed fee today."
+    );
+}
