@@ -17,7 +17,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,19 +91,22 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
         home.received(context.contentResolver, uris, io.github.lawkitt.mdoc.core.SourceKind.Image, context.getString(R.string.photo))
     }
     // Scan: the system camera, a page per photo (ADR 0089); mdoc itself asks for no camera permission.
-    val pages = remember { mutableStateListOf<File>() }
-    var askNextPage by remember { mutableStateOf(false) }
-    var pendingPage by remember { mutableStateOf<File?>(null) }
+    // Kept through activity recreation: Android may recreate mdoc while the camera is open.
+    var pagePaths by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var askNextPage by rememberSaveable { mutableStateOf(false) }
+    var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val pages = pagePaths.map(::File)
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
-        val page = pendingPage
-        if (taken && page != null && page.length() > 0) pages += page else page?.delete()
-        askNextPage = pages.isNotEmpty()
+        val page = pendingPath?.let(::File)
+        if (taken && page != null && page.length() > 0) pagePaths = pagePaths + page.path else page?.delete()
+        pendingPath = null
+        askNextPage = pagePaths.isNotEmpty()
     }
     fun takePage() {
         val folder = pages.firstOrNull()?.parentFile
             ?: File(app.core.storage.dir(MdocStorage.Area.Originals), UUID.randomUUID().toString()).apply { mkdirs() }
         val page = File(folder, "page-${pages.size + 1}.jpg")
-        pendingPage = page
+        pendingPath = page.path
         camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", page))
     }
 
@@ -119,7 +121,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                     AddOption.Files -> files.launch(OPENABLE)
                     AddOption.Photos -> photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     AddOption.Scan -> {
-                        pages.clear()
+                        pagePaths = emptyList()
                         takePage()
                     }
                 }
@@ -199,7 +201,8 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             confirmButton = {
                 TextButton(onClick = {
                     askNextPage = false
-                    home.scanned(pages.toList(), context.getString(R.string.scan))
+                    home.scanned(pages, context.getString(R.string.scan))
+                    pagePaths = emptyList()
                 }) { Text(stringResource(R.string.done)) }
             },
             dismissButton = {

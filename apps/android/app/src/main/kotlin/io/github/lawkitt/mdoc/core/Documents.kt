@@ -43,7 +43,7 @@ class Documents(
     /** A saved document's path → the id this run gave it. */
     private val ids = mutableMapOf<String, DocumentId>()
     private val originals = Originals(storage)
-    private val pending = PendingImports(storage)
+    private val pending = PendingImports(storage, originals::importFolder)
 
     init {
         // Imports not yet read when mdoc last stopped come back, ready to read again.
@@ -100,6 +100,8 @@ class Documents(
     @Synchronized
     fun delete(id: DocumentId) {
         val session = sessions[id] ?: throw AppError.NotFound()
+        // An import still being read must not save itself back afterwards.
+        session.discard()
         val path = session.path
         val source = session.sourceFile
         if (path != null) {
@@ -142,13 +144,20 @@ class Documents(
 
         internal val sourceFile: File? get() = source?.file
 
+        @Volatile private var discarded = false
+
+        internal fun discard() {
+            discarded = true
+            ffi.cancel()
+        }
+
         internal fun reopen(path: String) {
             val opened = core { ffi.openDocument(this@Documents.ffi, path) }
             this.path = path
             review = opened
             title = opened.title
             caseId = opened.caseId
-            scanned = opened.mentions.isNotEmpty()
+            scanned = opened.mentions.isNotEmpty() || originals.scanned(path)
             kind = originals.kind(path)
         }
 
@@ -190,7 +199,10 @@ class Documents(
                 val case = review.caseId ?: caseId ?: return@let null
                 val text = runCatching { this@Documents.ffi.reply(case, path) }.getOrNull()
                     ?.takeIf { it.isNotEmpty() } ?: return@let null
-                runCatching { ReplySnapshot(text, restoreResult(ffi.restoreReply(text))) }.getOrNull()
+                runCatching {
+                    val restored = restoreResult(ffi.restoreReply(text))
+                    ReplySnapshot(text, restored, markdownStyling(restored.text))
+                }.getOrNull()
             }
             return DocumentSnapshot(
                 id, review.title, (review.caseId ?: caseId)?.let(::CaseId), caseName(review.caseId ?: caseId),
@@ -241,6 +253,8 @@ class Documents(
                 this.scanned = true
             }
             save()
+            // Kept, so an empty scan still reads "Nothing found" after mdoc restarts (ADR 0087).
+            path?.let(originals::markScanned)
             return snapshot()
         }
 
@@ -306,6 +320,7 @@ class Documents(
         }
 
         private fun save() {
+            if (discarded) throw AppError.Cancelled()
             val saved = core { ffi.save(this@Documents.ffi) }
             synchronized(this) {
                 path = saved.path
@@ -426,7 +441,7 @@ private fun CoreException.detailOrMessage(): String = when (this) {
  * Imports not yet read, kept on disk until their first save, so they
  * survive mdoc stopping (`pending.json` beside the core's folders).
  */
-internal class PendingImports(storage: MdocStorage) {
+internal class PendingImports(storage: MdocStorage, private val owner: (File) -> File?) {
     data class Entry(
         val id: DocumentId,
         val title: String,
@@ -453,7 +468,7 @@ internal class PendingImports(storage: MdocStorage) {
     fun remove(id: DocumentId, keepFiles: Boolean = false) {
         val entries = load()
         val entry = entries[id.raw] ?: return
-        if (!keepFiles) entry.source.file?.parentFile?.deleteRecursively()
+        if (!keepFiles) entry.source.file?.let(owner)?.deleteRecursively()
         save(entries - id.raw)
     }
 

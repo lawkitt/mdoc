@@ -8,6 +8,7 @@ import io.github.lawkitt.mdoc.core.CandidateId
 import io.github.lawkitt.mdoc.core.Category
 import io.github.lawkitt.mdoc.core.Decision
 import io.github.lawkitt.mdoc.core.DocumentPhase
+import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.DocumentSnapshot
 import io.github.lawkitt.mdoc.core.Documents
 import io.github.lawkitt.mdoc.core.HandOff
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,9 +82,19 @@ class DocumentViewModel(
     val running: StateFlow<RunningJob?> = jobs.current
     val interrupted = jobs.interrupted
 
+    /**
+     * The id a job of this document carries: its saved path once it has one,
+     * which is the id it has after mdoc restarts, so an interrupted job still
+     * finds its document.
+     */
+    private val jobId get() = session.path?.let(::DocumentId) ?: session.id
+
+    /** Whether a job or interruption belongs to this document. */
+    fun isMine(id: DocumentId?): Boolean = id != null && (id == session.id || id.raw == session.path)
+
     fun primaryAction(state: DocumentState, job: RunningJob?): PrimaryAction {
         val snapshot = state.snapshot
-        if (job != null && job.documentId == snapshot.id) return PrimaryAction.Running(job)
+        if (job != null && isMine(job.documentId)) return PrimaryAction.Running(job)
         val phase = snapshot.phase
         return when {
             // Nothing to find below the floor: marking by selection, then the hand-off.
@@ -101,12 +113,12 @@ class DocumentViewModel(
 
     fun recognize(title: String) = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        finish(JobKind.Recognize, jobs.run(JobKind.Recognize, session.id, title) { session.recognize(it) })
+        finish(JobKind.Recognize, jobs.run(JobKind.Recognize, jobId, title) { session.recognize(it) })
     }
 
     fun findNames(title: String) = viewModelScope.launch {
         mutable.update { it.copy(needsSetup = null) }
-        val outcome = jobs.run(JobKind.Scan, session.id, title) { session.scan(it) }
+        val outcome = jobs.run(JobKind.Scan, jobId, title) { session.scan(it) }
         finish(JobKind.Scan, outcome)
         // A scan that finds nothing says so, rather than going quietly to Share (ADR 0087).
         if (outcome is JobOutcome.Finished && outcome.value.candidates.isEmpty()) {
@@ -183,6 +195,11 @@ class DocumentViewModel(
     }
 
     fun delete(onDeleted: () -> Unit) = viewModelScope.launch {
+        // A job on this document stops first, so it cannot save it again.
+        if (isMine(jobs.current.value?.documentId)) {
+            jobs.cancel(CancelReason.User)
+            jobs.current.first { it == null }
+        }
         withContext(Dispatchers.IO) { runCatching { documents.delete(session.id) } }
             .onSuccess { onDeleted() }
             .onFailure(::show)

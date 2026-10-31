@@ -135,6 +135,7 @@ private fun DocumentRow(document: DocumentSummary, case: CaseSummary?, canFindNa
         StatusLine.ReadyToMark -> stringResource(R.string.status_ready_to_mark)
         is StatusLine.ToReview -> stringResource(R.string.status_to_review, line.count)
         StatusLine.ReadyToShare -> stringResource(R.string.status_ready_to_share)
+        StatusLine.NothingFound -> stringResource(R.string.status_nothing_found)
     }
     // The case's name only when it differs from the title; the dot is the row's one colour.
     val caseName = case?.name?.takeIf { it != document.title }

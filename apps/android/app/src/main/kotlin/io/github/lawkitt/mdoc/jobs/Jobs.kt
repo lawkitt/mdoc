@@ -7,7 +7,11 @@ import io.github.lawkitt.mdoc.core.DocumentId
 import io.github.lawkitt.mdoc.core.JobObserver
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,37 +59,55 @@ class Jobs(private val context: Context) {
     val interrupted: StateFlow<InterruptedJob?> = stopped.asStateFlow()
 
     private val token = AtomicReference<Token?>(null)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    suspend fun <T> run(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): JobOutcome<T> {
+    /**
+     * Runs `work` as the one long job. The job belongs to the app, not the
+     * caller: a screen that closes stops waiting, but the job finishes, stops
+     * its service and frees the slot.
+     */
+    suspend fun <T> run(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): JobOutcome<T> =
+        start(kind, documentId, title, work)?.await() ?: JobOutcome.Busy
+
+    fun <T> start(kind: JobKind, documentId: DocumentId?, title: String, work: (JobObserver) -> T): Deferred<JobOutcome<T>>? {
         val job = RunningJob(kind, documentId, title)
-        if (!running.compareAndSet(null, job)) return JobOutcome.Busy
+        if (!running.compareAndSet(null, job)) return null
         val token = Token { stage -> running.value = running.value?.copy(stage = stage) }
         this.token.set(token)
         if (stopped.value?.documentId == documentId) clearInterrupted()
-        // Written first: a process Android ends mid-job leaves it behind.
-        saveInterrupted(InterruptedJob(kind, documentId))
-        ContextCompat.startForegroundService(context, LongJobService.start(context, title))
-        val result = withContext(Dispatchers.IO) { runCatching { work(token) } }
-        context.stopService(LongJobService.intent(context))
-        this.token.set(null)
-        running.value = null
-        val reason = token.reason
-        return when {
-            result.isSuccess -> {
-                clearInterrupted()
-                JobOutcome.Finished(result.getOrThrow())
-            }
-            reason != null -> {
-                if (reason == CancelReason.Background) stopped.value = InterruptedJob(kind, documentId) else clearInterrupted()
-                JobOutcome.Cancelled(reason)
-            }
-            result.exceptionOrNull() is AppError.Cancelled -> {
-                clearInterrupted()
-                JobOutcome.Cancelled(CancelReason.User)
-            }
-            else -> {
-                clearInterrupted()
-                JobOutcome.Failed(result.exceptionOrNull()!!)
+        return scope.async {
+            try {
+                // A foreground service starts only while mdoc is on screen
+                // (ADR 0089); refused, the job does not run.
+                ContextCompat.startForegroundService(context, LongJobService.start(context, title))
+                // Written first: a process Android ends mid-job leaves it behind.
+                saveInterrupted(InterruptedJob(kind, documentId))
+                val result = withContext(Dispatchers.IO) { runCatching { work(token) } }
+                val reason = token.reason
+                when {
+                    result.isSuccess -> {
+                        clearInterrupted()
+                        JobOutcome.Finished(result.getOrThrow())
+                    }
+                    reason != null -> {
+                        if (reason == CancelReason.Background) stopped.value = InterruptedJob(kind, documentId) else clearInterrupted()
+                        JobOutcome.Cancelled(reason)
+                    }
+                    result.exceptionOrNull() is AppError.Cancelled -> {
+                        clearInterrupted()
+                        JobOutcome.Cancelled(CancelReason.User)
+                    }
+                    else -> {
+                        clearInterrupted()
+                        JobOutcome.Failed(result.exceptionOrNull()!!)
+                    }
+                }
+            } catch (refused: IllegalStateException) {
+                JobOutcome.Failed(refused)
+            } finally {
+                context.stopService(LongJobService.intent(context))
+                this@Jobs.token.set(null)
+                running.value = null
             }
         }
     }
