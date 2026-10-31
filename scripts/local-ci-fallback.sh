@@ -49,6 +49,10 @@ hosted_runner() {
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
+# jq for Windows ends lines with CRLF, which leaves a \r in the last field
+# (the suite runs in local CI on the PC too).
+jq() { command jq "$@" | tr -d '\r'; }
+
 # --- GitHub (replaced by fakes in scripts/test-local-ci-fallback.sh) --------
 
 # shellcheck disable=SC2016 # GraphQL variables, not shell ones
