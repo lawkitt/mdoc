@@ -34,7 +34,7 @@ struct DocumentScreen: View {
                     CandidateSheet(
                         candidate: candidate,
                         identity: model.snapshot.identities.first { $0.id == candidate.identityID },
-                        hasNext: model.snapshot.candidates.contains { $0.state == .proposed && $0.id != candidate.id },
+                        hasNext: { scope in model.hasProposal(after: candidate.id, scope: scope) },
                         onDone: { decision, scope in model.decide(candidate.id, decision, scope: scope) },
                         onNext: { model.reviewNext() })
                 }

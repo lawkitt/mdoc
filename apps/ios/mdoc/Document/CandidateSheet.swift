@@ -6,8 +6,8 @@ struct CandidateSheet: View {
     let candidate: Candidate
     let identity: Identity?
     let onDone: (Decision, Scope) -> Void
-    /// Whether another proposal is left after this one.
-    let hasNext: Bool
+    /// Whether a proposal is left once this one is decided for a scope.
+    let hasNext: (Scope) -> Bool
     let onNext: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -15,7 +15,7 @@ struct CandidateSheet: View {
     @State private var scope: Scope = .allOccurrences
 
     init(
-        candidate: Candidate, identity: Identity?, hasNext: Bool,
+        candidate: Candidate, identity: Identity?, hasNext: @escaping (Scope) -> Bool,
         onDone: @escaping (Decision, Scope) -> Void, onNext: @escaping () -> Void
     ) {
         self.candidate = candidate
@@ -83,7 +83,7 @@ struct CandidateSheet: View {
                         Text("Apply to")
                     }
                 }
-                if hasNext {
+                if hasNext(scope) {
                     Section {
                         Button("Next proposal") {
                             onDone(replace ? .replace : .keep, scope)

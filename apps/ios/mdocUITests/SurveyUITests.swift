@@ -89,25 +89,28 @@ final class SurveyUITests: XCTestCase {
         app.buttons["candidate-done"].tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
 
-        app.buttons["identities-button"].tap()
+        // On iPad the list already sits beside the text.
+        if !app.staticTexts["Identities"].waitForExistence(timeout: 2) {
+            app.buttons["identities-button"].tap()
+        }
         XCTAssertTrue(app.staticTexts["Identities"].waitForExistence(timeout: 5))
         shot("17-identities")
         if !isPad {
             closeSheet(app)
         }
 
-        // Replace… for a selected word.
-        let word = text.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.45))
-        word.press(forDuration: 1.0)
-        let replace = app.menuItems["Replace…"].firstMatch
-        if replace.waitForExistence(timeout: 3) {
-            shot("18-selection-edit-menu")
-            replace.tap()
-            if app.navigationBars["Replace"].waitForExistence(timeout: 5) {
-                shot("19-manual-replace-sheet")
-                app.buttons["Cancel"].firstMatch.tap()
-            }
+        // Replace… for a selected word: the title's first word, from the top.
+        for _ in 0..<4 {
+            text.swipeDown(velocity: .fast)
         }
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04)).press(forDuration: 1.0)
+        let replace = app.menuItems["Replace…"].firstMatch
+        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
+        shot("18-selection-edit-menu")
+        replace.tap()
+        XCTAssertTrue(app.navigationBars["Replace"].waitForExistence(timeout: 5))
+        shot("19-manual-replace-sheet")
+        app.buttons["Cancel"].firstMatch.tap()
 
         let primary = app.buttons["primary-action"]
         if primary.label.hasPrefix("Replace") {
@@ -257,11 +260,10 @@ final class SurveyUITests: XCTestCase {
         let restore = sheet.descendants(matching: .any)
             .matching(NSPredicate(format: "label IN {'Restore with mdoc', 'mdoc'}"))
             .firstMatch
-        guard restore.waitForExistence(timeout: 3) else {
-            MdocUITest.closeShareSheet(app)
-            return
-        }
+        XCTAssertTrue(restore.waitForExistence(timeout: 5), "Restore with mdoc is not in the share sheet")
         restore.tap()
+        // The extension runs in its own process; its title may not be in
+        // the app's tree, so give its sheet time to show.
         _ = app.staticTexts["Restore with mdoc"].waitForExistence(timeout: 10)
         sleep(2)
         shot("22-restore-extension")

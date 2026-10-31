@@ -159,6 +159,16 @@ final class DocumentViewModel {
         reviewing = candidate
     }
 
+    /// Whether a proposal is left once `candidate` is decided for `scope`:
+    /// All occurrences decides the identity's other mentions too.
+    func hasProposal(after candidate: CandidateID, scope: Scope) -> Bool {
+        guard let decided = snapshot.candidate(candidate) else { return false }
+        return snapshot.candidates.contains { other in
+            other.state == .proposed && other.id != decided.id
+                && (scope == .justThisOne || other.identityID != decided.identityID)
+        }
+    }
+
     /// Opens the first proposal after the one under review, wrapping around.
     func reviewNext() {
         let pending = snapshot.candidates.filter { $0.state == .proposed }

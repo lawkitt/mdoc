@@ -28,6 +28,24 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .handOff)
     }
 
+    /// Next proposal counts what the chosen scope leaves undecided (#285).
+    func testNextProposalFollowsTheScope() throws {
+        let model = try model()
+        let candidates = model.snapshot.candidates
+        let repeated = try XCTUnwrap(candidates.first { candidate in
+            candidates.filter { $0.identityID == candidate.identityID }.count > 1
+        }, "the fixture needs a name mentioned twice")
+        let others = candidates.filter { $0.state == .proposed && $0.identityID != repeated.identityID }
+        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
+        XCTAssertEqual(model.hasProposal(after: repeated.id, scope: .allOccurrences), !others.isEmpty)
+        // Deciding every other identity leaves only the repeat's mentions.
+        for other in others {
+            model.decide(other.id, .keep, scope: .allOccurrences)
+        }
+        XCTAssertFalse(model.hasProposal(after: repeated.id, scope: .allOccurrences))
+        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
+    }
+
     func testCandidateSheetDecisionUpdatesTheSnapshot() throws {
         let model = try model()
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
