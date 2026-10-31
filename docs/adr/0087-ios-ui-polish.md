@@ -28,7 +28,19 @@ Markdown.
   fills are stronger in dark than in light. (A fill itself cannot reach 3:1
   on black for the darker hues without hiding the text over it.)
 - **Button bars never wrap a label.** A bar whose labels do not fit on one
-  line stacks its buttons, as at accessibility text sizes.
+  line stacks its buttons, as at accessibility text sizes. The hand-off bar
+  reads **Share, Copy, Paste** on both tabs, so it stays one row on a
+  402 pt iPhone at default text size. VoiceOver keeps the full names:
+  Paste reply on the Text tab; Share reply, Copy reply and Paste another
+  reply on the Reply tab.
+- **A portrait iPad gives the text the room.** In a regular-width window
+  narrower than 1100 pt (every iPad in portrait, none in landscape) the
+  sidebar hides once a document opens, and Identities show in the right
+  column in place of the original or reply, picked from the same segmented
+  control, rather than as a third column; with Identities showing, the
+  hand-off bar acts on the document. Landscape keeps
+  [ADR 0085](0085-mobile-apps.md)'s rule: Text and Original side by side
+  with Identities beside them.
 - **Paste is one sheet** (text, title, case). **Share is one tap** to the
   share sheet with the text and the document's title as its preview; a
   long press offers Share as Markdown file.

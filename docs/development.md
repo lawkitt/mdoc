@@ -137,7 +137,7 @@ dependency forks.
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
 | `src/system_quit.rs` | macOS: a quit from the Dock, an Apple Event or logout runs Quit's questions first and answers the vendored `applicationShouldTerminate:` hook when they end ([ADR 0071](adr/0071-one-close-and-quit-prompt.md)) |
 | `src/shelf.rs`, `src/shelf/` | The menu bar shelf's GPUI-free model: readiness, the list, pseudonymized rows, Copy for AI text, temporary exports and Restore Clipboard ([ADR 0084](adr/0084-menu-bar-shelf.md)) |
-| `src/menu_bar.rs`, `src/shelf_ui.rs` | macOS: the menu bar item and staying in the menu bar (hide on close, the Dock, the shelf popup under the item), and the shelf's view ([ADR 0084](adr/0084-menu-bar-shelf.md)) |
+| `src/menu_bar.rs`, `src/shelf_ui.rs`, `src/shelf_ui/` | macOS: the menu bar item and staying in the menu bar (hide on close, the Dock, the shelf popup under the item, the first-close note), and the shelf's view: rows, the Clipboard section and the footer ([ADR 0084](adr/0084-menu-bar-shelf.md)) |
 | `src/workspace/shelf_source.rs` | What the window gives the shelf: open tabs and closed case members, and the ready-text fingerprint recorded in the case on save |
 | `src/updater.rs` | Detection-only GitHub Releases update check ([ADR 0038](adr/0038-update-check.md)) |
 | `src/spelling.rs`, `crates/mdoc-spell` | Spellcheck: background checks, toolbar indicator and navigation; GUI-free EN/RU engine with bundled dictionaries ([ADR 0036](adr/0036-bundled-spellcheck.md)) |
@@ -228,6 +228,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android, then, when the commit changes `crates/`, `Cargo.lock` or `apps/`, the iOS job (`just ios-app ios-test`, shutting down the Simulator it booted); the Mac's local CI runs it after `test`, with a 40-minute limit |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
 | `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator |
+| `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |
 | `just retire-worktree <path>` | Remove a finished worktree and its `target/` |
@@ -335,7 +336,8 @@ the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,
 a restored AI reply, and the menu bar shelf (ready, not-ready and
-changed-since-review rows, empty, and locked) on a stage window. The legal review uses
+changed-since-review rows, a row's "Copied", the first-close note, empty,
+and locked) on a stage window. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
 uses the captured `restore/claude-en` fixture. No detector runs. Platform file
 pickers and the OS Keychain password prompt are outside this app-owned set.

@@ -3341,6 +3341,8 @@ extern "C" fn dragging_session_ended(
         lock.last_left_mouse_down_event = None;
     }
     send_file_drop_event(window_state, FileDropEvent::Ended);
+    // mdoc patch (ADR 0084): a text-and-file drag reports its end.
+    finish_text_and_file_drag(operation != NSDragOperationNone);
 }
 
 async fn synthetic_drag(
@@ -3577,21 +3579,158 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
     }
 }
 
+/// mdoc patch (ADR 0084): the card a shelf drag shows under the pointer:
+/// the document's title and first line, in the shelf's light or dark look.
+pub struct DragCard<'a> {
+    pub title: &'a str,
+    pub line: &'a str,
+    pub dark: bool,
+}
+
+/// The drag card's size in points.
+const DRAG_CARD_WIDTH: f64 = 240.;
+const DRAG_CARD_HEIGHT: f64 = 52.;
+
+/// mdoc patch (ADR 0084): the running text-and-file drag's end callback and
+/// its source window, retained until the drag ends so AppKit can still
+/// report the end after the window closes.
+struct TextDragEnd {
+    on_end: Box<dyn FnOnce(bool)>,
+    source: id,
+    /// The card or icon the drag shows, retained for its image provider.
+    image: id,
+}
+
+thread_local! {
+    static TEXT_DRAG_END: std::cell::RefCell<Option<TextDragEnd>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// End the running text-and-file drag, if any: its callback runs once with
+/// whether something took the drop, and its source window is released.
+fn finish_text_and_file_drag(dropped: bool) {
+    let Some(end) = TEXT_DRAG_END.with(|end| end.borrow_mut().take()) else {
+        return;
+    };
+    // SAFETY: `source` and `image` were retained when the drag started, on
+    // this thread.
+    unsafe {
+        let _: () = msg_send![end.source, release];
+        let _: () = msg_send![end.image, release];
+    }
+    (end.on_end)(dropped);
+}
+
+/// The card as an image: a rounded panel with the title in semibold and the
+/// line in muted text, each cut with "…".
+unsafe fn drag_card_image(card: &DragCard<'_>) -> id {
+    unsafe {
+        let size = NSSize::new(DRAG_CARD_WIDTH, DRAG_CARD_HEIGHT);
+        let image: id = msg_send![class!(NSImage), alloc];
+        let image: id = msg_send![image, initWithSize: size];
+        let color = |gray: f64, alpha: f64| -> id {
+            msg_send![class!(NSColor), colorWithSRGBRed: gray green: gray blue: gray alpha: alpha]
+        };
+        let (fill, border, title_color, line_color) = if card.dark {
+            (color(0.16, 0.96), color(1., 0.16), color(0.95, 1.), color(0.68, 1.))
+        } else {
+            (color(0.99, 0.96), color(0., 0.14), color(0.1, 1.), color(0.4, 1.))
+        };
+        let _: () = msg_send![image, lockFocus];
+        let bounds = NSRect::new(NSPoint::new(0.5, 0.5), NSSize::new(size.width - 1., size.height - 1.));
+        let path: id = msg_send![
+            class!(NSBezierPath),
+            bezierPathWithRoundedRect: bounds
+            xRadius: 8f64
+            yRadius: 8f64
+        ];
+        let _: () = msg_send![fill, setFill];
+        let _: () = msg_send![path, fill];
+        let _: () = msg_send![border, setStroke];
+        let _: () = msg_send![path, stroke];
+        let style: id = msg_send![class!(NSMutableParagraphStyle), new];
+        // NSLineBreakByTruncatingTail
+        let _: () = msg_send![style, setLineBreakMode: 4 as NSUInteger];
+        let draw = |text: &str, font: id, color: id, y: f64| {
+            let keys = [
+                ns_string("NSFont"),
+                ns_string("NSColor"),
+                ns_string("NSParagraphStyle"),
+            ];
+            let values = [font, color, style];
+            let attributes: id = msg_send![
+                class!(NSDictionary),
+                dictionaryWithObjects: values.as_ptr()
+                forKeys: keys.as_ptr()
+                count: 3 as NSUInteger
+            ];
+            let rect = NSRect::new(NSPoint::new(12., y), NSSize::new(size.width - 24., 17.));
+            let _: () = msg_send![ns_string(text), drawInRect: rect withAttributes: attributes];
+        };
+        let title_font: id = msg_send![class!(NSFont), boldSystemFontOfSize: 12f64];
+        let line_font: id = msg_send![class!(NSFont), systemFontOfSize: 11f64];
+        draw(card.title, title_font, title_color, 27.);
+        draw(card.line, line_font, line_color, 9.);
+        let _: () = msg_send![image, unlockFocus];
+        let _: () = msg_send![style, release];
+        let _: id = msg_send![image, autorelease];
+        image
+    }
+}
+
 /// mdoc patch (ADR 0084): start an outbound drag from `window` carrying one
 /// pasteboard item with both `text` (plain text) and `file`'s URL, so a chat
 /// box takes the text and Finder takes the file. Starts from the window's
-/// last left mouse down, like `start_external_drag`. Returns whether AppKit
-/// started the drag.
+/// last left mouse down, like `start_external_drag`. The pointer carries
+/// `card` (or the `.md` icon without one). `on_end` runs exactly once, on
+/// the main thread: with whether something took the drop when the drag
+/// ends (cancelled included), or with `false` at once if it cannot start.
+/// Returns whether AppKit started the drag.
 pub fn start_text_and_file_drag(
     window: &gpui::Window,
     text: &str,
     file: &std::path::Path,
+    card: Option<DragCard<'_>>,
+    on_end: Box<dyn FnOnce(bool)>,
 ) -> bool {
+    // A drag that never reported its end ends now, so each callback runs once.
+    finish_text_and_file_drag(false);
+    let started = begin_text_and_file_drag(window, text, file, card);
+    match started {
+        Some((source, image)) => {
+            // SAFETY: `source` is the live NSWindow the session reports to.
+            unsafe {
+                let _: id = msg_send![source, retain];
+            }
+            TEXT_DRAG_END.with(|end| {
+                *end.borrow_mut() = Some(TextDragEnd {
+                    on_end,
+                    source,
+                    image,
+                })
+            });
+            true
+        }
+        None => {
+            on_end(false);
+            false
+        }
+    }
+}
+
+/// Begin the drag; when AppKit started it, the source window and the
+/// retained image the drag shows.
+fn begin_text_and_file_drag(
+    window: &gpui::Window,
+    text: &str,
+    file: &std::path::Path,
+    card: Option<DragCard<'_>>,
+) -> Option<(id, id)> {
     let Ok(handle) = rwh::HasWindowHandle::window_handle(window) else {
-        return false;
+        return None;
     };
     let rwh::RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-        return false;
+        return None;
     };
     let native_view: id = handle.ns_view.as_ptr().cast();
     // SAFETY: the handle's view is the GPUIView of a live window on the main
@@ -3604,13 +3743,13 @@ pub fn start_text_and_file_drag(
         };
         let Some(last_left_mouse_down_event) = last_left_mouse_down_event else {
             log::warn!("start_text_and_file_drag declined: no retained left mouse down event");
-            return false;
+            return None;
         };
         let event: id = Retained::as_ptr(&last_left_mouse_down_event)
             .cast_mut()
             .cast();
         let Ok(path_bytes) = CString::new(file.as_os_str().as_bytes()) else {
-            return false;
+            return None;
         };
         let url: id = msg_send![
             class!(NSURL),
@@ -3619,7 +3758,7 @@ pub fn start_text_and_file_drag(
             relativeToURL: nil
         ];
         if url.is_null() {
-            return false;
+            return None;
         }
         let item: id = msg_send![class!(NSPasteboardItem), alloc];
         let item: id = msg_send![item, init];
@@ -3632,24 +3771,40 @@ pub fn start_text_and_file_drag(
         let dragging_item: id = msg_send![dragging_item, initWithPasteboardWriter: item];
         let _: () = msg_send![item, release];
         if dragging_item.is_null() {
-            return false;
+            return None;
         }
         let location: NSPoint = msg_send![event, locationInWindow];
+        // The card hangs just below and right of the pointer; the icon
+        // centres on it.
+        let (contents, size, offset): (id, NSSize, NSPoint) = match &card {
+            Some(card) => (
+                drag_card_image(card),
+                NSSize::new(DRAG_CARD_WIDTH, DRAG_CARD_HEIGHT),
+                NSPoint::new(-12., -DRAG_CARD_HEIGHT + 8.),
+            ),
+            None => {
+                let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
+                (
+                    msg_send![workspace, iconForFileType: ns_string("md")],
+                    NSSize::new(32., 32.),
+                    NSPoint::new(-16., -16.),
+                )
+            }
+        };
+        let _: id = msg_send![contents, retain];
         let frame = NSRect::new(
-            NSPoint::new(location.x - 16., location.y - 16.),
-            NSSize::new(32., 32.),
+            NSPoint::new(location.x + offset.x, location.y + offset.y),
+            size,
         );
         let provider = ConcreteBlock::new(move || -> id {
             let component: id = msg_send![
                 class!(NSDraggingImageComponent),
                 draggingImageComponentWithKey: NSDraggingImageComponentIconKey
             ];
-            let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
-            let icon: id = msg_send![workspace, iconForFileType: ns_string("md")];
-            let _: () = msg_send![component, setContents: icon];
+            let _: () = msg_send![component, setContents: contents];
             let _: () = msg_send![
                 component,
-                setFrame: NSRect::new(NSPoint::new(0., 0.), NSSize::new(32., 32.))
+                setFrame: NSRect::new(NSPoint::new(0., 0.), size)
             ];
             msg_send![class!(NSArray), arrayWithObject: component]
         });
@@ -3664,11 +3819,12 @@ pub fn start_text_and_file_drag(
             event: event
             source: native_window
         ];
-        let started = !session.is_null();
-        if started {
-            window_state.lock().synthetic_drag_counter += 1;
+        if session.is_null() {
+            let _: () = msg_send![contents, release];
+            return None;
         }
-        started
+        window_state.lock().synthetic_drag_counter += 1;
+        Some((native_window, contents))
     }
 }
 

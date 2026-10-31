@@ -45,5 +45,7 @@ ocr-consent
 restored-reply
 comments
 shelf
+shelf-copied
+shelf-note
 shelf-empty
 shelf-locked
