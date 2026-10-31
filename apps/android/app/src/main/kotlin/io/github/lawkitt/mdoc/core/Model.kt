@@ -140,6 +140,24 @@ data class RestoreResult(
         }
 }
 
+/** The page a document came from, for the Original view (ADR 0085): a PDF or a photo; DOCX and text have none. */
+sealed interface OriginalSource {
+    data object None : OriginalSource
+
+    data class Pdf(val file: java.io.File) : OriginalSource
+
+    data class Image(val file: java.io.File) : OriginalSource
+
+    companion object {
+        fun of(file: java.io.File?): OriginalSource = when (file?.extension?.lowercase()) {
+            null -> None
+            "pdf" -> if (file.exists()) Pdf(file) else None
+            "jpg", "jpeg", "png", "webp" -> if (file.exists()) Image(file) else None
+            else -> None
+        }
+    }
+}
+
 data class ReplySnapshot(val aliasText: String, val restored: RestoreResult, val styling: MarkdownStyling? = null)
 
 data class HandOff(val text: String, val fileName: String)
@@ -159,6 +177,7 @@ data class DocumentSnapshot(
     val warning: String? = null,
     /** Text recognition began and kept finished pages: Recognize resumes. */
     val resumesOcr: Boolean = false,
+    val original: OriginalSource = OriginalSource.None,
 ) {
     val pendingCount: Int get() = candidates.count { it.state == MentionState.Proposed }
     val replacedCount: Int get() = candidates.count { it.state == MentionState.Replaced }
