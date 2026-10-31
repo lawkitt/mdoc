@@ -480,7 +480,8 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
     cx.update(|_, cx| crate::menus::install(cx));
     cx.simulate_input("alpha beta");
     cx.run_until_parked();
-    for (name, action) in crate::menus::items() {
+    let recent = [std::path::PathBuf::from("/tmp/recent.md")];
+    for (name, action) in crate::menus::items(&recent) {
         // In the window's focus path, or app-wide (Hide, Minimize).
         let available = cx.update(|window, cx| {
             window.is_action_available(action.as_ref(), cx)
@@ -488,6 +489,35 @@ fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
         });
         assert!(available, "menu item {name} has no handler");
     }
+}
+
+/// File › Open Recent follows Recents: its rows open their file, and Clear
+/// Menu empties it and Recents (decision 10 of the UI polish grill).
+#[gpui::test]
+fn open_recent_follows_recents_and_clear_menu_empties_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = ["first.md", "second.md"]
+        .iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, *name).unwrap();
+            path
+        })
+        .collect();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let titles =
+        |cx: &mut VisualTestContext| cx.update(|_, cx| crate::menus::open_recent_titles(cx));
+    assert_eq!(titles(cx), ["Clear Menu"]);
+    for path in &paths {
+        cx.dispatch_action(crate::workspace::OpenRecent(path.clone()));
+        cx.run_until_parked();
+    }
+    assert_eq!(tab_names(&tabs, cx), ["first.md", "second.md"]);
+    assert_eq!(titles(cx), ["second.md", "first.md", "Clear Menu"]);
+    cx.dispatch_action(crate::workspace::ClearRecentFiles);
+    cx.run_until_parked();
+    assert_eq!(titles(cx), ["Clear Menu"]);
+    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files.is_empty()));
 }
 
 #[gpui::test]

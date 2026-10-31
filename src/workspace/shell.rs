@@ -72,7 +72,7 @@ impl ShellState {
         } else {
             Recents::default_path()
         });
-        RecentFolders::share(recents.folders(), cx);
+        share_recents(&recents, cx);
         Self {
             recents,
             palette: None,
@@ -83,6 +83,13 @@ impl ShellState {
             home_scroll: gpui::ScrollHandle::new(),
         }
     }
+}
+
+/// Recents changed: Save As's folders (#180) and File › Open Recent follow.
+fn share_recents(recents: &Recents, cx: &mut App) {
+    RecentFolders::share(recents.folders(), cx);
+    let files = recents.files.iter().map(|recent| recent.path.clone());
+    crate::menus::set_recent_files(files.collect(), cx);
 }
 
 pub(super) struct Palette {
@@ -204,6 +211,16 @@ impl Workspace {
         cx.notify();
     }
 
+    /// macOS: the Save panel, its alerts and the menus follow the choice
+    /// too (ADR 0076). Called when the choice changes, not from the
+    /// appearance observer: setting the appearance notifies it.
+    pub(super) fn sync_app_appearance(&self, cx: &App) {
+        #[cfg(target_os = "macos")]
+        cx.set_window_appearance(style::app_appearance(self.theme_choice));
+        #[cfg(not(target_os = "macos"))]
+        let _ = cx;
+    }
+
     pub(super) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.select_theme(self.theme_choice.next(), window, cx);
     }
@@ -215,6 +232,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.theme_choice = choice;
+        self.sync_app_appearance(cx);
         self.apply_theme(window, cx);
         self.checkpoint(window, cx);
         cx.notify();
@@ -303,9 +321,16 @@ impl Workspace {
                     .any(|recent| &recent.path == path && !recent.pseudonymized);
             // Cleared or evicted entries return only on a new file event.
             if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized) {
-                RecentFolders::share(self.shell.recents.folders(), cx);
+                share_recents(&self.shell.recents, cx);
             }
         }
+    }
+
+    /// Settings › Clear and File › Open Recent › Clear Menu.
+    pub(super) fn clear_recents(&mut self, cx: &mut Context<Self>) {
+        self.shell.recents.clear();
+        share_recents(&self.shell.recents, cx);
+        cx.notify();
     }
 
     // ---- Sidebar ------------------------------------------------------------
@@ -464,9 +489,7 @@ impl Workspace {
                     )
                     .child(
                         ui::header_icon("sidebar-help", "Help ↗", ui::Icon::Help, theme, false)
-                            .on_click(|_, _, cx| {
-                                cx.open_url("https://github.com/lawkitt/mdoc#readme")
-                            }),
+                            .on_click(|_, _, cx| cx.open_url(crate::menus::HELP_URL)),
                     ),
             )
             .child(
@@ -1087,9 +1110,25 @@ impl Workspace {
                     .child(home_label("Cases", theme).pt_0())
                     .child(div().flex_1())
                     .child(
-                        ui::link_button("home-open-case", "Open a case…", theme, true).on_click(
-                            |_, window, cx| window.dispatch_action(Box::new(OpenCase), cx),
-                        ),
+                        // The list opens below this link (#307).
+                        div()
+                            .relative()
+                            .child({
+                                let bounds = self.cases.home_link.clone();
+                                gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+                                    .absolute()
+                                    .inset_0()
+                            })
+                            .child(
+                                ui::link_button("home-open-case", "Open a case…", theme, true)
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "home-open-case".into())
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        let link = this.cases.home_link.get();
+                                        this.show_case_list_at(link, window, cx);
+                                    })),
+                            ),
                     )
                     .into_any_element(),
             );
