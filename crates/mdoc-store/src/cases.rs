@@ -694,6 +694,24 @@ impl Store {
         }
         Ok(case)
     }
+    /// How many case files `dir` holds, from their names alone: the count of
+    /// locked cases, read without the key. `None` when `dir` can't be read.
+    pub fn count(dir: &Path) -> Option<usize> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        Some(
+            entries
+                .flatten()
+                .filter(|entry| {
+                    let path = entry.path();
+                    path.extension().is_some_and(|e| e == "case")
+                        && path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .is_some_and(Self::valid_id)
+                })
+                .count(),
+        )
+    }
     /// Every readable case, and the ids of files that could not be read.
     pub fn list(&self) -> (Vec<Case>, Vec<String>) {
         let mut cases = Vec::new();
@@ -1176,6 +1194,21 @@ mod tests {
         next.revision += 1;
         store.save(&next).unwrap();
         assert_eq!(store.load(&next.id).unwrap(), next);
+    }
+
+    #[test]
+    fn count_reads_case_file_names_without_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(Store::count(&dir.path().join("missing")), None);
+        assert_eq!(Store::count(dir.path()), Some(0));
+        let store = store(dir.path());
+        for name in ["One", "Two"] {
+            store.save(&Case::new(name.into(), &[], None)).unwrap();
+        }
+        // Other files and badly named case files are not cases.
+        std::fs::write(dir.path().join("notes.txt"), "x").unwrap();
+        std::fs::write(dir.path().join("short.case"), "x").unwrap();
+        assert_eq!(Store::count(dir.path()), Some(2));
     }
 
     #[test]

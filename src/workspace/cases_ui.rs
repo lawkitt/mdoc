@@ -34,6 +34,10 @@ pub(super) struct CaseState {
     /// Saves the rename when focus leaves its field.
     rename_blur: Option<gpui::Subscription>,
     pub(super) list_open: bool,
+    /// The link the Open Case list hangs from; none centers it.
+    list_anchor: Option<gpui::Bounds<gpui::Pixels>>,
+    /// Where Home's Open a case… link was last painted.
+    pub(super) home_link: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
     /// The Keychain explainer is shown (ADR 0043).
@@ -260,19 +264,49 @@ impl Workspace {
         }
     }
     /// The banner for members waiting on the key, or a declined dialog.
-    pub(super) fn case_key_banner(&self) -> Option<(&'static str, &'static str)> {
+    pub(super) fn case_key_banner(&self) -> Option<(gpui::SharedString, &'static str)> {
         Some(match self.case_coordinator.key_wait()? {
             KeyWait::Denied => (
-                "Saved cases need Keychain access to open their replacements.",
+                "Saved cases need Keychain access to open their replacements.".into(),
                 "Try again…",
             ),
             // Any opened document may be a member: a manually opened one is
             // only matched to its case by path, which needs the cases loaded.
             KeyWait::Locked => (
-                "Saved cases are locked. Unlock them to restore replacements in their documents.",
+                match self.case_coordinator.locked_count() {
+                    Some(1) => {
+                        "1 saved case is locked. Unlock it to restore replacements in its documents."
+                            .into()
+                    }
+                    Some(n) if n > 1 => format!(
+                        "{n} saved cases are locked. Unlock them to restore replacements in their documents."
+                    )
+                    .into(),
+                    _ => "Saved cases are locked. Unlock them to restore replacements in their documents."
+                        .into(),
+                },
                 "Unlock…",
             ),
         })
+    }
+    /// The Open Case list's line above Unlock, when cases wait for the key;
+    /// none when the folder holds no case files.
+    fn case_list_locked_line(&self) -> Option<String> {
+        self.case_coordinator.key_wait()?;
+        match self.case_coordinator.locked_count() {
+            Some(0) => None,
+            Some(1) => Some("1 saved case is locked.".into()),
+            Some(n) => Some(format!("{n} saved cases are locked.")),
+            None => Some("Saved cases are locked.".into()),
+        }
+    }
+    /// Count the locked cases by file name; never the key. Tests skip it:
+    /// the default folder is not theirs.
+    fn count_locked_cases(&mut self) {
+        if !cfg!(test) {
+            let files = Store::default_dir().and_then(|dir| Store::count(&dir));
+            self.case_coordinator.count_locked(files);
+        }
     }
     /// Whether the locked-cases notice should open by itself: the key was
     /// declined after an action, or an open tab belongs to a case whose
@@ -298,6 +332,7 @@ impl Workspace {
                 // when that needs no dialog.
                 if (exists || cfg!(test)) && self.key_may_ask() {
                     self.case_coordinator.lock();
+                    self.count_locked_cases();
                     cx.notify();
                     return;
                 }
@@ -313,6 +348,7 @@ impl Workspace {
                     Err(error) => {
                         // Stay unloaded so members keep their case link.
                         self.case_coordinator.lock();
+                        self.count_locked_cases();
                         self.key_failed(error);
                         cx.notify();
                         return;
@@ -1191,6 +1227,15 @@ impl Workspace {
         self.show_case_page(case_id, super::case_page::Place::Header, window, cx);
     }
     pub(super) fn show_case_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_case_list_at(None, window, cx);
+    }
+    /// Open the list below `anchor`, the link it was opened from (#307).
+    pub(super) fn show_case_list_at(
+        &mut self,
+        anchor: Option<gpui::Bounds<gpui::Pixels>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // An existing modal keeps focus. Browsing itself needs no key, but
         // waits for that modal to finish before it is shown.
         if self.cases.explainer {
@@ -1199,11 +1244,12 @@ impl Workspace {
                 if let Some(earlier) = earlier {
                     earlier(this, window, cx);
                 }
-                this.show_case_list(window, cx);
+                this.show_case_list_at(anchor, window, cx);
             }));
             return;
         }
         self.cases.list_open = true;
+        self.cases.list_anchor = anchor;
         self.case_list_return = window.focused(cx).filter(|f| *f != self.case_list_focus);
         // After the palette, if it ran this, has restored its own focus.
         let focus = self.case_list_focus.clone();
@@ -1627,110 +1673,122 @@ impl Workspace {
                     .into_any_element()
             })
             .collect();
-        Some(
-            gpui::deferred(
+        let locked = self.case_list_locked_line();
+        let panel = ui::panel("case-list", theme)
+            .when(cfg!(test), |v| v.debug_selector(|| "case-list".into()))
+            .track_focus(&self.case_list_focus)
+            .key_context("UiPanel UiMenu")
+            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                ui::cycle(window, cx, Some(&this.case_list_focus), false);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                ui::cycle(window, cx, Some(&this.case_list_focus), true);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                this.close_case_list(window, cx);
+                cx.stop_propagation();
+            }))
+            .w(px(420.))
+            .max_h(px(480.))
+            .overflow_y_scroll()
+            .p_2()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                this.cases.list_open = false;
+                // Unless the click focused something, focus
+                // goes back where the list was opened from.
+                let list = this.case_list_focus.clone();
+                let back = this.case_list_return.take();
+                let weak = cx.entity().downgrade();
+                window.defer(cx, move |window, cx| {
+                    if list.contains_focused(window, cx) {
+                        match back {
+                            Some(focus) => window.focus(&focus, cx),
+                            None => {
+                                let _ = weak.update(cx, |this, cx| this.focus_active(window, cx));
+                            }
+                        }
+                    }
+                });
+                cx.notify();
+            }))
+            .child(
                 div()
-                    .absolute()
-                    .inset_0()
                     .flex()
-                    .items_start()
-                    .justify_center()
-                    .pt(px(80.))
+                    .items_center()
+                    .px_2()
+                    .pb_1()
+                    .child(div().flex_1().child("Open case"))
                     .child(
-                        ui::panel("case-list", theme)
-                            .when(cfg!(test), |v| v.debug_selector(|| "case-list".into()))
-                            .track_focus(&self.case_list_focus)
-                            .key_context("UiPanel UiMenu")
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.case_list_focus), false);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.case_list_focus), true);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                        ui::control("close-case-list", "×", theme, true)
+                            .aria_label("Close case list")
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.close_case_list(window, cx);
-                                cx.stop_propagation();
-                            }))
-                            .w(px(420.))
-                            .max_h(px(480.))
-                            .overflow_y_scroll()
-                            .p_2()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                                this.cases.list_open = false;
-                                // Unless the click focused something, focus
-                                // goes back where the list was opened from.
-                                let list = this.case_list_focus.clone();
-                                let back = this.case_list_return.take();
-                                let weak = cx.entity().downgrade();
-                                window.defer(cx, move |window, cx| {
-                                    if list.contains_focused(window, cx) {
-                                        match back {
-                                            Some(focus) => window.focus(&focus, cx),
-                                            None => {
-                                                let _ = weak.update(cx, |this, cx| {
-                                                    this.focus_active(window, cx)
-                                                });
-                                            }
-                                        }
-                                    }
-                                });
-                                cx.notify();
-                            }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .px_2()
-                                    .pb_1()
-                                    .child(div().flex_1().child("Open case"))
-                                    .child(
-                                        ui::control("close-case-list", "×", theme, true)
-                                            .aria_label("Close case list")
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.close_case_list(window, cx);
-                                            })),
-                                    ),
-                            )
-                            .when(rows.is_empty(), |v| {
-                                v.child(
-                                    div()
-                                        .px_2()
-                                        .py_2()
-                                        .text_size(px(12.))
-                                        .text_color(palette.header_muted)
-                                        .child(
-                                            "No saved cases yet. Right-click a tab with applied \
-                                             replacements and choose Save as case.",
-                                        ),
-                                )
-                            })
-                            .children(rows)
-                            .when(!self.case_coordinator.loaded(), |v| {
-                                v.child(
-                                    ui::control(
-                                        "case-list-unlock",
-                                        "Unlock saved cases…",
-                                        theme,
-                                        true,
-                                    )
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "case-list-unlock".into())
-                                    })
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| this.unlock_cases(window, cx),
-                                    )),
-                                )
-                            }),
+                            })),
                     ),
             )
-            .with_priority(2)
-            .into_any_element(),
-        )
+            // Locked cases are never "no saved cases" (#307).
+            .when(rows.is_empty() && locked.is_none(), |v| {
+                v.child(
+                    div()
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "case-list-empty".into())
+                        })
+                        .px_2()
+                        .py_2()
+                        .text_size(px(12.))
+                        .text_color(palette.header_muted)
+                        .child(
+                            "No saved cases yet. Right-click a tab with applied \
+                             replacements and choose Save as case, or choose \
+                             Share › Save as Case.",
+                        ),
+                )
+            })
+            .children(rows)
+            .children(locked.map(|line| {
+                div()
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "case-list-locked".into())
+                    })
+                    .px_2()
+                    .py_2()
+                    .text_size(px(12.))
+                    .text_color(palette.header_muted)
+                    .child(line)
+            }))
+            .when(!self.case_coordinator.loaded(), |v| {
+                v.child(
+                    ui::control("case-list-unlock", "Unlock saved cases…", theme, true)
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "case-list-unlock".into())
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| this.unlock_cases(window, cx))),
+                )
+            });
+        // Below Home's link when opened from it; centered otherwise.
+        let placed = match self.cases.list_anchor {
+            Some(link) => gpui::anchored()
+                .position(gpui::point(link.right(), link.bottom() + px(4.)))
+                .anchor(gpui::Anchor::TopRight)
+                .snap_to_window_with_margin(px(8.))
+                .child(panel)
+                .into_any_element(),
+            None => div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_start()
+                .justify_center()
+                .pt(px(80.))
+                .child(panel)
+                .into_any_element(),
+        };
+        Some(gpui::deferred(placed).with_priority(2).into_any_element())
     }
 
     /// Save the tab as a case and close it once the case is safely written;
