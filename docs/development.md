@@ -319,7 +319,8 @@ mdoc-renders/
 The output also includes paired `focus-toggle-on`, `focus-sidebar-row` and
 `focus-settings-row` PNGs in both themes, each with a `-rest` counterpart.
 The Settings pair targets the first Detection model radio, reached by one Tab
-from the selected category tab.
+from the selected category tab; `focus-settings-appearance` focuses System
+while the run's own theme stays selected (filled).
 `focus-beside-selected-tab` also checks a focused Review tab beside the
 selected Share tab.
 `focus-comments-toggle` uses the public DOCX comments fixture to check the
@@ -333,7 +334,9 @@ ring remain visible.
 Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, the
 selection pill and its category menu, model setup
 consent, the OCR language card, all six Settings categories (General, Detection, Recognition,
-Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
+Spelling, Cases and About), General with its switches off, Detection with
+installed models (Remove… on the active and an inactive model) and at the end
+of its scroll, the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
 before/after, What you did with done and undone entries, Open Case, the unlocked and locked case page, case rename/categories, the Keychain explainer preview,
 the folder sheet (a small folder, one over the 20-file cap, and Add to a

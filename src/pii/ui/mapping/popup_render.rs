@@ -1006,6 +1006,7 @@ impl DocumentView {
             .text_color(accent)
             .font_weight(gpui::FontWeight::MEDIUM)
             .hover(move |s| s.border_color(palette.border))
+            .tooltip(crate::style::tooltip("Rename alias".into(), theme))
             .child(mapping.alias.clone())
             // A pencil on hover marks the alias as editable.
             .child(

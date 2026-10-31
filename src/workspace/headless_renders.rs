@@ -172,6 +172,7 @@ impl Driver {
                     "settings_category": w.settings.read(cx).category().label(),
                     "settings_theme_choice": w.settings.read(cx).selected_theme(),
                     "appearance_in_view": w.settings.read(cx).appearance_in_view(),
+                    "settings_scroll_cues": w.settings.read(cx).open.then(|| w.settings.read(cx).scroll_cues()),
                     "theme_choice": match w.theme_choice {
                         ThemeChoice::System => "system",
                         ThemeChoice::Light => "light",
@@ -340,6 +341,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     docx_source::scenes(d)?;
     review::merge_hint(d)?;
+    review::long_counts(d)?;
     review::scanning(d)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;
