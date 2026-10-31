@@ -903,9 +903,10 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
         styled.append(done);
         capped
     };
-    // The content column of the list item the text is in, 0 outside lists:
-    // code is indented four columns past it.
-    let mut item_content = 0;
+    // The list item the text is in, as the quotes and items around it,
+    // outermost first; empty outside lists. Code is indented four columns
+    // past it, and a fence opened in it is in it.
+    let mut list: Vec<Container> = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
@@ -933,21 +934,6 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
                 }
             }
         }
-        if fenced.is_none() && !trimmed.is_empty() {
-            // Indented code starts only where no paragraph runs on.
-            let raw = without_quotes(line);
-            let indent = width(&raw[..raw.len() - raw.trim_start().len()]);
-            if paragraph.is_empty() && indent < item_content {
-                // Back out of the list.
-                item_content = 0;
-            }
-            if paragraph.is_empty() && indent >= item_content + 4 {
-                continue;
-            }
-            if let Some(Container::Item(content)) = containers_of(raw).first() {
-                item_content = *content;
-            }
-        }
         let structure = fence(block).is_some()
             || block.is_empty()
             || lines::heading_level(block).is_some()
@@ -956,6 +942,37 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             || tables::is_table_row(block)
             || block.starts_with("<!--")
             || block.starts_with("![");
+        // The line within the list item it is in, if any, and the blocks it
+        // opens past that item.
+        let mut tail = Vec::new();
+        if !trimmed.is_empty() {
+            let mut in_list = inside(line, &list);
+            // A line outside the item leaves the list, unless it runs on the
+            // item's paragraph (a lazy line).
+            if in_list.is_none() && (paragraph.is_empty() || structure) {
+                list.clear();
+                in_list = Some(line);
+            }
+            let rest = in_list.unwrap_or(line);
+            // Indented code starts only where no paragraph runs on.
+            let raw = without_quotes(rest);
+            if paragraph.is_empty() && width(&raw[..raw.len() - raw.trim_start().len()]) >= 4 {
+                continue;
+            }
+            // A new item, maybe nested: the list now runs to its content.
+            let opened = containers_of(rest);
+            let items = opened
+                .iter()
+                .rposition(|c| matches!(c, Container::Item(_)))
+                .map_or(0, |last| last + 1);
+            if items > 0 {
+                if in_list.is_none() {
+                    list.clear();
+                }
+                list.extend_from_slice(&opened[..items]);
+            }
+            tail = opened[items..].to_vec();
+        }
         // A structure line ends a paragraph, and a list item starts one;
         // a quote's lines run on.
         let item = lines::list_prefix(unquoted(trimmed)).is_some();
@@ -966,15 +983,9 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             }
         }
         if let Some(mark) = fence(block) {
-            let mut containers = containers_of(line);
-            // A fence on a list item's later line is in that item too.
-            let raw = without_quotes(line);
-            if item_content > 0
-                && !containers.iter().any(|c| matches!(c, Container::Item(_)))
-                && width(&raw[..raw.len() - raw.trim_start().len()]) >= item_content
-            {
-                containers.push(Container::Item(item_content));
-            }
+            // A fence is in the blocks its line opens, within the list item
+            // it sits in (a fence on an item's later line is in that item).
+            let containers = [list.as_slice(), &tail].concat();
             fenced = Some(Fence { mark, containers });
             continue;
         }

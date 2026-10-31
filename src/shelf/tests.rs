@@ -401,6 +401,7 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         "- > ~~~\n  > code example that is long enough as prose\n- > PERSON_1 signed the agreement today.\n",
         "- Notes\n\n  ~~~\n  code example that is long enough as prose\n- PERSON_1 signed the agreement today.\n",
         "> - Notes\n>\n>   ~~~\n>   code example that is long enough as prose\n> - PERSON_1 signed the agreement today.\n",
+        "- Notes\n\n  > ~~~\n  > code example that is long enough as prose\n> PERSON_1 signed the agreement today.\n",
     ] {
         assert_eq!(
             preview_of(ended).unwrap().text,
@@ -719,6 +720,7 @@ fn indented_code_is_not_prose() {
         "\tThis literal code example must never become preview prose.\n\n",
         "# Title\n    This literal code example must never become preview prose.\n\n",
         ">     This literal code example must never become preview prose.\n\n",
+        "- Notes\n# Heading\n    This literal code example must never become preview prose.\n\n",
     ] {
         let text = format!("{code}PERSON_1 signed the agreement today.\n");
         assert_eq!(
