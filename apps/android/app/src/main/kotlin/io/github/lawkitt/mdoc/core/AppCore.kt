@@ -26,6 +26,10 @@ class AppCore(
     /** ONNX Runtime and PDFium as the APK ships them. */
     val runtimes: Runtimes by lazy { linkedRuntimes() }
 
+    val models = Models(setup) { runtimes }
+
+    val documents = Documents(library, storage, models)
+
     companion object {
         init {
             // The core opens both beside itself (`linked_runtimes`); loading

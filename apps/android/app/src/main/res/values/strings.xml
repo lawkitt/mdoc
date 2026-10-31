@@ -2,8 +2,126 @@
 <!-- English strings, word for word with the iOS String Catalog (ADR 0089). -->
 <resources>
     <string name="app_name">mdoc</string>
+
+    <!-- Home -->
     <string name="home_empty_title">No documents yet</string>
     <string name="home_empty_body">Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.</string>
     <string name="home_empty_body_below_floor">Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.</string>
-    <string name="core_failed">mdoc could not open its documents: %1$s</string>
+    <string name="core_failed">mdoc could not open its documents</string>
+    <string name="add">Add</string>
+    <string name="paste">Paste</string>
+    <string name="files">Files</string>
+    <string name="photos">Photos</string>
+    <string name="scan">Scan</string>
+    <string name="settings">Settings</string>
+    <string name="delete">Delete</string>
+    <string name="case_named">case %1$s</string>
+    <string name="status_ready_to_find">Ready to find names</string>
+    <string name="status_ready_to_mark">Ready to mark names</string>
+    <string name="status_ready_to_share">Ready to share</string>
+    <string name="status_to_review">%1$d to review</string>
+    <string name="status_not_recognized">Text not recognized yet</string>
+    <string name="status_import_not_finished">Import not finished</string>
+    <string name="status_nothing_found">Nothing found</string>
+
+    <!-- Adding a document -->
+    <string name="paste_text">Paste text</string>
+    <string name="paste_placeholder">Paste or type the text to check</string>
+    <string name="add_document">Add document</string>
+    <string name="title">Title</string>
+    <string name="case_label">Case</string>
+    <string name="new_case">New case</string>
+    <string name="case_explanation">A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.</string>
+    <string name="pasted_text">Pasted text</string>
+    <string name="photo">Photo</string>
+    <string name="opens_files">mdoc opens PDF, DOCX and image files.</string>
+    <string name="could_not_open">mdoc could not open this file: %1$s</string>
+    <string name="cancel">Cancel</string>
+    <string name="done">Done</string>
+    <string name="ok">OK</string>
+
+    <!-- Document -->
+    <string name="text">Text</string>
+    <string name="reply">Reply</string>
+    <string name="recognize_text">Recognize text</string>
+    <string name="resume_recognition">Resume recognition</string>
+    <string name="finish_import">Finish import</string>
+    <string name="find_names">Find names</string>
+    <string name="finding_names">Finding names</string>
+    <string name="recognizing_text">Recognizing text</string>
+    <string name="reading_the_file">Reading the file</string>
+    <string name="converting">Converting</string>
+    <string name="recognizing_title">Recognizing %1$s</string>
+    <string name="finding_names_in">Finding names in %1$s</string>
+    <string name="replace_all">Replace all</string>
+    <string name="replace_count">Replace %1$d</string>
+    <string name="waiting_for_other">Waiting for another document to finish.</string>
+    <string name="import_not_finished_body">The import stopped before mdoc read the text. Finish import reads it now.</string>
+    <string name="recognition_stopped_background">Recognition stopped when mdoc left the screen. Finished pages are kept.</string>
+    <string name="finding_stopped_background">Finding names stopped when mdoc left the screen.</string>
+    <string name="resume">Resume</string>
+    <string name="stopped">Stopped.</string>
+    <string name="no_names_found">No names found. Select text to mark one.</string>
+    <string name="find_or_select">Find names, or select words in the text and choose Replace….</string>
+    <string name="below_floor_note">This phone can\'t find names: the name detector needs 8 GB of memory. Select text to mark a name.</string>
+    <string name="review_before_sharing">Review %1$d proposals before sharing.</string>
+    <string name="something_went_wrong">Something went wrong</string>
+    <string name="document_gone">This document is no longer in mdoc.</string>
+    <string name="download_models_first">Download the models first.</string>
+    <string name="select_words_first">Select the words to replace first.</string>
+
+    <!-- Review -->
+    <string name="replace">Replace</string>
+    <string name="replace_ellipsis">Replace…</string>
+    <string name="keep">Keep</string>
+    <string name="keep_all">Keep all</string>
+    <string name="apply_to">Apply to</string>
+    <string name="all_occurrences">All %1$d occurrences</string>
+    <string name="just_this_one">Just this one</string>
+    <string name="alias">Alias</string>
+    <string name="category">Category</string>
+    <string name="identities">Identities</string>
+    <string name="no_names_yet">No names yet</string>
+    <string name="proposed">Proposed</string>
+    <string name="replaced">Replaced</string>
+    <string name="kept">Kept</string>
+    <string name="mentions">%1$d mentions</string>
+    <string name="alias_explanation">The AI sees the alias; mdoc puts the original back when you restore its reply.</string>
+    <string name="keep_explanation">The original stays in the text you share.</string>
+    <string name="repeats_replaced">Every exact repeat in this document is replaced too.</string>
+    <string name="selected_text">Selected text</string>
+    <string name="spoken_proposed">%1$s, proposed as %2$s</string>
+    <string name="spoken_replaced">%1$s, replaced; was %2$s</string>
+    <string name="spoken_kept">%1$s, kept</string>
+
+    <!-- Categories -->
+    <string name="category_person">Person</string>
+    <string name="category_organization">Organization</string>
+    <string name="category_email">Email</string>
+    <string name="category_phone">Phone</string>
+    <string name="category_address">Address</string>
+    <string name="category_date">Date</string>
+    <string name="category_identity">Identity</string>
+    <string name="category_tax">Tax identifier</string>
+    <string name="category_bank">Bank details</string>
+    <string name="category_other">Other</string>
+
+    <!-- Hand-off -->
+    <string name="share">Share</string>
+    <string name="copy">Copy</string>
+    <string name="share_as_file">Share as Markdown file</string>
+    <string name="copied_for_ai">Copied for AI</string>
+    <string name="paste_reply">Paste reply</string>
+    <string name="paste_ai_reply">Paste AI reply</string>
+    <string name="restore">Restore</string>
+    <string name="copy_reply">Copy reply</string>
+    <string name="share_reply">Share reply</string>
+    <string name="remove_reply">Remove reply</string>
+    <string name="copied_reply">Copied reply</string>
+    <string name="values_restored">%1$d values restored</string>
+    <string name="unrecognised">%1$d unrecognised</string>
+    <string name="nothing_to_restore">Nothing to restore</string>
+
+    <!-- Long jobs -->
+    <string name="jobs_channel">Long jobs</string>
 </resources>
