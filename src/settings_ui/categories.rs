@@ -41,9 +41,19 @@ impl Category {
     }
 }
 
+/// Height of the fade where a page's rows continue past the viewport.
+const SCROLL_FADE: f32 = 20.;
+
 impl Panel {
     pub(crate) fn category(&self) -> Category {
         self.category
+    }
+    /// Whether rows continue above and below the page's viewport, from its
+    /// last layout. The scroll thumb redraws when that layout changes.
+    pub(crate) fn scroll_cues(&self) -> (bool, bool) {
+        let max = self.scroll.max_offset().y;
+        let offset = -self.scroll.offset().y;
+        (offset > px(0.5), max > px(1.) && offset < max - px(0.5))
     }
     pub(crate) fn show_category(
         &mut self,
@@ -120,7 +130,11 @@ impl Panel {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // On is the accent; off is neutral grey, so an off switch never
+        // reads as a tinted on one (ADR 0076).
         let accent = theme.search_accent();
+        let p = theme.pdf_style();
+        let off = p.header_muted;
         self.scrolled_quiet(id, "", theme, enabled, cx)
             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
             .role(gpui::Role::Switch)
@@ -137,14 +151,16 @@ impl Panel {
             .flex()
             .items_center()
             .border_1()
-            .border_color(accent)
-            .bg(if on { accent } else { theme.pdf_style().bg })
+            .border_color(if on { accent } else { off })
+            .bg(if on { accent } else { p.placeholder_bg })
             .when(on, |v| v.justify_end())
-            .child(div().w(px(14.)).h(px(14.)).rounded_full().bg(if on {
-                theme.pdf_style().bg
-            } else {
-                accent
-            }))
+            .child(
+                div()
+                    .w(px(14.))
+                    .h(px(14.))
+                    .rounded_full()
+                    .bg(if on { p.bg } else { off }),
+            )
             .on_click(cx.listener(move |this, _, _, cx| {
                 if enabled {
                     flip(&mut this.draft);
@@ -152,6 +168,53 @@ impl Panel {
                 }
             }))
             .into_any_element()
+    }
+    /// One choice of a segmented control (Appearance, Resolution). The
+    /// selected choice is filled with the accent, so it never reads as the
+    /// focused one, which only gains the outside ring (ADR 0076). The caller
+    /// adds the label.
+    pub(super) fn segment(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        label: impl Into<gpui::SharedString>,
+        selected: bool,
+        theme: Theme,
+        cx: &App,
+    ) -> ui::Control {
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let id = id.into();
+        let segment = ui::focus_ring(id.clone(), theme)
+            .role(gpui::Role::RadioButton)
+            .aria_label(label)
+            .aria_toggled(if selected {
+                gpui::Toggled::True
+            } else {
+                gpui::Toggled::False
+            })
+            .key_context("UiControl")
+            .tab_index(0)
+            .tab_stop(true)
+            .flex_shrink_0()
+            .px_3()
+            .py_1()
+            .rounded_md()
+            .border_1()
+            .text_size(px(13.))
+            .cursor_pointer()
+            .map(|v| {
+                if selected {
+                    v.bg(accent)
+                        .border_color(accent)
+                        .text_color(p.bg)
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                } else {
+                    v.border_color(p.border)
+                        .text_color(p.header_fg)
+                        .hover(move |s| s.bg(p.placeholder_bg))
+                }
+            });
+        self.reveal(id, segment, true, cx)
     }
     fn spelling_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let s = self.draft.spelling;
@@ -399,10 +462,9 @@ impl Panel {
                 let note = self.section_note("Default when a document suggests no language. Each document’s card picks its own.", Model::Ocr(self.draft.ocr.model));
                 div().child(div().text_size(px(11.)).text_color(theme.pdf_style().header_muted).child(note.clone()).when(cfg!(test), |v| v.debug_selector(move || note.clone())))
                     .child(div().id("ocr-models").role(gpui::Role::RadioGroup).aria_label("Text recognition").children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx))))
-                    .child(self.setting_row("Resolution", "Pixels per inch for recognized pages.", div().flex().gap_1().children([150, 200, 300].map(|dpi| self.scrolled_control(("dpi", dpi as usize), format!("{dpi}"), theme, true, cx)
+                    .child(self.setting_row("Resolution", "Pixels per inch for recognized pages.", div().id("settings-dpi").role(gpui::Role::RadioGroup).aria_label("Resolution").flex().gap_2().children([150, 200, 300].map(|dpi| self.segment(("dpi", dpi as usize), format!("{dpi} DPI"), self.draft.ocr.dpi == dpi, theme, cx)
+                        .child(format!("{dpi}"))
                         .when(cfg!(test), |v| v.debug_selector(move || format!("settings-dpi-{dpi}")))
-                        .role(gpui::Role::RadioButton).aria_label(format!("{dpi} DPI")).aria_toggled(if self.draft.ocr.dpi == dpi { gpui::Toggled::True } else { gpui::Toggled::False })
-                        .when(self.draft.ocr.dpi == dpi, |v| v.bg(theme.sidebar_selected()).border_color(theme.search_accent()))
                         .on_click(cx.listener(move |this, _, _, cx| { this.draft.ocr.dpi = dpi; this.persist(cx); })))), theme))
                     .child(self.number_row(1, theme, cx))
                     .child(self.setting_row("Compare text recognition", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-ocr", "Compare", theme, true, cx).aria_label("Compare text recognition").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))), theme))
@@ -411,26 +473,19 @@ impl Panel {
             Category::Cases => div().child(self.setting_row("Ask before closing", "Confirm before closing an unsaved mapping. A saved case keeps its mapping encrypted on this computer.", self.switch("cases-ask", "Ask before closing an unsaved mapping", self.draft.cases.ask_before_closing, true, |p| p.cases.ask_before_closing = !p.cases.ask_before_closing, theme, cx), theme)),
             Category::About => div().child(self.about_section(theme, cx)),
         };
-        body.child(
-            self.setting_row(
-                "Reset",
-                if self.category == Category::About {
-                    "There are no preferences in this category."
-                } else {
-                    "Restore this category's defaults."
-                },
-                self.scrolled_quiet(
-                    "reset-settings",
+        // About has no preferences, so it has nothing to reset (ADR 0076).
+        body.when(self.category != Category::About, |v| {
+            v.child(
+                self.setting_row(
                     "Reset",
+                    "Restore this category's defaults.",
+                    self.scrolled_quiet("reset-settings", "Reset", theme, true, cx)
+                        .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
+                        .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
                     theme,
-                    self.category != Category::About,
-                    cx,
-                )
-                .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
-                .on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
-                theme,
-            ),
-        )
+                ),
+            )
+        })
         .into_any_element()
     }
     pub(super) fn category_render(
@@ -547,19 +602,62 @@ impl Panel {
                 v.child(self.dictionary_body(theme, cx))
             })
             .when(self.dictionary.is_none(), |v| {
+                // A page taller than the overlay shows a scroll thumb, and
+                // fades at an edge where rows continue (ADR 0076).
+                let (above, below) = self.scroll_cues();
+                let fade = |top: bool| {
+                    let clear = gpui::Hsla { a: 0., ..p.bg };
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .h(px(SCROLL_FADE))
+                        .when(top, |v| v.top_0())
+                        .when(!top, |v| v.bottom_0())
+                        .bg(gpui::linear_gradient(
+                            if top { 0. } else { 180. },
+                            gpui::linear_color_stop(clear, 0.),
+                            gpui::linear_color_stop(p.bg, 1.),
+                        ))
+                };
                 v.child(
                     div()
-                        .id("settings-scroll")
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "settings-scroll".into())
-                        })
-                        .track_scroll(&self.scroll)
-                        .overflow_y_scroll()
+                        .relative()
+                        .flex()
+                        .flex_col()
                         .min_h_0()
                         .flex_1()
-                        .px_4()
-                        .pb_3()
-                        .child(self.category_body(theme, cx)),
+                        .child(
+                            div()
+                                .id("settings-scroll")
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "settings-scroll".into())
+                                })
+                                .track_scroll(&self.scroll)
+                                .overflow_y_scroll()
+                                .min_h_0()
+                                .flex_1()
+                                .px_4()
+                                .pb_3()
+                                .child(self.category_body(theme, cx)),
+                        )
+                        .when(above, |v| {
+                            v.child(fade(true).when(cfg!(test), |v| {
+                                v.debug_selector(|| "settings-fade-top".into())
+                            }))
+                        })
+                        .when(below, |v| {
+                            v.child(fade(false).when(cfg!(test), |v| {
+                                v.debug_selector(|| "settings-fade-bottom".into())
+                            }))
+                        })
+                        .child(gpui_pdf::scrollbar::overlay_scrollbar(
+                            "settings-scrollbar",
+                            &self.scroll,
+                            false,
+                            p.header_muted,
+                            cx,
+                        )),
                 )
             })
             .when_some(self.error.clone(), |v, e| {
