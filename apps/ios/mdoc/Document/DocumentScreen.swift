@@ -239,14 +239,15 @@ private struct InterruptionBanner: View {
 
     var body: some View {
         HStack {
-            // The core cannot resume OCR part-way yet, so both start again.
+            // OCR keeps its finished pages and resumes; the scan reruns.
             Text(kind == .recognize
-                ? "Recognition stopped when mdoc left the screen."
+                ? "Recognition stopped when mdoc left the screen. Finished pages are kept."
                 : "Finding names stopped when mdoc left the screen.")
                 .font(.footnote)
             Spacer()
-            Button("Start again", action: resume)
+            Button(kind == .recognize ? "Resume" : "Start again", action: resume)
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("interruption-resume")
         }
     }
 }
