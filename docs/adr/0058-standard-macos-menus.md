@@ -15,9 +15,9 @@ Save panels had no ⌘C/⌘V, since those come from the Edit menu. Found by the
 - **Menus** (`src/menus.rs`): *mdoc* (About mdoc, Settings…, Services, Hide
   mdoc ⌘H, Hide Others ⌥⌘H, Show All, Quit mdoc), *File* (New, Open…, Open
   Case…, Convert to Markdown, Save, Save As…, Copy Markdown, Copy for AI, Paste
-  AI Response, Close Tab), *Edit* (Undo, Redo, Cut, Copy, Paste, Select All,
+  AI Reply, Close Tab), *Edit* (Undo, Redo, Cut, Copy, Paste, Select All,
   Find…, Find Next, Find Previous, Pseudonymize, Pseudonymize Clipboard),
-  *View* (Toggle Sidebar ⌃⌘S, Before / After, Zoom In, Zoom Out, Actual Size) and
+  *View* (Toggle Sidebar ⌃⌘S, Side by Side, Zoom In, Zoom Out, Actual Size) and
   *Window* (Minimize ⌘M, Zoom, Next Tab, Previous Tab) and *Help* (Keyboard
   Shortcuts, [ADR 0073](0073-keyboard-shortcuts-panel.md)). Hide, Services and
   their shortcuts, and ⌃⌘S, are macOS only.

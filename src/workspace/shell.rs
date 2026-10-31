@@ -1031,7 +1031,7 @@ impl Workspace {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
-                ui::primary_button("home-restore", "Restore AI reply", theme, true)
+                ui::primary_button("home-restore", "Paste AI reply", theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-restore".into()))
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(PasteAiResponse), cx)
@@ -1413,7 +1413,7 @@ impl Workspace {
                 },
                 Row {
                     section: "Actions",
-                    label: "Before / After".into(),
+                    label: "Side by side".into(),
                     detail: None,
                     command: Command::BeforeAfter,
                 },
@@ -1454,7 +1454,7 @@ impl Workspace {
         rows.extend([
             Row {
                 section: "Actions",
-                label: "Restore AI reply".into(),
+                label: "Paste AI reply".into(),
                 detail: None,
                 command: Command::RestoreReply,
             },
@@ -1472,10 +1472,7 @@ impl Workspace {
             },
             Row {
                 section: "Actions",
-                label: format!(
-                    "Switch theme ({})",
-                    style::theme_label(self.theme_choice.next()).trim_start_matches("Theme: ")
-                ),
+                label: style::theme_switch_label(self.theme_choice.next()).into(),
                 detail: None,
                 command: Command::Theme,
             },

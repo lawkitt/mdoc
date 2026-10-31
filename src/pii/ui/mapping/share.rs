@@ -284,7 +284,7 @@ impl DocumentView {
                             v.child(
                                 ui::control(
                                     "share-next-unrecognised",
-                                    "Next unrecognised",
+                                    "Next unrecognized",
                                     theme,
                                     true,
                                 )
