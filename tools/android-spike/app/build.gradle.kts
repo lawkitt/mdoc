@@ -8,6 +8,9 @@ val repo = rootDir.resolve("../..")
 android {
     namespace = "io.github.lawkitt.mdoc.spike"
     compileSdk = 36
+    // The build-tools scripts/install-android-sdk.sh pins; AGP would
+    // otherwise fetch its own default.
+    buildToolsVersion = "36.1.0"
 
     defaultConfig {
         applicationId = "io.github.lawkitt.mdoc.spike"
@@ -20,7 +23,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDir(repo.resolve("target/android/kotlin"))
+            kotlin.srcDir(repo.resolve("target/android/kotlin"))
             jniLibs.srcDir(repo.resolve("target/android/jniLibs"))
             assets.srcDir(repo.resolve("target/android-spike/assets"))
         }
