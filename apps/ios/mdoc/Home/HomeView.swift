@@ -16,7 +16,7 @@ struct HomeView: View {
 
     var body: some View {
         List(selection: $app.selection) {
-            if app.setup.showsCard {
+            if app.setup.showsCard && !app.openDocumentShowsSetup {
                 Section {
                     SetupCard(model: app.setup)
                         .listRowInsets(EdgeInsets())
