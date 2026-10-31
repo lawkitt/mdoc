@@ -1744,8 +1744,8 @@ impl Workspace {
                         .text_color(palette.header_muted)
                         .child(
                             "No saved cases yet. Right-click a tab with applied \
-                             replacements and choose Save as case, or choose \
-                             Share › Save as Case.",
+                             replacements, or open Share, and choose Save as \
+                             case.",
                         ),
                 )
             })

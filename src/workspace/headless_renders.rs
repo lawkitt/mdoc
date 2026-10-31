@@ -15,6 +15,7 @@ mod folder_sheet;
 mod import;
 mod narrow;
 mod navigation;
+mod recents;
 mod restore;
 mod review;
 mod search;
@@ -346,6 +347,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     review::merge_hint(d)?;
     review::long_counts(d)?;
     review::scanning(d)?;
+    recents::scenes(d, path)?;
     narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     // Last: they leave cases locked.
     shelf::scenes(d)?;

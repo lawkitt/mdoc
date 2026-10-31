@@ -65,5 +65,6 @@ narrow-sidebar-names
 sidebar-wide
 narrow-minimum
 narrow-minimum-sidebar
+home-recents
 review-scanning
 review-long-counts
