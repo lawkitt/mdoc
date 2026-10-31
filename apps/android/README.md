@@ -63,5 +63,5 @@ SHA-256 against `gradle/verification-metadata.xml`. After changing a
 dependency, regenerate it with the emulator running:
 
 ```sh
-ANDROID_SERIAL=emulator-5554 ./gradlew --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest connectedDebugAndroidTest
+ANDROID_SERIAL=emulator-5554 ./gradlew --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest :app:connectedDebugAndroidTest
 ```
