@@ -5,15 +5,16 @@ import Foundation
 /// tests.
 enum CoreFactory {
     /// Launch argument for UI tests: a separate, fresh storage root and case
-    /// key, and the structured rules instead of the detector, so no model is
-    /// needed.
+    /// key, and a device below the detector floor, so no model is needed;
+    /// the seeded document is scanned with the structured rules.
     static let uiTestingArgument = "-mdoc-ui-testing"
     /// Set in the App Group's defaults while the app runs for UI tests, so
     /// the Restore extension opens the same test library.
     private static let uiTestingKey = "uiTestingLibrary"
     private static let uiTestingFolder = "mdoc-ui-testing"
-    /// Below the detector floor: a scan runs the structured rules.
-    static let rulesOnlyMemory: UInt64 = 4 * 1_073_741_824
+    /// Below the detector floor: the app offers no Find names, and only the
+    /// UI tests' seed scans, with the structured rules.
+    static let belowFloorMemory: UInt64 = 4 * 1_073_741_824
 
     static var isUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains(uiTestingArgument)
@@ -36,7 +37,7 @@ enum CoreFactory {
     static func appCore(storage: MdocStorage) throws -> Core {
         try RealCore.make(
             storage: storage, keys: keyStore(testing: isUITesting),
-            physicalMemory: isUITesting && !detectorTierInUITests ? rulesOnlyMemory : ProcessInfo.processInfo.physicalMemory)
+            physicalMemory: isUITesting && !detectorTierInUITests ? belowFloorMemory : ProcessInfo.processInfo.physicalMemory)
     }
 
     /// The UI survey shows the detector tier's setup screens too; nothing

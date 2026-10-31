@@ -25,8 +25,44 @@ enum Fixture {
 }
 
 /// A connection the test controls.
-struct FakeNetwork: NetworkConditions {
-    var isExpensive: Bool
+@MainActor
+final class FakeNetwork: NetworkConditions {
+    private(set) var route: NetworkRoute
+    var onChange: ((NetworkRoute) -> Void)?
+
+    init(_ route: NetworkRoute) {
+        self.route = route
+    }
+
+    func change(to route: NetworkRoute) {
+        self.route = route
+        onChange?(route)
+    }
+}
+
+/// Holds a Wi-Fi-only download until it is cancelled, as the background
+/// session does on cellular; a cellular one finishes at once.
+final class HeldDownloader: ModelDownloader, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [Bool] = []
+
+    /// `allowCellular` of each download started, in order.
+    var cellular: [Bool] { lock.withLock { calls } }
+
+    func download(
+        _ request: ModelDownloadRequest,
+        allowCellular: Bool,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        lock.withLock { calls.append(allowCellular) }
+        if !allowCellular {
+            try await Task.sleep(for: .seconds(600))
+        }
+        progress(1)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(request.modelID)-\(UUID().uuidString).download")
+        try Data().write(to: file)
+        return file
+    }
 }
 
 /// Records a job's progress and cancels on request.

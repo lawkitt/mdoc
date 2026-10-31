@@ -54,6 +54,31 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(String(decoding: bytes[replaced.range.start..<replaced.range.end], as: UTF8.self), email.alias)
     }
 
+    /// Below the floor a document added to a case can arrive with the
+    /// case's names proposed: Replace N comes before the hand-off, which the
+    /// core refuses while proposals wait (ADR 0088).
+    @MainActor
+    func testBelowTheFloorCaseProposalsComeBeforeShare() throws {
+        let core = try core()
+        let first = try reviewed(core)
+        let email = try XCTUnwrap(first.snapshot().candidates.first { $0.category == .email })
+        _ = try first.decide(email.id, .replace, scope: .allOccurrences)
+        let caseID = try XCTUnwrap(first.snapshot().caseID)
+
+        let second = try core.library.importDocument(
+            .text("Write to maya.ellison@example.com today."), title: "Note", into: .existing(caseID))
+        let imported = try second.recognize(observer: TestObserver())
+        XCTAssertEqual(imported.phase, .unscanned)
+        XCTAssertGreaterThan(imported.pendingCount, 0)
+        let model = DocumentViewModel(
+            session: second, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage,
+            findsNames: false)
+        XCTAssertEqual(model.primaryAction, .replaceAll(imported.pendingCount))
+        XCTAssertTrue(model.showsBelowFloorNote)
+        model.replaceAllPending()
+        XCTAssertEqual(model.primaryAction, .handOff)
+    }
+
     func testHomeListsTheSavedDocumentInItsCase() throws {
         let core = try core()
         let session = try reviewed(core)
@@ -136,7 +161,7 @@ final class RealCoreTests: XCTestCase {
 
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
         let small = RealSetup(storage: storage, physicalMemory: 4 * Fixture.gigabyte).snapshot()
-        XCTAssertEqual(small.tier, .rulesOnly)
+        XCTAssertEqual(small.tier, .belowFloor)
         XCTAssertEqual(small.offers.map(\.purpose), [.ocr])
         let large = RealSetup(storage: storage, physicalMemory: 8 * Fixture.gigabyte).snapshot()
         XCTAssertEqual(large.tier, .detector)

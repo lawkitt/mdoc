@@ -3,7 +3,8 @@ import Observation
 
 /// The first-use setup card and Settings' model rows: the models that fit
 /// this device by physical RAM, their size, and the download (ADR 0026,
-/// ADR 0085). Wi-Fi by default; cellular asks first.
+/// ADR 0085). Wi-Fi by default; on any cellular interface, a download asks
+/// first, and one held for Wi-Fi says so (ADR 0088).
 @MainActor
 @Observable
 final class SetupViewModel {
@@ -20,6 +21,16 @@ final class SetupViewModel {
     /// The cellular question is showing.
     var asksCellular = false
     private(set) var isWorking = false
+    /// The connection now.
+    private(set) var route: NetworkRoute
+    /// The running download may use cellular: the user said yes.
+    private(set) var allowsCellular = false
+    /// A file is downloading (not being checked and installed).
+    private var fetching = false
+
+    /// A Wi-Fi-only download is held: the connection is cellular, or there
+    /// is none. The card says "Waiting for Wi-Fi" and offers Use cellular.
+    var waitsForWiFi: Bool { fetching && !allowsCellular && route != .wifi }
 
     static let dismissedKey = "setupCardDismissed"
 
@@ -37,11 +48,18 @@ final class SetupViewModel {
         self.defaults = defaults
         snapshot = setup.snapshot()
         cardDismissed = defaults.bool(forKey: Self.dismissedKey)
+        route = network.route
+        network.onChange = { [weak self] route in
+            self?.route = route
+        }
     }
 
     private(set) var cardDismissed: Bool
 
-    var showsCard: Bool { snapshot.needsSetup && !cardDismissed }
+    /// Home's card sets up name finding. Below the floor there is none: the
+    /// text-recognition download waits in the document that needs it, and
+    /// in Settings (ADR 0088).
+    var showsCard: Bool { snapshot.tier == .detector && snapshot.needsSetup && !cardDismissed }
 
     var physicalMemory: UInt64 { snapshot.physicalMemory }
 
@@ -52,30 +70,43 @@ final class SetupViewModel {
 
     func state(of offer: ModelOffer) -> ModelState {
         if let fraction = downloadProgress[offer.id] {
-            return .downloading(fraction: fraction)
+            return waitsForWiFi ? .waitingForWiFi : .downloading(fraction: fraction)
         }
         return offer.state
     }
 
-    /// Download pressed: on a costly connection ask first, else go on Wi-Fi.
+    /// Download pressed: on cellular ask first, else go on Wi-Fi.
     /// `then` runs once every offered model is installed: the document card
     /// passes the scan that asked for setup (Download & continue, ADR 0026);
     /// Settings passes nothing.
     func download(then continuation: (@MainActor () async -> Void)? = nil) {
         guard !isWorking else { return }
         self.continuation = continuation
-        if network.isExpensive {
+        if route == .cellular {
             asksCellular = true
             return
         }
         begin(allowCellular: false)
     }
 
+    /// Use cellular, while a download waits for Wi-Fi: the same question.
+    func askCellular() {
+        guard waitsForWiFi else { return }
+        asksCellular = true
+    }
+
     /// The answer to the cellular question. Waiting keeps the download for
-    /// Wi-Fi.
+    /// Wi-Fi; a yes while one waits starts it again on the cellular session.
     func answerCellular(useCellular: Bool) {
         asksCellular = false
-        begin(allowCellular: useCellular)
+        guard isWorking else {
+            begin(allowCellular: useCellular)
+            return
+        }
+        guard useCellular, !allowsCellular else { return }
+        let held = work
+        held?.cancel()
+        begin(allowCellular: true, after: held)
     }
 
     /// Stops the download or the install; the models return to not
@@ -100,20 +131,32 @@ final class SetupViewModel {
 
     private var work: Task<Void, Never>?
     private var continuation: (@MainActor () async -> Void)?
+    /// The download started last; one it replaced ends quietly.
+    private var generation = 0
 
-    private func begin(allowCellular: Bool) {
+    /// `held`, a Wi-Fi download being cancelled for cellular, ends first.
+    private func begin(allowCellular: Bool, after held: Task<Void, Never>? = nil) {
         isWorking = true
+        allowsCellular = allowCellular
         errorMessage = nil
+        generation += 1
+        let generation = generation
         work = Task { [weak self] in
-            await self?.run(allowCellular: allowCellular)
+            await held?.value
+            await self?.run(allowCellular: allowCellular, generation: generation)
         }
     }
 
-    private func run(allowCellular: Bool) async {
+    private func run(allowCellular: Bool, generation: Int) async {
         let finished = await install(allowCellular: allowCellular)
-        isWorking = false
+        fetching = false
         downloadProgress = [:]
         refresh()
+        // Replaced by the cellular download: it goes on, with the work that
+        // asked for setup.
+        guard generation == self.generation else { return }
+        isWorking = false
+        allowsCellular = false
         let next = continuation
         continuation = nil
         if finished && !snapshot.needsSetup {
@@ -132,6 +175,7 @@ final class SetupViewModel {
                 downloadProgress[offer.id] = 0
                 for request in requests {
                     let before = done
+                    fetching = true
                     let file = try await downloader.download(request, allowCellular: allowCellular) { fraction in
                         Task { @MainActor [weak self] in
                             if self?.downloadProgress[offer.id] != nil {
@@ -139,6 +183,8 @@ final class SetupViewModel {
                             }
                         }
                     }
+                    // A failed download returns through `run`, which resets it.
+                    fetching = false
                     done += request.byteSize
                     try Task.checkCancellation()
                     let setup = self.setup

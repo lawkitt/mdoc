@@ -14,6 +14,9 @@ final class DocumentViewModel {
     /// The header's one primary action, following the document's state.
     enum PrimaryAction: Equatable {
         case recognize(resume: Bool)
+        /// An import of a file that needs no recognition stopped before
+        /// its text was read (ADR 0088).
+        case finishImport
         case findNames
         case running(JobKind, JobUpdate?)
         /// Another document's job holds the one slot.
@@ -23,6 +26,9 @@ final class DocumentViewModel {
     }
 
     let session: any DocumentSession
+    /// The device runs the name detector. Below the floor the document
+    /// offers no Find names and says why (ADR 0088).
+    let findsNames: Bool
     private let jobs: LongJobRunner
     private let storage: MdocStorage
     private let onChange: () -> Void
@@ -39,13 +45,29 @@ final class DocumentViewModel {
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
     private(set) var notice: String?
+    /// Below the floor, where Find names would be: the device cannot find
+    /// names, and selecting text marks one (ADR 0088).
+    var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
+
+    /// An import that stopped before its text was read, of a file that is
+    /// not a scan or photo: the document says "Import not finished". A PDF
+    /// counts even when recognition began on it, since the core starts it
+    /// for every PDF once the model is in; Finish import keeps its pages.
+    var importNotFinished: Bool {
+        snapshot.phase == .recognizing && !snapshot.kind.needsRecognition && runningJob == nil
+    }
+
     /// Recognition or the scan needs a model the device has not downloaded.
     var needsSetup: Bool { waitingForSetup != nil }
     /// The job that asked for setup, run again once the models are in.
     private(set) var waitingForSetup: JobKind?
 
-    init(session: any DocumentSession, jobs: LongJobRunner, storage: MdocStorage, onChange: @escaping () -> Void = {}) {
+    init(
+        session: any DocumentSession, jobs: LongJobRunner, storage: MdocStorage, findsNames: Bool = true,
+        onChange: @escaping () -> Void = {}
+    ) {
         self.session = session
+        self.findsNames = findsNames
         self.jobs = jobs
         self.storage = storage
         self.onChange = onChange
@@ -72,8 +94,14 @@ final class DocumentViewModel {
             return .running(job.kind, job.progress)
         }
         switch snapshot.phase {
+        case .unscanned where !findsNames:
+            // Nothing to find here: marking by selection, then the hand-off.
+            // A case's names can still come in as proposals on import.
+            return snapshot.pendingCount > 0 ? .replaceAll(snapshot.pendingCount) : .handOff
         case .recognizing where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
+        case .recognizing where importNotFinished:
+            return .finishImport
         case .recognizing:
             return .recognize(resume: snapshot.pagesDone > 0 || snapshot.resumesOCR)
         case .unscanned:

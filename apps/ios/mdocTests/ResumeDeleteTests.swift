@@ -86,6 +86,22 @@ final class ResumeDeleteTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .recognize(resume: true))
     }
 
+    /// The core starts recognition on every PDF once the model is in, so a
+    /// stopped PDF import reads as an import, never as missing OCR (ADR 0088).
+    @MainActor
+    func testAStoppedPDFImportOffersFinishImport() throws {
+        let pdf = storage.url(.originals).appendingPathComponent("statement.pdf")
+        try Data("%PDF-1.4".utf8).write(to: pdf)
+        let session = try core().library.importDocument(.file(pdf, .pdf), title: "Statement", into: .newCase(name: "Statement"))
+        PendingImports(storage: storage).markOCRStarted(session.id)
+        let reopened = try core().library.session(for: session.id)
+        XCTAssertTrue(reopened.snapshot().resumesOCR)
+        let model = DocumentViewModel(
+            session: reopened, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        XCTAssertTrue(model.importNotFinished)
+        XCTAssertEqual(model.primaryAction, .finishImport)
+    }
+
     func testTheCoreKeepsOCRPagesInTheProtectedImportsFolder() throws {
         XCTAssertEqual(MdocStorage.Area.imports.rawValue, "imports")
         XCTAssertEqual(MdocStorage.Area.imports.protection, .complete)

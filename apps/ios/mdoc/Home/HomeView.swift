@@ -26,7 +26,7 @@ struct HomeView: View {
             // Its own section, so the setup card above reads apart from it.
             Section {
                 ForEach(home.documents) { document in
-                    DocumentRow(document: document, caseSummary: home.caseSummary(of: document))
+                    DocumentRow(document: document, caseSummary: home.caseSummary(of: document), findsNames: home.findsNames)
                         .tag(document.id)
                         .swipeActions {
                             Button("Delete", role: .destructive) {
@@ -41,7 +41,13 @@ struct HomeView: View {
                 ContentUnavailableView {
                     Label("No documents yet", systemImage: "doc.text.magnifyingglass")
                 } description: {
-                    Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
+                    // Below the floor mdoc finds no names: no promise it does
+                    // not keep (ADR 0088).
+                    if home.findsNames {
+                        Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
+                    } else {
+                        Text("Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.")
+                    }
                 } actions: {
                     addMenu
                 }
@@ -113,19 +119,15 @@ struct HomeView: View {
         }
     }
 
+    /// Paste, Files, Photos, Scan: the first item opens nearest the button,
+    /// so the camera is last, away from it, and a double tap cannot open it
+    /// (ADR 0088).
     private var addMenu: some View {
         Menu {
-            if VNDocumentCameraViewController.isSupported {
-                Button {
-                    showsScanner = true
-                } label: {
-                    Label("Scan", systemImage: "doc.viewfinder")
-                }
-            }
             Button {
-                showsPhotos = true
+                showsPaste = true
             } label: {
-                Label("Photos", systemImage: "photo.on.rectangle")
+                Label("Paste", systemImage: "doc.on.clipboard")
             }
             Button {
                 showsFiles = true
@@ -133,13 +135,21 @@ struct HomeView: View {
                 Label("Files", systemImage: "folder")
             }
             Button {
-                showsPaste = true
+                showsPhotos = true
             } label: {
-                Label("Paste", systemImage: "doc.on.clipboard")
+                Label("Photos", systemImage: "photo.on.rectangle")
+            }
+            if VNDocumentCameraViewController.isSupported {
+                Button {
+                    showsScanner = true
+                } label: {
+                    Label("Scan", systemImage: "doc.viewfinder")
+                }
             }
         } label: {
             Label("Add", systemImage: "plus")
         }
+        .menuOrder(.priority)
         .accessibilityIdentifier("add-menu")
     }
 }
@@ -147,6 +157,9 @@ struct HomeView: View {
 private struct DocumentRow: View {
     let document: DocumentSummary
     let caseSummary: CaseSummary?
+    let findsNames: Bool
+
+    private var status: String { HomeViewModel.status(of: document, findsNames: findsNames) }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -173,9 +186,9 @@ private struct DocumentRow: View {
                         CaseDot(colour: caseSummary.colour)
                     }
                     Label {
-                        Text(HomeViewModel.status(of: document))
+                        Text(status)
                     } icon: {
-                        Image(systemName: HomeViewModel.statusSymbol(of: document))
+                        Image(systemName: HomeViewModel.statusSymbol(of: document, findsNames: findsNames))
                     }
                     .labelStyle(StatusLabelStyle())
                     .fontWeight(document.phase == .reviewing ? .semibold : .regular)
@@ -191,7 +204,7 @@ private struct DocumentRow: View {
 
     /// "Settlement agreement, 1 to review, case Settlement agreement".
     private var spoken: String {
-        var parts = [document.title, HomeViewModel.status(of: document)]
+        var parts = [document.title, status]
         if let caseSummary {
             parts.append(String(localized: "case \(caseSummary.name)"))
         }

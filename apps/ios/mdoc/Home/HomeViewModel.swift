@@ -13,12 +13,15 @@ struct PendingImport: Identifiable, Equatable {
 @Observable
 final class HomeViewModel {
     private let library: any Library
+    /// The device runs the name detector (ADR 0088).
+    let findsNames: Bool
     private(set) var snapshot: LibrarySnapshot = .empty
     var pendingImport: PendingImport?
     var errorMessage: String?
 
-    init(library: any Library) {
+    init(library: any Library, findsNames: Bool = true) {
         self.library = library
+        self.findsNames = findsNames
         refresh()
     }
 
@@ -63,10 +66,14 @@ final class HomeViewModel {
         refresh()
     }
 
-    /// One line under a document's title.
-    static func status(of document: DocumentSummary) -> String {
+    /// One line under a document's title. An interrupted import of a file
+    /// that needs no recognition says so (ADR 0088); below the detector
+    /// floor nothing waits for Find names.
+    static func status(of document: DocumentSummary, findsNames: Bool = true) -> String {
         switch document.phase {
+        case .recognizing where !document.kind.needsRecognition: String(localized: "Import not finished")
         case .recognizing: String(localized: "Text not recognized yet")
+        case .unscanned where !findsNames: String(localized: "Ready to mark names")
         case .unscanned: String(localized: "Ready to find names")
         case .reviewing: String(localized: "\(document.pendingCount) to review")
         case .ready where document.candidateCount == 0: String(localized: "Nothing found")
@@ -76,9 +83,11 @@ final class HomeViewModel {
 
     /// The status's symbol: state is shown by symbol and words, never by a
     /// colour, so the case colour stays the only colour on a row.
-    static func statusSymbol(of document: DocumentSummary) -> String {
+    static func statusSymbol(of document: DocumentSummary, findsNames: Bool = true) -> String {
         switch document.phase {
+        case .recognizing where !document.kind.needsRecognition: "doc.badge.clock"
         case .recognizing: "text.viewfinder"
+        case .unscanned where !findsNames: "character.cursor.ibeam"
         case .unscanned: "person.text.rectangle"
         case .reviewing: "exclamationmark.circle"
         case .ready: "checkmark.circle"

@@ -74,7 +74,7 @@ final class ScreenshotUITests: XCTestCase {
         XCTAssertTrue(download.waitForExistence(timeout: 30))
         download.tap()
         // The Simulator's network can count as cellular: allow it.
-        let cellular = app.buttons["Use Cellular"]
+        let cellular = app.buttons["Use cellular"]
         if cellular.waitForExistence(timeout: 5) {
             cellular.tap()
         }

@@ -104,7 +104,17 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var textPane: some View {
-        if model.snapshot.markdown.isEmpty {
+        if model.snapshot.markdown.isEmpty && model.importNotFinished {
+            ContentUnavailableView(
+                "Import not finished",
+                systemImage: "doc.badge.clock",
+                description: Text("The import stopped before mdoc read the text. Finish import reads it now."))
+        } else if model.snapshot.markdown.isEmpty && !model.snapshot.kind.needsRecognition {
+            ContentUnavailableView(
+                "No text yet",
+                systemImage: "doc.text",
+                description: Text("mdoc is reading the file."))
+        } else if model.snapshot.markdown.isEmpty {
             ContentUnavailableView(
                 "No text yet",
                 systemImage: "text.viewfinder",
@@ -205,9 +215,12 @@ struct DocumentScreen: View {
                 }
             } else {
                 if let interruption = model.interruption {
-                    InterruptionBanner(kind: interruption.kind) {
+                    InterruptionBanner(kind: interruption.kind, isImport: model.importNotFinished) {
                         Task { await model.resume() }
                     }
+                }
+                if model.showsBelowFloorNote {
+                    BelowFloorNote()
                 }
                 ActionBar(model: model)
             }
@@ -242,20 +255,49 @@ private struct IdentifiedSelection: Identifiable {
 /// "Recognition stopped when mdoc left the screen."
 private struct InterruptionBanner: View {
     let kind: JobKind
+    /// The stopped job read a file that needs no recognition.
+    let isImport: Bool
     let resume: () -> Void
 
     var body: some View {
         HStack {
             // OCR keeps its finished pages and resumes; the scan reruns.
-            Text(kind == .recognize
-                ? "Recognition stopped when mdoc left the screen. Finished pages are kept."
-                : "Finding names stopped when mdoc left the screen.")
+            Text(message)
                 .font(.footnote)
             Spacer()
-            Button(kind == .recognize ? "Resume" : "Start again", action: resume)
+            Button(button, action: resume)
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("interruption-resume")
         }
+    }
+
+    private var message: LocalizedStringKey {
+        switch kind {
+        case .recognize where isImport: "The import stopped when mdoc left the screen."
+        case .recognize: "Recognition stopped when mdoc left the screen. Finished pages are kept."
+        case .scan, .install: "Finding names stopped when mdoc left the screen."
+        }
+    }
+
+    private var button: LocalizedStringKey {
+        switch kind {
+        case .recognize where isImport: "Finish import"
+        case .recognize: "Resume"
+        case .scan, .install: "Start again"
+        }
+    }
+}
+
+/// Below the detector floor, where Find names would be (ADR 0088).
+private struct BelowFloorNote: View {
+    var body: some View {
+        Label(BelowFloor.note, systemImage: "info.circle")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("below-floor-note")
     }
 }
 
@@ -269,6 +311,10 @@ private struct ActionBar: View {
         switch model.primaryAction {
         case .recognize(let resume):
             primary(resume ? "Resume recognition" : "Recognize text", systemImage: "text.viewfinder") {
+                Task { await model.recognize() }
+            }
+        case .finishImport:
+            primary("Finish import", systemImage: "doc.badge.arrow.up") {
                 Task { await model.recognize() }
             }
         case .findNames:
