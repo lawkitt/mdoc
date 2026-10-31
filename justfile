@@ -79,6 +79,19 @@ check-all: check smoke-ocr smoke-models
 ios-core:
     scripts/build-ios-core.sh
 
+# Pinned Android SDK, emulator, JDK 21 and NDK under E:\Android; Windows (ADR 0089)
+android-setup:
+    scripts/install-android-sdk.sh
+    scripts/install-android-ndk.sh
+
+# Boot the API 36 emulator (16 KB pages) headless and print its adb serial; --window shows it (ADR 0089)
+android-emulator *args:
+    scripts/android-emulator.sh {{args}}
+
+# Android core into target/android: jniLibs for arm64-v8a and x86_64, Kotlin bindings (ADR 0089)
+android-core:
+    scripts/build-android-core.sh
+
 # cargo check of mdoc-ffi for iOS and Android; the Mac's local CI runs it (ADR 0085)
 mobile:
     scripts/mobile-check.sh
