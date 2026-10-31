@@ -280,23 +280,6 @@ impl DocumentView {
                         .child(muted(self.reply.summary()).when(cfg!(test), |v| {
                             v.debug_selector(|| "share-reply-summary".into())
                         }))
-                        .when(unresolved > 0, |v| {
-                            v.child(
-                                ui::control(
-                                    "share-next-unrecognised",
-                                    "Next unrecognized",
-                                    theme,
-                                    true,
-                                )
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "share-next-unrecognised".into())
-                                })
-                                .text_size(px(12.))
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.next_unrecognised(window, cx),
-                                )),
-                            )
-                        })
                         .when(!restorable, |v| {
                             v.child(
                                 muted("No aliases are applied, so nothing can be restored.".into())
@@ -350,7 +333,25 @@ impl DocumentView {
                                     }
                                 },
                             )),
-                        ),
+                        )
+                        // Bordered like its neighbors, not a bare text
+                        // control beside them (U25).
+                        .when(exists && unresolved > 0, |v| {
+                            v.child(
+                                ui::primary_button(
+                                    "share-next-unrecognised",
+                                    "Next unrecognized",
+                                    theme,
+                                    true,
+                                )
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "share-next-unrecognised".into())
+                                })
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.next_unrecognised(window, cx),
+                                )),
+                            )
+                        }),
                 )
                 .into_any_element(),
         )

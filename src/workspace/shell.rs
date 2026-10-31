@@ -864,15 +864,16 @@ impl Workspace {
                     ),
             );
         // Collapsed sidebar: the header sits in the title row and Home in its
-        // own card below (ADR 0048).
+        // own card below (ADR 0048). The header comes after the body in
+        // element order, shown on top by the reversed column, so Home's
+        // first Tab stop is Open files…, not the header's bell (U25).
         div()
             .id("home")
             .track_focus(self.focus_regions.home())
             .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
             .size_full()
             .flex()
-            .flex_col()
-            .child(header)
+            .flex_col_reverse()
             .map(|v| {
                 if detached {
                     v.child(ui::card_surface(body.ml(px(style::CARD_MARGIN)), theme))
@@ -880,6 +881,7 @@ impl Workspace {
                     v.child(body)
                 }
             })
+            .child(header)
             .into_any_element()
     }
 
@@ -1138,9 +1140,12 @@ impl Workspace {
                     .child(home_label("Cases", theme).pt_0())
                     .child(div().flex_1())
                     .child(
-                        // The list opens below this link (#307).
+                        // The list opens below this link (#307). The link's
+                        // text, not its padding, ends where the local note
+                        // above it ends (U25).
                         div()
                             .relative()
+                            .mr(px(-8.))
                             .child({
                                 let bounds = self.cases.home_link.clone();
                                 gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})

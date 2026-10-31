@@ -1,4 +1,5 @@
 home
+home-notice
 home-local-note
 document
 navigation-disabled

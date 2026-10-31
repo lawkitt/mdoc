@@ -7,6 +7,28 @@ use std::path::Path;
 /// Opens the fixture document and returns its view for later scenes.
 pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
     d.capture("home")?;
+    // Home with no cases and the header's bell: "Open a case…" ends under
+    // the local note, and the Tab walk starts at Open files… (U25).
+    let cases = d.change(|w, _, cx| {
+        let cases = w.case_coordinator.cases().to_vec();
+        w.case_coordinator.hide_for_locked_render();
+        w.case_coordinator.restore_summaries(Vec::new());
+        w.notices.post("Saved elsewhere");
+        cx.notify();
+        cases
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.title.notices_open.set(false);
+        window.focus(&w.focus, cx);
+        cx.notify();
+    })?;
+    d.capture("home-notice")?;
+    d.change(|w, _, cx| {
+        w.notices.dismiss();
+        w.case_coordinator.finish_load(cases);
+        cx.notify();
+    })?;
     // The local note's explanation, as hovering it shows it (U16).
     d.change(|w, _, cx| {
         w.shell.local_note_hover = true;
