@@ -6,7 +6,7 @@ use crate::{
     document_view::DocumentView,
     pii::ui::{CopyForAi, PiiClosePopup},
     ui,
-    workspace::{PasteAiResponse, PseudonymizeClipboard},
+    workspace::{PasteAiResponse, PseudonymizeClipboard, RestoreClipboard},
 };
 use gpui::{
     AnyElement, App, Context, Focusable, Hsla, Window, anchored, deferred, div, prelude::*, px,
@@ -131,6 +131,60 @@ impl DocumentView {
                 "Replaced {n} {} from {source} in the clipboard. Names mdoc doesn't know yet \
                  were not replaced; check before pasting.",
                 if n == 1 { "name" } else { "names" }
+            ),
+        };
+        self.show_clipboard_notice(notice, cx);
+    }
+    /// Edit › Restore Clipboard: the shelf's Restore (ADR 0084) with this
+    /// tab's names, its case's or its live mapping's.
+    pub(crate) fn restore_clipboard(
+        &mut self,
+        _: &RestoreClipboard,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let identities = if self.case.link().is_some() {
+            self.case.names().to_vec()
+        } else {
+            self.pii.review.export_identities()
+        };
+        if identities.is_empty() {
+            self.show_clipboard_notice(
+                "This tab has no names to restore yet. Pseudonymize a document or open a case first."
+                    .into(),
+                cx,
+            );
+            cx.emit(crate::workspace::TabEvent::Case(
+                crate::workspace::CaseEvent::MappingMissing,
+            ));
+            return;
+        }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            self.show_clipboard_notice("The clipboard has no text.".into(), cx);
+            return;
+        };
+        let restored = crate::shelf::restore_clipboard(&text, identities);
+        if restored.text != text {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(restored.text.clone()));
+        }
+        let source = self
+            .case
+            .link()
+            .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
+        let plural =
+            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let notice = match (restored.restored, restored.unrecognised) {
+            (0, 0) => {
+                format!("No aliases from {source} were found in the clipboard. It is unchanged.")
+            }
+            (n, 0) => format!(
+                "Restored {} from {source} in the clipboard.",
+                plural(n, "name", "names")
+            ),
+            (n, m) => format!(
+                "Restored {} from {source} in the clipboard; {} unrecognized, left as is.",
+                plural(n, "name", "names"),
+                plural(m, "alias", "aliases")
             ),
         };
         self.show_clipboard_notice(notice, cx);

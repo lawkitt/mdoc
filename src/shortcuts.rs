@@ -567,6 +567,22 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
+        "Copy for AI",
+        &[on!(App, None, &["mod-shift-c"], pii::CopyForAi)],
+    ),
+    // ⌥⇧⌘C (the grill's pick) is Pseudonymize clipboard's; M for Markdown.
+    row(
+        Everywhere,
+        "Copy Markdown",
+        &[on!(
+            App,
+            None,
+            &["mod-shift-m"],
+            document_view::CopyMarkdown
+        )],
+    ),
+    row(
+        Everywhere,
         "Paste AI reply",
         &[on!(
             App,

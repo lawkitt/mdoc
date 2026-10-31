@@ -72,7 +72,7 @@ impl ShellState {
         } else {
             Recents::default_path()
         });
-        RecentFolders::share(recents.folders(), cx);
+        share_recents(&recents, cx);
         Self {
             recents,
             palette: None,
@@ -83,6 +83,13 @@ impl ShellState {
             home_scroll: gpui::ScrollHandle::new(),
         }
     }
+}
+
+/// Recents changed: Save As's folders (#180) and File › Open Recent follow.
+fn share_recents(recents: &Recents, cx: &mut App) {
+    RecentFolders::share(recents.folders(), cx);
+    let files = recents.files.iter().map(|recent| recent.path.clone());
+    crate::menus::set_recent_files(files.collect(), cx);
 }
 
 pub(super) struct Palette {
@@ -303,9 +310,16 @@ impl Workspace {
                     .any(|recent| &recent.path == path && !recent.pseudonymized);
             // Cleared or evicted entries return only on a new file event.
             if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized) {
-                RecentFolders::share(self.shell.recents.folders(), cx);
+                share_recents(&self.shell.recents, cx);
             }
         }
+    }
+
+    /// Settings › Clear and File › Open Recent › Clear Menu.
+    pub(super) fn clear_recents(&mut self, cx: &mut Context<Self>) {
+        self.shell.recents.clear();
+        share_recents(&self.shell.recents, cx);
+        cx.notify();
     }
 
     // ---- Sidebar ------------------------------------------------------------
@@ -464,9 +478,7 @@ impl Workspace {
                     )
                     .child(
                         ui::header_icon("sidebar-help", "Help ↗", ui::Icon::Help, theme, false)
-                            .on_click(|_, _, cx| {
-                                cx.open_url("https://github.com/lawkitt/mdoc#readme")
-                            }),
+                            .on_click(|_, _, cx| cx.open_url(crate::menus::HELP_URL)),
                     ),
             )
             .child(

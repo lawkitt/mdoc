@@ -851,6 +851,80 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("compare-view").is_some());
 }
 
+/// Edit › Restore Clipboard puts the tab's names back in copied text, as the
+/// shelf's Restore does (ADR 0084); ⇧⌘C and ⇧⌘M copy for AI and copy the
+/// Markdown (decision 10 of the UI polish grill).
+#[gpui::test]
+fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| crate::bind_app_keys(cx));
+    let view = active(&tabs, cx);
+    let focus = view.read_with(cx, |view, cx| view.editor.read(cx).focus_handle(cx));
+    cx.update(|window, cx| window.focus(&focus, cx));
+    let clipboard = |cx: &mut VisualTestContext| {
+        cx.read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default()
+    };
+    let notice = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            view.read(cx)
+                .clipboard_notice
+                .text()
+                .unwrap_or_default()
+                .to_string()
+        })
+    };
+
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "PERSON_1 thanks ORG_1 and PERSON_9.".into(),
+    ));
+    cx.dispatch_action(crate::workspace::RestoreClipboard);
+    cx.run_until_parked();
+    assert_eq!(
+        clipboard(cx),
+        "Anna Petrova thanks Northwind Traders Ltd and PERSON_9."
+    );
+    assert!(
+        notice(cx).starts_with("Restored 2 names from this document"),
+        "{}",
+        notice(cx)
+    );
+    assert!(
+        notice(cx).contains("1 alias unrecognized"),
+        "{}",
+        notice(cx)
+    );
+
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Nothing to restore.".into(),
+    ));
+    cx.dispatch_action(crate::workspace::RestoreClipboard);
+    cx.run_until_parked();
+    assert_eq!(clipboard(cx), "Nothing to restore.");
+    assert!(notice(cx).starts_with("No aliases"), "{}", notice(cx));
+
+    cx.update(|window, cx| window.focus(&focus, cx));
+    cx.simulate_keystrokes("secondary-shift-c");
+    cx.run_until_parked();
+    let for_ai = clipboard(cx);
+    assert!(
+        for_ai.contains("PERSON_1") && !for_ai.contains("Anna Petrova"),
+        "{for_ai}"
+    );
+    assert_ne!(
+        for_ai,
+        view.read_with(cx, |view, cx| view.editor.read(cx).text().to_string())
+    );
+    cx.simulate_keystrokes("secondary-shift-m");
+    cx.run_until_parked();
+    assert_eq!(
+        clipboard(cx),
+        view.read_with(cx, |view, cx| view.editor.read(cx).text().to_string())
+    );
+}
+
 /// The clipboard notice is transient (issue #181): it times out, and an
 /// edit, a copy or its × clears it sooner.
 #[gpui::test]

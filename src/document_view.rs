@@ -54,6 +54,10 @@ actions!(
         SaveAs,
         CopyMarkdown,
         ToggleCompare,
+        ShowEditView,
+        ShowOriginalView,
+        ShowPseudonymizedView,
+        ShowReplacements,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -2264,7 +2268,22 @@ impl Render for DocumentView {
                     this.toggle_compare(window, cx)
                 },
             ))
+            // View › Edit, Original and Pseudonymized: the view switcher's
+            // segments (ADR 0046).
+            .on_action(cx.listener(|this, _: &ShowEditView, window, cx| {
+                this.set_view_mode(None, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowOriginalView, window, cx| {
+                this.set_view_mode(Some(crate::pii::ui::CompareMode::Original), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowPseudonymizedView, window, cx| {
+                this.set_view_mode(Some(crate::pii::ui::CompareMode::Pseudonymized), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowReplacements, window, cx| {
+                this.show_replacements(window, cx)
+            }))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
+            .on_action(cx.listener(Self::restore_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))
             .on_action(cx.listener(Self::add_pii_candidate_as))
