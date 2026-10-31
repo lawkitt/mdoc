@@ -12,10 +12,16 @@ use crate::{
 };
 use gpui::{
     AnyElement, Context, CursorStyle, FontStyle, FontWeight, HighlightStyle, Hsla, MouseButton,
-    MouseDownEvent, MouseMoveEvent, SharedString, StyledText, div, prelude::*, px,
+    MouseDownEvent, MouseMoveEvent, SharedString, StyledText, TextRun, TextStyle, Window, div,
+    prelude::*, px,
 };
 use mdoc_pii::Category;
 use std::{ops::Range, time::SystemTime};
+
+/// The preview's width: the shelf's, less its padding and the row's.
+pub(crate) const PREVIEW_WIDTH: f32 = crate::menu_bar::SHELF_WIDTH - 2. * 8. - 2. * 8. - 2.;
+const PREVIEW_SIZE: f32 = 12.;
+const PREVIEW_LINES: usize = 2;
 
 /// Heights the shelf sums to size its window.
 pub(super) const READY_ROW: f32 = 92.;
@@ -23,8 +29,12 @@ pub(super) const WAITING_ROW: f32 = 58.;
 const TITLE_LINE: f32 = 20.;
 const PREVIEW_LINE: f32 = 16.;
 const META_LINE: f32 = 18.;
-/// A long case name gives way before the title does.
-const CASE_LABEL_MAX: f32 = 132.;
+const TITLE_SIZE: f32 = 13.;
+/// What the title line keeps for the others: a case label at least this
+/// wide, and the Copy for AI button; a long case label gives way first.
+const CASE_LABEL_MIN: f32 = 64.;
+const COPY_BUTTON: f32 = 92.;
+const HEADER_GAP: f32 = 6.;
 const ROW_INNER_GAP: f32 = 3.;
 
 /// A row's height: a ready row with prose shows its two preview lines.
@@ -156,6 +166,160 @@ pub(crate) fn preview_runs(preview: &Preview, theme: Theme) -> Vec<(Range<usize>
         .collect()
 }
 
+/// The preview's text runs over `base`: bold and italic in their own
+/// fonts, as the row draws them (chips change colour, not width).
+fn fit_runs(preview: &Preview, base: &TextStyle) -> Vec<TextRun> {
+    let mut runs = Vec::new();
+    let mut at = 0;
+    for (range, style) in preview_runs(preview, Theme::Light) {
+        if range.start > at {
+            runs.push(base.to_run(range.start - at));
+        }
+        runs.push(base.clone().highlight(style).to_run(range.len()));
+        at = range.end;
+    }
+    if at < preview.text.len() {
+        runs.push(base.to_run(preview.text.len() - at));
+    }
+    runs
+}
+
+/// How many lines `preview` wraps to at `width`, shaped as drawn.
+pub(crate) fn wrapped_lines(preview: &Preview, width: f32, window: &Window) -> usize {
+    let mut base = window.text_style();
+    base.font_size = px(PREVIEW_SIZE).into();
+    let runs = fit_runs(preview, &base);
+    window
+        .text_system()
+        .shape_text(
+            preview.text.clone().into(),
+            px(PREVIEW_SIZE),
+            &runs,
+            Some(px(width)),
+            None,
+        )
+        .map_or(1, |lines| {
+            lines
+                .iter()
+                .map(|line| line.wrap_boundaries().len() + 1)
+                .sum()
+        })
+}
+
+/// How wide `text` is in the title's font, on one line.
+fn title_width(text: &str, window: &Window) -> f32 {
+    let mut style = window.text_style();
+    style.font_size = px(TITLE_SIZE).into();
+    style.font_weight = FontWeight::SEMIBOLD;
+    let runs = [style.to_run(text.len())];
+    window
+        .text_system()
+        .shape_text(text.to_string().into(), px(TITLE_SIZE), &runs, None, None)
+        .ok()
+        .and_then(|lines| {
+            lines
+                .first()
+                .map(|line| line.size(px(TITLE_LINE)).width.as_f32())
+        })
+        .unwrap_or(0.)
+}
+
+/// `title` as the row draws it, measured, and its width: whole when it
+/// fits the room its row leaves, else cut in the middle with "…" (ADR 0084).
+pub(crate) fn fit_title(document: &ShelfDocument, window: &Window) -> (String, f32) {
+    let mut room = PREVIEW_WIDTH - HEADER_GAP;
+    if document.case.is_some() {
+        room -= CASE_LABEL_MIN + HEADER_GAP;
+    }
+    if document.readiness.is_ready() {
+        room -= COPY_BUTTON + HEADER_GAP;
+    }
+    let title = document.display_title();
+    let width = title_width(title, window);
+    if width <= room {
+        return (title.to_string(), width.ceil());
+    }
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() < 3 {
+        return (title.to_string(), room);
+    }
+    let cut = |keep: usize| -> String {
+        let head = keep.div_ceil(2);
+        let tail = keep / 2;
+        let start: String = chars[..head].iter().collect();
+        let end: String = chars[chars.len() - tail..].iter().collect();
+        format!("{start}…{end}")
+    };
+    // The most characters kept that still fit.
+    let (mut lo, mut hi) = (0, chars.len() - 1);
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if title_width(&cut(mid), window) <= room {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let fitted = cut(lo);
+    let width = title_width(&fitted, window);
+    (fitted, width.ceil())
+}
+
+/// `preview` cut at byte `cut`, back to a word, ending in "…"; ranges past
+/// the end are dropped or clipped, so no chip is cut in half.
+fn cut_preview(preview: &Preview, cut: usize) -> Preview {
+    let body = &preview.text[..cut];
+    let at_word = body.rfind(' ').filter(|at| *at > cut / 2).unwrap_or(cut);
+    let end = body[..at_word].trim_end().len();
+    let clip = |ranges: &[Range<usize>]| -> Vec<Range<usize>> {
+        ranges
+            .iter()
+            .filter(|r| r.start < end)
+            .map(|r| r.start..r.end.min(end))
+            .collect()
+    };
+    Preview {
+        text: format!("{}…", &preview.text[..end]),
+        aliases: preview
+            .aliases
+            .iter()
+            .filter(|r| r.end <= end)
+            .cloned()
+            .collect(),
+        bold: clip(&preview.bold),
+        italic: clip(&preview.italic),
+    }
+}
+
+/// `preview` as it fits two lines `width` wide with its real fonts: whole
+/// when it fits, else cut at a word and ending in "…" (ADR 0084). Bold and
+/// chips wrap wider than plain text, so the cut is measured, not counted.
+pub(crate) fn fit_preview(preview: &Preview, width: f32, window: &Window) -> Preview {
+    if wrapped_lines(preview, width, window) <= PREVIEW_LINES {
+        return preview.clone();
+    }
+    let body_len = preview.text.trim_end_matches('…').len();
+    let cuts: Vec<usize> = preview.text[..body_len]
+        .char_indices()
+        .map(|(at, _)| at)
+        .filter(|at| *at > 0)
+        .collect();
+    // The longest cut that still fits.
+    let (mut lo, mut hi) = (0, cuts.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if wrapped_lines(&cut_preview(preview, cuts[mid - 1]), width, window) <= PREVIEW_LINES {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    match lo {
+        0 => cut_preview(preview, cuts.first().copied().unwrap_or(0)),
+        n => cut_preview(preview, cuts[n - 1]),
+    }
+}
+
 /// A small label: the case in its colour, or a readiness state in amber.
 fn label(text: impl Into<SharedString>, color: Hsla) -> gpui::Div {
     div()
@@ -179,29 +343,34 @@ impl ShelfView {
         let document = &self.content.documents[index];
         let ready = document.readiness.is_ready();
         let copied = self.copied == Some(index);
+        let (title, title_width) = self
+            .titles
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| (document.display_title().to_string(), PREVIEW_WIDTH));
         let header = div()
             .h(px(TITLE_LINE))
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(6.))
+            .gap(px(HEADER_GAP))
             .child(
+                // Measured when the shelf opened: the title keeps its width
+                // and the case label takes what is left.
                 div()
-                    .min_w_0()
-                    .flex_shrink(1.)
+                    .flex_shrink_0()
+                    .w(px(title_width))
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_ellipsis_middle()
-                    .text_size(px(13.))
+                    .text_size(px(TITLE_SIZE))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(document.display_title().to_string()),
+                    .child(title),
             )
             .when_some(document.case.as_ref(), |header, case| {
                 header.child(
                     label(case.name.clone(), style::case_color(case.hue(), theme))
-                        .flex_shrink(3.)
-                        .min_w(px(40.))
-                        .max_w(px(CASE_LABEL_MAX))
+                        .flex_shrink(1.)
+                        .min_w_0()
                         .overflow_hidden()
                         .text_ellipsis(),
                 )
@@ -246,7 +415,8 @@ impl ShelfView {
                         })),
                 )
             });
-        let preview = document.preview.as_ref().filter(|_| ready).map(|preview| {
+        let fitted = self.fitted.get(index).and_then(Option::as_ref);
+        let preview = fitted.filter(|_| ready).map(|preview| {
             div()
                 .id(("shelf-preview", index))
                 .h(px(2. * PREVIEW_LINE))
@@ -366,6 +536,74 @@ mod tests {
             "6 people · 4 organisations · 4 IDs"
         );
         assert_eq!(breakdown(&[(Category::Person, 1)]), "1 person");
+    }
+
+    /// GUI run of #280: bold and chips wrap wider than plain text, so the
+    /// two-line cut is measured with them and always ends in "…".
+    #[gpui::test]
+    fn previews_fit_two_measured_lines_and_end_in_an_ellipsis(cx: &mut gpui::TestAppContext) {
+        let cx = cx.add_empty_window();
+        let text = "Without prejudice and subject to contract Claim number: 6001842/2026 \
+                    (Employment Tribunal, Bristol) ORG_1 and PERSON_1 agree the terms below.";
+        let preview = Preview {
+            text: text.into(),
+            aliases: vec![text.find("ORG_1").unwrap()..text.find("ORG_1").unwrap() + 5; 1],
+            bold: vec![42..55; 1],
+            italic: Vec::new(),
+        };
+        cx.update(|window, _| {
+            for width in [120., 200., PREVIEW_WIDTH] {
+                let fitted = fit_preview(&preview, width, window);
+                assert!(
+                    wrapped_lines(&fitted, width, window) <= PREVIEW_LINES,
+                    "{width}"
+                );
+                if fitted.text != text {
+                    assert!(fitted.text.ends_with('…'), "{}", fitted.text);
+                    assert!(text.starts_with(fitted.text.trim_end_matches('…')));
+                    assert!(fitted.aliases.iter().all(|r| r.end < fitted.text.len()));
+                }
+            }
+            let short = Preview {
+                text: "PERSON_1 signed.".into(),
+                ..Preview::default()
+            };
+            assert_eq!(fit_preview(&short, PREVIEW_WIDTH, window), short);
+        });
+    }
+
+    /// GUI run of #280: the title takes its width first; only a title
+    /// longer than its room is cut, in the middle.
+    #[gpui::test]
+    fn titles_keep_their_width_and_cut_in_the_middle_only_when_long(cx: &mut gpui::TestAppContext) {
+        use crate::shelf::OpenTab;
+        let cx = cx.add_empty_window();
+        let row = |title: &'static str| {
+            ShelfDocument::of_tab(OpenTab {
+                id: 1,
+                title,
+                text: "PERSON_1 signed the agreement today.",
+                aliases: vec!["PERSON_1"],
+                pending: 0,
+                checking: false,
+                names: Vec::new(),
+                case: None,
+                edited: SystemTime::UNIX_EPOCH,
+            })
+            .unwrap()
+        };
+        cx.update(|window, _| {
+            let (short, width) = fit_title(&row("Settlement agreement.md"), window);
+            assert_eq!(short, "Settlement agreement");
+            assert!(width > 0. && width < PREVIEW_WIDTH - COPY_BUTTON);
+            let long = row(
+                "Settlement agreement between the parties, schedules, annexes and the final \
+                 signed copy.md",
+            );
+            let (cut, width) = fit_title(&long, window);
+            assert!(cut.contains('…') && cut.starts_with("Settlement") && cut.ends_with("copy"));
+            assert!(width <= PREVIEW_WIDTH - COPY_BUTTON - 2. * HEADER_GAP + 1.);
+        });
     }
 
     #[test]

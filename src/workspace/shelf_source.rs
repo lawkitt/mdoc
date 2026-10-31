@@ -148,7 +148,7 @@ pub(crate) enum ClipboardSource {
         id: String,
         name: String,
     },
-    /// The tab's title, pseudonymized.
+    /// The tab's title, pseudonymized, without `.md` (ADR 0084).
     Tab {
         id: u64,
         title: String,
@@ -189,7 +189,7 @@ impl Workspace {
                 let row = shelf_tab(tab.id(), view, cx)?;
                 Some(ClipboardSource::Tab {
                     id: tab.id(),
-                    title: row.title,
+                    title: row.display_title().to_string(),
                 })
             })
             .collect();

@@ -30,9 +30,9 @@ use crate::{
     workspace::{ClipboardNames, ClipboardSource, Quit, Workspace},
 };
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, FocusHandle, Focusable, Global, Hsla, KeyBinding,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, Task, Window,
-    WindowHandle, actions, div, prelude::*, px,
+    AnyElement, App, ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, Global, Hsla,
+    KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString,
+    Task, Window, WindowHandle, actions, div, prelude::*, px,
 };
 use mdoc_pii::restore::RestoreMap;
 use std::{cell::Cell, rc::Rc, time::Duration};
@@ -193,6 +193,10 @@ pub(crate) struct ShelfView {
     focus: FocusHandle,
     /// One focus handle per document row, for ↑↓ and the focus ring.
     rows: Vec<FocusHandle>,
+    /// Each row's preview as it fits two lines, and its title as it fits
+    /// with its width, measured once.
+    fitted: Vec<Option<shelf::Preview>>,
+    titles: Vec<(String, f32)>,
     /// A press on a ready row that may become a drag: its row and place.
     press: Option<(usize, Point<Pixels>)>,
     /// The row whose Copy for AI just ran; the shelf closes after it.
@@ -204,6 +208,8 @@ pub(crate) struct ShelfView {
     picker_rows: Vec<FocusHandle>,
     /// The ▾ that opens the picker; focus returns to it.
     pick_button: FocusHandle,
+    /// The running drag was dropped on the shelf itself: not a drop.
+    dropped_here: bool,
     /// The last clipboard action's result, on the source line for a while.
     result: Option<String>,
     result_clear: Option<Task<()>>,
@@ -237,6 +243,21 @@ impl ShelfView {
             .iter()
             .map(|_| cx.focus_handle().tab_stop(true))
             .collect();
+        let fitted = content
+            .documents
+            .iter()
+            .map(|document| {
+                document
+                    .preview
+                    .as_ref()
+                    .map(|preview| row::fit_preview(preview, row::PREVIEW_WIDTH, window))
+            })
+            .collect();
+        let titles = content
+            .documents
+            .iter()
+            .map(|document| row::fit_title(document, window))
+            .collect();
         // Focus starts on the first row (ADR 0084).
         window.focus(rows.first().unwrap_or(&focus), cx);
         // A click outside takes key status from the panel: close it.
@@ -253,12 +274,15 @@ impl ShelfView {
             content,
             focus,
             rows,
+            fitted,
+            titles,
             press: None,
             copied: None,
             closing: None,
             picking: false,
             picker_rows,
             pick_button: cx.focus_handle().tab_stop(true),
+            dropped_here: false,
             result: None,
             result_clear: None,
             #[cfg(test)]
@@ -471,6 +495,7 @@ impl ShelfView {
         let Some(path) = export(document, cx) else {
             return;
         };
+        self.dropped_here = false;
         #[cfg(all(target_os = "macos", not(test)))]
         {
             let workspace = self.workspace;
@@ -517,12 +542,19 @@ impl ShelfView {
         self.used(index, cx);
     }
 
+    /// The running drag was released over the shelf itself.
+    pub(crate) fn dropped_on_shelf(&mut self) {
+        self.dropped_here = true;
+    }
+
     /// A drag ended; a drop somewhere retires "Drag a preview into any app"
     /// for good (ADR 0084).
     // Only the macOS drag reports its end; elsewhere there is no shelf.
     #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
     pub(crate) fn drag_ended(&mut self, dropped: bool, cx: &mut Context<Self>) {
-        if !dropped || !std::mem::take(&mut self.content.drag_hint) {
+        // A drop back on the shelf took nothing anywhere.
+        let elsewhere = dropped && !std::mem::take(&mut self.dropped_here);
+        if !elsewhere || !std::mem::take(&mut self.content.drag_hint) {
             return;
         }
         let _ = self.workspace.update(cx, |workspace, _, cx| {
@@ -932,6 +964,8 @@ impl Render for ShelfView {
                 MouseButton::Left,
                 cx.listener(|this, _, _, _| this.press = None),
             )
+            // A drag released over the shelf lands here, not in another app.
+            .on_drop(cx.listener(|this, _: &ExternalPaths, _, _| this.dropped_on_shelf()))
             .size_full()
             .overflow_y_scroll()
             .flex()

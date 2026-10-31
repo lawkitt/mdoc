@@ -703,6 +703,16 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         })
         .unwrap();
     assert!(hint, "the hint shows before the first drag");
+    // A tab without a case is named without `.md` (GUI run of #280).
+    let sources = shelf
+        .read_with(cx, |view, _| view.content().sources.clone())
+        .unwrap();
+    assert!(
+        sources.iter().any(
+            |s| matches!(s, crate::workspace::ClipboardSource::Tab { title, .. } if title == "b")
+        ),
+        "{sources:?}"
+    );
 
     // ⌘1–⌘8 are bound on macOS, where the shelf exists; elsewhere the
     // action itself runs.
@@ -778,6 +788,18 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
         })
         .unwrap();
     assert!(hint(cx), "a cancelled drag keeps the hint");
+    assert!(!cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
+    // Released over the shelf itself (GUI run of #280): AppKit reports a
+    // drop, but nothing left mdoc. (The shelf's drop handler calls
+    // `dropped_on_shelf`; the native event is a GUI check.)
+    shelf
+        .update(cx, |view, window, cx| {
+            view.drag(0, window, cx);
+            view.dropped_on_shelf();
+            view.drag_ended(true, cx);
+        })
+        .unwrap();
+    assert!(hint(cx), "a drop on the shelf keeps the hint");
     assert!(!cx.update(|_, cx| tabs.read(cx).shelf_drag_hint_shown()));
     shelf
         .update(cx, |view, window, cx| {
