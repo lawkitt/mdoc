@@ -5,6 +5,7 @@ issue: 387
 kind: contract
 source: hunt-r1
 expect: false hit: PERSON "Lead technician" ×2
+expect: false hit: PERSON "lead technician"
 ---
 # Calibration services: personnel schedule
 
