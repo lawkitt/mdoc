@@ -1,5 +1,6 @@
 //! Experimental, offline GLiNER2 integration. Network access belongs only to
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
+pub mod lists;
 pub mod recognition;
 mod rules;
 mod structured;

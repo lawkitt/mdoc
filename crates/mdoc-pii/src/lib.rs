@@ -272,6 +272,9 @@ pub enum Recognizer {
     /// A form of a known full name, found by the review after a scan or a
     /// mark (ADR 0092); never a detector's.
     Propagation,
+    /// A wording on the user's Always list (ADR 0092), the last scan-time
+    /// stage.
+    UserList,
 }
 impl Recognizer {
     fn rule(self) -> bool {

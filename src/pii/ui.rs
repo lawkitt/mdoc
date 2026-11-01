@@ -846,7 +846,11 @@ impl DocumentView {
             return;
         };
         let original = source[range.clone()].into();
-        self.record_decision(before, mdoc_pii::decisions::Decision::Add { original }, cx);
+        self.record_decision(
+            before,
+            mdoc_pii::decisions::Decision::Add { original, category },
+            cx,
+        );
         self.pii.reviewing = true;
         if !self.pii.mapping.open {
             self.pii.mapping.open_panel(window.focused(cx));

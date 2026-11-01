@@ -114,6 +114,30 @@ fn kept_homonyms_retain_each_occurrences_assigned_identity() {
 }
 
 #[test]
+fn keeping_a_whole_identity_lists_its_wordings_for_never() {
+    let source = "Acme met Acme and Bob";
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0..4, Category::Organization),
+                detection(18..21, Category::Person),
+            ],
+        )
+        .unwrap();
+    let acme = review.candidates()[0].variant;
+    // One of two mentions kept: the name is still proposed, nothing listed.
+    review.keep_mentions([(acme, 0..4)]);
+    assert!(review.never_wordings().is_empty());
+    review.keep_mentions([(acme, 9..13)]);
+    assert_eq!(review.never_wordings(), [Arc::<str>::from("Acme")]);
+    // Proposed again: off the list.
+    review.propose_kept_mentions(source, std::slice::from_ref(&(9..13)));
+    assert!(review.never_wordings().is_empty());
+}
+
+#[test]
 fn batch_keeps_exclusions_protects_markdown_and_skips_detected_markers() {
     let source =
         "**Анна** Bob Анна [mail](anna@example.invalid) <span title='Bob'>Bob</span> 2026 100";

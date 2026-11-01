@@ -2,6 +2,7 @@
 //! stored as one AES-256-GCM file per case in app data. The key is held by the
 //! OS (macOS Keychain, Windows data protection); there is no plaintext
 //! fallback. Originals never reach the session manifest.
+use crate::lists::Lists;
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, Generate, Nonce, Payload},
@@ -67,6 +68,10 @@ pub enum CaseError {
 /// File header: magic and format version, also authenticated with the case id.
 const MAGIC: &[u8; 9] = b"MDOCCASE1";
 const NONCE: usize = 12;
+/// The user-wide lists' file in the cases folder, and its header (also its
+/// authenticated data). Not a `.case`, so listing and counting cases skip it.
+const LISTS_FILE: &str = "user.lists";
+const LISTS_MAGIC: &[u8; 9] = b"MDOCLIST1";
 /// Cases are small; anything larger is not one of ours.
 const MAX_FILE: u64 = 64 * 1024 * 1024;
 
@@ -254,6 +259,18 @@ pub struct Case {
     /// member is ready on the shelf only while its file matches (ADR 0084).
     #[serde(default)]
     pub reviewed: Vec<ReviewedMember>,
+    /// The case's Always and Never lists, from its members' manual marks
+    /// and Keeps (ADR 0092).
+    #[serde(default)]
+    pub lists: Lists,
+}
+
+/// The user-wide Always and Never lists as stored (ADR 0092).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct UserLists {
+    /// Bumped on every change; a store never writes an older revision.
+    pub revision: u64,
+    pub lists: Lists,
 }
 
 /// A member's text as last saved while ready (ADR 0084): a fingerprint of
@@ -290,6 +307,7 @@ impl Case {
             replies: Vec::new(),
             dismissed_hints: Vec::new(),
             reviewed: Vec::new(),
+            lists: Lists::default(),
         };
         case.merge(identities);
         case
@@ -641,58 +659,90 @@ impl Store {
         {
             return Ok(());
         }
+        self.write_sealed(
+            &self.path(&case.id),
+            MAGIC,
+            &Self::aad(&case.id),
+            &serde_json::to_vec(case)?,
+        )?;
+        written.insert(case.id.clone(), case.revision);
+        Ok(())
+    }
+    /// Encrypt `plain` with `aad` and replace `path` with it atomically.
+    fn write_sealed(&self, path: &Path, magic: &[u8], aad: &[u8], plain: &[u8]) -> io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
-        let plain = serde_json::to_vec(case)?;
         let nonce = Nonce::<Aes256Gcm>::try_generate()
             .map_err(|_| io::Error::other("Could not generate a nonce"))?;
         let sealed = self
             .cipher
-            .encrypt(
-                &nonce,
-                Payload {
-                    msg: &plain,
-                    aad: &Self::aad(&case.id),
-                },
-            )
+            .encrypt(&nonce, Payload { msg: plain, aad })
             .map_err(|_| io::Error::other("Could not encrypt the case"))?;
         let mut file = tempfile::NamedTempFile::new_in(&self.dir)?;
-        file.write_all(MAGIC)?;
+        file.write_all(magic)?;
         file.write_all(nonce.as_slice())?;
         file.write_all(&sealed)?;
         file.flush()?;
         file.as_file().sync_all()?;
-        file.persist(self.path(&case.id))
-            .map_err(|error| error.error)?;
-        written.insert(case.id.clone(), case.revision);
+        file.persist(path).map_err(|error| error.error)?;
         Ok(())
+    }
+    /// The plaintext [`Self::write_sealed`] wrote to `path`.
+    fn read_sealed(
+        path: &Path,
+        cipher: &Aes256Gcm,
+        magic: &[u8],
+        aad: &[u8],
+    ) -> Result<Vec<u8>, CaseError> {
+        let bytes = read_limited(path).map_err(CaseError::Read)?;
+        let body = bytes
+            .strip_prefix(magic)
+            .filter(|b| b.len() > NONCE)
+            .ok_or(CaseError::NotACase)?;
+        let (nonce, sealed) = body.split_at(NONCE);
+        let nonce = <&Nonce<Aes256Gcm>>::try_from(nonce).map_err(|_| CaseError::NotACase)?;
+        cipher
+            .decrypt(nonce, Payload { msg: sealed, aad })
+            .map_err(|_| CaseError::WrongKey)
     }
     pub fn load(&self, id: &str) -> Result<Case, CaseError> {
         if !Self::valid_id(id) {
             return Err(CaseError::InvalidId);
         }
-        let path = self.path(id);
-        let bytes = read_limited(&path).map_err(CaseError::Read)?;
-        let body = bytes
-            .strip_prefix(MAGIC.as_slice())
-            .filter(|b| b.len() > NONCE)
-            .ok_or(CaseError::NotACase)?;
-        let (nonce, sealed) = body.split_at(NONCE);
-        let nonce = <&Nonce<Aes256Gcm>>::try_from(nonce).map_err(|_| CaseError::NotACase)?;
-        let plain = self
-            .cipher
-            .decrypt(
-                nonce,
-                Payload {
-                    msg: sealed,
-                    aad: &Self::aad(id),
-                },
-            )
-            .map_err(|_| CaseError::WrongKey)?;
+        let plain = Self::read_sealed(&self.path(id), &self.cipher, MAGIC, &Self::aad(id))?;
         let case: Case = serde_json::from_slice(&plain).map_err(|_| CaseError::Damaged)?;
         if case.id != id {
             return Err(CaseError::Damaged);
         }
         Ok(case)
+    }
+    /// The user-wide lists of Settings › Detection (ADR 0092), sealed like a
+    /// case beside the cases; none saved yet: empty lists at revision 0.
+    pub fn load_lists(&self) -> Result<UserLists, CaseError> {
+        let path = self.dir.join(LISTS_FILE);
+        if !path.exists() {
+            return Ok(UserLists::default());
+        }
+        let plain = Self::read_sealed(&path, &self.cipher, LISTS_MAGIC, LISTS_MAGIC)?;
+        serde_json::from_slice(&plain).map_err(|_| CaseError::Damaged)
+    }
+    /// Save the user-wide lists; a revision older than the last written is
+    /// skipped, as for cases.
+    pub fn save_lists(&self, lists: &UserLists) -> io::Result<()> {
+        let mut written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+        if written
+            .get(LISTS_FILE)
+            .is_some_and(|&last| last > lists.revision)
+        {
+            return Ok(());
+        }
+        self.write_sealed(
+            &self.dir.join(LISTS_FILE),
+            LISTS_MAGIC,
+            LISTS_MAGIC,
+            &serde_json::to_vec(lists)?,
+        )?;
+        written.insert(LISTS_FILE.into(), lists.revision);
+        Ok(())
     }
     /// How many case files `dir` holds, from their names alone: the count of
     /// locked cases, read without the key. `None` when `dir` can't be read.
@@ -1700,5 +1750,53 @@ mod tests {
             (anna.alias.as_str(), anna.previous.as_slice()),
             ("PERSON_1", &["BUYER".to_string()][..])
         );
+    }
+
+    #[test]
+    fn user_lists_are_sealed_beside_the_cases_and_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            store(dir.path()).load_lists().unwrap(),
+            UserLists::default()
+        );
+        let mut saved = UserLists::default();
+        saved.lists.add_never("Supreme Court");
+        saved
+            .lists
+            .add_always("Acme Holdings", Category::Organization);
+        saved.revision = 2;
+        store(dir.path()).save_lists(&saved).unwrap();
+        // A new store on the same key: the next launch.
+        assert_eq!(store(dir.path()).load_lists().unwrap(), saved);
+        let bytes = std::fs::read(dir.path().join(LISTS_FILE)).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("Acme"));
+        // The file is no case: listing and counting skip it.
+        assert_eq!(Store::count(dir.path()), Some(0));
+        assert_eq!(store(dir.path()).list(), (Vec::new(), Vec::new()));
+        assert!(matches!(
+            Store::with_key(dir.path().to_path_buf(), &[8; 32]).load_lists(),
+            Err(CaseError::WrongKey)
+        ));
+        // An older revision never overwrites a newer one.
+        let store = store(dir.path());
+        let mut newer = saved.clone();
+        newer.revision = 3;
+        newer.lists.add_never("Riverside");
+        store.save_lists(&newer).unwrap();
+        store.save_lists(&saved).unwrap();
+        assert_eq!(store.load_lists().unwrap(), newer);
+    }
+
+    #[test]
+    fn a_case_keeps_its_own_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        let mut a = Case::new("A".into(), &[], None);
+        a.lists.add_never("Maya Bennett");
+        let b = Case::new("B".into(), &[], None);
+        store.save(&a).unwrap();
+        store.save(&b).unwrap();
+        assert!(store.load(&a.id).unwrap().lists.never_has("maya bennett"));
+        assert!(store.load(&b.id).unwrap().lists.is_empty());
     }
 }
