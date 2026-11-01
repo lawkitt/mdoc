@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: hidden-underscore-name
 issue: 376
 kind: docx
 source: import
-expect: miss: PERSON "Alice_Morgan" ×2
 ---
 | Counsel | Contact |
 | --- | --- |

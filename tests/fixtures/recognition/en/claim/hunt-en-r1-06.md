@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary hidden-underscore-name
-issue: 374 376
+flaw: org-boundary
+issue: 374
 kind: claim
 source: hunt-r1
-expect: miss: PERSON "Merrit_Zorlan"
 expect: boundary: gold ORG "Quiet Anvil Storage Ltd"; proposed ORG "Quiet Anvil Storage Ltd."
 ---
 # Application to correct the service record
