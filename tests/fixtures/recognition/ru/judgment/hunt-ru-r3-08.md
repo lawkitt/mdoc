@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: soft-hyphen-name
-issue: 420
+status: pass
+flaw:
+issue:
 kind: judgment
 source: hunt-r3
-expect: boundary: gold PERSON "Ма\u{ad}рина Арсеньевна Рудина"; proposed PERSON "рина Арсеньевна Рудина"
 ---
 # Судебный приказ о взыскании задолженности
 
