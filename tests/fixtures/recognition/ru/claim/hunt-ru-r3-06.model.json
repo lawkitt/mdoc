@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":232,"end":272,"label":"person","score":0.98215127,"text":"Илья Сергеевич Живцов"},
+    {"start":158,"end":210,"label":"person","score":0.97477317,"text":"Евгения\n  Матвеевна\n  Мельник"},
+    {"start":2175,"end":2202,"label":"email","score":0.99895966,"text":"melnik@vozvratdolga.invalid"},
+    {"start":2098,"end":2119,"label":"bank_account","score":0.80069196,"text":"40817О10900008673124"}
+  ]
+}

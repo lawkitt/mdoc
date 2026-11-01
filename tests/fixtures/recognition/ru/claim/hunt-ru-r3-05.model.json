@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":106,"end":148,"label":"person","score":0.9256343,"text":"Артём Антонович Зайцев"},
+    {"start":168,"end":204,"label":"organization","score":0.88817817,"text":"ООО «Книжный валик»"},
+    {"start":2336,"end":2359,"label":"person","score":0.9596865,"text":"Артём Зайцев"},
+    {"start":1901,"end":1920,"label":"email","score":0.99862766,"text":"zaicev@trud.invalid"}
+  ]
+}
