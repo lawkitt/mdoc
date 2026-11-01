@@ -1437,3 +1437,25 @@ fn a_lowercase_repeat_of_a_full_name_joins_it() {
     assert_eq!(repeat.recognizer(), Some(Recognizer::Propagation));
     assert_eq!(review.active_identities().len(), 2);
 }
+
+/// Review of #422: a repeat joins the name's identity after a merge, and a
+/// repeat inside a path stays out even once the wording is proposed.
+#[test]
+fn a_case_repeat_follows_merges_and_stays_out_of_paths() {
+    let source = "Iara Veldune signed. Corvin Ashmere witnessed.";
+    let mut review = ingest_names(source, &["Iara Veldune", "Corvin Ashmere"]);
+    let iara = review
+        .variant_identity(proposed(&review, "Iara Veldune").id)
+        .unwrap();
+    let corvin = review
+        .variant_identity(proposed(&review, "Corvin Ashmere").id)
+        .unwrap();
+    review.merge_identity(iara, corvin).unwrap();
+    let source = "Iara Veldune signed. Corvin Ashmere witnessed. Later iara veldune \
+        agreed. File /iara veldune/notes.";
+    review.ingest(source, Vec::new()).unwrap();
+    let repeat = proposed(&review, "iara veldune");
+    assert_eq!(review.variant_identity(repeat.id), Some(corvin));
+    let prose = source.find("iara veldune").unwrap();
+    assert_eq!(repeat.mentions, vec![prose..prose + "iara veldune".len()]);
+}

@@ -1,7 +1,7 @@
 //! Immutable, cancellable candidate discovery; reusable cached matcher.
 use super::{
     exact_boundary, generated_alias, intersects, interval_conflict,
-    propagation::sentence_start,
+    propagation::{glued, sentence_start},
     syntax::{plain_text_span, protected_syntax},
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
@@ -20,6 +20,8 @@ pub struct DiscoveryInput {
     pub(super) enabled: Vec<bool>,
     pub(super) priority: Vec<u64>,
     pub(super) mid_sentence: Vec<bool>,
+    /// Propagated: never inside an identifier, a path or an address.
+    pub(super) unglued: Vec<bool>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -75,6 +77,7 @@ impl DiscoveryInput {
                 && !intersects(&protected, range)
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
+                && !(self.unglued[*index] && glued(source, range))
         });
         // A hit inside a longer one never splits it, whatever its priority: a
         // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
