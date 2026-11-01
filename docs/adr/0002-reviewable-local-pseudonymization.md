@@ -3,7 +3,9 @@
 Status: Accepted, 2026-10-01. Superseded in part by
 [ADR 0041](0041-cases-and-ai-response-restoration.md) (cases store mappings),
 [ADR 0034](0034-pseudonymization-supported-feature.md) (no experimental label),
-and ADRs 0020, 0032 and 0048 (review surfaces).
+and ADRs 0020, 0032 and 0048 (review surfaces). Amended by
+[ADR 0092](0092-recognition-correction-pipeline.md) (dates of birth and
+case numbers are reviewed).
 
 ## Decision
 
@@ -20,7 +22,8 @@ or Docker.
 - Generic annotations and painted geometry belong in `mdoc-editor`; detection,
   review policy, grouping and mapping belong in the app.
 - Review names, organizations, contact details, addresses and identity, tax and
-  bank identifiers. Ordinary dates, amounts and legal references stay unless the
+  bank identifiers, dates in a personal context and labelled case numbers
+  (ADR 0092). Other dates, amounts and legal references stay unless the
   user selects them. Manual additions and exclusions are allowed.
 - Repeats of an exact value are reviewed together with an explicit
   single-occurrence option. Initials, inflections and other variants stay
