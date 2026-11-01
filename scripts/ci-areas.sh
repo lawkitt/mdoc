@@ -3,7 +3,8 @@
 #        scripts/ci-areas.sh --github
 #
 # The areas a change touches, by scripts/ci-areas.txt (ADR 0091): one line
-# of core, desktop, ios and android, in that order; empty for docs only.
+# of core, desktop, recognition, ios and android, in that order; empty for
+# docs only.
 # A core change lists every area. <from> and <to> default to HEAD^1 and
 # HEAD: on a merge ref, what the PR brings onto its base.
 #
@@ -14,7 +15,7 @@
 # a push whose earlier commit is unknown lists every area.
 source "$(dirname "$0")/lib.sh"
 
-every='core desktop ios android'
+every='core desktop recognition ios android'
 
 github() {
   local areas=$every
@@ -32,7 +33,9 @@ github() {
       ;;
   esac
   echo "areas=$areas"
-  if affects desktop "$areas"; then echo desktop=true; else echo desktop=false; fi
+  # Hosted clippy and test also run the recognition fixtures: on main they
+  # are the hosted check of a fixture change (the Mac's runner tests it too).
+  if affects desktop "$areas" || affects recognition "$areas"; then echo desktop=true; else echo desktop=false; fi
 }
 
 case "${1:-}" in

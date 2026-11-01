@@ -429,7 +429,7 @@ When a runner is stuck, the hosted fallback posts those statuses instead
 (part of `just test`) check both against fakes.
 
 **Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
-area (`none`, `ios`, `android`, `core`, `desktop`, or two of them) and a
+area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, or two of them) and a
 glob; a file takes the first line that matches it, desktop when none does,
 and a core change runs every area. Its comment says which scripts are
 desktop, shared (core) or mobile. `scripts/ci-areas.sh [<from> <to>]`
@@ -438,9 +438,14 @@ merge ref, the PR). A new script outside `src/` and `tests/` that a mobile
 job runs needs a line there, or it counts as desktop. `ci.yml`'s
 `paths-ignore` repeats the `none` lines word for word (the suite checks).
 Only exceptions precede the `none` lines: Markdown a test reads under
-`tests/fixtures/` (the recognition fixtures, core). Local CI runs them;
-hosted CI still skips them, since `paths-ignore` takes no `!` and a PR's
-hosted run is only lint, which reads no fixture.
+`tests/fixtures/` (the recognition fixtures, area `recognition`). A PR that
+changes only those gets a short `local/macos` job: `scripts/setup.sh`,
+`cargo nextest run -p mdoc-detect` and `just detection-gate`; `local/windows`
+gets `success` "Not affected: recognition fixtures only, the Mac tests them",
+and the mobile statuses "Not affected". With a desktop or core change too,
+the full desktop job runs. Hosted CI still skips them on PRs, since
+`paths-ignore` takes no `!` and a PR's hosted run is only lint, which reads
+no fixture; on `main` its `clippy` and `test` run for them.
 
 **Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
 runs only `lint (ubuntu)` on `pull_request`; its `areas`, `clippy` and `test`
@@ -580,6 +585,13 @@ user, not drafts) and calls a context stuck when it has
 | "Queued; waiting for …" | 15 min | the runner is up but out of capacity |
 | "Running …" | 50 min (the longest step limit is 40) | the runner stopped mid-job |
 | any other `pending` ("Queued") | 45 min | a long queue, or the runner is gone |
+| "Queued" behind 2 or more heads (`local/macos`, `local/windows`) | 5 min | overflow: a runner tests one head at a time, hosted CI many |
+
+Overflow counts, for the same context, the heads whose local status says
+"Running …" and those "Queued" earlier. Hosted CI is free on a public
+repository and runs jobs side by side, so a long local queue spills onto
+it instead of waiting 45 minutes (`FALLBACK_OVERFLOW_AHEAD`,
+`FALLBACK_OVERFLOW_MIN`).
 
 For a stuck head it dispatches the full `ci.yml` on the PR branch (one
 dispatch serves both contexts) and posts `pending` "Hosted fallback: hosted
@@ -595,9 +607,13 @@ or `local/android` dispatches nothing: until the hosted mobile jobs exist
 ([ADR 0091](adr/0091-mobile-ci-and-releases.md) item 5) it gets `success`
 "Hosted fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5)" at
 once, so a machine that is off never blocks merges (temporary). The merge gate does
-not change: a green fallback status counts like a local one. A runner that
-comes back queues every head with a fallback status, pending or finished,
-and its own result replaces the fallback's. The fallback writes only over
+not change: a green fallback status counts like a local one. A runner
+leaves alone the heads the fallback is running hosted CI for and those it
+failed; it tests again only an `error` (hosted CI gave up) and a mobile
+"NOT tested". On the Mac a fallback pass of `local/macos` gets a leftover
+job, `just detection-gate` only (hosted CI has none; it skips itself when
+recognition did not change), whose result keeps "clippy and test by hosted
+CI"; the PC does not test a fallback pass again. The fallback writes only over
 the status it read, re-reading it right before each write, so a runner's
 result wins (a runner posting in that same second is the one window left). The workflow runs
 `main`'s script with its own token (`statuses: write`, `actions: write`) and

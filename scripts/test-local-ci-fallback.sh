@@ -206,7 +206,7 @@ check "dispatches once per PR that needs it" \
 check "a head with no runner status is claimed" \
   has head1000000 local/macos "pending	Hosted fallback: hosted CI on head100 (attempt 1); no runner status after 20 min	https://github.com/example/mdoc/actions/workflows/ci.yml?query=branch%3Ab1"
 check "a finished context is left alone" none head1000000 local/windows
-check "a 30-min queue is not stuck" none head2000000 local/macos
+check "a 30-min queue behind two others overflows to hosted CI" has head2000000 local/macos "pending	Hosted fallback: * (attempt 1); overflow: queued behind 2 for 30 min	*"
 check "a 20-min capacity wait is claimed" has head2000000 local/windows "pending	Hosted fallback: * (attempt 1); \"Queued; waiting for disk*for 20 min	*"
 check "a 60-min step is claimed" has head3000000 local/macos "pending	*\"Running just test on main@abc\" for 60 min	*"
 check "a 10-min step is not" none head3000000 local/windows
@@ -254,6 +254,24 @@ check "untested_job names them" [ "$(untested_job local/ios), $(untested_job loc
   check "running: 49 min is not stuck" eval '! stuck_reason PENDING "Running just test" $((10000 - 49 * 60)) 0 10000'
   check "the fallback's own status is never stuck" eval '! stuck_reason PENDING "Hosted fallback: x" 0 0 100000'
   check "final states are never stuck" eval '! stuck_reason FAILURE x 0 0 100000'
+  check "overflow: queued 5 min behind 2 is stuck" \
+    [ "$(stuck_reason PENDING Queued $((10000 - 5 * 60)) 0 10000 2)" = "overflow: queued behind 2 for 5 min" ]
+  check "overflow: 4 min is not" eval '! stuck_reason PENDING Queued $((10000 - 4 * 60)) 0 10000 2'
+  check "overflow: behind 1 is not" eval '! stuck_reason PENDING Queued $((10000 - 30 * 60)) 0 10000 1'
+  check "overflow: a running step is never overflow" eval '! stuck_reason PENDING "Running just test" $((10000 - 30 * 60)) 0 10000 5'
+  # Ahead: the context's other running heads and earlier queued ones; mobile rows never count.
+  sep=$'\x1f'
+  ahead_rows=$(
+    printf '%s\n' "1${sep}b${sep}h1${sep}local/macos${sep}PENDING${sep}Running just test${sep}50${sep}0" \
+      "2${sep}b${sep}h2${sep}local/macos${sep}PENDING${sep}Queued${sep}10${sep}0" \
+      "3${sep}b${sep}h3${sep}local/macos${sep}PENDING${sep}Queued${sep}20${sep}0" \
+      "4${sep}b${sep}h4${sep}local/macos${sep}PENDING${sep}Queued${sep}30${sep}0" \
+      "4${sep}b${sep}h4${sep}local/ios${sep}PENDING${sep}Queued${sep}5${sep}0" \
+      "5${sep}b${sep}h5${sep}local/windows${sep}PENDING${sep}Queued${sep}40${sep}0" \
+      "6${sep}b${sep}h6${sep}local/macos${sep}PENDING${sep}Hosted fallback: x${sep}1${sep}0"
+  )
+  check "ahead counts running and earlier queued heads per context" \
+    [ "$(ahead_counts "$ahead_rows" | tr '\n' ' ')" = "0 1 2 3 0 0 0 " ]
   check "attempt is read from the description" [ "$(attempt_of "$(fb 1 2)")" = 2 ]
   check "attempt defaults to 1" [ "$(attempt_of "Hosted fallback: x")" = 1 ]
 }

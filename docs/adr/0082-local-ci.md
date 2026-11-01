@@ -1,6 +1,7 @@
 # Local CI
 
-Status: Accepted, 2026-10-29; amended 2026-10-30 and 2026-10-31. Amended by
+Status: Accepted, 2026-10-29; amended 2026-10-30, 2026-10-31 and 2026-11-01
+(overflow and recognition-only jobs, below). Amended by
 [ADR 0091](0091-mobile-ci-and-releases.md): areas decide which jobs run,
 `local/ios` and `local/android` join the gate (five checks), and the runners
 also test `main`; the hosted mobile jobs and the Mac's takeover follow in its
@@ -58,10 +59,10 @@ hub wait on CI.
   `local/android` is posted `success` "Hosted fallback: NOT tested; no hosted
   iOS job yet (ADR 0091 item 5)" at once: temporary, until ADR 0091's hosted
   mobile jobs replace it, so a machine that is off never blocks merges. The
-  gate keeps its five checks; a green fallback status counts. A runner that comes back
-  still tests every head with a fallback status, finished or not, and its
-  result replaces the fallback's; the fallback re-reads a status before
-  writing over it. The fallback runs `main`'s
+  gate keeps its five checks; a green fallback status counts. A runner
+  tests again only a fallback `error` and a mobile "NOT tested"; on the Mac
+  a fallback pass of `local/macos` gets the detection gate only (2026-11-01,
+  below). The fallback re-reads a status before writing over it. The fallback runs `main`'s
   script with `statuses: write` and `actions: write` and never checks out
   PR code. Accepted gaps: hosted CI tests the branch head, not the merge
   ref, and has no `just mobile` or mobile job yet, which the status says.
@@ -127,6 +128,20 @@ hub wait on CI.
   broken test branch. Trial result: local and hosted agreed on six PRs
   (#237, #238, #241, #244, #245, #246), and both runners failed the
   deliberately failing #239; PR CI cut over on 2026-10-30 (#252).
+
+- **Overflow and recognition-only jobs** (2026-11-01). On 2026-11-01 the
+  Mac was asked to test 122 PR heads and finished 56; up to 15 PRs were
+  open, and its desktop job took 23 minutes instead of 2 (the same GUI test
+  6 s in the morning, 100 s in the afternoon) while it also ran about 16
+  agent sessions. One job at a time per machine is a queue, not a speed-up,
+  at that volume. So: (1) area `recognition` (`tests/fixtures/recognition/`,
+  ADR 0093): a PR touching only it runs `setup`, `cargo nextest run -p
+  mdoc-detect` and the detection gate in `local/macos`, and `local/windows`
+  is "Not affected" (6 of the 15 open PRs were such); (2) the fallback
+  claims a "Queued" desktop head that has two or more heads ahead of it for
+  5 minutes (overflow), since hosted CI is free on this public repository
+  and runs side by side; (3) runners do not test again what hosted CI took:
+  heads it is running or failed, and off the Mac those it passed.
 
 ## Consequences
 

@@ -8,14 +8,17 @@
 #            fails when they disagree), and come first, so a README under
 #            apps/ or crates/ is still docs. Only exceptions precede them:
 #            Markdown under tests/fixtures/ that a test reads (the recognition
-#            fixtures, ADR 0093: desktop, since only the desktop jobs and the
-#            Mac's detection gate read them; the apps never do). Local CI runs
-#            them as their area; hosted CI
+#            fixtures, ADR 0093: recognition, below). Local CI runs them as
+#            their area; hosted CI
 #            still skips them (paths-ignore has no exceptions, and on a PR it
 #            runs only lint, which reads no fixture).
 #   ios      the iOS job (local/ios): apps/ios/ and the iOS scripts.
 #   android  the Android job (local/android): apps/android/ and the Android
 #            scripts.
+#   recognition  the recognition fixtures (ADR 0093): on the Mac, local/macos
+#            runs only mdoc-detect's tests and the detection gate;
+#            local/windows and the mobile jobs are not affected. The full
+#            desktop job covers them when the change is also desktop.
 #   core     every area: the Rust core and what every job builds with (the
 #            toolchain, the workspace manifest and lock, the justfile, and
 #            the shared scripts lib.sh, tools.env and setup.sh with what it
@@ -33,7 +36,7 @@
 # scripts/ci-areas.sh prints the areas a change touches; local-ci.sh,
 # mobile-check.sh, android-check.sh and ci.yml's areas job all read this file.
 
-desktop               tests/fixtures/recognition/**
+recognition           tests/fixtures/recognition/**
 
 none                  **/*.md
 none                  LICENSE

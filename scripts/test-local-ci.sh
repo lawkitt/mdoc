@@ -65,7 +65,7 @@ not() { ! "$@"; }
   check "the none lines are one block" \
     [ "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { inside = 1; next } inside { after = 1 } after && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
   check "every line names known areas and one glob" \
-    [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | grep -vE '^(none|core|desktop|ios|android)(,(desktop|ios|android))*[[:space:]]+[^[:space:]]+$')" ]
+    [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | grep -vE '^(none|core|desktop|recognition|ios|android)(,(desktop|ios|android))*[[:space:]]+[^[:space:]]+$')" ]
   # The desktop jobs follow the table through ci.yml's areas job.
   check "ci.yml's areas job reads the table" grep -q 'run: scripts/ci-areas.sh --github' .github/workflows/ci.yml
   check "hosted clippy and test wait for it" \
@@ -83,11 +83,11 @@ not() { ! "$@"; }
   routes ios apps/ios/mdoc.xcodeproj/project.pbxproj scripts/build-ios-core.sh scripts/ios-survey.sh scripts/ios-scan-pages.swift
   routes android apps/android/app/build.gradle.kts
   routes android scripts/build-android-core.sh scripts/android-emulator.sh scripts/android-package-xml.py scripts/install-android-sdk.sh
-  routes "core desktop ios android" crates/mdoc-ffi/src/lib.rs
-  routes "core desktop ios android" Cargo.lock
-  routes "core desktop ios android" scripts/lib.sh
-  routes "core desktop ios android" justfile apps/ios/mdoc/App/MdocApp.swift
-  routes "core desktop ios android" scripts/ci-areas.txt
+  routes "core desktop recognition ios android" crates/mdoc-ffi/src/lib.rs
+  routes "core desktop recognition ios android" Cargo.lock
+  routes "core desktop recognition ios android" scripts/lib.sh
+  routes "core desktop recognition ios android" justfile apps/ios/mdoc/App/MdocApp.swift
+  routes "core desktop recognition ios android" scripts/ci-areas.txt
   routes desktop src/main.rs
   routes desktop tests/render.rs vendor/gpui-pre-macos/src/lib.rs .github/workflows/ci.yml
   routes desktop scripts/release.sh scripts/local-ci.sh scripts/test-local-ci.sh
@@ -95,13 +95,13 @@ not() { ! "$@"; }
   routes "desktop android" scripts/install-android-ndk.sh
   routes "desktop ios" src/main.rs apps/ios/mdoc/App/MdocApp.swift
   routes "ios android" apps/ios/a.swift apps/android/b.kt
-  routes desktop tests/fixtures/recognition/en/claim/x.md
-  routes desktop tests/fixtures/recognition/en/claim/x.model.json
+  routes recognition tests/fixtures/recognition/en/claim/x.md
+  routes recognition tests/fixtures/recognition/en/claim/x.model.json
   routes "" tests/fixtures/pseudonymization/README.md
   routes "" README.md docs/adr/0091-mobile-ci-and-releases.md LICENSE
   routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
   routes "ios" apps/ios/README.md apps/ios/a.swift
-  check "no files runs every area" [ "$(changed_areas "$table" </dev/null)" = "core desktop ios android" ]
+  check "no files runs every area" [ "$(changed_areas "$table" </dev/null)" = "core desktop recognition ios android" ]
   check "a table with CRLF line endings routes the same" \
     [ "$(printf 'apps/ios/a.swift\0' | changed_areas "${table//$'\n'/$'\r\n'}")" = ios ]
   check "docs.rs is not under docs/" [ "$(areas_of docs.rs)" = desktop ]
@@ -113,22 +113,34 @@ not() { ! "$@"; }
   check "**/ matches at the root and below" eval 'matches b.md "**/*.md" && matches a/b.md "**/*.md"'
   check "affects reads the list" eval 'affects ios "desktop ios" && ! affects android "desktop ios"'
   # The CLI's GitHub mode: anything but a PR or a known push runs every area.
-  every="areas=core desktop ios android"$'\n'"desktop=true"
+  every="areas=core desktop recognition ios android"$'\n'"desktop=true"
   check "a manual run runs every area" [ "$(EVENT=workflow_dispatch bash scripts/ci-areas.sh --github)" = "$every" ]
   check "a release call runs every area" [ "$(EVENT=push RELEASE_CALL=true BEFORE=1234567890123456789012345678901234567890 bash scripts/ci-areas.sh --github)" = "$every" ]
   check "a new branch's push runs every area" [ "$(EVENT=push BEFORE=0000000000000000000000000000000000000000 bash scripts/ci-areas.sh --github)" = "$every" ]
 
   # The statuses: which area each stands for, and what a skipped one says.
   # shellcheck disable=SC2034 # read by area_of, steps_of and queue
-  context=local/macos mobile_context=local/ios mobile_area=ios steps="setup lint test ffi detect" mobile_steps="setup ios"
+  context=local/macos mobile_context=local/ios mobile_area=ios steps="setup lint test ffi detect" mobile_steps="setup ios" recognition_steps="setup recognition detect" leftover_steps=detect
   check "local/macos is desktop" [ "$(area_of local/macos)" = desktop ]
   check "local/ios is ios" [ "$(area_of local/ios)" = ios ]
   check "the iOS job's steps" [ "$(steps_of local/ios)" = "setup ios" ]
   check "a Swift-only PR leaves local/macos not affected" \
     [ "$(settled_text local/macos ios main@abc)" = "Not affected: no core or desktop change (main@abc)" ]
   check "and runs local/ios" eval '! settled_text local/ios ios main@abc'
-  check "a core PR runs both" eval '! settled_text local/macos "core desktop ios android" x && ! settled_text local/ios "core desktop ios android" x'
+  check "a core PR runs both" eval '! settled_text local/macos "core desktop recognition ios android" x && ! settled_text local/ios "core desktop recognition ios android" x'
   check "a docs-only PR passes both" [ "$(settled_text local/ios "" main@abc)" = "Docs only, not tested (main@abc)" ]
+  # Recognition fixtures only (ADR 0093): the Mac runs a short job, the PC and the mobile jobs pass.
+  check "a fixtures-only PR runs local/macos" eval '! settled_text local/macos recognition x'
+  check "with mdoc-detect's tests and the gate only" [ "$(steps_of local/macos recognition)" = "setup recognition detect" ]
+  check "and leaves local/ios not affected" [ "$(settled_text local/ios recognition main@abc)" = "Not affected: no core or ios change (main@abc)" ]
+  check "fixtures with a desktop change run the full job" [ "$(steps_of local/macos "desktop recognition")" = "setup lint test ffi detect" ]
+  check "a core change runs the full job" [ "$(steps_of local/macos "core desktop recognition ios android")" = "setup lint test ffi detect" ]
+  check "a head the fallback passed runs only the leftover steps" \
+    [ "$(steps_of local/macos desktop SUCCESS "Hosted fallback: clippy and test (macos-26) passed; just mobile not run")" = detect ]
+  check "a fallback NOT tested mobile row runs the mobile job" \
+    [ "$(steps_of local/ios ios SUCCESS "Hosted fallback: NOT tested; x")" = "setup ios" ]
+  check "the PC leaves fixtures-only PRs to the Mac" \
+    [ "$(recognition_steps='' settled_text local/macos recognition main@abc)" = "Not affected: recognition fixtures only, the Mac tests them (main@abc)" ]
 
   # Step limits: the mobile cargo check shares lint's; the mobile jobs have their own.
   # shellcheck disable=SC2034 # read by timeout_for
@@ -139,7 +151,7 @@ not() { ! "$@"; }
   check "the iOS job has its own limit" [ "$(timeout_for ios)" = 2400 ]
   check "the Android job has its own limit" [ "$(timeout_for android)" = 2400 ]
   check "test keeps its limit" [ "$(timeout_for test)" = 1800 ]
-  check "the steps read as their commands" [ "$(label ffi), $(label ios), $(label android), $(label detect)" = "just mobile --ffi, just mobile --ios, just android, just detection-gate" ]
+  check "the steps read as their commands" [ "$(label ffi), $(label ios), $(label android), $(label detect), $(label recognition)" = "just mobile --ffi, just mobile --ios, just android, just detection-gate, cargo nextest run -p mdoc-detect" ]
   check "the detection gate has test's limit" [ "$(timeout_for detect)" = 1800 ]
 
   # The mobile steps follow the merge's main.
@@ -171,7 +183,7 @@ not() { ! "$@"; }
   # A commit without the table runs every area.
   # shellcheck disable=SC2034 # read by commit_areas
   checkout=$repo
-  check "a commit without the area table runs every area" [ "$(commit_areas HEAD HEAD^1..HEAD)" = "core desktop ios android" ]
+  check "a commit without the area table runs every area" [ "$(commit_areas HEAD HEAD^1..HEAD)" = "core desktop recognition ios android" ]
   # The installed copy against main's: lib.sh matches (CRLF aside), local-ci.sh does not.
   # shellcheck disable=SC2034 # read by check_copy
   runner_dir=$repo/runner
@@ -309,17 +321,21 @@ not() { ! "$@"; }
   )
   check "a PR's desktop job goes before its older queued mobile one" \
     [ "$(queue | cut -f1,8 | tr '\t\n' ': ')" = "7:local/macos 7:local/ios 8:local/macos " ]
-  # A runner that comes back tests rows the fallback holds or finished.
+  # A runner tests rows the fallback gave up on or left untested, and on the
+  # Mac the detection gate of those it passed; hosted CI keeps the rest.
   prs=$(
     line 1 local/macos SUCCESS 2026-01-01T00:00:01Z "Hosted fallback: clippy and test (macos-26) passed; just mobile not run"
     line 1 local/ios SUCCESS 2026-01-01T00:00:01Z "Hosted fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5); x"
     line 2 local/macos ERROR 2026-01-01T00:00:02Z "Hosted fallback: no hosted result after 3 dispatches; dispatch ci.yml by hand"
     line 3 local/macos PENDING 2026-01-01T00:00:03Z "Hosted fallback: hosted CI on h3 (attempt 1); x"
     line 4 local/macos SUCCESS 2026-01-01T00:00:04Z "Passed on main@abc in 3m00s"
+    line 5 local/macos FAILURE 2026-01-01T00:00:05Z "Hosted fallback: test (macos-26) failed"
     line 6 local/macos FAILURE 2026-01-01T00:00:06Z "Failed in just test on main@abc"
   )
-  check "fallback rows, finished or not, are queued; local results are not" \
-    [ "$(queue | cut -f1,8 | tr '\t\n' ': ')" = "1:local/macos 1:local/ios 2:local/macos 3:local/macos " ]
+  check "the Mac queues fallback passes (leftover steps), NOT tested and errors; not hosted runs in progress or local results" \
+    [ "$(queue | cut -f1,8 | tr '\t\n' ': ')" = "1:local/macos 1:local/ios 2:local/macos " ]
+  check "the PC does not test again the desktop heads the fallback passed" \
+    [ "$(leftover_steps='' queue | cut -f1,8 | tr '\t\n' ': ')" = "1:local/ios 2:local/macos " ]
   rm -f "$posts"
   # install keeps the machine's own settings in runner.env.
   LOCAL_CI_HOME=$(mktemp -d) port=8787

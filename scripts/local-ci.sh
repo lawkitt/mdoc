@@ -33,7 +33,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 agent=com.lawkitt.mdoc.local-ci
 web_agent=com.lawkitt.mdoc.local-ci-web
-every_area='core desktop ios android'
+every_area='core desktop recognition ios android'
 
 config() {
   local default_os=
@@ -80,6 +80,20 @@ config() {
     macos) steps=${LOCAL_CI_STEPS:-setup lint test ffi detect} ;;
     *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
   esac
+  # A change only to the recognition fixtures (area recognition): the Mac
+  # runs mdoc-detect's tests and the detection gate, not the whole suite;
+  # other runners leave it to the Mac.
+  case "$os" in
+    macos) recognition_steps=${LOCAL_CI_RECOGNITION_STEPS:-setup recognition detect} ;;
+    *) recognition_steps='' ;;
+  esac
+  # A head the hosted fallback passed: hosted CI ran clippy and test, so the
+  # Mac runs only what hosted CI lacks, the detection gate (it skips itself
+  # when recognition did not change); other runners do not test it again.
+  case "$os" in
+    macos) leftover_steps=${LOCAL_CI_LEFTOVER_STEPS:-detect} ;;
+    *) leftover_steps='' ;;
+  esac
   mobile_steps=${LOCAL_CI_MOBILE_STEPS:-setup $mobile_area}
   # The hosted job limits (ADR 0082): clippy 20 min, test 30 min; the mobile
   # cargo check shares lint's. The iOS job builds the core and app and runs
@@ -114,8 +128,18 @@ area_of() {
   if [ "$1" = "$context" ]; then echo desktop; else echo "$mobile_area"; fi
 }
 
-steps_of() {
-  if [ "$1" = "$context" ]; then echo "$steps"; else echo "$mobile_steps"; fi
+# A job's steps: the context's, fewer for a recognition-only change on the
+# desktop status, and only the leftover ones on a head the fallback passed.
+steps_of() { # context [areas [state description]]
+  if [ "$1" != "$context" ]; then
+    echo "$mobile_steps"
+  elif [ "${3:-}" = SUCCESS ] && [[ ${4:-} == "Hosted fallback"* ]]; then
+    echo "$leftover_steps"
+  elif [ $# -ge 2 ] && ! affects desktop "$2" && affects recognition "$2"; then
+    echo "$recognition_steps"
+  else
+    echo "$steps"
+  fi
 }
 
 # The areas a commit range touches, by the area table in commit $1 (every
@@ -137,6 +161,9 @@ settled_text() { # context areas on
   area=$(area_of "$1")
   if [ -z "$2" ]; then
     echo "Docs only, not tested ($3)"
+  elif [ "$area" = desktop ] && ! affects desktop "$2" && affects recognition "$2"; then
+    [ -z "$recognition_steps" ] || return 1
+    echo "Not affected: recognition fixtures only, the Mac tests them ($3)"
   elif ! affects "$area" "$2"; then
     echo "Not affected: no core or $area change ($3)"
   else
@@ -216,15 +243,27 @@ pr_line() { awk -F'\t' -v n="$1" '$1 == n { print; exit }' <<<"$prs"; }
 drop_row() { prs=$(awk -F'\t' -v n="$1" -v c="$2" '!($1 == n && $8 == c)' <<<"$prs"); }
 
 # Rows waiting for this runner: no status yet (posted "Queued" by
-# queue_new), pending (queued, or left by a stopped runner), or any status
-# from the hosted fallback (scripts/local-ci-fallback.sh), which a local
-# result replaces. PRs by their oldest waiting status, a PR's desktop row
+# queue_new), pending (queued, or left by a stopped runner), or a status
+# from the hosted fallback (scripts/local-ci-fallback.sh) that a local job
+# should replace: an error (hosted CI gave up), a mobile row's "NOT tested",
+# and on the Mac a desktop success, for the detection gate hosted CI lacks
+# (leftover_steps). Not one the fallback is running hosted CI for, nor its
+# failures, nor (off the Mac) its desktop successes: hosted CI took those
+# heads so this queue would not. PRs by their oldest waiting status, a PR's desktop row
 # before its mobile one even when the desktop status is newer (a step it
 # posted before a restart). Each line gains two fields: 0 (desktop) or 1,
 # and the PR's oldest status time.
 queue() {
-  awk -F'\t' -v OFS='\t' -v rn="${run_pr:-}" -v rc="${run_ctx:-}" -v d="$context" '
-    !($1 == rn && $8 == rc) && ($9 == "NONE" || $9 == "PENDING" || $11 ~ /^Hosted fallback/) {
+  awk -F'\t' -v OFS='\t' -v rn="${run_pr:-}" -v rc="${run_ctx:-}" -v d="$context" -v left="$leftover_steps" '
+    function wanted(fb) {
+      fb = ($11 ~ /^Hosted fallback/)
+      if ($9 == "NONE") return 1
+      if (!fb) return $9 == "PENDING"
+      if ($9 == "ERROR") return 1
+      if ($9 != "SUCCESS") return 0
+      return $8 != d || left != ""
+    }
+    !($1 == rn && $8 == rc) && wanted() {
       line[++rows] = $0; pr[rows] = $1; key[rows] = ($8 == d ? 0 : 1)
       if (!($1 in first) || $10 < first[$1]) first[$1] = $10
     }
@@ -294,6 +333,7 @@ settle() { # pr head mergeable base
     log "warning: #$n: could not read its areas; running every job"
     areas=$every_area
   fi
+  settle_areas=$areas
   for ctx in $(queued_contexts "$n"); do
     text=$(settled_text "$ctx" "$areas" "$4@$(short "$settle_base_sha")") || continue
     post "$ctx" "$head" success "$text"
@@ -370,6 +410,7 @@ label() {
     ffi) echo "just mobile --ffi" ;;
     ios) echo "just mobile --ios" ;;
     detect) echo "just detection-gate" ;;
+    recognition) echo "cargo nextest run -p mdoc-detect" ;;
     *) echo "just $1" ;;
   esac
 }
@@ -415,6 +456,8 @@ job() { # commit dir step...
       # Not through just: setup may replace the just binary.
       setup) bash scripts/setup.sh </dev/null || rc=$? ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
+      # The recognition fixtures' tests, without the rest of the suite.
+      recognition) cargo nextest run --locked -p mdoc-detect || rc=$? ;;
       ffi | ios)
         if mobile_check_expected; then
           MDOC_IOS_JOB=always just mobile "--$step" || rc=$?
@@ -449,7 +492,7 @@ job() { # commit dir step...
 }
 
 # A PR's job (kind: its number) or a main commit's (kind: main).
-start_job() { # kind head base base-sha context commit
+start_job() { # kind head base base-sha context commit steps
   local kind=$1 head=$2 ctx=$5 name dir area link
   area=$(area_of "$ctx")
   if [ "$kind" = main ]; then
@@ -479,8 +522,9 @@ started: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
   post "$ctx" "$head" pending "Running on $3@$(short "$4")" "$run_url"
   set -m
-  # shellcheck disable=SC2046 # the steps are words
-  job "$6" "$run_dir" $(steps_of "$ctx") </dev/null >"$run_dir/log.txt" 2>&1 &
+  echo "steps: $7" >>"$run_dir/summary.txt"
+  # shellcheck disable=SC2086 # the steps are words
+  job "$6" "$run_dir" $7 </dev/null >"$run_dir/log.txt" 2>&1 &
   run_pid=$!
   set +m
   echo "$run_pid" >"$state/job.pid"
@@ -520,7 +564,7 @@ finish() { # state description
     awk -F'\t' -v s="$run_head" -v c="$run_ctx" '!($1 == s && $2 == c)' "$state/main-queue" >"$state/main-queue.new"
     mv -f "$state/main-queue.new" "$state/main-queue"
   fi
-  run_kind='' run_pr='' run_head='' run_ctx='' run_pid='' run_step=''
+  run_kind='' run_pr='' run_head='' run_ctx='' run_pid='' run_step='' run_note=''
   # Statuses changed: read them again before starting the next job.
   prs=
   next_poll=0
@@ -549,7 +593,7 @@ check_job() {
   fi
   wait "$run_pid" || rc=$?
   case "$rc" in
-    0) finish success "Passed on $on in $(duration $(($(date +%s) - run_start)))" ;;
+    0) finish success "Passed on $on in $(duration $(($(date +%s) - run_start)))${run_note:-}" ;;
     1)
       read -r step _ 2>/dev/null <"$run_dir/.step" || step='?'
       finish failure "Failed in $(label "$step") on $on"
@@ -577,13 +621,19 @@ sync_running() {
 # Starts the first startable queued row, settling those that need no build;
 # with no PR row queued, the next main commit's. Returns 0 if a job started.
 start_next() {
-  local n mergeable base head ctx
+  local n mergeable base head ctx row_state row
   capacity_ok || return 1
-  while IFS=$'\t' read -r n _ _ _ mergeable base head ctx _; do
+  while IFS=$'\t' read -r n _ _ _ mergeable base head ctx row_state _; do
     settle "$n" "$head" "$mergeable" "$base" || continue
     # Settled without a build.
-    [ -n "$(queue | awk -F'\t' -v n="$n" -v c="$ctx" '$1 == n && $8 == c')" ] || continue
-    start_job "$n" "$head" "$base" "$settle_base_sha" "$ctx" "$settle_merge"
+    row=$(queue | awk -F'\t' -v n="$n" -v c="$ctx" '$1 == n && $8 == c')
+    [ -n "$row" ] || continue
+    start_job "$n" "$head" "$base" "$settle_base_sha" "$ctx" "$settle_merge" \
+      "$(steps_of "$ctx" "$settle_areas" "$row_state" "$(cut -f11 <<<"$row")")"
+    # A head the fallback passed: its result keeps saying what hosted CI ran.
+    if [ "$ctx" = "$context" ] && [ "$row_state" = SUCCESS ]; then
+      run_note="; clippy and test by hosted CI"
+    fi
     return 0
   done < <(queue)
   [ -z "$(queue)" ] || return 1
@@ -660,14 +710,15 @@ check_copy() {
 
 # Starts the next main job, after a poll found no PR row waiting.
 start_main() {
-  local commit ctx
+  local commit ctx areas
   if [ ! -s "$state/main-queue" ]; then
     $main_due || return 1
     main_due=false
     queue_main || return 1
   fi
   IFS=$'\t' read -r commit ctx <"$state/main-queue"
-  start_job main "$commit" main "$commit" "$ctx" "$commit"
+  areas=$(commit_areas "$commit" "$commit^1..$commit" 2>/dev/null) || areas=$every_area
+  start_job main "$commit" main "$commit" "$ctx" "$commit" "$(steps_of "$ctx" "$areas")"
 }
 
 prune() {

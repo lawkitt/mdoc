@@ -18,6 +18,12 @@
 #   "Running ..."    50 min: each step posts its own status, and the longest
 #                    step limit is 40 min, so the runner stopped
 #   other pending    45 min ("Queued": a long queue, or the runner is gone)
+#   "Queued" behind 2 or more   5 min, for local/macos and local/windows:
+#                    overflow. Each runner tests one head at a time; hosted
+#                    CI runs many at once (free on a public repository), so
+#                    heads that would wait behind two others go there. Ahead
+#                    means the same context's other local "Running" heads and
+#                    its "Queued" ones posted earlier.
 #
 # The fallback's own statuses start with "Hosted fallback". A runner that
 # comes back still tests such a head, pending or finished, and its status
@@ -42,6 +48,8 @@ no_status_min=${FALLBACK_NO_STATUS_MIN:-15}
 waiting_min=${FALLBACK_WAITING_MIN:-15}
 running_min=${FALLBACK_RUNNING_MIN:-50}
 queued_min=${FALLBACK_QUEUED_MIN:-45}
+overflow_ahead=${FALLBACK_OVERFLOW_AHEAD:-2}
+overflow_min=${FALLBACK_OVERFLOW_MIN:-5}
 retry_min=${FALLBACK_RETRY_MIN:-25}
 queued_retry_min=${FALLBACK_QUEUED_RETRY_MIN:-60}
 max_attempts=${FALLBACK_MAX_ATTEMPTS:-3}
@@ -140,9 +148,10 @@ rows() {
     | map(tostring) | join("\u001f")'
 }
 
-# Why the context is stuck, or nothing (exit 1) when it is not.
-stuck_reason() { # state description status-time seen-time now
-  local state=$1 desc=$2 at=$3 seen=$4 t=$5 age limit
+# Why the context is stuck, or nothing (exit 1) when it is not. Ahead: the
+# heads queued or running before it (overflow, desktop contexts only).
+stuck_reason() { # state description status-time seen-time now [ahead]
+  local state=$1 desc=$2 at=$3 seen=$4 t=$5 ahead=${6:-0} age limit
   case "$state" in
     NONE)
       age=$(((t - seen) / 60))
@@ -157,7 +166,11 @@ stuck_reason() { # state description status-time seen-time now
         *"waiting for"*) limit=$waiting_min ;;
         *) limit=$queued_min ;;
       esac
-      [ "$age" -ge "$limit" ] || return 1
+      if [ "$age" -lt "$limit" ]; then
+        [[ $desc == Queued* ]] && [ "$ahead" -ge "$overflow_ahead" ] && [ "$age" -ge "$overflow_min" ] || return 1
+        echo "overflow: queued behind $ahead for ${age} min"
+        return 0
+      fi
       echo "\"${desc:0:40}\" for ${age} min"
       ;;
     *) return 1 ;;
@@ -211,6 +224,27 @@ post_over() { # head context old-state old-description state description url
 
 runs_url() { echo "https://github.com/$repo/actions/workflows/ci.yml?query=branch%3A$1"; }
 
+# Prints, for each line of rows(), the number of heads ahead of it in its
+# runner's queue: for a desktop context's local "Queued" status, the same
+# context's local "Running" statuses and the "Queued" ones posted earlier;
+# 0 for everything else.
+ahead_counts() { # rows-lines
+  awk -v FS=$'\x1f' '
+    { pr[NR] = $1; ctx[NR] = $4; st[NR] = $5; desc[NR] = $6; at[NR] = $7 + 0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        n = 0
+        if ((ctx[i] == "local/macos" || ctx[i] == "local/windows") && st[i] == "PENDING" && desc[i] ~ /^Queued/) {
+          for (j = 1; j <= NR; j++) {
+            if (j == i || ctx[j] != ctx[i] || st[j] != "PENDING" || pr[j] == pr[i]) continue
+            if (desc[j] ~ /^Running/ || (desc[j] ~ /^Queued/ && at[j] < at[i])) n++
+          }
+        }
+        print n
+      }
+    }' <<<"$1"
+}
+
 # --- one pass -------------------------------------------------------------------
 
 tick() {
@@ -228,11 +262,14 @@ tick() {
   # cancel the first (ci.yml's concurrency group). A PR with a hosted run
   # still going is not dispatched: a newly stuck context joins that run,
   # and a retry waits for it, keeping its attempts.
-  local pr branch head ctx state desc at seen reason result job url note attempt checks age
+  local pr branch head ctx state desc at seen reason result job url note attempt checks age ahead
   local -A want=() active=() dispatched=() branch_of=() head_of=()
-  local -a claims=()
-  local sep=$'\x1f'
+  local -a claims=() aheads=()
+  local sep=$'\x1f' i=0
+  mapfile -t aheads < <(ahead_counts "$lines")
   while IFS=$'\x1f' read -r pr branch head ctx state desc at seen; do
+    ahead=${aheads[i]:-0}
+    i=$((i + 1))
     branch_of[$pr]=$branch head_of[$pr]=$head
     if [ "$state" = PENDING ] && [[ $desc == "$prefix"* ]] && ! untested_job "$ctx" >/dev/null; then
       attempt=$(attempt_of "$desc")
@@ -274,7 +311,7 @@ tick() {
       esac
       continue
     fi
-    reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t") || continue
+    reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t" "$ahead") || continue
     # TEMPORARY (ADR 0091 item 5): no hosted mobile job to dispatch yet.
     if job=$(untested_job "$ctx"); then
       post_over "$head" "$ctx" "$state" "$desc" success \
