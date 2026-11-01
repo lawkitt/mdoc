@@ -61,6 +61,15 @@ final class DocumentViewModel {
     var needsSetup: Bool { waitingForSetup != nil }
     /// The job that asked for setup, run again once the models are in.
     private(set) var waitingForSetup: JobKind?
+    /// The model the waiting job needs: recognition needs text recognition,
+    /// Find names the name detector (ADR 0090).
+    var setupNeeds: ModelPurpose? {
+        switch waitingForSetup {
+        case .recognize: .ocr
+        case .scan: .detector
+        case .install, nil: nil
+        }
+    }
 
     init(
         session: any DocumentSession, jobs: LongJobRunner, storage: MdocStorage, findsNames: Bool = true,

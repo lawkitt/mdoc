@@ -169,6 +169,7 @@ final class DocumentViewModelTests: XCTestCase {
         // The quotation is scanned already; scanning again needs the model.
         await model.findNames()
         XCTAssertTrue(model.needsSetup)
+        XCTAssertEqual(model.setupNeeds, .detector)
     }
 
     /// On iPad Home and the document are on screen together: the setup card
@@ -204,8 +205,10 @@ final class DocumentViewModelTests: XCTestCase {
         await model.recognize()
         XCTAssertTrue(model.needsSetup)
         XCTAssertEqual(model.waitingForSetup, .recognize)
+        XCTAssertEqual(model.setupNeeds, .ocr)
         XCTAssertNil(model.errorMessage)
-        for offer in core.setup.snapshot().offers {
+        // Text recognition alone is enough to continue (ADR 0090).
+        for offer in core.setup.snapshot().offers where offer.purpose == .ocr {
             for request in try core.setup.downloadRequests(for: offer.id) {
                 _ = try core.setup.install(request, from: URL(fileURLWithPath: "/dev/null"))
             }

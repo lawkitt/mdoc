@@ -2,9 +2,13 @@ import SwiftUI
 import UIKit
 
 /// The first-use card: what downloads, its size, and that processing then
-/// stays on the device (ADR 0026).
+/// stays on the device (ADR 0026). In a document it offers the model the
+/// waiting job needs, with every missing model as the second choice
+/// (ADR 0090).
 struct SetupCard: View {
     @Bindable var model: SetupViewModel
+    /// The model the waiting job needs; nil (Home) offers every missing one.
+    var needs: ModelPurpose?
     /// Shows Not now.
     var dismissible = true
     /// What Not now does; on Home it hides the card until next launch.
@@ -22,7 +26,7 @@ struct SetupCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if model.isWorking {
-                ForEach(model.snapshot.offers) { offer in
+                ForEach(model.snapshot.offers.filter { model.requested.contains($0.id) }) { offer in
                     ModelRow(offer: offer, state: model.state(of: offer))
                 }
                 ButtonRow(forceColumn: dynamicTypeSize.isAccessibilitySize) {
@@ -39,7 +43,7 @@ struct SetupCard: View {
             } else {
                 HStack {
                     Button {
-                        model.download(then: then)
+                        model.download(offered, then: then)
                     } label: {
                         if then == nil {
                             Text("Download \(size)")
@@ -60,6 +64,16 @@ struct SetupCard: View {
                         .buttonStyle(.borderless)
                     }
                 }
+                if offered.count < model.snapshot.missing.count {
+                    Button {
+                        model.download(then: then)
+                    } label: {
+                        Text("Download all models (\(allSize))")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.subheadline)
+                    .accessibilityIdentifier("setup-download-all")
+                }
             }
             if let error = model.errorMessage {
                 Text(error)
@@ -72,27 +86,43 @@ struct SetupCard: View {
         // The grouped row colour: white on Home's grey list in light mode, a
         // lifted grey in dark (the plain secondary background matched the list).
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-        .cellularQuestion(model: model, size: size)
+        .cellularQuestion(model: model)
+    }
+
+    /// What the main button downloads: the model the job needs, else every
+    /// missing one.
+    private var offered: [ModelOffer] {
+        guard let needs else { return model.snapshot.missing }
+        let needed = model.missing(needs)
+        return needed.isEmpty ? model.snapshot.missing : needed
     }
 
     private var size: String {
+        offered.reduce(0) { $0 + $1.byteSize }.formatted(.byteCount(style: .file))
+    }
+
+    private var allSize: String {
         model.snapshot.missingBytes.formatted(.byteCount(style: .file))
     }
 
+    private var offersDetector: Bool { offered.contains { $0.purpose == .detector } }
+    private var offersOCR: Bool { offered.contains { $0.purpose == .ocr } }
+
     private var title: String {
-        switch model.snapshot.tier {
-        case .detector: String(localized: "Set up name finding")
-        case .belowFloor: String(localized: "Set up text recognition")
-        }
+        offersDetector
+            ? String(localized: "Set up name finding")
+            : String(localized: "Set up text recognition")
     }
 
     /// Below the floor the card shows only in a document that needs text
     /// recognition; it offers that model alone (ADR 0088).
     private var message: String {
-        switch model.snapshot.tier {
-        case .detector:
+        switch (offersDetector, offersOCR) {
+        case (true, true):
             String(localized: "mdoc downloads its name detector and text recognition once (\(size)). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
-        case .belowFloor:
+        case (true, false):
+            String(localized: "mdoc downloads its name detector once (\(size)). After that, names are found on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
+        default:
             String(localized: "mdoc downloads text recognition once (\(size)). After that, scans and photos are read on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
         }
     }
@@ -201,19 +231,19 @@ struct UseCellularButton: View {
 }
 
 extension View {
-    /// Asks before a download on cellular; waiting keeps it for Wi-Fi.
-    func cellularQuestion(model: SetupViewModel, size: String) -> some View {
-        modifier(CellularQuestion(model: model, size: size))
+    /// Asks before a download on cellular, naming the requested size;
+    /// waiting keeps it for Wi-Fi.
+    func cellularQuestion(model: SetupViewModel) -> some View {
+        modifier(CellularQuestion(model: model))
     }
 }
 
 private struct CellularQuestion: ViewModifier {
     @Bindable var model: SetupViewModel
-    let size: String
 
     func body(content: Content) -> some View {
         content.confirmationDialog(
-            Text("Download \(size) over cellular?"),
+            Text("Download \(model.requestedBytes.formatted(.byteCount(style: .file))) over cellular?"),
             isPresented: $model.asksCellular,
             titleVisibility: .visible
         ) {

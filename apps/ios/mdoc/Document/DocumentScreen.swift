@@ -269,10 +269,10 @@ struct DocumentScreen: View {
                         model.clearNotice()
                     }
             }
-            if model.needsSetup && setup.snapshot.needsSetup {
-                // The card's download is the one prominent button; Not now
-                // brings Find names back.
-                SetupCard(model: setup, dismissible: true, onDismiss: { model.skipSetup() }) {
+            if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
+                // The card's download, of the model this job needs, is the
+                // one prominent button; Not now brings Find names back.
+                SetupCard(model: setup, needs: needs, dismissible: true, onDismiss: { model.skipSetup() }) {
                     await model.continueAfterSetup()
                 }
             } else {
