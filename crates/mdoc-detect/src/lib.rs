@@ -1,6 +1,7 @@
 //! Experimental, offline GLiNER2 integration. Network access belongs only to
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 pub mod recognition;
+mod rules;
 mod structured;
 mod windows;
 use gliner2_rs::{
@@ -64,16 +65,11 @@ use std::{
 };
 
 pub const SUPPORTED: bool = mdoc_import::ocr::SUPPORTED;
-/// Company legal forms that mark a manual selection as an organization.
-const LEGAL_FORMS: &[&str] = &[
-    "ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "ИП", "LLC", "LLP", "Ltd", "Inc", "Corp", "PLC",
-    "GmbH", "AG", "SA", "BV",
-];
 
 /// Guess a manual selection's category without a model, correctable in the
 /// popup (ADR 0025): a structured rule covering exactly the selection
-/// (evaluated on its line, so labels count), a date, a phone shape, a legal
-/// form, a name shape (Person), else Other.
+/// (evaluated on its line, so labels count), else the rule pack's guesses (a
+/// date, a phone, a legal form, a name shape for Person), else Other.
 pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
     let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
     let line_end = source[range.end..]
@@ -87,122 +83,16 @@ pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
     {
         return detection.category;
     }
-    let text = &source[range];
-    if date_shaped(text) {
-        return Category::Date;
-    }
-    let digits = text.chars().filter(char::is_ascii_digit).count();
-    if digits >= 7
-        && text
-            .chars()
-            .all(|c| c.is_ascii_digit() || " +()-\u{a0}".contains(c))
-    {
-        return Category::Phone;
-    }
-    if text.split(|c: char| !c.is_alphanumeric()).any(|word| {
-        LEGAL_FORMS
-            .iter()
-            .any(|form| form.eq_ignore_ascii_case(word))
-    }) {
-        return Category::Organization;
-    }
-    if name_shaped(text) {
-        Category::Person
-    } else {
-        Category::Other
-    }
+    rules::pack()
+        .guess(&source[range])
+        .unwrap_or(Category::Other)
 }
-/// Numeric, month-name (RU/EN) and blank-fill (`«__» ____ 2026 г.`) dates.
-/// Year-only and month-only values are not dates here.
-fn date_shaped(text: &str) -> bool {
-    static DATE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let date = DATE.get_or_init(|| {
-        const RU: &str = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
-        const EN: &str = "january|february|march|april|may|june|july|august|september|october|november|december";
-        let day = r#"[«"]?(?:\d{1,2}|_+)[»"]?"#;
-        let year = r"(?:\d{4}|_+)(?:\s*(?:г\.?|года))?";
-        regex::Regex::new(&format!(
-            r"(?i)^(?:\d{{1,2}}[./]\d{{1,2}}[./]\d{{2,4}}(?:\s*г\.?)?|\d{{4}}-\d{{2}}-\d{{2}}|{day}\s+(?:{RU}|{EN}|_+)\s+{year}|(?:{EN})\s+\d{{1,2}},?\s+\d{{4}})$"
-        ))
-        .expect("static date regex")
-    });
-    let normalized = text.replace("\\_", "_").replace('\u{a0}', " ");
-    date.is_match(normalized.trim())
-}
-/// 1–4 words that each start with a capital letter; hyphenated surnames and
-/// initials ("М.С.", "J.R.") count.
-fn name_shaped(text: &str) -> bool {
-    let words: Vec<_> = text.split_whitespace().collect();
-    (1..=4).contains(&words.len())
-        && words.iter().all(|word| {
-            let initials = word
-                .split_terminator('.')
-                .all(|part| part.chars().count() == 1 && part.chars().all(char::is_uppercase))
-                && word.ends_with('.');
-            initials
-                || word.split('-').all(|part| {
-                    let mut chars = part.chars();
-                    chars.next().is_some_and(char::is_uppercase)
-                        && chars.all(|c| c.is_alphabetic() || c == '\'' || c == '’')
-                })
-        })
-}
-/// Titles and role words: never a person's or organization's name on their
-/// own ("Ms", "her adviser", "the Employer"; issue #302), nor the words for
-/// people. Lowercase, matched whole or with a plural `s`.
-const TITLES_AND_ROLES: &str = "mr mrs ms miss mx dr prof professor sir dame lord lady \
-    madam madame mme mlle herr frau husband wife spouse partner father mother daughter \
-    adviser advisor solicitor barrister counsel lawyer attorney client employer employee \
-    claimant respondent applicant defendant plaintiff appellant party parties buyer seller \
-    landlord tenant lessor lessee licensor licensee contractor customer supplier company \
-    director witness judge people person individual \
-    г-н г-жа господин госпожа гражданин гражданка муж жена";
-/// Determiners around them name no one either ("The Employer", "Her Adviser").
-const DETERMINERS: &str = "the an her his their its our my your this that said";
-/// Russian role stems, matched with up to three letters of ending
-/// ("Заказчику", "Исполнителя", "Стороны").
-const RU_ROLE_STEMS: &str = "заказчик исполнител подрядчик арендатор арендодател \
-    покупател продав работник работодател истец истц ответчик заявител сторон \
-    представител доверител поверенн супруг адвокат юрист директор";
 
-/// Whether a model span has the shape of its category; the model also tags
-/// the words for things ("email", "phone number", "companies"). A person
-/// needs a capitalized word that is not a title or role ("Ms Bennett", not
-/// "Ms" or "husband"); an organization a word that is not one and a capital
-/// or digit; an email an `@`; an address a capital or digit; numbers a
-/// digit, and bank details no `/`.
+/// Whether a model span has its category's shape in the rule pack; the model
+/// also tags the words for things ("email", "phone number", "companies") and
+/// titles and roles on their own ("Ms", "husband"; issue #302).
 fn identifying(text: &str, category: Category) -> bool {
-    let role = |word: &str| {
-        let word = word.to_lowercase();
-        DETERMINERS.split_whitespace().any(|d| word == d)
-            || TITLES_AND_ROLES
-                .split_whitespace()
-                .any(|title| word == title || word.strip_suffix('s') == Some(title))
-            || RU_ROLE_STEMS.split_whitespace().any(|stem| {
-                word.strip_prefix(stem).is_some_and(|ending| {
-                    ending.chars().count() <= 3 && ending.chars().all(char::is_alphabetic)
-                })
-            })
-    };
-    let mut words = text
-        .split_whitespace()
-        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
-        .filter(|word| !word.is_empty());
-    let capital_or_digit = || text.chars().any(|c| c.is_uppercase() || c.is_numeric());
-    match category {
-        Category::Person => {
-            words.any(|word| word.chars().next().is_some_and(char::is_uppercase) && !role(word))
-        }
-        Category::Organization => capital_or_digit() && words.any(|word| !role(word)),
-        Category::Email => text.contains('@'),
-        Category::Address => capital_or_digit(),
-        // Case and claim numbers ("6001842/2026") are not bank details.
-        Category::Bank => text.chars().any(|c| c.is_numeric()) && !text.contains('/'),
-        Category::Phone | Category::Identity | Category::Tax => {
-            text.chars().any(|c| c.is_numeric())
-        }
-        Category::Date | Category::Other => true,
-    }
+    rules::pack().identifying(text, category)
 }
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUT_TOKENS: usize = 512;
