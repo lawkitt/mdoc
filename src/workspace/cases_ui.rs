@@ -638,8 +638,18 @@ impl Workspace {
             )
         };
         // Its Keeps and manual marks since the last save, for the case's
-        // lists (ADR 0092).
-        let listed = view.update(cx, |view, cx| view.take_list_changes(cx));
+        // lists (ADR 0092); what other open members still list stays.
+        let others: Vec<_> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.id() != id)
+            .filter_map(|tab| tab.view())
+            .filter(|other| other.read(cx).case.is(&link.id))
+            .map(|other| other.read(cx).case.listed().clone())
+            .collect();
+        let listed = view
+            .update(cx, |view, cx| view.take_list_changes(cx))
+            .map(|changes| changes.sparing(&others));
         let Some(((renames, added, exported, lists), effect)) =
             self.case_coordinator.edit(&link.id, |case| {
                 let before = case.clone();

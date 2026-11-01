@@ -1,9 +1,9 @@
 //! The user's lists (ADR 0092), the last scan-time stage: a proposal whose
 //! wording is on Never goes, and every whole-word mention of an Always
 //! wording becomes one, ignoring case and whitespace. A person's Always
-//! entry is a full name like any proposal, so the review's propagation
-//! (`mdoc_pii::propagation`) proposes its forms when the scan is ingested.
-use mdoc_pii::{Detection, Recognizer};
+//! entry also proposes propagation's forms of the name
+//! (`mdoc_pii::propagation`), where the full name appears or not.
+use mdoc_pii::{Category, Detection, Recognizer, person_forms_in};
 use mdoc_store::lists::{Lists, key};
 use std::ops::Range;
 
@@ -21,16 +21,18 @@ pub fn apply(source: &str, mut detections: Vec<Detection>, lists: &Lists) -> Vec
     });
     for entry in &lists.always {
         let category = entry.category();
-        detections.extend(
-            mentions(source, &entry.wording)
-                .into_iter()
-                .map(|range| Detection {
-                    range,
-                    category,
-                    score: 1.0,
-                    recognizer: Recognizer::UserList,
-                }),
-        );
+        let mut found = mentions(source, &entry.wording);
+        // A listed person's other names too, where the full name may not
+        // appear (ADR 0092).
+        if category == Category::Person {
+            found.extend(person_forms_in(source, &[entry.wording.as_str()]));
+        }
+        detections.extend(found.into_iter().map(|range| Detection {
+            range,
+            category,
+            score: 1.0,
+            recognizer: Recognizer::UserList,
+        }));
     }
     detections
 }
@@ -139,15 +141,28 @@ mod tests {
             found,
             ["Northwind", "Maya Bennett", "Ms Bennett", "NORTHWIND"]
         );
-        let ms = review
-            .candidates()
-            .iter()
-            .find(|c| &source[c.range.clone()] == "Ms Bennett")
+        // The form joins the full name, as propagation links it.
+        let identity = |text: &str| {
+            let c = review
+                .candidates()
+                .iter()
+                .find(|c| &source[c.range.clone()] == text)
+                .unwrap();
+            review.variant_identity(c.variant)
+        };
+        assert_eq!(identity("Ms Bennett"), identity("Maya Bennett"));
+    }
+
+    #[test]
+    fn a_listed_persons_forms_are_proposed_without_the_full_name() {
+        let source = "Ms Bennett replied. Maya wrote again.";
+        let mut lists = Lists::default();
+        lists.add_always("Maya Bennett", Category::Person);
+        let mut review = Review::default();
+        review
+            .ingest(source, apply(source, correct(source, &[]), &lists))
             .unwrap();
-        assert_eq!(
-            review.variant(ms.variant).unwrap().recognizer(),
-            Some(Recognizer::Propagation)
-        );
+        assert_eq!(texts(source, &review), ["Ms Bennett", "Maya"]);
     }
 
     #[test]

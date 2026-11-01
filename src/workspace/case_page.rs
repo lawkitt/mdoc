@@ -1011,7 +1011,7 @@ impl Workspace {
             .gap_2()
             .child(section("Always and never replace"))
             .child(div().text_size(px(12.)).text_color(p.header_muted).child(
-                "Scans in this case's documents propose what you marked yourself and skip                  what you kept.",
+                "Scans in this case's documents propose what you marked yourself and skip what you kept.",
             ));
         // Each list's wordings, with the category of an Always one.
         type Entries = Vec<(String, Option<&'static str>)>;

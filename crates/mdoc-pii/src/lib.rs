@@ -9,7 +9,7 @@ mod manual;
 pub mod merge_hints;
 mod propagation;
 pub use identities::{Identity, IdentitySnapshot};
-pub use propagation::nicknames;
+pub use propagation::{nicknames, person_forms_in};
 pub mod restore;
 mod syntax;
 pub mod tracking;

@@ -61,6 +61,11 @@ impl CaseLink {
         &self.lists
     }
 
+    /// What this tab has put on its case's lists.
+    pub(crate) fn listed(&self) -> &Lists {
+        &self.listed
+    }
+
     /// The case's lists, as the tab joins or as they change.
     pub(crate) fn set_lists(&mut self, lists: Lists) {
         self.lists = lists;

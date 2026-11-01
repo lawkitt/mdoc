@@ -1,6 +1,6 @@
 //! The user-wide Always and Never lists of Settings › Detection (ADR 0092):
 //! read with the saved cases, since they share the OS-held key, and saved
-//! beside them on every change, one revision after another.
+//! beside them at once on every change, one revision after another.
 use super::Workspace;
 use gpui::Context;
 use mdoc_store::{cases::UserLists, lists::Lists};
@@ -50,19 +50,13 @@ impl Workspace {
             revision: self.cases.user_lists_revision,
             lists,
         };
-        let task = cx
-            .background_executor()
-            .spawn(async move { store.save_lists(&saved) });
-        cx.spawn(async move |this, cx| {
-            if let Err(error) = task.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.notices.post(format!(
-                        "Could not save your Always and Never lists: {error}"
-                    ));
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+        // A small file, written at once: a quit right after an edit
+        // never outruns it.
+        if let Err(error) = store.save_lists(&saved) {
+            self.notices.post(format!(
+                "Could not save your Always and Never lists: {error}"
+            ));
+            cx.notify();
+        }
     }
 }

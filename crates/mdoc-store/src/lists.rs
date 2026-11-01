@@ -180,6 +180,16 @@ impl ListChanges {
             always_removed: always(before, after),
         }
     }
+    /// Keep the wordings `others` (other open members' contributions) still
+    /// list: one member's undo leaves another's Keep or mark in place.
+    pub fn sparing<'a>(mut self, others: impl IntoIterator<Item = &'a Lists>) -> Self {
+        for other in others {
+            self.never_removed.retain(|w| !other.never_has(w));
+            self.always_removed
+                .retain(|e| other.always_for(&e.wording).is_none());
+        }
+        self
+    }
     pub fn is_empty(&self) -> bool {
         self.never_added.is_empty()
             && self.never_removed.is_empty()
@@ -255,5 +265,11 @@ mod tests {
         assert_eq!(case.never, ["Other member's wording", "Riverside"]);
         assert!(!case.apply(&ListChanges::default()));
         assert!(ListChanges::between(&after, &after).is_empty());
+        // Another member still keeps Acme: only its own removal is spared.
+        let mut other = Lists::default();
+        other.add_never("ACME");
+        let spared = ListChanges::between(&before, &after).sparing([&other]);
+        assert!(spared.never_removed.is_empty());
+        assert_eq!(spared.never_added, ["Riverside"]);
     }
 }

@@ -673,6 +673,20 @@ fn find_forms(
     found
 }
 
+/// Spans of the forms of full person names `names` in `source`, found as
+/// for a name in the document: the user's Always list (ADR 0092) proposes
+/// a listed person's forms even where the full name never appears.
+pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
+    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
+    if people.is_empty() {
+        return Vec::new();
+    }
+    find_forms(source, &people, &[])
+        .into_iter()
+        .map(|(range, _)| range)
+        .collect()
+}
+
 impl Review {
     /// Full person names that propagate, as `(identity, wording)`: proposed
     /// (not kept) or applied. With a surname and initials, which only block.

@@ -191,3 +191,56 @@ fn user_wide_lists_apply_outside_and_inside_cases_and_survive_a_restart(cx: &mut
         assert!(lists.always_for("Acme Ltd").is_some());
     });
 }
+
+#[gpui::test]
+fn one_members_undo_leaves_another_members_keep(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met staff at Riverside.",
+        &[("Anna Petrova", Person)],
+    );
+    let first_view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| first_view.read(cx).case.link().unwrap().id.clone());
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov visited Riverside.",
+        &[("Boris Ivanov", Person)],
+    );
+    let second_view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    keep_all(&first_view, "Riverside", cx);
+    keep_all(&second_view, "Riverside", cx);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
+    first_view.update(cx, |view, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Riverside").unwrap();
+        let range = start..start + "Riverside".len();
+        view.pii
+            .review_mut()
+            .propose_kept_mentions(&text, std::slice::from_ref(&range));
+        view.review_changed(cx);
+    });
+    settle(cx);
+    assert_eq!(store.load(&case).unwrap().lists.never, ["Riverside"]);
+}
