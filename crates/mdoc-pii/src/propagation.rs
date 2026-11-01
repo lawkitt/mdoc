@@ -1100,11 +1100,16 @@ impl Review {
         }
         // A scan's one-word form of a known name that is also an ordinary
         // word ("Grant") counts only capitalised mid-sentence, whoever
-        // proposed it; a mark by hand lifts that.
+        // proposed it; a mark by hand lifts that, and a case's or restored
+        // wording keeps every mention. Only a scan sets it, so no undo step
+        // changes a variant's own flag.
         let ordinary: Vec<u64> = self
             .variants()
             .iter()
-            .filter(|v| v.category == Category::Person && v.priority == 0 && !v.mid_sentence)
+            .filter(|_| !marked)
+            .filter(|v| {
+                v.category == Category::Person && v.detected && v.priority == 0 && !v.mid_sentence
+            })
             .filter(|v| match parse_form(&v.original) {
                 Some(form @ Form::Word { titled: false, .. }) => {
                     matches!(&form, Form::Word { word, .. } if common_word(word))
