@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: role-as-name
 issue: 385
 kind: power-of-attorney
 source: hunt-r2
-expect: false hit: PERSON "Principal"
 ---
 # Explanatory note: restricted authority
 

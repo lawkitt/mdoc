@@ -47,7 +47,8 @@ words = [
     "applicant", "defendant", "plaintiff", "appellant", "party", "parties",
     "buyer", "seller", "landlord", "tenant", "lessor", "lessee", "licensor",
     "licensee", "contractor", "customer", "supplier", "company", "director",
-    "witness", "judge",
+    "witness", "judge", "owner", "repairer", "assignee", "assignor", "principal",
+    "provider",
 ]
 
 # The words for people themselves ("People").
@@ -60,6 +61,38 @@ words = ["people", "person", "individual"]
 [[never]]
 match = "whole"
 words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this", "that", "said"]
+
+# Job roles that end a phrase: "Technical Reviewer", "Costs Officer",
+# "Administrative Team" are roles, not people or organizations, also alone.
+[[never]]
+match = "plural"
+words = [
+    "officer", "reviewer", "team", "surveyor", "representative", "secretary",
+    "expert", "registrar", "assessor", "inspector", "adjudicator", "mediator",
+    "arbitrator", "clerk",
+]
+last_word_of = ["PERSON", "ORG"]
+
+# Category words: "Email", "Bank", "Address" in a table header name no one
+# (issue #379).
+[[never]]
+match = "plural"
+words = [
+    "email", "e-mail", "phone", "telephone", "address", "organisation",
+    "organization", "bank", "account", "passport", "name",
+]
+
+# Courts and public bodies are never marked (the fixture guide's rule 8):
+# an organization span with one of these words anywhere is dropped ("County
+# Court", "Ministry of Justice", "Employment Tribunal", "Ofcom"; issue #378).
+[[never]]
+match = "plural"
+words = [
+    "court", "tribunal", "ministry", "registry", "department", "council",
+    "ombudsman", "government", "parliament", "police", "ofcom", "ofgem",
+    "ofwat", "hmrc", "acas",
+]
+anywhere_in = ["ORG"]
 
 # English legal forms mark a manual selection as an organization
 # ("Acme Ltd.").

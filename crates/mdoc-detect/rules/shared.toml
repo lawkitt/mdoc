@@ -22,6 +22,13 @@
 #                    proposed, never the label
 # A context match wins over a model span on the same text.
 #
+# A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
+# `s`) or as a `stem` with up to `ending` letters. Optionally:
+#   last_word_of = [category…]  a model span of these categories ending in
+#                               one of the words is dropped (a role phrase)
+#   anywhere_in  = [category…]  a model span of these categories with one of
+#                               the words anywhere is dropped (a court)
+#
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere
 #   forbid  = [regex…]  a model span must match none
@@ -105,10 +112,12 @@ guess = [
 category = "EMAIL"
 require = ['@[^@\s]+\.\p{Alphabetic}{2,}']
 
-# Addresses need a capital or a digit; "addresses" alone is not one.
+# Addresses need a capital or a digit, and a word that is not a never word:
+# "addresses" or "Address" alone is not one.
 [[shape]]
 category = "ADDRESS"
 require = ['[\p{Uppercase}\p{N}]']
+word = '.'
 
 # Identity documents need a digit; "passport" alone is not one.
 [[shape]]

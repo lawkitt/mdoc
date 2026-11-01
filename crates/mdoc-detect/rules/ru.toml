@@ -47,7 +47,45 @@ words = ["истец", "истц", "ответчик", "заявител"]
 [[never]]
 match = "stem"
 ending = 3
-words = ["представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор"]
+words = [
+    "представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор",
+    "эксперт", "секретар", "свидетел", "собственник", "владел", "поставщик",
+]
+
+# Defined terms: "Общество", "Компания", "Организация" stand for a party
+# named elsewhere (issue #390), as stems ("Обществу", "Компании").
+[[never]]
+match = "stem"
+ending = 3
+words = ["обществ", "компани", "организаци"]
+
+# Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
+# name no one (issue #379).
+[[never]]
+match = "whole"
+words = ["снилс", "инн", "огрн", "огрнип", "кпп", "бик"]
+
+# The same for words that inflect ("Телефона", "Адресу"), as stems.
+[[never]]
+match = "stem"
+ending = 3
+words = ["телефон", "адрес", "паспорт", "банк"]
+
+# Codes of law and the country: "ГК РФ", "ГПК РФ" are references, not
+# organizations (issue #378).
+[[never]]
+match = "whole"
+words = ["гк", "рф", "гпк", "апк", "ук", "коап", "нк", "тк"]
+
+# Courts and public bodies are never marked (the fixture guide's rule 8):
+# an organization span with one of these stems anywhere is dropped
+# ("Районный суд", "Верховный Суд Российской Федерации", "Министерства
+# юстиции"; issue #378).
+[[never]]
+match = "stem"
+ending = 3
+words = ["суд", "министерств", "прокуратур", "департамент", "администраци", "инспекци"]
+anywhere_in = ["ORG"]
 
 # Russian legal forms mark a manual selection as an organization
 # ("ООО «Ромашка»"). Matched as written: ASCII case folding leaves Cyrillic
