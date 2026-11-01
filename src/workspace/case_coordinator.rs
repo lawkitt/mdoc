@@ -16,7 +16,7 @@ use std::{
 pub(super) enum CaseEffect<W> {
     /// Save this revision with the store in the background, then report
     /// with `written`.
-    Write(Case),
+    Write(Box<Case>),
     /// The tab's new case is saved: close the tab now.
     CloseTab(u64),
     /// A write failed; tell the user.
@@ -312,7 +312,7 @@ impl<W: Clone> CaseCoordinator<W> {
         let id = self.pending.keys().next().cloned()?;
         let case = self.pending.remove(&id)?;
         self.writing = Some(case.clone());
-        Some(CaseEffect::Write(case))
+        Some(CaseEffect::Write(Box::new(case)))
     }
 
     /// Whether a write runs or waits.
@@ -480,7 +480,7 @@ mod tests {
 
     fn written_case(effect: Option<CaseEffect<u8>>) -> Case {
         match effect {
-            Some(CaseEffect::Write(case)) => case,
+            Some(CaseEffect::Write(case)) => *case,
             other => panic!("expected a write, got {other:?}"),
         }
     }

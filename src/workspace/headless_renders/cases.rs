@@ -1,5 +1,5 @@
 //! Saved cases: the case list, the case page (ADR 0077), its locked,
-//! rename and categories states, the Keychain explainer and deleting.
+//! rename, categories and lists states, the Keychain explainer and deleting.
 use super::{Driver, Result};
 use crate::workspace::case_page::Place;
 use std::path::Path;
@@ -50,6 +50,34 @@ pub(super) fn scenes(d: &mut Driver, path: &Path) -> Result<String> {
         w.show_case_page(&id, Place::Categories, window, cx);
     })?;
     d.capture("case-categories")?;
+    // The case's Always and Never lists, each entry with Remove (ADR 0092).
+    d.change(|w, window, cx| {
+        let (_, effect) = w
+            .case_coordinator
+            .edit(&id, |case| {
+                use mdoc_pii::Category;
+                case.lists
+                    .add_always("Northwind Holdings", Category::Organization);
+                case.lists.add_always("Maya Bennett", Category::Person);
+                case.lists.add_never("High Court");
+                case.lists.add_never("Riverside Clinic");
+                Some(())
+            })
+            .unwrap();
+        w.carry_out_cases(effect.into_iter().collect(), cx);
+        w.show_case_page(&id, Place::Delete, window, cx);
+    })?;
+    d.capture("case-page-lists")?;
+    d.change(|w, _, cx| {
+        let (_, effect) = w
+            .case_coordinator
+            .edit(&id, |case| {
+                case.lists = Default::default();
+                Some(())
+            })
+            .unwrap();
+        w.carry_out_cases(effect.into_iter().collect(), cx);
+    })?;
     d.change(|w, window, cx| w.activate(w.tabs.active(), window, cx))?;
     d.change(|w, _, cx| {
         // Preview only. Continue is never invoked and no OS key is read.

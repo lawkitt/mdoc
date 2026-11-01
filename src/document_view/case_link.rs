@@ -1,11 +1,15 @@
 //! A tab's link to its saved case (ADR 0041): which case the tab belongs
 //! to, the case's identities for the panel's "in case" section, the
-//! categories the case skips in scans, and whether a mapping change waits to
-//! be saved into the case. The window's `CaseCoordinator` owns the cases
+//! categories the case skips in scans, its Always and Never lists and what
+//! this tab put on them, and whether a mapping change waits to be saved
+//! into the case. The window's `CaseCoordinator` owns the cases
 //! themselves; the document view runs the save timer.
 
 use mdoc_pii::{Category, restore::ExportedIdentity};
-use mdoc_store::cases;
+use mdoc_store::{
+    cases,
+    lists::{ListChanges, Lists},
+};
 use std::collections::HashSet;
 
 /// What the document view carries out for a case-link transition.
@@ -27,6 +31,11 @@ pub(crate) struct CaseLink {
     names: Vec<ExportedIdentity>,
     /// Categories this tab's case does not detect.
     skip: HashSet<Category>,
+    /// The case's Always and Never lists, for scans (ADR 0092).
+    lists: Lists,
+    /// What this tab's Keeps and manual marks have put on the case's
+    /// lists, as last saved into the case.
+    listed: Lists,
 }
 
 impl CaseLink {
@@ -46,6 +55,43 @@ impl CaseLink {
 
     pub(crate) fn skip(&self) -> &HashSet<Category> {
         &self.skip
+    }
+
+    pub(crate) fn lists(&self) -> &Lists {
+        &self.lists
+    }
+
+    /// What this tab has put on its case's lists.
+    pub(crate) fn listed(&self) -> &Lists {
+        &self.listed
+    }
+
+    /// The case's lists, as the tab joins or as they change.
+    pub(crate) fn set_lists(&mut self, lists: Lists) {
+        self.lists = lists;
+    }
+
+    /// Case `id`'s lists changed; only its members follow.
+    pub(crate) fn case_lists_changed(&mut self, id: &str, lists: &Lists) {
+        if self.is(id) {
+            self.lists = lists.clone();
+        }
+    }
+
+    /// This tab's contribution to its case's lists is now `listed`: what
+    /// changed since the last save into the case. Nothing outside a case,
+    /// where the user-wide lists are edited by hand only.
+    pub(crate) fn contribute(&mut self, listed: Lists) -> Option<ListChanges> {
+        self.link.as_ref()?;
+        let changes = ListChanges::between(&self.listed, &listed);
+        self.listed = listed;
+        (!changes.is_empty()).then_some(changes)
+    }
+
+    /// The tab's review started over (a reload): what it put on the lists
+    /// stays there, no longer followed.
+    pub(crate) fn forget_listed(&mut self) {
+        self.listed = Lists::default();
     }
 
     /// The tab joined `link` (or a reply restored it; none: no case).
@@ -92,6 +138,8 @@ impl CaseLink {
     /// Returns the case it left.
     pub(crate) fn leave(&mut self) -> (Option<cases::CaseLink>, CaseLinkEffect) {
         self.skip.clear();
+        self.lists = Lists::default();
+        self.listed = Lists::default();
         (self.link.take(), CaseLinkEffect::CancelSave)
     }
 
@@ -102,6 +150,8 @@ impl CaseLink {
         }
         self.link = None;
         self.skip.clear();
+        self.lists = Lists::default();
+        self.listed = Lists::default();
         Some(CaseLinkEffect::CancelSave)
     }
 }
@@ -155,5 +205,31 @@ mod tests {
         assert_eq!(case.case_deleted("b"), None);
         assert_eq!(case.case_deleted("a"), Some(CaseLinkEffect::CancelSave));
         assert!(case.link().is_none() && case.skip().is_empty());
+    }
+
+    #[test]
+    fn a_member_contributes_what_changed_and_forgets_it_on_leaving() {
+        let mut case = CaseLink::default();
+        let mut listed = Lists::default();
+        listed.add_never("Acme");
+        assert_eq!(case.contribute(listed.clone()), None, "no case, no lists");
+        case.attach(Some(link("a")));
+        let changes = case.contribute(listed.clone()).unwrap();
+        assert_eq!(changes.never_added, ["Acme"]);
+        assert_eq!(case.contribute(listed.clone()), None, "nothing new");
+        let changes = case.contribute(Lists::default()).unwrap();
+        assert_eq!(changes.never_removed, ["Acme"]);
+        // A reload forgets the contribution without taking it back.
+        case.contribute(listed.clone());
+        case.forget_listed();
+        assert_eq!(case.contribute(Lists::default()), None);
+        let mut lists = Lists::default();
+        lists.add_always("Maya Bennett", Category::Person);
+        case.case_lists_changed("b", &lists);
+        assert!(case.lists().is_empty());
+        case.case_lists_changed("a", &lists);
+        assert_eq!(case.lists(), &lists);
+        case.leave();
+        assert!(case.lists().is_empty());
     }
 }

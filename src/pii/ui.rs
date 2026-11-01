@@ -358,6 +358,9 @@ impl DocumentView {
         self.editor
             .update(cx, |editor, _| editor.set_copy_metadata(None));
         self.pii.decisions.clear();
+        // The new review lists nothing; what the old one put on the case's
+        // lists stays there.
+        self.case.forget_listed();
         self.review_changed(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {
@@ -846,7 +849,11 @@ impl DocumentView {
             return;
         };
         let original = source[range.clone()].into();
-        self.record_decision(before, mdoc_pii::decisions::Decision::Add { original }, cx);
+        self.record_decision(
+            before,
+            mdoc_pii::decisions::Decision::Add { original, category },
+            cx,
+        );
         self.pii.reviewing = true;
         if !self.pii.mapping.open {
             self.pii.mapping.open_panel(window.focused(cx));

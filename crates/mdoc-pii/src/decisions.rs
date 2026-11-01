@@ -52,8 +52,10 @@ pub enum Decision {
         original: Arc<str>,
         category: Option<Category>,
     },
+    /// A manual mark, in the category it was marked in.
     Add {
         original: Arc<str>,
+        category: Category,
     },
     Restore(Mentions),
     JoinCase {
@@ -97,7 +99,7 @@ impl Decision {
                 original,
                 category: Some(category),
             } => format!("Separated “{original}” as {}", category.label()),
-            Self::Add { original } => format!("Added “{original}”"),
+            Self::Add { original, .. } => format!("Added “{original}”"),
             Self::Restore(One(original)) => format!("Restored “{original}”"),
             Self::Restore(Many(n)) => format!("Restored {}", count(*n, "name", "names")),
             Self::JoinCase { case } => format!("Joined case “{case}”"),
@@ -236,9 +238,53 @@ impl DecisionLog {
         }
         path.steps_to(entry.history)
     }
+    /// The wordings this document's manual marks put on its case's Always
+    /// list (ADR 0092), each in the category it was marked in: every mark
+    /// still done, or past the undo limit, oldest first. Undoing a mark
+    /// takes it off.
+    pub fn marked<'a>(
+        &'a self,
+        path: &'a HistoryPath,
+    ) -> impl Iterator<Item = (Arc<str>, Category)> + 'a {
+        self.rows(path)
+            .filter(|(_, state)| *state != EntryState::Undone)
+            .flat_map(|(entry, _)| &entry.decisions)
+            .filter_map(|decision| match decision {
+                Decision::Add { original, category } => Some((original.clone(), *category)),
+                _ => None,
+            })
+    }
 }
 
 impl Review {
+    /// The wordings this document's Keeps put on its case's Never list (ADR
+    /// 0092): the kept wordings of each identity with no mention still
+    /// proposed or replaced, so keeping one mention of a name lists
+    /// nothing. A kept mention outside any identity counts once no mention
+    /// of its wording is proposed or replaced. Follows undo, as the kept
+    /// mentions do.
+    pub fn never_wordings(&self) -> Vec<Arc<str>> {
+        let mut wordings: Vec<Arc<str>> = Vec::new();
+        for exclusion in &self.tracking.exclusions {
+            let listed = match exclusion.identity {
+                Some(id) => self.identity_count(id) == 0,
+                None => {
+                    let wording = exclusion.original.as_ref();
+                    !self.candidates().iter().any(|c| {
+                        self.variant(c.variant)
+                            .is_some_and(|v| v.original.as_ref() == wording)
+                    }) && !self
+                        .applied()
+                        .iter()
+                        .any(|a| a.step.original_shared().as_ref() == wording)
+                }
+            };
+            if listed && !wordings.contains(&exclusion.original) {
+                wordings.push(exclusion.original.clone());
+            }
+        }
+        wordings
+    }
     /// The wording an entry names for identity `id`: its longest original,
     /// applied or proposed.
     pub fn identity_wording(&self, id: u64) -> Option<Arc<str>> {
@@ -263,6 +309,7 @@ mod tests {
     use super::{Decision, DecisionLog, EntryState, Mentions};
     use crate::Category;
     use mdoc_history::HistoryPath;
+    use std::sync::Arc;
 
     fn path(undo: &[u64], current: u64, redo: &[u64]) -> HistoryPath {
         HistoryPath {
@@ -273,6 +320,45 @@ mod tests {
     }
     fn kept(name: &str) -> Decision {
         Decision::Keep(Mentions::One(name.into()))
+    }
+    fn added(name: &str, category: Category) -> Decision {
+        Decision::Add {
+            original: name.into(),
+            category,
+        }
+    }
+
+    #[test]
+    fn marks_still_done_are_listed_with_their_category() {
+        let mut log = DecisionLog::default();
+        log.record(
+            1,
+            added("Acme", Category::Organization),
+            "t".into(),
+            &path(&[1], 2, &[]),
+        );
+        log.record(2, kept("Bob"), "t".into(), &path(&[1, 2], 3, &[]));
+        log.record(
+            3,
+            added("Maya", Category::Person),
+            "t".into(),
+            &path(&[1, 2, 3], 4, &[]),
+        );
+        let now = path(&[1, 2, 3], 4, &[]);
+        let marked: Vec<_> = log.marked(&now).collect();
+        assert_eq!(
+            marked,
+            [
+                ("Acme".into(), Category::Organization),
+                ("Maya".into(), Category::Person)
+            ]
+        );
+        // Undoing the last mark takes it off.
+        let back = path(&[2], 3, &[4]);
+        log.follow(&back);
+        let marked: Vec<_> = log.marked(&back).map(|(w, _)| w).collect();
+        assert_eq!(marked, [Arc::<str>::from("Acme")]);
+        assert_eq!(added("Acme", Category::Other).label(), "Added “Acme”");
     }
 
     #[test]

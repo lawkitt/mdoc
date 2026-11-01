@@ -208,6 +208,8 @@ never reads as a saved case (ADR 0092).
 
 **Always and Never lists**: wordings always or never proposed, per case
 (from manual marks and Keep) and user-wide (Settings › Detection; ADR 0092).
+Code: `mdoc_store::lists::Lists`; a proposal from Always has recognizer
+`UserList`.
 
 **Flaw**: a miss, false hit or wrong boundary against the
 [annotation guide](tests/fixtures/recognition/GUIDE.md); a **flaw class**

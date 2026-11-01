@@ -52,6 +52,8 @@ pub(super) struct CaseState {
     quit_asked: Vec<u64>,
     /// The quit waits on the Keychain explainer to save this tab's case.
     quit_key_wait: Option<u64>,
+    /// The user-wide lists' last saved revision (ADR 0092).
+    pub(super) user_lists_revision: u64,
     /// A close or quit question about a mapping is up; a quit waits for it.
     mapping_prompt: bool,
     /// Stands in for "reading the key may ask" in tests.
@@ -338,6 +340,8 @@ impl Workspace {
                 }
                 if !exists || cfg!(test) {
                     self.case_coordinator.mark_loaded();
+                    // No cases folder: no lists saved yet either.
+                    self.user_lists_read(Ok(Default::default()), cx);
                     return;
                 }
                 // On macOS the quiet read has opened the store by now, so this
@@ -359,11 +363,14 @@ impl Workspace {
         let CaseLoad::List = self.case_coordinator.begin_load() else {
             return;
         };
-        let task = cx.background_executor().spawn(async move { store.list() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { (store.list(), store.load_lists()) });
         cx.spawn_in(window, async move |this, cx| {
-            let (cases, failed) = task.await;
+            let ((cases, failed), lists) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.case_coordinator.finish_load(cases);
+                this.user_lists_read(lists, cx);
                 if this
                     .cases
                     .page
@@ -430,10 +437,12 @@ impl Workspace {
                 let identities = case.exported();
                 let reserved = case.reserved_aliases();
                 let skip = case.skipped();
+                let lists = case.lists.clone();
                 let dismissed = case.dismissed_hints.clone();
                 let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
                     view.case.set_skip(skip);
+                    view.case.set_lists(lists);
                     view.dismiss_case_hints(&dismissed, cx);
                     view.open_case_mapping(link, &identities, &reserved, cx)
                 });
@@ -628,10 +637,27 @@ impl Workspace {
                 v.session.document.path.clone(),
             )
         };
-        let Some(((renames, added, exported), effect)) =
+        // Its Keeps and manual marks since the last save, for the case's
+        // lists (ADR 0092); what other open members still list stays.
+        let others: Vec<_> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.id() != id)
+            .filter_map(|tab| tab.view())
+            .filter(|other| other.read(cx).case.is(&link.id))
+            .map(|other| other.read(cx).case.listed().clone())
+            .collect();
+        let listed = view
+            .update(cx, |view, cx| view.take_list_changes(cx))
+            .map(|changes| changes.sparing(&others));
+        let Some(((renames, added, exported, lists), effect)) =
             self.case_coordinator.edit(&link.id, |case| {
                 let before = case.clone();
                 case.merge(&identities);
+                let lists = listed
+                    .as_ref()
+                    .is_some_and(|changes| case.lists.apply(changes))
+                    .then(|| case.lists.clone());
                 if let Some(path) = path.as_deref().map(session_store::identity)
                     && !case.members.contains(&path)
                 {
@@ -643,13 +669,16 @@ impl Workspace {
                 // Renamed or recategorized identities, by the alias they had.
                 let renames = case.renames_since(&before);
                 let added = case.identities.len() > before.identities.len();
-                Some((renames, added, case.exported()))
+                Some((renames, added, case.exported(), lists))
             })
         else {
             return;
         };
         view.update(cx, |view, _| view.case.set_names(exported.clone()));
         self.carry_out_cases(effect.into_iter().collect(), cx);
+        if let Some(lists) = lists {
+            self.case_lists_changed(&link.id, &lists, cx);
+        }
         if renames.is_empty() && !added {
             return;
         }
@@ -772,9 +801,11 @@ impl Workspace {
         let identities = case.exported();
         let reserved = case.reserved_aliases();
         let skip = case.skipped();
+        let lists = case.lists.clone();
         let dismissed = case.dismissed_hints.clone();
         let result = view.update(cx, |view, cx| {
             view.case.set_skip(skip);
+            view.case.set_lists(lists);
             view.dismiss_case_hints(&dismissed, cx);
             let result = view.join_case(&link.name, &identities, &reserved, cx);
             if result.is_ok() {
@@ -1441,6 +1472,39 @@ impl Workspace {
             });
         }
         cx.notify();
+    }
+    /// Case `case_id`'s lists changed: its open members scan with them.
+    pub(super) fn case_lists_changed(
+        &mut self,
+        case_id: &str,
+        lists: &mdoc_store::lists::Lists,
+        cx: &mut Context<Self>,
+    ) {
+        for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
+            view.update(cx, |view, _| view.case.case_lists_changed(case_id, lists));
+        }
+        cx.notify();
+    }
+    /// The case page's Remove on an Always (`always`) or Never entry.
+    pub(super) fn remove_case_list_entry(
+        &mut self,
+        case_id: &str,
+        always: bool,
+        wording: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((lists, effect)) = self.case_coordinator.edit(case_id, |case| {
+            let removed = if always {
+                case.lists.remove_always(wording)
+            } else {
+                case.lists.remove_never(wording)
+            };
+            removed.then(|| case.lists.clone())
+        }) else {
+            return;
+        };
+        self.carry_out_cases(effect.into_iter().collect(), cx);
+        self.case_lists_changed(case_id, &lists, cx);
     }
     /// Case entries for the tab context menu.
     pub(super) fn case_menu_items(&self, tab: u64, cx: &mut Context<Self>) -> Vec<AnyElement> {

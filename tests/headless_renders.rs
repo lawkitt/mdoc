@@ -356,7 +356,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     record["state"]["case_page"],
                     matches!(
                         *name,
-                        "case-page" | "case-page-locked" | "rename-case" | "case-categories"
+                        "case-page"
+                            | "case-page-locked"
+                            | "case-page-lists"
+                            | "rename-case"
+                            | "case-categories"
                     ),
                     "{theme}/{name}"
                 );

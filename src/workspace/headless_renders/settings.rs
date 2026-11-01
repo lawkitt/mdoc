@@ -1,5 +1,5 @@
-//! Settings categories, categories to detect and the Spelling dictionary
-//! (ADR 0076).
+//! Settings categories, categories to detect, the user-wide lists (ADR
+//! 0092) and the Spelling dictionary (ADR 0076).
 use super::{Driver, Result};
 use crate::settings_ui::{Category, Status};
 
@@ -90,6 +90,32 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     d.change(|w, window, cx| {
         w.settings
             .update(cx, |p, cx| p.render_categories(&[], "", window, cx))
+    })?;
+    // The user-wide Always and Never lists, a wording typed to add, then
+    // the same section while cases are locked (ADR 0092).
+    d.change(|w, window, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.show_category(Category::Detection, window, cx);
+            let mut lists = mdoc_store::lists::Lists::default();
+            lists.add_always("Acme Holdings", mdoc_pii::Category::Organization);
+            lists.add_never("Supreme Court");
+            lists.add_never("Ministry of Justice");
+            p.set_user_lists(Some(lists), cx);
+            p.type_user_list_entry(true, "Riverside Clinic", cx);
+        })
+    })?;
+    d.settle()?;
+    d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.render_scroll_to_end(cx)))?;
+    d.capture("settings-detection-lists")?;
+    d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.set_user_lists(None, cx)))?;
+    d.settle()?;
+    d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.render_scroll_to_end(cx)))?;
+    d.capture("settings-detection-lists-locked")?;
+    d.change(|w, _, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.type_user_list_entry(true, "", cx);
+            p.set_user_lists(Some(Default::default()), cx)
+        })
     })?;
     // Detection starts on its category tab; one Tab enters the first model radio.
     d.change(|w, window, cx| {

@@ -25,6 +25,7 @@ use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 mod categories;
 pub(crate) mod dictionary;
+pub(crate) mod lists;
 pub(crate) use categories::Category;
 
 fn status_label(status: &Status) -> String {
@@ -63,6 +64,10 @@ pub enum Event {
     Shortcuts,
     /// Saved: Settings › Detection stopped detecting these (ADR 0076).
     CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),
+    /// The user-wide lists changed: save them with the cases (ADR 0092).
+    UserListsChanged(mdoc_store::lists::Lists),
+    /// The lists wait for locked cases: unlock them.
+    UnlockLists,
 }
 
 struct SetupCompletion {
@@ -169,6 +174,8 @@ pub struct Panel {
     controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     /// The user dictionary view, replacing the Settings body while open.
     pub dictionary: Option<dictionary::DictionaryView>,
+    /// Settings › Detection's user-wide Always and Never lists (ADR 0092).
+    user_lists: lists::UserListsUi,
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
@@ -294,6 +301,7 @@ impl Panel {
     }
 
     pub fn new(shared: Shared, theme: Rc<Cell<Theme>>, cx: &mut Context<Self>) -> Self {
+        let user_lists = lists::UserListsUi::new(theme.clone(), cx);
         let draft = shared.borrow().current.clone().unwrap_or_default();
         let model_state = ModelState::open(shared.borrow().path.as_deref());
         Self {
@@ -354,6 +362,7 @@ impl Panel {
             scroll: gpui::ScrollHandle::new(),
             controls: Default::default(),
             dictionary: None,
+            user_lists,
         }
     }
     /// A Settings › General choice changed and saved outside the panel (the

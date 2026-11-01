@@ -2,7 +2,10 @@
 use crate::{document_view::DocumentView, settings_ui};
 use gpui::Context;
 use mdoc_pii::Category;
-use mdoc_store::settings;
+use mdoc_store::{
+    lists::{ListChanges, Lists},
+    settings,
+};
 use std::{
     collections::HashSet,
     sync::{
@@ -53,6 +56,39 @@ impl DocumentView {
             .as_ref()
             .map(|p| p.categories.skipped())
             .unwrap_or_default()
+    }
+    /// The lists this tab's scans use (ADR 0092): its case's over the
+    /// user-wide ones of Settings › Detection, or those alone outside a
+    /// case.
+    pub(crate) fn scan_lists(&self, cx: &gpui::App) -> Lists {
+        let panel = self.model_panel.read(cx);
+        Lists::effective(
+            self.case.link().map(|_| self.case.lists()),
+            panel.user_lists(),
+        )
+    }
+    /// What this tab's decisions put on its case's lists now (ADR 0092):
+    /// the wordings of identities it kept whole on Never, the wordings it
+    /// marked by hand, in their categories, on Always. A wording both kept
+    /// and marked is kept.
+    fn listed(&self, cx: &gpui::App) -> Lists {
+        let mut listed = Lists::default();
+        let path = self.editor.read(cx).history_path();
+        for (wording, category) in self.pii.decisions.marked(&path) {
+            listed.add_always(&wording, category);
+        }
+        for wording in self.pii.review.never_wordings() {
+            listed.add_never(&wording);
+        }
+        listed
+    }
+    /// What changed in this tab's contribution to its case's lists since
+    /// the last save into the case; `None` outside a case or when nothing
+    /// did.
+    pub(crate) fn take_list_changes(&mut self, cx: &gpui::App) -> Option<ListChanges> {
+        self.case.link()?;
+        let listed = self.listed(cx);
+        self.case.contribute(listed)
     }
     /// Settings › Detection stopped detecting `categories` (ADR 0076). A tab
     /// without a case drops their unapplied scan proposals; applied
@@ -110,6 +146,7 @@ impl DocumentView {
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
         let progress = Arc::new(ScanCount::default());
+        let lists = self.scan_lists(cx);
         self.pii.scan_started = std::time::Instant::now();
         self.pii.job = Some(ScanJob {
             cancel: cancel.clone(),
@@ -122,6 +159,7 @@ impl DocumentView {
             mdoc_detect::scan_config_with_progress(&source, &cancel, &config, &|p| {
                 progress.set(p.done, p.windows)
             })
+            .map(|detections| mdoc_detect::lists::apply(&source, detections, &lists))
             .map_err(|e| e.to_string())
         });
         cx.spawn(async move |this, cx| {

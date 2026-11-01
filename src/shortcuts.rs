@@ -1296,6 +1296,16 @@ pub static SHORTCUTS: &[Shortcut] = &[
         )],
     ),
     row(
+        Panel,
+        "Add the wording to the list",
+        &[on!(
+            Settings,
+            Some("UserListInput"),
+            &["enter"],
+            settings_ui::lists::AddUserListEntry
+        )],
+    ),
+    row(
         Popup,
         "Add the word to the dictionary",
         &[on!(
