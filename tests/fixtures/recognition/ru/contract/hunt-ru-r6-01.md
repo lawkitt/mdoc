@@ -5,7 +5,6 @@ issue: 374 362
 kind: contract
 source: hunt-r6
 expect: miss: ADDRESS "Псков, ул. Тихих залов, д. 29, пом. 8"
-expect: boundary: gold ORG "ООО «Евгений Лорн»"; proposed ORG "Евгений Лорн"
 ---
 # Решение единственного участника об одобрении займа
 

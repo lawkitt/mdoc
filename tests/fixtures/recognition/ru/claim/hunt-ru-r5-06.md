@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: org-boundary
-issue: 374
+status: pass
+flaw:
+issue:
 kind: claim
 source: hunt-r5
-expect: boundary: gold ORG "ООО «Меридианный стул»"; proposed ORG "Меридианный стул"
 ---
 # Иск о замене стула с повреждённым фиксатором
 
