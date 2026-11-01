@@ -9,8 +9,15 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    // Each model downloads on its own; Download all takes
+                    // every missing one (ADR 0090).
                     ForEach(setup.snapshot.offers) { offer in
-                        ModelRow(offer: offer, state: setup.state(of: offer))
+                        VStack(alignment: .leading, spacing: 8) {
+                            ModelRow(offer: offer, state: setup.state(of: offer))
+                            if !setup.isWorking && offer.state != .installed {
+                                ModelDownloadButton(setup: setup, offer: offer)
+                            }
+                        }
                     }
                     if setup.waitsForWiFi {
                         Button("Use cellular") {
@@ -23,12 +30,13 @@ struct SettingsView: View {
                         Button("Cancel download", role: .cancel) {
                             setup.cancel()
                         }
-                    } else if setup.snapshot.needsSetup {
+                    } else if setup.snapshot.missing.count > 1 {
                         Button {
                             setup.download()
                         } label: {
-                            Text("Download \(setup.snapshot.missingBytes.formatted(.byteCount(style: .file)))")
+                            Text("Download all (\(setup.snapshot.missingBytes.formatted(.byteCount(style: .file))))")
                         }
+                        .accessibilityIdentifier("settings-download-all")
                     }
                 } header: {
                     Text("Models")
@@ -61,7 +69,7 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .cellularQuestion(model: setup, size: setup.snapshot.missingBytes.formatted(.byteCount(style: .file)))
+            .cellularQuestion(model: setup)
         }
         .onAppear { setup.refresh() }
     }
@@ -73,6 +81,25 @@ struct SettingsView: View {
         } else {
             String(localized: "mdoc's documents stay on this iPhone and are not in backups.")
         }
+    }
+}
+
+/// One model's download in Settings. Borderless, so only the button, not
+/// the whole row, starts it.
+private struct ModelDownloadButton: View {
+    let setup: SetupViewModel
+    let offer: ModelOffer
+
+    var body: some View {
+        let size = offer.byteSize.formatted(.byteCount(style: .file))
+        Button {
+            setup.download([offer])
+        } label: {
+            Label("Download \(size)", systemImage: "arrow.down.circle")
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text("Download \(ModelRow.plainName(offer.purpose)), \(size)"))
+        .accessibilityIdentifier("settings-download-\(offer.id)")
     }
 }
 

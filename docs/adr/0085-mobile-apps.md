@@ -91,7 +91,8 @@ already lives in GUI-free Rust crates (ADR 0069).
 - **Model delivery.** Models come from the same pinned URLs and SHA-256
   checks as desktop, through a background download session, on Wi-Fi by
   default; cellular needs the user's yes. A first-use setup card names the
-  size (ADR 0026). No Apple Background Assets or Play Asset Delivery.
+  size (ADR 0026). On iOS each model also downloads on its own
+  ([ADR 0090](0090-ios-models-download-separately.md)). No Apple Background Assets or Play Asset Delivery.
 - **OCR: PP-OCR everywhere** through the Rust core, the same bundles as
   desktop. OS engines follow the desktop's Later item (adopted where they
   beat PP-OCR on the fixtures). ML Kit text recognition is excluded: it has

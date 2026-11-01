@@ -155,6 +155,11 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   held for Wi-Fi shows "Waiting for Wi-Fi" with Use cellular. That state
   comes from `NWPathMonitor`: background sessions never call
   `taskIsWaitingForConnectivity` ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
+- **Each model downloads on its own.** Settings has a Download button per
+  missing model and Download all; a document's setup card offers the model
+  its job needs (text recognition to recognize, the detector to find
+  names), with Download all models beside it
+  ([ADR 0090](../../docs/adr/0090-ios-models-download-separately.md)).
 - **Below the detector floor** there is no Find names and no detector setup
   card: where Find names would be, the document says the device cannot find
   names and that selecting text marks one; Settings says the same. Text

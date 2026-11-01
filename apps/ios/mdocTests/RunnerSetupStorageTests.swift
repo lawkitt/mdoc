@@ -200,6 +200,39 @@ final class SetupViewModelTests: XCTestCase {
         XCTAssertTrue(continued)
     }
 
+    /// One model downloads on its own, and its continuation runs once that
+    /// model is in, with the other still missing (ADR 0090).
+    func testOneModelDownloadsAlone() async throws {
+        let (model, _) = model()
+        let ocr = try XCTUnwrap(model.missing(.ocr).first)
+        var continued = false
+        model.download([ocr]) { continued = true }
+        XCTAssertEqual(model.requested, [ocr.id])
+        await model.waitForDownload()
+        XCTAssertTrue(continued)
+        XCTAssertTrue(model.missing(.ocr).isEmpty)
+        XCTAssertEqual(model.missing(.detector).count, 1)
+        XCTAssertEqual(model.snapshot.missingBytes, 1_190_000_000)
+        // Download all then takes only what is left.
+        model.download()
+        XCTAssertEqual(model.requested, model.missing(.detector).map(\.id))
+        await model.waitForDownload()
+        XCTAssertFalse(model.snapshot.needsSetup)
+    }
+
+    /// The cellular question names the size of what was asked for.
+    func testCellularQuestionNamesTheRequestedSize() async throws {
+        let (model, _) = model(network: FakeNetwork(.cellular))
+        let ocr = try XCTUnwrap(model.missing(.ocr).first)
+        model.download([ocr])
+        XCTAssertTrue(model.asksCellular)
+        XCTAssertEqual(model.requestedBytes, 31_000_000)
+        model.answerCellular(useCellular: true)
+        await model.waitForDownload()
+        XCTAssertTrue(model.missing(.ocr).isEmpty)
+        XCTAssertFalse(model.missing(.detector).isEmpty)
+    }
+
     func testCancelReturnsToARetryableState() async {
         let (model, _) = model(downloadSeconds: 5)
         var continued = false

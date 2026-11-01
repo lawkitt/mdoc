@@ -3,8 +3,9 @@ import Observation
 
 /// The first-use setup card and Settings' model rows: the models that fit
 /// this device by physical RAM, their size, and the download (ADR 0026,
-/// ADR 0085). Wi-Fi by default; on any cellular interface, a download asks
-/// first, and one held for Wi-Fi says so (ADR 0088).
+/// ADR 0085). Each model downloads on its own or all together (ADR 0090).
+/// Wi-Fi by default; on any cellular interface, a download asks first, and
+/// one held for Wi-Fi says so (ADR 0088).
 @MainActor
 @Observable
 final class SetupViewModel {
@@ -27,6 +28,19 @@ final class SetupViewModel {
     private(set) var allowsCellular = false
     /// A file is downloading (not being checked and installed).
     private var fetching = false
+    /// The models the running download, or the one the cellular question
+    /// holds, installs.
+    private(set) var requested: [String] = []
+
+    /// What the requested download still has to fetch.
+    var requestedBytes: Int64 {
+        snapshot.missing.filter { requested.contains($0.id) }.reduce(0) { $0 + $1.byteSize }
+    }
+
+    /// The models of one purpose not yet installed.
+    func missing(_ purpose: ModelPurpose) -> [ModelOffer] {
+        snapshot.missing.filter { $0.purpose == purpose }
+    }
 
     /// A Wi-Fi-only download is held: the connection is cellular, or there
     /// is none. The card says "Waiting for Wi-Fi" and offers Use cellular.
@@ -76,11 +90,15 @@ final class SetupViewModel {
     }
 
     /// Download pressed: on cellular ask first, else go on Wi-Fi.
-    /// `then` runs once every offered model is installed: the document card
-    /// passes the scan that asked for setup (Download & continue, ADR 0026);
-    /// Settings passes nothing.
-    func download(then continuation: (@MainActor () async -> Void)? = nil) {
+    /// `models` are the offers to install, every missing one by default.
+    /// `then` runs once they are installed: the document card passes the job
+    /// that asked for setup (Download & continue, ADR 0026); Settings passes
+    /// nothing.
+    func download(_ models: [ModelOffer]? = nil, then continuation: (@MainActor () async -> Void)? = nil) {
         guard !isWorking else { return }
+        let ids = (models ?? snapshot.missing).map(\.id)
+        requested = snapshot.missing.map(\.id).filter { ids.contains($0) }
+        guard !requested.isEmpty else { return }
         self.continuation = continuation
         if route == .cellular {
             asksCellular = true
@@ -159,15 +177,15 @@ final class SetupViewModel {
         allowsCellular = false
         let next = continuation
         continuation = nil
-        if finished && !snapshot.needsSetup {
+        if finished && requestedBytes == 0 {
             await next?()
         }
     }
 
-    /// True when every missing model was installed: each pinned file is
+    /// True when every requested model was installed: each pinned file is
     /// downloaded by the platform, then verified and installed by the core.
     private func install(allowCellular: Bool) async -> Bool {
-        for offer in snapshot.missing {
+        for offer in snapshot.missing where requested.contains(offer.id) {
             do {
                 let requests = try setup.downloadRequests(for: offer.id)
                 let total = max(requests.reduce(0) { $0 + $1.byteSize }, 1)
