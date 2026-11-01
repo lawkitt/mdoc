@@ -9,8 +9,7 @@
     {"start":870,"end":892,"label":"email","score":0.9870795,"text":"ksen.rav@\nsvod.invalid"},
     {"start":975,"end":988,"label":"tax_id","score":0.9506864,"text":"54О8 1l62З7"},
     {"start":999,"end":1019,"label":"bank_account","score":0.8854335,"text":"40817810900007146328"},
-    {"start":1926,"end":1940,"label":"person","score":0.69637144,"text":"мастера"},
-    {"start":1966,"end":1990,"label":"person","score":0.5706903,"text":"исполнителем"},
-    {"start":1132,"end":1148,"label":"person","score":0.5646387,"text":"Оператор"}
+    {"start":1422,"end":1436,"label":"person","score":0.7806625,"text":"мастера"},
+    {"start":1462,"end":1486,"label":"person","score":0.70598775,"text":"исполнителем"}
   ]
 }

@@ -2,14 +2,18 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":1203,"end":1223,"label":"person","score":0.73048216,"text":"доверитель"},
-    {"start":455,"end":488,"label":"email","score":0.7466935,"text":"электронной почты"},
-    {"start":1314,"end":1340,"label":"person","score":0.796134,"text":"представителя"},
-    {"start":2024,"end":2044,"label":"person","score":0.6159545,"text":"доверителя"},
-    {"start":2247,"end":2267,"label":"person","score":0.8292156,"text":"Доверитель"},
-    {"start":2271,"end":2297,"label":"person","score":0.81242126,"text":"Представитель"},
-    {"start":2940,"end":2958,"label":"person","score":0.77780664,"text":"сотрудник"},
-    {"start":2367,"end":2389,"label":"organization","score":0.891811,"text":"организация"},
-    {"start":2417,"end":2446,"label":"bank_account","score":0.9508692,"text":"банковский счёт"}
+    {"start":540,"end":566,"label":"person","score":0.85752964,"text":"представителя"},
+    {"start":516,"end":536,"label":"person","score":0.8262917,"text":"доверителя"},
+    {"start":1148,"end":1168,"label":"person","score":0.7316342,"text":"доверитель"},
+    {"start":462,"end":478,"label":"phone_number","score":0.9015746,"text":"телефона"},
+    {"start":482,"end":515,"label":"email","score":0.8337311,"text":"электронной почты"},
+    {"start":448,"end":460,"label":"address","score":0.78349185,"text":"адреса"},
+    {"start":1259,"end":1285,"label":"person","score":0.796134,"text":"представителя"},
+    {"start":1969,"end":1989,"label":"person","score":0.6159545,"text":"доверителя"},
+    {"start":2201,"end":2221,"label":"person","score":0.79182106,"text":"Доверитель"},
+    {"start":2983,"end":3001,"label":"person","score":0.78082967,"text":"сотрудник"},
+    {"start":2257,"end":2279,"label":"organization","score":0.7685595,"text":"организации"},
+    {"start":2297,"end":2319,"label":"organization","score":0.73810315,"text":"организация"},
+    {"start":2424,"end":2453,"label":"bank_account","score":0.95791227,"text":"банковский счёт"}
   ]
 }

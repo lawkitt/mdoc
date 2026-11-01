@@ -2,12 +2,12 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":170,"end":208,"label":"person","score":0.9948804,"text":"Олеся Макаровна Шэнь"},
-    {"start":116,"end":136,"label":"person","score":0.98789966,"text":"Nguyễn Thị Lụa"},
-    {"start":1767,"end":1785,"label":"person","score":0.7399865,"text":"заявитель"},
-    {"start":1088,"end":1106,"label":"person","score":0.727298,"text":"заявителю"},
-    {"start":1803,"end":1819,"label":"person","score":0.6378207,"text":"Ответчик"},
-    {"start":1542,"end":1603,"label":"organization","score":0.7130321,"text":"мастерская ООО «Тканый горизонт»"},
-    {"start":2324,"end":2343,"label":"email","score":0.99719906,"text":"lua@obrazec.invalid"}
+    {"start":170,"end":208,"label":"person","score":0.99358684,"text":"Олеся Макаровна Шэнь"},
+    {"start":116,"end":136,"label":"person","score":0.9895109,"text":"Nguyễn Thị Lụa"},
+    {"start":1095,"end":1124,"label":"organization","score":0.74871993,"text":"Тканый горизонт"},
+    {"start":1290,"end":1308,"label":"person","score":0.5110303,"text":"заявитель"},
+    {"start":1326,"end":1342,"label":"person","score":0.50214195,"text":"Ответчик"},
+    {"start":1847,"end":1866,"label":"email","score":0.9967649,"text":"lua@obrazec.invalid"},
+    {"start":2676,"end":2702,"label":"person","score":0.80084777,"text":"представителя"}
   ]
 }
