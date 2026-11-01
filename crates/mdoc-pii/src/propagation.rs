@@ -640,7 +640,15 @@ fn find_forms(
             {
                 run += 1;
             }
-            if (1..=2).contains(&(run - i)) {
+            // Right after a name word they are that name's initials
+            // ("Ветлин Н. О."), not a signature of their own.
+            let after_name = i > 0
+                && word(i - 1)
+                && blank(tokens[i - 1].end, start)
+                && (intersects(covered, &tokens[i - 1])
+                    || parse_form(&source[tokens[i - 1].clone()])
+                        .is_some_and(|form| people.candidates(&form).proposed));
+            if (1..=2).contains(&(run - i)) && !after_name {
                 tries.push((start..tokens[run].end + 1, run + 1));
             }
         } else {
@@ -1083,6 +1091,14 @@ mod tests {
             .map(|(r, _)| &source[r])
             .collect();
         assert_eq!(found, ["Y. Q.", "Я. В."]);
+        // After a surname they are its initials, not a signature.
+        let names = ["Надир Оскарович Ветлин"];
+        let source = "Заявитель: Ветлин Н. О.";
+        let covered = [Range {
+            start: source.find("Ветлин").unwrap(),
+            end: source.find(" Н.").unwrap(),
+        }];
+        assert!(find_forms(source, &people(&names), &covered).is_empty());
     }
 
     #[test]
