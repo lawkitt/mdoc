@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: bank-slash-filter document-heading-org
-issue: 425 426
+flaw: bank-slash-filter
+issue: 425
 kind: power-of-attorney
 source: hunt-r4
 expect: miss: BANK "47-29-16/00318572"
-expect: false hit: ORG "Financial authority"
 ---
 ## Financial authority: bank instruction annex
 

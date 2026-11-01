@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: role-as-name
 issue: 385
 kind: letter
 source: hunt-r3
-expect: false hit: ORG "Accounts team"
 ---
 # Demand for repayment of an inspection deposit
 

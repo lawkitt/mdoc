@@ -944,6 +944,31 @@ mod tests {
         }
     }
 
+    /// An English organization in sentence case is a heading, a document
+    /// kind or a team; title case, legal forms and Russian names stay.
+    #[test]
+    fn english_sentence_case_is_no_organization() {
+        let org = |text: &str| pack().identifying(text, Category::Organization);
+        for text in [
+            "Distribution register",
+            "Lasting power of attorney",
+            "Financial authority",
+            "Accounts team",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            "Harrow & Finch Ltd",
+            "Copper Kite Metrology LLP",
+            "Ofcom",
+            "Elm Row Legal LLP",
+            "Переплётная орбита",
+            "Sable Chime Music Ltd",
+        ] {
+            assert!(org(text), "{text}");
+        }
+    }
+
     /// What the review shows: a case number's other mentions join it, and a
     /// labelled number too short to propose never spreads to statute and
     /// clause numbers (the review finds a wording everywhere).
