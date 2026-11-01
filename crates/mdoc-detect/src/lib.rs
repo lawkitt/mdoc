@@ -551,7 +551,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .iter()
         .filter_map(|entity| {
             let category = category_of(&entity.label)?;
-            identifying(&mdoc_pii::view::decoded(&entity.text), category).then_some(Detection {
+            // Read as the model read it: "%41lice" in a link target is "Alice".
+            let text = &view.text[view.view_range(entity.start..entity.end)];
+            identifying(text, category).then_some(Detection {
                 range: entity.start..entity.end,
                 category,
                 score: entity.score,
@@ -559,7 +561,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
-    rules::pack().fix_spans(source, &mut detections);
+    rules::pack().fix_spans(source, &view, &mut detections);
     // After the span fixes, so each spelling copies the fixed wording.
     let respelt = respelt(source, &view, &detections);
     detections.extend(respelt);
@@ -585,7 +587,7 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
     let mut seen = std::collections::HashSet::new();
     let mut found = Vec::new();
     for detection in model {
-        let text = mdoc_pii::view::decoded(&source[detection.range.clone()]).into_owned();
+        let text = view.text[view.view_range(detection.range.clone())].to_owned();
         if !seen.insert(text.clone()) {
             continue;
         }
@@ -1041,6 +1043,41 @@ mod tests {
             .map(|d| &source[d.range])
             .collect();
         assert_eq!(found, ["Liora Nesket", "Liora%20Nesket", "Liora_Nesket"]);
+    }
+
+    /// A link target's spellings: a name only there is read decoded, an
+    /// underscore before an encoded letter is a space too, and an email
+    /// address keeps its underscores.
+    #[test]
+    fn link_targets_read_names_decoded_and_emails_whole() {
+        let person = |source: &str, text: &str| {
+            let start = source.find(text).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        };
+        let found = |source: &str, raw: &[RawEntity]| -> Vec<String> {
+            correct(source, raw)
+                .into_iter()
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        let source = "See [x](https://b.invalid/%41lice%20Morgan).";
+        assert_eq!(
+            found(source, &[person(source, "%41lice%20Morgan")]),
+            ["%41lice%20Morgan"]
+        );
+        let source = "Client: Liora Nesket. [x](https://b.invalid/Liora_%4Eesket)";
+        assert_eq!(
+            found(source, &[person(source, "Liora Nesket")]),
+            ["Liora Nesket", "Liora_%4Eesket"]
+        );
+        let source = "Write to [mail](mailto:alice_morgan@example.invalid?subject=a_b).";
+        assert_eq!(found(source, &[]), ["alice_morgan@example.invalid"]);
     }
     #[test]
     fn titles_role_and_category_words_are_never_proposed() {

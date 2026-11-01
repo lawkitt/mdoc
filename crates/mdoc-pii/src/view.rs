@@ -55,6 +55,28 @@ impl View {
         self.source_offset(range.start, false)..self.source_offset(range.end, true)
     }
 
+    /// The view range source `range` reads as: the inverse of
+    /// [`View::source_range`], widened the same way, so a span found in the
+    /// source can be read as detection read it ("%41lice" in a link target
+    /// reads "Alice").
+    pub fn view_range(&self, range: Range<usize>) -> Range<usize> {
+        self.view_offset(range.start, false)..self.view_offset(range.end, true)
+    }
+
+    fn view_offset(&self, at: usize, end: bool) -> usize {
+        let index = self
+            .edits
+            .partition_point(|edit| edit.source.start < at || (!end && edit.source.start == at));
+        let Some(edit) = index.checked_sub(1).map(|i| &self.edits[i]) else {
+            return at;
+        };
+        if at < edit.source.end || (end && at == edit.source.end) {
+            if end { edit.view.end } else { edit.view.start }
+        } else {
+            edit.view.end + (at - edit.source.end)
+        }
+    }
+
     fn source_offset(&self, at: usize, end: bool) -> usize {
         // The last edit starting before `at` (an end) or at it (a start).
         let index = self
@@ -98,18 +120,21 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         let before = previous;
         previous = Some(c);
         while destination.next_if(|range| range.end <= at).is_some() {}
-        let hidden = destination.peek().is_some_and(|range| range.start <= at);
-        if hidden
+        let hidden = destination.peek().filter(|range| range.start <= at);
+        if hidden.is_some()
             && c == '%'
             && let Some((len, value)) = percent_encoded(&source[at..])
         {
             previous = value.chars().next_back();
             out.push((at..at + len, value));
             while chars.next_if(|&(i, _)| i < at + len).is_some() {}
-        } else if hidden
+        } else if let Some(link) = hidden
             && c == '_'
             && before.is_some_and(char::is_alphabetic)
-            && next.is_some_and(char::is_alphabetic)
+            && (next.is_some_and(char::is_alphabetic)
+                || percent_encoded(&source[at + 1..])
+                    .is_some_and(|(_, value)| value.starts_with(char::is_alphabetic)))
+            && !in_email(source, link, at)
         {
             // "clients/Alice_Morgan" names Alice Morgan.
             out.push((at..at + 1, " ".into()));
@@ -180,6 +205,19 @@ fn link_destinations(source: &str) -> Vec<Range<usize>> {
         }
     }
     out
+}
+
+/// Whether `at` in `destination` is inside an email address
+/// ("mailto:alice_morgan@example.invalid"), whose underscores are its own.
+fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
+    const PARTS: [char; 6] = ['/', '?', '#', '&', '=', ':'];
+    let start = source[destination.start..at]
+        .rfind(PARTS)
+        .map_or(destination.start, |i| destination.start + i + 1);
+    let end = source[at..destination.end]
+        .find(PARTS)
+        .map_or(destination.end, |i| at + i);
+    source[start..end].contains('@')
 }
 
 /// The percent-encoded character at the start of `text` ("%20", or the
