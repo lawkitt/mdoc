@@ -15,11 +15,16 @@
 #
 # A `context` entry proposes its `category` for the value after a label:
 #   labels  = […]    phrases, case ignored (only here), matched as whole
-#                    words; a space
-#                    matches any run of whitespace
+#                    words; a space matches any run of whitespace
 #   between = regex  what may sit between the label and the value
-#   value   = regex  the value, which ends at a word boundary; only it is
-#                    proposed, never the label
+#   value   = regex  the value, never followed by a letter or digit; only it
+#                    is proposed, never the label
+# and optionally:
+#   min_digits     = n           a value with fewer digits is not proposed
+#   unless_after   = [word…]     no label just after one of these words
+#                                ("in case")
+#   unless_guessed = [category…] no value these categories' guesses take
+#   only_guessed   = [category…] only a value one of them takes
 # A context match wins over a model span on the same text.
 #
 # A `shape` entry has any of:
