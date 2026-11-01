@@ -7,7 +7,9 @@ pub mod handoff;
 mod identities;
 mod manual;
 pub mod merge_hints;
+mod propagation;
 pub use identities::{Identity, IdentitySnapshot};
+pub use propagation::nicknames;
 pub mod restore;
 mod syntax;
 pub mod tracking;
@@ -114,6 +116,24 @@ pub struct Variant {
     priority: u64,
     /// Seeded by a scan, not by the user, a case or a restored mapping.
     detected: bool,
+    /// Proposed as a form of a known full name (recognizer `Propagation`,
+    /// ADR 0092).
+    propagated: bool,
+    /// An ordinary word too ("Rose", "Мира"): only its capitalised
+    /// mentions mid-sentence count.
+    mid_sentence: bool,
+    /// Propagation decides its identity: its one candidate full name's, or
+    /// `own` while there is none; checked again as names come and go.
+    managed: bool,
+    /// The identity it falls back to without one candidate.
+    own: Option<u64>,
+}
+impl Variant {
+    /// Whether propagation proposed it: a form of a known full name found
+    /// in the text (recognizer `Propagation`, ADR 0092).
+    pub fn propagated(&self) -> bool {
+        self.propagated
+    }
 }
 
 #[derive(Clone)]
@@ -423,6 +443,7 @@ impl Review {
             originals: self.variants().iter().map(|g| g.original.clone()).collect(),
             enabled: self.variants().iter().map(|g| !g.kept).collect(),
             priority: self.variants().iter().map(|g| g.priority).collect(),
+            mid_sentence: self.variants().iter().map(|g| g.mid_sentence).collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -550,6 +571,7 @@ impl Review {
         let known = input.originals.len();
         input.enabled.extend(fresh.iter().map(|_| true));
         input.priority.extend(fresh.iter().map(|_| 0));
+        input.mid_sentence.extend(fresh.iter().map(|_| false));
         input.originals.extend(fresh.iter().cloned());
         input.matcher = None;
         let unseen: HashSet<Arc<str>> = input
@@ -564,11 +586,55 @@ impl Review {
             })
             .unwrap_or_default();
         selected.retain(|detection| !unseen.contains(&source[detection.range.clone()]));
-        for detection in selected {
-            self.add_seed(&source[detection.range], detection.category);
+        // A form of a full name joins it when that is its one candidate
+        // (ADR 0092), so it waits for the full names and takes no alias of
+        // its own. Others keep their place in alias order.
+        let mut people: Vec<(u64, &str)> = Vec::new();
+        let mut provisional = HashMap::new();
+        for detection in selected.iter().filter(|d| d.category == Category::Person) {
+            let text = &source[detection.range.clone()];
+            let owner = self
+                .candidates
+                .by_original(text)
+                .and_then(|id| self.variant_identity(id))
+                .or_else(|| self.identities.normalized_identity(text, Category::Person))
+                .unwrap_or_else(|| {
+                    let next = u64::MAX - provisional.len() as u64;
+                    *provisional
+                        .entry(
+                            text.split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .to_lowercase(),
+                        )
+                        .or_insert(next)
+                });
+            people.push((owner, text));
         }
-        self.discover_initial_variants(source);
-        self.discover_short_variants(source);
+        let known = self.known_people();
+        people.extend(known.iter().map(|(id, w)| (*id, w.as_ref())));
+        let people = propagation::People::new(people);
+        let mut forms = Vec::new();
+        for detection in selected {
+            let text = &source[detection.range.clone()];
+            let joins = detection.category == Category::Person
+                && propagation::parse_form(text)
+                    .is_some_and(|form| people.candidates(&form).target.is_some());
+            if joins {
+                forms.push(detection);
+            } else {
+                self.add_seed(text, detection.category);
+            }
+        }
+        if !forms.is_empty() {
+            self.refresh(source);
+        }
+        for detection in forms {
+            let text = &source[detection.range];
+            let target = self.propagation_target(text);
+            self.seed_form(text, target);
+        }
+        self.propagate(source, false);
         // Variants this scan seeded, including the name forms derived from them.
         for variant in &mut self.candidates.variants {
             variant.detected |= variant.id > first;
@@ -577,10 +643,18 @@ impl Review {
         Ok(())
     }
     fn add_seed(&mut self, original: &str, category: Category) -> u64 {
+        self.add_seed_linked(original, category, None)
+    }
+    /// Seed `original`, joining identity `link` unless its wording already
+    /// normalizes to one.
+    fn add_seed_linked(&mut self, original: &str, category: Category, link: Option<u64>) -> u64 {
         if let Some(id) = self.candidates.by_original(original) {
             return id;
         }
-        let normalized = self.identities.normalized_identity(original, category);
+        let normalized = self
+            .identities
+            .normalized_identity(original, category)
+            .or(link.filter(|id| self.identity(*id).is_some_and(|i| i.category == category)));
         let replacement = normalized
             .and_then(|id| self.identity(id))
             .map(|i| i.alias.clone())
@@ -611,6 +685,10 @@ impl Review {
             keep_default: false,
             priority: 0,
             detected: false,
+            propagated: false,
+            mid_sentence: false,
+            managed: false,
+            own: None,
         });
         id
     }
@@ -643,10 +721,17 @@ impl Review {
         if let Some(group) = self.candidates.variant_mut(id) {
             group.keep_default |= !existed;
             group.priority = priority;
+            // Marked by hand, every mention counts, even an ordinary word's
+            // at the start of a sentence.
+            group.mid_sentence = false;
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
+        // A marked full name proposes its forms elsewhere (ADR 0092).
+        if category == Category::Person && identities::split_full_name(original).is_some() {
+            self.propagate(source, true);
+        }
         Ok(id)
     }
     /// The category of `original`'s variant when the wording is proposed

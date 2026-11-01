@@ -123,6 +123,9 @@ final class ParityTests: XCTestCase {
         let inSession = try session.restoreReply(reply: reply)
         let inExtension = try library.restore(caseId: saved.case.id, reply: reply)
         XCTAssertEqual(inExtension.text, inSession.text)
-        XCTAssertEqual(inExtension.text, "Summary:\n\n" + markdown)
+        // "Maya" alone joined her full name (ADR 0092), so it restores as that.
+        XCTAssertEqual(
+            inExtension.text,
+            "Summary:\n\n" + markdown.replacingOccurrences(of: "Maya brought", with: "Maya Bennett brought"))
     }
 }

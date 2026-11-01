@@ -1167,10 +1167,11 @@ fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpu
     cx.dispatch_action(PiiConfirm);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
+        // Marking the full name linked the scan's lone "Иван" to it (ADR
+        // 0092), so Apply replaces both with its alias.
         let text = app.editor.read(cx).text().to_owned();
-        assert!(text.starts_with("Contact PERSON_2 today."), "{text}");
-        assert!(text.ends_with("Иван agreed."), "{text}");
-        assert_eq!(app.pii.review.remaining(), 1);
+        assert_eq!(text, "Contact PERSON_2 today. PERSON_2 agreed.");
+        assert_eq!(app.pii.review.remaining(), 0);
     });
     // Apply and the addition are separate undo steps.
     app.update_in(cx, |app, window, cx| {
@@ -2196,8 +2197,9 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
     assert!(cx.debug_bounds("replacement-filter").is_some());
 }
 
-/// #301: a lone word of a replaced full name keeps Share from saying the
-/// names are aliases, and the shelf from listing the tab as ready.
+/// #301: a lone word of a replaced full name, its proposal kept, keeps Share
+/// from saying the names are aliases, and the shelf from listing the tab as
+/// ready.
 #[gpui::test]
 fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
@@ -2213,6 +2215,16 @@ fn share_counts_a_lone_first_name_left_after_apply(cx: &mut gpui::TestAppContext
             recognizer: mdoc_pii::Recognizer::Model,
         };
         app.pii.review.ingest(source, vec![detection]).unwrap();
+        // Propagation proposes "Марина" under her alias; keep it.
+        let lone = app
+            .pii
+            .review
+            .variants()
+            .iter()
+            .find(|variant| variant.original.as_ref() == "Марина")
+            .expect("propagated first name")
+            .id;
+        app.pii.review.keep(lone, None);
         app.apply_replacements(cx);
         assert_eq!(app.pii.review.remaining(), 0);
         app.review_changed(cx);
@@ -2299,7 +2311,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
 #[gpui::test]
 fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let source = "Maya Bennett signed. Maya Benett agreed.";
     app.update(cx, |app, cx| {
         app.editor.update(cx, |e, cx| e.set_text(source, cx));
     });
@@ -2310,12 +2322,16 @@ fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
             generation,
             identity,
             revision,
-            Ok(vec![mdoc_pii::Detection {
-                range: 0..12,
-                category: Category::Person,
-                score: 0.9,
-                recognizer: mdoc_pii::Recognizer::Model,
-            }]),
+            // A slip the hint offers to merge; a short form of the name
+            // would join it by propagation (ADR 0092).
+            Ok([0..12, 21..32]
+                .map(|range| mdoc_pii::Detection {
+                    range,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                })
+                .to_vec()),
             cx,
         );
         app.pii.review.merge_hints().remove(0)
@@ -2386,7 +2402,7 @@ fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let source = "Maya Bennett signed. Maya Benett agreed.";
     app.update(cx, |app, cx| {
         app.editor.update(cx, |e, cx| e.set_text(source, cx))
     });
@@ -2396,12 +2412,14 @@ fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui:
             .review
             .ingest(
                 source,
-                vec![mdoc_pii::Detection {
-                    range: 0..12,
-                    category: Category::Person,
-                    score: 0.9,
-                    recognizer: mdoc_pii::Recognizer::Model,
-                }],
+                [0..12, 21..32]
+                    .map(|range| mdoc_pii::Detection {
+                        range,
+                        category: Category::Person,
+                        score: 0.9,
+                        recognizer: mdoc_pii::Recognizer::Model,
+                    })
+                    .to_vec(),
             )
             .unwrap();
         app.pii.reviewing = true;

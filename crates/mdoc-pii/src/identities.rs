@@ -1,7 +1,6 @@
 //! Document-local identities. Policy history shares immutable values and follows
 //! editor history; typing never clones the mapping index. Nothing is serialized.
-use super::{Category, Review, exact_boundary, intersects, safe_span, valid_replacement};
-use crate::syntax::protected_syntax;
+use super::{Category, Review, exact_boundary, valid_replacement};
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -27,6 +26,9 @@ pub struct IdentityPolicy {
     /// A saved or merge target's primary wording: it wins only among equally
     /// long wordings, since the primary is the longest full form.
     primary: HashMap<u64, Arc<str>>,
+    /// Variants whose entry in `variants` propagation made, not the user;
+    /// it may move them again (ADR 0092).
+    automatic: HashSet<u64>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
 #[derive(Default)]
@@ -39,6 +41,29 @@ pub(super) struct IdentityStore {
 impl IdentityStore {
     pub(super) fn primary_wording(&self, id: u64) -> Option<&Arc<str>> {
         self.policy.primary.get(&id)
+    }
+    /// Whether the user linked variant `group` to another identity.
+    pub(super) fn reassigned(&self, group: u64) -> bool {
+        self.policy.variants.contains_key(&group) && !self.policy.automatic.contains(&group)
+    }
+    /// Whether propagation linked variant `group` in the policy.
+    pub(super) fn linked_automatically(&self, group: u64) -> bool {
+        self.policy.automatic.contains(&group)
+    }
+    /// Propagation's link of `group` to `target`, part of the current undo
+    /// step; `None` drops it, back to the variant's seed identity.
+    pub(super) fn link_automatically(&mut self, group: u64, target: Option<u64>) {
+        let policy = Arc::make_mut(&mut self.policy);
+        match target {
+            Some(target) => {
+                policy.variants.insert(group, target);
+                policy.automatic.insert(group);
+            }
+            None => {
+                policy.variants.remove(&group);
+                policy.automatic.remove(&group);
+            }
+        }
     }
     pub(super) fn retired_aliases(&self, id: u64) -> &[String] {
         self.policy.retired.get(&id).map_or(&[], Vec::as_slice)
@@ -133,7 +158,7 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
 pub(crate) fn cyrillic(word: &str) -> bool {
     word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
 }
-fn patronymic(word: &str) -> bool {
+pub(crate) fn patronymic(word: &str) -> bool {
     ["ович", "евич", "овна", "евна", "ична"]
         .iter()
         .any(|s| word.ends_with(s))
@@ -165,7 +190,17 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
     let last = words.len() - 1;
-    let surname = if !words.iter().all(|w| cyrillic(w)) {
+    let russian = words.iter().all(|w| cyrillic(w));
+    // An inflected name ("Павлову Дмитрию Андреевичу") gives no reliable
+    // surname, and first name + patronymic has none.
+    if russian
+        && words
+            .iter()
+            .any(|w| crate::propagation::patronymic_like(w) && (!patronymic(w) || words.len() == 2))
+    {
+        return None;
+    }
+    let surname = if !russian {
         last
     } else if words.len() == 3 && patronymic(&words[2]) && !patronymic(&words[1]) {
         0
@@ -187,8 +222,8 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
 }
 /// Lowercase wordings that stand for `surname` alone: itself and, for a
 /// Russian surname, its conservative case forms ("раман" → "рамана",
-/// "раману"). Some forms are shared with relatives ("петрова"), which is why
-/// they are proposed, never linked.
+/// "раману"). Some forms are shared with relatives ("петрова"), so a form
+/// links only when one full name fits (ADR 0092).
 pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
     let mut forms = vec![surname.to_owned()];
     if cyrillic(surname) {
@@ -231,14 +266,6 @@ pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
     forms.sort_unstable();
     forms.dedup();
     forms
-}
-/// Whether `short` is a title + surname or a bare surname, possibly in a
-/// Russian case form, of the full name `full`: "Ms Raman", "Рамана".
-fn short_form_of(short: &str, full: &str) -> bool {
-    let words = name_words(short);
-    words.len() == 1
-        && split_full_name(full)
-            .is_some_and(|(surname, _)| surname_forms(&surname).contains(&words[0]))
 }
 fn surname_related(a: &str, b: &str) -> bool {
     if a == b {
@@ -395,6 +422,7 @@ impl Review {
                 .variants
                 .retain(|group, owner| !groups.contains(group) && *owner != id);
             policy.kept.retain(|group, _| !groups.contains(group));
+            policy.automatic.retain(|group| !groups.contains(group));
             for identity in policy.edited.values_mut() {
                 if identity.owner == Some(id) {
                     Arc::make_mut(identity).owner = None;
@@ -751,9 +779,10 @@ impl Review {
             .ok_or("Variant is no longer available.")?;
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
-        Arc::make_mut(&mut self.identities.policy)
-            .variants
-            .insert(group, target);
+        let policy = Arc::make_mut(&mut self.identities.policy);
+        policy.variants.insert(group, target);
+        // The user's link: propagation no longer moves it.
+        policy.automatic.remove(&group);
         self.sync_identity_variants();
         Ok(())
     }
@@ -859,7 +888,7 @@ impl Review {
                         && related_name(&g.original, &variant.original))
                         || (g.category == Category::Person
                             && variant.category == Category::Person
-                            && short_form_of(&variant.original, &g.original))
+                            && crate::propagation::People::form_of(&variant.original, &g.original))
                         || (is_name(g.category)
                             && is_name(variant.category)
                             && contained_name(&g.original, &variant.original)))
@@ -870,131 +899,6 @@ impl Review {
         ids.sort_unstable();
         ids.dedup();
         ids
-    }
-    pub(super) fn discover_initial_variants(&mut self, source: &str) {
-        static INITIALS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let regex = INITIALS.get_or_init(|| {
-            regex::Regex::new(r"[\p{L}][\p{L}'-]{2,}[ \t]+\p{L}\.[ \t]*\p{L}\.")
-                .expect("static initials regex")
-        });
-        // One source pass; surname/signature indexing keeps large documents from
-        // being rescanned once per identity. Ambiguous signatures stay separate.
-        let mut signatures: HashSet<(String, char, char)> = HashSet::new();
-        for group in self.variants() {
-            if group.category != Category::Person {
-                continue;
-            }
-            let p = name_parts(&group.original);
-            if p.len() == 3 && p.iter().all(|p| p.chars().count() > 1) {
-                signatures.insert((
-                    p[0].clone(),
-                    p[1].chars().next().unwrap(),
-                    p[2].chars().next().unwrap(),
-                ));
-                signatures.insert((
-                    p[2].clone(),
-                    p[0].chars().next().unwrap(),
-                    p[1].chars().next().unwrap(),
-                ));
-            }
-        }
-        if signatures.is_empty() {
-            return;
-        }
-        let protected = protected_syntax(source);
-        for m in regex.find_iter(source) {
-            let parts = name_parts(m.as_str());
-            if parts.len() == 3
-                && signatures.contains(&(
-                    parts[0].clone(),
-                    parts[1].chars().next().unwrap(),
-                    parts[2].chars().next().unwrap(),
-                ))
-                && safe_span(m.as_str())
-                && !intersects(&protected, &(m.start()..m.end()))
-                && exact_boundary(source, &(m.start()..m.end()), m.as_str())
-            {
-                self.add_seed(m.as_str(), Category::Person);
-            }
-        }
-    }
-    /// Propose title + surname, the bare surname and its Russian case forms of
-    /// each full person name outside existing mentions, as variants of their
-    /// own that Same as… offers to link (ADR 0068). A word that is also a
-    /// known first name is never proposed.
-    pub(super) fn discover_short_variants(&mut self, source: &str) {
-        static WORD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        // Abbreviated titles in any case ("MR SMITH", "mr Smith"); "miss" in
-        // lowercase is the verb ("did not miss Raman").
-        let regex = WORD.get_or_init(|| {
-            regex::Regex::new(
-                r"\b(?:(?:(?i:Mr|Mrs|Ms|Mx|Dr|Prof)|Miss|MISS)\.?[ \t]+)?\p{Lu}\p{L}*(?:['’-]\p{Lu}\p{L}*)*",
-            )
-            .expect("static surname regex")
-        });
-        // Mentions of the seeds so far, so a surname inside a full name or a
-        // longer wording stays part of it.
-        self.refresh(source);
-        // A name the user kept everywhere yields no forms; given names of every
-        // full name stay unproposed.
-        let applied: HashSet<&str> = self
-            .applied()
-            .iter()
-            .map(|a| a.step.original_shared().as_ref())
-            .collect();
-        let mut forms = HashSet::new();
-        let mut given = HashSet::new();
-        for group in self.variants() {
-            if group.category != Category::Person {
-                continue;
-            }
-            let Some((surname, names)) = split_full_name(&group.original) else {
-                continue;
-            };
-            if !group.kept
-                && (!group.mentions.is_empty() || applied.contains(group.original.as_ref()))
-            {
-                forms.extend(surname_forms(&surname));
-            }
-            given.extend(names);
-        }
-        forms.retain(|form| !given.contains(form));
-        if forms.is_empty() {
-            return;
-        }
-        // Pending, applied and kept mentions, merged so `intersects` can
-        // search them.
-        let mut spans: Vec<_> = self
-            .candidates()
-            .iter()
-            .map(|c| c.range.clone())
-            .chain(self.applied().iter().map(|a| a.range.clone()))
-            .chain(self.tracking.exclusions.iter().map(|e| e.range.clone()))
-            .collect();
-        spans.sort_by_key(|r| r.start);
-        let mut covered: Vec<Range<usize>> = Vec::with_capacity(spans.len());
-        for span in spans {
-            match covered.last_mut() {
-                Some(last) if span.start < last.end => last.end = last.end.max(span.end),
-                _ => covered.push(span),
-            }
-        }
-        let protected = protected_syntax(source);
-        let found: Vec<_> = regex
-            .find_iter(source)
-            .filter(|m| {
-                let word = m.as_str().rsplit([' ', '\t']).next().unwrap_or_default();
-                forms.contains(&word.to_lowercase())
-                    && safe_span(m.as_str())
-                    && !intersects(&protected, &m.range())
-                    && !intersects(&covered, &m.range())
-                    && exact_boundary(source, &m.range(), m.as_str())
-            })
-            .map(|m| m.as_str().to_owned())
-            .collect();
-        for wording in found {
-            self.add_seed(&wording, Category::Person);
-        }
     }
 }
 

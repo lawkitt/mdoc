@@ -700,12 +700,14 @@ mod tests {
 
     #[test]
     fn linking_is_explicit_and_moves_applied_aliases() {
-        let text = "Maya Bennett met Ms Bennett.";
+        // Two full names, one a slip: a short form ("Ms Bennett") would join
+        // the name by propagation (ADR 0092).
+        let text = "Maya Bennett met Maya Benett.";
         let mut document = document(
             text,
             &[
                 ("Maya Bennett", Category::Person),
-                ("Ms Bennett", Category::Person),
+                ("Maya Benett", Category::Person),
             ],
         );
         let identities = document.review.active_identities();

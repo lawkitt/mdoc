@@ -193,7 +193,7 @@ fn fixture_replies_restore_as_expected() {
     }
 }
 
-fn apply_pending(review: &mut Review, source: &str, revision: u64) -> String {
+pub(crate) fn apply_pending(review: &mut Review, source: &str, revision: u64) -> String {
     let plans = review.pending_plans(source, &HashMap::new()).unwrap();
     let added = review.prepare_replacements(&plans);
     let mut text = source.to_string();

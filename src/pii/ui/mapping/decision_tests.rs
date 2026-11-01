@@ -6,7 +6,7 @@ use crate::pii::ui::PiiAddCandidate;
 use gpui::{Context, Focusable};
 use mdoc_pii::{Category, decisions::EntryState};
 
-const SOURCE: &str = "Maya Bennett met Ms Bennett. Acme Ltd paid 555-0100. Maya Bennett left.";
+const SOURCE: &str = "Maya Bennett met Ms Carter. Acme Ltd paid 555-0100. Maya Bennett left.";
 
 fn seed(app: &mut DocumentView, cx: &mut Context<DocumentView>) {
     app.editor.update(cx, |e, cx| e.set_text(SOURCE, cx));
@@ -16,7 +16,7 @@ fn seed(app: &mut DocumentView, cx: &mut Context<DocumentView>) {
     let mut detections = Vec::new();
     for (value, category) in [
         ("Maya Bennett", Category::Person),
-        ("Ms Bennett", Category::Person),
+        ("Ms Carter", Category::Person),
         ("Acme Ltd", Category::Organization),
     ] {
         for (at, _) in SOURCE.match_indices(value) {
@@ -78,7 +78,7 @@ fn every_decision_kind_is_listed_once_and_text_edits_are_not(cx: &mut gpui::Test
         // Setting an owner and typing are undo steps, not decisions.
         app.change_mapping(MappingAction::Owner(acme, Some(maya)), cx);
         type_text(app, SOURCE.len(), " Signed.", cx);
-        let ms = identity(app, "Ms Bennett");
+        let ms = identity(app, "Ms Carter");
         app.change_mapping(MappingAction::Merge(ms, maya), cx);
         let last = app.pii.review.variants()[0]
             .mentions
@@ -113,7 +113,7 @@ fn every_decision_kind_is_listed_once_and_text_edits_are_not(cx: &mut gpui::Test
             [
                 "Renamed “Maya Bennett” to CLIENT",
                 "Changed “Acme Ltd” to Person",
-                "Merged “Ms Bennett” into “Maya Bennett”",
+                "Merged “Ms Carter” into “Maya Bennett”",
                 "Separated “Maya Bennett”",
                 "Added “555-0100”",
                 "Applied 5 replacements",
@@ -374,7 +374,7 @@ fn mention_scoped_category_is_a_split_and_alias_a_rename(cx: &mut gpui::TestAppC
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         let maya = identity(app, "Maya Bennett");
-        let ms = identity(app, "Ms Bennett");
+        let ms = identity(app, "Ms Carter");
         app.change_mapping(MappingAction::Merge(ms, maya), cx);
         let identities = app.pii.review.active_identities().len();
         let [first, second] = mentions(app, "Maya Bennett").try_into().unwrap();
@@ -402,7 +402,7 @@ fn mention_scoped_category_is_a_split_and_alias_a_rename(cx: &mut gpui::TestAppC
         assert_eq!(
             labels(app, cx),
             [
-                "Merged “Ms Bennett” into “Maya Bennett”",
+                "Merged “Ms Carter” into “Maya Bennett”",
                 "Separated “Maya Bennett” as Organization",
                 "Renamed “Maya Bennett” to CLIENT",
             ]

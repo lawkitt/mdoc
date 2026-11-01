@@ -50,8 +50,8 @@ pub(super) fn reply_view(d: &mut Driver, view: &Entity<DocumentView>) -> Result<
     Ok(())
 }
 
-/// #301: after Apply, a lone first name of a replaced full name is left, as
-/// in the Russian demo, and Share counts it instead of saying the names are
+/// #301: after Apply, a lone first name of a replaced full name is left
+/// (its proposal kept), and Share counts it instead of saying the names are
 /// aliases now.
 pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
     let text = "Павлова Марина Сергеевна работала аналитиком. Марина обратилась в суд.";
@@ -77,6 +77,16 @@ pub(super) fn share_leftover(d: &mut Driver) -> Result<()> {
                     }],
                 )
                 .expect("leftover fixture");
+            // Propagation proposes "Марина" under her alias; keep it.
+            let lone = v
+                .pii
+                .review()
+                .variants()
+                .iter()
+                .find(|variant| variant.original.as_ref() == "Марина")
+                .expect("propagated first name")
+                .id;
+            v.pii.review_mut().keep(lone, None);
             v.review_changed(cx);
             if !v.replacements_open() {
                 v.toggle_replacements_panel(window, cx);

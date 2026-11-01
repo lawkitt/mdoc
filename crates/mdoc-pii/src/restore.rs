@@ -683,6 +683,10 @@ impl Review {
                     keep_default: on_step,
                     priority: 0,
                     detected: false,
+                    propagated: false,
+                    mid_sentence: false,
+                    managed: false,
+                    own: None,
                 });
                 if on_step {
                     self.set_kept(self.next_id, false);
@@ -831,4 +835,4 @@ pub fn plan_join(
 
 #[cfg(test)]
 #[path = "restore_tests.rs"]
-mod tests;
+pub(crate) mod tests;
