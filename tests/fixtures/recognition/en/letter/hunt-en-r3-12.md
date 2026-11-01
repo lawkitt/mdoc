@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: email-local-part-boundary email-autolink-protected
-issue: 412 411
+flaw: email-local-part-boundary
+issue: 412
 kind: letter
 source: hunt-r3
-expect: miss: EMAIL "dalen.dispatch@copper-skein.invalid" ×2
 expect: boundary: gold EMAIL "eira.o'venn@copper-skein.invalid"; proposed EMAIL "venn@copper-skein.invalid" ×2
 ---
 Subject: Re: correction to the delivery acknowledgement
