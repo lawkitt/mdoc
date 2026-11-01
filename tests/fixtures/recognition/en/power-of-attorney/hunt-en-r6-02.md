@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: superscript-note-name
 issue: 442
 kind: power-of-attorney
 source: hunt-r6
-expect: miss: PERSON "Avelina Durnell"
 ---
 ## Continuing authority: appointment and verification notes
 

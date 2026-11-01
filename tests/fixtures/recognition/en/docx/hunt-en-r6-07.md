@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: emphasis-wrapped-name superscript-note-name
 issue: 443 442
 kind: docx
 source: hunt-r6
-expect: miss: PERSON "Alva Ruskett"
-expect: miss: PERSON "Serena Marnell"
 ---
 # Review protocol: signatories and final comments
 
