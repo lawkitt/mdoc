@@ -1,0 +1,52 @@
+# mdoc's rule pack, part 3 of 3: Russian. Sections and fields are described
+# in shared.toml.
+
+# No Russian context rules yet.
+context = []
+
+# No Russian span fixes yet.
+span = []
+
+# No Russian nicknames yet.
+variants = []
+
+# Titles and the words for spouses: "г-жа", "муж" name no one on their own.
+[[never]]
+match = "plural"
+words = ["г-н", "г-жа", "господин", "госпожа", "гражданин", "гражданка", "муж", "жена"]
+
+# Contract parties, as stems with up to three letters of ending
+# ("Заказчику", "Исполнителя", "Стороны").
+[[never]]
+match = "stem"
+ending = 3
+words = [
+    "заказчик", "исполнител", "подрядчик", "арендатор", "арендодател",
+    "покупател", "продав", "работник", "работодател", "сторон",
+]
+
+# Parties to a dispute ("Истца", "Ответчику").
+[[never]]
+match = "stem"
+ending = 3
+words = ["истец", "истц", "ответчик", "заявител"]
+
+# Representatives and other roles ("Представителя", "Супруга", "Директору").
+[[never]]
+match = "stem"
+ending = 3
+words = ["представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор"]
+
+# Russian legal forms mark a manual selection as an organization
+# ("ООО «Ромашка»"). Matched as written: ASCII case folding leaves Cyrillic
+# as is.
+[[shape]]
+category = "ORG"
+guess_words = ["ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "ИП"]
+
+# Dates with a Russian month name: "12 марта 2026 г.", "«12» марта 2026".
+[[shape]]
+category = "DATE"
+guess = [
+    '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+]

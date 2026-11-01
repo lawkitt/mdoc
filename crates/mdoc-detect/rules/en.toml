@@ -1,0 +1,64 @@
+# mdoc's rule pack, part 2 of 3: English. Sections and fields are described
+# in shared.toml.
+
+# No English context rules yet.
+context = []
+
+# No English span fixes yet.
+span = []
+
+# No English nicknames yet.
+variants = []
+
+# Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
+# French and German titles turn up in English documents too.
+[[never]]
+match = "plural"
+words = [
+    "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
+    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+]
+
+# Family words: "her husband" names no one.
+[[never]]
+match = "plural"
+words = ["husband", "wife", "spouse", "partner", "father", "mother", "daughter"]
+
+# Roles in a matter or a contract: "the Employer", "Her Adviser", "Parties"
+# (issue #302).
+[[never]]
+match = "plural"
+words = [
+    "adviser", "advisor", "solicitor", "barrister", "counsel", "lawyer",
+    "attorney", "client", "employer", "employee", "claimant", "respondent",
+    "applicant", "defendant", "plaintiff", "appellant", "party", "parties",
+    "buyer", "seller", "landlord", "tenant", "lessor", "lessee", "licensor",
+    "licensee", "contractor", "customer", "supplier", "company", "director",
+    "witness", "judge",
+]
+
+# The words for people themselves ("People").
+[[never]]
+match = "plural"
+words = ["people", "person", "individual"]
+
+# Determiners around a role name no one either ("The Employer"). Matched
+# whole only.
+[[never]]
+match = "whole"
+words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this", "that", "said"]
+
+# English legal forms mark a manual selection as an organization
+# ("Acme Ltd.").
+[[shape]]
+category = "ORG"
+guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+
+# Dates with an English month name: "12 March 2026" (a Russian "г." after
+# the year still counts) and "March 12, 2026".
+[[shape]]
+category = "DATE"
+guess = [
+    '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+    '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
+]
