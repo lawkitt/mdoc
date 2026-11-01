@@ -459,6 +459,10 @@ pub(crate) enum Form {
     Word { word: String, titled: bool },
     /// First name + patronymic ("Марина Сергеевна").
     Patronymic { first: String, patronymic: String },
+    /// The full name again, in another case or spelling ("Артёма
+    /// Антоновича Зайцева" of Артём Антонович Зайцев), read in the
+    /// nominative.
+    Full { surname: String, given: Vec<String> },
     /// A surname with initials before or after it ("Павловой М. С.").
     Initials {
         surname: String,
@@ -515,6 +519,8 @@ pub(crate) fn parse_form(wording: &str) -> Option<Form> {
                 initials,
             })
         }
+        (names, 0) if (3..=4).contains(&names.len()) => crate::identities::split_full_name(wording)
+            .map(|(surname, given)| Form::Full { surname, given }),
         _ => None,
     }
 }
@@ -676,6 +682,11 @@ impl People {
                         first || person.surname_forms.contains(word),
                     )
                 }
+                Form::Full { surname, given } => {
+                    let same =
+                        person.target && person.surname == *surname && person.given == *given;
+                    (same, same)
+                }
                 Form::Patronymic { first, patronymic } => {
                     let both = person.first_forms.contains(first)
                         && person.patronymic_forms.contains(patronymic);
@@ -721,8 +732,10 @@ impl People {
     }
 }
 
-static TOKEN: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\p{L}+(?:['’-]\p{Lu}\p{L}*)*").expect("name token"));
+static TOKEN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Combining marks belong to their letter ("Арте\u{308}ма").
+    regex::Regex::new(r"\p{L}[\p{L}\p{M}]*(?:['’-]\p{Lu}[\p{L}\p{M}]*)*").expect("name token")
+});
 
 /// Whether the text before `start` on its line ends a sentence: a line
 /// start, a list marker, a table cell or sentence punctuation.
@@ -797,6 +810,17 @@ fn find_forms(
                     tries.push((start..tokens[i + 2].end + 1, i + 3));
                 }
                 tries.push((start..tokens[i + 1].end + 1, i + 2));
+            }
+            // The full name in another case or spelling.
+            if word(i)
+                && word(i + 1)
+                && word(i + 2)
+                && blank(tokens[i].end, tokens[i + 1].start)
+                && blank(tokens[i + 1].end, tokens[i + 2].start)
+                && tokens[i].end < tokens[i + 1].start
+                && tokens[i + 1].end < tokens[i + 2].start
+            {
+                tries.push((start..tokens[i + 2].end, i + 3));
             }
             // A title in any case and a surname ("Ms Raman", "dr. Raman"),
             // or first name + patronymic.
@@ -949,7 +973,9 @@ impl Review {
                         .any(|a| a.step.original_shared().as_ref() == v.original.as_ref())
             })
             .filter_map(|v| {
-                let target = parse_form(&v.original).and_then(|f| people.candidates(&f).target);
+                // A full name keeps the identity it has.
+                let form = parse_form(&v.original).filter(|f| !matches!(f, Form::Full { .. }))?;
+                let target = people.candidates(&form).target;
                 let current = self.variant_identity(v.id)?;
                 let desired = match target {
                     Some(target) => Some(target),
@@ -1080,10 +1106,39 @@ mod tests {
         assert_eq!(form("М.С. Павлова"), initials("павлова", &['м', 'с']));
         assert_eq!(form("M. Bennett"), initials("bennett", &['m']));
         // Two names without a patronymic, or initials between names, are not
-        // forms: a full name is one.
+        // forms; three or four name words are the full name again, read in
+        // the nominative.
         assert_eq!(parse_form("Maya Bennett"), None);
-        assert_eq!(parse_form("Павлова Марина Сергеевна"), None);
         assert_eq!(parse_form("John F. Kennedy"), None);
+        let full = Form::Full {
+            surname: "зайцев".into(),
+            given: vec!["артём".into(), "антонович".into()],
+        };
+        assert_eq!(parse_form("Артёма Антоновича Зайцева"), Some(full));
+    }
+
+    #[test]
+    fn decomposed_letters_read_as_one() {
+        assert_eq!(crate::identities::compose("Арте\u{308}ма"), "Артёма");
+        assert_eq!(crate::identities::compose("Заи\u{306}цева"), "Зайцева");
+        assert_eq!(crate::identities::compose("Rene\u{301}e"), "Renée");
+        assert_eq!(
+            crate::identities::compose("x\u{308}"),
+            "x\u{308}",
+            "no such letter"
+        );
+        let names = ["Артём Антонович Зайцев"];
+        assert_eq!(
+            target(&names, "Арте\u{308}ма Антоновича Заи\u{306}цева"),
+            Some(1)
+        );
+        assert_eq!(target(&names, "Заи\u{306}цев"), Some(1));
+        let source = "Обращение Арте\u{308}ма Антоновича Заи\u{306}цева принято.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[])
+            .into_iter()
+            .map(|(r, _)| &source[r])
+            .collect();
+        assert_eq!(found, ["Арте\u{308}ма Антоновича Заи\u{306}цева"]);
     }
 
     #[test]

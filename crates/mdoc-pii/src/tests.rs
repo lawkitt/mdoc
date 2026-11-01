@@ -1485,3 +1485,15 @@ fn soft_stems_and_patronymic_shaped_surnames_read_back() {
         full
     );
 }
+
+/// #418: the full name again, decomposed and inflected, joins it.
+#[test]
+fn a_decomposed_inflected_full_name_joins_it() {
+    let source = "Истец: Артём Антонович Зайцев. Заявление \
+        Арте\u{308}ма Антоновича Заи\u{306}цева принято.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    let full = review.variant_identity(proposed(&review, "Артём Антонович Зайцев").id);
+    let repeat = proposed(&review, "Арте\u{308}ма Антоновича Заи\u{306}цева");
+    assert_eq!(repeat.mentions.len(), 1);
+    assert_eq!(review.variant_identity(repeat.id), full);
+}

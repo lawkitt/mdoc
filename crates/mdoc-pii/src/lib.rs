@@ -631,9 +631,12 @@ impl Review {
         let mut forms = Vec::new();
         for detection in selected {
             let text = &source[detection.range.clone()];
+            // A full name is a name of its own here, not a form to defer.
             let joins = detection.category == Category::Person
-                && propagation::parse_form(text)
-                    .is_some_and(|form| people.candidates(&form).target.is_some());
+                && propagation::parse_form(text).is_some_and(|form| {
+                    !matches!(form, propagation::Form::Full { .. })
+                        && people.candidates(&form).target.is_some()
+                });
             if joins {
                 forms.push(detection);
             } else {

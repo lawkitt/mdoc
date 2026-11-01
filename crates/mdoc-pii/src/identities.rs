@@ -167,9 +167,61 @@ fn name_parts(value: &str) -> Vec<String> {
 pub(crate) fn name_words(value: &str) -> Vec<String> {
     value
         .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase())
+        .map(|w| {
+            compose(w)
+                .trim_matches(|c: char| !c.is_alphabetic())
+                .to_lowercase()
+        })
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.as_str()))
         .collect()
+}
+/// `word` with a letter and a combining mark after it written as one letter
+/// ("е\u{308}" → "ё", "и\u{306}" → "й", "e\u{301}" → "é"), so a name
+/// typed with decomposed letters matches the same name precomposed. A
+/// small table, not full Unicode normalization.
+pub(crate) fn compose(word: &str) -> String {
+    const PAIRS: &[(char, char, char)] = &[
+        ('е', '\u{308}', 'ё'),
+        ('Е', '\u{308}', 'Ё'),
+        ('и', '\u{306}', 'й'),
+        ('И', '\u{306}', 'Й'),
+        ('a', '\u{300}', 'à'),
+        ('a', '\u{301}', 'á'),
+        ('a', '\u{302}', 'â'),
+        ('a', '\u{308}', 'ä'),
+        ('e', '\u{300}', 'è'),
+        ('e', '\u{301}', 'é'),
+        ('e', '\u{302}', 'ê'),
+        ('e', '\u{308}', 'ë'),
+        ('i', '\u{301}', 'í'),
+        ('i', '\u{302}', 'î'),
+        ('i', '\u{308}', 'ï'),
+        ('o', '\u{301}', 'ó'),
+        ('o', '\u{302}', 'ô'),
+        ('o', '\u{308}', 'ö'),
+        ('u', '\u{301}', 'ú'),
+        ('u', '\u{302}', 'û'),
+        ('u', '\u{308}', 'ü'),
+        ('n', '\u{303}', 'ñ'),
+        ('c', '\u{327}', 'ç'),
+        ('E', '\u{301}', 'É'),
+        ('E', '\u{300}', 'È'),
+        ('A', '\u{308}', 'Ä'),
+        ('O', '\u{308}', 'Ö'),
+        ('U', '\u{308}', 'Ü'),
+    ];
+    let mut out = String::with_capacity(word.len());
+    for c in word.chars() {
+        let last = out.chars().next_back();
+        match last.and_then(|l| PAIRS.iter().find(|(b, m, _)| *b == l && *m == c)) {
+            Some((base, _, composed)) => {
+                out.truncate(out.len() - base.len_utf8());
+                out.push(*composed);
+            }
+            None => out.push(c),
+        }
+    }
+    out
 }
 pub(crate) fn cyrillic(word: &str) -> bool {
     word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
