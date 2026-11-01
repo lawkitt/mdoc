@@ -145,9 +145,11 @@ glob_regex() {
   printf '^%s$' "$re"
 }
 
-# The areas the files on stdin touch, by the area table given as text
-# (scripts/ci-areas.txt): each file takes the areas of the table's first
-# line that matches it, desktop when none does. Prints them on one line in
+# The areas the files on stdin touch, NUL-separated as `git diff -z` prints
+# them (newline-separated output quotes unusual names, which would then match
+# no line), by the area table given as text (scripts/ci-areas.txt): each
+# file takes the areas of the table's first line that matches it, desktop
+# when none does. Prints them on one line in
 # the order core, desktop, ios, android; core brings in every area. Nothing
 # (an empty line) when every file is in no area (docs only); every area for
 # an empty list of files.
@@ -160,7 +162,7 @@ changed_areas() { # table-text
     line_areas+=("$areas")
     line_res+=("$(glob_regex "$glob")")
   done <<<"$1"
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     [ -n "$f" ] || continue
     match=desktop
     for i in "${!line_res[@]}"; do
@@ -184,7 +186,7 @@ affects() { [[ " $2 " == *" $1 "* ]]; }
 
 # The areas between two commits, by this checkout's table.
 diff_areas() { # from to
-  local files
-  files=$(git diff --no-renames --name-only "$1" "$2")
-  changed_areas "$(cat scripts/ci-areas.txt)" <<<"$files"
+  local table
+  table=$(cat scripts/ci-areas.txt)
+  git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
 }

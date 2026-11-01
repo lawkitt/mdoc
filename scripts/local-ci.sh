@@ -26,6 +26,8 @@
 # copy in $LOCAL_CI_HOME/runner, never the CI checkout it switches between
 # merge refs; re-run install (or the setup script) to update it. Settings are
 # the LOCAL_CI_* variables in config(), also read from $LOCAL_CI_HOME/runner.env.
+# The folder this copy runs from, before lib.sh moves to the repository root.
+runner_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -120,13 +122,12 @@ steps_of() {
 # area when it has none): a PR's changes since it left main, or a main
 # commit's since the one before.
 commit_areas() { # commit range
-  local table files
+  local table
   if ! table=$(git -C "$checkout" show "$1:scripts/ci-areas.txt" 2>/dev/null); then
     echo "$every_area"
     return 0
   fi
-  files=$(git -C "$checkout" diff --no-renames --name-only "$2") || return 1
-  changed_areas "$table" <<<"$files"
+  git -C "$checkout" diff --no-renames --name-only -z "$2" | changed_areas "$table"
 }
 
 # What a status says when its job need not run: docs only, or no change in
@@ -191,12 +192,14 @@ poll() {
   polled=true
 }
 
+# Sets post_ok to whether GitHub took it.
 post() { # context sha state description [target url]
   local args=(api -X POST "repos/$repo/statuses/$2" -f "state=$3" -f "context=$1"
     -f "description=${4:0:140}")
   [ -z "${5:-}" ] || args+=(-f "target_url=$5")
   # A lost final status would leave the head pending and run it again.
   local try
+  post_ok=true
   for try in 1 2 3; do
     if gh "${args[@]}" >/dev/null; then
       log "$3 $1 on $(short "$2"): $4"
@@ -204,6 +207,7 @@ post() { # context sha state description [target url]
     fi
     [ "$try" -eq 3 ] || sleep "$tick_s"
   done
+  post_ok=false
   log "warning: could not post $3 $1 on $(short "$2"): $4"
 }
 
@@ -211,17 +215,21 @@ pr_line() { awk -F'\t' -v n="$1" '$1 == n { print; exit }' <<<"$prs"; }
 
 drop_row() { prs=$(awk -F'\t' -v n="$1" -v c="$2" '!($1 == n && $8 == c)' <<<"$prs"); }
 
-# Rows waiting for this runner, oldest status first, a PR's desktop row
-# before its mobile one: no status yet (posted "Queued" by queue_new),
-# pending (queued, or left by a stopped runner), or any status from the
-# hosted fallback (scripts/local-ci-fallback.sh), which a local result
-# replaces. Each line gains a twelfth field, the sort key 0 (desktop) or 1.
+# Rows waiting for this runner: no status yet (posted "Queued" by
+# queue_new), pending (queued, or left by a stopped runner), or any status
+# from the hosted fallback (scripts/local-ci-fallback.sh), which a local
+# result replaces. PRs by their oldest waiting status, a PR's desktop row
+# before its mobile one even when the desktop status is newer (a step it
+# posted before a restart). Each line gains two fields: 0 (desktop) or 1,
+# and the PR's oldest status time.
 queue() {
   awk -F'\t' -v OFS='\t' -v rn="${run_pr:-}" -v rc="${run_ctx:-}" -v d="$context" '
     !($1 == rn && $8 == rc) && ($9 == "NONE" || $9 == "PENDING" || $11 ~ /^Hosted fallback/) {
-      print $0, ($8 == d ? 0 : 1)
-    }' <<<"$prs" |
-    sort -t$'\t' -k10,10 -k1,1n -k12,12n
+      line[++rows] = $0; pr[rows] = $1; key[rows] = ($8 == d ? 0 : 1)
+      if (!($1 in first) || $10 < first[$1]) first[$1] = $10
+    }
+    END { for (i = 1; i <= rows; i++) print line[i], key[i], first[pr[i]] }' <<<"$prs" |
+    sort -t$'\t' -k13,13 -k1,1n -k12,12n
 }
 
 # The contexts of PR $1's queued rows.
@@ -493,7 +501,9 @@ finish() { # state description
   post "$run_ctx" "$run_head" "$1" "$2" "$run_url"
   echo "result: $1, $2" >>"$run_dir/summary.txt"
   rm -f "$state/job.pid" "$run_dir/.step"
-  if [ "$run_kind" = main ] && [ -f "$state/main-queue" ]; then
+  # A main job whose result GitHub did not take stays queued and runs
+  # again; a PR's stays pending on GitHub, which queues it again.
+  if [ "$run_kind" = main ] && $post_ok && [ -f "$state/main-queue" ]; then
     awk -F'\t' -v s="$run_head" -v c="$run_ctx" '!($1 == s && $2 == c)' "$state/main-queue" >"$state/main-queue.new"
     mv -f "$state/main-queue.new" "$state/main-queue"
   fi
@@ -581,6 +591,7 @@ queue_main() {
     log "warning: could not fetch main"
     return 1
   fi
+  check_copy
   tip=$(git -C "$checkout" rev-parse refs/local-ci/main)
   while [ ! -s "$state/main-queue" ]; do
     last=$(cat "$state/main-last" 2>/dev/null || true)
@@ -597,17 +608,41 @@ queue_main() {
       # The first run, or main was rewritten: its tip only.
       next=$tip
     fi
-    echo "$next" >"$state/main-last"
     areas=$(commit_areas "$next" "$next^1..$next" 2>/dev/null) || areas=$every_area
+    # Settled statuses first, then the jobs in one rename, then the cursor:
+    # a stop at any point repeats the commit rather than skips it.
+    : >"$state/main-queue.new"
     for ctx in "$context" "$mobile_context"; do
       if text=$(settled_text "$ctx" "$areas" "main@$(short "$next")"); then
         post "$ctx" "$next" success "$text"
       else
-        post "$ctx" "$next" pending Queued "${url:+$url/status.txt}"
-        printf '%s\t%s\n' "$next" "$ctx" >>"$state/main-queue"
+        printf '%s\t%s\n' "$next" "$ctx" >>"$state/main-queue.new"
       fi
     done
+    mv -f "$state/main-queue.new" "$state/main-queue"
+    echo "$next" >"$state/main-last.new"
+    mv -f "$state/main-last.new" "$state/main-last"
+    while IFS=$'\t' read -r _ ctx; do
+      post "$ctx" "$next" pending Queued "${url:+$url/status.txt}"
+    done <"$state/main-queue"
   done
+}
+
+# The installed runner is a copy that only install (or the Windows setup
+# script) updates: sets outdated, for status.txt, to the files that differ
+# from main's, and logs when that changes. Line endings are ignored (a
+# Windows checkout may have CRLF).
+check_copy() {
+  local f was=${outdated:-}
+  outdated=''
+  for f in local-ci.sh lib.sh; do
+    git -C "$checkout" cat-file -e "refs/local-ci/main:scripts/$f" 2>/dev/null || continue
+    cmp -s <(git -C "$checkout" show "refs/local-ci/main:scripts/$f" | tr -d '\r') \
+      <(tr -d '\r' <"$runner_dir/$f" 2>/dev/null) || outdated+="${outdated:+ and }$f"
+  done
+  if [ "$outdated" != "$was" ] && [ -n "$outdated" ]; then
+    log "warning: this runner's $outdated differ from main's; re-run install (or local-ci-setup.ps1)"
+  fi
 }
 
 # Starts the next main job, after a poll found no PR row waiting.
@@ -644,6 +679,7 @@ write_status() {
     fi
     echo "queue: ${q:-empty}"
     echo "main queue: ${mq:-empty}"
+    [ -z "${outdated:-}" ] || echo "outdated: this runner's $outdated differ from main's; re-run install"
     [ -z "${waiting:-}" ] || echo "waiting: $waiting"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
@@ -706,7 +742,7 @@ cmd_run() { # [once]
   log "runner started: $context and $mobile_context for $repo, checkout $checkout"
   kill_stale_job
   prs='' polled=false run_kind='' run_pr='' run_head='' run_ctx='' run_pid='' run_step=''
-  waiting='' waiting_kind='' next_poll=0 settled='' main_due=false
+  waiting='' waiting_kind='' next_poll=0 settled='' main_due=false outdated='' post_ok=true
   local now
   while :; do
     [ -z "$run_pid" ] || check_job

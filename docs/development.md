@@ -527,7 +527,11 @@ clone the CI checkout if it is missing (its first build is cold and its
 `target/` reaches about 30 GB), copy the runner, register the agents or the
 task and add `/ci` to `tailscale serve`; existing `tailscale serve` paths are
 kept. Re-run the same command after `scripts/local-ci.sh` or
-`scripts/lib.sh` changes on `main`; nothing updates the runner by itself.
+`scripts/lib.sh` changes on `main`; nothing updates the runner by itself
+(on 2026-11-01 the Mac still ran a copy from before the swap-gate fix and
+held PRs for it). When its copy differs from `main`'s, `status.txt` says
+so ("outdated: this runner's local-ci.sh differ from main's; re-run
+install") and the log warns.
 The area table is not copied: the runner reads it from each commit it
 tests. Never run either from the CI checkout, which sits at whatever merge
 ref it tested last.

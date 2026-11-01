@@ -68,7 +68,7 @@ not() { ! "$@"; }
   check "and run only for the desktop area" grep -q "if: &desktop \${{ needs.areas.outputs.desktop == 'true' }}" .github/workflows/ci.yml
 
   # Routing: a file takes the first matching line's areas, desktop by default.
-  areas_of() { printf '%s\n' "$@" | changed_areas "$table"; }
+  areas_of() { printf '%s\0' "$@" | changed_areas "$table"; }
   routes() { # expected files...
     local want=$1
     shift
@@ -157,6 +157,72 @@ not() { ! "$@"; }
   # shellcheck disable=SC2034 # read by commit_areas
   checkout=$repo
   check "a commit without the area table runs every area" [ "$(commit_areas HEAD HEAD^1..HEAD)" = "core desktop ios android" ]
+  # The installed copy against main's: lib.sh matches (CRLF aside), local-ci.sh does not.
+  # shellcheck disable=SC2034 # read by check_copy
+  runner_dir=$repo/runner
+  mkdir -p "$runner_dir"
+  printf 'old\n' >"$runner_dir/local-ci.sh"
+  printf 'lib\r\n' >"$runner_dir/lib.sh"
+  printf 'new\n' >"$repo/scripts/local-ci.sh"
+  printf 'lib\n' >"$repo/scripts/lib.sh"
+  g add scripts && g commit --quiet -m runner && g update-ref refs/local-ci/main HEAD
+  outdated=''
+  check "a runner copy behind main's is logged" grep -q "warning: this runner's local-ci.sh differ from main's" <<<"$(check_copy)"
+  check_copy >/dev/null
+  check "and named for status.txt, line endings aside" [ "$outdated" = local-ci.sh ]
+  cp "$repo/scripts/local-ci.sh" "$runner_dir/local-ci.sh"
+  check_copy >/dev/null
+  check "a copy that matches main's is not outdated" [ -z "$outdated" ]
+  # Names git would quote still route: read NUL-separated.
+  cp scripts/ci-areas.txt "$repo/scripts/ci-areas.txt"
+  g add scripts && g commit --quiet -m table
+  mkdir -p "$repo/apps/ios" "$repo/apps/android"
+  echo a >"$repo/apps/ios/Сканер.swift"
+  echo b >"$repo/apps/android/a \"b\".kt"
+  g add apps && g commit --quiet -m names
+  check "non-ASCII and quoted file names keep their areas" [ "$(commit_areas HEAD HEAD^1..HEAD)" = "ios android" ]
+  # main's queue: a stop at any point repeats a commit, never skips it.
+  g remote add origin "$repo"
+  g update-ref refs/heads/main HEAD
+  echo c >"$repo/src.rs" && echo c >>"$repo/apps/ios/Сканер.swift"
+  g add -A && g commit --quiet -m both
+  both=$(g rev-parse HEAD)
+  echo d >"$repo/notes.md" && g add -A && g commit --quiet -m docs
+  docs_commit=$(g rev-parse HEAD)
+  g update-ref refs/heads/main HEAD
+  # shellcheck disable=SC2034 # read by queue_main
+  state=$(mktemp -d) main_max=10 url=''
+  g rev-parse HEAD~2 >"$state/main-last"
+  # shellcheck disable=SC2317,SC2329 # stops the runner at the first Queued post
+  post() { [ "$3" != pending ] || exit 0; }
+  (queue_main) >/dev/null 2>&1 || true
+  check "a stop after queueing keeps both jobs" [ "$(cut -f2 "$state/main-queue" | tr '\n' ' ')" = "local/macos local/ios " ]
+  check "and moves the cursor" [ "$(cat "$state/main-last")" = "$both" ]
+  rm -f "$state/main-queue"
+  # shellcheck disable=SC2317,SC2329 # stops it at the first settled post
+  post() { [ "$3" != success ] || exit 0; }
+  (queue_main) >/dev/null 2>&1 || true
+  check "a stop while settling leaves the cursor, so the commit repeats" [ "$(cat "$state/main-last")" = "$both" ]
+  check "with nothing queued for it" [ ! -s "$state/main-queue" ]
+  # shellcheck disable=SC2317,SC2329
+  post() { post_ok=true; }
+  queue_main >/dev/null 2>&1 || true
+  check "a full pass settles it" [ "$(cat "$state/main-last")" = "$docs_commit" ]
+  # A main result GitHub did not take keeps the job queued.
+  printf '%s\tlocal/ios\n' "$both" >"$state/main-queue"
+  # shellcheck disable=SC2317,SC2329
+  post() { post_ok=false; }
+  # shellcheck disable=SC2034 # read by finish
+  run_kind=main run_head=$both run_ctx=local/ios run_url='' run_dir=$state
+  finish failure "Failed in just mobile --ios on main@abc" >/dev/null
+  check "a main result that failed to post stays queued" grep -q "local/ios" "$state/main-queue"
+  # shellcheck disable=SC2317,SC2329
+  post() { post_ok=true; }
+  # shellcheck disable=SC2034
+  run_kind=main run_head=$both run_ctx=local/ios run_url='' run_dir=$state
+  finish failure "Failed in just mobile --ios on main@abc" >/dev/null
+  check "one that posted leaves the queue" [ ! -s "$state/main-queue" ]
+  rm -rf "${state:?}"
   rm -rf "${repo:?}"
   # The Mac's start gate: memory pressure and disk, never swap in use.
   # shellcheck disable=SC2034 # read by capacity_ok and queued_text
@@ -219,6 +285,15 @@ not() { ! "$@"; }
   )
   check "the queue runs oldest first, desktop before mobile" \
     [ "$(queue | cut -f1,8 | tr '\t\n' ': ')" = "3:local/macos 2:local/macos 2:local/ios 1:local/ios " ]
+  # After a restart mid-job, the desktop row's status is newer than its
+  # queued mobile row's: the desktop job still goes first.
+  prs=$(
+    line 7 local/macos PENDING 2026-01-01T00:00:09Z "Running just test on main@abc"
+    line 7 local/ios PENDING 2026-01-01T00:00:02Z Queued
+    line 8 local/macos PENDING 2026-01-01T00:00:03Z Queued
+  )
+  check "a PR's desktop job goes before its older queued mobile one" \
+    [ "$(queue | cut -f1,8 | tr '\t\n' ': ')" = "7:local/macos 7:local/ios 8:local/macos " ]
   # A runner that comes back tests rows the fallback holds or finished.
   prs=$(
     line 1 local/macos SUCCESS 2026-01-01T00:00:01Z "Hosted fallback: clippy and test (macos-26) passed; just mobile not run"
@@ -603,6 +678,7 @@ check "beside a desktop not affected" has "$m2" "$D" "success	Not affected: no c
 check "a docs-only main commit passes both without a build" \
   has_both "$m3" "success	Docs only, not tested (main@${m3:0:7})	"
 check "main is tested up to its tip" [ "$(cat "$LOCAL_CI_HOME/state/main-last")" = "$m3" ]
+check "a main without the runner scripts does not mark the copy outdated" not grep -q "^outdated" "$LOCAL_CI_HOME/out/status.txt"
 check "with nothing left queued" [ ! -s "$LOCAL_CI_HOME/state/main-queue" ]
 check "the status file shows the main queue" grep -q "^main queue: empty" "$LOCAL_CI_HOME/out/status.txt"
 
