@@ -62,8 +62,11 @@ guess = [
 ]
 
 # Claim and case numbers after their label (ADR 0092): "Claim No.
-# 6001842/2026", "**Case number:** 2026/314". Statute, article and clause
-# numbers have no such label and stay unmarked.
+# 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
+# "Claim No CL-2026-000123". The value is the whole identifier. Statute,
+# article and clause numbers have no such label and stay unmarked. A value
+# needs four digits: the review proposes a wording everywhere it appears,
+# and "Claim No. 12" would mark "article 12" too. A date is not one.
 [[context]]
 category = "CASE"
 labels = [
@@ -71,13 +74,19 @@ labels = [
     "proceedings number", "proceedings are numbered",
 ]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
-value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)*'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
 
-# "case" alone is also a common word ("in case 30 days pass"): only a
-# number with a `/` or `-`, or of five digits or more, follows it as a case
-# number ("case 202-555-0169").
+# "case" alone is also a common word ("in case 30 days pass", "in case
+# 2026-03-12 is a holiday"): after it only a number with a separator, or of
+# five digits or more, is a case number ("case 202-555-0169"), never after
+# "in", "just" and the like, and never a date.
 [[context]]
 category = "CASE"
 labels = ["case"]
 between = '[\p{Zs}\t:№#]{1,4}'
-value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)+|\d{5,}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
+min_digits = 4
+unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
+unless_guessed = ["DATE"]

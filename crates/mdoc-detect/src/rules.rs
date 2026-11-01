@@ -67,6 +67,16 @@ struct ContextEntry {
     /// What may sit between a label and its value (`:`, `№`, Markdown bold).
     between: String,
     value: String,
+    /// Fewer digits in the value and it is not proposed: the review finds a
+    /// wording everywhere, so a short one would mark "article 12" too.
+    #[serde(default)]
+    min_digits: usize,
+    /// Words that, just before the label, make it a common word ("in case").
+    #[serde(default)]
+    unless_after: Vec<String>,
+    /// Categories whose guesses, taking the value, rule it out (a date).
+    #[serde(default)]
+    unless_guessed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +123,9 @@ pub(crate) struct Pack {
 struct Context {
     category: Category,
     pattern: Regex,
+    min_digits: usize,
+    unless_after: Vec<String>,
+    unless_guessed: Vec<Category>,
 }
 
 struct Never {
@@ -274,7 +287,26 @@ impl Pack {
                 if pattern.captures_len() != 2 {
                     return Err(at("between and value must not capture".into()));
                 }
-                pack.contexts.push(Context { category, pattern });
+                if let Some(word) = entry.unless_after.iter().find(|word| {
+                    word.is_empty()
+                        || *word != &word.to_lowercase()
+                        || !word.chars().all(char::is_alphanumeric)
+                }) {
+                    return Err(at(format!("{word:?} is not one lowercase word")));
+                }
+                let unless_guessed = entry
+                    .unless_guessed
+                    .iter()
+                    .map(|token| self::category(token))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
+                pack.contexts.push(Context {
+                    category,
+                    pattern,
+                    min_digits: entry.min_digits,
+                    unless_after: entry.unless_after.clone(),
+                    unless_guessed,
+                });
             }
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
@@ -346,6 +378,21 @@ impl Pack {
             .flat_map(|context| {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
+                    let digits = value.as_str().chars().filter(char::is_ascii_digit).count();
+                    let before = source[..found.get(0)?.start()]
+                        .trim_end()
+                        .rsplit(|c: char| !c.is_alphanumeric())
+                        .next()
+                        .unwrap_or_default()
+                        .to_lowercase();
+                    if digits < context.min_digits
+                        || context.unless_after.contains(&before)
+                        || self
+                            .guess(value.as_str())
+                            .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+                    {
+                        return None;
+                    }
                     Some(Detection {
                         range: value.range(),
                         category: context.category,
@@ -518,7 +565,12 @@ mod tests {
         };
         for (source, value) in [
             ("**Claim number:** 6001842/2026 (Employment", "6001842/2026"),
-            ("Claim No. 12 was settled", "12"),
+            ("Claim No. 1234 was settled", "1234"),
+            ("Case No. 1:26-cv-01234-JAB, filed", "1:26-cv-01234-JAB"),
+            ("Claim No CL-2026-000123.", "CL-2026-000123"),
+            ("Case No. 2026/314A; see", "2026/314A"),
+            ("Дело № 1234", "1234"),
+            ("**Дело №** 2-1842/2026", "2-1842/2026"),
             ("proceedings are numbered 2026/314.", "2026/314"),
             ("case number 7707083894.", "7707083894"),
             ("Formula x + 2; case 202-555-0169.", "202-555-0169"),
@@ -539,9 +591,33 @@ mod tests {
             "case abc12345",
             "по делу 15 свидетелей",
             "showcase 2026/314",
+            "Claim No. 12. Under article 12 and section 12, payment is due.",
+            "In case 2026-03-12 is a non-business day, payment falls due.",
+            "Case No. 12.03.2026",
+            "Дело № 12",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
+    }
+
+    /// What the review shows: a case number's other mentions join it, and a
+    /// labelled number too short to propose never spreads to statute and
+    /// clause numbers (the review finds a wording everywhere).
+    #[test]
+    fn a_case_number_reaches_its_repeats_and_never_a_statute_number() {
+        let shown = |source: &str| -> Vec<String> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "CASE")
+                .map(|span| source[span.range].to_owned())
+                .collect()
+        };
+        assert!(shown("Claim No. 12. Under article 12 and section 12, payment is due.").is_empty());
+        assert_eq!(
+            shown("Claim No 6001842/2026. The claim 6001842/2026 is settled under article 309."),
+            ["6001842/2026", "6001842/2026"]
+        );
     }
 
     #[test]
