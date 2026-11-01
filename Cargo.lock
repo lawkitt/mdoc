@@ -4778,6 +4778,7 @@ dependencies = [
  "mdoc-history",
  "regex",
  "serde_json",
+ "unicode-normalization",
 ]
 
 [[package]]
