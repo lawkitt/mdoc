@@ -649,7 +649,7 @@ fn find_forms(
                     || parse_form(&source[tokens[i - 1].clone()])
                         .is_some_and(|form| people.candidates(&form).proposed));
             if (1..=2).contains(&(run - i)) && !after_name {
-                tries.push((start..tokens[run].end + 1, run + 1));
+                tries.push((start..tokens[run].end + 1, run + 1, false));
             }
         } else {
             let title = &source[tokens[i].clone()];
@@ -1088,7 +1088,7 @@ mod tests {
             clause A. B. and Y. alone stay; so do Y. Q. X. and Y. Q. Z. W.";
         let found: Vec<_> = find_forms(source, &people(&names), &[])
             .into_iter()
-            .map(|(r, _)| &source[r])
+            .map(|(r, ..)| &source[r])
             .collect();
         assert_eq!(found, ["Y. Q.", "Я. В."]);
         // After a surname they are its initials, not a signature.
