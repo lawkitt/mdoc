@@ -1424,3 +1424,16 @@ fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
         .unwrap();
     assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
 }
+
+/// #398: a known full name repeated in lower case joins it.
+#[test]
+fn a_lowercase_repeat_of_a_full_name_joins_it() {
+    let source = "I, Iara Veldune, appoint Corvin Ashmere. Signed electronically: iara veldune.";
+    let review = ingest_names(source, &["Iara Veldune", "Corvin Ashmere"]);
+    let full = review.variant_identity(proposed(&review, "Iara Veldune").id);
+    let repeat = proposed(&review, "iara veldune");
+    assert_eq!(repeat.mentions.len(), 1);
+    assert_eq!(review.variant_identity(repeat.id), full);
+    assert_eq!(repeat.recognizer(), Some(Recognizer::Propagation));
+    assert_eq!(review.active_identities().len(), 2);
+}

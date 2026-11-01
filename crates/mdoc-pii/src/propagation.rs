@@ -536,6 +536,67 @@ pub(crate) fn sentence_start(source: &str, start: usize) -> bool {
         || before.ends_with(['.', '!', '?', '…', '|'])
 }
 
+/// Whether `range` can be proposed: plain text outside protected syntax and
+/// existing mentions, whole words, and not glued to `_`, `/`, `@` or `\`,
+/// where it is part of an identifier, a path or an address
+/// ("x.invalid/Alice_Morgan").
+fn usable_span(
+    source: &str,
+    range: &Range<usize>,
+    protected: &[Range<usize>],
+    covered: &[Range<usize>],
+) -> bool {
+    let text = &source[range.clone()];
+    let glued = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
+    !glued(source[..range.start].chars().next_back())
+        && !glued(source[range.end..].chars().next())
+        && safe_span(text)
+        && !intersects(protected, range)
+        && !intersects(covered, range)
+        && exact_boundary(source, range, text)
+}
+
+/// Repeats of known full names in another letter case ("iara veldune",
+/// "IARA VELDUNE" of "Iara Veldune"), outside `covered`: the same name, so
+/// the same identity. Only names of two words or more, never a lone word,
+/// and not one made of ordinary words only ("Rose Hill", "the rose hill").
+fn case_repeats<'a>(source: &'a str, names: &[&str], covered: &[Range<usize>]) -> Vec<&'a str> {
+    let names: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|name| {
+            let words = name_words(name);
+            words.len() >= 2 && !words.iter().all(|w| common_word(w))
+        })
+        .collect();
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let pattern = names
+        .iter()
+        .map(|name| {
+            name.split_whitespace()
+                .map(regex::escape)
+                .collect::<Vec<_>>()
+                .join(r"[ \t]+")
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    let Ok(regex) = regex::RegexBuilder::new(&pattern)
+        .case_insensitive(true)
+        .build()
+    else {
+        return Vec::new();
+    };
+    let protected = protected_syntax(source);
+    regex
+        .find_iter(source)
+        .filter(|m| !names.contains(&m.as_str()))
+        .filter(|m| usable_span(source, &m.range(), &protected, covered))
+        .map(|m| m.as_str())
+        .collect()
+}
+
 /// Spans of forms in `source`, outside `covered` and protected syntax, with
 /// whether each is an ordinary word too. Longer forms win at each place.
 fn find_forms(
@@ -611,15 +672,7 @@ fn find_forms(
         let accepted = tries.into_iter().find_map(|(range, next)| {
             let text = &source[range.clone()];
             let form = parse_form(text)?;
-            // Touching `_`, `/`, `@` or `\` it is part of an identifier, a
-            // path or an address ("x.invalid/Alice_Morgan").
-            let glued = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
-            let usable = !glued(source[..range.start].chars().next_back())
-                && !glued(source[range.end..].chars().next())
-                && safe_span(text)
-                && !intersects(&protected, &range)
-                && !intersects(covered, &range)
-                && exact_boundary(source, &range, text)
+            let usable = usable_span(source, &range, &protected, covered)
                 && people.candidates(&form).proposed;
             let common = matches!(&form, Form::Word { word, titled: false } if common_word(word));
             (usable && !(common && sentence_start(source, range.start)))
@@ -714,6 +767,32 @@ impl Review {
             if let Some(variant) = self.candidates.variant_mut(id) {
                 variant.recognizer = Some(Recognizer::Propagation);
                 variant.mid_sentence = common;
+                variant.keep_default = marked;
+            }
+            if marked {
+                self.set_kept(id, false);
+            }
+            added.push(id);
+        }
+        // A full name repeated in another letter case joins it by
+        // normalization, as any case-only respelling does.
+        let names: Vec<_> = self
+            .known_people()
+            .into_iter()
+            .filter(|(_, w)| split_full_name(w).is_some())
+            .collect();
+        let wordings: Vec<&str> = names.iter().map(|(_, w)| w.as_ref()).collect();
+        let repeats: Vec<String> = case_repeats(source, &wordings, &covered)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for wording in repeats {
+            if self.candidates.by_original(&wording).is_some() {
+                continue;
+            }
+            let id = self.add_seed(&wording, Category::Person);
+            if let Some(variant) = self.candidates.variant_mut(id) {
+                variant.recognizer = Some(Recognizer::Propagation);
                 variant.keep_default = marked;
             }
             if marked {
@@ -959,6 +1038,23 @@ mod tests {
         assert_eq!(
             target(&["Maya Bennett", "Daniel Bennett"], "D. Bennett"),
             Some(2)
+        );
+    }
+
+    #[test]
+    fn a_full_name_repeats_in_any_letter_case() {
+        let source = "Iara Veldune signs. Signed: iara veldune; IARA  VELDUNE; \
+            mail iara.veldune@x.invalid; the rose hill; Iara alone.";
+        let names = ["Iara Veldune", "Rose Hill"];
+        assert_eq!(
+            case_repeats(source, &names, &[]),
+            ["iara veldune", "IARA  VELDUNE"]
+        );
+        // Inside an existing mention it is part of it.
+        let start = source.find("iara veldune").unwrap();
+        assert_eq!(
+            case_repeats(source, &names, &[start - 8..start + 12]),
+            ["IARA  VELDUNE"]
         );
     }
 
