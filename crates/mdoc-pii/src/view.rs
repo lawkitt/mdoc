@@ -55,6 +55,28 @@ impl View {
         self.source_offset(range.start, false)..self.source_offset(range.end, true)
     }
 
+    /// The view range source `range` reads as: the inverse of
+    /// [`View::source_range`], widened the same way, so a span found in the
+    /// source can be read as detection read it ("%41lice" in a link target
+    /// reads "Alice").
+    pub fn view_range(&self, range: Range<usize>) -> Range<usize> {
+        self.view_offset(range.start, false)..self.view_offset(range.end, true)
+    }
+
+    fn view_offset(&self, at: usize, end: bool) -> usize {
+        let index = self
+            .edits
+            .partition_point(|edit| edit.source.start < at || (!end && edit.source.start == at));
+        let Some(edit) = index.checked_sub(1).map(|i| &self.edits[i]) else {
+            return at;
+        };
+        if at < edit.source.end || (end && at == edit.source.end) {
+            if end { edit.view.end } else { edit.view.start }
+        } else {
+            edit.view.end + (at - edit.source.end)
+        }
+    }
+
     fn source_offset(&self, at: usize, end: bool) -> usize {
         // The last edit starting before `at` (an end) or at it (a start).
         let index = self
@@ -89,13 +111,34 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
 /// overlapping.
 fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
+    let destinations = link_destinations(source);
+    let mut destination = destinations.iter().peekable();
     let mut chars = source.char_indices().peekable();
     let mut previous = None;
     while let Some((at, c)) = chars.next() {
         let next = chars.peek().map(|&(_, next)| next);
         let before = previous;
         previous = Some(c);
-        if c == '-'
+        while destination.next_if(|range| range.end <= at).is_some() {}
+        let hidden = destination.peek().filter(|range| range.start <= at);
+        if hidden.is_some()
+            && c == '%'
+            && let Some((len, value)) = percent_encoded(&source[at..])
+        {
+            previous = value.chars().next_back();
+            out.push((at..at + len, value));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+        } else if let Some(link) = hidden
+            && c == '_'
+            && before.is_some_and(char::is_alphabetic)
+            && (next.is_some_and(char::is_alphabetic)
+                || percent_encoded(&source[at + 1..])
+                    .is_some_and(|(_, value)| value.starts_with(char::is_alphabetic)))
+            && !in_email(source, link, at)
+        {
+            // "clients/Alice_Morgan" names Alice Morgan.
+            out.push((at..at + 1, " ".into()));
+        } else if c == '-'
             && before.is_some_and(char::is_alphabetic)
             && let Some(len) = line_end_hyphen(&source[at..])
         {
@@ -112,6 +155,7 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         } else if c == '&'
             && let Some((len, value)) = character_reference(&source[at..])
         {
+            previous = value.chars().next_back();
             out.push((at..at + len, value));
             while chars.next_if(|&(i, _)| i < at + len).is_some() {}
         } else if invisible(c) {
@@ -132,6 +176,102 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
+}
+
+/// Link and image destinations ("](clients/Alice_Morgan)"): hidden source
+/// that names people in its own spelling.
+fn link_destinations(source: &str) -> Vec<Range<usize>> {
+    let bytes = source.as_bytes();
+    let mut out = Vec::new();
+    for (open, _) in source.match_indices("](") {
+        // Spaces or tabs, and one line ending, may come first ("]( url)").
+        let mut start = open + 2;
+        while matches!(bytes.get(start), Some(b' ' | b'\t')) {
+            start += 1;
+        }
+        if bytes.get(start) == Some(&b'\r') {
+            start += 1;
+        }
+        if bytes.get(start) == Some(&b'\n') {
+            start += 1;
+            while matches!(bytes.get(start), Some(b' ' | b'\t')) {
+                start += 1;
+            }
+        }
+        let mut depth = 0;
+        let mut end = start;
+        while let Some(&byte) = bytes.get(end) {
+            match byte {
+                b'(' => depth += 1,
+                b')' if depth == 0 => break,
+                b')' => depth -= 1,
+                b' ' | b'\t' | b'\n' | b'\r' => break,
+                _ => {}
+            }
+            end += 1;
+        }
+        if out
+            .last()
+            .is_none_or(|last: &Range<usize>| last.end <= start)
+        {
+            out.push(start..end);
+        }
+    }
+    out
+}
+
+/// Whether the underscore at `at` in `destination` is in an email address's
+/// local part ("mailto:alice_morgan@example.invalid", "&#64;" or "%40" for
+/// its "@"), whose underscores are its own.
+fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
+    let mut i = at;
+    while i < destination.end {
+        let rest = &source[i..destination.end];
+        if rest.starts_with('@') || rest.starts_with("%40") {
+            return true;
+        }
+        let c = rest.chars().next().unwrap_or_default();
+        if c == '&' {
+            match character_reference(rest) {
+                Some((_, value)) if value == "@" => return true,
+                Some((len, _)) => i += len,
+                // A query's "&" ends the part.
+                None => return false,
+            }
+            continue;
+        }
+        if matches!(c, '/' | '?' | '#' | '=' | ':') {
+            return false;
+        }
+        i += c.len_utf8();
+    }
+    false
+}
+
+/// The percent-encoded character at the start of `text` ("%20", or the
+/// UTF-8 bytes of one letter, "%D0%90") and its length.
+fn percent_encoded(text: &str) -> Option<(usize, String)> {
+    let byte = |at: usize| {
+        let hex = text
+            .get(at + 1..at + 3)
+            .filter(|_| text[at..].starts_with('%'))?;
+        u8::from_str_radix(hex, 16).ok()
+    };
+    let first = byte(0)?;
+    let len = match first {
+        0x20..=0x7e => 1,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return None,
+    };
+    let bytes: Vec<u8> = (0..len).map(|i| byte(3 * i)).collect::<Option<_>>()?;
+    let value = String::from_utf8(bytes).ok()?;
+    // Only what a name is spelt with: a space or a letter.
+    value
+        .chars()
+        .all(|c| c == ' ' || c.is_alphabetic())
+        .then_some((3 * len, value))
 }
 
 /// The length of a line-end hyphen that splits a word at the start of
@@ -277,6 +417,22 @@ mod tests {
             view.text,
             "Melora Brinsett, Верестова, Ли-\nВельт, 000-\n74, list -\nnext, ksen@svod.invalid"
         );
+        // Link destinations read "%20" and "_" between letters as spaces,
+        // and percent-encoded letters as letters; visible text keeps them.
+        let source = "[a](x.invalid/Liora%20Nesket/%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина?q=%3D) a_b Liora%20Nesket ![s](Alice_Morgan.png \"t_t\")";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "[a](x.invalid/Liora Nesket/Анна Ёлкина?q=%3D) a_b Liora%20Nesket ![s](Alice Morgan.png \"t_t\")"
+        );
+        let span = |text: &str| {
+            let start = view.text.find(text).unwrap();
+            &source[view.source_range(start..start + text.len())]
+        };
+        assert_eq!(span("Анна Ёлкина"), "%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина");
+        assert_eq!(span("Liora Nesket"), "Liora%20Nesket");
+        let view = View::new("Melora Brin-\nsett");
+        let source = "Melora Brin-\nsett";
         let start = view.text.find("Melora").unwrap();
         assert_eq!(
             &source[view.source_range(start..start + "Melora Brinsett".len())],

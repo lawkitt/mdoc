@@ -528,8 +528,13 @@ impl Pack {
     /// The `span` fixes on `detections` in `source`: each grows to an
     /// `extend` match it lies inside, loses `trim` words at either edge and
     /// `strip_end` characters at its end. A span left without its shape
-    /// goes.
-    pub(crate) fn fix_spans(&self, source: &str, detections: &mut Vec<Detection>) {
+    /// goes, read as `view` reads it.
+    pub(crate) fn fix_spans(
+        &self,
+        source: &str,
+        view: &mdoc_pii::view::View,
+        detections: &mut Vec<Detection>,
+    ) {
         for fix in &self.spans {
             if !detections.iter().any(|d| d.category == fix.category) {
                 continue;
@@ -553,10 +558,7 @@ impl Pack {
         }
         detections.retain(|d| {
             !d.range.is_empty()
-                && self.identifying(
-                    &mdoc_pii::view::decoded(&source[d.range.clone()]),
-                    d.category,
-                )
+                && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
         });
     }
 
@@ -1116,7 +1118,7 @@ mod tests {
                 }
             })
             .collect();
-        pack().fix_spans(source, &mut detections);
+        pack().fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
         detections
             .into_iter()
             .map(|d| source[d.range].to_owned())

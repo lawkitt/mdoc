@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: hidden-underscore-name
 issue: 376
 kind: claim
 source: hunt-r1
-expect: miss: PERSON "Merrit_Zorlan"
 ---
 # Application to correct the service record
 

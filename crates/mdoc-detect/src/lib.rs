@@ -551,7 +551,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .iter()
         .filter_map(|entity| {
             let category = category_of(&entity.label)?;
-            identifying(&mdoc_pii::view::decoded(&entity.text), category).then_some(Detection {
+            // Read as the model read it: "%41lice" in a link target is "Alice".
+            let text = &view.text[view.view_range(entity.start..entity.end)];
+            identifying(text, category).then_some(Detection {
                 range: entity.start..entity.end,
                 category,
                 score: entity.score,
@@ -559,7 +561,10 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
-    rules::pack().fix_spans(source, &mut detections);
+    rules::pack().fix_spans(source, &view, &mut detections);
+    // After the span fixes, so each spelling copies the fixed wording.
+    let respelt = respelt(source, &view, &detections);
+    detections.extend(respelt);
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()
@@ -569,6 +574,44 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         detection
     }));
     detections
+}
+
+/// The model's wordings where the source spells them otherwise and the view
+/// reads them the same: "Liora%20Nesket" in a link target, "Alice_Morgan"
+/// in a file name, for a detected "Liora Nesket" (ADR 0092). Each is a
+/// wording of its own, so Copy for AI replaces it as written.
+fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Vec<Detection> {
+    if view.is_source() {
+        return Vec::new();
+    }
+    // Each wording once per category: a wording the model gave two
+    // categories gets both, and the review's conflict rules choose, as they
+    // do where it is visible.
+    let mut seen = std::collections::HashSet::new();
+    let proposed: std::collections::HashSet<_> =
+        model.iter().map(|d| (d.range.start, d.range.end)).collect();
+    let mut found = Vec::new();
+    for detection in model {
+        let text = view.text[view.view_range(detection.range.clone())].to_owned();
+        if !seen.insert((text.clone(), detection.category)) {
+            continue;
+        }
+        for (at, _) in view.text.match_indices(&text) {
+            let end = at + text.len();
+            let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+            if word(view.text[..at].chars().next_back()) || word(view.text[end..].chars().next()) {
+                continue;
+            }
+            let range = view.source_range(at..end);
+            if source[range.clone()] != text && !proposed.contains(&(range.start, range.end)) {
+                found.push(Detection {
+                    range,
+                    ..*detection
+                });
+            }
+        }
+    }
+    found
 }
 
 fn category_of(label: &str) -> Option<Category> {
@@ -986,6 +1029,93 @@ mod tests {
                 ("Ism&#97;y O&#39;Verren", Category::Person),
                 ("ismay&#64;crane-pith.invalid", Category::Email)
             ]
+        );
+    }
+    /// #401, #376: a detected name spelt otherwise in a link target is
+    /// proposed there too, as written.
+    #[test]
+    fn a_detected_name_is_found_in_its_hidden_spellings() {
+        let source = "Client: Liora Nesket. [a](https://b.invalid/Liora%20Nesket/x) ![s](Liora_Nesket.png) LioraNesket";
+        let raw = [RawEntity {
+            start: 8,
+            end: 20,
+            label: "person".into(),
+            score: 0.9,
+            text: "Liora Nesket".into(),
+        }];
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| &source[d.range])
+            .collect();
+        assert_eq!(found, ["Liora Nesket", "Liora%20Nesket", "Liora_Nesket"]);
+    }
+
+    /// A link target's spellings: a name only there is read decoded, an
+    /// underscore before an encoded letter is a space too, and an email
+    /// address keeps its underscores.
+    #[test]
+    fn link_targets_read_names_decoded_and_emails_whole() {
+        let person = |source: &str, text: &str| {
+            let start = source.find(text).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        };
+        let found = |source: &str, raw: &[RawEntity]| -> Vec<String> {
+            correct(source, raw)
+                .into_iter()
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        let source = "See [x](https://b.invalid/%41lice%20Morgan).";
+        assert_eq!(
+            found(source, &[person(source, "%41lice%20Morgan")]),
+            ["%41lice%20Morgan"]
+        );
+        let source = "Client: Liora Nesket. [x](https://b.invalid/Liora_%4Eesket)";
+        assert_eq!(
+            found(source, &[person(source, "Liora Nesket")]),
+            ["Liora Nesket", "Liora_%4Eesket"]
+        );
+        let source = "Write to [mail](mailto:alice_morgan@example.invalid?subject=a_b).";
+        assert_eq!(found(source, &[]), ["alice_morgan@example.invalid"]);
+        let source = "Write to [mail](mailto:alice_morgan&#64;example.invalid).";
+        assert_eq!(found(source, &[]), ["alice_morgan&#64;example.invalid"]);
+        let source = "Write to [mail](mailto:alice_morgan&commat;example.invalid).";
+        assert_eq!(found(source, &[]), ["alice_morgan&commat;example.invalid"]);
+        // Spaces may come before a destination.
+        let source = "Client: Liora Nesket. [x]( https://b.invalid/Liora%20Nesket)";
+        assert_eq!(
+            found(source, &[person(source, "Liora Nesket")]),
+            ["Liora Nesket", "Liora%20Nesket"]
+        );
+    }
+
+    /// A wording the model gave two categories is copied to its other
+    /// spellings with both, whichever came first; the review chooses.
+    #[test]
+    fn a_respelling_keeps_every_category_the_model_gave() {
+        let source = "Amber. [x](%41mber)";
+        let raw = [("person", 0.6), ("organization", 0.9)].map(|(label, score)| RawEntity {
+            start: 0,
+            end: 5,
+            label: label.into(),
+            score,
+            text: "Amber".into(),
+        });
+        let mut found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .filter(|d| &source[d.range.clone()] == "%41mber")
+            .map(|d| (d.category, d.score))
+            .collect();
+        found.sort_by(|a, b| a.1.total_cmp(&b.1));
+        assert_eq!(
+            found,
+            [(Category::Person, 0.6), (Category::Organization, 0.9)]
         );
     }
     #[test]
