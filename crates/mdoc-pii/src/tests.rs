@@ -1569,3 +1569,32 @@ fn a_surname_keeps_its_particle() {
             .all(|v| v.original.as_ref() != "Лаваль")
     );
 }
+
+/// #416: a known first name that is an ordinary word ("Grant") counts only
+/// capitalised mid-sentence, even where the model proposed it.
+#[test]
+fn an_ordinary_word_name_counts_only_mid_sentence_whoever_proposed_it() {
+    let source = "Landlord: Grant Pellover.\n\n## Grant\n\nThe room is let. \
+        Grant of storage needs a variation.\n\nThe landlord, Grant, keeps a key.";
+    let model = source.find("Grant of").unwrap();
+    let full = source.find("Grant Pellover").unwrap();
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(full..full + "Grant Pellover".len(), Category::Person),
+                detection(model..model + "Grant".len(), Category::Person),
+            ],
+        )
+        .unwrap();
+    let grant = proposed(&review, "Grant");
+    let mid = source.find("Grant, keeps").unwrap();
+    assert_eq!(grant.mentions, vec![mid..mid + "Grant".len()]);
+    // Marked by hand at a sentence start, every mention counts.
+    let heading = source.find("## Grant").unwrap() + 3;
+    review
+        .add_manual(source, heading..heading + 5, Category::Person)
+        .unwrap();
+    assert_eq!(proposed(&review, "Grant").mentions.len(), 3);
+}

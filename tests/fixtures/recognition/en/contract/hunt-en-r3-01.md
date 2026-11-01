@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: common-word-person-repeat
 issue: 416
 kind: contract
 source: hunt-r3
-expect: false hit: PERSON "Grant" ×2
 ---
 # Lease of a rehearsal room
 
