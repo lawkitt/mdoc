@@ -190,10 +190,44 @@ fn html_tag(bytes: &[u8], open: usize, parts: &mut Vec<Range<usize>>) -> Option<
         }
     }
 }
+/// The HTML line breaks (`<br>`) inside `range` of `source`, with value
+/// text on both sides: a value over the lines of a table cell ("27 Wisp
+/// Lane<br>Norwich NR2 8ZZ").
+pub(super) fn line_breaks_in(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
+    let mut breaks = Vec::new();
+    let mut at = range.start;
+    while let Some(offset) = source[at..range.end].find('<') {
+        let open = at + offset;
+        match crate::view::line_break_tag(&source[open..range.end]) {
+            Some(len) => {
+                if open > range.start && open + len < range.end {
+                    breaks.push(open..open + len);
+                }
+                at = open + len;
+            }
+            None => at = open + 1,
+        }
+    }
+    breaks
+}
+/// Whether `range` crosses protected syntax, where a whole `<br>` inside
+/// it is part of the value.
+pub(super) fn crosses_syntax(
+    protected: &[Range<usize>],
+    source: &str,
+    range: &Range<usize>,
+) -> bool {
+    let first = protected.partition_point(|r| r.end <= range.start);
+    let breaks = line_breaks_in(source, range);
+    protected[first..]
+        .iter()
+        .take_while(|r| r.start < range.end)
+        .any(|r| !breaks.iter().any(|b| b.start <= r.start && r.end <= b.end))
+}
 /// Characters that only matter as Markdown structure: escapes, emphasis
-/// delimiters, heading marks and line breaks. A span containing them is
-/// checked structurally: a soft line break inside a paragraph is text.
-const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#', '\n', '\r'];
+/// delimiters, heading marks, line breaks and HTML. A span containing them
+/// is checked structurally: a soft line break inside a paragraph is text.
+const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#', '\n', '\r', '<'];
 /// Whether replacing `range` with a plain token leaves the Markdown structure
 /// of its block unchanged: escaped (`\_`) or literal (`____`) delimiters are
 /// text, while a span that opens or closes emphasis, or splits an escape, is not.
@@ -227,15 +261,27 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
     }
 }
 /// Node kinds and child counts in document order, ignoring text values.
+/// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
+/// ADR 0092): `<br>` nodes are skipped and the text around them is one.
 fn shape(
     node: &markdown::mdast::Node,
 ) -> Vec<(std::mem::Discriminant<markdown::mdast::Node>, usize)> {
+    use markdown::mdast::Node;
     let mut out = Vec::new();
     let mut stack = vec![node];
     while let Some(node) = stack.pop() {
-        let children = node.children().map_or(&[][..], Vec::as_slice);
+        let mut children: Vec<&Node> = Vec::new();
+        for child in node.children().map_or(&[][..], Vec::as_slice) {
+            let line_break = matches!(child, Node::Html(html)
+                if crate::view::line_break_tag(&html.value) == Some(html.value.len()));
+            let text = matches!(child, Node::Text(_));
+            if line_break || (text && matches!(children.last(), Some(Node::Text(_)))) {
+                continue;
+            }
+            children.push(child);
+        }
         out.push((std::mem::discriminant(node), children.len()));
-        stack.extend(children.iter().rev());
+        stack.extend(children.into_iter().rev());
     }
     out
 }
