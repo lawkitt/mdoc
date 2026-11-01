@@ -130,10 +130,10 @@ release version *flags:
 ios-app: ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
 
-# Run the iOS unit, parity and UI tests on an iOS 26.1 Simulator device
+# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env)
 [macos]
 ios-test device="iPhone 17": ios-core
-    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'platform=iOS Simulator,OS=26.1,name={{device}}' -derivedDataPath target/ios/DerivedData -quiet test
+    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet test
 
 # The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]

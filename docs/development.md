@@ -702,7 +702,9 @@ both targets, packaging and the packaged-app gate, then a draft GitHub Release
 with `SHA256SUMS` and build provenance. Review the draft and publish it by
 hand. "Run workflow" on the Release workflow builds an unpublished test build
 from any pushed branch; it goes straight to packaging (the branch already ran
-CI) unless **checks** is ticked, and signs the macOS app only with **sign**.
+CI) unless **checks** is ticked, and signs the macOS app only with **sign**,
+which works from `main` only: the `release` environment admits `main` and `v*`
+tags ([ADR 0091](adr/0091-mobile-ci-and-releases.md)).
 
 For a run without prompts, `just release <version> --yes` (`--check-all` opts
 into the smoke tests; `--no-push` wins over the automatic push).

@@ -25,7 +25,8 @@ on:
       sign:
         description: >-
           Developer ID sign and notarize the macOS build, as a tag build does
-          (uses the `release` environment's secrets).
+          (uses the `release` environment's secrets, which only `main` and
+          `v*` tags can reach, ADR 0091).
         type: boolean
         default: false
       checks:

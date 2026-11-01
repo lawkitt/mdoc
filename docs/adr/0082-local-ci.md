@@ -1,6 +1,9 @@
 # Local CI
 
-Status: Accepted, 2026-10-29; amended 2026-10-30 and 2026-10-31. Amends
+Status: Accepted, 2026-10-29; amended 2026-10-30 and 2026-10-31. Amended by
+[ADR 0091](0091-mobile-ci-and-releases.md) as its rollout lands: areas decide
+which jobs run, `local/ios` and `local/android` join the gate (five checks),
+the fallback runs hosted mobile jobs, and the runners also test `main`. Amends
 [ADR 0070](0070-ci-speed-and-script-hygiene.md) (runners, test runner,
 cache) and [ADR 0037](0037-ci-and-release-pipeline.md) (where CI runs).
 

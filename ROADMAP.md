@@ -162,6 +162,54 @@ Maintainer actions list the steps on the maintainer's side.
    build, the signed APK and its SHA-256 are on GitHub Releases, and the
    Play production release is submitted (or the slip is recorded).
 
+## Mobile CI/CD
+
+Mobile tests stay on local CI with a real fallback, and agents release the
+apps to internal tracks and drafts
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). Record:
+[mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2–4
+touch separate files and run as parallel lanes; 5 builds on 2 and 3.
+
+2. **[CI] Areas, mobile statuses and testing `main`.** One path table
+   (desktop, core, ios, android) that `local-ci.sh`, `ci.yml` and the check
+   scripts follow, with a test that fails when they disagree; `local/ios`
+   and `local/android` statuses with "not affected" for other PRs; runners
+   test new `main` commits once their queue is empty. *Done when:* a
+   Swift-only PR runs only the iOS job, a core PR runs all four statuses,
+   and the fleet profile requires five checks.
+3. **[CI] Android scripts on macOS and Linux.** `android-check.sh`, the SDK,
+   NDK and emulator scripts run on the Mac (`arm64-v8a` emulator) and on
+   Ubuntu with KVM as well as the PC; the Android job also builds the
+   minified release-like variant. *Done when:* `just android` passes on the
+   Mac and on a dispatched `ubuntu-latest` run, and a deliberately missing
+   R8 keep rule fails it.
+4. **[Release] One changelog per app.** `changes/ios/` and
+   `changes/android/` feed `apps/ios/CHANGELOG.md` and
+   `apps/android/CHANGELOG.md`; `just release` takes only top-level
+   fragments; unreleased mobile fragments such as
+   `changes/ios-separate-model-downloads.md` move (released sections stay).
+   *Done when:*
+   `just test-release` covers both folders, before the next desktop release.
+5. **[CI] Takeover, hosted mobile jobs and Dependabot.** The Mac takes a
+   `local/android` stuck 15 minutes; the hosted fallback runs the hosted
+   iOS (`macos-26`, pinned Xcode) and Android (`ubuntu-latest`, KVM) jobs;
+   Dependabot and fork PRs run them in their areas; a dispatched workflow
+   regenerates Gradle verification metadata as a reviewable diff. *Done
+   when:* a stuck-runner drill posts each path, and a Gradle Dependabot PR
+   goes green after its metadata commit.
+6. **[Release] iOS release workflow.** After ROADMAP iOS item 1's first
+   TestFlight build by hand: `just release-ios`, `ios-v*` tags from `main`,
+   hosted tests on the Release configuration, Apple-managed signing,
+   TestFlight upload with What to Test from the iOS CHANGELOG, build number
+   from `main`'s commit count, the core commit in Settings. *Done when:* an
+   agent ships a TestFlight build to internal testers with no maintainer
+   step.
+7. **[Release] Android release workflow.** After the Play account (Android
+   item 8): `just release-android`, `android-v*` tags, the minified variant
+   on the hosted emulator, the AAB to Play's internal track, Play's signed
+   universal APK in a draft GitHub Release with SHA256SUMS and provenance.
+   *Done when:* an agent produces that draft with no maintainer step.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier

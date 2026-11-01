@@ -1,7 +1,10 @@
 # Changelog fragments
 
 Status: Accepted, 2026-10-28. Amends [ADR 0059](0059-roadmap-after-0-1-0.md)
-("Done means deleted": where the CHANGELOG entry goes).
+("Done means deleted": where the CHANGELOG entry goes). Amended by
+[ADR 0091](0091-mobile-ci-and-releases.md): iOS and Android fragments go in
+`changes/ios/` and `changes/android/` and feed each app's own CHANGELOG, once
+its rollout item lands.
 
 ## Problem
 
