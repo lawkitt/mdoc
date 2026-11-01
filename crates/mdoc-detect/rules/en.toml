@@ -112,3 +112,15 @@ parts.street = '\b\d+[A-Za-z]?\s+(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*\s+){1
 parts.sep = ',\s*|\s*<br\s*/?>\s*'
 parts.town = '\p{Uppercase}[\p{Ll}\d][\p{Alphabetic}\d\x27’-]*(?:\s\p{Uppercase}\p{Ll}[\p{Alphabetic}\x27’-]*)?'
 parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}|[A-Z]{2}\s\d{5}(?:-\d{4})?)\b'
+
+# A legal form's abbreviation dot is not part of the name: "Moth Lantern
+# Events Ltd." is proposed as "Moth Lantern Events Ltd" (issue #374).
+[[span]]
+category = "ORG"
+trim_end = '\b(?:Ltd|Inc|Corp|LLC|LLP|PLC)(\.)'
+
+# A title is never inside a person's span: "Ms Bennett" is proposed as
+# "Bennett", "Dr Ysolde Qhenn" as "Ysolde Qhenn" (issue #382).
+[[span]]
+category = "PERSON"
+trim_start = '(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Dame|Lord|Lady|Herr|Frau|Mme|Mlle)\.?\s+'

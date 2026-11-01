@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: org-boundary initials-only-missed
-issue: 374 387
+flaw: initials-only-missed
+issue: 387
 kind: letter
 source: hunt-r1
 expect: miss: PERSON "Я. В."
-expect: boundary: gold ORG "ООО «Листовая пристань»"; proposed ORG "Листовая пристань"
 ---
 # Письмо о согласовании доступа к архивному шкафу
 

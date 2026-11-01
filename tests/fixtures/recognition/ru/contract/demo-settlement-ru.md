@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: org-boundary public-body-org
-issue: 374 378
+flaw: public-body-org
+issue: 378
 kind: contract
 source: demo
 expect: false hit: ORG "Дзержинский районный суд Санкт-Петербурга"
-expect: boundary: gold ORG "коллегия адвокатов «Елагин и партнёры»"; proposed ORG "Елагин и партнёры"
 ---
 # Соглашение об урегулировании
 

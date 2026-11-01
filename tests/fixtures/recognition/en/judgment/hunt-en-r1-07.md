@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: title-in-person initials-only-missed
-issue: 382 387
+flaw: initials-only-missed
+issue: 387
 kind: judgment
 source: hunt-r1
 expect: miss: PERSON "Y. Q."
-expect: boundary: gold PERSON "Ysolde Qhenn"; proposed PERSON "Dr Ysolde Qhenn"
 ---
 # Reasons for decision on repair costs
 

@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary
 issue: 374
 kind: contract
 source: import
-expect: boundary: gold ORG "ООО «Северный Вектор»"; proposed ORG "Северный Вектор"
 ---
 # Договор оказания услуг
 ⟦ORG|ООО «Северный Вектор»⟧ в лице директора ⟦PERSON|Анны Сергеевны Ёлкиной⟧ заключает договор с ⟦PERSON|Иваном Петровичем Соколовым⟧. Уведомления: ⟦EMAIL|elkinа@example.invalid⟧, ⟦PHONE|+7 (495) 555-01-47⟧. Адрес: ⟦ADDRESS|г. Москва, ул. Кедровая, д. 42, кв. 7⟧.

@@ -523,18 +523,25 @@ pub struct RawEntity {
     pub text: String,
 }
 
-/// The correction stage (ADR 0092): the model's raw entities through the
-/// shape filter (`identifying`), then the rule pack's `context` rules and
-/// the structured rules over the whole source. Rules win the review's
-/// conflicts with the model. Pure: the same source and entities give the same detections, in
-/// the order a scan returns them.
+/// The correction stage (ADR 0092): the model's raw entities with the rule
+/// pack's boundary fixes, through the shape filter (`identifying`), then
+/// the pack's `context` rules and `span` patterns and the structured rules
+/// over the whole source. Rules win the review's conflicts with the model.
+/// Pure: the same source and entities give the same detections, in the
+/// order a scan returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let mut detections: Vec<Detection> = raw
         .iter()
         .filter_map(|entity| {
             let category = category_of(&entity.label)?;
-            identifying(&entity.text, category).then_some(Detection {
-                range: entity.start..entity.end,
+            // Offsets from a snapshot or the model are checked by the review.
+            let range = match source.get(entity.start..entity.end) {
+                Some(_) => rules::pack().fix(source, entity.start..entity.end, category),
+                None => entity.start..entity.end,
+            };
+            let text = source.get(range.clone()).unwrap_or(&entity.text);
+            identifying(text, category).then_some(Detection {
+                range,
                 category,
                 score: entity.score,
                 recognizer: mdoc_pii::Recognizer::Model,

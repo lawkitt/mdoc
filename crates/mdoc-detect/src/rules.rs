@@ -103,10 +103,18 @@ struct ShapeEntry {
 struct SpanEntry {
     category: String,
     /// What a whole span looks like; `{name}` stands for a part.
-    pattern: String,
+    pattern: Option<String>,
     /// Named pieces of the pattern, each a regex.
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
+    /// A model span's fixes: text just before it and just after it that it
+    /// takes in, both or neither ("ООО «" and "»").
+    before: Option<String>,
+    after: Option<String>,
+    /// What a model span drops at its start or end ("Ms ", a final dot):
+    /// the first capture group, or the whole match without one.
+    trim_start: Option<String>,
+    trim_end: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +131,7 @@ pub(crate) struct Pack {
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
     spans: Vec<Span>,
+    fixes: Vec<Fix>,
 }
 
 /// A whole span by its pattern: an address from its first element to its
@@ -130,6 +139,16 @@ pub(crate) struct Pack {
 struct Span {
     category: Category,
     pattern: Regex,
+}
+
+/// A boundary fix for a model span of `category`.
+struct Fix {
+    category: Category,
+    /// Anchored at the span's start and end.
+    before: Option<Regex>,
+    after: Option<Regex>,
+    trim_start: Option<Regex>,
+    trim_end: Option<Regex>,
 }
 
 /// A label then its value: the value's capture group 1 is proposed.
@@ -166,6 +185,7 @@ impl Pack {
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
+            fixes: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -334,7 +354,50 @@ impl Pack {
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
                 let category = category(&entry.category).map_err(at)?;
-                let mut pattern = entry.pattern.clone();
+                let fixes = [
+                    &entry.before,
+                    &entry.after,
+                    &entry.trim_start,
+                    &entry.trim_end,
+                ];
+                let Some(pattern) = entry.pattern.clone() else {
+                    if !entry.parts.is_empty() || fixes.iter().all(|f| f.is_none()) {
+                        return Err(at("needs a pattern, or fixes without parts".into()));
+                    }
+                    let anchored = |regex: &Option<String>, start: bool| {
+                        regex
+                            .as_deref()
+                            .map(|regex| {
+                                let regex = rust_classes(regex);
+                                let regex = if start {
+                                    format!("^(?:{regex})")
+                                } else {
+                                    format!("(?:{regex})$")
+                                };
+                                Regex::new(&regex).map_err(|e| at(e.to_string()))
+                            })
+                            .transpose()
+                    };
+                    let fix = Fix {
+                        category,
+                        before: anchored(&entry.before, false)?,
+                        after: anchored(&entry.after, true)?,
+                        trim_start: anchored(&entry.trim_start, true)?,
+                        trim_end: anchored(&entry.trim_end, false)?,
+                    };
+                    if [&fix.trim_start, &fix.trim_end]
+                        .iter()
+                        .any(|r| r.as_ref().is_some_and(|r| r.captures_len() > 2))
+                    {
+                        return Err(at("a trim has at most one group".into()));
+                    }
+                    pack.fixes.push(fix);
+                    continue;
+                };
+                if fixes.iter().any(|f| f.is_some()) {
+                    return Err(at("a pattern takes no fixes".into()));
+                }
+                let mut pattern = pattern;
                 for (part, regex) in &entry.parts {
                     let name = format!("{{{part}}}");
                     if !pattern.contains(&name) {
@@ -449,6 +512,55 @@ impl Pack {
                 })
             })
             .collect()
+    }
+
+    /// A model span of `category` with the `span` section's boundary fixes:
+    /// a legal form and its quotes taken in, a title or a final dot dropped.
+    pub(crate) fn fix(
+        &self,
+        source: &str,
+        mut range: std::ops::Range<usize>,
+        category: Category,
+    ) -> std::ops::Range<usize> {
+        // Text beside a span is read this far, not to the document's ends.
+        const NEAR: usize = 128;
+        for fix in self.fixes.iter().filter(|f| f.category == category) {
+            let window = source.floor_char_boundary(range.start.saturating_sub(NEAR));
+            let before = fix.before.as_ref().map(|r| {
+                r.find(&source[window..range.start])
+                    .map(|m| window + m.start())
+            });
+            let after_end = source.ceil_char_boundary((range.end + NEAR).min(source.len()));
+            let after = fix.after.as_ref().map(|r| {
+                r.find(&source[range.end..after_end])
+                    .map(|m| range.end + m.end())
+            });
+            if (before.is_some() || after.is_some())
+                && before.is_none_or(|b| b.is_some())
+                && after.is_none_or(|a| a.is_some())
+            {
+                range =
+                    before.flatten().unwrap_or(range.start)..after.flatten().unwrap_or(range.end);
+            }
+            let trimmed = |regex: &Option<Regex>, text: &str| {
+                regex.as_ref().and_then(|r| {
+                    r.captures(text)
+                        .and_then(|c| c.get(1).or_else(|| c.get(0)))
+                        .map(|m| m.range())
+                })
+            };
+            if let Some(cut) = trimmed(&fix.trim_start, &source[range.clone()])
+                && range.start + cut.end < range.end
+            {
+                range.start += cut.end;
+            }
+            if let Some(cut) = trimmed(&fix.trim_end, &source[range.clone()])
+                && cut.start > 0
+            {
+                range.end = range.start + cut.start;
+            }
+        }
+        range
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -775,6 +887,72 @@ mod tests {
             assert!(!pack.identifying(city, Category::Address), "{city}");
         }
         assert!(pack.identifying("ул. Ленина", Category::Address));
+    }
+
+    /// Model spans get the guide's boundaries (#374, #382, #391): a legal
+    /// form with its quotes taken in, the abbreviation dot and a title left
+    /// out, initials after a surname taken in.
+    #[test]
+    fn model_spans_get_the_guides_boundaries() {
+        let pack = pack();
+        let fixed = |source: &str, model: &str, category: Category| {
+            let start = source.find(model).unwrap();
+            source[pack.fix(source, start..start + model.len(), category)].to_owned()
+        };
+        for (source, model, category, expected) in [
+            (
+                "deposit from Moth Lantern Events Ltd. The booking",
+                "Moth Lantern Events Ltd.",
+                Category::Organization,
+                "Moth Lantern Events Ltd",
+            ),
+            (
+                "Ответчик: ООО «Северный Вектор», ИНН",
+                "Северный Вектор",
+                Category::Organization,
+                "ООО «Северный Вектор»",
+            ),
+            (
+                "адвокат коллегия адвокатов «Елагин и партнёры» (Представитель)",
+                "Елагин и партнёры",
+                Category::Organization,
+                "коллегия адвокатов «Елагин и партнёры»",
+            ),
+            (
+                "журнал «Северный Вектор» сообщил",
+                "Северный Вектор",
+                Category::Organization,
+                "Северный Вектор",
+            ),
+            (
+                "Signed by Ms Bennett today",
+                "Ms Bennett",
+                Category::Person,
+                "Bennett",
+            ),
+            (
+                "Dr Ysolde Qhenn heard it",
+                "Dr Ysolde Qhenn",
+                Category::Person,
+                "Ysolde Qhenn",
+            ),
+            (
+                "Peter Lord signed",
+                "Peter Lord",
+                Category::Person,
+                "Peter Lord",
+            ),
+            ("Ms", "Ms", Category::Person, "Ms"),
+            (
+                "Ответчик Ветлин Н. О. возражал",
+                "Ветлин",
+                Category::Person,
+                "Ветлин Н. О.",
+            ),
+            ("Ветлин. Н. Иванов", "Ветлин", Category::Person, "Ветлин"),
+        ] {
+            assert_eq!(fixed(source, model, category), expected, "{source}");
+        }
     }
 
     #[test]

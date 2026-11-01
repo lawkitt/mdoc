@@ -1,12 +1,11 @@
 ---
 status: known-flaw
-flaw: title-in-person public-body-org
-issue: 382 378
+flaw: public-body-org
+issue: 378
 kind: contract
 source: demo
 expect: false hit: ORG "Employment Tribunal"
 expect: false hit: ORG "Ofcom"
-expect: boundary: gold PERSON "Bennett"; proposed PERSON "Ms Bennett" ×6
 ---
 # Settlement agreement
 

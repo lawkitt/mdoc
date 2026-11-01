@@ -30,7 +30,12 @@
 #
 # A `span` entry proposes its `category` for each match of its `pattern`;
 # `{name}` in the pattern stands for `parts.name`, a regex. A span match
-# wins over a model span it overlaps.
+# wins over a model span it overlaps. An entry without a pattern fixes the
+# boundaries of the model's spans of its category instead:
+#   before, after         text just before and just after the span that it
+#                         takes in, every one given or none ("ООО «", "»")
+#   trim_start, trim_end  what it drops at its start or end: the first
+#                         capture group, or the whole match without one
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere

@@ -104,3 +104,23 @@ parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\
 parts.house = '(?:\bд\.|\bдом)\s*\d+\p{Alphabetic}?(?:/\d+)?'
 parts.building = '(?:\bкорп\.|\bкорпус|\bстр\.|\bстроение)\s*\d+\p{Alphabetic}?'
 parts.flat = '(?:\bкв\.|\bквартира|\bофис|\bоф\.|\bпом\.)\s*\d+\p{Alphabetic}?'
+
+# An organization's legal form and its quotes are part of its name: the
+# model's "Северный Вектор" in "ООО «Северный Вектор»" takes them in
+# (issue #374).
+[[span]]
+category = "ORG"
+before = '(?:\bООО|\bОАО|\bЗАО|\bПАО|\bАО|\bНКО|\bАНО|\bколлегия адвокатов|\bадвокатское бюро)\s*«'
+after = '»'
+
+# A title is never inside a person's span: "г-жа Павлова" is proposed as
+# "Павлова" (issue #382).
+[[span]]
+category = "PERSON"
+trim_start = '(?:г-н|г-жа|господин|госпожа)\s+'
+
+# Initials after a surname are part of the name: the model's "Ветлин" in
+# "Ветлин Н. О." takes them in (issue #391).
+[[span]]
+category = "PERSON"
+after = '\s\p{Uppercase}\.\s?\p{Uppercase}\.'
