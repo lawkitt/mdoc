@@ -1,0 +1,20 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":557,"end":571,"label":"person","score":0.6804541,"text":"Эксперт"},
+    {"start":527,"end":553,"label":"person","score":0.6279512,"text":"Представитель"},
+    {"start":509,"end":525,"label":"person","score":0.5816002,"text":"Ответчик"},
+    {"start":497,"end":507,"label":"person","score":0.5658386,"text":"Истец"},
+    {"start":93,"end":116,"label":"organization","score":0.8518296,"text":"Районный суд"},
+    {"start":1571,"end":1589,"label":"person","score":0.897336,"text":"Ответчику"},
+    {"start":1361,"end":1371,"label":"person","score":0.8773718,"text":"Истцу"},
+    {"start":1851,"end":1867,"label":"person","score":0.82261705,"text":"Эксперту"},
+    {"start":3266,"end":3284,"label":"person","score":0.71133065,"text":"Секретарь"},
+    {"start":2643,"end":2708,"label":"organization","score":0.99138916,"text":"Верховный Суд Российской Федерации"},
+    {"start":2813,"end":2825,"label":"address","score":0.967163,"text":"Самара"},
+    {"start":2797,"end":2809,"label":"address","score":0.9506864,"text":"Москва"},
+    {"start":3102,"end":3116,"label":"phone_number","score":0.90813017,"text":"телефон"},
+    {"start":3122,"end":3155,"label":"email","score":0.7169128,"text":"электронная почта"}
+  ]
+}

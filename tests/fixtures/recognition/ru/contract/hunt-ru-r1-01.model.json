@@ -1,0 +1,17 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":254,"end":318,"label":"person","score":0.9623914,"text":"Эльзы-Руты Мартыновны Таль-Шнейдер"},
+    {"start":131,"end":166,"label":"organization","score":0.8854335,"text":"Переплётная орбита"},
+    {"start":1351,"end":1415,"label":"full_name","score":0.9725715,"text":"Эльзе-Руте Мартыновне Таль-Шнейдер"},
+    {"start":2116,"end":2134,"label":"phone_number","score":0.99998355,"text":"+7 (900) 000-16-83"},
+    {"start":2032,"end":2053,"label":"email","score":0.9999528,"text":"ruta@pereplet.invalid"},
+    {"start":1514,"end":1526,"label":"passport_number","score":0.99932283,"text":"46 82 731604"},
+    {"start":2446,"end":2458,"label":"tax_id","score":0.94427973,"text":"508614729031"},
+    {"start":2469,"end":2489,"label":"bank_account","score":0.84758973,"text":"40817810900004731608"},
+    {"start":3097,"end":3132,"label":"person","score":0.9736446,"text":"Э.-Р. М. Таль-Шнейдер"},
+    {"start":3173,"end":3189,"label":"person","score":0.8938666,"text":"директор"},
+    {"start":2797,"end":2806,"label":"organization","score":0.9349913,"text":"ГК РФ"}
+  ]
+}
