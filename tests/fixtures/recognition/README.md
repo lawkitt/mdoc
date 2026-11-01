@@ -35,9 +35,12 @@ just recognize --check [<folder>]         # the detection gate
 The model is the installed pinned FP16 in the app data (read only, never
 downloaded; `MDOC_PII_MODEL_ROOT` and `MDOC_ONNX_RUNTIME` point elsewhere).
 Folders default to this one; any folder of fixtures works, such as the
-holdout, where the language comes from an `en`/`ru` folder or a `language`
-front matter key. A plain Markdown file without front matter is annotated
-too.
+holdout: run `just recognize` from inside the repository with the folder's
+path (relative to where you are). There the language comes from an `en`/`ru`
+folder or a `language` front matter key, a document without `status` is
+expected to pass, and one without a snapshot runs the model. `--gold` exits
+1 when a document is not as expected; `--scoreboard` prints aggregates only
+and exits 0. A plain Markdown file without front matter is annotated too.
 
 `just test` runs every fixture on its snapshot on each OS
 (`crates/mdoc-detect/tests/recognition.rs`). `local/macos` also runs `just

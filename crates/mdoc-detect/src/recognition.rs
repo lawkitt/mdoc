@@ -143,6 +143,8 @@ impl Fixture {
                     "source" => fixture.origin = value,
                     "reason" => fixture.reason = value,
                     "language" => language = value,
+                    // The holdout names its id; the file name still finds a snapshot.
+                    "id" => fixture.id = value,
                     other => return Err(format!("unknown front matter key `{other}`")),
                 }
             }
@@ -214,8 +216,19 @@ impl Fixture {
         }
     }
 
+    /// What the fixture must do: its status, or `pass` without one (the
+    /// holdout's documents name none).
+    pub fn expected(&self) -> Status {
+        self.status.unwrap_or(Status::Pass)
+    }
+
     pub fn snapshot_path(&self) -> PathBuf {
-        self.path.with_file_name(format!("{}.model.json", self.id))
+        let stem = self
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        self.path.with_file_name(format!("{stem}.model.json"))
     }
 }
 
@@ -603,7 +616,7 @@ impl Scoreboard {
         }
         *self
             .statuses
-            .entry(fixture.status.map_or("none", Status::name))
+            .entry(fixture.status.map_or("no status (pass)", Status::name))
             .or_default() += 1;
         let cell = |category: &str| {
             (
@@ -772,6 +785,27 @@ mod tests {
         .unwrap();
         assert_eq!(outside.language, "en");
         assert!(outside.validate_layout().is_err());
+    }
+
+    #[test]
+    fn a_holdout_document_without_a_status_is_expected_to_pass() {
+        let fixture = Fixture::parse(
+            Path::new("/holdout/ru/letter/h-07.md"),
+            "---\nid: h-07\nlanguage: ru\nkind: letter\nsource: holdout\n---\n⟦PERSON|Анна⟧\n",
+        )
+        .unwrap();
+        assert_eq!(fixture.status, None);
+        assert_eq!(fixture.expected(), Status::Pass);
+        assert_eq!(fixture.language, "ru");
+        assert_eq!(fixture.id, "h-07");
+        assert_eq!(
+            fixture.snapshot_path(),
+            Path::new("/holdout/ru/letter/h-07.model.json")
+        );
+        assert!(
+            fixture.validate().is_err(),
+            "the repository's fixtures name a status"
+        );
     }
 
     #[test]

@@ -9,12 +9,14 @@
 //!
 //! A file prints its proposals marked as gold is (`⟦CATEGORY|text⟧`);
 //! `--gold` prints each fixture's misses, false hits and boundary errors
-//! and fails when one is not as its status expects. The model is the
+//! and fails when one is not as its status expects; a document without a
+//! status (the holdout) is expected to pass, and without a snapshot the
+//! model runs. The model is the
 //! installed pinned FP16 from the app data (read only, never downloaded;
 //! `MDOC_PII_MODEL_ROOT` and `MDOC_ONNX_RUNTIME` point elsewhere);
 //! `--snapshot` reads each fixture's committed `<id>.model.json` instead.
 //! `--scoreboard` prints recall and precision per language × category ×
-//! kind. `--refresh-snapshots` rewrites snapshots (on the Mac, the
+//! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots (on the Mac, the
 //! reference platform). `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
 //! and on a model run over its 5-minute budget. Folders default to
@@ -143,12 +145,10 @@ fn run() -> Result<bool, String> {
                 let proposed = proposals(&fixture.source, &raw)?;
                 let comparison = Comparison::new(&fixture.gold, &proposed);
                 scoreboard.add(&fixture, &comparison, &proposed);
-                let unexpected = fixture
-                    .status
-                    .and_then(|status| ratchet(status, comparison.passes()));
+                let unexpected = ratchet(fixture.expected(), comparison.passes());
                 ok &= unexpected.is_none();
                 if mode == Mode::Gold {
-                    let status = fixture.status.map_or("no status", Status::name);
+                    let status = fixture.status.map_or("no status: pass", Status::name);
                     let result = if comparison.passes() {
                         "passes"
                     } else {
@@ -167,7 +167,9 @@ fn run() -> Result<bool, String> {
                 }
             }
             if mode == Mode::Scoreboard {
+                // A report: aggregates only, whatever each document did.
                 print!("{}", scoreboard.render());
+                return Ok(true);
             }
             Ok(ok)
         }
@@ -216,9 +218,7 @@ fn run() -> Result<bool, String> {
                 }
                 let proposed = proposals(&fixture.source, &fresh.entities)?;
                 let comparison = Comparison::new(&fixture.gold, &proposed);
-                if let Some(status) = fixture.status
-                    && let Some(why) = ratchet(status, comparison.passes())
-                {
+                if let Some(why) = ratchet(fixture.expected(), comparison.passes()) {
                     problems.push(format!("{why}\n{}", comparison.report(&fixture.source)));
                 }
                 if !problems.is_empty() {
