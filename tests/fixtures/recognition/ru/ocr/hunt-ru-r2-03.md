@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-wrapped-identifier
 issue: 396
 kind: ocr
 source: hunt-r2
-expect: miss: EMAIL "ksen.rav@\nsvod.invalid"
-expect: miss: PHONE "+7 (900) 000-\n74-63"
 ---
 АКТ СВЕРКИ К0МПЛЕКТАЦИИ                      л. 1
 

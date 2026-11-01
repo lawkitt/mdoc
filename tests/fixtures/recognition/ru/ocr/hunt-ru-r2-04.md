@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-hyphen-name
 issue: 388
 kind: ocr
 source: hunt-r2
-expect: boundary: gold PERSON "Руднев Тимо-\nфей Ильич"; proposed PERSON "Руднев", PERSON "Ильич"
 ---
 ПР0ТОКОЛ ОСМ0ТРА РАМЫ             Страница 2 из 2
 
