@@ -542,6 +542,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     detections.extend(rules::pack().context(source));
+    detections.extend(rules::pack().spans(source));
     detections.extend(structured::scan(source));
     detections
 }

@@ -1,7 +1,7 @@
 ---
 status: known-flaw
-flaw: city-only-address role-as-name public-body-org tax-rate-as-tax
-issue: 386 385 378 389
+flaw: role-as-name public-body-org tax-rate-as-tax
+issue: 385 378 389
 kind: letter
 source: hunt-r1
 expect: false hit: PERSON "Surveyor"
@@ -9,7 +9,6 @@ expect: false hit: PERSON "Technical Reviewer"
 expect: false hit: PERSON "Representative"
 expect: false hit: ORG "Ministry of Justice"
 expect: false hit: ORG "County Court"
-expect: false hit: ADDRESS "Cardiff"
 expect: false hit: TAX "20 percent tax"
 expect: false hit: ORG "Administrative Team"
 ---

@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: ru-address org-boundary
-issue: 362 374
+flaw: org-boundary
+issue: 374
 kind: contract
 source: import
-expect: miss: ADDRESS "г. Москва, ул. Кедровая, д. 42, кв. 7"
 expect: boundary: gold ORG "ООО «Северный Вектор»"; proposed ORG "Северный Вектор"
 ---
 # Договор оказания услуг

@@ -2,9 +2,6 @@
 # in shared.toml.
 
 
-# No English span fixes yet.
-span = []
-
 # No English nicknames yet.
 variants = []
 
@@ -101,3 +98,17 @@ labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
 between = '[\p{Zs}\t:*_.,]{1,8}(?:on[\p{Zs}\t]+)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
 only_guessed = ["DATE"]
+
+# Addresses (ADR 0092, issue #361): a house number and a street word,
+# optionally after a flat or unit, then the town and postcode: "Flat 3, 41
+# Larch Road, Bristol BS6 9ZY", "42 Cedar Lane, Boston, MA 02110", "27 Wisp
+# Lane<br>Norwich NR2 8ZZ". Two elements at least, so a number before "High
+# Court" alone is not an address.
+[[span]]
+category = "ADDRESS"
+pattern = '{flat}{sep}{street}(?:{sep}{town})?(?:(?:{sep}|\s+){postcode})?|{street}{sep}{town}(?:(?:{sep}|\s+){postcode})?|{street}(?:{sep}|\s+){postcode}'
+parts.flat = '\b(?:Flat|Unit|Apartment|Apt\.?|Suite|Room)\s+\d+[A-Za-z]?'
+parts.street = '\b\d+[A-Za-z]?\s+(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*\s+){1,3}(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Rd|St|Ave)\b'
+parts.sep = ',\s*|\s*<br\s*/?>\s*'
+parts.town = '\p{Uppercase}[\p{Ll}\d][\p{Alphabetic}\d\x27’-]*(?:\s\p{Uppercase}\p{Ll}[\p{Alphabetic}\x27’-]*)?'
+parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}|[A-Z]{2}\s\d{5}(?:-\d{4})?)\b'

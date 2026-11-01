@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary public-body-org ru-address inflected-name-propagation
-issue: 374 378 362 392
+flaw: org-boundary public-body-org inflected-name-propagation
+issue: 374 378 392
 kind: contract
 source: hunt-r1
-expect: miss: ADDRESS "ул. Тихих фонарей, д. 83, кв. 16"
 expect: miss: PERSON "Таль-Шнейдер"
 expect: false hit: ORG "ГК РФ"
 expect: boundary: gold ORG "ООО «Переплётная орбита»"; proposed ORG "Переплётная орбита"

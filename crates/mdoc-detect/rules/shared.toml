@@ -7,7 +7,8 @@
 #   context   a label proposes a category for the value beside it
 #   shape     what a span of each category must look like, and what makes
 #             a manual selection that category
-#   span      boundary fixes for a span
+#   span      whole spans by pattern, with their boundaries (an address
+#             from its first element to its postcode or city)
 #   variants  nicknames of given names, for names already in the document
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
@@ -26,6 +27,10 @@
 #   unless_guessed = [category…] no value these categories' guesses take
 #   only_guessed   = [category…] only a value one of them takes
 # A context match wins over a model span on the same text.
+#
+# A `span` entry proposes its `category` for each match of its `pattern`;
+# `{name}` in the pattern stands for `parts.name`, a regex. A span match
+# wins over a model span it overlaps.
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere
@@ -46,8 +51,7 @@
 # Context rules are per language.
 context = []
 
-# Span fixes, as [[span]] with `category` and `trim` words or `extend`
-# regexes. None yet.
+# Span patterns are per language.
 span = []
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
@@ -98,10 +102,15 @@ guess = [
 category = "EMAIL"
 require = ['@']
 
-# Addresses need a capital or a digit; "addresses" alone is not one.
+# Addresses need a capital or a digit; "addresses" alone is not one. They
+# also need a house or postcode number or a street word: a city alone
+# ("Cardiff", "Москва") is not an address (issue #386).
 [[shape]]
 category = "ADDRESS"
-require = ['[\p{Uppercase}\p{N}]']
+require = [
+    '[\p{Uppercase}\p{N}]',
+    '\p{N}|(?i:\b(?:ул|улица|проспект|переулок|пр-т|бульвар|шоссе|набережная|площадь|проезд|road|street|lane|avenue|mews|close|drive|place|square|crescent|gardens|terrace|yard)\b)',
+]
 
 # Identity documents need a digit; "passport" alone is not one.
 [[shape]]

@@ -2,9 +2,6 @@
 # in shared.toml.
 
 
-# No Russian span fixes yet.
-span = []
-
 # No Russian nicknames yet.
 variants = []
 
@@ -92,3 +89,18 @@ labels = ["дата рождения", "даты рождения", "д.р", "р
 between = '[\p{Zs}\t:*_.,]{1,8}'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
+
+# Addresses (ADR 0092, issue #362): a street and a house ("д. 7"), after an
+# optional index and city, then a building and a flat or office: "191187,
+# Санкт-Петербург, Литейный проспект, д. 7, офис 12", "г. Москва, ул.
+# Кедровая, д. 42, кв. 7", "ул. Тихих фонарей, д. 83, кв. 16".
+[[span]]
+category = "ADDRESS"
+pattern = '(?:{index},\s*(?:{bare_city},\s*)?|{city},\s*)?{street},\s*{house}(?:,\s*{building})*(?:,\s*{flat})?'
+parts.index = '\b\d{6}'
+parts.bare_city = '\p{Uppercase}[\p{Alphabetic}\d]*(?:-\p{Uppercase}[\p{Alphabetic}\d]*)*'
+parts.city = '\bг\.\s*\p{Uppercase}[\p{Alphabetic}\d-]*'
+parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\.|\bб-р|\bпл\.|\bш\.)\s*\p{Uppercase}[\p{Alphabetic}\d-]*(?:\s[\p{Alphabetic}\d-]+)?|\b\p{Uppercase}[\p{Alphabetic}-]*\s(?:проспект|переулок|улица|бульвар|шоссе|набережная|площадь|проезд|тупик)'
+parts.house = '(?:\bд\.|\bдом)\s*\d+\p{Alphabetic}?(?:/\d+)?'
+parts.building = '(?:\bкорп\.|\bкорпус|\bстр\.|\bстроение)\s*\d+\p{Alphabetic}?'
+parts.flat = '(?:\bкв\.|\bквартира|\bофис|\bоф\.|\bпом\.)\s*\d+\p{Alphabetic}?'

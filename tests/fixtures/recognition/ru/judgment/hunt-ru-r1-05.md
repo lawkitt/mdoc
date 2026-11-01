@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: city-only-address
 issue: 386
 kind: judgment
 source: hunt-r1
-expect: false hit: ADDRESS "Казань"
 ---
 # Решение по спору о качестве выставочного стенда
 

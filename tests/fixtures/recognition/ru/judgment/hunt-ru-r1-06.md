@@ -1,15 +1,13 @@
 ---
 status: known-flaw
-flaw: city-only-address public-body-org role-as-name
-issue: 386 378 385
+flaw: public-body-org role-as-name
+issue: 378 385
 kind: judgment
 source: hunt-r1
 expect: false hit: ORG "Районный суд"
 expect: false hit: PERSON "Эксперт"
 expect: false hit: PERSON "Эксперту"
 expect: false hit: ORG "Верховный Суд Российской Федерации"
-expect: false hit: ADDRESS "Москва"
-expect: false hit: ADDRESS "Самара"
 expect: false hit: PERSON "Секретарь"
 ---
 # Определение о подготовке дела к разбирательству

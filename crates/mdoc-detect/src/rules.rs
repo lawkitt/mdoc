@@ -102,10 +102,11 @@ struct ShapeEntry {
 #[serde(deny_unknown_fields)]
 struct SpanEntry {
     category: String,
+    /// What a whole span looks like; `{name}` stands for a part.
+    pattern: String,
+    /// Named pieces of the pattern, each a regex.
     #[serde(default)]
-    trim: Vec<String>,
-    #[serde(default)]
-    extend: Vec<String>,
+    parts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -121,6 +122,14 @@ pub(crate) struct Pack {
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
+    spans: Vec<Span>,
+}
+
+/// A whole span by its pattern: an address from its first element to its
+/// postcode or city.
+struct Span {
+    category: Category,
+    pattern: Regex,
 }
 
 /// A label then its value: the value's capture group 1 is proposed.
@@ -156,6 +165,7 @@ impl Pack {
             never: Vec::new(),
             shapes: Vec::new(),
             contexts: Vec::new(),
+            spans: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -323,16 +333,17 @@ impl Pack {
             }
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
-                category(&entry.category).map_err(at)?;
-                if entry.trim.is_empty() && entry.extend.is_empty() {
-                    return Err(at("needs trim words or extend patterns".into()));
+                let category = category(&entry.category).map_err(at)?;
+                let mut pattern = entry.pattern.clone();
+                for (part, regex) in &entry.parts {
+                    let name = format!("{{{part}}}");
+                    if !pattern.contains(&name) {
+                        return Err(at(format!("part {part:?} is never used")));
+                    }
+                    pattern = pattern.replace(&name, &format!("(?:{regex})"));
                 }
-                if entry.trim.iter().any(|word| word.trim().is_empty()) {
-                    return Err(at("a blank trim word".into()));
-                }
-                for pattern in &entry.extend {
-                    Regex::new(pattern).map_err(|e| at(e.to_string()))?;
-                }
+                let pattern = Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
+                pack.spans.push(Span { category, pattern });
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -419,6 +430,22 @@ impl Pack {
                         score: CONTEXT_SCORE,
                         recognizer: Recognizer::Context,
                     })
+                })
+            })
+            .collect()
+    }
+
+    /// Whole spans the `span` patterns find in `source`: an address from
+    /// its first element to its postcode or city (ADR 0092).
+    pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans
+            .iter()
+            .flat_map(|span| {
+                span.pattern.find_iter(source).map(|found| Detection {
+                    range: found.range(),
+                    category: span.category,
+                    score: CONTEXT_SCORE,
+                    recognizer: Recognizer::Span,
                 })
             })
             .collect()
@@ -682,6 +709,74 @@ mod tests {
         }
     }
 
+    /// Addresses are found whole, from the first element to the postcode or
+    /// city (#361, #362); a city alone or a numbered court is no address
+    /// (#386).
+    #[test]
+    fn addresses_are_found_whole_and_cities_alone_are_not() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<String> {
+            pack.spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, address) in [
+            (
+                "of Flat 3, 41 Larch Road, Bristol BS6 9ZY (the Employee).",
+                "Flat 3, 41 Larch Road, Bristol BS6 9ZY",
+            ),
+            (
+                "at 42 Cedar Lane, Boston, MA 02110.",
+                "42 Cedar Lane, Boston, MA 02110",
+            ),
+            (
+                "is at 18 Brindle Mews, Leeds. Access",
+                "18 Brindle Mews, Leeds",
+            ),
+            (
+                "| 27 Wisp Lane<br>Norwich NR2 8ZZ |",
+                "27 Wisp Lane<br>Norwich NR2 8ZZ",
+            ),
+            ("Address: 42 Cedar Lane, B0ston", "42 Cedar Lane, B0ston"),
+            (
+                "<span>Unit 6, 92 Fable Street, Exeter</span>",
+                "Unit 6, 92 Fable Street, Exeter",
+            ),
+            (
+                "адрес: 191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12 (Работодатель)",
+                "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12",
+            ),
+            (
+                "Адрес: г. Москва, ул. Кедровая, д. 42, кв. 7.",
+                "г. Москва, ул. Кедровая, д. 42, кв. 7",
+            ),
+            (
+                "Адрес получателя: ул. Тихих фонарей, д. 83, кв. 16. Электронная",
+                "ул. Тихих фонарей, д. 83, кв. 16",
+            ),
+            (
+                "Адрес: г. М0сква, ул. Кедровая, д. 42",
+                "г. М0сква, ул. Кедровая, д. 42",
+            ),
+        ] {
+            assert_eq!(found(source), [address], "{source}");
+        }
+        for source in [
+            "Claim 12 High Court was listed.",
+            "under section 4.2 of the Road Traffic Act 1988",
+            "Иванов, ул. Ленина",
+            "the hearing in Cardiff on 3 May",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        for city in ["Cardiff", "Москва", "Казань"] {
+            assert!(!pack.identifying(city, Category::Address), "{city}");
+        }
+        assert!(pack.identifying("ул. Ленина", Category::Address));
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -720,7 +815,11 @@ mod tests {
                 "[[context]]\ncategory = \"CASE\"\nlabels = [\"case\"]\nbetween = ' '\nvalue = '(\\d+)'",
                 "capture",
             ),
-            ("[[span]]\ncategory = \"PERSON\"", "trim"),
+            ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nparts = { street = 'x' }",
+                "never used",
+            ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
                 "[[never]]\nmatch = \"whole\"\nwords = [\"a\"]\ntypo = 1",
