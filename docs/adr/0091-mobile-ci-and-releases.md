@@ -146,8 +146,11 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
 - **One changelog per app.** Fragments in `changes/ios/` and
   `changes/android/` feed `apps/ios/CHANGELOG.md` and
   `apps/android/CHANGELOG.md` at that app's release; `just release` takes
-  only the top-level `changes/*.md` for desktop. A core change users see on
-  both platforms gets a fragment in each folder it affects.
+  only the top-level `changes/*.md` for desktop (`just test-release`
+  checks it). App fragments use repository-root links like desktop ones;
+  the app's release recipe rewrites them for `apps/<app>/` when it joins
+  them. A core change users see on more than one platform gets a fragment
+  in each folder it affects.
 
 ## Invariants
 
