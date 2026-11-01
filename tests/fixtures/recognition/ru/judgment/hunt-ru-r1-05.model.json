@@ -6,8 +6,8 @@
     {"start":851,"end":899,"label":"person","score":0.7102265,"text":"Нияза Рауф оглы Иль-Булата"},
     {"start":514,"end":552,"label":"organization","score":0.8485962,"text":"ООО «Глиняный парус»"},
     {"start":105,"end":169,"label":"organization","score":0.7060891,"text":"Российской Федерации\n\nРайонный суд"},
-    {"start":1826,"end":1843,"label":"person","score":0.98905545,"text":"Иль-Булат"},
-    {"start":1529,"end":1545,"label":"person","score":0.981022,"text":"Aveline D'Orveil"},
+    {"start":1826,"end":1843,"label":"person","score":0.9875683,"text":"Иль-Булат"},
+    {"start":1529,"end":1545,"label":"person","score":0.97997653,"text":"Aveline D'Orveil"},
     {"start":2987,"end":3012,"label":"person","score":0.9710743,"text":"Н. Р. Иль-Булат"},
     {"start":3173,"end":3211,"label":"organization","score":0.8201816,"text":"суд первой инстанции"},
     {"start":2569,"end":2575,"label":"organization","score":0.52230877,"text":"суд"}

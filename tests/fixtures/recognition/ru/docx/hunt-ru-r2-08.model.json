@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":169,"end":208,"label":"person","score":0.9950371,"text":"Яна Леонидовна де Вос"},
-    {"start":236,"end":266,"label":"person","score":0.99442345,"text":"Роман Ильич Чэнь"},
-    {"start":292,"end":317,"label":"organization","score":0.8410439,"text":"Льняная линия"},
+    {"start":169,"end":208,"label":"person","score":0.9939964,"text":"Яна Леонидовна де Вос"},
+    {"start":236,"end":266,"label":"person","score":0.99343574,"text":"Роман Ильич Чэнь"},
+    {"start":283,"end":319,"label":"organization","score":0.8631611,"text":"ООО «Льняная линия»"},
     {"start":1212,"end":1234,"label":"email","score":0.99858963,"text":"yana@peredacha.invalid"},
     {"start":1301,"end":1312,"label":"passport_number","score":0.7036513,"text":"4687-731604"},
     {"start":2834,"end":2853,"label":"full_name","score":0.94920063,"text":"Роман Чэнь"}

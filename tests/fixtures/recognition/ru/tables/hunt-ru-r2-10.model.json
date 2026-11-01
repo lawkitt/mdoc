@@ -2,16 +2,16 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":656,"end":680,"label":"person","score":0.9784259,"text":"Ян Никитич Рю"},
-    {"start":498,"end":532,"label":"person","score":0.97079873,"text":"Майя Феликсовна Ло"},
-    {"start":683,"end":721,"label":"organization","score":0.939803,"text":"АО «Палитровый круг»"},
-    {"start":535,"end":575,"label":"organization","score":0.91935337,"text":"ООО «Лоскутный атлас»"},
-    {"start":940,"end":958,"label":"phone_number","score":0.9999999,"text":"+7 (900) 000-18-42"},
-    {"start":1022,"end":1040,"label":"phone_number","score":0.99999976,"text":"+7 (900) 000-29-53"},
-    {"start":918,"end":937,"label":"email","score":0.999999,"text":"maya@svodka.invalid"},
-    {"start":1001,"end":1019,"label":"email","score":0.99999607,"text":"yan@svodka.invalid"},
-    {"start":1163,"end":1177,"label":"tax_id","score":0.83250916,"text":"731-604-829 17"},
-    {"start":1043,"end":1063,"label":"bank_account","score":0.9199307,"text":"40702810900007295348"},
-    {"start":961,"end":981,"label":"bank_account","score":0.9111797,"text":"40817810900006184237"}
+    {"start":656,"end":680,"label":"person","score":0.9826243,"text":"Ян Никитич Рю"},
+    {"start":498,"end":532,"label":"person","score":0.9820827,"text":"Майя Феликсовна Ло"},
+    {"start":683,"end":721,"label":"organization","score":0.9779256,"text":"АО «Палитровый круг»"},
+    {"start":535,"end":575,"label":"organization","score":0.9763557,"text":"ООО «Лоскутный атлас»"},
+    {"start":940,"end":958,"label":"phone_number","score":0.9999995,"text":"+7 (900) 000-18-42"},
+    {"start":1022,"end":1040,"label":"phone_number","score":0.99999845,"text":"+7 (900) 000-29-53"},
+    {"start":918,"end":937,"label":"email","score":0.99997616,"text":"maya@svodka.invalid"},
+    {"start":1001,"end":1019,"label":"email","score":0.9999394,"text":"yan@svodka.invalid"},
+    {"start":1163,"end":1177,"label":"tax_id","score":0.83141696,"text":"731-604-829 17"},
+    {"start":1043,"end":1063,"label":"bank_account","score":0.94844186,"text":"40702810900007295348"},
+    {"start":961,"end":981,"label":"bank_account","score":0.9436599,"text":"40817810900006184237"}
   ]
 }

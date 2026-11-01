@@ -2,15 +2,15 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":170,"end":208,"label":"person","score":0.9945094,"text":"Олеся Макаровна Шэнь"},
-    {"start":116,"end":136,"label":"person","score":0.9885361,"text":"Nguyễn Thị Lụa"},
-    {"start":1095,"end":1124,"label":"organization","score":0.7793218,"text":"Тканый горизонт"},
-    {"start":443,"end":474,"label":"passport_number","score":0.99937856,"text":"４６８２ ７３１６０４"},
-    {"start":488,"end":524,"label":"national_id_number","score":0.8426043,"text":"５０８６１４７２９０３１"},
-    {"start":564,"end":624,"label":"bank_account","score":0.89715594,"text":"４０８１７８１０９００００７３１６４２５"},
-    {"start":1290,"end":1308,"label":"person","score":0.5110303,"text":"заявитель"},
-    {"start":1326,"end":1342,"label":"person","score":0.50214195,"text":"Ответчик"},
-    {"start":1847,"end":1866,"label":"email","score":0.9967649,"text":"lua@obrazec.invalid"},
-    {"start":2676,"end":2702,"label":"person","score":0.80084777,"text":"представителя"}
+    {"start":170,"end":208,"label":"person","score":0.9949593,"text":"Олеся Макаровна Шэнь"},
+    {"start":116,"end":136,"label":"person","score":0.9866234,"text":"Nguyễn Thị Lụa"},
+    {"start":443,"end":474,"label":"passport_number","score":0.99911,"text":"４６８２ ７３１６０４"},
+    {"start":488,"end":524,"label":"national_id_number","score":0.7076068,"text":"５０８６１４７２９０３１"},
+    {"start":564,"end":624,"label":"bank_account","score":0.8267118,"text":"４０８１７８１０９００００７３１６４２５"},
+    {"start":1290,"end":1308,"label":"person","score":0.7772999,"text":"заявитель"},
+    {"start":691,"end":709,"label":"person","score":0.75401044,"text":"заявителю"},
+    {"start":1326,"end":1342,"label":"person","score":0.68594944,"text":"Ответчик"},
+    {"start":1095,"end":1124,"label":"organization","score":0.71889055,"text":"Тканый горизонт"},
+    {"start":1847,"end":1866,"label":"email","score":0.99719906,"text":"lua@obrazec.invalid"}
   ]
 }
