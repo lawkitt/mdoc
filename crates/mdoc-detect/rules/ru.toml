@@ -124,3 +124,22 @@ trim_start = '(?:г-н|г-жа|господин|госпожа)\s+'
 [[span]]
 category = "PERSON"
 after = '\s\p{Uppercase}\.\s?\p{Uppercase}\.'
+
+# A value after "ИНН" is a tax identifier, after "СНИЛС" an identity number,
+# valid or not and OCR-damaged too ("ИНН: 77O1234567", "СНИЛС: 123-456-789
+# 00"; the fixture guide's rule 6), whatever the model called it. In a
+# table, a cell under an "ИНН" or "СНИЛС" column counts as labelled
+# (issues #380, #381).
+[[context]]
+category = "TAX"
+labels = ["инн", "inn"]
+between = '[\p{Zs}\t:*_№#=]{1,6}'
+value = '[\dOО]{10}(?:[\dOО]{2})?'
+min_digits = 8
+
+# The СНИЛС, the same way.
+[[context]]
+category = "IDENTITY"
+labels = ["снилс"]
+between = '[\p{Zs}\t:*_№#=]{1,6}'
+value = '\d{3}-\d{3}-\d{3}[\p{Zs}\t]?\d{2}|\d{11}'

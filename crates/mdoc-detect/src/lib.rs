@@ -540,7 +540,10 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 None => entity.start..entity.end,
             };
             let text = source.get(range.clone()).unwrap_or(&entity.text);
-            identifying(text, category).then_some(Detection {
+            let reference = source.is_char_boundary(range.start)
+                && range.start <= source.len()
+                && rules::pack().reference(source, range.start, category);
+            (identifying(text, category) && !reference).then_some(Detection {
                 range,
                 category,
                 score: entity.score,

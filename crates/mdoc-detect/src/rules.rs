@@ -96,6 +96,10 @@ struct ShapeEntry {
     guess: Vec<String>,
     #[serde(default)]
     guess_words: Vec<String>,
+    /// Words just before a model span (past `№`, `:` and the like) that make
+    /// it a reference, not this category: "Article 12345678900".
+    #[serde(default)]
+    unless_after: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +159,10 @@ struct Fix {
 struct Context {
     category: Category,
     pattern: Regex,
+    /// Lowercase, single-spaced: table headers are compared with them.
+    labels: Vec<String>,
+    /// The value alone, for a table cell.
+    whole: Regex,
     min_digits: usize,
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
@@ -174,6 +182,7 @@ struct Shape {
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
+    unless_after: Vec<String>,
 }
 
 impl Pack {
@@ -241,8 +250,16 @@ impl Pack {
                     && entry.word.is_none()
                     && entry.guess.is_empty()
                     && entry.guess_words.is_empty()
+                    && entry.unless_after.is_empty()
                 {
                     return Err(at("no rules".into()));
+                }
+                if let Some(word) = entry.unless_after.iter().find(|word| {
+                    word.is_empty()
+                        || **word != word.to_lowercase()
+                        || !word.chars().all(char::is_alphanumeric)
+                }) {
+                    return Err(at(format!("{word:?} is not one lowercase word")));
                 }
                 if let Some(word) = entry
                     .guess_words
@@ -269,6 +286,7 @@ impl Pack {
                             word: None,
                             guess: Vec::new(),
                             guess_words: Vec::new(),
+                            unless_after: Vec::new(),
                         });
                         pack.shapes.last_mut().expect("just pushed")
                     }
@@ -281,6 +299,7 @@ impl Pack {
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
+                shape.unless_after.extend(entry.unless_after);
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -342,9 +361,23 @@ impl Pack {
                     .map(|token| self::category(token))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(at)?;
+                let whole = Regex::new(&format!("^(?:{})$", rust_classes(&entry.value)))
+                    .map_err(|e| at(e.to_string()))?;
                 pack.contexts.push(Context {
                     category,
                     pattern,
+                    labels: entry
+                        .labels
+                        .iter()
+                        .map(|label| {
+                            label
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .to_lowercase()
+                        })
+                        .collect(),
+                    whole,
                     min_digits: entry.min_digits,
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
@@ -457,43 +490,58 @@ impl Pack {
             })
     }
 
+    /// Whether the word just before `at` makes a model span of `category`
+    /// a reference ("Article 12345678900", "Договор № 5401000039").
+    pub(crate) fn reference(&self, source: &str, at: usize, category: Category) -> bool {
+        self.shapes
+            .iter()
+            .find(|s| s.category == category)
+            .is_some_and(|shape| shape.unless_after.contains(&word_before(source, at)))
+    }
+
     /// Values beside their labels in `source`, as `context` rules propose
     /// them: the value only, without its label.
     pub(crate) fn context(&self, source: &str) -> Vec<Detection> {
+        let accepts = |context: &Context, value: &str| {
+            let digits = value.chars().filter(char::is_ascii_digit).count();
+            let guessed = self.guess(value);
+            digits >= context.min_digits
+                && !guessed.is_some_and(|g| context.unless_guessed.contains(&g))
+                && (context.only_guessed.is_empty()
+                    || guessed.is_some_and(|g| context.only_guessed.contains(&g)))
+        };
+        let detection = |context: &Context, range: std::ops::Range<usize>| Detection {
+            range,
+            category: context.category,
+            score: CONTEXT_SCORE,
+            recognizer: Recognizer::Context,
+        };
+        let cells = table_cells(source);
         self.contexts
             .iter()
             .flat_map(|context| {
-                context.pattern.captures_iter(source).filter_map(|found| {
+                let inline = context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
-                    let digits = value.as_str().chars().filter(char::is_ascii_digit).count();
                     // The value ends where a word does.
                     let ends = !source[value.end()..]
                         .chars()
                         .next()
                         .is_some_and(char::is_alphanumeric);
-                    let guessed = self.guess(value.as_str());
-                    let before = source[..found.get(0)?.start()]
-                        .trim_end()
-                        .rsplit(|c: char| !c.is_alphanumeric())
-                        .next()
-                        .unwrap_or_default()
-                        .to_lowercase();
-                    if !ends
-                        || digits < context.min_digits
-                        || context.unless_after.contains(&before)
-                        || guessed.is_some_and(|g| context.unless_guessed.contains(&g))
-                        || (!context.only_guessed.is_empty()
-                            && !guessed.is_some_and(|g| context.only_guessed.contains(&g)))
-                    {
-                        return None;
-                    }
-                    Some(Detection {
-                        range: value.range(),
-                        category: context.category,
-                        score: CONTEXT_SCORE,
-                        recognizer: Recognizer::Context,
-                    })
-                })
+                    let before = word_before(source, found.get(0)?.start());
+                    (ends
+                        && !context.unless_after.contains(&before)
+                        && accepts(context, value.as_str()))
+                    .then(|| detection(context, value.range()))
+                });
+                // A table cell is read with its column's header as its label.
+                let tabled = cells.iter().filter_map(|(header, cell)| {
+                    let value = &source[cell.clone()];
+                    (context.labels.contains(header)
+                        && context.whole.is_match(value)
+                        && accepts(context, value))
+                    .then(|| detection(context, cell.clone()))
+                });
+                inline.chain(tabled).collect::<Vec<_>>()
             })
             .collect()
     }
@@ -631,6 +679,90 @@ fn class(predicate: fn(char) -> bool) -> String {
     }
     class.push(']');
     class
+}
+
+/// Each Markdown table body cell with its column's header, lowercase with
+/// its emphasis and extra spaces gone, and the cell's trimmed byte range.
+fn table_cells(source: &str) -> Vec<(String, std::ops::Range<usize>)> {
+    // A row's cells: byte ranges between unescaped pipes, trimmed.
+    let cells = |line: &str, at: usize| -> Option<Vec<std::ops::Range<usize>>> {
+        let inner = line.trim_end_matches(['\r', '\n']);
+        let body = inner.trim();
+        if !(body.starts_with('|') && body.ends_with('|') && body.len() > 1) {
+            return None;
+        }
+        let offset = at + (inner.len() - inner.trim_start().len());
+        let mut ranges = Vec::new();
+        let mut start = 1;
+        let bytes = body.as_bytes();
+        for i in 1..body.len() {
+            if bytes[i] == b'|' && bytes[i - 1] != b'\\' {
+                let cell = &body[start..i];
+                let lead = cell.len() - cell.trim_start().len();
+                let range = offset + start + lead..offset + start + cell.trim_end().len();
+                ranges.push(range.start..range.end.max(range.start));
+                start = i + 1;
+            }
+        }
+        Some(ranges)
+    };
+    let mut found = Vec::new();
+    let mut lines = source.split_inclusive('\n').scan(0, |at, line| {
+        let start = *at;
+        *at += line.len();
+        Some((start, line))
+    });
+    let mut previous: Option<(usize, &str)> = None;
+    while let Some((at, line)) = lines.next() {
+        let separator = line.trim().trim_matches('|').split('|').all(|cell| {
+            let cell = cell.trim();
+            !cell.is_empty() && cell.trim_matches(':').chars().all(|c| c == '-')
+        });
+        let Some((header_at, header_line)) = previous.filter(|_| separator) else {
+            previous = Some((at, line));
+            continue;
+        };
+        let Some(headers) = cells(header_line, header_at) else {
+            previous = Some((at, line));
+            continue;
+        };
+        let headers: Vec<String> = headers
+            .iter()
+            .map(|range| {
+                source[range.clone()]
+                    .trim_matches(|c: char| c == '*' || c == '_' || c.is_whitespace())
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase()
+            })
+            .collect();
+        previous = None;
+        for (at, line) in lines.by_ref() {
+            let Some(row) = cells(line, at) else {
+                previous = Some((at, line));
+                break;
+            };
+            for (header, cell) in headers.iter().zip(row) {
+                if !cell.is_empty() {
+                    found.push((header.clone(), cell));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The lowercase word before `at`, past whitespace and `№`, `#`, `:`, `.`,
+/// `,`, `=`; read from the 64 bytes before it.
+fn word_before(source: &str, at: usize) -> String {
+    let window = source.floor_char_boundary(at.saturating_sub(64));
+    source[window..at]
+        .trim_end_matches(|c: char| c.is_whitespace() || "№#:.,=*".contains(c))
+        .rsplit(|c: char| !c.is_alphanumeric())
+        .next()
+        .unwrap_or_default()
+        .to_lowercase()
 }
 
 /// A category by its token (`PERSON`, `ORG`, …).
@@ -953,6 +1085,64 @@ mod tests {
         ] {
             assert_eq!(fixed(source, model, category), expected, "{source}");
         }
+    }
+
+    /// Labelled Russian identifiers take their label's category, in text
+    /// and in table columns (#380, #381); reference numbers, long digit runs,
+    /// dotless domains and rates are not identifiers (#375, #389).
+    #[test]
+    fn identifiers_follow_their_labels_and_references_stay_out() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<(String, Category)> {
+            let mut found: Vec<_> = pack
+                .context(source)
+                .into_iter()
+                .map(|d| (source[d.range].to_owned(), d.category))
+                .collect();
+            found.sort_by(|a, b| a.0.cmp(&b.0));
+            found
+        };
+        assert_eq!(
+            found("ИНН: 77O1234567; СНИЛС: 123-456-789 00; inn=660100000231"),
+            [
+                ("123-456-789 00".to_owned(), Category::Identity),
+                ("660100000231".to_owned(), Category::Tax),
+                ("77O1234567".to_owned(), Category::Tax),
+            ]
+        );
+        assert_eq!(
+            found(
+                "| ИНН | СНИЛС |\n| --- | --- |\n| 5401000039 | 345-678-912 26 |\n| ООО «Север» | 7701234567 |\n"
+            ),
+            [
+                ("345-678-912 26".to_owned(), Category::Identity),
+                ("5401000039".to_owned(), Category::Tax),
+            ]
+        );
+        assert_eq!(
+            found("| **Заказчик** | **ИНН** |\n|:---|---:|\n| ООО «Север» | 7701234567 |"),
+            [("7701234567".to_owned(), Category::Tax)]
+        );
+        for (source, number, category) in [
+            ("Article 12345678900 applies", "12345678900", Category::Bank),
+            ("Договор № 5401000039, цена", "5401000039", Category::Bank),
+            (
+                "платёжное поручение № 044525593.",
+                "044525593",
+                Category::Phone,
+            ),
+        ] {
+            let at = source.find(number).unwrap();
+            assert!(pack.reference(source, at, category), "{source}");
+        }
+        let account = "Счёт № 40702810500000009876";
+        assert!(!pack.reference(account, account.find("4070").unwrap(), Category::Bank));
+        assert!(!pack.identifying("123456789012345678901234567890", Category::Phone));
+        assert!(pack.identifying("+44 7700 900842", Category::Phone));
+        assert!(!pack.identifying("not-a-mail@localhost", Category::Email));
+        assert!(pack.identifying("ismay@crane-pith.invalid", Category::Email));
+        assert!(!pack.identifying("20 percent tax", Category::Tax));
+        assert!(!pack.identifying("13%", Category::Tax));
     }
 
     #[test]

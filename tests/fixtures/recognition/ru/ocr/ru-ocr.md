@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ru-identifier-category
 issue: 380
 kind: ocr
 source: import
-expect: boundary: gold TAX "77O1234567"; proposed IDENTITY "77O1234567"
 ---
 ДОГОВ0Р
 Заказчик: ⟦PERSON|Анна Сергее вна Ёлкина⟧

@@ -26,6 +26,8 @@
 #                                ("in case")
 #   unless_guessed = [category…] no value these categories' guesses take
 #   only_guessed   = [category…] only a value one of them takes
+# In a Markdown table, a body cell whose column header is one of the labels
+# is read as labelled when the whole cell is a value.
 # A context match wins over a model span on the same text.
 #
 # A `span` entry proposes its `category` for each match of its `pattern`;
@@ -44,6 +46,9 @@
 #                       other than `-`) must match it and not be a `never`
 #                       word; one per category in the whole pack
 #   guess   = [regex…]  a manual selection that matches one in full is this
+#                       category
+#   unless_after = […]  a model span right after one of these words (past
+#                       `№`, `:` and the like) is a reference, not this
 #                       category
 #   guess_words = […]   a manual selection with one of these words (ASCII
 #                       case ignored) is this category
@@ -133,3 +138,54 @@ require = ['\p{N}']
 category = "BANK"
 require = ['\p{N}']
 forbid = ['/']
+
+# A number right after a reference word is that reference, not an
+# identifier: "Article 12345678900", "Договор № 5401000039", "платёжное
+# поручение № 044525593" (issue #375).
+[[shape]]
+category = "PHONE"
+unless_after = [
+    "article", "section", "clause", "invoice", "статья", "статьи", "пункт",
+    "договор", "договора", "поручение", "поручения",
+]
+
+# The same for bank spans.
+[[shape]]
+category = "BANK"
+unless_after = [
+    "article", "section", "clause", "invoice", "статья", "статьи", "пункт",
+    "договор", "договора", "поручение", "поручения",
+]
+
+# The same for tax spans.
+[[shape]]
+category = "TAX"
+unless_after = [
+    "article", "section", "clause", "invoice", "статья", "статьи", "пункт",
+    "договор", "договора", "поручение", "поручения",
+]
+
+# The same for identity spans.
+[[shape]]
+category = "IDENTITY"
+unless_after = [
+    "article", "section", "clause", "invoice", "статья", "статьи", "пункт",
+    "договор", "договора", "поручение", "поручения",
+]
+
+# A phone number has at most 15 digits in a row (E.164): a run of 16 or
+# more is not one (issue #375).
+[[shape]]
+category = "PHONE"
+forbid = ['\d{16}']
+
+# An email's domain has a dot: "not-a-mail@localhost" is not one (issue
+# #375).
+[[shape]]
+category = "EMAIL"
+require = ['@[^@\s]+\.[^@\s.]']
+
+# A rate is not a tax identifier: "20 percent tax" (issue #389).
+[[shape]]
+category = "TAX"
+forbid = ['(?i)%|\bper\s?cent\b|\bпроцент']
