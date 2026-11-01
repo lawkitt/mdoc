@@ -55,3 +55,18 @@ before adoption; every pre-existing expected Markdown file remains unchanged.
 The import regression checks exact Markdown, retained source bytes, source-kind
 metadata, and warnings. Broader symbol/revision edge cases stay in the fork's
 regression tests. See [verification](anydoc-fidelity-verification.md).
+
+## Hidden Office content, 2026-11-01
+
+`handmade-hidden-content.docx` is a synthetic package from
+`gen_hidden_content.py` (run it with Python 3; the output is deterministic).
+Its comments, deleted and moved-from tracked changes, footnote deletion and
+core, extended and custom document properties all name "Margaret Holloway"
+or "Ivan Petrov"; its insertions and moved-to text are ordinary wording.
+Checked against the pinned AnyDoc
+(`d01cce0dda4a8918fc4b603c4afe9c329102371c`): it reads no comments or
+property parts and skips `w:del` and `w:moveFrom`, with no option to keep
+them, so `handmade-hidden-content.docx.md` holds the document as it reads
+now and no name. `mdoc-import` counts the comments for the import note
+("2 comments not imported."), and its test fails if a fork update carries
+any of the hidden text.

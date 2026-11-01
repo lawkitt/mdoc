@@ -194,6 +194,19 @@ pub fn prepare_cancellable(
     let is_docx = source
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
+    // Word comments never reach the Markdown (AnyDoc reads no comments
+    // part); the note says how many were left out.
+    let word = matches!(
+        anydoc::Format::from_path(&source),
+        Some(anydoc::Format::Docx) | None
+    );
+    let comments = word
+        .then(|| crate::hidden_content::docx_comment_count(&source))
+        .and_then(crate::hidden_content::comments_note);
+    let warning = match (warning, comments) {
+        (Some(pages), Some(comments)) => Some(format!("{pages} {comments}")),
+        (pages, comments) => pages.or(comments),
+    };
     Ok(Imported {
         ocr_configuration: None,
         source,
@@ -442,6 +455,46 @@ mod tests {
                 name == "handmade-partly-scanned.pdf"
             );
         }
+    }
+
+    /// A DOCX whose comments, deleted and moved-from changes and document
+    /// properties name people: none of it reaches the Markdown, insertions
+    /// are accepted, and the note counts the comments
+    /// (recognition grill 2026-11-01, round 3).
+    #[test]
+    fn hidden_office_content_never_reaches_the_markdown() {
+        let path = fixture("handmade-hidden-content.docx");
+        let imported = convert(&path).unwrap();
+        let expected = std::fs::read_to_string(fixture("handmade-hidden-content.docx.md"))
+            .unwrap()
+            .replace("\r\n", "\n");
+        assert_eq!(imported.markdown.trim_end(), expected.trim_end());
+        for hidden in [
+            "Holloway",
+            "Petrov",
+            "555-0142",
+            "guarantor",
+            "Holloway lease",
+        ] {
+            assert!(!imported.markdown.contains(hidden), "{hidden}");
+        }
+        for accepted in ["the Client", "Landlord Ltd", "Moved sentence."] {
+            assert!(imported.markdown.contains(accepted), "{accepted}");
+        }
+        assert_eq!(
+            imported.markdown.matches("Moved sentence.").count(),
+            1,
+            "moved text appears once, where it now is"
+        );
+        assert_eq!(
+            imported.warning.as_deref(),
+            Some("2 comments not imported.")
+        );
+        // Content detection counts them too, for a renamed copy.
+        let dir = tempfile::tempdir().unwrap();
+        let renamed = dir.path().join("renamed.bin");
+        std::fs::copy(&path, &renamed).unwrap();
+        assert_eq!(convert(&renamed).unwrap().warning, imported.warning);
     }
 
     #[test]

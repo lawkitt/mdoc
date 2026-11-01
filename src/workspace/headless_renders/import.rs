@@ -1,8 +1,9 @@
-//! Import states shown in a tab: a failed conversion and OCR consent. Both
-//! are set directly, so no converter, worker, model download or native
-//! runtime runs.
+//! Import states shown in a tab: a failed conversion, OCR consent, and the
+//! note for a DOCX's comments left out. The first two are set directly; the
+//! note comes from converting a public fixture in-process, so no worker,
+//! model download or native runtime runs.
 use super::{Driver, Result};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc, sync::atomic::AtomicBool};
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // A damaged DOCX: the conversion and preview failures as their panes
@@ -38,5 +39,37 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
             cx.notify();
         });
     })?;
-    d.capture("ocr-consent")
+    d.capture("ocr-consent")?;
+    comments_note(d)
+}
+
+/// A DOCX whose comments and deleted changes name people: the Markdown
+/// holds neither and the note counts the comments left out (recognition
+/// grill 2026-11-01, round 3). The preview refuses tracked changes, so the
+/// Original pane shows that failure, as the worker would report it.
+fn comments_note(d: &mut Driver) -> Result<()> {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/handmade-hidden-content.docx");
+    let mut imported =
+        mdoc_import::import::prepare_cancellable(&fixture, None, true, &AtomicBool::new(false))
+            .map_err(|e| e.to_string())?;
+    let Err(failure) = mdoc_import::docx_preview::render_in_process(
+        &imported.source,
+        Arc::new(AtomicBool::new(false)),
+    ) else {
+        return Err("the preview renders tracked changes now; show it instead".into());
+    };
+    let source = imported.source.clone();
+    // No preview worker: the failure above stands in for its answer.
+    imported.is_docx = false;
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.proceed(crate::document_view::Next::Import(imported), window, cx);
+            v.preview
+                .show_failure(source, crate::preview::docx_message(&failure).to_string());
+            cx.notify();
+        });
+    })?;
+    d.capture("import-comments-note")
 }

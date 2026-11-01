@@ -55,6 +55,7 @@ confirm-remove-model
 model-comparison
 conversion-failed
 ocr-consent
+import-comments-note
 restored-reply
 comments
 docx-source

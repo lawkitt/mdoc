@@ -5,6 +5,7 @@
 //! apps convert DOCX in-process and have no preview, ADR 0085).
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod docx_preview;
+pub mod hidden_content;
 pub mod import;
 pub mod import_session;
 pub mod model_download;
