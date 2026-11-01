@@ -68,4 +68,3 @@ a boundary case.
 - A surname's lower-case particle is inside the span: "⟦PERSON|Генриетта Яновна де Лаваль⟧", "на фамилию ⟦PERSON|де Лаваль⟧" (hunt-ru-r2-01).
 - Name parts in separate table columns are each their own span: "| ⟦PERSON|Кий⟧ | ⟦PERSON|Ева⟧ | ⟦PERSON|Оскаровна⟧ |" (hunt-ru-r2-09).
 - An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
-- Post-nominal letters (KC, QC, LLB) are outside the span, like a title: "⟦PERSON|Gavira Vennick⟧ KC" (hunt-en-r8-01).
