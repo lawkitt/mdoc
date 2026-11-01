@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":8,"end":20,"label":"full_name","score":0.96653706,"text":"Maya Bennett"}
+  ]
+}

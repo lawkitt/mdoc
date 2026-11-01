@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":15,"end":37,"label":"iban","score":0.9930693,"text":"GB28NWBK60161331926819"},
+    {"start":87,"end":98,"label":"routing_number","score":0.62039167,"text":"12345678900"}
+  ]
+}

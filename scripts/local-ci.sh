@@ -74,10 +74,10 @@ config() {
   tick_s=${LOCAL_CI_TICK:-5}
   # setup installs the merge ref's pinned tools, as hosted CI's setup step
   # does. The Mac's desktop job also checks the mobile core (`ffi`, ADR
-  # 0085); the mobile job is the iOS job (`ios`) or the Android job
-  # (`android`, ADR 0089).
+  # 0085) and runs the detection gate (`detect`, ADR 0093); the mobile job
+  # is the iOS job (`ios`) or the Android job (`android`, ADR 0089).
   case "$os" in
-    macos) steps=${LOCAL_CI_STEPS:-setup lint test ffi} ;;
+    macos) steps=${LOCAL_CI_STEPS:-setup lint test ffi detect} ;;
     *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
   esac
   mobile_steps=${LOCAL_CI_MOBILE_STEPS:-setup $mobile_area}
@@ -369,6 +369,7 @@ label() {
     setup) echo scripts/setup.sh ;;
     ffi) echo "just mobile --ffi" ;;
     ios) echo "just mobile --ios" ;;
+    detect) echo "just detection-gate" ;;
     *) echo "just $1" ;;
   esac
 }
@@ -383,6 +384,11 @@ mobile_check_expected() {
 # The same for the Android job (ADR 0089).
 android_check_expected() {
   git cat-file -e HEAD^1:scripts/android-check.sh 2>/dev/null
+}
+
+# The same for the detection gate (ADR 0093).
+detection_gate_expected() {
+  git cat-file -e HEAD^1:scripts/detection-gate.sh 2>/dev/null
 }
 
 # Runs in the background in its own process group; output goes to log.txt.
@@ -414,6 +420,13 @@ job() { # commit dir step...
           MDOC_IOS_JOB=always just mobile "--$step" || rc=$?
         else
           echo "local-ci: this commit's main predates the mobile check; skipped"
+        fi
+        ;;
+      detect)
+        if detection_gate_expected; then
+          just detection-gate || rc=$?
+        else
+          echo "local-ci: this commit's main predates the detection gate; skipped"
         fi
         ;;
       android)

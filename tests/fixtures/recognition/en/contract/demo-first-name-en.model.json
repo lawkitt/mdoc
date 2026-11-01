@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":0,"end":12,"label":"person","score":0.98577297,"text":"Maya Bennett"},
+    {"start":37,"end":40,"label":"person","score":0.86613256,"text":"Mia"},
+    {"start":58,"end":76,"label":"organization","score":0.9980122,"text":"Harrow & Finch Ltd"}
+  ]
+}

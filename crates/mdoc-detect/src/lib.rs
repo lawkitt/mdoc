@@ -1,5 +1,6 @@
 //! Experimental, offline GLiNER2 integration. Network access belongs only to
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
+pub mod recognition;
 mod structured;
 mod windows;
 use gliner2_rs::{
@@ -7,7 +8,7 @@ use gliner2_rs::{
     processor::SchemaTransformer,
 };
 use mdoc_pii::{Category, Detection};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Why detection setup, its checks or a scan failed.
 #[derive(Debug, thiserror::Error)]
@@ -271,15 +272,15 @@ pub fn source_and_license(model: mdoc_store::settings::PiiModel) -> (String, Str
         manifest.license,
     )
 }
+/// The pinned export's id and revision, as its folder is named
+/// ("gliner2-pii-fp16-e5948986"); recognition snapshots record it.
+pub fn model_name(model: mdoc_store::settings::PiiModel) -> String {
+    let manifest = manifest_for(model);
+    format!("{}-{}", manifest.id, &manifest.revision[..8])
+}
 pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, DetectError> {
     mdoc_store::app_paths::data_local_dir()
-        .map(|root| {
-            root.join(format!(
-                "mdoc/pseudonymization/{}-{}",
-                manifest_for(model).id,
-                &manifest_for(model).revision[..8]
-            ))
-        })
+        .map(|root| root.join("mdoc/pseudonymization").join(model_name(model)))
         .ok_or(DetectError::NoStorage)
 }
 
@@ -558,7 +559,8 @@ pub struct ScanTimings {
     pub engine_load: Duration,
     /// One entry per distinct model window, in source order.
     pub windows: Vec<WindowTiming>,
-    /// The structured rules over the whole source.
+    /// The correction stage ([`correct`]): the shape filter and the
+    /// structured rules over the whole source.
     pub structured: Duration,
     pub total: Duration,
 }
@@ -607,10 +609,73 @@ fn scan_timed(
     config: &mdoc_store::settings::PiiConfig,
     progress: &dyn Fn(ScanProgress),
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
+    let started = Instant::now();
+    let (raw, mut timings) = model_stage(source, cancel, started, root, runtime, config, progress)?;
+    checkpoint(cancel, started)?;
+    let lap = Instant::now();
+    let detections = correct(source, &raw);
+    timings.structured = lap.elapsed();
+    checkpoint(cancel, started)?;
+    timings.total = started.elapsed();
+    Ok((detections, timings))
+}
+
+/// One span the model proposed, in document byte offsets, before any
+/// correction (ADR 0092): its label from the schema, its score at the
+/// configured threshold and its text. Recognition snapshots are these
+/// (ADR 0093).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RawEntity {
+    pub start: usize,
+    pub end: usize,
+    pub label: String,
+    pub score: f32,
+    pub text: String,
+}
+
+/// The correction stage (ADR 0092): the model's raw entities through the
+/// shape filter (`identifying`), then the structured rules over the whole
+/// source. Pure: the same source and entities give the same detections, in
+/// the order a scan returns them.
+pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
+    let mut detections: Vec<Detection> = raw
+        .iter()
+        .filter_map(|entity| {
+            let category = category_of(&entity.label)?;
+            identifying(&entity.text, category).then_some(Detection {
+                range: entity.start..entity.end,
+                category,
+                score: entity.score,
+                recognizer: mdoc_pii::Recognizer::Model,
+            })
+        })
+        .collect();
+    detections.extend(structured::scan(source));
+    detections
+}
+
+fn category_of(label: &str) -> Option<Category> {
+    FAMILIES
+        .iter()
+        .flat_map(|family| family.iter())
+        .find_map(|(name, category)| (*name == label).then_some(*category))
+}
+
+/// The model stage: windows, inference and offsets checked, with no
+/// correction. `started` is the scan's start, for its deadline.
+#[allow(clippy::too_many_arguments)]
+fn model_stage(
+    source: &str,
+    cancel: &AtomicBool,
+    started: Instant,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
+) -> Result<(Vec<RawEntity>, ScanTimings), DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
     }
-    let started = Instant::now();
     let mut timings = ScanTimings::default();
     let mut lap = Instant::now();
     let mut split = || {
@@ -628,23 +693,9 @@ fn scan_timed(
     mdoc_import::ocr::load_onnx_runtime(runtime)?;
     timings.runtime = split();
     let tasks = schema_tasks();
-    let transformer = SchemaTransformer::from_tokenizer_file(
-        &root.join(config.model.folder()).join("tokenizer.json"),
-    )
-    .map_err(|e| DetectError::Engine(e.to_string()))?;
+    let transformer = transformer(root, config.model)?;
     timings.tokenizer = split();
-    // A window's proposals depend only on its text, so a repeated paragraph
-    // runs once and its results land on every repeat.
-    let mut windows: Vec<(&str, usize, Vec<usize>)> = Vec::new();
-    let mut seen = std::collections::HashMap::new();
-    for (range, tokens) in bounded_windows(source, &transformer, &tasks, cancel, started)? {
-        let text = &source[range.clone()];
-        let index = *seen.entry(text).or_insert_with(|| {
-            windows.push((text, tokens, Vec::new()));
-            windows.len() - 1
-        });
-        windows[index].2.push(range.start);
-    }
+    let windows = distinct_windows(source, &transformer, &tasks, cancel, started)?;
     timings.windowing = split();
     let count = windows.len();
     progress(ScanProgress {
@@ -653,59 +704,163 @@ fn scan_timed(
     });
     let mut engine = load_engine(root, config.model)?;
     timings.engine_load = split();
-    let params = InferenceParams {
-        threshold: config.threshold,
-        flat_ner: true,
-        ..Default::default()
-    };
-    let mut detections = Vec::new();
+    let params = inference_params(config);
+    let mut raw = Vec::new();
     for (index, (text, tokens, starts)) in windows.into_iter().enumerate() {
         checkpoint(cancel, started)?;
         split();
-        let output = engine
-            .extract_with(text, &tasks, &params)
-            .map_err(|e| DetectError::Engine(e.to_string()))?;
+        run_window(&mut engine, text, &starts, &tasks, &params, &mut raw)?;
         timings.windows.push(WindowTiming {
             bytes: text.len(),
             tokens,
             inference: split(),
         });
         checkpoint(cancel, started)?;
-        for entity in output.entities {
-            let Some(category) = FAMILIES
-                .iter()
-                .flat_map(|family| family.iter())
-                .find_map(|(label, category)| (*label == entity.label).then_some(*category))
-            else {
-                continue;
-            };
-            if text.get(entity.char_start..entity.char_end) != Some(entity.text.as_str())
-                || entity.char_start >= entity.char_end
-            {
-                return Err(DetectError::InvalidOffsets);
-            }
-            if !identifying(&entity.text, category) {
-                continue;
-            }
-            detections.extend(starts.iter().map(|start| Detection {
-                range: start + entity.char_start..start + entity.char_end,
-                category,
-                score: entity.score,
-                recognizer: mdoc_pii::Recognizer::Model,
-            }));
-        }
         progress(ScanProgress {
             done: index + 1,
             windows: count,
         });
     }
-    checkpoint(cancel, started)?;
-    split();
-    detections.extend(structured::scan(source));
-    timings.structured = split();
-    checkpoint(cancel, started)?;
-    timings.total = started.elapsed();
-    Ok((detections, timings))
+    Ok((raw, timings))
+}
+
+fn transformer(
+    root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Result<SchemaTransformer, DetectError> {
+    SchemaTransformer::from_tokenizer_file(&root.join(model.folder()).join("tokenizer.json"))
+        .map_err(|e| DetectError::Engine(e.to_string()))
+}
+
+fn inference_params(config: &mdoc_store::settings::PiiConfig) -> InferenceParams {
+    InferenceParams {
+        threshold: config.threshold,
+        flat_ner: true,
+        ..Default::default()
+    }
+}
+
+/// A distinct window's text, its token count and every start it occurs at.
+type Window<'a> = (&'a str, usize, Vec<usize>);
+
+/// The source's model windows, each distinct text once with its token count
+/// and every start it occurs at.
+fn distinct_windows<'a>(
+    source: &'a str,
+    transformer: &SchemaTransformer,
+    tasks: &[SchemaTask],
+    cancel: &AtomicBool,
+    started: Instant,
+) -> Result<Vec<Window<'a>>, DetectError> {
+    // A window's proposals depend only on its text, so a repeated paragraph
+    // runs once and its results land on every repeat.
+    let mut windows: Vec<(&str, usize, Vec<usize>)> = Vec::new();
+    let mut seen = std::collections::HashMap::new();
+    for (range, tokens) in bounded_windows(source, transformer, tasks, cancel, started)? {
+        let text = &source[range.clone()];
+        let index = *seen.entry(text).or_insert_with(|| {
+            windows.push((text, tokens, Vec::new()));
+            windows.len() - 1
+        });
+        windows[index].2.push(range.start);
+    }
+    Ok(windows)
+}
+
+/// One window's entities with a known label, at each of its starts. Offsets
+/// that don't round-trip to the entity's text reject the whole scan.
+fn run_window(
+    engine: &mut SpanEngine,
+    text: &str,
+    starts: &[usize],
+    tasks: &[SchemaTask],
+    params: &InferenceParams,
+    raw: &mut Vec<RawEntity>,
+) -> Result<(), DetectError> {
+    let output = engine
+        .extract_with(text, tasks, params)
+        .map_err(|e| DetectError::Engine(e.to_string()))?;
+    for entity in output.entities {
+        if category_of(&entity.label).is_none() {
+            continue;
+        }
+        if text.get(entity.char_start..entity.char_end) != Some(entity.text.as_str())
+            || entity.char_start >= entity.char_end
+        {
+            return Err(DetectError::InvalidOffsets);
+        }
+        raw.extend(starts.iter().map(|start| RawEntity {
+            start: start + entity.char_start,
+            end: start + entity.char_end,
+            label: entity.label.clone(),
+            score: entity.score,
+            text: entity.text.clone(),
+        }));
+    }
+    Ok(())
+}
+
+/// The model stage loaded once for many sources: the recognition tool's
+/// snapshots and the detection gate (ADR 0093). The app scans through
+/// [`scan_config`], which builds its engine per scan (ADR 0002). Holds the
+/// model work permit while it lives.
+pub struct ModelSession {
+    engine: SpanEngine,
+    transformer: SchemaTransformer,
+    tasks: Vec<SchemaTask>,
+    params: InferenceParams,
+    _inference: std::sync::MutexGuard<'static, ()>,
+    _permit: mdoc_import::model_work::Permit,
+}
+
+impl ModelSession {
+    /// Verifies the model under `root` and loads it with the ONNX Runtime
+    /// library at `runtime`; never downloads.
+    pub fn load(
+        root: &Path,
+        runtime: &Path,
+        config: &mdoc_store::settings::PiiConfig,
+    ) -> Result<Self, DetectError> {
+        if !mdoc_store::settings::unit_interval(config.threshold) {
+            return Err(DetectError::InvalidThreshold);
+        }
+        let permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
+        let inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
+        verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
+        mdoc_import::ocr::load_onnx_runtime(runtime)?;
+        Ok(Self {
+            transformer: transformer(root, config.model)?,
+            engine: load_engine(root, config.model)?,
+            tasks: schema_tasks(),
+            params: inference_params(config),
+            _inference: inference,
+            _permit: permit,
+        })
+    }
+
+    /// The model stage over one source, as a scan runs it, with the scan's
+    /// size limit and deadline.
+    pub fn entities(&mut self, source: &str) -> Result<Vec<RawEntity>, DetectError> {
+        if source.len() > MAX_SOURCE_BYTES {
+            return Err(DetectError::TooLarge);
+        }
+        let cancel = AtomicBool::new(false);
+        let started = Instant::now();
+        let windows = distinct_windows(source, &self.transformer, &self.tasks, &cancel, started)?;
+        let mut raw = Vec::new();
+        for (text, _, starts) in windows {
+            checkpoint(&cancel, started)?;
+            run_window(
+                &mut self.engine,
+                text,
+                &starts,
+                &self.tasks,
+                &self.params,
+                &mut raw,
+            )?;
+        }
+        Ok(raw)
+    }
 }
 
 fn schema_tasks() -> Vec<SchemaTask> {

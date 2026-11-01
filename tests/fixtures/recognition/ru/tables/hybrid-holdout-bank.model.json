@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":6,"end":28,"label":"iban","score":0.9976768,"text":"NL91 ABNA 0417 1643 00"},
+    {"start":39,"end":59,"label":"bank_account","score":0.98463464,"text":"40702810500000009876"},
+    {"start":118,"end":138,"label":"bank_account","score":0.98314995,"text":"40702810500000009876"},
+    {"start":69,"end":78,"label":"bank_account","score":0.88759494,"text":"044525593"},
+    {"start":141,"end":150,"label":"bank_account","score":0.8554894,"text":"044525593"}
+  ]
+}

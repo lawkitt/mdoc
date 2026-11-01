@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":38,"end":50,"label":"full_name","score":0.9810583,"text":"Alice Morgan"},
+    {"start":302,"end":314,"label":"full_name","score":0.9634375,"text":"Alice Morgan"},
+    {"start":221,"end":233,"label":"full_name","score":0.9628831,"text":"Alice Morgan"},
+    {"start":53,"end":74,"label":"email","score":0.99972415,"text":"alice@example.invalid"},
+    {"start":255,"end":276,"label":"email","score":0.9996749,"text":"alice@example.invalid"},
+    {"start":93,"end":114,"label":"email","score":0.9994,"text":"alice@example.invalid"}
+  ]
+}

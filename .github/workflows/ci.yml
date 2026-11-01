@@ -25,6 +25,7 @@ on:
       - "docs/**"
       - ".github/workflows/actionlint.yml"
       - ".github/dependabot.yml"
+      - "!tests/fixtures/recognition/**"
   # Any base branch, so a stacked PR gets CI too (fleet ADR 0016).
   pull_request:
     types: [opened, synchronize, reopened, closed]

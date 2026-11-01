@@ -21,6 +21,10 @@ These are dated measurements, not output snapshots for normal tests.
 
 ## Corpus and scoring
 
+Frozen: the headless renders read `corpus.json`, and its cases are imported,
+re-marked by the annotation guide, as [recognition fixtures](../recognition/README.md)
+(ADR 0093), which the detection gate checks.
+
 `corpus.json` is original synthetic evaluation material, dedicated to CC0-1.0.
 It contains no user documents. The pre-existing untracked DOCX/scanned-PDF files
 in this checkout were not used. Fictional names, organizations, identifiers,

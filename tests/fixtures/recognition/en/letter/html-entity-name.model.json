@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":14,"end":21,"label":"person","score":0.9293122,"text":"Petrova"},
+    {"start":5,"end":8,"label":"person","score":0.62726647,"text":"Ann"},
+    {"start":46,"end":67,"label":"organization","score":0.99782586,"text":"Northbridge Legal Ltd"}
+  ]
+}

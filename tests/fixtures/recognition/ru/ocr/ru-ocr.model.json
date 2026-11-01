@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":32,"end":73,"label":"full_name","score":0.9777138,"text":"Анна Сергее вна Ёлкина"},
+    {"start":98,"end":138,"label":"organization","score":0.9829547,"text":"ООО «Северньй Вектор»"},
+    {"start":233,"end":252,"label":"phone_number","score":0.99999756,"text":"+7 (495) 555-О1-47"},
+    {"start":331,"end":358,"label":"email","score":0.99998826,"text":"anna.elkina@example.invalid"},
+    {"start":154,"end":165,"label":"passport_number","score":0.9991574,"text":"45I0 123456"},
+    {"start":174,"end":184,"label":"national_id_number","score":0.98687875,"text":"77O1234567"},
+    {"start":195,"end":215,"label":"bank_account","score":0.88817817,"text":"407028I0900000001234"}
+  ]
+}

@@ -129,7 +129,7 @@ dependency forks.
 | `crates/mdoc-import/src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
 | `src/pii.rs`, `src/pii/ui*` | Pseudonymization UI: scan/edit controller, Replacements panel and word popup, UI regression tests |
-| `crates/mdoc-detect` | GUI-free offline detection: the GLiNER2 detector, its verified setup and the structured rules |
+| `crates/mdoc-detect` | GUI-free offline detection: the GLiNER2 detector and its verified setup, split into the model stage (raw entities) and the correction stage (`correct`: the shape filter and the structured rules, ADR 0092); recognition fixtures, snapshots and scoring (`recognition`, the `recognize` example, ADR 0093) |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs` and their `tests/` folders, `src/perf_tests.rs` | Headless flows, one file per owner beside shared helpers, ownership/lifetime checks, and opt-in performance measurements |
 | `src/workspace/headless_renders.rs`, `src/workspace/headless_renders/`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen/Tab evidence: the driver, one scene module per feature, the output contract test and its screen list (one name per line, `merge=union`) |
@@ -220,6 +220,8 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
 | `just perf` | Ignored performance tests, serially |
+| `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--check` is the detection gate. Any folder of fixtures works (the holdout) |
+| `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides); `local/macos` runs it last |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
@@ -435,6 +437,9 @@ prints the areas a change touches (`HEAD^1` to `HEAD` by default: on a
 merge ref, the PR). A new script outside `src/` and `tests/` that a mobile
 job runs needs a line there, or it counts as desktop. `ci.yml`'s
 `paths-ignore` repeats the `none` lines word for word (the suite checks).
+Only exceptions precede the `none` lines, Markdown a test reads under
+`tests/fixtures/` (the recognition fixtures, core); `paths-ignore` lists
+each after them with a `!`.
 
 **Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
 runs only `lint (ubuntu)` on `pull_request`; its `areas`, `clippy` and `test`
@@ -463,7 +468,11 @@ stopped. A job fetches `refs/pull/N/merge`, checks it out in the CI checkout
 (keeping its `target/`) and installs the merge ref's pinned tools with
 `scripts/setup.sh` (as hosted CI's setup step does). The desktop job then
 runs `just lint` and `just test` with the hosted job limits (20 and 30
-minutes), and on the Mac `just mobile --ffi` (20 minutes). The mobile job
+minutes), and on the Mac `just mobile --ffi` (20 minutes) and the
+[detection gate](../tests/fixtures/recognition/README.md) `just
+detection-gate` (30 minutes; its model run has a 5-minute budget and reads
+the pinned FP16 from the runner's app data, never downloading). The hosted
+fallback cannot run the gate (no model). The mobile job
 runs `just mobile --ios` on the Mac or `just android` on the PC (40
 minutes each, [ADR 0089](adr/0089-android-app.md)). A runner reads its own
 copy of `local-ci.sh` and `lib.sh`, so a change to them takes effect after

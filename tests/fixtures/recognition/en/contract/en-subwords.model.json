@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":5546,"end":5558,"label":"person","score":0.9786719,"text":"Alice Morgan"},
+    {"start":5562,"end":5583,"label":"email","score":0.9995308,"text":"alice@example.invalid"},
+    {"start":5546,"end":5558,"label":"person","score":0.976038,"text":"Alice Morgan"},
+    {"start":5562,"end":5583,"label":"email","score":0.9940429,"text":"alice@example.invalid"}
+  ]
+}

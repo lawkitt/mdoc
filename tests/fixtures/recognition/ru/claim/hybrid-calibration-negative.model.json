@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":176,"end":180,"label":"organization","score":0.5873515,"text":"BANK"},
+    {"start":140,"end":160,"label":"email","score":0.92944044,"text":"not-a-mail@localhost"},
+    {"start":22,"end":38,"label":"tax_id","score":0.54192406,"text":"А40-987654/2026"}
+  ]
+}

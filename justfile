@@ -56,6 +56,15 @@ test-local-ci:
 local-ci *args:
     scripts/local-ci.sh {{args}}
 
+# Recognition fixtures (ADR 0093): annotate a file or folder, --gold, --snapshot, --scoreboard, --refresh-snapshots, --check (the detection gate)
+[no-cd]
+recognize *args:
+    @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-detect --example recognize -- {{args}}
+
+# The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; local/macos runs it
+detection-gate:
+    scripts/detection-gate.sh
+
 # Offscreen macOS/Windows screen/Tab evidence in a new output directory (dev only)
 [positional-arguments]
 headless-renders out:

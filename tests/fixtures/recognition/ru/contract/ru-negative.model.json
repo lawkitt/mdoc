@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":261,"end":283,"label":"organization","score":0.7576151,"text":"организация"},
+    {"start":287,"end":297,"label":"address","score":0.6766199,"text":"адрес"}
+  ]
+}

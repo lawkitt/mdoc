@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":41,"end":68,"label":"iban","score":0.99750805,"text":"DE89 3704 0044 0532 0130 00"},
+    {"start":6,"end":33,"label":"iban","score":0.9973581,"text":"GB29 NWBK 6016 1331 9268 19"}
+  ]
+}

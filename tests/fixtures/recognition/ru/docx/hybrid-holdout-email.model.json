@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":103,"end":126,"label":"email","score":0.9908035,"text":"case-42@example.invalid"}
+  ]
+}

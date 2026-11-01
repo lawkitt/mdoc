@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":183,"end":229,"label":"full_name","score":0.9753431,"text":"Павлова Марина Сергеевна"},
+    {"start":5,"end":41,"label":"organization","score":0.8914336,"text":"ООО «Северный двор»"}
+  ]
+}
