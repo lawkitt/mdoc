@@ -1032,7 +1032,8 @@ mod tests {
         for text in [
             "Harrow & Finch Ltd",
             "Copper Kite Metrology LLP",
-            "Ofcom",
+            // One title-case word; Ofcom is a public body, never marked (#378).
+            "Vantora",
             "Elm Row Legal LLP",
             "Переплётная орбита",
             "Sable Chime Music Ltd",
