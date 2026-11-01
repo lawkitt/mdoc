@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: url-encoded-name
 issue: 401
 kind: docx
 source: hunt-r2
-expect: miss: PERSON "Liora%20Nesket"
-expect: miss: PERSON "Tovan%20Pellis"
 ---
 # 1. Statement delivery protocol
 

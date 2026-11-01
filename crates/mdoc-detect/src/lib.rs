@@ -560,6 +560,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     rules::pack().fix_spans(source, &mut detections);
+    // After the span fixes, so each spelling copies the fixed wording.
+    let respelt = respelt(source, &view, &detections);
+    detections.extend(respelt);
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()
@@ -569,6 +572,39 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         detection
     }));
     detections
+}
+
+/// The model's wordings where the source spells them otherwise and the view
+/// reads them the same: "Liora%20Nesket" in a link target, "Alice_Morgan"
+/// in a file name, for a detected "Liora Nesket" (ADR 0092). Each is a
+/// wording of its own, so Copy for AI replaces it as written.
+fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Vec<Detection> {
+    if view.is_source() {
+        return Vec::new();
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut found = Vec::new();
+    for detection in model {
+        let text = mdoc_pii::view::decoded(&source[detection.range.clone()]).into_owned();
+        if !seen.insert(text.clone()) {
+            continue;
+        }
+        for (at, _) in view.text.match_indices(&text) {
+            let end = at + text.len();
+            let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+            if word(view.text[..at].chars().next_back()) || word(view.text[end..].chars().next()) {
+                continue;
+            }
+            let range = view.source_range(at..end);
+            if source[range.clone()] != text && !model.iter().any(|d| d.range == range) {
+                found.push(Detection {
+                    range,
+                    ..*detection
+                });
+            }
+        }
+    }
+    found
 }
 
 fn category_of(label: &str) -> Option<Category> {
@@ -987,6 +1023,24 @@ mod tests {
                 ("ismay&#64;crane-pith.invalid", Category::Email)
             ]
         );
+    }
+    /// #401, #376: a detected name spelt otherwise in a link target is
+    /// proposed there too, as written.
+    #[test]
+    fn a_detected_name_is_found_in_its_hidden_spellings() {
+        let source = "Client: Liora Nesket. [a](https://b.invalid/Liora%20Nesket/x) ![s](Liora_Nesket.png) LioraNesket";
+        let raw = [RawEntity {
+            start: 8,
+            end: 20,
+            label: "person".into(),
+            score: 0.9,
+            text: "Liora Nesket".into(),
+        }];
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| &source[d.range])
+            .collect();
+        assert_eq!(found, ["Liora Nesket", "Liora%20Nesket", "Liora_Nesket"]);
     }
     #[test]
     fn titles_role_and_category_words_are_never_proposed() {
