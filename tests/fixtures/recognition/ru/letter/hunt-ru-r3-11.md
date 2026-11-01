@@ -1,11 +1,7 @@
 ---
-status: known-flaw
-flaw: email-autolink-protected
-issue: 411
+status: pass
 kind: letter
 source: hunt-r3
-expect: miss: EMAIL "oksana@perepiska.invalid" ×2
-expect: miss: EMAIL "pavel@\u{200b}vector.invalid" ×2
 ---
 # Переписка о возврате оригинала акта
 
