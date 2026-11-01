@@ -53,15 +53,6 @@ on the last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-can
 Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
 [recognition grill](docs/design/recognition-grill-2026-11-01.md).
 
-2. **[Detection] Detection gate in local CI.** *From the 2026-11-01
-   grills.* The fixture format of ADR 0093
-   (`tests/fixtures/recognition/`, one file per fixture with its Mac
-   snapshot), the hybrid and render corpora imported and re-marked by the
-   [guide](tests/fixtures/recognition/GUIDE.md), `just recognize <file.md>
-   [--gold] [--snapshot]`, snapshot-based tests in `just test`, and the
-   model run in `local/macos` (stale snapshots fail, strict `known-flaw`).
-   *Done when:* a PR breaking a fixture fails local CI, and #301's and the
-   demos' spans are `known-flaw` fixtures.
 3. **[Detection] Rule pack.** *From the 2026-11-01 grills (#301).* ADR
    0092's TOML pack replaces `mdoc-detect`'s hardcoded lists and
    `guess_category`'s shapes; personal-context dates, the Case number
