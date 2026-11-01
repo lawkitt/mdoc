@@ -255,6 +255,8 @@ fn manual_span(value: &str) -> bool {
         && value.chars().any(char::is_alphanumeric)
         && !value.chars().any(|ch| "\n\r[]<>`|#$".contains(ch))
 }
+/// Whether `range` is whole words; a note marker after a word ("Durnell¹")
+/// is a word of its own.
 fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
     let left = original.chars().next().is_some_and(char::is_alphanumeric)
         && source[..range.start]
@@ -268,7 +270,7 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
         && source[range.end..]
             .chars()
             .next()
-            .is_some_and(char::is_alphanumeric);
+            .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c));
     !left && !right
 }
 fn interval_conflict(occupied: &BTreeMap<usize, usize>, range: &Range<usize>) -> bool {
