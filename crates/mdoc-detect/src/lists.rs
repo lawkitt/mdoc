@@ -22,9 +22,11 @@ pub fn apply(source: &str, mut detections: Vec<Detection>, lists: &Lists) -> Vec
     for entry in &lists.always {
         let category = entry.category();
         let mut found = mentions(source, &entry.wording);
-        // A listed person's other names too, where the full name may not
-        // appear (ADR 0092).
-        if category == Category::Person {
+        // A listed person's other names too (ADR 0092). Where the full name
+        // appears, the review's propagation proposes them from it, with a
+        // title's context and the ordinary-word rule; only where it does
+        // not does the list find them.
+        if category == Category::Person && found.is_empty() {
             found.extend(person_forms_in(source, &[entry.wording.as_str()]));
         }
         detections.extend(found.into_iter().map(|range| Detection {
@@ -161,6 +163,46 @@ mod tests {
             .ingest(source, apply(source, correct(source, &[]), &lists))
             .unwrap();
         assert_eq!(texts(source, &review), ["Bennett", "Maya"]);
+    }
+
+    #[test]
+    fn a_titled_form_of_a_listed_name_in_the_document_keeps_its_context() {
+        // #409's two people sharing "Paul": the title marks a surname.
+        let source = "Paul Smith met James Paul. Mr Paul agreed.";
+        let detections = correct(
+            source,
+            &[
+                raw(source, "Paul Smith", "person"),
+                raw(source, "James Paul", "person"),
+            ],
+        );
+        let mut lists = Lists::default();
+        lists.add_always("James Paul", Category::Person);
+        let mut review = Review::default();
+        review
+            .ingest(source, apply(source, detections, &lists))
+            .unwrap();
+        let identity = |text: &str| {
+            let c = review
+                .candidates()
+                .iter()
+                .find(|c| &source[c.range.clone()] == text)
+                .unwrap();
+            review.variant_identity(c.variant)
+        };
+        assert_eq!(identity("Paul"), identity("James Paul"));
+    }
+
+    #[test]
+    fn an_ordinary_word_form_of_a_listed_name_is_not_proposed_alone() {
+        let source = "Call Ms Hill. Hill walking is popular.";
+        let mut lists = Lists::default();
+        lists.add_always("Rose Hill", Category::Person);
+        let mut review = Review::default();
+        review
+            .ingest(source, apply(source, correct(source, &[]), &lists))
+            .unwrap();
+        assert!(texts(source, &review).is_empty());
     }
 
     #[test]

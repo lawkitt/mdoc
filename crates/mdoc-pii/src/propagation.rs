@@ -675,7 +675,10 @@ fn find_forms(
 
 /// Spans of the forms of full person names `names` in `source`, found as
 /// for a name in the document: the user's Always list (ADR 0092) proposes
-/// a listed person's forms even where the full name never appears.
+/// a listed person's forms where the full name never appears, so no
+/// identity carries a form's context. A form that is also an ordinary word
+/// ("Hill") is left out: without the review's mid-sentence restriction it
+/// would spread to the word itself.
 pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
     let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
     if people.is_empty() {
@@ -683,6 +686,7 @@ pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
     }
     find_forms(source, &people, &[])
         .into_iter()
+        .filter(|(_, common, _)| !common)
         .map(|(range, ..)| range)
         .collect()
 }
