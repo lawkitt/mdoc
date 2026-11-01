@@ -1,8 +1,8 @@
 //! Immutable, cancellable candidate discovery; reusable cached matcher.
 use super::{
-    exact_boundary, generated_alias, intersects, interval_conflict,
+    exact_boundary, generated_alias, interval_conflict,
     propagation::{glued, sentence_start},
-    syntax::{plain_text_span, protected_syntax},
+    syntax::{crosses_syntax, plain_text_span, protected_syntax},
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use std::{
@@ -77,7 +77,7 @@ impl DiscoveryInput {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
-                && !intersects(&protected, range)
+                && !crosses_syntax(&protected, source, range)
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
