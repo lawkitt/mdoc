@@ -137,11 +137,9 @@ mod tests {
         let mut review = Review::default();
         review.ingest(source, detections).unwrap();
         let found = texts(source, &review);
-        assert_eq!(
-            found,
-            ["Northwind", "Maya Bennett", "Ms Bennett", "NORTHWIND"]
-        );
-        // The form joins the full name, as propagation links it.
+        assert_eq!(found, ["Northwind", "Maya Bennett", "Bennett", "NORTHWIND"]);
+        // The surname, its title outside the span (#382), joins the full
+        // name, as propagation links it.
         let identity = |text: &str| {
             let c = review
                 .candidates()
@@ -150,7 +148,7 @@ mod tests {
                 .unwrap();
             review.variant_identity(c.variant)
         };
-        assert_eq!(identity("Ms Bennett"), identity("Maya Bennett"));
+        assert_eq!(identity("Bennett"), identity("Maya Bennett"));
     }
 
     #[test]
@@ -162,7 +160,7 @@ mod tests {
         review
             .ingest(source, apply(source, correct(source, &[]), &lists))
             .unwrap();
-        assert_eq!(texts(source, &review), ["Ms Bennett", "Maya"]);
+        assert_eq!(texts(source, &review), ["Bennett", "Maya"]);
     }
 
     #[test]

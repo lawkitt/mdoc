@@ -683,7 +683,7 @@ pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
     }
     find_forms(source, &people, &[])
         .into_iter()
-        .map(|(range, _)| range)
+        .map(|(range, ..)| range)
         .collect()
 }
 
