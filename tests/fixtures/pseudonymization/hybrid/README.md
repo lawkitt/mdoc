@@ -9,6 +9,10 @@ and [historical OSS source review](https://github.com/lawkitt/mdoc/blob/faa2c5e2
 
 ## Corpus
 
+Frozen for research reproduction: its cases are imported, re-marked by
+the annotation guide, as [recognition fixtures](../../recognition/README.md)
+(ADR 0093); change those, not this corpus.
+
 `corpus.json` is original synthetic material dedicated to CC0-1.0, with no user
 documents. It preserves 13 existing short fixtures verbatim and adds eight
 calibration fixtures and 12 holdout fixtures, including four negative fixtures.

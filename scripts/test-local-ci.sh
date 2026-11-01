@@ -58,8 +58,12 @@ not() { ! "$@"; }
   none=$(awk '$1 == "none" { print $2 }' <<<"$table")
   check "ci.yml's paths-ignore list is read" [ -n "$ignored" ]
   check "ci.yml's paths-ignore is the table's none lines, in order" [ "$ignored" = "$none" ]
-  check "the none lines come first, so a README under apps/ is docs" \
-    [ "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 != "none" { seen = 1 } seen && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
+  # The lines above the first none line are exceptions to it: Markdown a test
+  # reads. GitHub's paths-ignore takes no `!`, so hosted CI skips them.
+  check "the exceptions are under tests/fixtures/, so a README under apps/ is docs" \
+    [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { exit } { print $2 }' | grep -v '^tests/fixtures/')" ]
+  check "the none lines are one block" \
+    [ "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { inside = 1; next } inside { after = 1 } after && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
   check "every line names known areas and one glob" \
     [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | grep -vE '^(none|core|desktop|ios|android)(,(desktop|ios|android))*[[:space:]]+[^[:space:]]+$')" ]
   # The desktop jobs follow the table through ci.yml's areas job.
@@ -91,6 +95,9 @@ not() { ! "$@"; }
   routes "desktop android" scripts/install-android-ndk.sh
   routes "desktop ios" src/main.rs apps/ios/mdoc/App/MdocApp.swift
   routes "ios android" apps/ios/a.swift apps/android/b.kt
+  routes "core desktop ios android" tests/fixtures/recognition/en/claim/x.md
+  routes "core desktop ios android" tests/fixtures/recognition/en/claim/x.model.json
+  routes "" tests/fixtures/pseudonymization/README.md
   routes "" README.md docs/adr/0091-mobile-ci-and-releases.md LICENSE
   routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
   routes "ios" apps/ios/README.md apps/ios/a.swift
@@ -113,7 +120,7 @@ not() { ! "$@"; }
 
   # The statuses: which area each stands for, and what a skipped one says.
   # shellcheck disable=SC2034 # read by area_of, steps_of and queue
-  context=local/macos mobile_context=local/ios mobile_area=ios steps="setup lint test ffi" mobile_steps="setup ios"
+  context=local/macos mobile_context=local/ios mobile_area=ios steps="setup lint test ffi detect" mobile_steps="setup ios"
   check "local/macos is desktop" [ "$(area_of local/macos)" = desktop ]
   check "local/ios is ios" [ "$(area_of local/ios)" = ios ]
   check "the iOS job's steps" [ "$(steps_of local/ios)" = "setup ios" ]
@@ -132,7 +139,8 @@ not() { ! "$@"; }
   check "the iOS job has its own limit" [ "$(timeout_for ios)" = 2400 ]
   check "the Android job has its own limit" [ "$(timeout_for android)" = 2400 ]
   check "test keeps its limit" [ "$(timeout_for test)" = 1800 ]
-  check "the steps read as their commands" [ "$(label ffi), $(label ios), $(label android)" = "just mobile --ffi, just mobile --ios, just android" ]
+  check "the steps read as their commands" [ "$(label ffi), $(label ios), $(label android), $(label detect)" = "just mobile --ffi, just mobile --ios, just android, just detection-gate" ]
+  check "the detection gate has test's limit" [ "$(timeout_for detect)" = 1800 ]
 
   # The mobile steps follow the merge's main.
   repo=$(mktemp -d)
@@ -140,7 +148,7 @@ not() { ! "$@"; }
   g init --quiet -b main
   echo a >"$repo/a" && g add a && g commit --quiet -m old-main
   old_main=$(g rev-parse HEAD)
-  mkdir "$repo/scripts" && : >"$repo/scripts/mobile-check.sh" && : >"$repo/scripts/android-check.sh"
+  mkdir "$repo/scripts" && : >"$repo/scripts/mobile-check.sh" && : >"$repo/scripts/android-check.sh" && : >"$repo/scripts/detection-gate.sh"
   g add scripts && g commit --quiet -m new-main
   new_main=$(g rev-parse HEAD)
   # A PR merged onto the old main: no check to run.
@@ -150,12 +158,16 @@ not() { ! "$@"; }
   in_repo() { (cd "$repo" && mobile_check_expected); }
   # shellcheck disable=SC2317,SC2329 # called through check
   android_in_repo() { (cd "$repo" && android_check_expected); }
+  # shellcheck disable=SC2317,SC2329 # called through check
+  gate_in_repo() { (cd "$repo" && detection_gate_expected); }
+  check "a merge ref on a main without the detection gate skips it" eval '! gate_in_repo'
   check "a merge ref on a main without the check skips it" eval '! in_repo'
   check "a merge ref on a main without the Android job skips it" eval '! android_in_repo'
   # A PR that deletes the script, merged onto the new main: the check still runs (and fails).
   g checkout --quiet -b pr-new "$new_main" && g rm --quiet scripts/mobile-check.sh && g commit --quiet -m drop
   g checkout --quiet --detach "$new_main" && g merge --quiet --no-ff -m merge pr-new
   check "a PR that removes the check still runs it" in_repo
+  check "and the detection gate too" gate_in_repo
   # A commit without the table runs every area.
   # shellcheck disable=SC2034 # read by commit_areas
   checkout=$repo
@@ -413,6 +425,7 @@ echo readme >"$tmp/work/README.md"
 echo doc >"$tmp/work/docs/a.md"
 : >"$tmp/work/scripts/mobile-check.sh"
 : >"$tmp/work/scripts/android-check.sh"
+: >"$tmp/work/scripts/detection-gate.sh"
 cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 # Setup must never wait on a prompt: the runner closes its stdin.
@@ -589,10 +602,10 @@ check "queued statuses link the runner's status" grep -q "^$pass	$D	pending	Queu
 steps_run() { grep "^$1 " "$FAKE/just.log" | head -3 | cut -d' ' -f2 | tr '\n' ' '; }
 check "setup, lint, then test" [ "$(steps_run pass)" = "setup lint test " ]
 case "$FAKE_CONTEXT" in
-  local/macos) last_step="mobile --ffi" ;;
+  local/macos) last_step="detection-gate" ;;
   *) last_step="test" ;;
 esac
-check "the Mac's desktop job ends with the mobile cargo check, others with test" \
+check "the Mac's desktop job ends with the detection gate, others with test" \
   [ "$(grep "^pass " "$FAKE/just.log" | tail -1 | cut -d' ' -f2- | sed 's/ renders=.*//')" = "$last_step" ]
 check "lint gets no renders" grep -qx "pass lint renders= job=" "$FAKE/just.log"
 check "the test step gets MDOC_HEADLESS_ARTIFACTS" grep -qx "pass test renders=set job=" "$FAKE/just.log"
@@ -637,7 +650,7 @@ else
 fi
 check "a core PR runs both statuses" has_both "$core" "success	Passed on main@$short_base in *"
 desktop_steps="setup,lint,test,"
-[ "$D" != local/macos ] || desktop_steps+="mobile --ffi,"
+[ "$D" != local/macos ] || desktop_steps+="mobile --ffi,detection-gate,"
 check "the desktop job first, then the mobile one, which does not wait for it to post" \
   [ "$(ran core)" = "$desktop_steps$mobile_steps" ]
 check "renders are kept for a PR's newest head only" [ ! -e "$LOCAL_CI_HOME/out/pr-1/0000000/renders" ]

@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":52,"end":64,"label":"person","score":0.99754655,"text":"Alice Morgan"},
+    {"start":88,"end":100,"label":"person","score":0.9966885,"text":"Alice Morgan"},
+    {"start":21,"end":42,"label":"organization","score":0.9962492,"text":"Northbridge Legal Ltd"},
+    {"start":150,"end":167,"label":"phone_number","score":0.99999905,"text":"+1 (202) 555-0147"},
+    {"start":118,"end":146,"label":"email","score":0.99999535,"text":"alice.morgan@example.invalid"},
+    {"start":171,"end":202,"label":"address","score":0.943243,"text":"42 Cedar Lane, Boston, MA 02110"}
+  ]
+}

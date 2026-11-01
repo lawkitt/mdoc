@@ -25,3 +25,6 @@ scripts/ci-areas.txt text eol=lf
 # The render test's screen list: parallel branches each add lines, and a
 # union merge keeps both (ADR 0082).
 tests/headless_screens.txt merge=union text eol=lf
+
+# Recognition fixtures (ADR 0093): byte offsets and snapshots assume LF.
+tests/fixtures/recognition/** text eol=lf

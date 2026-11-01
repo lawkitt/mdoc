@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":0,"end":12,"label":"person","score":0.9832145,"text":"Alice Morgan"},
+    {"start":103,"end":115,"label":"person","score":0.9705206,"text":"Alice Morgan"},
+    {"start":47,"end":56,"label":"person","score":0.8312801,"text":"A. Morgan"},
+    {"start":24,"end":46,"label":"organization","score":0.9974491,"text":"Northbridge Legal Ltd."}
+  ]
+}

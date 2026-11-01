@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":7,"end":19,"label":"full_name","score":0.9897909,"text":"Robert Hayes"},
+    {"start":34,"end":43,"label":"passport_number","score":0.99791706,"text":"XK0427819"},
+    {"start":71,"end":81,"label":"tax_id","score":0.9388008,"text":"12-3456789"},
+    {"start":181,"end":189,"label":"routing_number","score":0.98421544,"text":"2026/314"},
+    {"start":96,"end":123,"label":"iban","score":0.96458924,"text":"GB29 NWBK 6016 1331 9268 19"}
+  ]
+}

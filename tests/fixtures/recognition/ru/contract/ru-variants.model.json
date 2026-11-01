@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":0,"end":40,"label":"person","score":0.85752964,"text":"Анна Сергеевна Ёлкина"},
+    {"start":173,"end":193,"label":"person","score":0.80022407,"text":"А. С. Ёлкина"},
+    {"start":102,"end":144,"label":"person","score":0.742048,"text":"Анне Сергеевне Ёлкиной"},
+    {"start":221,"end":235,"label":"person","score":0.582016,"text":"Ёлкиной"},
+    {"start":272,"end":301,"label":"organization","score":0.83223665,"text":"Северный Вектор"}
+  ]
+}

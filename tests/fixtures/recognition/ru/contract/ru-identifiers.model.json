@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":18,"end":58,"label":"full_name","score":0.98826754,"text":"Анна Сергеевна Ёлкина"},
+    {"start":76,"end":87,"label":"passport_number","score":0.99780875,"text":"4510 123456"},
+    {"start":97,"end":107,"label":"national_id_number","score":0.9895109,"text":"7701234567"},
+    {"start":251,"end":267,"label":"routing_number","score":0.938124,"text":"А40-123456/2026"},
+    {"start":166,"end":186,"label":"bank_account","score":0.9167081,"text":"40702810900000001234"},
+    {"start":196,"end":205,"label":"bank_account","score":0.7664685,"text":"044525225"}
+  ]
+}

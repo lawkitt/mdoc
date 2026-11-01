@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":59,"end":68,"label":"routing_number","score":0.9658996,"text":"044525225"},
+    {"start":29,"end":49,"label":"bank_account","score":0.856092,"text":"40702810900000001234"}
+  ]
+}
