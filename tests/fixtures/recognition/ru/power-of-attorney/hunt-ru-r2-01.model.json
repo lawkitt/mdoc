@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":186,"end":235,"label":"person","score":0.9709643,"text":"Генриетта Яновна де Лаваль"},
+    {"start":471,"end":513,"label":"organization","score":0.79597545,"text":"ООО «Бархатный оттиск»"},
+    {"start":305,"end":317,"label":"passport_number","score":0.99819684,"text":"46 73 812609"},
+    {"start":1502,"end":1555,"label":"full_name","score":0.8553685,"text":"Генриеттой Яновной де Лаваль"},
+    {"start":2227,"end":2237,"label":"person","score":0.80852115,"text":"Гетой"},
+    {"start":1945,"end":1968,"label":"email","score":0.99857855,"text":"g.laval@doverie.invalid"},
+    {"start":3039,"end":3059,"label":"person","score":0.7348813,"text":"доверителя"}
+  ]
+}

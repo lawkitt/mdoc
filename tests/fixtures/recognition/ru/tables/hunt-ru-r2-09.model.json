@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":798,"end":804,"label":"person","score":0.55546534,"text":"Ева"},
+    {"start":828,"end":840,"label":"phone_number","score":0.99986863,"text":"46 82 731609"},
+    {"start":878,"end":890,"label":"phone_number","score":0.99982464,"text":"46 83 862710"},
+    {"start":1199,"end":1218,"label":"email","score":0.999977,"text":"eva@reyestr.invalid"},
+    {"start":1291,"end":1311,"label":"email","score":0.9999076,"text":"leon@reyestr.invalid"},
+    {"start":1392,"end":1404,"label":"tax_id","score":0.9711291,"text":"508614729031"},
+    {"start":2231,"end":2253,"label":"person","score":0.66985285,"text":"отправителя"},
+    {"start":1897,"end":1917,"label":"person","score":0.6273806,"text":"Получатель"}
+  ]
+}
