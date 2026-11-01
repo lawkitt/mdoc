@@ -1203,10 +1203,9 @@ fn propagation_scales_with_the_document() {
         names.push(format!("Ан{}а Петр{}ова Сергеевна", tag(n), tag(n)));
     }
     while source.len() < 1 << 20 {
-        for n in 0..names.len() {
+        for (n, name) in names.iter().enumerate() {
             source.push_str(&format!(
-                "{} подписала. Позже Петр{}овой и Ан{}а Сергеевна, Mr Smith и Rose. ",
-                names[n],
+                "{name} подписала. Позже Петр{}овой и Ан{}а Сергеевна, Mr Smith и Rose. ",
                 tag(n),
                 tag(n)
             ));
