@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: hidden-underscore-name ru-identifier-category
-issue: unfiled
+issue: 376 380
 kind: docx
 source: import
 expect: miss: PERSON "Анна_Ёлкина" ×2

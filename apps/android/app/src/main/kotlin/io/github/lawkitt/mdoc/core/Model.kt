@@ -23,6 +23,7 @@ enum class Category(@StringRes val label: Int, val token: String) {
     Phone(R.string.category_phone, "PHONE"),
     Address(R.string.category_address, "ADDRESS"),
     Date(R.string.category_date, "DATE"),
+    CaseNumber(R.string.category_case_number, "CASE"),
     Identity(R.string.category_identity, "IDENTITY"),
     Tax(R.string.category_tax, "TAX"),
     Bank(R.string.category_bank, "BANK"),

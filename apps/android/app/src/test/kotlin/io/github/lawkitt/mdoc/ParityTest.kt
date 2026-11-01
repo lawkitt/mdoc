@@ -47,6 +47,7 @@ class ParityTest {
         "IDENTITY" -> Category.IDENTITY
         "TAX" -> Category.TAX
         "BANK" -> Category.BANK
+        "CASE" -> Category.CASE_NUMBER
         "DATE" -> Category.DATE
         else -> Category.OTHER
     }

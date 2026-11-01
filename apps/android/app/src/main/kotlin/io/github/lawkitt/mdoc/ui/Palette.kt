@@ -19,6 +19,7 @@ object Palette {
         Category.Identity -> if (dark) 0xFF8E8CFF else 0xFF4B49C7
         Category.Tax -> if (dark) 0xFFFF7AA8 else 0xFFC7255E
         Category.Bank -> if (dark) 0xFFFF6B61 else 0xFFC62A1F
+        Category.CaseNumber -> if (dark) 0xFFFFD60A else 0xFF8A6D00
         Category.Other -> if (dark) 0xFFA8A8AE else 0xFF6B6B70
     }.toInt()
 

@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: ocr-name-category
-issue: unfiled
+issue: 377
 kind: ocr
 source: import
 expect: boundary: gold PERSON "A1ice M0rgan"; proposed ORG "A1ice M0rgan"

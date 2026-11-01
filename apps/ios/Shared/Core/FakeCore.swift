@@ -327,7 +327,7 @@ private final class FakeState: @unchecked Sendable {
     // MARK: Restore
 
     private static let aliasPattern = try! NSRegularExpression(
-        pattern: #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#,
+        pattern: #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|CASE|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#,
         options: [.caseInsensitive])
 
     /// Lenient on case and `_`/`-`/space separators; a loose form counts

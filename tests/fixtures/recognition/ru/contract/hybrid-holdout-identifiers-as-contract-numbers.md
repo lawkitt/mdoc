@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: digit-false-hit public-body-org
-issue: unfiled
+issue: 375 378
 kind: contract
 source: import
 expect: false hit: BANK "5401000039"

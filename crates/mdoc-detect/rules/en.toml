@@ -1,8 +1,6 @@
 # mdoc's rule pack, part 2 of 3: English. Sections and fields are described
 # in shared.toml.
 
-# No English context rules yet.
-context = []
 
 # No English span fixes yet.
 span = []
@@ -62,3 +60,33 @@ guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
     '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
 ]
+
+# Claim and case numbers after their label (ADR 0092): "Claim No.
+# 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
+# "Claim No CL-2026-000123". The value is the whole identifier. Statute,
+# article and clause numbers have no such label and stay unmarked. A value
+# needs four digits: the review proposes a wording everywhere it appears,
+# and "Claim No. 12" would mark "article 12" too. A date is not one.
+[[context]]
+category = "CASE"
+labels = [
+    "claim no", "claim number", "case no", "case number", "proceedings no",
+    "proceedings number", "proceedings are numbered",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# "case" alone is also a common word ("in case 30 days pass", "in case
+# 2026-03-12 is a holiday"): after it only a number with a separator, or of
+# five digits or more, is a case number ("case 202-555-0169"), never after
+# "in", "just" and the like, and never a date.
+[[context]]
+category = "CASE"
+labels = ["case"]
+between = '[\p{Zs}\t:№#]{1,4}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
+min_digits = 4
+unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
+unless_guessed = ["DATE"]

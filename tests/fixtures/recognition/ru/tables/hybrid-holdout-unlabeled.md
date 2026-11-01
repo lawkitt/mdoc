@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: ru-identifier-category
-issue: unfiled
+issue: 380
 kind: tables
 source: import
 expect: boundary: gold TAX "5401000039"; proposed BANK "5401000039"

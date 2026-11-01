@@ -16,6 +16,7 @@ pub enum Category {
     Identity,
     Tax,
     Bank,
+    CaseNumber,
     Date,
     Other,
 }
@@ -32,6 +33,7 @@ impl From<mdoc_pii::Category> for Category {
             C::Identity => Self::Identity,
             C::Tax => Self::Tax,
             C::Bank => Self::Bank,
+            C::CaseNumber => Self::CaseNumber,
             C::Date => Self::Date,
             C::Other => Self::Other,
         }
@@ -49,6 +51,7 @@ impl From<Category> for mdoc_pii::Category {
             Category::Identity => Self::Identity,
             Category::Tax => Self::Tax,
             Category::Bank => Self::Bank,
+            Category::CaseNumber => Self::CaseNumber,
             Category::Date => Self::Date,
             Category::Other => Self::Other,
         }

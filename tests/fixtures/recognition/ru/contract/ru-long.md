@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: org-boundary
-issue: unfiled
+issue: 374
 kind: contract
 source: import
 expect: boundary: gold ORG "ООО «Северный Вектор»"; proposed ORG "Северный Вектор" ×64

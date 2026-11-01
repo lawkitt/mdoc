@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: case-number
 issue: 364
 kind: claim
 source: demo
-expect: miss: CASE "6001842/2026"
 ---
 **Claim number:** ⟦CASE|6001842/2026⟧
 

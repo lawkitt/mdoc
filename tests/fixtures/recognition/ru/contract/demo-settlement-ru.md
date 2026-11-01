@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: ru-address date-of-birth case-number org-boundary public-body-org
-issue: 362 363 364 unfiled
+flaw: ru-address date-of-birth org-boundary public-body-org
+issue: 362 363 374 378
 kind: contract
 source: demo
-expect: miss: CASE "2-1842/2026"
 expect: miss: ADDRESS "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12"
 expect: miss: ADDRESS "197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3"
 expect: miss: DATE "14 марта 1988 г."

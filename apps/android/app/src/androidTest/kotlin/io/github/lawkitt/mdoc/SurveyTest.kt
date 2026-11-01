@@ -189,6 +189,7 @@ class SurveyTest {
                 "PHONE" -> Category.PHONE
                 "ADDRESS" -> Category.ADDRESS
                 "BANK" -> Category.BANK
+                "CASE" -> Category.CASE_NUMBER
                 "DATE" -> Category.DATE
                 else -> Category.OTHER
             }

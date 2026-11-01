@@ -11,7 +11,16 @@
 #   variants  nicknames of given names, for names already in the document
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
-# ADDRESS, IDENTITY, TAX, BANK, DATE, REDACTED.
+# ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
+#
+# A `context` entry proposes its `category` for the value after a label:
+#   labels  = […]    phrases, case ignored (only here), matched as whole
+#                    words; a space
+#                    matches any run of whitespace
+#   between = regex  what may sit between the label and the value
+#   value   = regex  the value, which ends at a word boundary; only it is
+#                    proposed, never the label
+# A context match wins over a model span on the same text.
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere
@@ -29,7 +38,7 @@
 # A category with no entry takes any span. Manual selections try each
 # category's guesses in the order the categories first appear in the pack.
 
-# Context rules, as [[context]] with `category` and `labels`. None yet.
+# Context rules are per language.
 context = []
 
 # Span fixes, as [[span]] with `category` and `trim` words or `extend`

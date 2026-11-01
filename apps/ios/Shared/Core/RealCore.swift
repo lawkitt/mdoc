@@ -37,6 +37,7 @@ extension Category {
         case .identity: .identity
         case .tax: .tax
         case .bank: .bank
+        case .caseNumber: .caseNumber
         case .date: .date
         case .other: .other
         }
@@ -52,6 +53,7 @@ extension Category {
         case .identity: .identity
         case .tax: .tax
         case .bank: .bank
+        case .caseNumber: .caseNumber
         case .date: .date
         case .other: .other
         }

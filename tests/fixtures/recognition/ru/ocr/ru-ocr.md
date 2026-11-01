@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: ru-address ru-identifier-category
-issue: 362 unfiled
+issue: 362 380
 kind: ocr
 source: import
 expect: miss: ADDRESS "г. М0сква, ул. Кедровая, д. 42"

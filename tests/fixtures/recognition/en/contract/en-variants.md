@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: org-boundary
-issue: unfiled
+issue: 374
 kind: contract
 source: import
 expect: boundary: gold ORG "Northbridge Legal Ltd"; proposed ORG "Northbridge Legal Ltd."

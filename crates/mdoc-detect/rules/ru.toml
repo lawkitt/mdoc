@@ -1,8 +1,6 @@
 # mdoc's rule pack, part 3 of 3: Russian. Sections and fields are described
 # in shared.toml.
 
-# No Russian context rules yet.
-context = []
 
 # No Russian span fixes yet.
 span = []
@@ -50,3 +48,36 @@ category = "DATE"
 guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
 ]
+
+# Case numbers after "номер дела" or "дело №" (ADR 0092): "**Номер дела:**
+# 2-1842/2026", "**Дело №** 1234", "дело № А40-123456/2026". The value is the
+# whole identifier and needs four digits: the review proposes a wording
+# everywhere it appears, and a short one would mark "статья 12" too. A date
+# is not one.
+[[context]]
+category = "CASE"
+labels = ["номер дела"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# "дело №", "дела №", "делу №": the number sign makes the word a label.
+[[context]]
+category = "CASE"
+labels = ["дело", "дела", "делу"]
+between = '[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# "дело", "дела", "делу" without "№" are also common words: only a number
+# with a separator, or of five digits or more, follows them as a case number
+# ("дело А40-987654/2026", "по делу 2-1842/2026"), never a date.
+[[context]]
+category = "CASE"
+labels = ["дело", "дела", "делу"]
+between = '[\p{Zs}\t:#]{1,4}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
+min_digits = 4
+unless_guessed = ["DATE"]

@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: uk-home-address date-of-birth case-number title-in-person public-body-org
-issue: 361 363 364 unfiled
+flaw: uk-home-address date-of-birth title-in-person public-body-org
+issue: 361 363 382 378
 kind: contract
 source: demo
-expect: miss: CASE "6001842/2026"
 expect: miss: ADDRESS "Flat 3, 41 Larch Road, Bristol BS6 9ZY"
 expect: miss: DATE "14 March 1988"
 expect: false hit: ORG "Employment Tribunal"

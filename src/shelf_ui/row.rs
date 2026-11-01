@@ -103,6 +103,8 @@ fn category_noun(category: Category, count: usize) -> &'static str {
         Category::Tax => "tax IDs",
         Category::Bank if one => "bank account",
         Category::Bank => "bank accounts",
+        Category::CaseNumber if one => "case number",
+        Category::CaseNumber => "case numbers",
         Category::Date if one => "date",
         Category::Date => "dates",
         Category::Other => "other",

@@ -32,7 +32,7 @@ struct SourceRange: Hashable, Sendable {
 
 /// What a replacement stands for, in `mdoc_pii::Category` order.
 enum Category: String, CaseIterable, Sendable {
-    case person, organization, email, phone, address, date, identity, tax, bank, other
+    case person, organization, email, phone, address, date, caseNumber, identity, tax, bank, other
 
     var label: String {
         switch self {
@@ -42,6 +42,7 @@ enum Category: String, CaseIterable, Sendable {
         case .phone: String(localized: "Phone")
         case .address: String(localized: "Address")
         case .date: String(localized: "Date")
+        case .caseNumber: String(localized: "Case number")
         case .identity: String(localized: "Identity")
         case .tax: String(localized: "Tax identifier")
         case .bank: String(localized: "Bank details")
@@ -58,6 +59,7 @@ enum Category: String, CaseIterable, Sendable {
         case .phone: "PHONE"
         case .address: "ADDRESS"
         case .date: "DATE"
+        case .caseNumber: "CASE"
         case .identity: "IDENTITY"
         case .tax: "TAX"
         case .bank: "BANK"

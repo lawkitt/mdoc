@@ -201,12 +201,17 @@ impl DocumentView {
             Vec::new().into()
         };
         // Contacts and identifiers can belong to a person or organization;
-        // the category menu holds that choice (ADR 0055).
+        // the category menu holds that choice (ADR 0055). A case number
+        // belongs to the dispute, not to one party.
         let ownable = identity.is_some_and(|i| {
             i.owner.is_some()
                 || !matches!(
                     i.category,
-                    Category::Person | Category::Organization | Category::Date | Category::Other
+                    Category::Person
+                        | Category::Organization
+                        | Category::Date
+                        | Category::CaseNumber
+                        | Category::Other
                 )
         });
         let owner = identity
