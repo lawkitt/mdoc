@@ -52,6 +52,13 @@ words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this",
 category = "ORG"
 guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
 
+# An English name of an organization is in title case or carries a legal
+# form; words in sentence case are a document kind, a heading or a team
+# ("Distribution register", "Lasting power of attorney", "Accounts team").
+[[shape]]
+category = "ORG"
+forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
+
 # Dates with an English month name: "12 March 2026" (a Russian "г." after
 # the year still counts) and "March 12, 2026".
 [[shape]]

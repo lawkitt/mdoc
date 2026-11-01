@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: document-heading-org
 issue: 426
 kind: tables
 source: hunt-r4
-expect: false hit: ORG "Distribution register"
 ---
 # Distribution register: copies and delivery charges
 

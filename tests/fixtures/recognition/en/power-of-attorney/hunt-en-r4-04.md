@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: document-heading-org
 issue: 426
 kind: power-of-attorney
 source: hunt-r4
-expect: false hit: ORG "Lasting power of attorney"
 ---
 # Lasting power of attorney: continuation of appointment details
 
