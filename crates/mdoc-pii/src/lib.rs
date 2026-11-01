@@ -211,6 +211,20 @@ fn safe_span(value: &str) -> bool {
         && !value.ends_with('_')
         && !value.chars().any(|ch| "\n\r[]<>`*|\\#~".contains(ch))
 }
+/// A person's name the text wraps over soft line breaks ("Евгения\n
+/// Матвеевна\n  Мельник"): up to four lines, each after the first only
+/// indented before a capital, no blank line, otherwise a safe span.
+fn soft_broken_name(value: &str) -> bool {
+    let lines: Vec<&str> = value.split('\n').collect();
+    (2..=4).contains(&lines.len())
+        && lines[1..].iter().all(|line| {
+            line.trim_start_matches([' ', '\t'])
+                .chars()
+                .next()
+                .is_some_and(char::is_uppercase)
+        })
+        && safe_span(&lines.join(" "))
+}
 /// Like `safe_span`, but escapes and emphasis characters are allowed; the
 /// caller checks them structurally with `plain_text_span`.
 fn manual_span(value: &str) -> bool {
@@ -549,7 +563,10 @@ impl Review {
             {
                 continue;
             }
-            if !safe_span(&source[detection.range.clone()])
+            let text = &source[detection.range.clone()];
+            let safe = safe_span(text)
+                || (detection.category == Category::Person && soft_broken_name(text));
+            if !safe
                 || intersects(&protected, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {

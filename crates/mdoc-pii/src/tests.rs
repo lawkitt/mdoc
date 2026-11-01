@@ -1424,3 +1424,28 @@ fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
         .unwrap();
     assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
 }
+
+/// #419: a name the text wraps over soft line breaks is proposed, and its
+/// surname propagates.
+#[test]
+fn a_name_over_soft_line_breaks_is_proposed() {
+    let source = "- Заявитель: Евгения\n  Матвеевна\n  Мельник.\n- Ответчик: Илья Сергеевич \
+        Живцов.\n\nЗаявитель Мельник направила требование.";
+    let review = ingest_names(
+        source,
+        &["Евгения\n  Матвеевна\n  Мельник", "Илья Сергеевич Живцов"],
+    );
+    let full = proposed(&review, "Евгения\n  Матвеевна\n  Мельник");
+    assert_eq!(full.mentions.len(), 1);
+    let identity = review.variant_identity(full.id);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Мельник").id),
+        identity
+    );
+    // A paragraph break or a lowercase line is no name.
+    assert!(!soft_broken_name("Евгения\n\nМельник"));
+    assert!(!soft_broken_name("Евгения\nсказала"));
+    assert!(!soft_broken_name(
+        "Евгения\n  Матвеевна\n  Мельник\n  А\n  Б"
+    ));
+}
