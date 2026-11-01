@@ -295,7 +295,8 @@ printf '## Unreleased\n\n## [0.3.0] - %s\n\n- Merged.\n\n- Newer.\n  continued.\
   "$(date +%Y-%m-%d)" >"$tmp/expected"
 diff -u "$tmp/expected" CHANGELOG.md || fail 'fragments joined out of order'
 [ "$(top_fragments)" = changes/README.md ] || fail 'fragments not deleted'
-[ -f changes/ios/ios-only.md ] && [ -f changes/android/android-only.md ] || fail 'desktop release removed app fragments'
+[ -f changes/ios/ios-only.md ] || fail 'desktop release removed the iOS fragment'
+[ -f changes/android/android-only.md ] || fail 'desktop release removed the Android fragment'
 ! grep -q 'only\.$' CHANGELOG.md || fail 'desktop release joined app fragments'
 echo 'ok: a desktop release leaves changes/ios and changes/android alone'
 [ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
