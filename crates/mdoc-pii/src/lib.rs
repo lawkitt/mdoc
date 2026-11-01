@@ -461,6 +461,11 @@ impl Review {
             enabled: self.variants().iter().map(|g| !g.kept).collect(),
             priority: self.variants().iter().map(|g| g.priority).collect(),
             mid_sentence: self.variants().iter().map(|g| g.mid_sentence).collect(),
+            unglued: self
+                .variants()
+                .iter()
+                .map(|g| g.recognizer == Some(Recognizer::Propagation))
+                .collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -589,6 +594,7 @@ impl Review {
         input.enabled.extend(fresh.iter().map(|_| true));
         input.priority.extend(fresh.iter().map(|_| 0));
         input.mid_sentence.extend(fresh.iter().map(|_| false));
+        input.unglued.extend(fresh.iter().map(|_| false));
         input.originals.extend(fresh.iter().cloned());
         input.matcher = None;
         let unseen: HashSet<Arc<str>> = input
@@ -618,12 +624,7 @@ impl Review {
                 .unwrap_or_else(|| {
                     let next = u64::MAX - provisional.len() as u64;
                     *provisional
-                        .entry(
-                            text.split_whitespace()
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                                .to_lowercase(),
-                        )
+                        .entry(identities::normalization_key(text, Category::Person))
                         .or_insert(next)
                 });
             people.push((owner, text));

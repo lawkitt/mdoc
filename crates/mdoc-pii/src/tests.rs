@@ -994,9 +994,17 @@ fn the_russian_demo_gives_pavlova_one_identity() {
             ("Марина".to_string(), 1),
             ("Павлова".to_string(), 2),
             ("Павловой".to_string(), 1),
-            ("Павлову".to_string(), 1),
         ]
     );
+    // "Павлову" is her accusative and her husband's dative: either, so an
+    // identity of its own that Same as… offers both.
+    let either = proposed(&review, "Павлову").id;
+    assert!(
+        !identity_variants(&review, pavlova)
+            .iter()
+            .any(|(w, _)| w == "Павлову")
+    );
+    assert_eq!(review.suggestions(either).len(), 2);
     assert!(proposed(&review, "Марина").recognizer() == Some(Recognizer::Propagation));
     assert_eq!(
         proposed(&review, "Маришей").recognizer(),
@@ -1020,7 +1028,7 @@ fn the_russian_demo_gives_pavlova_one_identity() {
             .iter()
             .filter(|(_, alias)| alias == "PERSON_1")
             .count(),
-        9
+        8
     );
     assert!(
         review.merge_hints().is_empty(),
@@ -1441,5 +1449,123 @@ fn a_titled_surname_links_as_a_surname_and_miss_is_no_title() {
             .variants()
             .iter()
             .all(|v| v.original.as_ref() != "Rose")
+    );
+}
+
+/// #387: signature initials of a known full name join it.
+#[test]
+fn signature_initials_join_their_full_name() {
+    let source = "The assessor, Dr Ysolde Qhenn, signed. She used the initials Y. Q. \
+        on the sheet. Recorded by Ceryn Nove.";
+    let review = ingest_names(source, &["Ysolde Qhenn", "Ceryn Nove"]);
+    let full = review.variant_identity(proposed(&review, "Ysolde Qhenn").id);
+    let initials = proposed(&review, "Y. Q.");
+    assert_eq!(review.variant_identity(initials.id), full);
+    assert_eq!(initials.recognizer(), Some(Recognizer::Propagation));
+}
+
+/// #392: a person the document names only in oblique cases still has a
+/// surname: the inflected full names are one identity, and the surname
+/// alone joins it.
+#[test]
+fn an_inflected_full_name_propagates_its_surname() {
+    let source = "Заказ гражданки Эльзы-Руты Мартыновны Таль-Шнейдер принят. \
+        Предмет выдаётся Эльзе-Руте Мартыновне Таль-Шнейдер лично. \
+        Получатель Таль-Шнейдер просит вернуть аванс.";
+    let review = ingest_names(
+        source,
+        &[
+            "Эльзы-Руты Мартыновны Таль-Шнейдер",
+            "Эльзе-Руте Мартыновне Таль-Шнейдер",
+        ],
+    );
+    let genitive =
+        review.variant_identity(proposed(&review, "Эльзы-Руты Мартыновны Таль-Шнейдер").id);
+    let dative =
+        review.variant_identity(proposed(&review, "Эльзе-Руте Мартыновне Таль-Шнейдер").id);
+    assert_eq!(genitive, dative, "one person in two cases");
+    let surname = proposed(&review, "Таль-Шнейдер");
+    assert_eq!(surname.mentions.len(), 1);
+    assert_eq!(review.variant_identity(surname.id), genitive);
+    assert_eq!(review.active_identities().len(), 1);
+}
+
+/// Review of #421: a soft-stem first name in two cases is one person, and a
+/// surname shaped like a patronymic still propagates.
+#[test]
+fn soft_stems_and_patronymic_shaped_surnames_read_back() {
+    let source = "Заявление Дарьи Ивановны Петровой принято. Ответ Дарье Ивановне Петровой \
+        направлен. Дарья согласна.";
+    let review = ingest_names(
+        source,
+        &["Дарьи Ивановны Петровой", "Дарье Ивановне Петровой"],
+    );
+    let genitive = review.variant_identity(proposed(&review, "Дарьи Ивановны Петровой").id);
+    let dative = review.variant_identity(proposed(&review, "Дарье Ивановне Петровой").id);
+    assert_eq!(genitive, dative);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Дарья").id),
+        genitive
+    );
+
+    let source = "Договор с Якубович Анны Сергеевны. Якубович подписала.";
+    let review = ingest_names(source, &["Якубович Анны Сергеевны"]);
+    let full = review.variant_identity(proposed(&review, "Якубович Анны Сергеевны").id);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Якубович").id),
+        full
+    );
+}
+
+/// #398: a known full name repeated in lower case joins it.
+#[test]
+fn a_lowercase_repeat_of_a_full_name_joins_it() {
+    let source = "I, Iara Veldune, appoint Corvin Ashmere. Signed electronically: iara veldune.";
+    let review = ingest_names(source, &["Iara Veldune", "Corvin Ashmere"]);
+    let full = review.variant_identity(proposed(&review, "Iara Veldune").id);
+    let repeat = proposed(&review, "iara veldune");
+    assert_eq!(repeat.mentions.len(), 1);
+    assert_eq!(review.variant_identity(repeat.id), full);
+    assert_eq!(repeat.recognizer(), Some(Recognizer::Propagation));
+    assert_eq!(review.active_identities().len(), 2);
+}
+
+/// Review of #422: a repeat joins the name's identity after a merge, and a
+/// repeat inside a path stays out even once the wording is proposed.
+#[test]
+fn a_case_repeat_follows_merges_and_stays_out_of_paths() {
+    let source = "Iara Veldune signed. Corvin Ashmere witnessed.";
+    let mut review = ingest_names(source, &["Iara Veldune", "Corvin Ashmere"]);
+    let iara = review
+        .variant_identity(proposed(&review, "Iara Veldune").id)
+        .unwrap();
+    let corvin = review
+        .variant_identity(proposed(&review, "Corvin Ashmere").id)
+        .unwrap();
+    review.merge_identity(iara, corvin).unwrap();
+    let source = "Iara Veldune signed. Corvin Ashmere witnessed. Later iara veldune \
+        agreed. File /iara veldune/notes.";
+    review.ingest(source, Vec::new()).unwrap();
+    let repeat = proposed(&review, "iara veldune");
+    assert_eq!(review.variant_identity(repeat.id), Some(corvin));
+    let prose = source.find("iara veldune").unwrap();
+    assert_eq!(repeat.mentions, vec![prose..prose + "iara veldune".len()]);
+}
+
+/// #403: a surname's particle stays in its span and its identity.
+#[test]
+fn a_surname_keeps_its_particle() {
+    let source = "Я, Генриетта Яновна де Лаваль, уполномочиваю. Заказ записан на фамилию \
+        де Лаваль.";
+    let review = ingest_names(source, &["Генриетта Яновна де Лаваль"]);
+    let full = review.variant_identity(proposed(&review, "Генриетта Яновна де Лаваль").id);
+    let surname = proposed(&review, "де Лаваль");
+    assert_eq!(surname.mentions.len(), 1);
+    assert_eq!(review.variant_identity(surname.id), full);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Лаваль")
     );
 }

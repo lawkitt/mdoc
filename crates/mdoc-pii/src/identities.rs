@@ -84,12 +84,13 @@ impl IdentityStore {
     }
     pub(crate) fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {
         self.normalized
-            .get(&(category, canonical(value)))
+            .get(&(category, normalization_key(value, category)))
             .copied()
             .filter(|id| self.get(*id).is_some_and(|i| i.category == category))
     }
     pub(crate) fn remember_normalized(&mut self, value: &str, category: Category, id: u64) {
-        self.normalized.insert((category, canonical(value)), id);
+        self.normalized
+            .insert((category, normalization_key(value, category)), id);
     }
     pub(crate) fn add(&mut self, identity: Identity) {
         self.definitions.insert(identity.id, Arc::new(identity));
@@ -128,6 +129,21 @@ impl IdentityStore {
     }
 }
 
+/// The key two wordings of one subject share: case, whitespace and quotes
+/// aside, and a Russian full name with a patronymic in any case, in its own
+/// word order ("Эльзы-Руты Мартыновны Таль-Шнейдер" is "Эльза-Рута
+/// Мартыновна Таль-Шнейдер").
+pub(crate) fn normalization_key(value: &str, category: Category) -> String {
+    let words = name_words(value);
+    if category == Category::Person
+        && words.len() == 3
+        && words.iter().all(|w| cyrillic(w))
+        && let Some(nominative) = crate::propagation::nominative(&words)
+    {
+        return nominative.join(" ");
+    }
+    canonical(value)
+}
 fn canonical(value: &str) -> String {
     value
         .replace(['«', '»', '“', '”'], "\"")
@@ -149,14 +165,53 @@ fn name_parts(value: &str) -> Vec<String> {
 /// Whitespace-separated name words, lowercased, without titles or edge
 /// punctuation: "Ms. O'Neil," → `["o'neil"]`.
 pub(crate) fn name_words(value: &str) -> Vec<String> {
-    value
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase())
-        .filter(|w| !w.is_empty() && !TITLES.contains(&w.as_str()))
+    name_words_cased(value)
+        .into_iter()
+        .map(|w| w.to_lowercase())
         .collect()
 }
+/// [`name_words`] as written, so a lowercase particle ("де") can be told
+/// from a given name ("Van Morrison").
+pub(crate) fn name_words_cased(value: &str) -> Vec<String> {
+    value
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
+        .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
+        .collect()
+}
+/// Lowercase Cyrillic, with hyphens, and spaces inside a surname with a
+/// particle ("де лаваль").
 pub(crate) fn cyrillic(word: &str) -> bool {
-    word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
+    word.chars()
+        .all(|c| matches!(c, 'а'..='я' | 'ё' | '-' | ' '))
+}
+/// Lowercase particles that belong to the surname after them ("де Лаваль",
+/// "van der Berg").
+const PARTICLES: [&str; 20] = [
+    "de", "van", "von", "der", "den", "da", "di", "du", "del", "della", "le", "la", "фон", "ван",
+    "де", "дер", "ди", "дю", "ла", "ле",
+];
+/// A particle as written: lowercase only, so "Van" in "Van Morrison" is a
+/// given name.
+pub(crate) fn is_particle(word: &str) -> bool {
+    PARTICLES.contains(&word)
+}
+/// Name words as written, lowercased, with each run of lowercase particles
+/// joined to the word after it: `["Генриетта", "Яновна", "де", "Лаваль"]` →
+/// `["генриетта", "яновна", "де лаваль"]`.
+pub(crate) fn merge_particles<S: AsRef<str>>(words: &[S]) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut pending: Vec<String> = Vec::new();
+    for word in words {
+        let word = word.as_ref();
+        pending.push(word.to_lowercase());
+        if !is_particle(word) {
+            merged.push(pending.join(" "));
+            pending.clear();
+        }
+    }
+    merged.extend(pending);
+    merged
 }
 pub(crate) fn patronymic(word: &str) -> bool {
     ["ович", "евич", "овна", "евна", "ична"]
@@ -180,6 +235,13 @@ fn russian_surname_score(word: &str) -> u8 {
 /// The surname and given names of a full person name, or `None` when the
 /// wording is not one (a single word, initials) or the surname is ambiguous.
 pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
+    split_full_name_inflected(value).map(|(surname, given, _)| (surname, given))
+}
+/// A full name's surname and given names as the document wrote them.
+pub(crate) type Written = Option<(String, Vec<String>)>;
+/// [`split_full_name`], in the nominative when the name came inflected
+/// ("Эльзе-Руте Мартыновне Таль-Шнейдер"), with the words as written then.
+pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<String>, Written)> {
     let mut words = name_words(value);
     let full = |w: &String| {
         w.chars().filter(|c| c.is_alphabetic()).count() > 1
@@ -189,10 +251,23 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     if !(2..=4).contains(&words.len()) || !words.iter().all(full) {
         return None;
     }
+    // A lowercase particle is part of the surname after it.
+    words = merge_particles(&name_words_cased(value));
+    if words.len() < 2 {
+        return None;
+    }
     let last = words.len() - 1;
     let russian = words.iter().all(|w| cyrillic(w));
-    // An inflected name ("Павлову Дмитрию Андреевичу") gives no reliable
-    // surname, and first name + patronymic has none.
+    // An inflected name with a patronymic is read in the nominative
+    // ("Павлову Дмитрию Андреевичу": Павлов Дмитрий Андреевич).
+    let nominative = (russian && words.len() >= 3)
+        .then(|| crate::propagation::nominative(&words))
+        .flatten();
+    let mut written = None;
+    if let Some(nominative) = nominative {
+        written = Some(std::mem::replace(&mut words, nominative));
+    }
+    // Still inflected, or first name + patronymic, which has no surname.
     if russian
         && words
             .iter()
@@ -217,14 +292,25 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     } else {
         last
     };
+    let written = written.map(|mut written| (written.remove(surname), written));
     let surname = words.remove(surname);
-    (surname.chars().count() >= 3).then_some((surname, words))
+    (surname.chars().count() >= 3).then_some((surname, words, written))
 }
 /// Lowercase wordings that stand for `surname` alone: itself and, for a
 /// Russian surname, its conservative case forms ("раман" → "рамана",
 /// "раману"). Some forms are shared with relatives ("петрова"), so a form
 /// links only when one full name fits (ADR 0092).
 pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
+    // With a particle: its forms with the particle and without it ("де
+    // Лаваль", "Лаваль").
+    if let Some((particles, base)) = surname.rsplit_once(' ') {
+        let base = surname_forms(base);
+        let mut forms: Vec<String> = base.iter().map(|f| format!("{particles} {f}")).collect();
+        forms.extend(base);
+        forms.sort_unstable();
+        forms.dedup();
+        return forms;
+    }
     let mut forms = vec![surname.to_owned()];
     if cyrillic(surname) {
         let mut decline = |stem: &str, endings: &[&str]| {

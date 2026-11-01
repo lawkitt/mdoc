@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: lowercase-name-repeat
 issue: 398
 kind: power-of-attorney
 source: hunt-r2
-expect: miss: PERSON "iara veldune"
 ---
 # Limited authority to collect stored equipment
 

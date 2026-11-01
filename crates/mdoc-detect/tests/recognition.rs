@@ -65,6 +65,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
 /// #366 (U27): in the Russian demo, from its snapshot, every form of
 /// Павлова Марина Сергеевна the review proposes is one identity, and her
 /// husband and her lawyer keep their own (ADR 0092 propagation).
+/// "Павлову" alone is her accusative and his dative: either, so its own.
 #[test]
 fn the_russian_demo_names_pavlova_once() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -86,11 +87,15 @@ fn the_russian_demo_names_pavlova_once() {
             .occurrence_identity(candidate.variant, &candidate.range)
             .unwrap()
     };
-    let others = ["Павлову Дмитрию Андреевичу", "Шахова Ирина Олеговна"];
+    let others = [
+        "Павлову Дмитрию Андреевичу",
+        "Шахова Ирина Олеговна",
+        "Павлову",
+    ];
     let people = fixture.gold.iter().filter(|span| span.category == "PERSON");
     let (theirs, hers): (Vec<_>, Vec<_>) =
         people.partition(|span| others.contains(&&source[span.range.clone()]));
-    assert_eq!(hers.len(), 9, "her forms in the gold");
+    assert_eq!(hers.len(), 8, "her forms in the gold");
     let mut ids: Vec<u64> = hers.iter().map(|span| identity(span)).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -99,12 +104,16 @@ fn the_russian_demo_names_pavlova_once() {
     all.push(ids[0]);
     all.sort_unstable();
     all.dedup();
-    assert_eq!(all.len(), 3, "her husband and her lawyer are others");
+    assert_eq!(
+        all.len(),
+        4,
+        "her husband, her lawyer and \"Павлову\" are others"
+    );
     // No alias is spent on a form that joined her.
     let mut aliases: Vec<_> = all
         .iter()
         .map(|id| review.identity(*id).unwrap().alias.clone())
         .collect();
     aliases.sort();
-    assert_eq!(aliases, ["PERSON_1", "PERSON_2", "PERSON_3"]);
+    assert_eq!(aliases, ["PERSON_1", "PERSON_2", "PERSON_3", "PERSON_4"]);
 }
