@@ -138,6 +138,17 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         {
             // "clients/Alice_Morgan" names Alice Morgan.
             out.push((at..at + 1, " ".into()));
+        } else if c == '_'
+            && hidden.is_none()
+            && (!before.is_some_and(char::is_alphanumeric) && next.is_some_and(char::is_alphabetic)
+                || before.is_some_and(char::is_alphabetic)
+                    && !next.is_some_and(char::is_alphanumeric))
+        {
+            // "_Alva Ruskett_": emphasis marks are syntax, not the name's.
+            out.push((at..at + 1, String::new()));
+        } else if note_marker(c) && before.is_some_and(char::is_alphabetic) {
+            // "Avelina Durnell¹": a note marker is a word of its own.
+            out.push((at..at + c.len_utf8(), format!(" {c}")));
         } else if c == '-'
             && before.is_some_and(char::is_alphabetic)
             && let Some(len) = line_end_hyphen(&source[at..])
@@ -364,6 +375,11 @@ fn halfwidth(c: char) -> Option<char> {
     }
 }
 
+/// A superscript digit, as a note marker writes it after a word ("¹").
+pub fn note_marker(c: char) -> bool {
+    matches!(c, '¹' | '²' | '³' | '⁰' | '⁴'..='⁹')
+}
+
 /// Characters that only break a word for the eye or a renderer: the soft
 /// hyphen and zero-width spaces and joiners ("Ма\u{ad}рина" is "Марина").
 fn invisible(c: char) -> bool {
@@ -476,6 +492,17 @@ mod tests {
         };
         assert_eq!(span("Анна Ёлкина"), "%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина");
         assert_eq!(span("Liora Nesket"), "Liora%20Nesket");
+        // Note markers stand apart and underscore emphasis drops out.
+        let source = "Avelina Durnell¹, _Alva Ruskett_ and snake_case x².";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "Avelina Durnell ¹, Alva Ruskett and snake_case x ²."
+        );
+        let at = |text: &str| view.text.find(text).unwrap();
+        let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
+        assert_eq!(span("Avelina Durnell"), "Avelina Durnell");
+        assert_eq!(span("Alva Ruskett"), "Alva Ruskett");
         // Full-width forms read as ASCII.
         let view = View::new("Паспорт ４６８２\u{3000}７３１６０４.");
         assert_eq!(view.text, "Паспорт 4682 731604.");
