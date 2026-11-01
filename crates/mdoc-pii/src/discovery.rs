@@ -22,6 +22,9 @@ pub struct DiscoveryInput {
     pub(super) mid_sentence: Vec<bool>,
     /// Propagated: never inside an identifier, a path or an address.
     pub(super) unglued: Vec<bool>,
+    /// Case numbers: a repeat counts only standing alone, never inside a
+    /// longer identifier or number, nor as an amount ([`whole_value`]).
+    pub(super) whole: Vec<bool>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -78,6 +81,7 @@ impl DiscoveryInput {
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
+                && !(self.whole[*index] && !whole_value(source, range))
         });
         // A hit inside a longer one never splits it, whatever its priority: a
         // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
@@ -125,5 +129,102 @@ impl DiscoveryInput {
             matcher: Some(matcher),
             tokens,
         })
+    }
+}
+
+/// Whether `range` stands alone as a value: not joined to a longer
+/// identifier ("2-7316/2026") or a digit group ("14 632"), and not an amount
+/// ("7316 рублей", "£7316"; the fixture guide never marks amounts). A case
+/// number's repeats count only so: its digits elsewhere are other numbers.
+pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
+    // Amounts' units and currencies, lowercase, as they start or end.
+    const AFTER: [&str; 22] = [
+        "руб",
+        "₽",
+        "коп",
+        "долл",
+        "евро",
+        "тыс",
+        "млн",
+        "млрд",
+        "%",
+        "процент",
+        "usd",
+        "eur",
+        "gbp",
+        "rub",
+        "$",
+        "€",
+        "£",
+        "pound",
+        "dollar",
+        "euro",
+        "percent",
+        "per cent",
+    ];
+    const BEFORE: [&str; 8] = ["$", "€", "£", "₽", "usd", "eur", "gbp", "rub"];
+    let value = &source[range.clone()];
+    let mut back = source[..range.start].chars().rev();
+    let (b1, b2) = (back.next(), back.next());
+    let mut ahead = source[range.end..].chars();
+    let (a1, a2) = (ahead.next(), ahead.next());
+    let joined = |separator: Option<char>, next: Option<char>| {
+        separator.is_some_and(|c| r"-/.:_\@".contains(c)) && next.is_some_and(char::is_alphanumeric)
+    };
+    let grouped = |space: Option<char>, digit: Option<char>| {
+        space.is_some_and(|c| matches!(c, ' ' | '\u{a0}' | '\u{202f}'))
+            && digit.is_some_and(|c| c.is_ascii_digit())
+    };
+    if joined(b1, b2)
+        || joined(a1, a2)
+        || (value.starts_with(|c: char| c.is_ascii_digit()) && grouped(b1, b2))
+        || (value.ends_with(|c: char| c.is_ascii_digit()) && grouped(a1, a2))
+    {
+        return false;
+    }
+    let near = |text: &str, from_start: bool| {
+        let text = if from_start {
+            &text[..text.floor_char_boundary(text.len().min(16))]
+        } else {
+            &text[text.floor_char_boundary(text.len().saturating_sub(16))..]
+        };
+        text.to_lowercase()
+    };
+    let after = near(source[range.end..].trim_start(), true);
+    let before = near(source[..range.start].trim_end(), false);
+    !AFTER.iter().any(|unit| after.starts_with(unit))
+        && !BEFORE.iter().any(|unit| before.ends_with(unit))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::whole_value;
+
+    #[test]
+    fn a_value_stands_alone_only_outside_identifiers_numbers_and_amounts() {
+        let at = |source: &str, value: &str| {
+            let start = source.rfind(value).unwrap();
+            whole_value(source, &(start..start + value.len()))
+        };
+        for (source, value) in [
+            ("Номер дела: 7316.", "7316"),
+            ("see case 7316, filed", "7316"),
+            ("| 7316 |", "7316"),
+        ] {
+            assert!(at(source, value), "{source}");
+        }
+        for (source, value) in [
+            ("| Возвращено частично | 7316 рублей |", "7316"),
+            ("| 4821 рубль |", "4821"),
+            ("paid £7316 in full", "7316"),
+            ("paid GBP 7316", "7316"),
+            ("7316 ₽", "7316"),
+            ("дело 2-7316/2026", "7316"),
+            ("14 7316 руб.", "7316"),
+            ("total 14 7316", "7316"),
+            ("ref 7316_a", "7316"),
+        ] {
+            assert!(!at(source, value), "{source}");
+        }
     }
 }
