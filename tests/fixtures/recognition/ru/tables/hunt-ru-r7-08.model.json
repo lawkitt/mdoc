@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":334,"end":364,"label":"organization","score":0.9269676,"text":"АО «Тихая грань»"},
+    {"start":220,"end":260,"label":"organization","score":0.91565824,"text":"ООО «Медный разворот»"}
+  ]
+}
