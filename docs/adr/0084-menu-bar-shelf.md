@@ -90,7 +90,8 @@ window.
   gear and **Quit** at the right.
 - **Keyboard.** ↑↓ move, Enter opens, ⌘C copies for AI, ⌘1–⌘8 copy a row,
   Tab reaches the other controls, Esc closes. No global shortcuts yet.
-- **Icon.** A monochrome template glyph with no badge or count.
+- **Icon.** A monochrome template glyph with no badge or count: the app
+  icon's M monogram alone (`build/menubar.svg`), rendered by `just icon`.
 - **Empty and locked.** With nothing to list the shelf reads "Pseudonymized
   documents appear here" above the clipboard section. While cases are
   locked, open tabs still show, closed members are hidden, and a locked
