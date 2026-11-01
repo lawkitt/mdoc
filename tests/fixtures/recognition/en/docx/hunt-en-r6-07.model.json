@@ -4,10 +4,10 @@
   "entities": [
     {"start":55,"end":66,"label":"person","score":0.9823555,"text":"signatories"},
     {"start":19,"end":30,"label":"person","score":0.92617023,"text":"signatories"},
-    {"start":711,"end":725,"label":"person","score":0.98871195,"text":"Serena Marnell"},
-    {"start":470,"end":485,"label":"person","score":0.97693473,"text":"Neris O’Brien"},
-    {"start":231,"end":245,"label":"person","score":0.9698426,"text":"Lirena Vossick"},
-    {"start":669,"end":683,"label":"person","score":0.9334308,"text":"_Alva Ruskett_"},
+    {"start":711,"end":725,"label":"person","score":0.9942251,"text":"Serena Marnell"},
+    {"start":670,"end":682,"label":"person","score":0.9898696,"text":"Alva Ruskett"},
+    {"start":470,"end":485,"label":"person","score":0.9841546,"text":"Neris O’Brien"},
+    {"start":231,"end":245,"label":"person","score":0.98016727,"text":"Lirena Vossick"},
     {"start":756,"end":769,"label":"person","score":0.98926485,"text":"Viora Mellick"}
   ]
 }
