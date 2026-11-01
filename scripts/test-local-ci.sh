@@ -513,9 +513,12 @@ export CARGO_TARGET_DIR="$tmp/shared-target"
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
 export PATH="$tmp/bin:$PATH"
 
-# Once PR 9's old head is running, move its merge ref to the new head.
+# Once PR 9's old head is running, move its merge ref to the new head. It
+# waits as long as the runner may run: on hosted Windows that head started
+# 2m46s in, after a 60 s wait had given up, and the runner then waited for
+# the ref for good.
 (
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 3000); do
     if grep -q "^push lint" "$FAKE/just.log" 2>/dev/null; then
       git --git-dir="$tmp/origin.git" update-ref refs/pull/9/merge "$new_merge"
       exit 0
