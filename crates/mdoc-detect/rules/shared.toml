@@ -26,6 +26,8 @@
 # `s`) or as a `stem` with up to `ending` letters. Optionally:
 #   last_word_of = [category…]  a model span of these categories ending in
 #                               one of the words is dropped (a role phrase)
+#   not_endings  = [ending…]    for a stem: endings that never count (a
+#                               surname's "-ов" after a role stem)
 #   anywhere_in  = [category…]  a model span of these categories with one of
 #                               the words anywhere is dropped (a court)
 #

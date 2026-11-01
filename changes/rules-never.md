@@ -4,3 +4,6 @@
   ("County Court", "Ministry of Justice", "Районный суд") as people or
   organizations ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md),
   fixes #378, #379, #385, #390).
+- **Surnames built on a role word are kept.** "Подрядчиков", "Супругов" or
+  "Директоров" alone are no longer dropped as the roles подрядчик, супруг,
+  директор (#450).

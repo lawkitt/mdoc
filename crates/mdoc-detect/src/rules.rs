@@ -54,6 +54,10 @@ struct NeverEntry {
     /// never proposed: courts and public bodies ("County Court").
     #[serde(default)]
     anywhere_in: Vec<String>,
+    /// For `stem`: endings that never count, because they make a surname
+    /// of the stem ("Подрядчиков", "Директоров").
+    #[serde(default)]
+    not_endings: Vec<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
@@ -208,6 +212,7 @@ struct Never {
     words: Vec<String>,
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
+    not_endings: Vec<String>,
 }
 
 impl Never {
@@ -217,7 +222,9 @@ impl Never {
             Form::Whole => word == listed,
             Form::Plural => word == listed || word.strip_suffix('s') == Some(listed),
             Form::Stem => word.strip_prefix(listed.as_str()).is_some_and(|ending| {
-                ending.chars().count() <= self.ending && ending.chars().all(char::is_alphabetic)
+                ending.chars().count() <= self.ending
+                    && ending.chars().all(char::is_alphabetic)
+                    && !self.not_endings.iter().any(|not| not == ending)
             }),
         })
     }
@@ -253,6 +260,9 @@ impl Pack {
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
+                if entry.form != Form::Stem && !entry.not_endings.is_empty() {
+                    return Err(at("only a stem takes not_endings".into()));
+                }
                 if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
@@ -280,6 +290,7 @@ impl Pack {
                     words: entry.words,
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
+                    not_endings: entry.not_endings,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {
@@ -1205,6 +1216,10 @@ mod tests {
             ("Суднев", Category::Person),
             ("Банков", Category::Person),
             ("Компаниец", Category::Person),
+            ("Подрядчиков", Category::Person),
+            ("Супругов", Category::Person),
+            ("Директоров", Category::Person),
+            ("Истцова", Category::Person),
             ("Banks", Category::Person),
             ("Адресат", Category::Organization),
         ] {
