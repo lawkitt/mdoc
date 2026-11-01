@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":178,"end":216,"label":"person","score":0.9948203,"text":"Лидия Мироновна Корн"},
+    {"start":118,"end":148,"label":"organization","score":0.70058763,"text":"ООО «Савва Грин»"},
+    {"start":1967,"end":1985,"label":"phone_number","score":0.9999857,"text":"+7 (900) 000-84-62"},
+    {"start":1864,"end":1891,"label":"email","score":0.9995986,"text":"arhiv.spora@letters.invalid"},
+    {"start":2048,"end":2061,"label":"tax_id","score":0.97891515,"text":"5086I4729О31"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":517,"end":553,"label":"person","score":0.99814695,"text":"Глеб Олегович Дарин"},
+    {"start":415,"end":469,"label":"person","score":0.99268264,"text":"Серафима Даниловна Ветлугина"},
+    {"start":758,"end":783,"label":"full_name","score":0.50193787,"text":"Кедровый свет"},
+    {"start":574,"end":614,"label":"organization","score":0.83682144,"text":"ООО «Печатный мостик»"},
+    {"start":1525,"end":1545,"label":"person","score":0.97745705,"text":"Ветлугиной"},
+    {"start":2333,"end":2373,"label":"organization","score":0.8641959,"text":"суда первой инстанции"},
+    {"start":3105,"end":3159,"label":"full_name","score":0.9500415,"text":"СЕРАФИМА ДАНИЛОВНА ВЕТЛУГИНА"}
+  ]
+}

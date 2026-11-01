@@ -63,8 +63,10 @@ a boundary case.
 - "оглы" belongs to the patronymic, inside the span: "⟦PERSON|Нияз Рауф оглы Иль-Булат⟧" (hunt-ru-r1-05).
 - A name split by a line-end hyphen is one span across the break, hyphen and newline included: "⟦PERSON|Верес-\nтова Дарья Ильинична⟧" (hunt-ru-r1-04).
 - A staff or employee ID assigned to one person is `IDENTITY`, letters only too: "Staff ID: ⟦IDENTITY|VELK-QUEN⟧" (hunt-en-r3-04).
-- A surname-first name is one span, comma included: "⟦PERSON|VALECROFT, Jorin P.⟧" (hunt-en-r3-04).
+- A surname-first name is one span, comma included: "⟦PERSON|VALECROFT, Jorin P.⟧" (hunt-en-r3-04), "⟦PERSON|Маркович, Савелий Игоревич⟧" (hunt-ru-r3-04).
 - A generational suffix belongs to the name, inside the span: "⟦PERSON|Kaelen Renn III⟧" (hunt-en-r3-08).
 - A surname's lower-case particle is inside the span: "⟦PERSON|Генриетта Яновна де Лаваль⟧", "на фамилию ⟦PERSON|де Лаваль⟧" (hunt-ru-r2-01).
 - Name parts in separate table columns are each their own span: "| ⟦PERSON|Кий⟧ | ⟦PERSON|Ева⟧ | ⟦PERSON|Оскаровна⟧ |" (hunt-ru-r2-09).
 - An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
+- The title of a work is not a span, even when it reads like a name: «Кедровый свет» (hunt-ru-r3-07).
+- An invisible character inside a name or value (soft hyphen, zero-width space, combining mark) stays inside the span (hunt-ru-r3-05, hunt-ru-r3-08, hunt-ru-r3-11).

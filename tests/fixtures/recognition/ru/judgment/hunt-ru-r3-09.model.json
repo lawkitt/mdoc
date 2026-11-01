@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":458,"end":496,"label":"organization","score":0.7049732,"text":"Суд первой инстанции"},
+    {"start":110,"end":143,"label":"organization","score":0.6471295,"text":"Судебная коллегия"},
+    {"start":1825,"end":1841,"label":"organization","score":0.91550726,"text":"Коллегия"},
+    {"start":2707,"end":2723,"label":"organization","score":0.86826926,"text":"коллегии"}
+  ]
+}

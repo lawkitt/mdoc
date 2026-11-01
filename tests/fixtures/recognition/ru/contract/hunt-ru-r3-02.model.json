@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":169,"end":211,"label":"full_name","score":0.9655764,"text":"Роман Николаевич Ладов"},
+    {"start":124,"end":147,"label":"organization","score":0.8906752,"text":"Вера Снегирь"},
+    {"start":1230,"end":1261,"label":"full_name","score":0.96432143,"text":"Роман Николаевич"},
+    {"start":1858,"end":1878,"label":"email","score":0.998914,"text":"_roman@kadry.invalid"},
+    {"start":1746,"end":1758,"label":"tax_id","score":0.9102267,"text":"508614729031"},
+    {"start":1769,"end":1789,"label":"bank_account","score":0.8611884,"text":"40817810900006271438"}
+  ]
+}
