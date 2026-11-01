@@ -21,10 +21,14 @@ impl Rules {
         };
         // Preserve mdoc's frozen EN/RU email coverage; the upstream default is
         // ASCII-only and would turn Cyrillic local parts into partial matches.
+        // A local part may be quoted (`"rhea desk"@…`), start with `+`
+        // (`+snezhana@…`) and hold an apostrophe (`eira.o'venn@…`). A leading
+        // `_` stays out: the review refuses a span that starts with one (its
+        // emphasis guard), which would lose the part proposed now.
         let mut email = predefined::email();
         email.patterns = vec![Pattern::new(
             "mdoc Unicode email",
-            r"[\p{L}\p{N}][\p{L}\p{N}._%+-]*@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+",
+            r#"(?:"[^"\r\n@]{1,64}"|[\p{L}\p{N}+][\p{L}\p{N}._%+'’-]*)@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+"#,
             0.9,
         )];
         // Narrow the upstream SNILS formats to the existing contract, including
@@ -309,6 +313,31 @@ mod tests {
 #[cfg(test)]
 mod captured_corpus {
     use super::*;
+    /// #412: a plus-tagged or quoted local part is the whole address.
+    #[test]
+    fn plus_and_quoted_local_parts_are_whole_addresses() {
+        let emails = |source: &str| -> Vec<String> {
+            scan(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Email)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert_eq!(
+            emails("Пишите на +snezhana@footer.invalid сегодня."),
+            ["+snezhana@footer.invalid"]
+        );
+        assert_eq!(
+            emails(r#"Write to "rhea desk"@ripple-spur.invalid today."#),
+            [r#""rhea desk"@ripple-spur.invalid"#]
+        );
+        assert_eq!(
+            emails("From: <eira.o'venn@copper-skein.invalid>"),
+            ["eira.o'venn@copper-skein.invalid"]
+        );
+        assert_eq!(emails("Call +7 900 000-00-00 or a@b"), Vec::<String>::new());
+    }
+
     #[test]
     fn selected_recognizers_match_the_frozen_research_predictions() {
         let corpus: Vec<serde_json::Value> = serde_json::from_str(include_str!(

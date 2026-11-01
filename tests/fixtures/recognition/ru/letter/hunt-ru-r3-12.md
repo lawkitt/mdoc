@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: email-local-part-boundary
 issue: 412
 kind: letter
 source: hunt-r3
-expect: boundary: gold EMAIL "+snezhana@footer.invalid"; proposed EMAIL "snezhana@footer.invalid"
 ---
 # Уведомление о готовности контрольного образца
 
