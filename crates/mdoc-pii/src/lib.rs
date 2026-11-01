@@ -225,16 +225,28 @@ fn safe_span(value: &str) -> bool {
 /// A detected span the review can take: like `safe_span`, but a literal
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
-/// and so is a line break inside a wrapped value ("Brin-\nsett").
+/// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich").
 fn detected_span(source: &str, range: &Range<usize>) -> bool {
     let value = &source[range.clone()];
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
         && !value.starts_with('_')
         && !value.ends_with('_')
-        && !value.chars().any(|ch| "[]<>`|".contains(ch))
+        && !value.chars().any(|ch| "[]`|".contains(ch))
+        && !outside_line_breaks(source, range).contains(['<', '>'])
         && view::wrapped_value(source, range)
         && plain_text_span(source, range.clone())
+}
+/// `range` of `source` without the `<br>` tags inside it.
+fn outside_line_breaks(source: &str, range: &Range<usize>) -> String {
+    let mut out = String::new();
+    let mut at = range.start;
+    for line_break in syntax::line_breaks_in(source, range) {
+        out.push_str(&source[at..line_break.start]);
+        at = line_break.end;
+    }
+    out.push_str(&source[at..range.end]);
+    out
 }
 /// Like `safe_span`, but escapes and emphasis characters are allowed; the
 /// caller checks them structurally with `plain_text_span`.
@@ -596,7 +608,7 @@ impl Review {
                 continue;
             }
             if !detected_span(source, &detection.range)
-                || intersects(&protected, &detection.range)
+                || syntax::crosses_syntax(&protected, source, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {
                 continue;

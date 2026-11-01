@@ -426,6 +426,33 @@ fn a_value_wrapped_over_lines_is_one_span() {
         "Signed by PERSON_1 on 3 May.\nPhone: PHONE_1\n- Заявитель: PERSON_2.\nDepositor: Delva Rosk\nExhibition company: Cinder Ltd\n\nAnn\n\nLee, Bob  \nRay."
     );
 }
+/// #402: a value over the lines of a table cell (`<br>`) is one span; a
+/// tag that is not a line break, or one at the span's edge, is syntax.
+#[test]
+fn a_value_over_html_line_breaks_is_one_span() {
+    let source = "| Address | 27 Wisp Lane<br>Norwich NR2 8ZZ |\n| --- | --- |\n| Name | Ann <b>Lee</b> |\n\nTo Bob<br>\n";
+    let span = |text: &str, category| {
+        let start = source.find(text).unwrap();
+        detection(start..start + text.len(), category)
+    };
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                span("27 Wisp Lane<br>Norwich NR2 8ZZ", Category::Address),
+                span("Ann <b>Lee", Category::Person),
+                span("Bob<br>", Category::Person),
+            ]
+        ),
+        "| Address | ADDRESS_1 |\n| --- | --- |\n| Name | Ann <b>Lee</b> |\n\nTo Bob<br>\n"
+    );
+    let view = view::View::new(source);
+    assert!(
+        view.text
+            .starts_with("| Address | 27 Wisp Lane, Norwich NR2 8ZZ |")
+    );
+    assert!(view.text.ends_with("To Bob<br>\n"));
+}
 #[test]
 fn parenthesized_phone_values_do_not_consume_link_delimiters() {
     let source = "Call (202) 555-0101. [contact](tel:(202)555-0101)";

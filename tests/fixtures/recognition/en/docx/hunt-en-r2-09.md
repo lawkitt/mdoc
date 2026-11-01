@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: html-break-address
 issue: 402
 kind: docx
 source: hunt-r2
-expect: miss: ADDRESS "27 Wisp Lane<br>Norwich NR2 8ZZ"
 ---
 # Delivery undertaking
 

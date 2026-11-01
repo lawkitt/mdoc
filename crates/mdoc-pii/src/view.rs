@@ -127,6 +127,16 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
             out.push((at + 1..at + 1 + len, String::new()));
             while chars.next_if(|&(i, _)| i <= at + len).is_some() {}
             previous = None;
+        } else if c == '<'
+            && let Some(len) = line_break_tag(&source[at..])
+            && !source[at + len..].starts_with(['\r', '\n'])
+        {
+            // "27 Wisp Lane<br>Norwich" reads "27 Wisp Lane, Norwich", one
+            // value across the lines of its cell. At a line's end the line
+            // break is already there, and the tag stays.
+            out.push((at..at + len, ", ".into()));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+            previous = None;
         } else if c == '&'
             && let Some((len, value)) = character_reference(&source[at..])
         {
@@ -151,6 +161,17 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
+}
+
+/// The length of an HTML line break tag at the start of `text`: `<br>`,
+/// `<br/>` or `<br />`, in any case.
+pub fn line_break_tag(text: &str) -> Option<usize> {
+    let rest = text
+        .get(..3)
+        .filter(|tag| tag.eq_ignore_ascii_case("<br"))?;
+    let after = text[rest.len()..].trim_start_matches(' ');
+    let after = after.strip_prefix('/').unwrap_or(after);
+    after.starts_with('>').then(|| text.len() - after.len() + 1)
 }
 
 /// Link and image destinations ("](clients/Alice_Morgan)"): hidden source
