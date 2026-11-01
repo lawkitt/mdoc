@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":773,"end":781,"label":"person","score":0.85219896,"text":"reviewer"}
+  ]
+}
