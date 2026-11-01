@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":73,"end":87,"label":"person","score":0.98646784,"text":"Maelin Veskett"},
+    {"start":120,"end":133,"label":"person","score":0.9642542,"text":"Nerisa Fallow"},
+    {"start":136,"end":149,"label":"person","score":0.94427973,"text":"Tovin Quenell"},
+    {"start":195,"end":206,"label":"person","score":0.9382373,"text":"Corven Mesk"},
+    {"start":178,"end":192,"label":"person","score":0.9331877,"text":"Avella Wrenick"},
+    {"start":2,"end":27,"label":"organization","score":0.65201986,"text":"Lasting power of attorney"},
+    {"start":1195,"end":1209,"label":"person","score":0.9688562,"text":"Maelin Veskett"}
+  ]
+}

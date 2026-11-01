@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":215,"end":228,"label":"person","score":0.99833864,"text":"Liora Vannell"},
+    {"start":149,"end":165,"label":"organization","score":0.94610083,"text":"Fennel*Orbit Ltd"},
+    {"start":60,"end":75,"label":"phone_number","score":0.9995744,"text":"+44 7700 900641"},
+    {"start":80,"end":95,"label":"phone_number","score":0.998433,"text":"+44 7700 900752"},
+    {"start":982,"end":995,"label":"person","score":0.9620363,"text":"Orren Feskell"},
+    {"start":1010,"end":1046,"label":"email","score":0.99626374,"text":"orrens.dispatch@fennel-orbit.invalid"}
+  ]
+}

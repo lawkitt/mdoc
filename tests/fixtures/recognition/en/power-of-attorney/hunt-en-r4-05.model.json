@@ -1,0 +1,17 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":81,"end":95,"label":"person","score":0.99926496,"text":"Lennor Ruskale"},
+    {"start":55,"end":69,"label":"person","score":0.998935,"text":"Orrisa Fenwick"},
+    {"start":24,"end":46,"label":"organization","score":0.74871993,"text":"bank instruction annex"},
+    {"start":3,"end":22,"label":"organization","score":0.5305709,"text":"Financial authority"},
+    {"start":392,"end":409,"label":"bank_account","score":0.927626,"text":"47-29-16/00318572"},
+    {"start":255,"end":267,"label":"bank_account","score":0.69802076,"text":"bank account"},
+    {"start":376,"end":388,"label":"bank_account","score":0.5418331,"text":"Bank account"},
+    {"start":1125,"end":1139,"label":"person","score":0.9922144,"text":"Lennor Ruskale"},
+    {"start":1081,"end":1095,"label":"person","score":0.97693473,"text":"Orrisa Fenwick"},
+    {"start":862,"end":901,"label":"email","score":0.99976027,"text":"orrisa.instructions@spindle-row.invalid"},
+    {"start":785,"end":810,"label":"address","score":0.94068086,"text":"28 Spindle Row, Lancaster"}
+  ]
+}
