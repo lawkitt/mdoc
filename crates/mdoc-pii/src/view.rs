@@ -143,6 +143,7 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
             && (!before.is_some_and(char::is_alphanumeric) && next.is_some_and(char::is_alphabetic)
                 || before.is_some_and(char::is_alphabetic)
                     && !next.is_some_and(char::is_alphanumeric))
+            && !in_address(source, at)
         {
             // "_Alva Ruskett_": emphasis marks are syntax, not the name's.
             out.push((at..at + 1, String::new()));
@@ -375,6 +376,17 @@ fn halfwidth(c: char) -> Option<char> {
     }
 }
 
+/// Whether the character at `at` is inside an email address: the run of
+/// non-space characters around it holds an "@" ("_roman@kadry.invalid" keeps
+/// its underscore).
+fn in_address(source: &str, at: usize) -> bool {
+    let start = source[..at].rfind(char::is_whitespace).map_or(0, |i| i + 1);
+    let end = source[at..]
+        .find(char::is_whitespace)
+        .map_or(source.len(), |i| at + i);
+    source[start..end].contains(['@', '＠'])
+}
+
 /// A superscript digit, as a note marker writes it after a word ("¹").
 pub fn note_marker(c: char) -> bool {
     matches!(c, '¹' | '²' | '³' | '⁰' | '⁴'..='⁹')
@@ -493,11 +505,11 @@ mod tests {
         assert_eq!(span("Анна Ёлкина"), "%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина");
         assert_eq!(span("Liora Nesket"), "Liora%20Nesket");
         // Note markers stand apart and underscore emphasis drops out.
-        let source = "Avelina Durnell¹, _Alva Ruskett_ and snake_case x².";
+        let source = "Avelina Durnell¹, _Alva Ruskett_ and snake_case x². Mail _roman@kadry.invalid or ann_@x.invalid.";
         let view = View::new(source);
         assert_eq!(
             view.text,
-            "Avelina Durnell ¹, Alva Ruskett and snake_case x ²."
+            "Avelina Durnell ¹, Alva Ruskett and snake_case x ². Mail _roman@kadry.invalid or ann_@x.invalid."
         );
         let at = |text: &str| view.text.find(text).unwrap();
         let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
