@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: email-local-part-boundary org-boundary date-of-birth
-issue: 412 374 363
+flaw: email-local-part-boundary date-of-birth
+issue: 412 363
 kind: contract
 source: hunt-r3
 expect: miss: DATE "27 марта 1990 года"
-expect: boundary: gold ORG "ООО «Вера Снегирь»"; proposed ORG "Вера Снегирь"
 expect: boundary: gold EMAIL "_roman@kadry.invalid"; proposed EMAIL "roman@kadry.invalid"
 ---
 # Трудовой договор с хранителем читального зала

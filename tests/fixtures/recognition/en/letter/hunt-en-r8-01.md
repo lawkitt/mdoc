@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: title-in-person
-issue: 382
+status: pass
+flaw:
+issue:
 kind: letter
 source: hunt-r8
-expect: boundary: gold PERSON "Gavira Vennick"; proposed PERSON "Gavira Vennick KC"
 ---
 # Advice on the proposed inventory correction
 

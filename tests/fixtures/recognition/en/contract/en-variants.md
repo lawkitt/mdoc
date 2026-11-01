@@ -1,9 +1,8 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary
 issue: 374
 kind: contract
 source: import
-expect: boundary: gold ORG "Northbridge Legal Ltd"; proposed ORG "Northbridge Legal Ltd."
 ---
 ⟦PERSON|Alice Morgan⟧ signed for ⟦ORG|Northbridge Legal Ltd⟧. ⟦PERSON|A. Morgan⟧ confirmed receipt. Counsel ⟦PERSON|Morgan⟧ agreed, and ⟦PERSON|Alice Morgan⟧ signed again.

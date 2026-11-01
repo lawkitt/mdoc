@@ -2,11 +2,25 @@
 # in shared.toml.
 
 
-# No Russian span fixes yet.
-span = []
-
 # No Russian nicknames yet.
 variants = []
+
+# An organization's legal form and quotes belong to its name: the model's
+# "Северный Вектор" inside "ООО «Северный Вектор»" grows to the whole of it,
+# as does "Елагин и партнёры" in "коллегия адвокатов «Елагин и партнёры»"
+# (guide rule 2, #374). Straight quotes count too.
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:ООО|ОАО|ЗАО|ПАО|АО|НКО|АНО|[Кк]оллегия адвокатов|[Аа]двокатское бюро)\s*«[^«»\n]+»',
+    '\b(?:ООО|ОАО|ЗАО|ПАО|АО|НКО|АНО|[Кк]оллегия адвокатов|[Аа]двокатское бюро)\s*"[^"\n]+"',
+]
+
+# Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
+# rule 1, #382).
+[[span]]
+category = "PERSON"
+trim = ["г-н", "г-жа", "господин", "госпожа"]
 
 # Titles and the words for spouses: "г-жа", "муж" name no one on their own.
 [[never]]

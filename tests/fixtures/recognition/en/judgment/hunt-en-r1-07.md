@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: title-in-person
 issue: 382
 kind: judgment
 source: hunt-r1
-expect: boundary: gold PERSON "Ysolde Qhenn"; proposed PERSON "Dr Ysolde Qhenn"
 ---
 # Reasons for decision on repair costs
 

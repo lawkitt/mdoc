@@ -2,11 +2,26 @@
 # in shared.toml.
 
 
-# No English span fixes yet.
-span = []
-
 # No English nicknames yet.
 variants = []
+
+# Titles and post-nominals stay outside a person's span: "Ms Bennett" is
+# proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
+# #382). A title's period goes with it.
+[[span]]
+category = "PERSON"
+trim = [
+    "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
+    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+    "kc", "qc", "esq", "phd",
+]
+
+# An organization ends with its legal form, not the sentence's period or
+# comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
+# Ltd" (#374).
+[[span]]
+category = "ORG"
+strip_end = ".,;:"
 
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.

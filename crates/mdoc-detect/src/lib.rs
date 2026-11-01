@@ -539,7 +539,8 @@ fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>)
 }
 
 /// The correction stage (ADR 0092): the model's raw entities through the
-/// shape filter (`identifying`), then the rule pack's `context` rules and
+/// shape filter (`identifying`) and the rule pack's `span` fixes, then its
+/// `context` rules and
 /// the structured rules over the whole source, all reading it as the model
 /// does. Rules win the review's conflicts with the model. Pure: the same
 /// source and entities give the same detections, in the order a scan
@@ -558,6 +559,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
+    rules::pack().fix_spans(source, &mut detections);
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()

@@ -1,14 +1,13 @@
 ---
 status: known-flaw
-flaw: uk-home-address date-of-birth title-in-person public-body-org
-issue: 361 363 382 378
+flaw: uk-home-address date-of-birth public-body-org
+issue: 361 363 378
 kind: contract
 source: demo
 expect: miss: ADDRESS "Flat 3, 41 Larch Road, Bristol BS6 9ZY"
 expect: miss: DATE "14 March 1988"
 expect: false hit: ORG "Employment Tribunal"
 expect: false hit: ORG "Ofcom"
-expect: boundary: gold PERSON "Bennett"; proposed PERSON "Ms Bennett" ×6
 ---
 # Settlement agreement
 

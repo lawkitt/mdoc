@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary
 issue: 374
 kind: judgment
 source: hunt-r1
-expect: boundary: gold ORG "Tidal Acorn Travel Ltd"; proposed ORG "Tidal Acorn Travel Ltd."
 ---
 # Decision on the admissibility of a booking record
 

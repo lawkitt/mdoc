@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: org-boundary
-issue: 374
+status: pass
+flaw:
+issue:
 kind: letter
 source: hunt-r6
-expect: boundary: gold ORG "адвокатское бюро «Валерия Конц»"; proposed ORG "Валерия Конц"
 ---
 # Запрос о предоставлении копии поручения на выдачу имущества
 
