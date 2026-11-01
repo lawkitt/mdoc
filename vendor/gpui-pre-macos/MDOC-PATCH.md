@@ -61,6 +61,15 @@ Local changes, marked `mdoc patch`:
   Debug builds assert they run on the main thread and that AppKit accepts
   the policy. mdoc's tests cover the rules that call them
   (`src/menu_bar.rs`); the native effect is a GUI check.
+- `pasteboard.rs`, exported from `gpui_macos.rs`: a string written with the
+  metadata `CONCEALED_CLIPBOARD_METADATA` is written for this Mac only
+  (`prepareForNewContentsWithOptions:` with
+  `NSPasteboardContentsCurrentHostOnly`, in place of `clearContents`), so
+  Universal Clipboard does not carry it, and carries the empty marker types
+  `org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType`
+  (nspasteboard.org), so clipboard managers skip it.
+  Every other copy is unchanged. mdoc tags restored text with it
+  (`src/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
 - `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream
   still calls the deprecated `cocoa` crate (716 warnings). Cargo hides
   warnings from registry crates, but prints them for this one because it is
@@ -69,5 +78,5 @@ Local changes, marked `mdoc patch`:
 Drop this directory, the patch entry and the `gpui_macos` dependency once the
 adopted GPUI family's `prompt_for_new_path` takes a message, the app can
 answer `applicationShouldTerminate:`, and GPUI offers a status item, a
-text drag, window hiding and the activation policy. When updating GPUI, re-vendor the
+text drag, window hiding, the activation policy and concealed clipboard text. When updating GPUI, re-vendor the
 adopted version and reapply only these changes.

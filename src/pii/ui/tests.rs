@@ -1750,6 +1750,75 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
     });
 }
 
+/// A Restore tab holds originals: Copy Markdown and the editor's own copies
+/// are tagged restored text, until a conversion replaces the tab's text.
+#[gpui::test]
+fn restore_tab_copies_are_restored_text(cx: &mut gpui::TestAppContext) {
+    use crate::restored_clipboard::{TAG, is_restored};
+    use mdoc_pii::restore::ExportedIdentity;
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.copy_markdown(&CopyMarkdown, window, cx);
+        assert!(!is_restored(&cx.read_from_clipboard().unwrap()));
+        assert_eq!(app.editor.read(cx).copy_metadata(), None);
+    });
+    // An ordinary document's before/after shows its own text: normal copies.
+    app.update_in(cx, |app, window, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Anna Petrova signed.", cx));
+        app.pii.review.seed(
+            &[ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: Vec::new(),
+                category: Category::Person,
+                custom: false,
+                originals: vec!["Anna Petrova".into()],
+            }],
+            "Anna Petrova signed.",
+        );
+        app.pii.reviewing = true;
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
+        let compare = app.compare.as_ref().expect("before/after opens");
+        for column in compare.columns() {
+            assert_eq!(column.read(cx).copy_metadata(), None);
+        }
+        app.set_view_mode(None, window, cx);
+        app.reset_pii(cx);
+    });
+    let reply = restore::RestoredReply {
+        text: "PERSON_1 signed.".into(),
+        identities: vec![ExportedIdentity {
+            alias: "PERSON_1".into(),
+            previous: Vec::new(),
+            category: Category::Person,
+            custom: false,
+            originals: vec!["Anna Petrova".into()],
+        }],
+        source_name: "contract".into(),
+        case: None,
+    };
+    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.copy_markdown(&CopyMarkdown, window, cx);
+        let item = cx.read_from_clipboard().unwrap();
+        assert_eq!(item.text().as_deref(), Some("Anna Petrova signed."));
+        assert!(is_restored(&item));
+        assert_eq!(app.editor.read(cx).copy_metadata(), Some(TAG));
+        // Before/after shows restored originals in both columns.
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
+        let compare = app.compare.as_ref().expect("before/after opens");
+        for column in compare.columns() {
+            assert_eq!(column.read(cx).copy_metadata(), Some(TAG));
+        }
+        app.set_view_mode(None, window, cx);
+        app.reset_pii(cx);
+        assert_eq!(app.editor.read(cx).copy_metadata(), None);
+    });
+}
+
 #[test]
 fn ai_notice_names_aliases_only() {
     let notice = mdoc_pii::handoff::ai_notice(&["PERSON_1", "ORG_2"]);

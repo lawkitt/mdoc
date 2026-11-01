@@ -455,9 +455,12 @@ impl DocumentView {
         if !self.can_copy_markdown() {
             return;
         }
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-            self.editor.read(cx).text().to_owned(),
-        ));
+        let text = self.editor.read(cx).text().to_owned();
+        cx.write_to_clipboard(if self.pii.restore().is_some() {
+            crate::restored_clipboard::item(text)
+        } else {
+            gpui::ClipboardItem::new_string(text)
+        });
         self.copied_for_ai = false;
         self.copied_reply = false;
         self.show_copy_feedback(cx);

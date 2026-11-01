@@ -248,7 +248,17 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
 
     // Copy reply copies the restored text.
     click_toolbar(cx, "share-copy-reply");
-    cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), restored));
+    cx.update(|_, cx| {
+        let item = cx.read_from_clipboard().unwrap();
+        assert_eq!(item.text().unwrap(), restored);
+        // Restored text is concealed and transient, in the Reply view too.
+        assert!(crate::restored_clipboard::is_restored(&item));
+        let compare = source.read(cx).compare.as_ref().unwrap();
+        assert_eq!(
+            compare.reply_editor().read(cx).copy_metadata(),
+            Some(crate::restored_clipboard::TAG)
+        );
+    });
 
     // Open as tab is today's restore tab.
     let source_id = cx.update(|_, cx| tabs.read(cx).tabs.active());

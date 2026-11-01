@@ -62,6 +62,8 @@ pub use platform::{
     MacPlatform, TerminateReply, reply_to_should_terminate, set_next_save_prompt_message,
     set_should_terminate_handler,
 };
+// mdoc patch: concealed clipboard text (see pasteboard.rs).
+pub use pasteboard::CONCEALED_CLIPBOARD_METADATA;
 // mdoc patch (ADR 0084): the menu bar shelf.
 pub use presence::{hide_window, set_dock_visible, set_window_height_keeping_top};
 pub use status_item::{StatusImage, StatusItem, set_status_item, status_item_bounds};

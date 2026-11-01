@@ -329,6 +329,12 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     *name == "ocr-consent",
                     "{theme}/{name}"
                 );
+                if *name == "import-comments-note" {
+                    assert_eq!(
+                        record["state"]["import_note"], "2 comments not imported.",
+                        "{theme}/{name}"
+                    );
+                }
                 assert_eq!(
                     record["state"]["decision_history"],
                     *name == "decision-history"
