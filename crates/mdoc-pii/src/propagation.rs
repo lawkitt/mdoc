@@ -9,7 +9,8 @@
 use super::{
     Category, Recognizer, Review, exact_boundary,
     identities::{
-        TITLES, cyrillic, is_particle, merge_particles, name_words, split_full_name, surname_forms,
+        TITLES, cyrillic, is_particle, merge_particles, name_words_cased, split_full_name,
+        surname_forms,
     },
     intersects, safe_span,
     syntax::protected_syntax,
@@ -277,6 +278,13 @@ fn patronymic_forms(word: &str) -> Vec<String> {
 /// masculine forms ("Павлов", "Павловым") name a relative, so they never
 /// link to her, though they are still proposed.
 fn own_surname_forms(surname: &str) -> Vec<String> {
+    // With a particle: the bare surname's own forms, with it and without.
+    if let Some((particles, base)) = surname.rsplit_once(' ') {
+        let base = own_surname_forms(base);
+        let mut forms: Vec<String> = base.iter().map(|f| format!("{particles} {f}")).collect();
+        forms.extend(base);
+        return forms;
+    }
     let all = surname_forms(surname);
     if !cyrillic(surname) {
         return all;
@@ -325,9 +333,11 @@ pub(crate) fn parse_form(wording: &str) -> Option<Form> {
                 .as_str(),
         )
     });
-    let words = name_words(wording);
+    // As written, so a lowercase particle stays apart from a given name.
+    let cased = name_words_cased(wording);
+    let words: Vec<String> = cased.iter().map(|w| w.to_lowercase()).collect();
     let parsed: Vec<_> = words.iter().map(|w| initials_of(w)).collect();
-    let names: Vec<&String> = words
+    let names: Vec<&String> = cased
         .iter()
         .zip(&parsed)
         .filter(|(_, i)| i.is_none())
@@ -581,8 +591,20 @@ fn find_forms(
             } else {
                 i
             };
-            if word(last + 1) && blank(tokens[last].end + 1, tokens[last + 1].start) {
-                tries.push((start..tokens[last + 1].end, last + 2));
+            // The surname may carry particles: "Г. Я. де Лаваль".
+            let mut surname = last + 1;
+            while surname < last + 3
+                && tokens
+                    .get(surname)
+                    .is_some_and(|t| is_particle(&source[t.clone()]))
+                && tokens.get(surname + 1).is_some_and(|next| {
+                    tokens[surname].end < next.start && blank(tokens[surname].end, next.start)
+                })
+            {
+                surname += 1;
+            }
+            if word(surname) && blank(tokens[last].end + 1, tokens[last + 1].start) {
+                tries.push((start..tokens[surname].end, surname + 1));
             }
         } else {
             // A surname with its particles: "де Лаваль", "van der Berg".
@@ -596,6 +618,17 @@ fn find_forms(
                 last += 1;
             }
             if last > i && word(last) {
+                // With initials after it first: "де Лаваль Г. Я.".
+                if initial(last + 1)
+                    && tokens[last].end < tokens[last + 1].start
+                    && blank(tokens[last].end, tokens[last + 1].start)
+                {
+                    if initial(last + 2) && blank(tokens[last + 1].end + 1, tokens[last + 2].start)
+                    {
+                        tries.push((start..tokens[last + 2].end + 1, last + 3));
+                    }
+                    tries.push((start..tokens[last + 1].end + 1, last + 2));
+                }
                 tries.push((start..tokens[last].end, last + 1));
             }
             let title = &source[tokens[i].clone()];
@@ -1003,6 +1036,30 @@ mod tests {
         for wording in ["де Лаваль", "Лаваль", "Г. Я. де Лаваль"] {
             assert_eq!(target(&names, wording), Some(1), "{wording}");
         }
+        // A capitalised "Van" is a given name, not a particle.
+        assert_eq!(
+            split_full_name("Van Morrison"),
+            Some(("morrison".into(), vec!["van".into()]))
+        );
+        // A feminine surname with a particle keeps its own forms bare too.
+        let names = ["Мария де Молина"];
+        for wording in ["Молина", "Молиной", "де Молиной"] {
+            assert_eq!(target(&names, wording), Some(1), "{wording}");
+        }
+        assert_eq!(target(&names, "Молиным"), None, "a relative's form");
+        // Initials after the surname with a particle break a wrong link.
+        let names = ["Генриетта Яновна де Лаваль"];
+        let source = "Подписал де Лаваль И. И.; подписала де Лаваль Г. Я.; Г. Я. де Лаваль.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[])
+            .into_iter()
+            .map(|(r, _)| &source[r])
+            .collect();
+        assert_eq!(
+            found,
+            ["де Лаваль И. И.", "де Лаваль Г. Я.", "Г. Я. де Лаваль"]
+        );
+        assert_eq!(target(&names, "де Лаваль И. И."), None);
+        assert_eq!(target(&names, "де Лаваль Г. Я."), Some(1));
         let source =
             "Заказ записан на фамилию де Лаваль; Лаваль согласна; Ludwig met van der Berg.";
         let names = ["Генриетта Яновна де Лаваль", "Ludwig van der Berg"];
