@@ -305,6 +305,10 @@ pub(crate) enum Form {
         surname: String,
         initials: Vec<char>,
     },
+    /// Two or three initials alone, as a signature ("E. N.", "Я. В."): the
+    /// first name's and the patronymic's or middle name's, the surname's, or
+    /// all three, in order.
+    InitialsOnly(Vec<char>),
 }
 
 /// Initials in one word ("м.с", "m"), or `None` for a name word.
@@ -347,6 +351,7 @@ pub(crate) fn parse_form(wording: &str) -> Option<Form> {
             first: (*first).clone(),
             patronymic: (*second).clone(),
         }),
+        ([], 2..=3) => Some(Form::InitialsOnly(initials)),
         ([surname], 1..=2)
             if parsed.first().is_some_and(Option::is_none)
                 || parsed.last().is_some_and(Option::is_none) =>
@@ -492,6 +497,25 @@ impl People {
                         named,
                     )
                 }
+                Form::InitialsOnly(initials) => {
+                    let first = |name: &String| name.chars().next();
+                    let given: Vec<_> = person.given.iter().map(first).collect();
+                    let surname = first(&person.surname);
+                    let spelled: Vec<_> = initials.iter().map(|c| Some(*c)).collect();
+                    // A name with initials ("Y. Quill") matches too, so it
+                    // blocks a link, though it never becomes a target.
+                    let matching = match spelled.as_slice() {
+                        [a, b] => {
+                            given.len() >= 2 && [given[0], given[1]] == [*a, *b]
+                                || given.first() == Some(a) && surname == *b
+                        }
+                        [a, b, c] => {
+                            given.len() >= 2 && [given[0], given[1], surname] == [*a, *b, *c]
+                        }
+                        _ => false,
+                    };
+                    (matching, matching)
+                }
             };
             if links {
                 found.link.insert(person.owner);
@@ -606,6 +630,26 @@ fn find_forms(
             };
             if word(last + 1) && blank(tokens[last].end + 1, tokens[last + 1].start) {
                 tries.push((start..tokens[last + 1].end, last + 2, false));
+            }
+            // Initials alone, as a signature: "E. N.", "Я. В.". The whole
+            // run or nothing: "J. S. X." is not "J. S." with a stray "X.".
+            let mut run = i;
+            while run < i + 3
+                && initial(run + 1)
+                && blank(tokens[run].end + 1, tokens[run + 1].start)
+            {
+                run += 1;
+            }
+            // Right after a name word they are that name's initials
+            // ("Ветлин Н. О."), not a signature of their own.
+            let after_name = i > 0
+                && word(i - 1)
+                && blank(tokens[i - 1].end, start)
+                && (intersects(covered, &tokens[i - 1])
+                    || parse_form(&source[tokens[i - 1].clone()])
+                        .is_some_and(|form| people.candidates(&form).proposed));
+            if (1..=2).contains(&(run - i)) && !after_name {
+                tries.push((start..tokens[run].end + 1, run + 1, false));
             }
         } else {
             let title = &source[tokens[i].clone()];
@@ -1009,6 +1053,52 @@ mod tests {
             target(&["Maya Bennett", "Daniel Bennett"], "D. Bennett"),
             Some(2)
         );
+    }
+
+    #[test]
+    fn initials_alone_name_the_one_person_they_fit() {
+        assert_eq!(form("E. N."), Form::InitialsOnly(vec!['e', 'n']));
+        assert_eq!(form("Я.В."), Form::InitialsOnly(vec!['я', 'в']));
+        assert_eq!(parse_form("E."), None, "one initial is too little");
+        // First name and surname, first name and patronymic, or all three.
+        assert_eq!(target(&["Ysolde Qhenn"], "Y. Q."), Some(1));
+        let names = ["Яромир Всеволодович Фьорд-Лукин", "Шахова Ирина Олеговна"];
+        assert_eq!(target(&names, "Я. В."), Some(1));
+        assert_eq!(target(&names, "Я. Ф."), Some(1));
+        assert_eq!(target(&names, "Я. В. Ф."), Some(1));
+        assert_eq!(target(&names, "И. О."), Some(2));
+        // Out of order or another person's: nothing.
+        assert_eq!(target(&names, "В. Я."), None);
+        let other = people(&names).candidates(&form("Y. Q."));
+        assert_eq!((other.target, other.proposed), (None, false));
+        // Two people with the same initials, or one named by initials
+        // only: proposed apart.
+        let both = people(&["Yara Quill", "Ysolde Qhenn"]).candidates(&form("Y. Q."));
+        assert_eq!((both.target, both.proposed), (None, true));
+        let abbreviated = people(&["Ysolde Qhenn", "Y. Quill"]).candidates(&form("Y. Q."));
+        assert_eq!((abbreviated.target, abbreviated.proposed), (None, true));
+        // A third initial that does not fit breaks the match.
+        assert_eq!(target(&["John Smith"], "J. S. X."), None);
+    }
+
+    #[test]
+    fn initials_alone_are_found_with_their_last_period() {
+        let names = ["Ysolde Qhenn", "Яромир Всеволодович Фьорд-Лукин"];
+        let source = "Signed Y. Q. on the sheet; подпись Я. В. в журнале; \
+            clause A. B. and Y. alone stay; so do Y. Q. X. and Y. Q. Z. W.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Y. Q.", "Я. В."]);
+        // After a surname they are its initials, not a signature.
+        let names = ["Надир Оскарович Ветлин"];
+        let source = "Заявитель: Ветлин Н. О.";
+        let covered = [Range {
+            start: source.find("Ветлин").unwrap(),
+            end: source.find(" Н.").unwrap(),
+        }];
+        assert!(find_forms(source, &people(&names), &covered).is_empty());
     }
 
     #[test]
