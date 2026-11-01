@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-hyphen-name
 issue: 388
 kind: letter
 source: hunt-r1
-expect: boundary: gold PERSON "Aveline Sorrel-\nby"; proposed PERSON "Aveline"
 ---
 ## Covering letter for a recovered witness statement
 

@@ -191,9 +191,9 @@ fn html_tag(bytes: &[u8], open: usize, parts: &mut Vec<Range<usize>>) -> Option<
     }
 }
 /// Characters that only matter as Markdown structure: escapes, emphasis
-/// delimiters and heading marks. A span containing them is checked
-/// structurally.
-const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#'];
+/// delimiters, heading marks and line breaks. A span containing them is
+/// checked structurally: a soft line break inside a paragraph is text.
+const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#', '\n', '\r'];
 /// Whether replacing `range` with a plain token leaves the Markdown structure
 /// of its block unchanged: escaped (`\_`) or literal (`____`) delimiters are
 /// text, while a span that opens or closes emphasis, or splits an escape, is not.

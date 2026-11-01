@@ -1,12 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-wrapped-identifier
 issue: 396
 kind: ocr
 source: hunt-r2
-expect: miss: EMAIL "beren.records@\nopal-dune.invalid"
-expect: miss: PHONE "+1 202\n555 0176"
-expect: miss: BANK "GB73 OPAL 4820\n1194 7603 25"
 ---
 NOTICE OF REFUND INSTRUCTI0NS
 

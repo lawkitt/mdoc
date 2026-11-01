@@ -2,7 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":135,"end":151,"label":"person","score":0.89218736,"text":"Aveline Sorrelby"},
+    {"start":373,"end":391,"label":"person","score":0.98875546,"text":"Aveline Sorrel-\nby"},
+    {"start":135,"end":151,"label":"person","score":0.98609793,"text":"Aveline Sorrelby"},
     {"start":1352,"end":1365,"label":"person","score":0.9945094,"text":"Damar Veycott"},
     {"start":1389,"end":1412,"label":"organization","score":0.9955142,"text":"Linen Compass Legal LLP"},
     {"start":795,"end":810,"label":"phone_number","score":0.99997586,"text":"+1 202 555 O186"},

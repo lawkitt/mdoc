@@ -402,6 +402,30 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
     assert_eq!(syntax::list_markers("1. a\n\nText\n2. b").len(), 1);
     assert_eq!(syntax::list_markers("# Title\n2. b").len(), 1);
 }
+/// #388, #396, #419: a value wrapped over lines is one span; two lines'
+/// text, a paragraph break or a hard break is not.
+#[test]
+fn a_value_wrapped_over_lines_is_one_span() {
+    let source = "Signed by Melora Brin-\nsett on 3 May.\nPhone: +1 202\n555 0176\n- Заявитель: Евгения\n  Матвеевна\n  Мельник.\nDepositor: Delva Rosk\nExhibition company: Cinder Ltd\n\nAnn\n\nLee, Bob  \nRay.";
+    let span = |text: &str, category| {
+        let start = source.find(text).unwrap();
+        detection(start..start + text.len(), category)
+    };
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                span("Melora Brin-\nsett", Category::Person),
+                span("+1 202\n555 0176", Category::Phone),
+                span("Евгения\n  Матвеевна\n  Мельник", Category::Person),
+                span("Delva Rosk\nExhibition company", Category::Organization),
+                span("Ann\n\nLee", Category::Person),
+                span("Bob  \nRay", Category::Person),
+            ]
+        ),
+        "Signed by PERSON_1 on 3 May.\nPhone: PHONE_1\n- Заявитель: PERSON_2.\nDepositor: Delva Rosk\nExhibition company: Cinder Ltd\n\nAnn\n\nLee, Bob  \nRay."
+    );
+}
 #[test]
 fn parenthesized_phone_values_do_not_consume_link_delimiters() {
     let source = "Call (202) 555-0101. [contact](tel:(202)555-0101)";
