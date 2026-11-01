@@ -165,6 +165,8 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         } else if c == '&'
             && let Some((len, value)) = character_reference(&source[at..])
         {
+            // A full-width form written as a reference reads as ASCII too.
+            let value = narrowed(value);
             previous = value.chars().next_back();
             out.push((at..at + len, value));
             while chars.next_if(|&(i, _)| i < at + len).is_some() {}
@@ -251,13 +253,13 @@ fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
     let mut i = at;
     while i < destination.end {
         let rest = &source[i..destination.end];
-        if rest.starts_with('@') || rest.starts_with("%40") {
+        if rest.starts_with(['@', '＠']) || rest.starts_with("%40") {
             return true;
         }
         let c = rest.chars().next().unwrap_or_default();
         if c == '&' {
             match character_reference(rest) {
-                Some((_, value)) if value == "@" => return true,
+                Some((_, value)) if value == "@" || value == "＠" => return true,
                 Some((len, _)) => i += len,
                 // A query's "&" ends the part.
                 None => return false,
@@ -341,6 +343,15 @@ pub fn wrapped_value(source: &str, range: &Range<usize>) -> bool {
         || rest
             .chars()
             .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
+}
+
+/// `text` with its full-width forms as ASCII ([`halfwidth`]).
+fn narrowed(text: String) -> String {
+    if text.chars().any(|c| halfwidth(c).is_some()) {
+        text.chars().map(|c| halfwidth(c).unwrap_or(c)).collect()
+    } else {
+        text
+    }
 }
 
 /// The ASCII character a full-width form stands for, as NFKC reads it

@@ -1087,12 +1087,35 @@ mod tests {
         assert_eq!(found(source, &[]), ["alice_morgan&#64;example.invalid"]);
         let source = "Write to [mail](mailto:alice_morgan&commat;example.invalid).";
         assert_eq!(found(source, &[]), ["alice_morgan&commat;example.invalid"]);
+        let source = "Write to [mail](mailto:alice_morgan＠example.invalid).";
+        assert_eq!(found(source, &[]), ["alice_morgan＠example.invalid"]);
         // Spaces may come before a destination.
         let source = "Client: Liora Nesket. [x]( https://b.invalid/Liora%20Nesket)";
         assert_eq!(
             found(source, &[person(source, "Liora Nesket")]),
             ["Liora Nesket", "Liora%20Nesket"]
         );
+    }
+
+    /// Full-width digits read as ASCII, a referenced one too (#405).
+    #[test]
+    fn full_width_digits_read_as_ascii() {
+        for source in [
+            "ИНН ７７０７０８３８９３.",
+            "ИНН &#xFF17;７０７０８３８９３.",
+        ] {
+            // The context rule and the structured INN rule both propose it.
+            let mut found: Vec<_> = correct(source, &[])
+                .into_iter()
+                .map(|d| (&source[d.range], d.category))
+                .collect();
+            found.dedup();
+            assert_eq!(
+                found,
+                [(&source[7..source.len() - 1], Category::Tax)],
+                "{source}"
+            );
+        }
     }
 
     /// A wording the model gave two categories is copied to its other
