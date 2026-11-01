@@ -138,7 +138,9 @@ class ParityTest {
                     val inSession = session.restoreReply(reply)
                     val inShareTarget = library.restore(saved.case.id, reply)
                     assertEquals(inSession.text, inShareTarget.text)
-                    assertEquals("Summary:\n\n$markdown", inShareTarget.text)
+                    // "Maya" alone joined her full name (ADR 0092), so it restores as that.
+                    val expected = markdown.replaceFirst("Maya brought", "Maya Bennett brought")
+                    assertEquals("Summary:\n\n$expected", inShareTarget.text)
                 }
             }
         } finally {
