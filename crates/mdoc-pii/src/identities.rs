@@ -155,8 +155,38 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.as_str()))
         .collect()
 }
+/// Lowercase Cyrillic, with hyphens, and spaces inside a surname with a
+/// particle ("де лаваль").
 pub(crate) fn cyrillic(word: &str) -> bool {
-    word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
+    word.chars()
+        .all(|c| matches!(c, 'а'..='я' | 'ё' | '-' | ' '))
+}
+/// Lowercase particles that belong to the surname after them ("де Лаваль",
+/// "van der Berg").
+const PARTICLES: [&str; 20] = [
+    "de", "van", "von", "der", "den", "da", "di", "du", "del", "della", "le", "la", "фон", "ван",
+    "де", "дер", "ди", "дю", "ла", "ле",
+];
+pub(crate) fn is_particle(word: &str) -> bool {
+    PARTICLES.contains(&word.to_lowercase().as_str())
+}
+/// Lowercase name words with each run of particles joined to the word after
+/// it: `["генриетта", "яновна", "де", "лаваль"]` → `[…, "де лаваль"]`.
+pub(crate) fn merge_particles<S: AsRef<str>>(words: &[S]) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut pending: Vec<&str> = Vec::new();
+    for word in words {
+        let word = word.as_ref();
+        if is_particle(word) {
+            pending.push(word);
+        } else {
+            pending.push(word);
+            merged.push(pending.join(" "));
+            pending.clear();
+        }
+    }
+    merged.extend(pending.into_iter().map(str::to_owned));
+    merged
 }
 pub(crate) fn patronymic(word: &str) -> bool {
     ["ович", "евич", "овна", "евна", "ична"]
@@ -187,6 +217,11 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
                 .all(|c| c.is_alphabetic() || matches!(c, '-' | '\'' | '’'))
     };
     if !(2..=4).contains(&words.len()) || !words.iter().all(full) {
+        return None;
+    }
+    // A particle is part of the surname after it.
+    words = merge_particles(&words);
+    if words.len() < 2 {
         return None;
     }
     let last = words.len() - 1;
@@ -225,6 +260,16 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
 /// "раману"). Some forms are shared with relatives ("петрова"), so a form
 /// links only when one full name fits (ADR 0092).
 pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
+    // With a particle: its forms with the particle and without it ("де
+    // Лаваль", "Лаваль").
+    if let Some((particles, base)) = surname.rsplit_once(' ') {
+        let base = surname_forms(base);
+        let mut forms: Vec<String> = base.iter().map(|f| format!("{particles} {f}")).collect();
+        forms.extend(base);
+        forms.sort_unstable();
+        forms.dedup();
+        return forms;
+    }
     let mut forms = vec![surname.to_owned()];
     if cyrillic(surname) {
         let mut decline = |stem: &str, endings: &[&str]| {

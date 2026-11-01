@@ -8,7 +8,9 @@
 //! fixed suffix table, not morphology) and nicknames from [`nicknames`].
 use super::{
     Category, Recognizer, Review, exact_boundary,
-    identities::{TITLES, cyrillic, name_words, split_full_name, surname_forms},
+    identities::{
+        TITLES, cyrillic, is_particle, merge_particles, name_words, split_full_name, surname_forms,
+    },
     intersects, safe_span,
     syntax::protected_syntax,
 };
@@ -338,21 +340,23 @@ pub(crate) fn parse_form(wording: &str) -> Option<Form> {
         return None;
     }
     let initials: Vec<char> = parsed.iter().flatten().flatten().copied().collect();
+    // A particle is part of the surname after it ("де Лаваль").
+    let names = merge_particles(&names);
     match (names.as_slice(), initials.len()) {
         ([word], 0) => Some(Form::Word {
-            word: (*word).clone(),
+            word: word.clone(),
             titled,
         }),
         ([first, second], 0) if !titled && patronymic_like(second) => Some(Form::Patronymic {
-            first: (*first).clone(),
-            patronymic: (*second).clone(),
+            first: first.clone(),
+            patronymic: second.clone(),
         }),
         ([surname], 1..=2)
             if parsed.first().is_some_and(Option::is_none)
                 || parsed.last().is_some_and(Option::is_none) =>
         {
             Some(Form::Initials {
-                surname: (*surname).clone(),
+                surname: surname.clone(),
                 initials,
             })
         }
@@ -581,6 +585,19 @@ fn find_forms(
                 tries.push((start..tokens[last + 1].end, last + 2));
             }
         } else {
+            // A surname with its particles: "де Лаваль", "van der Berg".
+            let mut last = i;
+            while last < i + 2
+                && is_particle(&source[tokens[last].clone()])
+                && tokens.get(last + 1).is_some_and(|next| {
+                    tokens[last].end < next.start && blank(tokens[last].end, next.start)
+                })
+            {
+                last += 1;
+            }
+            if last > i && word(last) {
+                tries.push((start..tokens[last].end, last + 1));
+            }
             let title = &source[tokens[i].clone()];
             // Lowercase "miss" is the verb.
             let titled = title != "miss" && TITLES.contains(&title.to_lowercase().as_str());
@@ -960,6 +977,40 @@ mod tests {
             target(&["Maya Bennett", "Daniel Bennett"], "D. Bennett"),
             Some(2)
         );
+    }
+
+    #[test]
+    fn a_particle_belongs_to_the_surname() {
+        assert_eq!(
+            split_full_name("Генриетта Яновна де Лаваль"),
+            Some((
+                "де лаваль".into(),
+                vec!["генриетта".into(), "яновна".into()]
+            ))
+        );
+        assert_eq!(
+            split_full_name("Ludwig van der Berg"),
+            Some(("van der berg".into(), vec!["ludwig".into()]))
+        );
+        assert_eq!(
+            form("де Лаваль"),
+            Form::Word {
+                word: "де лаваль".into(),
+                titled: false
+            }
+        );
+        let names = ["Генриетта Яновна де Лаваль"];
+        for wording in ["де Лаваль", "Лаваль", "Г. Я. де Лаваль"] {
+            assert_eq!(target(&names, wording), Some(1), "{wording}");
+        }
+        let source =
+            "Заказ записан на фамилию де Лаваль; Лаваль согласна; Ludwig met van der Berg.";
+        let names = ["Генриетта Яновна де Лаваль", "Ludwig van der Berg"];
+        let found: Vec<_> = find_forms(source, &people(&names), &[])
+            .into_iter()
+            .map(|(r, _)| &source[r])
+            .collect();
+        assert_eq!(found, ["де Лаваль", "Лаваль", "Ludwig", "van der Berg"]);
     }
 
     #[test]
