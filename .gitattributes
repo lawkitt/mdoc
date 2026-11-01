@@ -19,6 +19,8 @@ tests/fixtures/mobile-parity/** text eol=lf
 # shellcheck rejects CRLF, and a sourced CR ends up in variable values.
 *.sh text eol=lf
 scripts/tools.env text eol=lf
+# The area table (ADR 0091): read line by line on every runner.
+scripts/ci-areas.txt text eol=lf
 
 # The render test's screen list: parallel branches each add lines, and a
 # union merge keeps both (ADR 0082).

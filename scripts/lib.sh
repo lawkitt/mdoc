@@ -149,7 +149,7 @@ glob_regex() {
 # them (newline-separated output quotes unusual names, which would then match
 # no line), by the area table given as text (scripts/ci-areas.txt): each
 # file takes the areas of the table's first line that matches it, desktop
-# when none does. Prints them on one line in
+# when none does. A table with CRLF line endings reads the same. Prints them on one line in
 # the order core, desktop, ios, android; core brings in every area. Nothing
 # (an empty line) when every file is in no area (docs only); every area for
 # an empty list of files.
@@ -161,7 +161,7 @@ changed_areas() { # table-text
     [ -n "$glob" ] || die "area table: no glob after '$areas'"
     line_areas+=("$areas")
     line_res+=("$(glob_regex "$glob")")
-  done <<<"$1"
+  done <<<"${1//$'\r'/}"
   while IFS= read -r -d '' f; do
     [ -n "$f" ] || continue
     match=desktop

@@ -32,7 +32,8 @@ not() { ! "$@"; }
   export LOCAL_CI_SOURCED=1
   # shellcheck source=local-ci.sh
   source scripts/local-ci.sh
-  table=$(cat scripts/ci-areas.txt)
+  # A Windows checkout may have it with CRLF.
+  table=$(tr -d '\r' <scripts/ci-areas.txt)
 
   # ci.yml's paths-ignore is the table's `none` lines, word for word.
   # The first paths-ignore list in the YAML on stdin, one pattern per line.
@@ -53,14 +54,14 @@ not() { ! "$@"; }
       /^[[:space:]]*paths-ignore:/ { inlist = 1 }
     '
   }
-  ignored=$(paths_ignore <.github/workflows/ci.yml)
+  ignored=$(tr -d '\r' <.github/workflows/ci.yml | paths_ignore)
   none=$(awk '$1 == "none" { print $2 }' <<<"$table")
   check "ci.yml's paths-ignore list is read" [ -n "$ignored" ]
   check "ci.yml's paths-ignore is the table's none lines, in order" [ "$ignored" = "$none" ]
   check "the none lines come first, so a README under apps/ is docs" \
-    [ "$(grep -vE '^[[:space:]]*(#|$)' scripts/ci-areas.txt | awk '$1 != "none" { seen = 1 } seen && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
+    [ "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 != "none" { seen = 1 } seen && $1 == "none" { bad = 1 } END { print bad + 0 }')" = 0 ]
   check "every line names known areas and one glob" \
-    [ -z "$(grep -vE '^[[:space:]]*(#|$)' scripts/ci-areas.txt | grep -vE '^(none|core|desktop|ios|android)(,(desktop|ios|android))*[[:space:]]+[^[:space:]]+$')" ]
+    [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | grep -vE '^(none|core|desktop|ios|android)(,(desktop|ios|android))*[[:space:]]+[^[:space:]]+$')" ]
   # The desktop jobs follow the table through ci.yml's areas job.
   check "ci.yml's areas job reads the table" grep -q 'run: scripts/ci-areas.sh --github' .github/workflows/ci.yml
   check "hosted clippy and test wait for it" \
@@ -94,6 +95,8 @@ not() { ! "$@"; }
   routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
   routes "ios" apps/ios/README.md apps/ios/a.swift
   check "no files runs every area" [ "$(changed_areas "$table" </dev/null)" = "core desktop ios android" ]
+  check "a table with CRLF line endings routes the same" \
+    [ "$(printf 'apps/ios/a.swift\0' | changed_areas "${table//$'\n'/$'\r\n'}")" = ios ]
   check "docs.rs is not under docs/" [ "$(areas_of docs.rs)" = desktop ]
   # shellcheck disable=SC2317,SC2329 # called through check
   matches() { [[ $1 =~ $(glob_regex "$2") ]]; }
@@ -174,7 +177,7 @@ not() { ! "$@"; }
   check_copy >/dev/null
   check "a copy that matches main's is not outdated" [ -z "$outdated" ]
   # Names git would quote still route: read NUL-separated.
-  cp scripts/ci-areas.txt "$repo/scripts/ci-areas.txt"
+  printf '%s\n' "$table" >"$repo/scripts/ci-areas.txt"
   g add scripts && g commit --quiet -m table
   mkdir -p "$repo/apps/ios" "$repo/apps/android"
   echo a >"$repo/apps/ios/Сканер.swift"
@@ -401,7 +404,7 @@ git init --quiet -b main "$tmp/work"
 mkdir -p "$tmp/work/.github/workflows" "$tmp/work/src" "$tmp/work/docs" "$tmp/work/scripts" \
   "$tmp/work/apps/ios" "$tmp/work/apps/android" "$tmp/work/crates/mdoc-ffi"
 cp .github/workflows/ci.yml "$tmp/work/.github/workflows/ci.yml"
-cp scripts/ci-areas.txt "$tmp/work/scripts/ci-areas.txt"
+tr -d '\r' <scripts/ci-areas.txt >"$tmp/work/scripts/ci-areas.txt"
 echo base >"$tmp/work/src/lib.rs"
 echo base >"$tmp/work/apps/ios/App.swift"
 echo base >"$tmp/work/apps/android/App.kt"
