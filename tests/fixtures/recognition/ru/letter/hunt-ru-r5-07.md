@@ -1,11 +1,9 @@
 ---
 status: known-flaw
-flaw: email-autolink-protected mime-encoded-name
-issue: 411 444
+flaw: mime-encoded-name
+issue: 444
 kind: letter
 source: hunt-r5
-expect: miss: EMAIL "lada@forward.invalid" ×2
-expect: miss: EMAIL "roman@forward.invalid" ×2
 expect: miss: PERSON "=?UTF-8?B?0JvQsNC00LAg0K/QvdC+0LLQvdCwINCS0LXQu9GM0YY=?="
 expect: miss: PERSON "=?UTF-8?B?0KDQvtC80LDQvSDQmNC70YzQuNGHINCm0LLQuNC6?="
 ---
