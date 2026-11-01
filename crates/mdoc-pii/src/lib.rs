@@ -643,7 +643,7 @@ impl Review {
                 forms.push(detection);
             } else {
                 let id = self.add_seed(text, detection.category);
-                self.recognized(id, detection.recognizer);
+                self.recognized(id, first, detection.recognizer);
             }
         }
         if !forms.is_empty() {
@@ -653,7 +653,7 @@ impl Review {
             let text = &source[detection.range];
             let target = self.propagation_target(text);
             let id = self.seed_form(text, target);
-            self.recognized(id, detection.recognizer);
+            self.recognized(id, first, detection.recognizer);
         }
         // Variants this scan seeded, including the name forms derived from
         // them; marked first, so propagation can link this scan's own lone
@@ -669,9 +669,10 @@ impl Review {
         self.refresh(source);
         Ok(())
     }
-    /// The first recognizer to propose variant `id`.
-    fn recognized(&mut self, id: u64, recognizer: Recognizer) {
-        if let Some(variant) = self.candidates.variant_mut(id) {
+    /// The recognizer of variant `id` when this scan created it (its id
+    /// is past `first`); a marked, case or restored variant keeps `None`.
+    fn recognized(&mut self, id: u64, first: u64, recognizer: Recognizer) {
+        if let Some(variant) = self.candidates.variant_mut(id).filter(|v| v.id > first) {
             variant.recognizer.get_or_insert(recognizer);
         }
     }

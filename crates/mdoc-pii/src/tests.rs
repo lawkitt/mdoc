@@ -1395,3 +1395,32 @@ fn initials_of_the_one_candidate_do_not_block_her_other_forms() {
         "PERSON_2"
     );
 }
+
+/// Review of #384: a rescan does not claim a variant the user marked or a
+/// case seeded; only a variant the scan creates takes its recognizer.
+#[test]
+fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
+    let source = "Ann met Bob.";
+    let mut review = Review::default();
+    let ann = review.add_manual(source, 0..3, Category::Person).unwrap();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0..3, Category::Person),
+                detection(8..11, Category::Person),
+            ],
+        )
+        .unwrap();
+    assert_eq!(review.variant(ann).unwrap().recognizer(), None);
+    assert_eq!(
+        proposed(&review, "Bob").recognizer(),
+        Some(Recognizer::Model)
+    );
+    let mut seeded = Review::default();
+    seeded.seed(&review.export_identities(), source);
+    seeded
+        .ingest(source, vec![detection(0..3, Category::Person)])
+        .unwrap();
+    assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
+}
