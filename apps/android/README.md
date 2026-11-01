@@ -32,7 +32,8 @@ Android Studio supplies the SDK, the emulator and the JDK instead:
 2. In Device Manager, create a phone on an **arm64-v8a** image (an x86_64
    one barely runs on Apple Silicon) and start it. The 16 KB page images
    ("Google APIs … 16 KB page size") match the Windows emulator; any
-   API 31+ arm64 image runs the app. Give it 4 GB of RAM for the models.
+   API 31+ arm64 image runs the app. Give it 8 GB of RAM: below about
+   7 GiB mdoc offers only text recognition, not Find names' detector.
 3. From the repo root, `just android-core` (installs the pinned NDK under
    `~/Library/Android/ndk` on first use; about 10 minutes from clean).
 4. Build and install:
