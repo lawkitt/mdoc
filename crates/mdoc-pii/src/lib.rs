@@ -284,6 +284,9 @@ pub enum Recognizer {
     /// A value beside its label: a `context` rule of the rule pack
     /// ("Claim No 6001842/2026", ADR 0092).
     Context,
+    /// A whole span by a pattern of the rule pack's `span` section: an
+    /// address (ADR 0092).
+    Span,
     /// A form of a known full name, found by the review after a scan or a
     /// mark (ADR 0092); never a detector's.
     Propagation,

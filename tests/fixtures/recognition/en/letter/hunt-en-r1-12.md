@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: city-only-address
-issue: 386
+status: pass
+flaw:
+issue:
 kind: letter
 source: hunt-r1
-expect: false hit: ADDRESS "Cardiff"
 ---
 # Circular to independent assessors
 

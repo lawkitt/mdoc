@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: ru-address
-issue: 362
+status: pass
+flaw:
+issue:
 kind: contract
 source: import
-expect: miss: ADDRESS "г. Москва, ул. Кедровая, д. 42, кв. 7"
 ---
 # Договор оказания услуг
 ⟦ORG|ООО «Северный Вектор»⟧ в лице директора ⟦PERSON|Анны Сергеевны Ёлкиной⟧ заключает договор с ⟦PERSON|Иваном Петровичем Соколовым⟧. Уведомления: ⟦EMAIL|elkinа@example.invalid⟧, ⟦PHONE|+7 (495) 555-01-47⟧. Адрес: ⟦ADDRESS|г. Москва, ул. Кедровая, д. 42, кв. 7⟧.

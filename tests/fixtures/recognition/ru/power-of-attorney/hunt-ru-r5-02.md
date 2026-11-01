@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: ru-address
-issue: 362
+status: pass
+flaw:
+issue:
 kind: power-of-attorney
 source: hunt-r5
-expect: miss: ADDRESS "Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9"
 ---
 # Доверенность на подачу заявлений по ремонту помещения
 

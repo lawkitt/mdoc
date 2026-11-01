@@ -1,11 +1,9 @@
 ---
 status: known-flaw
-flaw: ru-address date-of-birth
-issue: 362 363
+flaw: date-of-birth
+issue: 363
 kind: contract
 source: demo
-expect: miss: ADDRESS "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12"
-expect: miss: ADDRESS "197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3"
 expect: miss: DATE "14 марта 1988 г."
 ---
 # Соглашение об урегулировании

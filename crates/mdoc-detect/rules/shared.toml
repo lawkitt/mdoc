@@ -7,7 +7,8 @@
 #   context   a label proposes a category for the value beside it
 #   shape     what a span of each category must look like, and what makes
 #             a manual selection that category
-#   span      boundary fixes for a span
+#   span      whole spans by pattern (an address from its first element
+#             to its postcode or city), and boundary fixes for model spans
 #   variants  nicknames of given names, for names already in the document
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
@@ -31,6 +32,23 @@
 #   anywhere_in  = [category…]  a model span of these categories with one of
 #                               the words anywhere is dropped (a court)
 #
+# A `span` entry for a `category` is one of two kinds. With a `pattern`
+# it proposes each match as a whole span; `{name}` in the pattern stands
+# for `parts.name`, a regex. A match wins over a model span inside it and
+# gives way to a model span of its category that reaches past it, a span
+# of another category across its edge and any other rule's span in it; a
+# match before a colon (a field's label) goes. Without a pattern an entry
+# fixes a model span's boundaries, in this order:
+#   extend    = [regex…]  a span inside a match grows to the whole match
+#                         (the longest, when several hold it)
+#   trim      = […]       lowercase words that come off either edge, a
+#                         word's own final period with it, and a comma
+#                         before a trailing one
+#   strip_end = "…"       punctuation that comes off the end, except an
+#                         initial's period
+# A fixed span left without its category's shape goes. An entry takes one
+# kind's keys only.
+#
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere
 #   forbid  = [regex…]  a model span must match none
@@ -44,14 +62,6 @@
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
-# A `span` entry fixes a model span's boundaries, in this order:
-#   extend    = [regex…]  a span inside a match grows to the whole match
-#                         (the longest, when several hold it)
-#   trim      = […]       lowercase words that come off either edge, a
-#                         word's own final period with it, and a comma
-#                         before a trailing one
-#   strip_end = "…"       punctuation that comes off the end
-# A span left without its category's shape goes.
 #
 # A category with no entry takes any span. Manual selections try each
 # category's guesses in the order the categories first appear in the pack.
@@ -59,7 +69,7 @@
 # Context rules are per language.
 context = []
 
-# Span fixes are per language.
+# Span patterns and fixes are per language.
 span = []
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
@@ -115,10 +125,17 @@ category = "EMAIL"
 require = ['@[^@\s]+\.\p{Alphabetic}{2,}']
 
 # Addresses need a capital or a digit, and a word that is not a never word:
-# "addresses" or "Address" alone is not one.
+# "addresses" or "Address" alone is not one. They also need a house or
+# postcode number, a street word, abbreviated or not ("пер. Кленовый",
+# "Cedar Court"), or a comma or line break between parts ("The Old
+# Rectory, Nether Compton"): a city alone ("Cardiff", "Москва") is not an address (issue
+# #386).
 [[shape]]
 category = "ADDRESS"
-require = ['[\p{Uppercase}\p{N}]']
+require = [
+    '[\p{Uppercase}\p{N}]',
+    '\p{N}|,|\n|(?i:\b(?:ул|улица|пр-т|пр|проспект|пер|переулок|наб|набережная|б-р|бульвар|пл|площадь|ш|шоссе|проезд|тупик|аллея|линия|тракт|просека|мкр|микрорайон|квартал|road|street|lane|ln|avenue|boulevard|blvd|mews|close|court|drive|dr|way|place|square|crescent|gardens|terrace|yard|row|hill|grove|walk|parade|rd|st|ave)\b)',
+]
 word = '.'
 
 # Identity documents need a digit; "passport" alone is not one.

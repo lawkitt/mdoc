@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: uk-home-address case-number
-issue: 361 364
+flaw: case-number
+issue: 364
 kind: claim
 source: hunt-r5
 expect: miss: CASE "1:26-cv-04731-QL"
-expect: miss: ADDRESS "Apt 4B, 57 Larchhaven Street, Portland, ME 04102-7634"
 ---
 # Complaint for return of a repair deposit
 

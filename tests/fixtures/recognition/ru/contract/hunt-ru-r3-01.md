@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: ru-address
-issue: 362
+status: pass
+flaw:
+issue:
 kind: contract
 source: hunt-r3
-expect: miss: ADDRESS "ул. Переплётных огней, д. 74, помещение 6"
 ---
 # Договор аренды места в мастерской
 
