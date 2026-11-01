@@ -3,6 +3,7 @@
 use super::{
     Category, Review,
     identities::{cyrillic, name_words, split_full_name, surname_forms},
+    propagation::{Form, People, parse_form},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -25,7 +26,8 @@ pub struct HintIdentity {
 /// Why two identities look like one subject.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Signal {
-    /// An ADR 0068 short or inflected form with exactly one candidate full name.
+    /// A short or inflected form, first name + patronymic or a surname with
+    /// every initial matching, with exactly one candidate full name.
     ShortForm,
     /// Wordings that differ only in case, whitespace or punctuation.
     Spelling,
@@ -131,6 +133,32 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
             && let Some(full) = candidates.iter().find_map(|c| c.full)
         {
             record((i, wording), (candidates[0].owner, full), Signal::ShortForm);
+        }
+    }
+
+    // First name + patronymic, or a surname with every initial matching,
+    // with one candidate full name (ADR 0092).
+    let people = People::new(
+        all()
+            .filter(|(_, category, _)| *category == Category::Person)
+            .map(|(i, _, w)| (i as u64, w.as_ref())),
+    );
+    for (i, category, wording) in all() {
+        if category != Category::Person {
+            continue;
+        }
+        let Some(form @ (Form::Patronymic { .. } | Form::Initials { .. })) = parse_form(wording)
+        else {
+            continue;
+        };
+        if let Some(into) = people.candidates(&form).target.map(|t| t as usize)
+            && into != i
+            && let Some(full) = identities[into]
+                .wordings
+                .iter()
+                .find(|w| split_full_name(w).is_some())
+        {
+            record((i, wording), (into, full), Signal::ShortForm);
         }
     }
 
@@ -585,9 +613,33 @@ mod tests {
     }
 
     #[test]
-    fn initials_and_transliteration_are_not_signals() {
-        assert!(hints(&people(&["Павлова Марина Сергеевна", "Павлова М.С."])).is_empty());
-        assert!(hints(&people(&["Maya Bennett", "M. Bennett"])).is_empty());
+    fn a_patronymic_and_matching_initials_are_signals() {
+        assert_eq!(
+            hints(&people(&["Павлова Марина Сергеевна", "Павлова М.С."])),
+            [(2, 1, Signal::ShortForm)]
+        );
+        assert_eq!(
+            hints(&people(&["Maya Bennett", "M. Bennett"])),
+            [(2, 1, Signal::ShortForm)]
+        );
+        assert_eq!(
+            hints(&people(&["Марина Сергеевна", "Павлова Марина Сергеевна"])),
+            [(1, 2, Signal::ShortForm)]
+        );
+        // An initial that matches another given name, or two candidates.
+        assert!(hints(&people(&["Павлова Марина Сергеевна", "Павлова А.С."])).is_empty());
+        assert!(
+            hints(&people(&[
+                "Павлова Марина Сергеевна",
+                "Петрова Марина Сергеевна",
+                "Марина Сергеевна"
+            ]))
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn initials_alone_and_transliteration_are_not_signals() {
         assert!(hints(&people(&["M. Bennett", "M. Benett"])).is_empty());
         assert!(hints(&people(&["M. Bennett", "M Bennett"])).is_empty());
         assert!(hints(&people(&["Павлова М.С.", "М.С. Павлова"])).is_empty());
@@ -650,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn a_review_hints_at_a_proposed_short_form_until_merged() {
+    fn a_review_hints_at_a_separated_short_form_until_merged() {
         let source = "Maya Bennett signed. Later Ms Bennett agreed.";
         let mut review = Review::default();
         review
@@ -664,6 +716,16 @@ mod tests {
                 }],
             )
             .unwrap();
+        // Propagation linked the short form; separated, it shows a hint.
+        assert!(review.merge_hints().is_empty());
+        let short = review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == "Ms Bennett")
+            .unwrap()
+            .id;
+        let own = review.new_identity(Category::Person);
+        review.assign_variant(short, own).unwrap();
         let all = review.merge_hints();
         assert_eq!(all.len(), 1, "{all:?}");
         let hint = &all[0];
