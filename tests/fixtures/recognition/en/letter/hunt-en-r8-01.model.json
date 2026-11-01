@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":52,"end":65,"label":"person","score":0.99801993,"text":"Alvena McRusk"},
+    {"start":164,"end":179,"label":"organization","score":0.98742366,"text":"storage company"},
+    {"start":1174,"end":1191,"label":"person","score":0.97496456,"text":"Gavira Vennick KC"},
+    {"start":1248,"end":1263,"label":"person","score":0.97079873,"text":"Nerovan Rillane"},
+    {"start":1214,"end":1234,"label":"organization","score":0.9879462,"text":"Moss Quoin Legal LLP"},
+    {"start":1013,"end":1048,"label":"email","score":0.9993513,"text":"inventory.review@moss-quoin.invalid"}
+  ]
+}

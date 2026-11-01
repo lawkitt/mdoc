@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":68,"end":83,"label":"person","score":0.99851626,"text":"Mireva Quennell"},
+    {"start":44,"end":58,"label":"person","score":0.9966626,"text":"Ceryna MacKell"},
+    {"start":1307,"end":1320,"label":"person","score":0.9975656,"text":"Orren Vannick"},
+    {"start":1172,"end":1186,"label":"person","score":0.99328107,"text":"Ceryna MacKell"},
+    {"start":1211,"end":1226,"label":"person","score":0.95945925,"text":"Mireva Quennell"},
+    {"start":1284,"end":1305,"label":"organization","score":0.9497627,"text":"Slate Purl Advice LLP"},
+    {"start":687,"end":709,"label":"address","score":0.9451974,"text":"28 Alder Row, Hereford"}
+  ]
+}
