@@ -969,6 +969,47 @@ mod tests {
         }
     }
 
+    /// English labels decide a bank account (a slash between sort code and
+    /// number is fine) and a staff ID, even one of letters only.
+    #[test]
+    fn english_labels_decide_bank_accounts_and_staff_ids() {
+        let found = |source: &str| -> Vec<(String, Category)> {
+            pack()
+                .context(source)
+                .into_iter()
+                .map(|d| (source[d.range].to_owned(), d.category))
+                .collect()
+        };
+        assert_eq!(
+            found("**Bank account:** 47-29-16/00318572"),
+            [("47-29-16/00318572".to_owned(), Category::Bank)]
+        );
+        assert_eq!(
+            found("<td>Bank account: 62-18-43/00492716<br>GBP 12</td>"),
+            [("62-18-43/00492716".to_owned(), Category::Bank)]
+        );
+        assert_eq!(
+            found("IBAN: GB28NWBK60161331926819."),
+            [("GB28NWBK60161331926819".to_owned(), Category::Bank)]
+        );
+        assert_eq!(
+            found("**Staff ID:** VELK-QUEN"),
+            [("VELK-QUEN".to_owned(), Category::Identity)]
+        );
+        assert_eq!(
+            found("Employee ID: TERN-WISP, signed"),
+            [("TERN-WISP".to_owned(), Category::Identity)]
+        );
+        for source in [
+            "the bank account was closed in 2026",
+            "Staff ID: pending",
+            "Employee ID: Maya Bennett",
+            "account number 12345",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+    }
+
     /// What the review shows: a case number's other mentions join it, and a
     /// labelled number too short to propose never spreads to statute and
     /// clause numbers (the review finds a wording everywhere).

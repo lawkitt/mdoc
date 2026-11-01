@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: alphabetic-identifier-as-person inverted-name-boundary
-issue: 413 414
+flaw: inverted-name-boundary
+issue: 414
 kind: contract
 source: hunt-r3
-expect: boundary: gold IDENTITY "VELK-QUEN"; proposed PERSON "VELK-QUEN"
 expect: boundary: gold PERSON "VALECROFT, Jorin P."; proposed PERSON "VALECROFT", PERSON "Jorin P."
 ---
 # Employment agreement: records and equipment

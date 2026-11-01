@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: alphabetic-identifier-as-person
 issue: 413
 kind: claim
 source: hunt-r3
-expect: boundary: gold IDENTITY "TERN-WISP"; proposed PERSON "TERN-WISP"
 ---
 ## Labour claim: unpaid training hours
 
