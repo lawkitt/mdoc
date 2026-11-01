@@ -792,6 +792,41 @@ mod tests {
         }
     }
 
+    /// Digits that are not the model's category: long runs and bank codes
+    /// are no phones, bare ten- or eleven-digit numbers no bank details, a
+    /// rate or a writ series no tax identifier, a host without a dot no
+    /// email. Real ones stay.
+    #[test]
+    fn shapes_drop_numbers_that_are_not_their_category() {
+        let keeps = |text: &str, category| pack().identifying(text, category);
+        for (text, category) in [
+            ("123456789012345678901234567890", Category::Phone),
+            ("+1234567890123456789012345", Category::Phone),
+            ("044525593", Category::Phone),
+            ("12345678900", Category::Bank),
+            ("5401000039", Category::Bank),
+            ("20 percent tax", Category::Tax),
+            ("НДС 20%", Category::Tax),
+            ("ФС 086731924", Category::Tax),
+            ("not-a-mail@localhost", Category::Email),
+        ] {
+            assert!(!keeps(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("+44 7700 900461", Category::Phone),
+            ("8 (495) 123-45-67", Category::Phone),
+            ("40702810900000001234", Category::Bank),
+            ("GB28NWBK60161331926819", Category::Bank),
+            ("044525225", Category::Bank),
+            ("12345", Category::Bank),
+            ("7707083893", Category::Tax),
+            ("GB 123 4567 89", Category::Tax),
+            ("maya.bennett@example.com", Category::Email),
+        ] {
+            assert!(keeps(text, category), "{text}");
+        }
+    }
+
     /// What the review shows: a case number's other mentions join it, and a
     /// labelled number too short to propose never spreads to statute and
     /// clause numbers (the review finds a wording everywhere).
