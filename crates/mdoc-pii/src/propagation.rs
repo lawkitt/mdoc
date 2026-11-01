@@ -1098,6 +1098,35 @@ impl Review {
         if people.is_empty() {
             return Vec::new();
         }
+        // A scan's one-word form of a known name that is also an ordinary
+        // word ("Grant") counts only capitalised mid-sentence, whoever
+        // proposed it; a mark by hand lifts that, and a case's or restored
+        // wording keeps every mention. Only a scan sets it, so no undo step
+        // changes a variant's own flag.
+        let ordinary: Vec<u64> = self
+            .variants()
+            .iter()
+            .filter(|_| !marked)
+            .filter(|v| {
+                v.category == Category::Person && v.detected && v.priority == 0 && !v.mid_sentence
+            })
+            .filter(|v| match parse_form(&v.original) {
+                Some(form @ Form::Word { titled: false, .. }) => {
+                    matches!(&form, Form::Word { word, .. } if common_word(word))
+                        && people.candidates(&form).proposed
+                }
+                _ => false,
+            })
+            .map(|v| v.id)
+            .collect();
+        if !ordinary.is_empty() {
+            for id in ordinary {
+                if let Some(variant) = self.candidates.variant_mut(id) {
+                    variant.mid_sentence = true;
+                }
+            }
+            self.refresh(source);
+        }
         let mut spans: Vec<_> = self
             .candidates()
             .iter()

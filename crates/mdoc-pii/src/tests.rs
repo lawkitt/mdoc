@@ -1569,3 +1569,78 @@ fn a_surname_keeps_its_particle() {
             .all(|v| v.original.as_ref() != "Лаваль")
     );
 }
+
+/// #416: a known first name that is an ordinary word ("Grant") counts only
+/// capitalised mid-sentence, even where the model proposed it.
+#[test]
+fn an_ordinary_word_name_counts_only_mid_sentence_whoever_proposed_it() {
+    let source = "Landlord: Grant Pellover.\n\n## Grant\n\nThe room is let. \
+        Grant of storage needs a variation.\n\nThe landlord, Grant, keeps a key.";
+    let model = source.find("Grant of").unwrap();
+    let full = source.find("Grant Pellover").unwrap();
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(full..full + "Grant Pellover".len(), Category::Person),
+                detection(model..model + "Grant".len(), Category::Person),
+            ],
+        )
+        .unwrap();
+    let grant = proposed(&review, "Grant");
+    let mid = source.find("Grant, keeps").unwrap();
+    assert_eq!(grant.mentions, vec![mid..mid + "Grant".len()]);
+    // Marked by hand at a sentence start, every mention counts.
+    let heading = source.find("## Grant").unwrap() + 3;
+    review
+        .add_manual(source, heading..heading + 5, Category::Person)
+        .unwrap();
+    assert_eq!(proposed(&review, "Grant").mentions.len(), 3);
+}
+
+/// Review of #440: a case's saved wording keeps every mention, and a mark
+/// leaves an existing proposal's mentions as they were, so undo has
+/// nothing to restore.
+#[test]
+fn the_ordinary_word_rule_leaves_saved_wordings_and_marks_alone() {
+    let source = "Grant Pellover signed.\nGrant agreed.";
+    let mut seeded = Review::default();
+    let saved = [crate::restore::ExportedIdentity {
+        alias: "PERSON_1".into(),
+        previous: vec![],
+        category: Category::Person,
+        custom: false,
+        originals: vec!["Grant Pellover".into(), "Grant".into()],
+    }];
+    seeded.seed(&saved, source);
+    seeded.ingest(source, Vec::new()).unwrap();
+    assert_eq!(
+        proposed(&seeded, "Grant").mentions.len(),
+        1,
+        "saved wording"
+    );
+
+    let source = "Grant agreed.\nGrant Pellover signed.";
+    let mut review = Review::default();
+    review
+        .ingest(source, vec![detection(0..5, Category::Person)])
+        .unwrap();
+    // The sentence-start "Grant" the model proposed stays proposed through
+    // a mark of the full name and its undo.
+    let first = |review: &Review| proposed(review, "Grant").mentions.contains(&(0..5));
+    assert!(first(&review));
+    let before = review.identity_snapshot();
+    let full = source.find("Grant Pellover").unwrap();
+    review
+        .add_manual(
+            source,
+            full..full + "Grant Pellover".len(),
+            Category::Person,
+        )
+        .unwrap();
+    assert!(first(&review), "a mark");
+    review.restore_identity_snapshot(before);
+    review.refresh(source);
+    assert!(first(&review), "undo");
+}
