@@ -81,3 +81,32 @@ between = '[\p{Zs}\t:#]{1,4}'
 value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
 min_digits = 4
 unless_guessed = ["DATE"]
+
+# Russian identifiers after their label (ADR 0092), whatever their checksum:
+# the guide marks invalid and damaged ones too. The structured rules propose
+# only valid ones; these give the label's category over the model's guess.
+# A table column headed by the label takes its cells' values too.
+#
+# ИНН: ten or twelve digits; OCR may read a digit as O, О, I, l or І.
+[[context]]
+category = "TAX"
+labels = ["инн"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[0-9OОoIlІ]{10}(?:[0-9OОoIlІ]{2})?'
+min_digits = 8
+
+# СНИЛС: "123-456-789 00" or eleven digits.
+[[context]]
+category = "IDENTITY"
+labels = ["снилс"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{3}-\d{3}-\d{3}[\p{Zs}-]\d{2}|\d{11}'
+min_digits = 11
+
+# A card or membership code after its label: "Код карточки: CARD-918264".
+[[context]]
+category = "IDENTITY"
+labels = ["код карточки", "номер карточки"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\p{Alphabetic}{2,}-?\d{4,}'
+min_digits = 4

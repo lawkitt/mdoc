@@ -123,6 +123,11 @@ pub(crate) struct Pack {
 struct Context {
     category: Category,
     pattern: Regex,
+    /// The labels, lowercase, single-spaced: a table column headed by one
+    /// takes the value in each of its cells.
+    labels: Vec<String>,
+    /// The value alone, whole.
+    value: Regex,
     min_digits: usize,
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
@@ -284,6 +289,8 @@ impl Pack {
                     rust_classes(&entry.value),
                 );
                 let pattern = Regex::new(&pattern).map_err(|e| at(e.to_string()))?;
+                let value = Regex::new(&format!("^(?:{})$", rust_classes(&entry.value)))
+                    .map_err(|e| at(e.to_string()))?;
                 if pattern.captures_len() != 2 {
                     return Err(at("between and value must not capture".into()));
                 }
@@ -303,6 +310,18 @@ impl Pack {
                 pack.contexts.push(Context {
                     category,
                     pattern,
+                    labels: entry
+                        .labels
+                        .iter()
+                        .map(|label| {
+                            label
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .to_lowercase()
+                        })
+                        .collect(),
+                    value,
                     min_digits: entry.min_digits,
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
@@ -373,23 +392,20 @@ impl Pack {
     /// Values beside their labels in `source`, as `context` rules propose
     /// them: the value only, without its label.
     pub(crate) fn context(&self, source: &str) -> Vec<Detection> {
-        self.contexts
+        let mut found: Vec<Detection> = self
+            .contexts
             .iter()
             .flat_map(|context| {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
-                    let digits = value.as_str().chars().filter(char::is_ascii_digit).count();
                     let before = source[..found.get(0)?.start()]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
-                    if digits < context.min_digits
-                        || context.unless_after.contains(&before)
-                        || self
-                            .guess(value.as_str())
-                            .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+                    if context.unless_after.contains(&before)
+                        || !self.takes(context, value.as_str())
                     {
                         return None;
                     }
@@ -401,7 +417,74 @@ impl Pack {
                     })
                 })
             })
-            .collect()
+            .collect();
+        found.extend(self.table_columns(source));
+        found
+    }
+
+    /// Whether `context` proposes `value`: enough digits, and no guess that
+    /// rules it out (a date).
+    fn takes(&self, context: &Context, value: &str) -> bool {
+        value.chars().filter(char::is_ascii_digit).count() >= context.min_digits
+            && !self
+                .guess(value)
+                .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+    }
+
+    /// Values in Markdown table columns whose header cell is a label ("| ИНН
+    /// | СНИЛС |"): each cell that is a whole value of that label's rule.
+    fn table_columns(&self, source: &str) -> Vec<Detection> {
+        let mut found = Vec::new();
+        let mut lines = Vec::new();
+        let mut at = 0;
+        for line in source.split_inclusive('\n') {
+            lines.push((at, line.trim_end_matches(['\n', '\r'])));
+            at += line.len();
+        }
+        let mut row = 0;
+        while row + 1 < lines.len() {
+            let (header_at, header) = lines[row];
+            if !is_table_row(header) || !is_delimiter_row(lines[row + 1].1) {
+                row += 1;
+                continue;
+            }
+            // The context rule each column's header names, if any.
+            let columns: Vec<Option<&Context>> = cells(header, header_at)
+                .into_iter()
+                .map(|cell| {
+                    let label = source[cell]
+                        .trim_matches(|c: char| {
+                            c == '*' || c == '_' || c == ':' || c.is_whitespace()
+                        })
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .to_lowercase();
+                    self.contexts
+                        .iter()
+                        .find(|context| context.labels.contains(&label))
+                })
+                .collect();
+            row += 2;
+            while row < lines.len() && is_table_row(lines[row].1) {
+                let (line_at, line) = lines[row];
+                for (cell, context) in cells(line, line_at).into_iter().zip(&columns) {
+                    if let Some(context) = context
+                        && context.value.is_match(&source[cell.clone()])
+                        && self.takes(context, &source[cell.clone()])
+                    {
+                        found.push(Detection {
+                            range: cell,
+                            category: context.category,
+                            score: CONTEXT_SCORE,
+                            recognizer: Recognizer::Context,
+                        });
+                    }
+                }
+                row += 1;
+            }
+        }
+        found
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -421,6 +504,41 @@ impl Pack {
             })
             .map(|shape| shape.category)
     }
+}
+
+fn is_table_row(line: &str) -> bool {
+    line.trim_start().starts_with('|')
+}
+
+/// "| --- | :-: |": the row under a table's header.
+fn is_delimiter_row(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with('|')
+        && line.contains('-')
+        && line
+            .chars()
+            .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
+}
+
+/// The byte ranges of a table row's cells in the source, each trimmed of
+/// spaces; an escaped `\|` stays inside its cell.
+fn cells(line: &str, at: usize) -> Vec<std::ops::Range<usize>> {
+    let mut cells = Vec::new();
+    let mut start = None;
+    let mut escaped = false;
+    for (i, c) in line.char_indices() {
+        if c == '|' && !escaped {
+            if let Some(from) = start {
+                let text: &str = &line[from..i];
+                let lead = text.len() - text.trim_start().len();
+                let trimmed = text.trim();
+                cells.push(at + from + lead..at + from + lead + trimmed.len());
+            }
+            start = Some(i + 1);
+        }
+        escaped = c == '\\' && !escaped;
+    }
+    cells
 }
 
 /// `pattern` with `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` meaning
@@ -595,6 +713,46 @@ mod tests {
             "In case 2026-03-12 is a non-business day, payment falls due.",
             "Case No. 12.03.2026",
             "Дело № 12",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+    }
+
+    /// Russian identifiers take their label's category whatever their
+    /// checksum, beside the label or under it as a table column's header.
+    #[test]
+    fn labelled_russian_identifiers_take_their_category() {
+        let found = |source: &str| -> Vec<(String, Category)> {
+            let mut found: Vec<_> = pack()
+                .context(source)
+                .into_iter()
+                .map(|d| (source[d.range].to_owned(), d.category))
+                .collect();
+            found.sort_by(|a, b| a.0.cmp(&b.0));
+            found
+        };
+        let tax = |v: &str| (v.to_owned(), Category::Tax);
+        let id = |v: &str| (v.to_owned(), Category::Identity);
+        assert_eq!(
+            found("ИНН: 7701234567; СНИЛС: 123-456-789 00; ИНН: 77O1234567."),
+            [id("123-456-789 00"), tax("7701234567"), tax("77O1234567")]
+        );
+        assert_eq!(found("**СНИЛС:** 000-000-000 00"), [id("000-000-000 00")]);
+        assert_eq!(
+            found("Код карточки: CARD-918264<br>Счёт"),
+            [id("CARD-918264")]
+        );
+        assert_eq!(
+            found(
+                "| ИНН | **СНИЛС** | Цена |\n| --- | :-: | --- |\n| 5401000039 | 345-678-912 26 | 1234567890 |\n| нет | — | 12 |\n"
+            ),
+            [id("345-678-912 26"), tax("5401000039")]
+        );
+        for source in [
+            "Договор № 5401000039, цена 660100000231 рублей.",
+            "ИНН: 123; СНИЛС: 12-34",
+            "| Номер | Цена |\n| --- | --- |\n| 5401000039 | 345-678-912 26 |\n",
+            "ИНН\n\n| 5401000039 |",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
