@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":62,"end":76,"label":"person","score":0.995752,"text":"Alvena Ruskett"},
+    {"start":90,"end":114,"label":"organization","score":0.9898696,"text":"Bramble Purl Surveys Ltd"},
+    {"start":154,"end":164,"label":"person","score":0.9777138,"text":"respondent"},
+    {"start":268,"end":273,"label":"organization","score":0.9658996,"text":"court"},
+    {"start":864,"end":878,"label":"person","score":0.9956685,"text":"Nerith MacVell"},
+    {"start":595,"end":605,"label":"person","score":0.7604728,"text":"respondent"},
+    {"start":420,"end":430,"label":"person","score":0.6213111,"text":"respondent"},
+    {"start":1445,"end":1462,"label":"person","score":0.99248123,"text":"Avren O’Kellane"},
+    {"start":1040,"end":1062,"label":"address","score":0.90615606,"text":"19 Quoin Road, Lincoln"}
+  ]
+}
