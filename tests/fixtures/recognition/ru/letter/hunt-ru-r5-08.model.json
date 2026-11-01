@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":113,"end":144,"label":"organization","score":0.9653159,"text":"отдел подготовки"},
+    {"start":155,"end":180,"label":"organization","score":0.79262483,"text":"группа сверки"},
+    {"start":1467,"end":1492,"label":"organization","score":0.9145963,"text":"группа сверки"},
+    {"start":1505,"end":1536,"label":"organization","score":0.89478946,"text":"отдел подготовки"},
+    {"start":2423,"end":2432,"label":"organization","score":0.881002,"text":"ГК РФ"},
+    {"start":2295,"end":2301,"label":"organization","score":0.56190604,"text":"ИНН"}
+  ]
+}

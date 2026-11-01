@@ -1,0 +1,17 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":162,"end":206,"label":"person","score":0.9947392,"text":"Матвей Юрьевич Вельский"},
+    {"start":111,"end":142,"label":"organization","score":0.9554024,"text":"ИП Белявская О. М."},
+    {"start":1604,"end":1622,"label":"person","score":0.677474,"text":"заказчика"},
+    {"start":2877,"end":2927,"label":"person","score":0.9762653,"text":"Оксана Мироновна Белявская"},
+    {"start":1935,"end":1978,"label":"organization","score":0.82796735,"text":"АО «Медовый берег банк»"},
+    {"start":2109,"end":2141,"label":"email","score":0.99988854,"text":"belyavskaya@shirminvalid.invalid"},
+    {"start":2061,"end":2073,"label":"national_id_number","score":0.92317784,"text":"508631742972"},
+    {"start":2043,"end":2052,"label":"routing_number","score":0.9847524,"text":"041234762"},
+    {"start":2014,"end":2034,"label":"bank_account","score":0.9554024,"text":"3010181O400000000762"},
+    {"start":1986,"end":2006,"label":"bank_account","score":0.9391366,"text":"40802810900007864231"},
+    {"start":1942,"end":1976,"label":"iban","score":0.6354487,"text":"Медовый берег банк"}
+  ]
+}
