@@ -1,0 +1,16 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":126,"end":141,"label":"person","score":0.9996873,"text":"Joël de la Vey"},
+    {"start":49,"end":62,"label":"person","score":0.9983896,"text":"Alwen di Sarn"},
+    {"start":78,"end":99,"label":"organization","score":0.99446666,"text":"Pale Comet Design Ltd"},
+    {"start":900,"end":908,"label":"person","score":0.97548366,"text":"Assignee"},
+    {"start":576,"end":584,"label":"person","score":0.97134733,"text":"Assignee"},
+    {"start":831,"end":841,"label":"tax_id","score":0.8598992,"text":"73-84O19?2"},
+    {"start":788,"end":815,"label":"bank_account","score":0.90926456,"text":"GB64 VELT 2045 6182 7704 3?"},
+    {"start":1303,"end":1318,"label":"person","score":0.99683964,"text":"Joël de la Vey"},
+    {"start":1279,"end":1292,"label":"person","score":0.99135584,"text":"Alwen di Sarn"},
+    {"start":997,"end":1004,"label":"person","score":0.50490934,"text":"witness"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":56,"end":68,"label":"person","score":0.9980277,"text":"Orla Vennick"},
+    {"start":82,"end":106,"label":"organization","score":0.99632144,"text":"Quiet Anvil Storage Ltd."},
+    {"start":862,"end":874,"label":"person","score":0.9654464,"text":"Orla Vennick"},
+    {"start":717,"end":730,"label":"person","score":0.9649874,"text":"Merrit Zorlan"},
+    {"start":809,"end":843,"label":"email","score":0.96043545,"text":"service+record@quiet-anvil.invalid"},
+    {"start":1534,"end":1546,"label":"person","score":0.9854405,"text":"Orla Vennick"}
+  ]
+}

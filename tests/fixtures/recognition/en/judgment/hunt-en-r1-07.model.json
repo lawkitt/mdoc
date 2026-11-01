@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":43,"end":56,"label":"person","score":0.9957354,"text":"Zélin O'Varr"},
+    {"start":59,"end":82,"label":"organization","score":0.99287856,"text":"Birch Orbit Repairs Ltd"},
+    {"start":677,"end":692,"label":"person","score":0.9710743,"text":"Dr Ysolde Qhenn"},
+    {"start":1332,"end":1342,"label":"person","score":0.9959927,"text":"Ceryn Nove"}
+  ]
+}

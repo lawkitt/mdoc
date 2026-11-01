@@ -1,0 +1,24 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":664,"end":678,"label":"person","score":0.8079157,"text":"Representative"},
+    {"start":632,"end":638,"label":"person","score":0.7687332,"text":"Client"},
+    {"start":411,"end":419,"label":"person","score":0.64187145,"text":"Surveyor"},
+    {"start":640,"end":650,"label":"person","score":0.6022955,"text":"Contractor"},
+    {"start":423,"end":441,"label":"person","score":0.5082085,"text":"Technical Reviewer"},
+    {"start":652,"end":659,"label":"organization","score":0.90140116,"text":"Company"},
+    {"start":509,"end":520,"label":"organization","score":0.6927459,"text":"partnership"},
+    {"start":524,"end":535,"label":"organization","score":0.68573904,"text":"sole trader"},
+    {"start":1070,"end":1089,"label":"organization","score":0.99798095,"text":"Ministry of Justice"},
+    {"start":1142,"end":1154,"label":"organization","score":0.98016727,"text":"County Court"},
+    {"start":786,"end":802,"label":"phone_number","score":0.99887526,"text":"telephone number"},
+    {"start":804,"end":817,"label":"email","score":0.914901,"text":"email address"},
+    {"start":1348,"end":1355,"label":"address","score":0.6614857,"text":"Cardiff"},
+    {"start":819,"end":833,"label":"tax_id","score":0.9478657,"text":"tax identifier"},
+    {"start":769,"end":784,"label":"passport_number","score":0.7934263,"text":"passport number"},
+    {"start":837,"end":849,"label":"bank_account","score":0.9823555,"text":"bank account"},
+    {"start":1526,"end":1545,"label":"organization","score":0.976038,"text":"Administrative Team"},
+    {"start":1414,"end":1428,"label":"tax_id","score":0.5526906,"text":"20 percent tax"}
+  ]
+}
