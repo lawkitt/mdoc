@@ -1,11 +1,7 @@
 ---
-status: known-flaw
-flaw: invalid-identifier-missed
-issue: 381
+status: pass
 kind: tables
 source: hunt-r7
-expect: miss: TAX "5087146328"
-expect: miss: TAX "5087693145"
 ---
 # Перечень кредиторов для проверки регистрационных сведений
 
