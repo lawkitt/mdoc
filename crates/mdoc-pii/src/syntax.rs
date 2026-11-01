@@ -256,15 +256,19 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
         markdown::to_mdast(block, &options),
         markdown::to_mdast(&replaced, &options),
     ) {
-        (Ok(before), Ok(after)) => shape(&before) == shape(&after),
+        // Only a line break the replaced value held is part of it: one
+        // the replacement exposes ("Ann\<br>" ends in an escape) is syntax.
+        (Ok(before), Ok(after)) => shape(&before, &local) == shape(&after, &(0..0)),
         _ => false,
     }
 }
 /// Node kinds and child counts in document order, ignoring text values.
 /// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
-/// ADR 0092): `<br>` nodes are skipped and the text around them is one.
+/// ADR 0092): `<br>` nodes wholly inside `value` are skipped and the text
+/// around them is one.
 fn shape(
     node: &markdown::mdast::Node,
+    value: &std::ops::Range<usize>,
 ) -> Vec<(std::mem::Discriminant<markdown::mdast::Node>, usize)> {
     use markdown::mdast::Node;
     let mut out = Vec::new();
@@ -273,7 +277,10 @@ fn shape(
         let mut children: Vec<&Node> = Vec::new();
         for child in node.children().map_or(&[][..], Vec::as_slice) {
             let line_break = matches!(child, Node::Html(html)
-                if crate::view::line_break_tag(&html.value) == Some(html.value.len()));
+            if crate::view::line_break_tag(&html.value) == Some(html.value.len())
+                && html.position.as_ref().is_some_and(|at| {
+                    value.start <= at.start.offset && at.end.offset <= value.end
+                }));
             let text = matches!(child, Node::Text(_));
             if line_break || (text && matches!(children.last(), Some(Node::Text(_)))) {
                 continue;

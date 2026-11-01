@@ -476,6 +476,13 @@ fn a_value_over_html_line_breaks_is_one_span() {
             .starts_with("| Address | 27 Wisp Lane, Norwich NR2 8ZZ |")
     );
     assert!(view.text.ends_with("To Bob<br>\n"));
+    // A span ending in the escape of an escaped tag would expose the tag
+    // as a line break: it is syntax, not text.
+    let source = "Ann\\<br>Lee and Ann";
+    assert_eq!(
+        applied(source, vec![detection(0..4, Category::Person)]),
+        source
+    );
 }
 #[test]
 fn parenthesized_phone_values_do_not_consume_link_delimiters() {
