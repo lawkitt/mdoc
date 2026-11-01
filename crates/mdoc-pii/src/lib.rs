@@ -116,9 +116,10 @@ pub struct Variant {
     priority: u64,
     /// Seeded by a scan, not by the user, a case or a restored mapping.
     detected: bool,
-    /// Proposed as a form of a known full name (recognizer `Propagation`,
-    /// ADR 0092).
-    propagated: bool,
+    /// What proposed it: the detector's recognizer for a scan's seed,
+    /// `Propagation` for a form of a known full name (ADR 0092); `None` for
+    /// a manual mark, a case or a restored mapping.
+    recognizer: Option<Recognizer>,
     /// An ordinary word too ("Rose", "Мира"): only its capitalised
     /// mentions mid-sentence count.
     mid_sentence: bool,
@@ -129,10 +130,10 @@ pub struct Variant {
     own: Option<u64>,
 }
 impl Variant {
-    /// Whether propagation proposed it: a form of a known full name found
-    /// in the text (recognizer `Propagation`, ADR 0092).
-    pub fn propagated(&self) -> bool {
-        self.propagated
+    /// What proposed it first; `None` for a manual mark, a case or a
+    /// restored mapping.
+    pub fn recognizer(&self) -> Option<Recognizer> {
+        self.recognizer
     }
 }
 
@@ -255,6 +256,9 @@ pub enum Recognizer {
     Inn,
     Snils,
     Ogrn,
+    /// A form of a known full name, found by the review after a scan or a
+    /// mark (ADR 0092); never a detector's.
+    Propagation,
 }
 impl Recognizer {
     fn rule(self) -> bool {
@@ -613,6 +617,21 @@ impl Review {
         }
         let known = self.known_people();
         people.extend(known.iter().map(|(id, w)| (*id, w.as_ref())));
+        // A surname with initials that is a form of one full name stands for
+        // that person ("Павловой М. С."), not for a second one.
+        let full = propagation::People::new(
+            people
+                .iter()
+                .copied()
+                .filter(|(_, w)| identities::split_full_name(w).is_some()),
+        );
+        for (owner, wording) in &mut people {
+            if let Some(target) =
+                propagation::parse_form(wording).and_then(|form| full.candidates(&form).target)
+            {
+                *owner = target;
+            }
+        }
         let people = propagation::People::new(people);
         let mut forms = Vec::new();
         for detection in selected {
@@ -623,7 +642,8 @@ impl Review {
             if joins {
                 forms.push(detection);
             } else {
-                self.add_seed(text, detection.category);
+                let id = self.add_seed(text, detection.category);
+                self.recognized(id, first, detection.recognizer);
             }
         }
         if !forms.is_empty() {
@@ -632,15 +652,29 @@ impl Review {
         for detection in forms {
             let text = &source[detection.range];
             let target = self.propagation_target(text);
-            self.seed_form(text, target);
+            let id = self.seed_form(text, target);
+            self.recognized(id, first, detection.recognizer);
         }
+        // Variants this scan seeded, including the name forms derived from
+        // them; marked first, so propagation can link this scan's own lone
+        // proposals too.
+        let mark_detected = |review: &mut Self| {
+            for variant in &mut review.candidates.variants {
+                variant.detected |= variant.id > first;
+            }
+        };
+        mark_detected(self);
         self.propagate(source, false);
-        // Variants this scan seeded, including the name forms derived from them.
-        for variant in &mut self.candidates.variants {
-            variant.detected |= variant.id > first;
-        }
+        mark_detected(self);
         self.refresh(source);
         Ok(())
+    }
+    /// The recognizer of variant `id` when this scan created it (its id
+    /// is past `first`); a marked, case or restored variant keeps `None`.
+    fn recognized(&mut self, id: u64, first: u64, recognizer: Recognizer) {
+        if let Some(variant) = self.candidates.variant_mut(id).filter(|v| v.id > first) {
+            variant.recognizer.get_or_insert(recognizer);
+        }
     }
     fn add_seed(&mut self, original: &str, category: Category) -> u64 {
         self.add_seed_linked(original, category, None)
@@ -685,7 +719,7 @@ impl Review {
             keep_default: false,
             priority: 0,
             detected: false,
-            propagated: false,
+            recognizer: None,
             mid_sentence: false,
             managed: false,
             own: None,

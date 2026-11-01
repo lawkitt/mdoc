@@ -760,7 +760,7 @@ fn a_scan_proposes_title_surname_and_possessive_forms_of_a_full_name() {
     assert_eq!(review.suggestions(short.id), expected);
     // "Maya" alone has one candidate and joins her.
     let maya = proposed(&review, "Maya");
-    assert!(maya.propagated());
+    assert!(maya.recognizer() == Some(Recognizer::Propagation));
     assert_eq!(review.variant_identity(maya.id), Some(full[0]));
     let edits = plan_all(&review, source).unwrap();
     assert_eq!(edits.len(), 9);
@@ -779,7 +779,10 @@ fn a_surname_or_first_name_with_one_candidate_joins_it() {
     let raman = review.variant_identity(proposed(&review, "Priya Raman").id);
     for short in ["Raman", "Dr. Raman", "Ms Raman", "Priya"] {
         let variant = proposed(&review, short);
-        assert!(variant.propagated(), "{short}");
+        assert!(
+            variant.recognizer() == Some(Recognizer::Propagation),
+            "{short}"
+        );
         assert_eq!(review.variant_identity(variant.id), raman, "{short}");
     }
     assert_eq!(proposed(&review, "Raman").mentions.len(), 1, "Raman's");
@@ -990,9 +993,10 @@ fn the_russian_demo_gives_pavlova_one_identity() {
             ("Павлову".to_string(), 1),
         ]
     );
-    assert!(proposed(&review, "Марина").propagated());
-    assert!(
-        !proposed(&review, "Маришей").propagated(),
+    assert!(proposed(&review, "Марина").recognizer() == Some(Recognizer::Propagation));
+    assert_eq!(
+        proposed(&review, "Маришей").recognizer(),
+        Some(Recognizer::Model),
         "the model's own"
     );
     // Her husband and her lawyer keep their own identities.
@@ -1352,4 +1356,71 @@ fn a_manual_mark_lifts_the_mid_sentence_filter() {
         .add_manual(source, start..start + 4, Category::Person)
         .unwrap();
     assert_eq!(proposed(&review, "Rose").mentions.len(), 2);
+}
+
+/// A surname with initials that is her form counts as her, not as a second
+/// person: the model's "Павловой" beside "Павловой М. С." joins her in one
+/// scan, and spends no alias.
+#[test]
+fn initials_of_the_one_candidate_do_not_block_her_other_forms() {
+    let source = "Павлова Марина Сергеевна, истец. Павловой М. С. выплачено. \
+        Ноутбук Павловой вернут. Шахова Ирина Олеговна консультировала.";
+    let laptop = source.find("Ноутбук ").unwrap() + "Ноутбук ".len();
+    let mut detections: Vec<_> = [
+        "Павлова Марина Сергеевна",
+        "Павловой М. С.",
+        "Шахова Ирина Олеговна",
+    ]
+    .map(|name| {
+        let start = source.find(name).unwrap();
+        detection(start..start + name.len(), Category::Person)
+    })
+    .to_vec();
+    detections.push(detection(
+        laptop..laptop + "Павловой".len(),
+        Category::Person,
+    ));
+    let mut review = Review::default();
+    review.ingest(source, detections).unwrap();
+    let full = review.variant_identity(proposed(&review, "Павлова Марина Сергеевна").id);
+    for form in ["Павловой М. С.", "Павловой"] {
+        assert_eq!(
+            review.variant_identity(proposed(&review, form).id),
+            full,
+            "{form}"
+        );
+    }
+    assert_eq!(
+        proposed(&review, "Шахова Ирина Олеговна").replacement,
+        "PERSON_2"
+    );
+}
+
+/// Review of #384: a rescan does not claim a variant the user marked or a
+/// case seeded; only a variant the scan creates takes its recognizer.
+#[test]
+fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
+    let source = "Ann met Bob.";
+    let mut review = Review::default();
+    let ann = review.add_manual(source, 0..3, Category::Person).unwrap();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0..3, Category::Person),
+                detection(8..11, Category::Person),
+            ],
+        )
+        .unwrap();
+    assert_eq!(review.variant(ann).unwrap().recognizer(), None);
+    assert_eq!(
+        proposed(&review, "Bob").recognizer(),
+        Some(Recognizer::Model)
+    );
+    let mut seeded = Review::default();
+    seeded.seed(&review.export_identities(), source);
+    seeded
+        .ingest(source, vec![detection(0..3, Category::Person)])
+        .unwrap();
+    assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
 }

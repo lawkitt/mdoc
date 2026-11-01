@@ -7,7 +7,7 @@
 //! and patronymic, the surname with initials, Russian case forms of each (a
 //! fixed suffix table, not morphology) and nicknames from [`nicknames`].
 use super::{
-    Category, Review, exact_boundary,
+    Category, Recognizer, Review, exact_boundary,
     identities::{TITLES, cyrillic, name_words, split_full_name, surname_forms},
     intersects, safe_span,
     syntax::protected_syntax,
@@ -712,7 +712,7 @@ impl Review {
             let target = parse_form(wording).and_then(|form| people.candidates(&form).target);
             let id = self.seed_form(wording, target);
             if let Some(variant) = self.candidates.variant_mut(id) {
-                variant.propagated = true;
+                variant.recognizer = Some(Recognizer::Propagation);
                 variant.mid_sentence = common;
                 variant.keep_default = marked;
             }
