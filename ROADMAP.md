@@ -70,24 +70,6 @@ Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
    when the candidate is unique. *Done when:* in the Russian demo,
    Павлова's six aliases become one and "Марина" links; every propagation
    flaw class is closed or `model-limit`; those cells are saturated.
-5. **[Detection] The user's own lists.** *From the 2026-11-01 grills and
-   the competitor scan.* ADR 0092's Never (from Keep) and Always (from a
-   manual mark) per case, and user-wide lists in Settings › Detection, in
-   the keychain-protected store. *Done when:* a Keep in case A doesn't hide
-   the wording in case B; the user-wide lists apply everywhere and survive
-   a restart.
-6. **[Leaks] Hidden Office content and the restored-text clipboard.**
-   *From the competitor scan and the 2026-11-01 grills.* Check what the
-   pinned AnyDoc carries from DOCX comments, deleted tracked changes and
-   document properties, then drop all three (the import note counts
-   dropped comments); mark desktop copies of restored text concealed and
-   transient (macOS pasteboard types; Windows clipboard-history and
-   monitor exclusion), as iOS does since
-   [#321](https://github.com/lawkitt/mdoc/issues/321). *Done when:* a DOCX
-   fixture with an author name in a comment and a deleted change sends
-   neither to the AI, and Universal Clipboard, Windows clipboard history
-   and clipboard managers skip restored text.
-
 The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
 runs as a separate overnight hub during 0.4.0, outside the item count.
 
