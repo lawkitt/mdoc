@@ -524,8 +524,9 @@ pub struct RawEntity {
 }
 
 /// The correction stage (ADR 0092): the model's raw entities through the
-/// shape filter (`identifying`), then the structured rules over the whole
-/// source. Pure: the same source and entities give the same detections, in
+/// shape filter (`identifying`), then the rule pack's `context` rules and
+/// the structured rules over the whole source. Rules win the review's
+/// conflicts with the model. Pure: the same source and entities give the same detections, in
 /// the order a scan returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let mut detections: Vec<Detection> = raw
@@ -540,6 +541,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
+    detections.extend(rules::pack().context(source));
     detections.extend(structured::scan(source));
     detections
 }

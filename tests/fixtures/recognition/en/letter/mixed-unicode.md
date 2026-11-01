@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: org-boundary
-issue: unfiled
+issue: 374
 kind: letter
 source: import
 expect: boundary: gold ORG "ООО «Ёлка»"; proposed ORG "Ёлка"

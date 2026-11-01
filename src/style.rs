@@ -232,6 +232,8 @@ impl Theme {
             Identity => (0.01, 0.50),
             Tax => (0.92, 0.40),
             Bank => (0.33, 0.40),
+            // The widest gap left: between Person's orange and Bank's green.
+            CaseNumber => (0.18, 0.32),
             Other => (0.0, 0.0),
         };
         match self {
@@ -523,6 +525,7 @@ mod contrast_tests {
                 Category::Phone,
                 Category::Address,
                 Category::Date,
+                Category::CaseNumber,
                 Category::Identity,
                 Category::Tax,
                 Category::Bank,

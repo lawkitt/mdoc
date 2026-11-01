@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: digit-false-hit
-issue: unfiled
+issue: 375
 kind: contract
 source: import
 expect: false hit: PHONE "123456789012345678901234567890"

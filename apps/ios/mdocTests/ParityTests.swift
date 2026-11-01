@@ -31,6 +31,7 @@ final class ParityTests: XCTestCase {
         case "IDENTITY": .identity
         case "TAX": .tax
         case "BANK": .bank
+        case "CASE": .caseNumber
         case "DATE": .date
         default: .other
         }

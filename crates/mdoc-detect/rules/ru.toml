@@ -1,8 +1,6 @@
 # mdoc's rule pack, part 3 of 3: Russian. Sections and fields are described
 # in shared.toml.
 
-# No Russian context rules yet.
-context = []
 
 # No Russian span fixes yet.
 span = []
@@ -50,3 +48,19 @@ category = "DATE"
 guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
 ]
+
+# Case numbers after "номер дела" (ADR 0092): "**Номер дела:** 2-1842/2026".
+[[context]]
+category = "CASE"
+labels = ["номер дела"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)*'
+
+# "дело", "дела", "делу" are also common words: only a number with a `/` or
+# `-`, or of five digits or more, follows them as a case number
+# ("дело № А40-123456/2026", "по делу 2-1842/2026").
+[[context]]
+category = "CASE"
+labels = ["дело", "дела", "делу"]
+between = '[\p{Zs}\t:№#]{1,4}'
+value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)+|\d{5,}'

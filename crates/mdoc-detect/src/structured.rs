@@ -261,6 +261,7 @@ mod tests {
                     Recognizer::Ogrn => panic!("unexpected registration identifier"),
                     Recognizer::Model => panic!("structured adapter emitted model evidence"),
                     Recognizer::Propagation => panic!("structured adapter emitted propagation"),
+                    Recognizer::Context => panic!("structured adapter emitted a context rule"),
                 }
             );
         }

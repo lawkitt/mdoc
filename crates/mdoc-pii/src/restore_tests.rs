@@ -953,3 +953,27 @@ fn a_failed_merge_leaves_the_identities_unchanged() {
         .id;
     assert_eq!(review.variant_identity(person), Some(maya));
 }
+
+/// A case number's alias (ADR 0092) is generated, recognised and restored
+/// like any other, loose forms included.
+#[test]
+fn a_case_number_alias_restores_like_any_alias() {
+    let mut review = Review::default();
+    let source = "Claim No 6001842/2026";
+    review.refresh(source);
+    let group = review
+        .add_manual(source, 9..source.len(), Category::CaseNumber)
+        .unwrap();
+    let id = review.variant_identity(group).unwrap();
+    assert_eq!(review.identity(id).unwrap().alias, "CASE_1");
+    assert!(crate::generated_alias("CASE_1"));
+    let map = RestoreMap::new(vec![identity(
+        "CASE_1",
+        Category::CaseNumber,
+        &["6001842/2026"],
+    )]);
+    assert_eq!(
+        apply(&map, "Settle CASE_1 and case-1 by Friday."),
+        "Settle 6001842/2026 and 6001842/2026 by Friday."
+    );
+}

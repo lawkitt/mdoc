@@ -15,6 +15,7 @@ extension Category {
         case .identity: .systemIndigo
         case .tax: .systemPink
         case .bank: .systemRed
+        case .caseNumber: .systemYellow
         case .other: .systemGray
         }
     }
@@ -32,6 +33,7 @@ extension Category {
         case .identity: "person.text.rectangle"
         case .tax: "number"
         case .bank: "banknote"
+        case .caseNumber: "number.square"
         case .other: "eye.slash"
         }
     }

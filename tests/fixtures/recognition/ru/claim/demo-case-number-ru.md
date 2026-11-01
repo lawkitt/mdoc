@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: case-number
 issue: 364
 kind: claim
 source: demo
-expect: miss: CASE "2-1842/2026"
 ---
 **Номер дела:** ⟦CASE|2-1842/2026⟧
 

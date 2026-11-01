@@ -383,6 +383,7 @@ class Documents(
             FfiCategory.IDENTITY -> Category.Identity
             FfiCategory.TAX -> Category.Tax
             FfiCategory.BANK -> Category.Bank
+            FfiCategory.CASE_NUMBER -> Category.CaseNumber
             FfiCategory.DATE -> Category.Date
             FfiCategory.OTHER -> Category.Other
         }
@@ -396,6 +397,7 @@ class Documents(
             Category.Identity -> FfiCategory.IDENTITY
             Category.Tax -> FfiCategory.TAX
             Category.Bank -> FfiCategory.BANK
+            Category.CaseNumber -> FfiCategory.CASE_NUMBER
             Category.Date -> FfiCategory.DATE
             Category.Other -> FfiCategory.OTHER
         }

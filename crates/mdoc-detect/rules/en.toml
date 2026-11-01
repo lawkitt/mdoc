@@ -1,8 +1,6 @@
 # mdoc's rule pack, part 2 of 3: English. Sections and fields are described
 # in shared.toml.
 
-# No English context rules yet.
-context = []
 
 # No English span fixes yet.
 span = []
@@ -62,3 +60,24 @@ guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
     '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
 ]
+
+# Claim and case numbers after their label (ADR 0092): "Claim No.
+# 6001842/2026", "**Case number:** 2026/314". Statute, article and clause
+# numbers have no such label and stay unmarked.
+[[context]]
+category = "CASE"
+labels = [
+    "claim no", "claim number", "case no", "case number", "proceedings no",
+    "proceedings number", "proceedings are numbered",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)*'
+
+# "case" alone is also a common word ("in case 30 days pass"): only a
+# number with a `/` or `-`, or of five digits or more, follows it as a case
+# number ("case 202-555-0169").
+[[context]]
+category = "CASE"
+labels = ["case"]
+between = '[\p{Zs}\t:№#]{1,4}'
+value = '\p{Uppercase}{0,3}\d+(?:[-/]\d+)+|\d{5,}'

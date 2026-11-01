@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: ru-identifier-category
-issue: unfiled
+issue: 380
 kind: ocr
 source: import
 expect: boundary: gold TAX "7701234567"; proposed IDENTITY "7701234567"

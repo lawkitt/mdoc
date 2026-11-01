@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: category-word-org
-issue: unfiled
+issue: 379
 kind: contract
 source: import
 expect: false hit: ORG "СНИЛС"

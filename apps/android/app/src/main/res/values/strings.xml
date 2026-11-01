@@ -117,6 +117,7 @@
     <string name="category_identity">Identity</string>
     <string name="category_tax">Tax identifier</string>
     <string name="category_bank">Bank details</string>
+    <string name="category_case_number">Case number</string>
     <string name="category_other">Other</string>
 
     <!-- Hand-off -->

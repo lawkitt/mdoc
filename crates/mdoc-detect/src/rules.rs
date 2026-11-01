@@ -1,7 +1,7 @@
 //! The rule pack (ADR 0092): `rules/{shared,en,ru}.toml`, compiled in, read
 //! and checked once. Its `never` words and `shape`s decide which model spans
 //! are kept and what a manual selection is guessed to be.
-use mdoc_pii::Category;
+use mdoc_pii::{Category, Detection, Recognizer};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::OnceLock;
@@ -12,6 +12,9 @@ const FILES: [(&str, &str); 3] = [
     ("en.toml", include_str!("../rules/en.toml")),
     ("ru.toml", include_str!("../rules/ru.toml")),
 ];
+
+/// A labelled value's score: rule evidence, like the structured rules'.
+const CONTEXT_SCORE: f32 = 0.95;
 
 /// The pack, read on first use. Every file is checked by a unit test, so a
 /// failure here is a build that skipped its tests.
@@ -61,6 +64,9 @@ enum Form {
 struct ContextEntry {
     category: String,
     labels: Vec<String>,
+    /// What may sit between a label and its value (`:`, `№`, Markdown bold).
+    between: String,
+    value: String,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +106,13 @@ pub(crate) struct Pack {
     never: Vec<Never>,
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
+    contexts: Vec<Context>,
+}
+
+/// A label then its value: the value's capture group 1 is proposed.
+struct Context {
+    category: Category,
+    pattern: Regex,
 }
 
 struct Never {
@@ -124,6 +137,7 @@ impl Pack {
         let mut pack = Self {
             never: Vec::new(),
             shapes: Vec::new(),
+            contexts: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -222,10 +236,45 @@ impl Pack {
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
-                category(&entry.category).map_err(at)?;
-                if entry.labels.is_empty() || entry.labels.iter().any(|l| l.trim().is_empty()) {
-                    return Err(at("needs labels, none blank".into()));
+                let category = category(&entry.category).map_err(at)?;
+                if entry.labels.is_empty() {
+                    return Err(at("needs labels".into()));
                 }
+                // Whole words: a label starts and ends with a letter or digit.
+                let edge = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+                if let Some(label) = entry
+                    .labels
+                    .iter()
+                    .find(|label| !edge(label.chars().next()) || !edge(label.chars().next_back()))
+                {
+                    return Err(at(format!(
+                        "{label:?} must start and end with a letter or digit"
+                    )));
+                }
+                // Spaces in a label match any run of whitespace.
+                let labels: Vec<String> = entry
+                    .labels
+                    .iter()
+                    .map(|label| {
+                        label
+                            .split_whitespace()
+                            .map(regex::escape)
+                            .collect::<Vec<_>>()
+                            .join(r"\s+")
+                    })
+                    .collect();
+                let pattern = format!(
+                    // Case is ignored in the label only.
+                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))\b",
+                    labels.join("|"),
+                    rust_classes(&entry.between),
+                    rust_classes(&entry.value),
+                );
+                let pattern = Regex::new(&pattern).map_err(|e| at(e.to_string()))?;
+                if pattern.captures_len() != 2 {
+                    return Err(at("between and value must not capture".into()));
+                }
+                pack.contexts.push(Context { category, pattern });
             }
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
@@ -287,6 +336,25 @@ impl Pack {
                     .filter(|word| !word.is_empty())
                     .any(|word| pattern.is_match(word) && !self.never(word))
             })
+    }
+
+    /// Values beside their labels in `source`, as `context` rules propose
+    /// them: the value only, without its label.
+    pub(crate) fn context(&self, source: &str) -> Vec<Detection> {
+        self.contexts
+            .iter()
+            .flat_map(|context| {
+                context.pattern.captures_iter(source).filter_map(|found| {
+                    let value = found.get(1)?;
+                    Some(Detection {
+                        range: value.range(),
+                        category: context.category,
+                        score: CONTEXT_SCORE,
+                        recognizer: Recognizer::Context,
+                    })
+                })
+            })
+            .collect()
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -437,6 +505,45 @@ mod tests {
         }
     }
 
+    /// Claim and case numbers after their label, the value only (ADR 0092);
+    /// statute and article numbers and "case" as a common word stay out.
+    #[test]
+    fn labelled_case_numbers_are_proposed() {
+        let found = |source: &str| -> Vec<(String, Category)> {
+            pack()
+                .context(source)
+                .into_iter()
+                .map(|d| (source[d.range].to_owned(), d.category))
+                .collect()
+        };
+        for (source, value) in [
+            ("**Claim number:** 6001842/2026 (Employment", "6001842/2026"),
+            ("Claim No. 12 was settled", "12"),
+            ("proceedings are numbered 2026/314.", "2026/314"),
+            ("case number 7707083894.", "7707083894"),
+            ("Formula x + 2; case 202-555-0169.", "202-555-0169"),
+            ("**Номер дела:** 2-1842/2026", "2-1842/2026"),
+            ("дело № А40-123456/2026.", "А40-123456/2026"),
+            ("Article 309; дело А40-987654/2026; цена", "А40-987654/2026"),
+        ] {
+            let found = found(source);
+            assert!(!found.is_empty(), "{source}");
+            for (text, category) in found {
+                assert_eq!((text.as_str(), category), (value, Category::CaseNumber));
+            }
+        }
+        for source in [
+            "Under section 4.2 and article 309, the claim above is settled.",
+            "in case 30 days pass",
+            "in this case. 12345 people",
+            "case abc12345",
+            "по делу 15 свидетелей",
+            "showcase 2026/314",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -463,7 +570,18 @@ mod tests {
                 "[[shape]]\ncategory = \"ORG\"\nguess_words = [\"S.A.\"]",
                 "one word",
             ),
-            ("[[context]]\ncategory = \"DATE\"\nlabels = []", "labels"),
+            (
+                "[[context]]\ncategory = \"DATE\"\nlabels = []\nbetween = ' '\nvalue = '\\d+'",
+                "labels",
+            ),
+            (
+                "[[context]]\ncategory = \"CASE\"\nlabels = [\"дело №\"]\nbetween = ' '\nvalue = '\\d+'",
+                "start and end",
+            ),
+            (
+                "[[context]]\ncategory = \"CASE\"\nlabels = [\"case\"]\nbetween = ' '\nvalue = '(\\d+)'",
+                "capture",
+            ),
             ("[[span]]\ncategory = \"PERSON\"", "trim"),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (

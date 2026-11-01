@@ -1,7 +1,7 @@
 ---
 status: known-flaw
 flaw: hidden-underscore-name
-issue: unfiled
+issue: 376
 kind: docx
 source: import
 expect: miss: PERSON "Alice_Morgan" ×2

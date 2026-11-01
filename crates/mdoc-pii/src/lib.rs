@@ -36,6 +36,9 @@ pub enum Category {
     Identity,
     Tax,
     Bank,
+    /// A claim or case number after its label (ADR 0092). Its token is
+    /// `CASE`, so an alias never reads as a saved case.
+    CaseNumber,
     /// Manual additions only; the detector never emits Date or Other.
     Date,
     Other,
@@ -51,30 +54,33 @@ impl Category {
             Self::Identity => "Identity",
             Self::Tax => "Tax identifier",
             Self::Bank => "Bank details",
+            Self::CaseNumber => "Case number",
             Self::Date => "Date",
             Self::Other => "Other",
         }
     }
     /// What scans can return, in picker order: Categories to detect lists
     /// these (ADR 0041, ADR 0076).
-    pub const DETECTED: [Self; 8] = [
+    pub const DETECTED: [Self; 9] = [
         Self::Person,
         Self::Organization,
         Self::Email,
         Self::Phone,
         Self::Address,
+        Self::CaseNumber,
         Self::Identity,
         Self::Tax,
         Self::Bank,
     ];
     /// Picker order; Other is the catch-all and comes last.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Person,
         Self::Organization,
         Self::Email,
         Self::Phone,
         Self::Address,
         Self::Date,
+        Self::CaseNumber,
         Self::Identity,
         Self::Tax,
         Self::Bank,
@@ -90,6 +96,7 @@ impl Category {
             Self::Identity => "IDENTITY",
             Self::Tax => "TAX",
             Self::Bank => "BANK",
+            Self::CaseNumber => "CASE",
             Self::Date => "DATE",
             Self::Other => "REDACTED",
         }
@@ -256,6 +263,9 @@ pub enum Recognizer {
     Inn,
     Snils,
     Ogrn,
+    /// A value beside its label: a `context` rule of the rule pack
+    /// ("Claim No 6001842/2026", ADR 0092).
+    Context,
     /// A form of a known full name, found by the review after a scan or a
     /// mark (ADR 0092); never a detector's.
     Propagation,
