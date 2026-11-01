@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":287,"end":303,"label":"person","score":0.9987792,"text":"Nerovan Pellwick"},
+    {"start":251,"end":266,"label":"person","score":0.99778295,"text":"Avelina Durnell"},
+    {"start":71,"end":84,"label":"person","score":0.99010193,"text":"Evrina McVell"},
+    {"start":1175,"end":1180,"label":"person","score":0.9636433,"text":"donor"},
+    {"start":626,"end":631,"label":"person","score":0.943243,"text":"donor"},
+    {"start":713,"end":722,"label":"person","score":0.9084556,"text":"custodian"},
+    {"start":787,"end":798,"label":"person","score":0.8671483,"text":"replacement"},
+    {"start":574,"end":585,"label":"person","score":0.8378855,"text":"replacement"},
+    {"start":891,"end":914,"label":"address","score":0.9130584,"text":"23 Plover Mews, Chester"}
+  ]
+}
