@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":143,"end":173,"label":"person","score":0.99568534,"text":"Роман Ильич Цвик"},
+    {"start":83,"end":115,"label":"person","score":0.9939496,"text":"Лада Яновна Вельц"},
+    {"start":117,"end":137,"label":"email","score":0.9977217,"text":"lada@forward.invalid"},
+    {"start":175,"end":196,"label":"email","score":0.99475956,"text":"roman@forward.invalid"},
+    {"start":1610,"end":1630,"label":"email","score":0.9982039,"text":"lada@forward.invalid"},
+    {"start":1695,"end":1716,"label":"email","score":0.99533635,"text":"roman@forward.invalid"}
+  ]
+}

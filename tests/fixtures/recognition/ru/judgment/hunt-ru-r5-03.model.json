@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":344,"end":394,"label":"person","score":0.9980122,"text":"Алена Мікалаеўна Літоўская"},
+    {"start":128,"end":178,"label":"person","score":0.98905545,"text":"Олеся Степанівна Лозівська"},
+    {"start":209,"end":249,"label":"organization","score":0.8260112,"text":"ООО «Звонкий квартет»"},
+    {"start":1730,"end":1750,"label":"person","score":0.95195264,"text":"Лозівської"}
+  ]
+}
