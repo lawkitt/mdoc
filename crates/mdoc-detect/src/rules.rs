@@ -466,7 +466,13 @@ impl Pack {
                 })
                 .collect();
             row += 2;
-            while row < lines.len() && is_table_row(lines[row].1) {
+            // Up to the next table's header, which a delimiter row follows.
+            while row < lines.len()
+                && is_table_row(lines[row].1)
+                && !lines
+                    .get(row + 1)
+                    .is_some_and(|(_, next)| is_delimiter_row(next))
+            {
                 let (line_at, line) = lines[row];
                 for (cell, context) in cells(line, line_at).into_iter().zip(&columns) {
                     if let Some(context) = context
@@ -537,6 +543,15 @@ fn cells(line: &str, at: usize) -> Vec<std::ops::Range<usize>> {
             start = Some(i + 1);
         }
         escaped = c == '\\' && !escaped;
+    }
+    // A trailing pipe is optional: the rest of the line is the last cell.
+    if let Some(from) = start {
+        let text = &line[from..];
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            let lead = text.len() - text.trim_start().len();
+            cells.push(at + from + lead..at + from + lead + trimmed.len());
+        }
     }
     cells
 }
@@ -753,6 +768,25 @@ mod tests {
             "ИНН: 123; СНИЛС: 12-34",
             "| Номер | Цена |\n| --- | --- |\n| 5401000039 | 345-678-912 26 |\n",
             "ИНН\n\n| 5401000039 |",
+            // An adjacent table's columns are its own.
+            "| ИНН |\n| --- |\n| 7701234567 |\n| Цена |\n| --- |\n| 1234567890 |\n",
+        ] {
+            let found = found(source);
+            assert!(
+                found
+                    .iter()
+                    .all(|(v, _)| v != "1234567890" && v != "5401000039"),
+                "{source}: {found:?}"
+            );
+        }
+        // No trailing pipe: the last cell still counts.
+        assert_eq!(
+            found("| Заказчик | ИНН\n| --- | ---\n| ООО | 7701234567\n"),
+            [tax("7701234567")]
+        );
+        for source in [
+            "Договор № 5401000039, цена 660100000231 рублей.",
+            "ИНН: 123; СНИЛС: 12-34",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
