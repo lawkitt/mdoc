@@ -411,11 +411,11 @@ impl Pack {
             .flat_map(|context| {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
-                    // The value ends where a word does.
+                    // The value ends where a word does ("1234_5678" is one word).
                     let ends = !source[value.end()..]
                         .chars()
                         .next()
-                        .is_some_and(char::is_alphanumeric);
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
                     let before = source[..found.get(0)?.start()]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
@@ -751,6 +751,7 @@ mod tests {
             "Дело № 12",
             "необходимо архивное дело 58239 из фонда",
             "личное дело № 4521 работника",
+            "Case No. 1234_5678. See section 1234.",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
@@ -897,6 +898,24 @@ mod tests {
             ),
             ("Иванов И. И., род. 14.03.1988, паспорт", "14.03.1988"),
             ("д.р. 01.02.1990", "01.02.1990"),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            ("DOB:\n14/03/1988", "14/03/1988"),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            (
+                "DOB:
+14/03/1988",
+                "14/03/1988",
+            ),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
         ] {
             assert_eq!(dates(source), [date], "{source}");
         }
@@ -910,6 +929,20 @@ mod tests {
         ] {
             assert!(dates(source).is_empty(), "{source}");
         }
+    }
+
+    /// A birth date's repeats join it, like any value's: leaving one would
+    /// show the AI the date of birth. A different date stays.
+    #[test]
+    fn a_birth_dates_repeats_join_it_and_other_dates_stay() {
+        let source = "DOB: 14/03/1988. Signed 14/03/1988, due 01/04/2026.";
+        let dates: Vec<_> = crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "DATE")
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
     }
 
     #[test]
