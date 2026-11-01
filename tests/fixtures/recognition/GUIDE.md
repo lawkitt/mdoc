@@ -58,3 +58,7 @@ of birth and claim number become gold, so they start as `known-flaw`.
 
 Agents add examples here, one line each, when a curator rejects or settles
 a boundary case.
+
+- An address with no postcode or city ends at its last element: "Адрес получателя: ⟦ADDRESS|ул. Тихих фонарей, д. 83, кв. 16⟧" (hunt-ru-r1-01).
+- "оглы" belongs to the patronymic, inside the span: "⟦PERSON|Нияз Рауф оглы Иль-Булат⟧" (hunt-ru-r1-05).
+- A name split by a line-end hyphen is one span across the break, hyphen and newline included: "⟦PERSON|Верес-\nтова Дарья Ильинична⟧" (hunt-ru-r1-04).

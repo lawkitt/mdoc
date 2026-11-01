@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":366,"end":410,"label":"person","score":0.9569572,"text":"Нияз Рауф оглы Иль-Булат"},
+    {"start":851,"end":899,"label":"person","score":0.7102265,"text":"Нияза Рауф оглы Иль-Булата"},
+    {"start":514,"end":552,"label":"organization","score":0.8485962,"text":"ООО «Глиняный парус»"},
+    {"start":105,"end":169,"label":"organization","score":0.7060891,"text":"Российской Федерации\n\nРайонный суд"},
+    {"start":1826,"end":1843,"label":"person","score":0.98905545,"text":"Иль-Булат"},
+    {"start":1529,"end":1545,"label":"person","score":0.981022,"text":"Aveline D'Orveil"},
+    {"start":3093,"end":3118,"label":"person","score":0.97209865,"text":"Н. Р. Иль-Булат"},
+    {"start":3279,"end":3317,"label":"organization","score":0.7867867,"text":"суд первой инстанции"},
+    {"start":3319,"end":3331,"label":"address","score":0.727298,"text":"Казань"}
+  ]
+}

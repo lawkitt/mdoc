@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":184,"end":229,"label":"person","score":0.974869,"text":"Ольга Яновна Зюйд-Левина"},
+    {"start":249,"end":293,"label":"organization","score":0.9572778,"text":"АО «Картонный меридиан»"},
+    {"start":1244,"end":1273,"label":"person","score":0.91505295,"text":"О. Я. Зюйд-Левина"},
+    {"start":1354,"end":1361,"label":"person","score":0.5603128,"text":"О. Я."},
+    {"start":1570,"end":1582,"label":"person","score":0.95257413,"text":"Ольгой"},
+    {"start":1861,"end":1884,"label":"person","score":0.9449947,"text":"Зюйд-Левиной"},
+    {"start":1633,"end":1643,"label":"person","score":0.93294376,"text":"Лёлей"},
+    {"start":2160,"end":2177,"label":"email","score":0.99687636,"text":"zyuid@isk.invalid"}
+  ]
+}
