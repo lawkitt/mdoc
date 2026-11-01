@@ -5,8 +5,8 @@
     {"start":52,"end":74,"label":"person","score":0.9897909,"text":"Ism&#97;y O&#39;Verren"},
     {"start":98,"end":120,"label":"organization","score":0.9915544,"text":"Crane Pith Records Ltd"},
     {"start":355,"end":383,"label":"email","score":0.9976586,"text":"ismay&#64;crane-pith.invalid"},
-    {"start":955,"end":969,"label":"person","score":0.8070048,"text":"account holder"},
-    {"start":768,"end":776,"label":"organization","score":0.91565824,"text":"Provider"},
+    {"start":955,"end":969,"label":"person","score":0.8071568,"text":"account holder"},
+    {"start":768,"end":776,"label":"organization","score":0.94355595,"text":"Provider"},
     {"start":1071,"end":1080,"label":"passport_number","score":0.9962783,"text":"NX7304816"}
   ]
 }

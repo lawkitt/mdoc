@@ -6,7 +6,7 @@ kind: judgment
 source: hunt-r1
 expect: false hit: ORG "County Court"
 expect: false hit: ORG "Registry"
-expect: false hit: ORG "Costs Officer"
+expect: false hit: PERSON "Costs Officer"
 expect: false hit: ORG "Court"
 ---
 # Reserved ruling: scope of a procedural direction

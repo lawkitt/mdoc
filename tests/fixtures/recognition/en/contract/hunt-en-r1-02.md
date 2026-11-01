@@ -4,7 +4,7 @@ flaw: initials-only-missed
 issue: 387
 kind: contract
 source: hunt-r1
-expect: miss: PERSON "E. N."
+expect: false hit: PERSON "Lead technician" ×2
 ---
 # Calibration services: personnel schedule
 

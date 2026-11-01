@@ -2,7 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":840,"end":848,"label":"person","score":0.8951566,"text":"assessor"},
+    {"start":2,"end":17,"label":"organization","score":0.53127015,"text":"Technical annex"},
+    {"start":840,"end":848,"label":"person","score":0.9019207,"text":"assessor"},
     {"start":1051,"end":1057,"label":"person","score":0.79881525,"text":"Person"},
     {"start":1059,"end":1071,"label":"organization","score":0.92482364,"text":"Organisation"},
     {"start":1113,"end":1117,"label":"organization","score":0.817283,"text":"Bank"},

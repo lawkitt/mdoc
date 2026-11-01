@@ -2,18 +2,17 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":566,"end":570,"label":"person","score":0.979784,"text":"Zelm"},
-    {"start":502,"end":506,"label":"person","score":0.979354,"text":"Eryx"},
-    {"start":509,"end":517,"label":"person","score":0.97548366,"text":"Nolliver"},
-    {"start":558,"end":563,"label":"person","score":0.96336865,"text":"Tavia"},
-    {"start":44,"end":69,"label":"organization","score":0.99290615,"text":"Copper Kite Metrology LLP"},
-    {"start":604,"end":614,"label":"person","score":0.9753901,"text":"technician"},
-    {"start":812,"end":820,"label":"person","score":0.96856016,"text":"Customer"},
-    {"start":932,"end":942,"label":"person","score":0.9168571,"text":"technician"},
-    {"start":678,"end":688,"label":"person","score":0.90796715,"text":"substitute"},
-    {"start":865,"end":876,"label":"person","score":0.64590204,"text":"replacement"},
-    {"start":747,"end":756,"label":"person","score":0.5153074,"text":"personnel"},
-    {"start":960,"end":969,"label":"passport_number","score":0.9992267,"text":"BZ-7O4?21"},
-    {"start":1508,"end":1520,"label":"person","score":0.9895917,"text":"Iona Kestrel"}
+    {"start":393,"end":401,"label":"person","score":0.6873153,"text":"Customer"},
+    {"start":93,"end":104,"label":"person","score":0.59596294,"text":"individuals"},
+    {"start":44,"end":69,"label":"organization","score":0.9926541,"text":"Copper Kite Metrology LLP"},
+    {"start":558,"end":563,"label":"person","score":0.9644556,"text":"Tavia"},
+    {"start":502,"end":506,"label":"person","score":0.9365177,"text":"Eryx"},
+    {"start":509,"end":517,"label":"person","score":0.8319638,"text":"Nolliver"},
+    {"start":566,"end":570,"label":"person","score":0.6987407,"text":"Zelm"},
+    {"start":1508,"end":1520,"label":"person","score":0.9828891,"text":"Iona Kestrel"},
+    {"start":927,"end":942,"label":"person","score":0.5798763,"text":"Lead technician"},
+    {"start":1479,"end":1484,"label":"person","score":0.53233397,"text":"E. N."},
+    {"start":1452,"end":1467,"label":"organization","score":0.5411967,"text":"lead technician"},
+    {"start":960,"end":969,"label":"passport_number","score":0.99935883,"text":"BZ-7O4?21"}
   ]
 }

@@ -2,11 +2,13 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":39,"end":54,"label":"person","score":0.99556625,"text":"Inelle Marrowen"},
-    {"start":77,"end":101,"label":"organization","score":0.98646784,"text":"Wisp Spoke Logistics LLP"},
-    {"start":336,"end":370,"label":"email","score":0.9998535,"text":"inelle.delivery@wisp-spoke.invalid"},
-    {"start":279,"end":310,"label":"address","score":0.8964329,"text":"27 Wisp Lane<br>Norwich NR2 8ZZ"},
-    {"start":920,"end":935,"label":"person","score":0.9482505,"text":"Inelle Marrowen"},
-    {"start":686,"end":695,"label":"person","score":0.6335236,"text":"recipient"}
+    {"start":39,"end":54,"label":"person","score":0.99435806,"text":"Inelle Marrowen"},
+    {"start":77,"end":101,"label":"organization","score":0.9823555,"text":"Wisp Spoke Logistics LLP"},
+    {"start":336,"end":370,"label":"email","score":0.9987649,"text":"inelle.delivery@wisp-spoke.invalid"},
+    {"start":279,"end":310,"label":"address","score":0.95869267,"text":"27 Wisp Lane<br>Norwich NR2 8ZZ"},
+    {"start":920,"end":935,"label":"person","score":0.9686196,"text":"Inelle Marrowen"},
+    {"start":686,"end":695,"label":"person","score":0.8578872,"text":"recipient"},
+    {"start":477,"end":486,"label":"person","score":0.78613067,"text":"recipient"},
+    {"start":662,"end":668,"label":"person","score":0.77746886,"text":"driver"}
   ]
 }
