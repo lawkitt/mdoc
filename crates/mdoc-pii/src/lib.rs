@@ -221,6 +221,18 @@ fn safe_span(value: &str) -> bool {
         && !value.ends_with('_')
         && !value.chars().any(|ch| "\n\r[]<>`*|\\#~".contains(ch))
 }
+/// A detected span the review can take: like `safe_span`, but a literal
+/// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
+/// is text when replacing the span leaves its block's structure as it was.
+fn detected_span(source: &str, range: &Range<usize>) -> bool {
+    let value = &source[range.clone()];
+    value.len() <= 1024
+        && value.chars().any(char::is_alphanumeric)
+        && !value.starts_with('_')
+        && !value.ends_with('_')
+        && !value.chars().any(|ch| "\n\r[]<>`|".contains(ch))
+        && plain_text_span(source, range.clone())
+}
 /// Like `safe_span`, but escapes and emphasis characters are allowed; the
 /// caller checks them structurally with `plain_text_span`.
 fn manual_span(value: &str) -> bool {
@@ -530,6 +542,19 @@ impl Review {
         }) {
             return Err("Invalid detector offsets; scan discarded.".into());
         }
+        // A span that starts with a list item's marker ("+ 7 (900) …" on a
+        // line of its own) keeps its value: the marker stays syntax.
+        let markers = syntax::list_markers(source);
+        for detection in &mut detections {
+            let range = &mut detection.range;
+            let next = markers.partition_point(|m| m.end <= range.start);
+            if let Some(marker) = markers.get(next).filter(|m| m.start <= range.start) {
+                let from = marker.end.min(range.end);
+                let value = source[from..range.end].trim_start_matches([' ', '\t']);
+                range.start = range.end - value.len();
+            }
+        }
+        detections.retain(|detection| !detection.range.is_empty());
         // Validated structured spans win conflicts; otherwise prefer model confidence.
         detections.sort_by(|a, b| {
             b.recognizer
@@ -567,7 +592,7 @@ impl Review {
             {
                 continue;
             }
-            if !safe_span(&source[detection.range.clone()])
+            if !detected_span(source, &detection.range)
                 || intersects(&protected, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {
