@@ -373,7 +373,7 @@ pub(crate) fn patronymic_like(word: &str) -> bool {
         })
 }
 
-/// One person a form may stand for.
+/// One person a form may stand for, with the forms of their names.
 struct Person {
     owner: u64,
     surname: String,
@@ -382,6 +382,36 @@ struct Person {
     /// A full name, so a form may join it; a surname with initials only
     /// blocks ("Петров И.И." beside "Петрова Марина": "Петрову" is either).
     target: bool,
+    surname_forms: HashSet<String>,
+    own_surname_forms: HashSet<String>,
+    /// The first name's forms and its nicknames' (full names only).
+    first_forms: HashSet<String>,
+    patronymic_forms: HashSet<String>,
+}
+impl Person {
+    fn new(owner: u64, surname: String, given: Vec<String>, target: bool) -> Self {
+        let first_forms = match given.first() {
+            Some(first) if target => given_forms(first)
+                .into_iter()
+                .chain(nicknames(first).iter().flat_map(|n| given_forms(n)))
+                .collect(),
+            _ => HashSet::new(),
+        };
+        let patronymic_forms = match given.as_slice() {
+            [_, second] if target => patronymic_forms(second).into_iter().collect(),
+            _ => HashSet::new(),
+        };
+        Self {
+            owner,
+            surname_forms: surname_forms(&surname).into_iter().collect(),
+            own_surname_forms: own_surname_forms(&surname).into_iter().collect(),
+            surname,
+            given,
+            target,
+            first_forms,
+            patronymic_forms,
+        }
+    }
 }
 
 /// The people of a document that forms are matched against.
@@ -405,34 +435,16 @@ impl People {
         let mut people = Vec::new();
         for (owner, wording) in names {
             if let Some((surname, given)) = split_full_name(wording) {
-                people.push(Person {
-                    owner,
-                    surname,
-                    given,
-                    target: true,
-                });
+                people.push(Person::new(owner, surname, given, true));
             } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
-                people.push(Person {
-                    owner,
-                    surname,
-                    given: initials.iter().map(char::to_string).collect(),
-                    target: false,
-                });
+                let given = initials.iter().map(char::to_string).collect();
+                people.push(Person::new(owner, surname, given, false));
             }
         }
         Self(people)
     }
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-    fn first_name_matches(person: &Person, word: &str) -> bool {
-        person.target
-            && person.given.first().is_some_and(|first| {
-                given_forms(first).iter().any(|f| f == word)
-                    || nicknames(first)
-                        .iter()
-                        .any(|n| given_forms(n).iter().any(|f| f == word))
-            })
     }
     pub(crate) fn candidates(&self, form: &Form) -> Candidates {
         let mut found = Candidates::default();
@@ -451,20 +463,19 @@ impl People {
             }
             let (links, proposes) = match form {
                 Form::Word { word, titled } => {
-                    let first = !titled && Self::first_name_matches(person, word);
+                    let first = !titled && person.first_forms.contains(word);
                     (
-                        first || own_surname_forms(&person.surname).contains(word),
-                        first || surname_forms(&person.surname).contains(word),
+                        first || person.own_surname_forms.contains(word),
+                        first || person.surname_forms.contains(word),
                     )
                 }
                 Form::Patronymic { first, patronymic } => {
-                    let both = person.given.len() == 2
-                        && Self::first_name_matches(person, first)
-                        && patronymic_forms(&person.given[1]).contains(patronymic);
+                    let both = person.first_forms.contains(first)
+                        && person.patronymic_forms.contains(patronymic);
                     (both, both)
                 }
                 Form::Initials { surname, initials } => {
-                    let named = surname_forms(&person.surname).contains(surname);
+                    let named = person.surname_forms.contains(surname);
                     // Every initial matches, in order; one that matches a
                     // different given name breaks the link.
                     let matching = initials.len() <= person.given.len()
@@ -473,7 +484,7 @@ impl People {
                             .zip(&person.given)
                             .all(|(i, name)| name.starts_with(*i));
                     (
-                        matching && own_surname_forms(&person.surname).contains(surname),
+                        matching && person.own_surname_forms.contains(surname),
                         named,
                     )
                 }

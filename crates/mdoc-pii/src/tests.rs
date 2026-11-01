@@ -1191,3 +1191,42 @@ fn only_forms_that_join_wait_so_aliases_keep_source_order() {
         ]
     );
 }
+
+#[test]
+#[ignore = "propagation over a 1 MiB document with 50 people; prints its time"]
+fn propagation_scales_with_the_document() {
+    let mut source = String::new();
+    let mut names = Vec::new();
+    let letters: Vec<char> = "бвгдклмнпрстфхцж".chars().collect();
+    let tag = |n: usize| format!("{}{}", letters[n / 16], letters[n % 16]);
+    for n in 0..50 {
+        names.push(format!("Ан{}а Петр{}ова Сергеевна", tag(n), tag(n)));
+    }
+    while source.len() < 1 << 20 {
+        for n in 0..names.len() {
+            source.push_str(&format!(
+                "{} подписала. Позже Петр{}овой и Ан{}а Сергеевна, Mr Smith и Rose. ",
+                names[n],
+                tag(n),
+                tag(n)
+            ));
+        }
+    }
+    let detections = names
+        .iter()
+        .map(|name| {
+            let start = source.find(name.as_str()).unwrap();
+            detection(start..start + name.len(), Category::Person)
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    let mut review = Review::default();
+    review.ingest(&source, detections).unwrap();
+    eprintln!(
+        "PROPAGATION bytes={} variants={} remaining={} in {:?}",
+        source.len(),
+        review.variants().len(),
+        review.remaining(),
+        started.elapsed()
+    );
+}
