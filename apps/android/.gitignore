@@ -2,3 +2,6 @@
 build/
 local.properties
 .kotlin/
+# Android Studio
+.idea/
+gradle/gradle-daemon-jvm.properties
