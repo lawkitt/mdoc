@@ -95,8 +95,8 @@ not() { ! "$@"; }
   routes "desktop android" scripts/install-android-ndk.sh
   routes "desktop ios" src/main.rs apps/ios/mdoc/App/MdocApp.swift
   routes "ios android" apps/ios/a.swift apps/android/b.kt
-  routes "core desktop ios android" tests/fixtures/recognition/en/claim/x.md
-  routes "core desktop ios android" tests/fixtures/recognition/en/claim/x.model.json
+  routes desktop tests/fixtures/recognition/en/claim/x.md
+  routes desktop tests/fixtures/recognition/en/claim/x.model.json
   routes "" tests/fixtures/pseudonymization/README.md
   routes "" README.md docs/adr/0091-mobile-ci-and-releases.md LICENSE
   routes "" apps/ios/README.md crates/mdoc-ffi/README.md changes/ios/x.md
