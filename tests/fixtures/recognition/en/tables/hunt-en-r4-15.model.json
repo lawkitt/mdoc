@@ -4,14 +4,14 @@
   "entities": [
     {"start":83,"end":93,"label":"person","score":0.68951476,"text":"recipients"},
     {"start":2,"end":23,"label":"organization","score":0.56559867,"text":"Distribution register"},
-    {"start":272,"end":286,"label":"full_name","score":0.9937588,"text":"Vellin Asterne"},
-    {"start":411,"end":427,"label":"full_name","score":0.98971164,"text":"Orvessa Keldrick"},
-    {"start":331,"end":363,"label":"email","score":0.9999691,"text":"vellin.copies@aster-purl.invalid"},
-    {"start":470,"end":505,"label":"email","score":0.99989855,"text":"orvessa.documents@keld-rill.invalid"},
-    {"start":298,"end":320,"label":"address","score":0.8737545,"text":"16 Celandine Road, Ely"},
-    {"start":439,"end":459,"label":"address","score":0.8633916,"text":"43 Mallow Row, Ripon"},
-    {"start":376,"end":385,"label":"passport_number","score":0.998345,"text":"ZR5814267"},
-    {"start":518,"end":527,"label":"passport_number","score":0.9975656,"text":"LP7426931"},
+    {"start":272,"end":286,"label":"full_name","score":0.97989976,"text":"Vellin Asterne"},
+    {"start":411,"end":427,"label":"full_name","score":0.97631055,"text":"Orvessa Keldrick"},
+    {"start":331,"end":363,"label":"email","score":0.9999531,"text":"vellin.copies@aster-purl.invalid"},
+    {"start":470,"end":505,"label":"email","score":0.9998059,"text":"orvessa.documents@keld-rill.invalid"},
+    {"start":439,"end":459,"label":"address","score":0.90974677,"text":"43 Mallow Row, Ripon"},
+    {"start":298,"end":320,"label":"address","score":0.896614,"text":"16 Celandine Road, Ely"},
+    {"start":376,"end":385,"label":"passport_number","score":0.9969839,"text":"ZR5814267"},
+    {"start":518,"end":527,"label":"passport_number","score":0.9956176,"text":"LP7426931"},
     {"start":988,"end":1001,"label":"person","score":0.78972054,"text":"administrator"}
   ]
 }
