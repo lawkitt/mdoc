@@ -4,7 +4,7 @@ flaw: list-prefix-identifier
 issue: 428
 kind: docx
 source: hunt-r4
-expect: miss: PHONE "+ 7 (900) 000-26-19"
+expect: boundary: gold PHONE "+ 7 (900) 000-26-19"; proposed PHONE "7 (900) 000-26-19"
 ---
 Верхний колонтитул: карточка допуска; редакция для подписания
 

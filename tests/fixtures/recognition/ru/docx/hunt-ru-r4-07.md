@@ -1,10 +1,7 @@
 ---
-status: known-flaw
-flaw: literal-delimiter-pii
-issue: 423
+status: pass
 kind: docx
 source: hunt-r4
-expect: miss: ORG "ООО «Лист#8»"
 ---
 Верхний колонтитул: протокол сверки приложений, лист первый
 

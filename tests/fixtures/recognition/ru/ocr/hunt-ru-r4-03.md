@@ -4,8 +4,7 @@ flaw: list-prefix-identifier
 issue: 428
 kind: ocr
 source: hunt-r4
-expect: miss: IDENTITY "46. 18 7319О4"
-expect: miss: PHONE "+ 7 (900) 000-84-31"
+expect: boundary: gold PHONE "+ 7 (900) 000-84-31"; proposed PHONE "7 (900) 000-84-31"
 ---
 НОТАРИАЛЬНАЯ К0ПИЯ                 лист 1 / 1
 

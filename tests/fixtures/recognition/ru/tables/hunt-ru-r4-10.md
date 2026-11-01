@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: invalid-identifier-missed literal-delimiter-pii
-issue: 381 423
+flaw: invalid-identifier-missed
+issue: 381
 kind: tables
 source: hunt-r4
-expect: miss: ORG "АО «Акция#6»"
 expect: miss: IDENTITY "CARD-918264"
 expect: miss: IDENTITY "CARD-827153"
 ---
