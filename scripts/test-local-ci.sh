@@ -513,9 +513,12 @@ export CARGO_TARGET_DIR="$tmp/shared-target"
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
 export PATH="$tmp/bin:$PATH"
 
-# Once PR 9's old head is running, move its merge ref to the new head.
+# Once PR 9's old head is running, move its merge ref to the new head. It
+# waits as long as the runner may run: on hosted Windows that head started
+# 2m46s in, after a 60 s wait had given up, and the runner then waited for
+# the ref for good.
 (
-  for _ in $(seq 1 300); do
+  for _ in $(seq 1 3000); do
     if grep -q "^push lint" "$FAKE/just.log" 2>/dev/null; then
       git --git-dir="$tmp/origin.git" update-ref refs/pull/9/merge "$new_merge"
       exit 0
@@ -532,8 +535,8 @@ echo log >"$LOCAL_CI_HOME/out/pr-1/0000000/log.txt"
 # A previous runner's lock and job pid, now an unrelated process: the
 # runner takes the lock over and leaves that process alone.
 mkdir -p "$LOCAL_CI_HOME/state/lock"
-# Outlives the runner's 3-minute allowance; killed below.
-sleep 600 &
+# Outlives the runner's 10-minute allowance; killed below.
+sleep 900 &
 unrelated=$!
 echo "$unrelated" >"$LOCAL_CI_HOME/state/lock/pid"
 echo "$unrelated" >"$LOCAL_CI_HOME/state/job.pid"
@@ -548,13 +551,15 @@ echo stray >"$LOCAL_CI_HOME/mdoc/stray.txt"
 run_once() { # log
   bash scripts/local-ci.sh once >"$1" 2>&1 &
   local runner=$! rc=0
-  for _ in $(seq 1 180); do
+  # 10 minutes: hosted Windows runs this beside a 15-minute render test and
+  # missed 3 minutes on main@9b04eb1, while the PC passed in seconds.
+  for _ in $(seq 1 600); do
     kill -0 "$runner" 2>/dev/null || break
     sleep 1
   done
   if kill -0 "$runner" 2>/dev/null; then
     kill "$runner"
-    echo "FAIL: the runner did not finish within 3 minutes" >&2
+    echo "FAIL: the runner did not finish within 10 minutes" >&2
     failures=$((failures + 1))
   fi
   wait "$runner" || rc=$?
