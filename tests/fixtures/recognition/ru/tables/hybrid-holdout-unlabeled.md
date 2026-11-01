@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ru-identifier-category
 issue: 380
 kind: tables
 source: import
-expect: boundary: gold TAX "5401000039"; proposed BANK "5401000039"
-expect: boundary: gold IDENTITY "345-678-912 26"; proposed PHONE "345-678-912 26"
 ---
 | ИНН | СНИЛС |
 | --- | --- |

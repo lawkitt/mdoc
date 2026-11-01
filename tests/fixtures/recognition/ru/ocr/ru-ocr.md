@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: ru-address ru-identifier-category
-issue: 362 380
+flaw: ru-address
+issue: 362
 kind: ocr
 source: import
 expect: miss: ADDRESS "г. М0сква, ул. Кедровая, д. 42"
-expect: boundary: gold TAX "77O1234567"; proposed IDENTITY "77O1234567"
 ---
 ДОГОВ0Р
 Заказчик: ⟦PERSON|Анна Сергее вна Ёлкина⟧
