@@ -21,6 +21,31 @@ export JAVA_HOME=E:/Android/jdk-21 ANDROID_HOME=E:/Android/Sdk
 `just android-emulator --window` shows the emulator instead of running it
 headless.
 
+### On an Apple Silicon Mac
+
+`just android-setup` and `just android-emulator` are Windows-only; on the Mac
+Android Studio supplies the SDK, the emulator and the JDK instead:
+
+1. `brew install --cask android-studio`, run its setup wizard, and in
+   Settings → Languages & Frameworks → Android SDK install the API 37
+   platform.
+2. In Device Manager, create a phone on an **arm64-v8a** image (an x86_64
+   one barely runs on Apple Silicon) and start it. The 16 KB page images
+   ("Google APIs … 16 KB page size") match the Windows emulator; any
+   API 31+ arm64 image runs the app. Give it 4 GB of RAM for the models.
+3. From the repo root, `just android-core` (installs the pinned NDK under
+   `~/Library/Android/ndk` on first use; about 10 minutes from clean).
+4. Build and install:
+
+```sh
+cd apps/android
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk"
+./gradlew :app:installDebug
+```
+
+Or open `apps/android` in Android Studio and press Run, after step 3.
+`testDebugUnitTest` runs on the Mac too, against the Mac build of the core.
+
 ## Tests
 
 - `./gradlew testDebugUnitTest`: JVM tests on the PC, among them the parity
