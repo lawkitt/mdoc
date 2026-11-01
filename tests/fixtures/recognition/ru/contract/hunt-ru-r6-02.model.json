@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":91,"end":111,"label":"person","score":0.7257458,"text":"Заимодавец"},
+    {"start":115,"end":129,"label":"person","score":0.66671383,"text":"Заёмщик"}
+  ]
+}
