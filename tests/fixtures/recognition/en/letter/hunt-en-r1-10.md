@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: date-of-birth
 issue: 363
 kind: letter
 source: hunt-r1
-expect: miss: DATE "23 September 1991"
 ---
 # Request to amend a client record
 

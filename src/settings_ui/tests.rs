@@ -1251,13 +1251,14 @@ fn detection_categories_save_on_change_by_mouse_and_keyboard(cx: &mut TestAppCon
     };
     let skip =
         |shared: &mdoc_store::settings::Shared| shared.borrow().snapshot().unwrap().categories.skip;
-    // Every category scans return is listed and on; Date and Other are manual only.
+    // Every category scans return is listed and on, dates of birth too
+    // (ADR 0092); Other is manual only.
     for category in mdoc_pii::Category::DETECTED {
         let id: &'static str = format!("settings-detect-{}", category.token()).leak();
         assert!(cx.debug_bounds(id).is_some(), "{id}");
     }
     assert!(cx.debug_bounds("settings-detect-REDACTED").is_none());
-    assert!(cx.debug_bounds("settings-detect-DATE").is_none());
+    assert!(cx.debug_bounds("settings-detect-DATE").is_some());
     assert!(skip(&shared).is_empty());
 
     click(cx, "settings-detect-ADDRESS");
