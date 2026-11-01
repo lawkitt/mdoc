@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: bank-slash-filter
-issue: 425
+status: pass
+flaw:
+issue:
 kind: power-of-attorney
 source: hunt-r4
-expect: miss: BANK "47-29-16/00318572"
 ---
 ## Financial authority: bank instruction annex
 
