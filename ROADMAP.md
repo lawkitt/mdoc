@@ -188,10 +188,10 @@ touch separate files and run as parallel lanes; 5 builds on 2 and 3.
    iOS (`macos-26`, pinned Xcode) and Android (`ubuntu-latest`, KVM) jobs,
    replacing its temporary "NOT tested" mobile statuses
    (`untested_job` in `scripts/local-ci-fallback.sh`); the `areas` job in
-   `ci.yml` gates them; Dependabot and fork PRs run them in their areas; a dispatched workflow
-   regenerates Gradle verification metadata as a reviewable diff. *Done
-   when:* a stuck-runner drill posts each path, and a Gradle Dependabot PR
-   goes green after its metadata commit.
+   `ci.yml` gates them; Dependabot and fork PRs run them in their areas; a
+   dispatched workflow regenerates Gradle verification metadata as a
+   reviewable diff. *Done when:* a stuck-runner drill posts each path, and
+   a Gradle Dependabot PR goes green after its metadata commit.
 6. **[Release] iOS release workflow.** After ROADMAP iOS item 1's first
    TestFlight build by hand: `just release-ios`, `ios-v*` tags from `main`,
    hosted tests on the Release configuration, Apple-managed signing,
