@@ -2,6 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":2074,"end":2084,"label":"address","score":0.61474097,"text":"Адрес"}
+    {"start":1661,"end":1683,"label":"person","score":0.5113201,"text":"отправитель"},
+    {"start":2074,"end":2084,"label":"address","score":0.8112278,"text":"Адрес"},
+    {"start":2108,"end":2122,"label":"phone_number","score":0.7750945,"text":"Телефон"}
   ]
 }

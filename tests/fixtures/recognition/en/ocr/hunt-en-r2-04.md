@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-hyphen-name
 issue: 388
 kind: ocr
 source: hunt-r2
-expect: boundary: gold PERSON "Melora Brin-\nsett"; proposed PERSON "Melora Brin"
 ---
 COLLECTION ACKN0WLEDGEMENT                         page l of 2
 

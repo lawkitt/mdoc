@@ -2,12 +2,11 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":180,"end":195,"label":"person","score":0.97863114,"text":"Mireille Vossel"},
-    {"start":818,"end":866,"label":"person","score":0.94143915,"text":"Дарья Ильинична Верестова"},
-    {"start":967,"end":996,"label":"person","score":0.5180433,"text":"Дарья Ильинична"},
-    {"start":280,"end":309,"label":"organization","score":0.94699025,"text":"Ладонный компас"},
-    {"start":1359,"end":1383,"label":"email","score":0.9987981,"text":"m.vossel@vozvrat.invalid"},
-    {"start":1487,"end":1499,"label":"passport_number","score":0.99904156,"text":"47I2 83О615"},
+    {"start":180,"end":195,"label":"person","score":0.9788748,"text":"Mireille Vossel"},
+    {"start":818,"end":866,"label":"person","score":0.9391366,"text":"Дарья Ильинична Верестова"},
+    {"start":280,"end":309,"label":"organization","score":0.9476724,"text":"Ладонный компас"},
+    {"start":1359,"end":1383,"label":"email","score":0.99892247,"text":"m.vossel@vozvrat.invalid"},
+    {"start":1487,"end":1499,"label":"passport_number","score":0.9990188,"text":"47I2 83О615"},
     {"start":1518,"end":1546,"label":"person","score":0.9778411,"text":"Д. И. Верестовой"}
   ]
 }

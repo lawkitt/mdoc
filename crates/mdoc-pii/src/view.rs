@@ -90,9 +90,26 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
 fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
     let mut chars = source.char_indices().peekable();
+    let mut previous = None;
     while let Some((at, c)) = chars.next() {
         let next = chars.peek().map(|&(_, next)| next);
-        if c == '&'
+        let before = previous;
+        previous = Some(c);
+        if c == '-'
+            && before.is_some_and(char::is_alphabetic)
+            && let Some(len) = line_end_hyphen(&source[at..])
+        {
+            out.push((at..at + len, String::new()));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+        } else if c == '@'
+            && before.is_some_and(char::is_alphanumeric)
+            && let Some(len) = line_break(&source[at + 1..])
+        {
+            // An email wrapped after its "@" ("ksen.rav@\nsvod.invalid").
+            out.push((at + 1..at + 1 + len, String::new()));
+            while chars.next_if(|&(i, _)| i <= at + len).is_some() {}
+            previous = None;
+        } else if c == '&'
             && let Some((len, value)) = character_reference(&source[at..])
         {
             out.push((at..at + len, value));
@@ -115,6 +132,51 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
+}
+
+/// The length of a line-end hyphen that splits a word at the start of
+/// `text` ("-\n" and the next line's indent before a lowercase letter, as
+/// in "Brin-\nsett"), which the word reads without.
+fn line_end_hyphen(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix('-')?;
+    let len = line_break(rest)?;
+    rest[len..]
+        .starts_with(char::is_lowercase)
+        .then_some(1 + len)
+}
+
+/// The length of the line break and the next line's indent at the start of
+/// `text`, when the next line goes on with text.
+fn line_break(text: &str) -> Option<usize> {
+    let rest = text
+        .strip_prefix("\r\n")
+        .or_else(|| text.strip_prefix('\n'))?;
+    let word = rest.trim_start_matches([' ', '\t']);
+    (!word.is_empty() && !word.starts_with(['\r', '\n'])).then_some(text.len() - word.len())
+}
+
+/// Whether the line breaks inside `range` of `source` only wrap one value
+/// (ADR 0092: OCR and narrow columns wrap names, emails, phones): each is a
+/// line-end hyphen inside a word, or the value ends its last line but for
+/// closing punctuation. "Delva Rosk\nExhibition company" before ": …" is two
+/// lines' text, not one wrapped value.
+pub fn wrapped_value(source: &str, range: &Range<usize>) -> bool {
+    let value = &source[range.clone()];
+    let plain = value.match_indices('\n').any(|(i, _)| {
+        let at = range.start + i;
+        let hyphen = source[..at].strip_suffix('\r').unwrap_or(&source[..at]);
+        !(hyphen.ends_with('-')
+            && hyphen[..hyphen.len() - 1]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphabetic)
+            && line_end_hyphen(&source[hyphen.len() - 1..]).is_some())
+    });
+    let rest = source[range.end..].split(['\r', '\n']).next().unwrap_or("");
+    !plain
+        || rest
+            .chars()
+            .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
 }
 
 /// Characters that only break a word for the eye or a renderer: the soft
@@ -207,6 +269,19 @@ mod tests {
         assert_eq!(span("ё"), "е\u{308}");
         assert_eq!(View::new("Mae\u{308}la Runnell").text, "Maëla Runnell");
         assert_eq!(span("pavel@vector.invalid"), "pavel@\u{200b}vector.invalid");
+        // A word split by a line-end hyphen reads whole; a hyphen before a
+        // capital, a digit or a dash at a line's end stays.
+        let source = "Melora Brin-\nsett, Верес-\r\n  това, Ли-\nВельт, 000-\n74, list -\nnext, ksen@\n svod.invalid";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "Melora Brinsett, Верестова, Ли-\nВельт, 000-\n74, list -\nnext, ksen@svod.invalid"
+        );
+        let start = view.text.find("Melora").unwrap();
+        assert_eq!(
+            &source[view.source_range(start..start + "Melora Brinsett".len())],
+            "Melora Brin-\nsett"
+        );
         assert!(View::new("plain").is_source());
     }
 }
