@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":160,"end":200,"label":"full_name","score":0.8470844,"text":"Нина Ефимовна Костель"},
+    {"start":245,"end":283,"label":"organization","score":0.7954993,"text":"ООО «Ситцевый архив»"},
+    {"start":1080,"end":1099,"label":"email","score":0.99866986,"text":"nina@pechat.invalid"},
+    {"start":823,"end":835,"label":"passport_number","score":0.9990854,"text":"46l9 82О731"},
+    {"start":1787,"end":1829,"label":"person","score":0.9788344,"text":"Даниил Викторович Шорн"}
+  ]
+}

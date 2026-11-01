@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":845,"end":893,"label":"full_name","score":0.9866749,"text":"Алексей Борисович Невельс"},
+    {"start":625,"end":682,"label":"full_name","score":0.9207897,"text":"Евдокия Сергеевна Ровель‑Корш"},
+    {"start":786,"end":812,"label":"email","score":0.99997854,"text":"evdokia@nasledniki.invalid"},
+    {"start":998,"end":1023,"label":"email","score":0.9999478,"text":"alexei@nasledniki.invalid"},
+    {"start":702,"end":714,"label":"passport_number","score":0.9946774,"text":"46 83 731625"},
+    {"start":913,"end":925,"label":"passport_number","score":0.98722816,"text":"46 84 862736"},
+    {"start":1211,"end":1266,"label":"full_name","score":0.95998776,"text":"Евдокия Сергеевна Ровель-Корш"},
+    {"start":2576,"end":2598,"label":"person","score":0.61288905,"text":"наследников"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":112,"end":163,"label":"person","score":0.9630225,"text":"Андрей Патрикович О’Шеннон"},
+    {"start":275,"end":313,"label":"person","score":0.9620363,"text":"Елена Борисовна Ренц"},
+    {"start":233,"end":245,"label":"passport_number","score":0.9993761,"text":"46 91 732608"},
+    {"start":1813,"end":1830,"label":"person","score":0.9448931,"text":"О’Шеннон"},
+    {"start":1747,"end":1772,"label":"email","score":0.9997326,"text":"andrei@poruchenie.invalid"},
+    {"start":2504,"end":2546,"label":"person","score":0.96666324,"text":"Еленой Борисовной Ренц"},
+    {"start":2267,"end":2303,"label":"person","score":0.8267118,"text":"Лидия Игоревна Брюн"},
+    {"start":2904,"end":2929,"label":"person","score":0.7999116,"text":"О’Шеннон А. П."}
+  ]
+}

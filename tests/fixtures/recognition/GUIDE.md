@@ -70,3 +70,5 @@ a boundary case.
 - An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
 - The title of a work is not a span, even when it reads like a name: «Кедровый свет» (hunt-ru-r3-07).
 - An invisible character inside a name or value (soft hyphen, zero-width space, combining mark) stays inside the span (hunt-ru-r3-05, hunt-ru-r3-08, hunt-ru-r3-11).
+- A writ's series and number is a court document reference and stays unmarked: «Серия и номер исполнительного листа: ФС 086731924» (hunt-ru-r4-12).
+- A notary is a person, not a public body: «Нотариус: ⟦PERSON|Лидия Игоревна Брюн⟧» (hunt-ru-r4-01).
