@@ -502,17 +502,18 @@ impl People {
                     let given: Vec<_> = person.given.iter().map(first).collect();
                     let surname = first(&person.surname);
                     let spelled: Vec<_> = initials.iter().map(|c| Some(*c)).collect();
-                    let matching = person.target
-                        && match spelled.as_slice() {
-                            [a, b] => {
-                                given.len() >= 2 && [given[0], given[1]] == [*a, *b]
-                                    || given.first() == Some(a) && surname == *b
-                            }
-                            [a, b, c] => {
-                                given.len() >= 2 && [given[0], given[1], surname] == [*a, *b, *c]
-                            }
-                            _ => false,
-                        };
+                    // A name with initials ("Y. Quill") matches too, so it
+                    // blocks a link, though it never becomes a target.
+                    let matching = match spelled.as_slice() {
+                        [a, b] => {
+                            given.len() >= 2 && [given[0], given[1]] == [*a, *b]
+                                || given.first() == Some(a) && surname == *b
+                        }
+                        [a, b, c] => {
+                            given.len() >= 2 && [given[0], given[1], surname] == [*a, *b, *c]
+                        }
+                        _ => false,
+                    };
                     (matching, matching)
                 }
             };
@@ -630,16 +631,17 @@ fn find_forms(
             if word(last + 1) && blank(tokens[last].end + 1, tokens[last + 1].start) {
                 tries.push((start..tokens[last + 1].end, last + 2, false));
             }
-            // Initials alone, as a signature: "E. N.", "Я. В.".
+            // Initials alone, as a signature: "E. N.", "Я. В.". The whole
+            // run or nothing: "J. S. X." is not "J. S." with a stray "X.".
             let mut run = i;
-            while run < i + 2
+            while run < i + 3
                 && initial(run + 1)
                 && blank(tokens[run].end + 1, tokens[run + 1].start)
             {
                 run += 1;
             }
-            for last in (i + 1..=run).rev() {
-                tries.push((start..tokens[last].end + 1, last + 1));
+            if (1..=2).contains(&(run - i)) {
+                tries.push((start..tokens[run].end + 1, run + 1));
             }
         } else {
             let title = &source[tokens[i].clone()];
@@ -1061,16 +1063,21 @@ mod tests {
         assert_eq!(target(&names, "В. Я."), None);
         let other = people(&names).candidates(&form("Y. Q."));
         assert_eq!((other.target, other.proposed), (None, false));
-        // Two people with the same initials: proposed apart.
+        // Two people with the same initials, or one named by initials
+        // only: proposed apart.
         let both = people(&["Yara Quill", "Ysolde Qhenn"]).candidates(&form("Y. Q."));
         assert_eq!((both.target, both.proposed), (None, true));
+        let abbreviated = people(&["Ysolde Qhenn", "Y. Quill"]).candidates(&form("Y. Q."));
+        assert_eq!((abbreviated.target, abbreviated.proposed), (None, true));
+        // A third initial that does not fit breaks the match.
+        assert_eq!(target(&["John Smith"], "J. S. X."), None);
     }
 
     #[test]
     fn initials_alone_are_found_with_their_last_period() {
         let names = ["Ysolde Qhenn", "Яромир Всеволодович Фьорд-Лукин"];
         let source = "Signed Y. Q. on the sheet; подпись Я. В. в журнале; \
-            clause A. B. and Y. alone stay.";
+            clause A. B. and Y. alone stay; so do Y. Q. X. and Y. Q. Z. W.";
         let found: Vec<_> = find_forms(source, &people(&names), &[])
             .into_iter()
             .map(|(r, _)| &source[r])
