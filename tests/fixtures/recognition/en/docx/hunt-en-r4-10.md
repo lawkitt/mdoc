@@ -1,10 +1,10 @@
 ---
-status: known-flaw
+status: model-limit
 flaw: literal-delimiter-pii
 issue: 423
 kind: docx
 source: hunt-r4
-expect: miss: IDENTITY "RV#842176"
+reason: the model never proposes the value, so no syntax protection hides it; only a context rule for its label could find it
 ---
 Header: Review copy — access agreement — page 1
 
