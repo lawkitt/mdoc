@@ -213,7 +213,8 @@ impl Pasteboard {
             // (NSPasteboardContentsCurrentHostOnly, which also clears it), so
             // Universal Clipboard does not carry it.
             if string.metadata.as_deref() == Some(CONCEALED_CLIPBOARD_METADATA) {
-                let _: isize = msg_send![self.inner, prepareForNewContentsWithOptions: 1usize];
+                let pasteboard: id = *self.inner;
+                let _: isize = msg_send![pasteboard, prepareForNewContentsWithOptions: 1usize];
             } else {
                 self.inner.clearContents();
             }
