@@ -167,7 +167,12 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
 - The fleet profile's required `checks` grows from three to five when the
   new statuses go live (fleet ADR 0017).
 - The Mac runner may run Android jobs as a takeover, adding emulator load
-  to the busiest machine; the memory and disk gate decides.
+  to the busiest machine. Memory and disk alone are not enough of a gate:
+  on 2026-11-01 an Android emulator (about 440% CPU, load average above
+  200) beside two agent builds timed out seven GPUI workspace tests at
+  nextest's 2-minute limit in `local/macos`. The takeover therefore also
+  waits for CPU load, and the Mac's runner never starts a desktop test
+  while its own emulator runs.
 - The hosted mobile jobs run rarely, so they can break unnoticed between
   fallbacks and releases; Dependabot PRs exercise them weekly.
 - An Android release depends on Google Play being reachable; a GitHub APK
