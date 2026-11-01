@@ -1,11 +1,9 @@
 ---
-status: known-flaw
-flaw: multiline-person
-issue: 419
+status: pass
+flaw:
+issue:
 kind: claim
 source: hunt-r3
-expect: miss: PERSON "Евгения\n  Матвеевна\n  Мельник"
-expect: miss: PERSON "Мельник"
 ---
 # Заявление о взыскании остатка долга по расписке
 
