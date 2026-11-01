@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":786,"end":830,"label":"full_name","score":0.97622,"text":"Мирон Павлович Грендель"},
+    {"start":907,"end":940,"label":"email","score":0.9993307,"text":"grendel@proverkavlozheniy.invalid"}
+  ]
+}

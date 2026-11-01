@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":1548,"end":1559,"label":"organization","score":0.58575296,"text":"ГПК РФ"}
+  ]
+}
