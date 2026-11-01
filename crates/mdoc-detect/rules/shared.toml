@@ -63,10 +63,13 @@ guess = [
 ]
 
 # Phones: a model span needs a digit; a manual selection of at least seven
-# digits with only spaces, `+`, brackets and dashes between is a phone.
+# digits with only spaces, `+`, brackets and dashes between is a phone. No
+# phone number has 16 digits in a row (E.164 allows 15), and a bare nine-digit
+# number starting 04 is a Russian bank code (БИК), not a phone.
 [[shape]]
 category = "PHONE"
 require = ['\p{N}']
+forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
 guess = ['[ +()\-\x{a0}]*(?:[0-9][ +()\-\x{a0}]*){7,}']
 
 # Organizations: a capital or digit, and a word that is not a never word
@@ -88,10 +91,11 @@ guess = [
     '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
 ]
 
-# Emails need an `@`; the model also tags the word "email" and bare domains.
+# Emails need an `@` and a dotted domain; the model also tags the word
+# "email", bare domains and "not-a-mail@localhost".
 [[shape]]
 category = "EMAIL"
-require = ['@']
+require = ['@[^@\s]+\.\p{Alphabetic}{2,}']
 
 # Addresses need a capital or a digit; "addresses" alone is not one.
 [[shape]]
@@ -103,14 +107,20 @@ require = ['[\p{Uppercase}\p{N}]']
 category = "IDENTITY"
 require = ['\p{N}']
 
-# Tax identifiers need a digit; "ИНН" alone is not one.
+# Tax identifiers need a digit; "ИНН" alone is not one. A rate ("20 percent
+# tax", "НДС 20%") is no identifier, and neither is a Russian document series
+# before its number ("ФС 086731924", a writ).
 [[shape]]
 category = "TAX"
 require = ['\p{N}']
+forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 
 # Bank details need a digit and no `/`: case and claim numbers
-# ("6001842/2026") are not bank details.
+# ("6001842/2026") are not bank details. A bare ten- or eleven-digit number is
+# a tax number, a phone or a contract number far more often than an account
+# (Russian accounts have 20 digits, UK ones 8 with a sort code): only a label
+# makes it bank details.
 [[shape]]
 category = "BANK"
 require = ['\p{N}']
-forbid = ['/']
+forbid = ['/', '^\s*\d{10,11}\s*$']
