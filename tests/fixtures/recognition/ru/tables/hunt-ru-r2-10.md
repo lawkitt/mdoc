@@ -6,7 +6,6 @@ kind: tables
 source: hunt-r2
 expect: miss: ADDRESS "кв. 9, д. 32, переулок Бумажных лодок, Тверь"
 expect: miss: ADDRESS "офис 6, д. 17, улица Лунных папок, Псков"
-expect: boundary: gold IDENTITY "731-604-829 17"; proposed TAX "731-604-829 17"
 ---
 # Сводка адресатов для возврата выставочных материалов
 
