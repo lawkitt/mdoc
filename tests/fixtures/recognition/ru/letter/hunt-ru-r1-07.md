@@ -4,6 +4,7 @@ flaw: org-boundary person-prefix-boundary
 issue: 374 391
 kind: letter
 source: hunt-r1
+expect: miss: PERSON "Ли-Вельт"
 expect: boundary: gold PERSON "Лея Аркадьевна Ли-Вельт"; proposed PERSON "Лея", PERSON "Ли-Вельт"
 expect: boundary: gold ORG "ООО «Тиснёный берег»"; proposed ORG "Тиснёный берег"
 ---
