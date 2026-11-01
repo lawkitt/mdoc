@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":44,"end":57,"label":"person","score":0.99848115,"text":"Søren McAven"},
+    {"start":74,"end":96,"label":"organization","score":0.991938,"text":"Alder Kite Repairs LLC"},
+    {"start":1131,"end":1144,"label":"person","score":0.98116684,"text":"Søren McAven"},
+    {"start":673,"end":682,"label":"person","score":0.7228206,"text":"plaintiff"},
+    {"start":961,"end":970,"label":"person","score":0.720958,"text":"plaintiff"},
+    {"start":1054,"end":1063,"label":"person","score":0.5861083,"text":"plaintiff"}
+  ]
+}

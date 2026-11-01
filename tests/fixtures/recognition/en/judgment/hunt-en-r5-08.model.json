@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":28,"end":44,"label":"bank_account","score":0.7371582,"text":"expenses account"}
+  ]
+}

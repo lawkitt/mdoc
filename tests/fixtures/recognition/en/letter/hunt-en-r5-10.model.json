@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":514,"end":536,"label":"person","score":0.9898696,"text":"Đorđe O'Quill-McRann"},
+    {"start":54,"end":73,"label":"person","score":0.9869795,"text":"Róisín MacKellane"},
+    {"start":89,"end":112,"label":"organization","score":0.9953544,"text":"Rill Heather Design Ltd"},
+    {"start":1134,"end":1149,"label":"person","score":0.99390244,"text":"Nóra MacVellin"},
+    {"start":1011,"end":1046,"label":"email","score":0.9994408,"text":"correspondence@rill-heather.invalid"}
+  ]
+}

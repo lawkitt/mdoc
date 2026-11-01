@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":87,"end":102,"label":"person","score":0.9929882,"text":"Nóra O'Mellane"},
+    {"start":121,"end":146,"label":"full_name","score":0.5883571,"text":"Clover Quoin Holdings Ltd"},
+    {"start":121,"end":146,"label":"organization","score":0.97693473,"text":"Clover Quoin Holdings Ltd"},
+    {"start":87,"end":102,"label":"organization","score":0.8908652,"text":"Nóra O'Mellane"},
+    {"start":1151,"end":1166,"label":"person","score":0.96691406,"text":"Nóra O'Mellane"},
+    {"start":526,"end":547,"label":"address","score":0.9073123,"text":"17 Bracken Vale, Cork"},
+    {"start":1184,"end":1199,"label":"person","score":0.9822196,"text":"Łukasz McQuill"}
+  ]
+}
