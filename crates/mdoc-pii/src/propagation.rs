@@ -446,6 +446,10 @@ impl People {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+    /// Whether `owner` is a full name's identity, which forms may join.
+    pub(crate) fn is_target(&self, owner: u64) -> bool {
+        self.0.iter().any(|p| p.owner == owner && p.target)
+    }
     pub(crate) fn candidates(&self, form: &Form) -> Candidates {
         let mut found = Candidates::default();
         for person in &self.0 {
@@ -660,15 +664,27 @@ impl Review {
         let form = parse_form(wording)?;
         self.people().candidates(&form).target
     }
+    /// Seed a form found by propagation: in its one candidate's identity,
+    /// or an identity of its own.
+    pub(super) fn seed_form(&mut self, wording: &str, target: Option<u64>) -> u64 {
+        let id = self.add_seed_linked(wording, Category::Person, target);
+        let seeded = self.variant(id).map(|v| v.identity);
+        if let Some(variant) = self.candidates.variant_mut(id) {
+            variant.managed = true;
+            variant.own = (seeded == Some(id)).then_some(id);
+        }
+        id
+    }
     /// Propose the forms of every known full name found outside existing
-    /// mentions. `marked`: a manual mark propagated them, so undoing the
-    /// mark withdraws them. Returns the variants added.
+    /// mentions, and link earlier ones again. `marked`: a manual mark of a
+    /// full name did it, as one undo step that withdraws the new forms and
+    /// the links. Returns the variants added.
     pub(super) fn propagate(&mut self, source: &str, marked: bool) -> Vec<u64> {
         // Mentions of the seeds so far, so a form inside a longer wording
         // stays part of it.
         self.refresh(source);
         let people = self.people();
-        self.recheck_joined(&people, !marked);
+        self.relink_forms(&people, marked);
         if people.is_empty() {
             return Vec::new();
         }
@@ -694,7 +710,7 @@ impl Review {
                 continue;
             }
             let target = parse_form(wording).and_then(|form| people.candidates(&form).target);
-            let id = self.add_seed_linked(wording, Category::Person, target);
+            let id = self.seed_form(wording, target);
             if let Some(variant) = self.candidates.variant_mut(id) {
                 variant.propagated = true;
                 variant.mid_sentence = common;
@@ -705,30 +721,77 @@ impl Review {
             }
             added.push(id);
         }
+        if marked {
+            self.refresh(source);
+        }
         added
     }
-    /// A form joined its one candidate full name; once another person
-    /// shares it, or that name is gone, it moves to the one candidate left
-    /// or an identity of its own. A user's link stays. `adopt`: a scan
-    /// proposal standing alone joins its one candidate too (a mark links
-    /// those as an undo step instead, [`Self::propagate_mark`]).
-    fn recheck_joined(&mut self, people: &People, adopt: bool) {
-        let moved: Vec<(u64, Option<u64>)> = self
+    /// Link forms again as names come and go: a form joins its one
+    /// candidate full name, and with none (another person shares it, or the
+    /// name is gone) returns to an identity of its own. A scan's lone
+    /// proposal that is a form joins too. The user's links stay, and so does
+    /// a form that replaced text already. `marked`: as one undo step.
+    fn relink_forms(&mut self, people: &People, marked: bool) {
+        let moves: Vec<(u64, Option<u64>)> = self
             .variants()
             .iter()
-            .filter(|v| !self.identities.reassigned(v.id) && (v.joined || adopt && self.loose(v)))
+            .filter(|v| {
+                v.category == Category::Person
+                    && !v.kept
+                    && !self.identities.reassigned(v.id)
+                    && (v.managed || self.loose(v))
+                    && !self
+                        .applied()
+                        .iter()
+                        .any(|a| a.step.original_shared().as_ref() == v.original.as_ref())
+            })
             .filter_map(|v| {
                 let target = parse_form(&v.original).and_then(|f| people.candidates(&f).target);
-                (target != Some(v.identity) && (v.joined || target.is_some()))
-                    .then_some((v.id, target))
+                let current = self.variant_identity(v.id)?;
+                let desired = match target {
+                    Some(target) => Some(target),
+                    // A managed form leaves a full name it no longer fits.
+                    None if v.managed && people.is_target(current) => None,
+                    None => Some(current),
+                };
+                (desired != Some(current)).then_some((v.id, desired))
             })
             .collect();
-        for (id, target) in moved {
-            let identity = target.unwrap_or_else(|| self.new_identity(Category::Person));
-            if let Some(variant) = self.candidates.variant_mut(id) {
-                variant.identity = identity;
-                variant.joined = target.is_some();
+        for (id, desired) in moves {
+            let Some(variant) = self.variant(id) else {
+                continue;
+            };
+            // Its own identity, or the one a respelling of it ("MS BENNETT")
+            // left for already.
+            let own = variant
+                .own
+                .or((variant.identity == variant.id).then_some(variant.id))
+                .filter(|own| !people.is_target(*own))
+                .or_else(|| {
+                    self.identities
+                        .normalized_identity(&variant.original, Category::Person)
+                        .filter(|own| !people.is_target(*own))
+                });
+            let desired = match desired.or(own) {
+                Some(identity) => identity,
+                None => self.new_identity(Category::Person),
+            };
+            let Some(variant) = self.candidates.variant_mut(id) else {
+                continue;
+            };
+            variant.managed = true;
+            if !people.is_target(desired) {
+                variant.own = Some(desired);
             }
+            let (seed, original) = (variant.identity, variant.original.clone());
+            if marked || self.identities.linked_automatically(id) {
+                self.identities
+                    .link_automatically(id, (desired != seed).then_some(desired));
+            } else if let Some(variant) = self.candidates.variant_mut(id) {
+                variant.identity = desired;
+            }
+            self.identities
+                .remember_normalized(&original, Category::Person, desired);
         }
         self.sync_identity_variants();
     }
@@ -736,37 +799,13 @@ impl Review {
     /// else in it: no other wording, no applied mention.
     fn loose(&self, v: &super::Variant) -> bool {
         v.detected
-            && !v.joined
+            && !v.managed
             && v.priority == 0
-            && !v.kept
-            && v.category == Category::Person
             && v.identity == v.id
             && !self.tracking.uses_identity(v.identity)
             && self.variants().iter().all(|other| {
                 other.id == v.id || self.variant_identity(other.id) != Some(v.identity)
             })
-    }
-    /// After a mark of a full name: propose its forms, and link scan
-    /// proposals that are forms of it alone and have nothing of their own
-    /// (no other wording, no applied mention, no user link).
-    pub(super) fn propagate_mark(&mut self, source: &str, identity: u64) {
-        self.propagate(source, true);
-        let people = self.people();
-        let loose: Vec<u64> = self
-            .variants()
-            .iter()
-            .filter(|v| {
-                self.loose(v)
-                    && !self.identities.reassigned(v.id)
-                    && parse_form(&v.original)
-                        .is_some_and(|form| people.candidates(&form).target == Some(identity))
-            })
-            .map(|v| v.id)
-            .collect();
-        for id in loose {
-            let _ = self.assign_variant(id, identity);
-        }
-        self.refresh(source);
     }
 }
 

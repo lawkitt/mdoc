@@ -122,9 +122,11 @@ pub struct Variant {
     /// An ordinary word too ("Rose", "Мира"): only its capitalised
     /// mentions mid-sentence count.
     mid_sentence: bool,
-    /// Seeded into its one candidate full name's identity; propagation
-    /// checks the candidate again as names come and go.
-    joined: bool,
+    /// Propagation decides its identity: its one candidate full name's, or
+    /// `own` while there is none; checked again as names come and go.
+    managed: bool,
+    /// The identity it falls back to without one candidate.
+    own: Option<u64>,
 }
 impl Variant {
     /// Whether propagation proposed it: a form of a known full name found
@@ -630,7 +632,7 @@ impl Review {
         for detection in forms {
             let text = &source[detection.range];
             let target = self.propagation_target(text);
-            self.add_seed_linked(text, Category::Person, target);
+            self.seed_form(text, target);
         }
         self.propagate(source, false);
         // Variants this scan seeded, including the name forms derived from them.
@@ -661,7 +663,6 @@ impl Review {
         let id = self.next_id;
         self.occupied_tokens.insert(replacement.clone());
         let identity = normalized.unwrap_or(id);
-        let joined = normalized.is_some() && normalized == link;
         if normalized.is_none() {
             self.identities.add(Identity {
                 id,
@@ -686,7 +687,8 @@ impl Review {
             detected: false,
             propagated: false,
             mid_sentence: false,
-            joined,
+            managed: false,
+            own: None,
         });
         id
     }
@@ -719,16 +721,16 @@ impl Review {
         if let Some(group) = self.candidates.variant_mut(id) {
             group.keep_default |= !existed;
             group.priority = priority;
+            // Marked by hand, every mention counts, even an ordinary word's
+            // at the start of a sentence.
+            group.mid_sentence = false;
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
         // A marked full name proposes its forms elsewhere (ADR 0092).
-        if category == Category::Person
-            && identities::split_full_name(original).is_some()
-            && let Some(identity) = self.variant_identity(id)
-        {
-            self.propagate_mark(source, identity);
+        if category == Category::Person && identities::split_full_name(original).is_some() {
+            self.propagate(source, true);
         }
         Ok(id)
     }

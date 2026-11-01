@@ -26,6 +26,9 @@ pub struct IdentityPolicy {
     /// A saved or merge target's primary wording: it wins only among equally
     /// long wordings, since the primary is the longest full form.
     primary: HashMap<u64, Arc<str>>,
+    /// Variants whose entry in `variants` propagation made, not the user;
+    /// it may move them again (ADR 0092).
+    automatic: HashSet<u64>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
 #[derive(Default)]
@@ -41,7 +44,26 @@ impl IdentityStore {
     }
     /// Whether the user linked variant `group` to another identity.
     pub(super) fn reassigned(&self, group: u64) -> bool {
-        self.policy.variants.contains_key(&group)
+        self.policy.variants.contains_key(&group) && !self.policy.automatic.contains(&group)
+    }
+    /// Whether propagation linked variant `group` in the policy.
+    pub(super) fn linked_automatically(&self, group: u64) -> bool {
+        self.policy.automatic.contains(&group)
+    }
+    /// Propagation's link of `group` to `target`, part of the current undo
+    /// step; `None` drops it, back to the variant's seed identity.
+    pub(super) fn link_automatically(&mut self, group: u64, target: Option<u64>) {
+        let policy = Arc::make_mut(&mut self.policy);
+        match target {
+            Some(target) => {
+                policy.variants.insert(group, target);
+                policy.automatic.insert(group);
+            }
+            None => {
+                policy.variants.remove(&group);
+                policy.automatic.remove(&group);
+            }
+        }
     }
     pub(super) fn retired_aliases(&self, id: u64) -> &[String] {
         self.policy.retired.get(&id).map_or(&[], Vec::as_slice)
@@ -400,6 +422,7 @@ impl Review {
                 .variants
                 .retain(|group, owner| !groups.contains(group) && *owner != id);
             policy.kept.retain(|group, _| !groups.contains(group));
+            policy.automatic.retain(|group| !groups.contains(group));
             for identity in policy.edited.values_mut() {
                 if identity.owner == Some(id) {
                     Arc::make_mut(identity).owner = None;
@@ -756,9 +779,10 @@ impl Review {
             .ok_or("Variant is no longer available.")?;
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
-        Arc::make_mut(&mut self.identities.policy)
-            .variants
-            .insert(group, target);
+        let policy = Arc::make_mut(&mut self.identities.policy);
+        policy.variants.insert(group, target);
+        // The user's link: propagation no longer moves it.
+        policy.automatic.remove(&group);
         self.sync_identity_variants();
         Ok(())
     }

@@ -1073,15 +1073,11 @@ fn a_marked_full_name_proposes_its_forms_and_undo_withdraws_them() {
 fn an_applied_name_propagates_to_new_text() {
     let source = "Priya Raman signed.";
     let mut review = ingest_names(source, &["Priya Raman"]);
-    let plans = review.pending_plans(source, &HashMap::new()).unwrap();
-    let added = review.prepare_replacements(&plans);
-    review.commit_replacements(1, added);
-    let identity = plans[0].identity;
-    let source = "PERSON_1 signed. Later Ms Raman and Priya agreed.";
-    review.refresh(source);
-    // The applied mention moved with the edit only in the app; rebase it here.
-    review.tracking.applied[0].range = 0..8;
-    review.ingest(source, Vec::new()).unwrap();
+    let text = crate::restore::tests::apply_pending(&mut review, source, 1);
+    let identity = review.applied()[0].step.identity;
+    let source = format!("{text} Later Ms Raman and Priya agreed.");
+    review.refresh(&source);
+    review.ingest(&source, Vec::new()).unwrap();
     for form in ["Ms Raman", "Priya"] {
         assert_eq!(
             review.variant_identity(proposed(&review, form).id),
@@ -1228,4 +1224,132 @@ fn propagation_scales_with_the_document() {
         review.remaining(),
         started.elapsed()
     );
+}
+
+/// Review of #372: a mark's automatic link is not the user's, so a later
+/// candidate moves it; undoing the mark restores the link it replaced.
+#[test]
+fn a_marks_links_stay_automatic_and_follow_its_undo() {
+    let source = "Maya agreed. Maya Bennett signed. Maya Jones wrote.";
+    let mut review = ingest_names(source, &["Maya"]);
+    let maya = proposed(&review, "Maya").id;
+    let full = review.add_manual(source, 13..25, Category::Person).unwrap();
+    let bennett = review.variant_identity(full);
+    assert_eq!(review.variant_identity(maya), bennett);
+    // A scan finds another Maya: the lone one may be either.
+    let jones = source.find("Maya Jones").unwrap();
+    review
+        .ingest(
+            source,
+            vec![detection(
+                jones..jones + "Maya Jones".len(),
+                Category::Person,
+            )],
+        )
+        .unwrap();
+    let alone = review.variant_identity(maya);
+    assert_ne!(alone, bennett);
+    assert_ne!(
+        alone,
+        review.variant_identity(proposed(&review, "Maya Jones").id)
+    );
+
+    // A mark that adds a second candidate moves a joined form within its
+    // own undo step.
+    let source = "Maya Bennett signed. Ms Bennett agreed. Daniel Bennett wrote.";
+    let mut review = ingest_names(source, &["Maya Bennett"]);
+    let short = proposed(&review, "Ms Bennett").id;
+    let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
+    assert_eq!(review.variant_identity(short), maya);
+    let before = review.identity_snapshot();
+    let daniel = source.find("Daniel").unwrap();
+    review
+        .add_manual(
+            source,
+            daniel..daniel + "Daniel Bennett".len(),
+            Category::Person,
+        )
+        .unwrap();
+    let after = review.identity_snapshot();
+    assert_ne!(review.variant_identity(short), maya);
+    review.restore_identity_snapshot(before);
+    assert_eq!(review.variant_identity(short), maya, "undo");
+    review.restore_identity_snapshot(after);
+    assert_ne!(review.variant_identity(short), maya, "redo");
+}
+
+/// Review of #372: a form that replaced text keeps its link; one that left
+/// a name can join it again; a respelled wording follows the form.
+#[test]
+fn applied_forms_stay_and_detached_forms_can_rejoin() {
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let mut review = ingest_names(source, &["Maya Bennett"]);
+    let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
+    let text = crate::restore::tests::apply_pending(&mut review, source, 1);
+    assert_eq!(text, "PERSON_1 signed. PERSON_1 agreed.");
+    let source = format!("{text} Ms Bennett and Daniel Bennett wrote.");
+    review.refresh(&source);
+    let daniel = source.find("Daniel").unwrap();
+    review
+        .ingest(
+            &source,
+            vec![detection(
+                daniel..daniel + "Daniel Bennett".len(),
+                Category::Person,
+            )],
+        )
+        .unwrap();
+    let short = proposed(&review, "Ms Bennett").id;
+    assert_eq!(
+        review.variant_identity(short),
+        maya,
+        "applied under her alias"
+    );
+
+    let source = "Maya Bennett signed. Ms Bennett agreed. Daniel Bennett wrote. MS BENNETT left.";
+    let daniel = source.find("Daniel").unwrap();
+    let mut review = ingest_names(source, &["Maya Bennett"]);
+    review
+        .ingest(
+            source,
+            vec![detection(
+                daniel..daniel + "Daniel Bennett".len(),
+                Category::Person,
+            )],
+        )
+        .unwrap();
+    let short = proposed(&review, "Ms Bennett").id;
+    let own = review.variant_identity(short);
+    let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
+    assert_ne!(own, maya);
+    // The respelled wording joins the detached form, not Maya.
+    let caps = source.find("MS BENNETT").unwrap();
+    review
+        .ingest(
+            source,
+            vec![detection(caps..caps + "MS BENNETT".len(), Category::Person)],
+        )
+        .unwrap();
+    assert_eq!(
+        review.variant_identity(proposed(&review, "MS BENNETT").id),
+        own
+    );
+    // Daniel kept everywhere: Maya is the one candidate again.
+    let daniel = proposed(&review, "Daniel Bennett").id;
+    review.keep(daniel, None);
+    review.ingest(source, Vec::new()).unwrap();
+    assert_eq!(review.variant_identity(short), maya);
+}
+
+/// Review of #372: marking an ordinary word by hand counts every mention.
+#[test]
+fn a_manual_mark_lifts_the_mid_sentence_filter() {
+    let source = "Rose Hill signed. We met Rose. Rose agreed.";
+    let mut review = ingest_names(source, &["Rose Hill"]);
+    assert_eq!(proposed(&review, "Rose").mentions.len(), 1);
+    let start = source.rfind("Rose").unwrap();
+    review
+        .add_manual(source, start..start + 4, Category::Person)
+        .unwrap();
+    assert_eq!(proposed(&review, "Rose").mentions.len(), 2);
 }

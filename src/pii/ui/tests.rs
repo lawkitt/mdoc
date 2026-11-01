@@ -1167,10 +1167,11 @@ fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpu
     cx.dispatch_action(PiiConfirm);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
+        // Marking the full name linked the scan's lone "Иван" to it (ADR
+        // 0092), so Apply replaces both with its alias.
         let text = app.editor.read(cx).text().to_owned();
-        assert!(text.starts_with("Contact PERSON_2 today."), "{text}");
-        assert!(text.ends_with("Иван agreed."), "{text}");
-        assert_eq!(app.pii.review.remaining(), 1);
+        assert_eq!(text, "Contact PERSON_2 today. PERSON_2 agreed.");
+        assert_eq!(app.pii.review.remaining(), 0);
     });
     // Apply and the addition are separate undo steps.
     app.update_in(cx, |app, window, cx| {

@@ -685,7 +685,8 @@ impl Review {
                     detected: false,
                     propagated: false,
                     mid_sentence: false,
-                    joined: false,
+                    managed: false,
+                    own: None,
                 });
                 if on_step {
                     self.set_kept(self.next_id, false);
@@ -834,4 +835,4 @@ pub fn plan_join(
 
 #[cfg(test)]
 #[path = "restore_tests.rs"]
-mod tests;
+pub(crate) mod tests;
