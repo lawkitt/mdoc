@@ -526,6 +526,17 @@ static TOKEN: LazyLock<regex::Regex> =
 pub(crate) fn sentence_start(source: &str, start: usize) -> bool {
     let line = &source[source[..start].rfind('\n').map_or(0, |i| i + 1)..start];
     let before = line.trim_end_matches(|c: char| c.is_whitespace() || "*_\"'«“„‘([".contains(c));
+    // "Mr. Hill": a title's period ends no sentence.
+    let titled = before.strip_suffix('.').is_some_and(|b| {
+        let word = b
+            .rsplit(|c: char| !c.is_alphabetic())
+            .next()
+            .unwrap_or_default();
+        TITLES.contains(&word.to_lowercase().as_str())
+    });
+    if titled {
+        return false;
+    }
     let marker = before.trim_start();
     marker.is_empty()
         || matches!(marker, "-" | "+" | ">")
@@ -569,7 +580,8 @@ fn find_forms(
     while i < tokens.len() {
         let start = tokens[i].start;
         // Candidate spans at `i`, longest first, each with the token after it.
-        let mut tries: Vec<(Range<usize>, usize)> = Vec::new();
+        // `true`: a surname after a title, which stays outside the span.
+        let mut tries: Vec<(Range<usize>, usize, bool)> = Vec::new();
         if initial(i) {
             // Initials before the surname: "М. С. Павлова", "M. Bennett".
             let last = if initial(i + 1) && blank(tokens[i].end + 1, tokens[i + 1].start) {
@@ -578,7 +590,7 @@ fn find_forms(
                 i
             };
             if word(last + 1) && blank(tokens[last].end + 1, tokens[last + 1].start) {
-                tries.push((start..tokens[last + 1].end, last + 2));
+                tries.push((start..tokens[last + 1].end, last + 2, false));
             }
         } else {
             let title = &source[tokens[i].clone()];
@@ -591,26 +603,36 @@ fn find_forms(
                 && blank(tokens[i].end, tokens[i + 1].start)
             {
                 if initial(i + 2) && blank(tokens[i + 1].end + 1, tokens[i + 2].start) {
-                    tries.push((start..tokens[i + 2].end + 1, i + 3));
+                    tries.push((start..tokens[i + 2].end + 1, i + 3, false));
                 }
-                tries.push((start..tokens[i + 1].end + 1, i + 2));
+                tries.push((start..tokens[i + 1].end + 1, i + 2, false));
             }
-            // A title in any case and a surname ("Ms Raman", "dr. Raman"),
-            // or first name + patronymic.
+            // A title in any case and a surname ("Ms Raman", "dr. Raman"):
+            // the surname alone, the title outside the span as the guide
+            // keeps it; or first name + patronymic.
             if (titled || word(i)) && word(i + 1) {
                 let gap =
                     tokens[i].end + usize::from(titled && source[tokens[i].end..].starts_with('.'));
                 if gap < tokens[i + 1].start && blank(gap, tokens[i + 1].start) {
-                    tries.push((start..tokens[i + 1].end, i + 2));
+                    if titled {
+                        tries.push((tokens[i + 1].clone(), i + 2, true));
+                    } else {
+                        tries.push((start..tokens[i + 1].end, i + 2, false));
+                    }
                 }
             }
             if word(i) {
-                tries.push((tokens[i].clone(), i + 1));
+                tries.push((tokens[i].clone(), i + 1, false));
             }
         }
-        let accepted = tries.into_iter().find_map(|(range, next)| {
+        let accepted = tries.into_iter().find_map(|(range, next, after_title)| {
             let text = &source[range.clone()];
-            let form = parse_form(text)?;
+            // After a title the word is a surname, never a first name.
+            let form = match parse_form(text)? {
+                Form::Word { word, .. } if after_title => Form::Word { word, titled: true },
+                _ if after_title => return None,
+                form => form,
+            };
             // Touching `_`, `/`, `@` or `\` it is part of an identifier, a
             // path or an address ("x.invalid/Alice_Morgan").
             let glued = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
@@ -621,8 +643,8 @@ fn find_forms(
                 && !intersects(covered, &range)
                 && exact_boundary(source, &range, text)
                 && people.candidates(&form).proposed;
-            let common = matches!(&form, Form::Word { word, titled: false } if common_word(word));
-            (usable && !(common && sentence_start(source, range.start)))
+            let common = matches!(&form, Form::Word { word, .. } if common_word(word));
+            (usable && !(common && !after_title && sentence_start(source, range.start)))
                 .then_some((range, common, next))
         });
         match accepted {
@@ -976,7 +998,11 @@ mod tests {
             found("- Rose left\n1. Rose\n| Rose |"),
             Vec::<String>::new()
         );
-        assert_eq!(found("Call Ms Hill. Hill agreed."), ["Ms Hill"]);
+        // A title marks a surname wherever it stands, and stays outside the
+        // span (guide rule 1); a title's period ends no sentence.
+        assert_eq!(found("Call Ms Hill. Hill agreed."), ["Hill"]);
+        assert_eq!(found("Mr. Hill agreed."), ["Hill"]);
+        assert!(!sentence_start("Mr. Hill", 4));
         assert!(sentence_start("**Rose**", 2));
         assert!(!sentence_start("said “Rose", 6 + "“".len()));
         // A name that is no ordinary word counts anywhere.

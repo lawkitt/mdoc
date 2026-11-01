@@ -721,7 +721,7 @@ mod tests {
         let short = review
             .variants()
             .iter()
-            .find(|v| v.original.as_ref() == "Ms Bennett")
+            .find(|v| v.original.as_ref() == "Bennett")
             .unwrap()
             .id;
         let own = review.new_identity(Category::Person);
@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(all.len(), 1, "{all:?}");
         let hint = &all[0];
         assert_eq!(hint.wording.as_ref(), "Maya Bennett");
-        assert_eq!(hint.pair.0.as_ref(), "Ms Bennett");
+        assert_eq!(hint.pair.0.as_ref(), "Bennett");
         let full = review.identity(hint.into).unwrap().alias.clone();
         review.merge_identity(hint.from, hint.into).unwrap();
         assert!(review.merge_hints().is_empty());
@@ -743,7 +743,7 @@ mod tests {
             variants,
             [
                 ("Maya Bennett".to_string(), full.clone()),
-                ("Ms Bennett".to_string(), full)
+                ("Bennett".to_string(), full)
             ]
         );
     }
