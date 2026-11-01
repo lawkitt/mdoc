@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":74,"end":88,"label":"person","score":0.9994558,"text":"Corvin Ashmere"},
+    {"start":52,"end":64,"label":"person","score":0.9979007,"text":"Iara Veldune"},
+    {"start":164,"end":187,"label":"organization","score":0.9924228,"text":"Flint Otter Storage Ltd"},
+    {"start":1230,"end":1242,"label":"person","score":0.9946981,"text":"Sennin Loake"},
+    {"start":1202,"end":1214,"label":"person","score":0.97745705,"text":"iara veldune"},
+    {"start":1142,"end":1176,"label":"email","score":0.9989798,"text":"iara.authority@flint-otter.invalid"},
+    {"start":698,"end":720,"label":"address","score":0.8828325,"text":"46 Thimble Road, Derby"}
+  ]
+}

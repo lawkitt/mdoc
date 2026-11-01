@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":1156,"end":1163,"label":"person","score":0.856092,"text":"Witness"},
+    {"start":1101,"end":1109,"label":"person","score":0.82544905,"text":"Attorney"},
+    {"start":1087,"end":1096,"label":"person","score":0.7913377,"text":"Principal"}
+  ]
+}

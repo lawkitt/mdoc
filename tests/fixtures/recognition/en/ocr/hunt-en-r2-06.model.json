@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":463,"end":476,"label":"person","score":0.99886644,"text":"Veyra Nemmick"},
+    {"start":41,"end":51,"label":"person","score":0.77081,"text":"Delva Rosk"},
+    {"start":72,"end":96,"label":"organization","score":0.98065495,"text":"Cinder Reed Displays Ltd"},
+    {"start":41,"end":70,"label":"organization","score":0.8358859,"text":"Delva Rosk\nExhibition company"},
+    {"start":1176,"end":1208,"label":"email","score":0.9989392,"text":"delva.return@cinder-reed.invalid"}
+  ]
+}

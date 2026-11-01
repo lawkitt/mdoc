@@ -1,0 +1,17 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":509,"end":522,"label":"person","score":0.9862577,"text":"Ziven Holmere"},
+    {"start":416,"end":427,"label":"person","score":0.9827573,"text":"Dara Vennil"},
+    {"start":477,"end":504,"label":"email","score":0.99995244,"text":"dara.witness@vellum.invalid"},
+    {"start":575,"end":609,"label":"email","score":0.9999403,"text":"ziven.attendance@alderwick.invalid"},
+    {"start":430,"end":453,"label":"address","score":0.8647679,"text":"64 Vellum Road, Chester"},
+    {"start":525,"end":551,"label":"address","score":0.8171371,"text":"9 Alderwick Lane, Carlisle"},
+    {"start":563,"end":572,"label":"passport_number","score":0.9956685,"text":"RM6841932"},
+    {"start":465,"end":474,"label":"passport_number","score":0.99517024,"text":"KC5927408"},
+    {"start":994,"end":1007,"label":"person","score":0.9961306,"text":"Ziven Holmere"},
+    {"start":930,"end":941,"label":"person","score":0.9916195,"text":"Dara Vennil"},
+    {"start":1229,"end":1236,"label":"person","score":0.6067897,"text":"witness"}
+  ]
+}
