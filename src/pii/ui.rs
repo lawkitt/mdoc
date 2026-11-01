@@ -358,6 +358,9 @@ impl DocumentView {
         self.editor
             .update(cx, |editor, _| editor.set_copy_metadata(None));
         self.pii.decisions.clear();
+        // The new review lists nothing; what the old one put on the case's
+        // lists stays there.
+        self.case.forget_listed();
         self.review_changed(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {

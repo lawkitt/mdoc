@@ -64,6 +64,7 @@ use session_writer::SessionEffect;
 mod sidebar;
 mod tab_menu;
 mod tab_set;
+mod user_lists;
 pub(crate) use cases_ui::{
     AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
 };
@@ -562,6 +563,10 @@ impl Workspace {
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
                     settings_ui::Event::ClearRecents => this.clear_recents(cx),
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
+                    settings_ui::Event::UserListsChanged(lists) => {
+                        this.save_user_lists(lists.clone(), cx)
+                    }
+                    settings_ui::Event::UnlockLists => this.unlock_cases(window, cx),
                     settings_ui::Event::CategoriesUnticked(categories) => {
                         for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
                             view.update(cx, |view, cx| {

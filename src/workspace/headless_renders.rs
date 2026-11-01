@@ -429,6 +429,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                     store.save(&case).expect("temporary fixture case");
                     workspace.use_case_store(store);
                     workspace.case_coordinator.finish_load(vec![case]);
+                    workspace.user_lists_read(Ok(Default::default()), cx);
                     workspace.restore(
                         Session {
                             theme_choice: theme,

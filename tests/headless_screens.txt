@@ -25,6 +25,8 @@ settings-detection-categories
 settings-general-off
 settings-models-installed
 settings-detection-end
+settings-detection-lists
+settings-detection-lists-locked
 dictionary
 command-palette
 keyboard-shortcuts
@@ -38,6 +40,7 @@ decision-history
 open-case
 case-page
 case-page-locked
+case-page-lists
 rename-case
 case-categories
 keychain-explainer

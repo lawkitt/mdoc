@@ -457,6 +457,7 @@ impl Panel {
                 .child(div().id("pii-models").role(gpui::Role::RadioGroup).aria_label("Pseudonymization").children(PiiModel::ALL.into_iter().map(|m| self.row(Model::Pii(m), cx))))
                 .child(self.number_row(0, theme, cx))
                 .child(self.categories_row(theme, cx))
+                .child(self.user_lists_section(theme, cx))
                 .child(self.setting_row("Compare pseudonymization", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-pii", "Compare", theme, true, cx).aria_label("Compare pseudonymization").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16))))), theme)),
             Category::Recognition => {
                 let note = self.section_note("Default when a document suggests no language. Each document’s card picks its own.", Model::Ocr(self.draft.ocr.model));

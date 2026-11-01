@@ -74,8 +74,11 @@ Fine-tuning needs training data, a new pinned export and requalification.
   whitespace; a person's Always entry also yields propagation's forms. The
   case page shows both lists (remove only); Settings › Detection has
   user-wide Always and Never lists (add, remove). A document outside a
-  case uses the user-wide lists only. Both live in the keychain-protected
-  store, since they can hold client names.
+  case uses the user-wide lists only; in a case, the case's lists win over
+  the user-wide ones. A wording is on one list at a time: the later
+  addition moves it. A Keep lists an identity's wordings once none of its
+  mentions is still proposed or replaced. Both live in the
+  keychain-protected store, since they can hold client names.
 - **Preprocessing is pipeline code**: windowing, table cells read as
   sentences, OCR hyphen joins, HTML entities decoded before detection and
   readiness (`Ann&#97; Petrova`). The threshold and the model stay as

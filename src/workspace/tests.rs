@@ -53,6 +53,7 @@ mod shortcuts_sheet;
 mod sidebar;
 mod tab_menu;
 mod tab_set;
+mod user_lists;
 mod window_shell;
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather

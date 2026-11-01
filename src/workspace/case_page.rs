@@ -974,6 +974,7 @@ impl Workspace {
                         }),
                 ),
             );
+        let lists = self.case_lists(case, cx);
         div()
             .w_full()
             .max_w(px(680.))
@@ -985,6 +986,7 @@ impl Workspace {
             .child(documents)
             .child(names)
             .child(categories)
+            .child(lists)
             .child(
                 self.page_control("case-page-delete", "Delete case and forget originals…", cx)
                     .text_color(style::markdown_style(theme).popover_danger)
@@ -996,6 +998,89 @@ impl Workspace {
                     })),
             )
             .into_any_element()
+    }
+
+    /// The case's Always and Never lists (ADR 0092): what its members'
+    /// manual marks and Keeps put there, each with Remove. Entries are
+    /// added only by marking and keeping in a member.
+    fn case_lists(&self, case: &mdoc_store::cases::Case, cx: &mut Context<Self>) -> gpui::Div {
+        let p = self.theme.get().pdf_style();
+        let mut lists = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(section("Always and never replace"))
+            .child(div().text_size(px(12.)).text_color(p.header_muted).child(
+                "Scans in this case's documents propose what you marked yourself and skip                  what you kept.",
+            ));
+        // Each list's wordings, with the category of an Always one.
+        type Entries = Vec<(String, Option<&'static str>)>;
+        let entries: [(bool, Entries); 2] = [
+            (
+                true,
+                case.lists
+                    .always
+                    .iter()
+                    .map(|e| (e.wording.clone(), Some(e.category().label())))
+                    .collect(),
+            ),
+            (
+                false,
+                case.lists.never.iter().map(|w| (w.clone(), None)).collect(),
+            ),
+        ];
+        for (always, entries) in entries {
+            let list = if always { "always" } else { "never" };
+            lists = lists.child(
+                div()
+                    .pt_2()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child(if always {
+                        "Always replace"
+                    } else {
+                        "Never replace"
+                    }),
+            );
+            if entries.is_empty() {
+                lists = lists.child(div().text_size(px(12.)).text_color(p.header_muted).child(
+                    if always {
+                        "Nothing yet. Words you mark yourself appear here."
+                    } else {
+                        "Nothing yet. Names you keep everywhere in a document appear here."
+                    },
+                ));
+            }
+            for (index, (wording, category)) in entries.into_iter().enumerate() {
+                let control = format!("case-{list}-remove-{index}");
+                let (id, remove) = (case.id.clone(), wording.clone());
+                lists = lists.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .py_1()
+                        .child(div().flex_1().min_w_0().truncate().child(wording.clone()))
+                        .children(category.map(|label| {
+                            div()
+                                .text_size(px(11.))
+                                .text_color(p.header_muted)
+                                .child(label)
+                        }))
+                        .child(
+                            self.page_control(SharedString::from(control.clone()), "Remove", cx)
+                                .aria_label(format!("Remove “{wording}”"))
+                                .when(cfg!(test), move |v| {
+                                    v.debug_selector(move || control.clone())
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.remove_case_list_entry(&id, always, &remove, cx)
+                                })),
+                        ),
+                );
+            }
+        }
+        lists
     }
 
     pub(super) fn add_page_name(&mut self, cx: &mut Context<Self>) {
