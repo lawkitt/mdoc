@@ -4,6 +4,367 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.3.0] - 2026-11-01
+
+- **mdoc's M in the menu bar (macOS).** The menu bar item shows the app
+  icon's M monogram instead of a generic document symbol, tinted to suit a
+  light or dark menu bar ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+
+- **Android spike: detector settings.** The Android feasibility spike also
+  times the name detector's window at 2, 4, 6 and 8 threads, on ONNX
+  Runtime's CPU provider and on XNNPACK, for the floor decision
+  ([ADR 0089](docs/adr/0089-android-app.md)). The detector's thread count
+  can be set with `MDOC_DETECT_THREADS`; the apps keep 4.
+
+- **A fuller tab menu.** The sidebar's tab menu adds Reveal in Finder (Show
+  in Explorer on Windows) and Copy path for a tab with a file, and Close
+  others, which asks each tab with unsaved changes or an unsaved mapping in
+  turn, in sidebar order; Cancel keeps that tab and the rest
+  ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+
+- **A long document scans like its parts.** Detection windows hold whole
+  paragraphs and each heading starts one, so a section repeated in a longer
+  document gets the proposals it gets alone, and a repeated section is
+  scanned once. Titles, role words and the names of categories are no longer
+  proposed ("Ms", "her husband", "the Employer", "email"), nor a claim number
+  as a bank account. A wording found only inside a longer one no longer takes
+  an alias, so aliases don't skip a number (ORG_1–4, ORG_6)
+  ([#302](https://github.com/lawkitt/mdoc/issues/302),
+  [ADR 0002](docs/adr/0002-reviewable-local-pseudonymization.md)).
+
+- **Readiness catches a lone first name.** A word of a known multi-word
+  person name left on its own ("Марина" of "Марина Сергеевна") now counts as
+  a name not replaced on the shelf and in its export checks, and Share says
+  how many names are left instead of "Names in the text are aliases now"
+  (refs #301).
+
+- **Small alignment fixes.** Home's "Open a case…" now ends in line with
+  "Documents stay on this Mac" above it, and Home's first Tab stop is Open
+  files…, with the header's bell after Home's own controls. In the AI reply
+  box, Next unrecognized is a bordered button in the row with Copy reply and
+  Open as tab. In the Reply view, the Reply label lines up with Close.
+
+- **Narrow windows.** Drag the sidebar's edge to make it 160–320 pt wide;
+  the width is saved. Below a 900 pt window width the sidebar collapses to
+  the rail by itself and comes back when the window widens, unless you
+  collapsed it. Long tab names lose their middle, not their extension, so
+  names that share a start still differ
+  ([ADR 0027](docs/adr/0027-chrome-style-vertical-sidebar.md)).
+
+- **Background tabs are named as their source.** A file opened with others
+  and not yet shown reads as its source in the sidebar and its tooltip, not
+  as a `.md` that doesn't exist (fixes #311).
+
+- **Context menus clear sidebar tooltips.** Opening a tab's or a case's
+  context menu dismisses the sidebar's tooltip, and none shows while the
+  menu stays open (fixes #310).
+
+- **Android polish, round 2.** The Android app has mdoc's icon, with a
+  themed variant, and its notification shows it. Paste text and Paste AI
+  reply have a one-tap Paste button, a pasted text is titled from its first
+  line, and the reply sheet names the case whose names come back, as on
+  iOS. On a tablet, Home and the text keep a readable width
+  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  [ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android polish, round 3.** In the Android app, tapping an identity
+  opens its first mention, and a mention opened from anywhere scrolls into
+  view above its sheet. A document without text yet says, in iOS's words,
+  whether mdoc is reading it, the import stopped, or recognition is waiting
+  or part done. Download while another job runs says so. The long-job
+  notification says mdoc keeps working in other apps. A long press deletes
+  a document from Home, replaces or keeps all of an identity, and a double
+  tap zooms the original page. Back and More options
+  have names for TalkBack
+  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  [ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Home › Recent badges and conversions.** The "pseudonymized" badge shows
+  only on documents with applied replacements, and a converted source saved
+  as `.md` folds into that file's row instead of a second entry (fixes #306).
+
+- **Open a case names Save as case once.** The empty hint reads "Right-click
+  a tab with applied replacements, or open Share, and choose Save as case",
+  the label both places show (UI polish decision 9).
+
+- **Settings states are easier to tell apart.** "Remove…" is a bordered
+  button and is left out, not dimmed, while it can't run; every switch sits
+  in one right-hand column and is grey when off; the selected Appearance and
+  Resolution choice is filled, so a focused one no longer looks selected;
+  About no longer ends with a Reset that has nothing to reset; and a long
+  page shows a scroll thumb and fades where its rows continue
+  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+
+- **Long counts keep the Replacements chevron.** An entity row's mention
+  count has room for four digits, and the chevron beside it keeps its full
+  width at any count (fixes #308).
+
+- **Tooltips name their shortcut.** The sidebar's Collapse sidebar (⌃⌘S),
+  Back and Forward (⌘[ ⌘]) and New tab (⌘N) and the toolbar's Pseudonymize
+  (⇧⌘P) show their key; the popup's alias field says "Rename alias"; Home's
+  "Documents stay on this Mac" explains itself above the note instead of over
+  the buttons beside it
+  ([ADR 0073](docs/adr/0073-keyboard-shortcuts-panel.md)).
+
+- **A selected alias's ring hugs the alias.** After Apply, the ring around
+  a selected alias follows its chip, so a short alias like ORG_1 no longer
+  carries a ring the width of its original across the next words, and on a
+  list item's wrapped rows the ring stays at the text. A selection across
+  wrapped rows no longer sometimes highlights its whole last row
+  (fixes #303).
+
+- **Locked cases say how many are locked.** The notice reads "4 saved cases
+  are locked…" when the cases folder can be counted, and Open a case… says
+  they are locked above Unlock instead of "No saved cases yet". Opened from
+  Home, the list sits below its link, and its empty hint also names
+  Share › Save as Case (fixes #307).
+
+- **Native panels follow the app's theme (macOS).** With Appearance on Light
+  or Dark, the Save and Open panels, their alerts and the menus use it too,
+  even when macOS is set the other way; System follows macOS
+  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+
+- **The DOCX source preview draws ₽.** On macOS, where the preview draws a
+  missing Calibri or Cambria in Arial, the ruble sign and the newer currency
+  signs (₸ ₹ ₺ ₼ ₾) were empty boxes; they now come from PT Sans and Rockwell,
+  which ship with macOS (fixes #305).
+
+- **Fuller menus and copy keys.** File › Open Recent lists up to 10 recent
+  files with Clear Menu; Edit › Restore Clipboard restores the active tab's
+  aliases in copied text; View gains Home, Search, Edit, Original,
+  Pseudonymized, Side by Side and Show Replacements; Help gains mdoc Help;
+  Check for Updates… sits in the mdoc menu (Help on Windows). Copy for AI is
+  ⇧⌘C (Ctrl+Shift+C) and Copy Markdown ⇧⌘M (Ctrl+Shift+M). ⌘\ now switches
+  to Side by side from Original or Pseudonymized
+  ([ADR 0058](docs/adr/0058-standard-macos-menus.md)).
+
+- **Android polish.** The Android app's bottom bars sit clear of the
+  gesture bar, and its button bars stack at large text instead of wrapping,
+  with full names for TalkBack. Home rows show their status as a symbol, as
+  on iOS, and the Add menu has icons. Counts read "1 mention" and "1 value
+  restored". Restored replies copied to the clipboard are marked sensitive,
+  so Android's clipboard preview hides them
+  ([#321](https://github.com/lawkitt/mdoc/issues/321)). Share as Markdown
+  file moves to the document's menu. An import interrupted off screen says
+  so in the same words as on iOS. The candidate sheet's alias is readable
+  in dark mode, and the Identities sheet shows each category's colour
+  ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  [ADR 0089](docs/adr/0089-android-app.md)).
+
+- **The shelf's count matches the editor's.** A shelf row's "N replaced"
+  counts mentions, the same number as the Share tab; hovering it lists the
+  names those mentions are ("14 names: 8 people · 3 organizations · …")
+  (fixes #304).
+
+- **A running scan says so.** While a scan runs the Replacements footer says
+  "Scanning…" instead of "Nothing to replace yet", Rescan is greyed out, and
+  a long document counts its parts in the toolbar ("Finding names… 3 of 12")
+  (fixes #309).
+
+- **Dialogs follow the platform.** Confirm dialogs lay out their buttons as
+  macOS and Windows do (on macOS Don't Save at the left, Cancel and the
+  default at the right), fill the default button, and dim the window behind
+  them in Dark too. "Discard" is now "Don't Save". The Quit summary names up
+  to five of the documents it asks about, then "and N more"
+  ([ADR 0064](docs/adr/0064-dialog-and-role-semantics.md),
+  [ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+
+- **iOS keeps restored replies on the phone.** Copy reply and Copy in
+  Restore with mdoc put the restored text, which holds originals, on this
+  device's clipboard only (no Universal Clipboard) for ten minutes; Copy for
+  AI is unchanged. Writing Tools no longer acts on the restored reply
+  (fixes #321).
+
+- **One name per action.** Paste AI Reply replaces Restore AI reply, Paste AI
+  Response and Paste AI reply…; Save as Case replaces Save mapping as case;
+  Side by Side replaces Before / After; the palette's theme row says which
+  theme it switches to ("Switch to dark theme"). UI text uses US spelling
+  ("unrecognized", "App license", "organizations").
+
+- **Android device tests.** `just android-device-test` runs the Android
+  app's tests and a long-job test on a phone by its adb serial or on
+  Firebase Test Lab phones: the model download, text recognition and Find
+  names go on while mdoc is off screen and resume after Android kills its
+  process, with no crash or ANR
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Paste text fills its new tab.** Home's Paste text and the palette's
+  "Paste text as new tab" put the clipboard text straight into the new tab
+  instead of leaving an empty Untitled tab (fixes #300).
+
+- **Android app scaffold.** `apps/android` is a Jetpack Compose app on the
+  Rust core's Kotlin bindings: Home lists stored documents, the case key is
+  wrapped by the Android Keystore, nothing goes into backups or device
+  transfers, and parity tests check the core against the desktop goldens on
+  the JVM. Windows local CI gains the Android job (`just android`)
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android: model setup.** A setup card names the download size and
+  downloads text recognition (and the name detector, on phones that can run
+  it) once, on Wi-Fi; on cellular mdoc asks first, and a download held for
+  Wi-Fi says "Waiting for Wi-Fi" with Use cellular. A document that needs a
+  model offers "Download & continue" ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android: the Original page.** A PDF's pages or a photo show beside the
+  text on a wide screen, or under an Original tab on a phone, zoomable with
+  two fingers ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android: Restore with mdoc, Open in mdoc and Settings.** An AI app's
+  reply shared to "Restore with mdoc" comes back restored with the case of
+  the document shared last (another case from a picker), then Copy, Share or
+  Save to document; PDFs, Word files and images shared or opened from other
+  apps open in mdoc; Settings shows the models, where documents live and the
+  licence ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android: the review flow.** Add a document by Paste, Files, Photos or
+  Scan (the system camera) into a new or existing case; read it as a long
+  job in a foreground service; review candidates, mark missed names with
+  Replace…, see Identities; Share or Copy for AI; paste the AI's reply to
+  restore it ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android UI survey.** `just android-survey` takes every screen of the
+  Android app in light and dark, and at the largest font, on the phone and
+  tablet emulators; the first set is in
+  [docs/evidence/android-app](docs/evidence/android-app/2026-10-31-ui-survey/README.md).
+  It found an unlabelled + button and a tablet crash, both fixed
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android feasibility spike.** `tools/android-spike` runs the core's spike
+  on Android phones in Firebase Test Lab, downloading the models through the
+  core's setup as the app will; the first rows are in the
+  [report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Android toolchain on Windows.** `just android-setup` installs the pinned
+  Android SDK, emulator, JDK 21 and NDK; `just android-emulator` boots an
+  API 36 emulator with 16 KB pages; and `just android-core` builds the mobile
+  core with ONNX Runtime and PDFium for Android phones and the emulator
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **Mobile core on Android.** The core opens the ONNX Runtime and PDFium
+  that ship inside the Android app, reads the process's memory there for the
+  feasibility spike, and leaves out the desktop's DOCX preview worker
+  ([ADR 0089](docs/adr/0089-android-app.md)).
+
+- **iOS: clearer text, and layouts that hold at the largest text sizes.**
+  A category's name and an alias are no longer drawn in the category's
+  colour, which failed contrast; the colour stays on the icons. Identities'
+  state chips read in the text colour, and its Done button has a full-size
+  target. At accessibility text sizes the model rows in Settings and setup,
+  the candidate sheet's category and Identities' rows stack instead of
+  breaking words over several lines, and the reply sheet's line about the
+  case is no longer cut short. Opt-in audits of the main screens help find
+  more.
+
+- **iOS device UI tests below the floor.** `just ios-device-test <udid>`
+  picks the test by the phone's tier: below the 8 GB detector floor (the
+  iPhone 12 Pro) it checks the text-recognition download, a scan recognized
+  while the app is left, a .docx import that is whole after it, the note
+  where Find names would be and in Settings, and marking a name by selecting
+  it; `below-floor` or `detector` picks one by hand
+  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+
+- **iOS: Restore with mdoc leads with Copy.** The restored reply's Copy is
+  the prominent button, as most replies go back into a chat or a document;
+  Share and Save to document stay beside it.
+
+- **iOS: smaller polish from the second UI survey.** Paste AI reply shows
+  a hint in its empty editor; Replace… for a selection is titled by the
+  category it becomes, not "Replace" twice; the share sheet's preview has a
+  document icon in place of a blank one; and on iPad the setup card shows
+  once, in the document that asked for it, not in the sidebar too.
+
+- **iOS device UI tests.** `just ios-device-test <udid>` runs the review
+  flow and a long-jobs test on a connected iPhone, through the real
+  background task the Simulator refuses: a camera scan downloads text
+  recognition on Wi-Fi and is recognized while the app is left, Find names
+  runs the detector and keeps running in the background on a 37-page .docx,
+  and a text PDF comes in. The recipe copies the fixtures into the app's
+  container with `devicectl` and fails on a new crash report
+  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+
+- **Menu bar shelf on by default, and polished (macOS).** "Show mdoc in the
+  menu bar" is on unless turned off; the first time the last window closes,
+  a note under the icon says mdoc is still there, with **Quit when windows
+  close** to turn it off. Previews show the first real prose with Markdown
+  hidden in two lines; titles drop `.md` and show their case as a tinted
+  label; Copy for AI is a button that shows "Copied" (also ⌘C and ⌘1–⌘8);
+  "N replaced" lists its categories on hover; the clipboard actions sit in a
+  Clipboard section; the footer is one row (Open mdoc, Settings, Quit); the
+  shelf has a blurred background; a drag shows a card with the title and
+  first line, and a hint that goes after the first drop
+  ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+
+- **iOS device fixes.** Below the detector floor (8 GB) the app no longer
+  runs a rules-only scan: where Find names would be, the document says the
+  device cannot find names and that selecting text marks one, and Settings
+  says the same. A model download asks first on any cellular interface,
+  shows "Waiting for Wi-Fi" with Use cellular while it is held, an
+  interrupted import reads "Import not finished" with Finish import, and the
+  + menu reads Paste, Files, Photos, Scan
+  ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).
+
+- **iOS: the name detector needs 8 GB of RAM.** The iOS app runs the name
+  detector (GLiNER2) only on iPhones and iPads with 8 GB or more: iPhone 15
+  Pro and every iPhone from the 16 on. On real phones the iPhone 17 Pro met
+  every detector budget (a 20-page scan in 35–43 s, peak memory 1.96–1.97
+  GiB, load under 1 s), while the 6 GB iPhone 12 Pro took about two minutes
+  for a 20-page scan against a 60-second budget
+  ([evidence](docs/evidence/mobile/2026-10-31/README.md)).
+
+- **iOS: fewer steps to share and restore.** Paste takes the text, title and
+  case in one sheet; Share opens the share sheet in one tap (a long press
+  shares a Markdown file) with the document's title as the preview; a
+  restored reply is styled like the review text, in the app and in Restore
+  with mdoc, and on the Reply tab the bar shares and copies the reply. A scan
+  that finds nothing says so ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
+  [UI survey](docs/evidence/ios-app/2026-10-31-ui-survey/README.md)).
+
+- **iOS: long jobs no longer crash the app on a device.** Downloading a
+  model, importing a document or finding names starts a background task,
+  whose handlers stopped the app on a real iPhone (Swift's main-actor
+  check on the scheduler's queue).
+
+- **iOS: calmer review text and Home.** Blank lines take a third of a line,
+  tables use a smaller monospaced font, and highlights are stronger in dark
+  mode. Home lists documents newest first with their case, and status is a
+  symbol and words, never a colour. The document's setup card has Not now,
+  Identities has Done and labelled states, and Settings names models by
+  what they do ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).
+
+- **iOS: polish defects fixed, and an app icon.** The candidate sheet loses
+  its empty band and is titled by category; no value is hyphenated at any
+  text size; Share, Copy and Paste reply stay on one line or stack; the setup
+  card shows as a card in light mode and promises only what the rules-only
+  tier finds. `just icon` now also makes the iOS icon, and `just ios-survey`
+  takes light and dark screenshots of every screen
+  ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).
+
+- **Backslash escapes dim like other markers.** With the caret on a
+  converted list number such as `1\.`, the editor now dims the backslash as
+  it dims `**` or `#`; away from the caret it still shows `1.` (ADR 0087).
+
+- **Menu bar shelf (macOS).** Settings › General › "Show mdoc in the menu
+  bar" adds a menu bar item listing pseudonymized documents to open, drag
+  into another app or Copy for AI, with Pseudonymize Clipboard and Restore
+  Clipboard for the current case. Only reviewed documents leave the shelf;
+  with it on, mdoc keeps running after its window closes
+  ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+
+- **The core builds for iOS.** `mdoc-import`, `mdoc-detect` and `mdoc-store`
+  build for iPhone and the Simulator, and the new `crates/mdoc-ffi` exposes
+  them to Swift through UniFFI; `just ios-core` assembles
+  `MdocCore.xcframework` with ONNX Runtime linked in and PDFium as an embedded
+  framework. A throwaway harness measured GLiNER2 and PP-OCR against the
+  mobile detector budgets; phone rows await the maintainer
+  ([ADR 0085](docs/adr/0085-mobile-apps.md),
+  [report](docs/evidence/mobile/2026-10-31/README.md)). Desktop is unchanged.
+
+- **Licence permission for app stores.** mdoc stays GPL-3.0-or-later and adds
+  a section 7 permission to ship through app stores
+  ([LICENSE-APP-STORES.md](LICENSE-APP-STORES.md),
+  [ADR 0086](docs/adr/0086-app-store-licence-permission.md)).
+
 - **Quiet macOS builds.** The vendored `gpui-pre-macos` crate no longer prints
   716 upstream `deprecated` warnings on every build; see
   [its patch notes](vendor/gpui-pre-macos/MDOC-PATCH.md).
