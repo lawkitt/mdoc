@@ -1,12 +1,10 @@
 ---
 status: known-flaw
-flaw: fullwidth-identifier-missed
-issue: 405
+flaw: ru-identifier-category
+issue: 380
 kind: docx
 source: hunt-r2
-expect: miss: IDENTITY "４６８２ ７３１６０４"
-expect: miss: TAX "５０８６１４７２９０３１"
-expect: miss: BANK "４０８１７８１０９００００７３１６４２５"
+expect: boundary: gold TAX "５０８６１４７２９０３１"; proposed IDENTITY "５０８６１４７２９０３１"
 ---
 # Приложение к заявлению о возврате образца ткани
 
