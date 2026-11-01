@@ -427,6 +427,8 @@ releases ([ADR 0082](docs/adr/0082-local-ci.md)).
 
 **Local status**: the `local/windows` or `local/macos` commit status local CI
 posts on a PR head; with `lint (ubuntu)`, the checks a code PR needs green.
+`local/ios` and `local/android` join them as
+[ADR 0091](docs/adr/0091-mobile-ci-and-releases.md) lands.
 
 **CI checkout**: local CI's own clone of the repository on a machine, separate
 from lanes and worktrees, with its own `target/`.
@@ -502,6 +504,30 @@ release after the first, to catch what simulators and emulators miss.
 **Real-device tiers** (Android): the emulator daily, Firebase Test Lab
 phones by RAM class, and a friend's phone weekly by hand ([ADR 0089](docs/adr/0089-android-app.md)).
 
-**Android job**: the part of a `local/windows` run that builds the Android
-core and app and runs the JVM parity tests and the emulator tests, when a
-PR touches the core or `apps/android` ([ADR 0089](docs/adr/0089-android-app.md)).
+**Android job**: the run that builds the Android core and app and runs the
+JVM parity tests and the emulator tests, when a PR touches the core or the
+android area: today inside `local/windows`, and as the `local/android`
+status once [ADR 0091](docs/adr/0091-mobile-ci-and-releases.md) lands, on
+the PC, the Mac by takeover, or hosted Linux ([ADR 0089](docs/adr/0089-android-app.md)).
+
+**iOS job**: the Mac's build of the iOS core and app with XCTest and
+XCUITest on the pinned Simulator, when a PR touches the core or the ios
+area; posted as `local/ios` ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+
+**Area**: one of desktop, core, ios and android, from the repository's one
+path table; a change runs the jobs of the areas it touches, and a core
+change runs all of them ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+
+**Takeover**: the Mac's local CI running a `local/android` job the PC left
+stuck for 15 minutes, before the hosted fallback
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+
+**Hosted mobile jobs**: the iOS job on a hosted `macos-26` runner and the
+Android job on hosted `ubuntu-latest` with KVM; they run only as the
+fallback, on Dependabot and fork PRs, and in release runs
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+
+**Mobile release draft**: where an agent-started mobile release stops: the
+build on TestFlight's internal testers, Play's internal track and a draft
+GitHub Release. Everything users can install is the maintainer's step
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).

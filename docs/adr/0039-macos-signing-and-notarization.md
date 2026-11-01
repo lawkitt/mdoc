@@ -1,6 +1,7 @@
 # macOS signing and notarization
 
-Status: Accepted, 2026-10-11.
+Status: Accepted, 2026-10-11. Amended by [ADR 0091](0091-mobile-ci-and-releases.md):
+the `release` environment admits only `v*` tags and `main`.
 
 ## Problem
 
@@ -39,7 +40,7 @@ individual Apple Developer Program membership (team `F33DLM8K53`) and a
   the identity, and `just smoke-package` checks the stapled tickets and
   `spctl` acceptance of the `.dmg` and `.app` before the OCR self-test. Test
   builds from `workflow_dispatch` stay ad-hoc signed unless **sign** is ticked,
-  which lets the whole signed path be tried before a tag.
+  which lets the whole signed path be tried before a tag, from `main`.
 - Windows signing is deferred: Microsoft's Trusted Signing limits individual
   eligibility, and SmartScreen's **Run anyway** is one click.
 

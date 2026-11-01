@@ -1,6 +1,9 @@
 # Android app
 
-Status: Accepted, 2026-10-31.
+Status: Accepted, 2026-10-31. Amended by [ADR 0091](0091-mobile-ci-and-releases.md):
+Google holds the app signing key, the Android scripts also run on macOS and
+Linux, and the Android job becomes the `local/android` status, as its rollout
+lands.
 
 ## Problem
 
@@ -116,7 +119,7 @@ invariants or with Google Play's rules. Findings:
   job) on Test Lab, or on a USB phone given its serial, by hand before
   every release after the first. `just android-survey <out>` takes every screen, light, dark and
   the largest font, on emulator phone and tablet; not in local CI.
-- **Local CI**: `local/windows` runs the Android job after lint and test
+- **Local CI** (becomes `local/android`, with a Mac takeover: [ADR 0091](0091-mobile-ci-and-releases.md)): `local/windows` runs the Android job after lint and test
   when a PR touches `crates/`, `Cargo.lock` or `apps/android/`: the core,
   the app, the JVM tests, then the emulator tests headless. The Mac keeps
   its Android `cargo check`.
@@ -125,7 +128,7 @@ invariants or with Google Play's rules. Findings:
   show with Share report. Nothing is sent on its own.
 - **Strings** in `strings.xml`, by hand; `scripts/mobile-strings.sh`
   reports English strings found on one platform only.
-- **Distribution**: application ID `io.github.lawkitt.mdoc`; one app
+- **Distribution** (signing key replaced by Play App Signing: [ADR 0091](0091-mobile-ci-and-releases.md)): application ID `io.github.lawkitt.mdoc`; one app
   signing key, kept outside the repository, signs the GitHub APK and is
   uploaded to Play App Signing, so users can move between channels. A
   personal Play account (lawkitt is not a legal entity), so production

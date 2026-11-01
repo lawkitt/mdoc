@@ -8,13 +8,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.." # repo root
 DEVICE="${1:-iPhone 17}"
 OUT="${2:?usage: scripts/ios-survey.sh <device> <output folder>}"
+RUNTIME=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env)
 RESULT="target/ios/survey-$(date +%s).xcresult"
 EXPORT="$(mktemp -d)"
 trap 'rm -rf "$EXPORT"; xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
 
 status=0
 TEST_RUNNER_MDOC_SURVEY=1 xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc \
-  -destination "platform=iOS Simulator,OS=26.1,name=$DEVICE" \
+  -destination "platform=iOS Simulator,OS=$RUNTIME,name=$DEVICE" \
   -derivedDataPath target/ios/DerivedData -resultBundlePath "$RESULT" \
   -only-testing:mdocUITests/SurveyUITests -quiet test || status=$?
 

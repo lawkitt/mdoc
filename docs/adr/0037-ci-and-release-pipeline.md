@@ -5,7 +5,9 @@ CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md);
 the pre-merge test gate moved to local CI by [ADR 0082](0082-local-ci.md);
 Windows artifacts (`.exe` only) and tag runs reusing `main`'s CI amended by
 [ADR 0083](0083-fewer-release-candidates.md); the `.exe`-only change is in
-effect, the tag-run change when its roadmap item lands.
+effect, the tag-run change when its roadmap item lands. Mobile releases
+(`ios-v*`, `android-v*` tags) and per-platform release environments are
+added by [ADR 0091](0091-mobile-ci-and-releases.md), in effect as its rollout lands.
 
 ## Problem
 

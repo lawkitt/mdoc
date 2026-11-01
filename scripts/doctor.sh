@@ -29,6 +29,10 @@ check cargo-nextest "$CARGO_NEXTEST_VERSION" "$(out cargo nextest --version)"
 check cargo-packager "$CARGO_PACKAGER_VERSION" "$(out cargo packager --version)"
 check actionlint "$ACTIONLINT_VERSION" "$(out actionlint --version)"
 check shfmt "$SHFMT_VERSION" "$(out shfmt --version)"
+# Xcode installs by hand; the iOS job needs exactly this one (ADR 0091).
+if [ "$(uname -s)" = Darwin ]; then
+  check xcode "$XCODE_VERSION" "$(out xcodebuild -version)"
+fi
 # Not pinned: `just lint-scripts` needs any shellcheck (Homebrew, apt, winget).
 if command -v shellcheck >/dev/null; then
   printf '  %-16s ok (any version)\n' shellcheck

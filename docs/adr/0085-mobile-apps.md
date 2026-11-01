@@ -4,7 +4,8 @@ Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
 when green, UI work runs beside the spike, native runtimes ship inside the
 app bundle, statically linked or as an embedded framework, the minimum is
 iOS 26, and the detector floor is 8 GB, measured. Android's start, minimum,
-scanner and testing are replaced by [ADR 0089](0089-android-app.md).
+scanner and testing are replaced by [ADR 0089](0089-android-app.md). Its CI
+and version rules are extended by [ADR 0091](0091-mobile-ci-and-releases.md).
 
 ## Problem
 
@@ -132,7 +133,7 @@ already lives in GUI-free Rust crates (ADR 0069).
   candidates, aliases and restored text against the desktop's goldens. A
   short XCUITest walks open → review → share → restore in the Simulator.
   The local CI iOS job runs both.
-- **Repository and CI.** In this repository: `crates/mdoc-ffi` (UniFFI
+- **Repository and CI** (how CI runs and releases: [ADR 0091](0091-mobile-ci-and-releases.md)). In this repository: `crates/mdoc-ffi` (UniFFI
   bindings), `apps/ios`, `apps/android`. Local CI (ADR 0082) gains an iOS
   job on the Mac runner (build and XCTest in the Simulator), run when a PR
   touches the core crates, `mdoc-ffi` or `apps/`; an Android job on ubuntu
