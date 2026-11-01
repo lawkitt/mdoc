@@ -6,7 +6,6 @@ kind: contract
 source: hunt-r3
 expect: false hit: ORG "Раскрывающая сторона" ×2
 expect: false hit: ORG "Получающая сторона" ×3
-expect: false hit: ORG "ИНН"
 ---
 # Соглашение о неразглашении технических сведений
 

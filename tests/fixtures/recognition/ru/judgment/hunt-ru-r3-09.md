@@ -5,7 +5,6 @@ issue: 378
 kind: judgment
 source: hunt-r3
 expect: false hit: ORG "Судебная коллегия"
-expect: false hit: ORG "Суд первой инстанции"
 expect: false hit: ORG "Коллегия"
 ---
 # Апелляционное определение по вопросу о судебных расходах
