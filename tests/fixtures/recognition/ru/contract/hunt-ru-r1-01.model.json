@@ -10,8 +10,8 @@
     {"start":1514,"end":1526,"label":"passport_number","score":0.99932283,"text":"46 82 731604"},
     {"start":2446,"end":2458,"label":"tax_id","score":0.94427973,"text":"508614729031"},
     {"start":2469,"end":2489,"label":"bank_account","score":0.84758973,"text":"40817810900004731608"},
-    {"start":3097,"end":3132,"label":"person","score":0.9736446,"text":"Э.-Р. М. Таль-Шнейдер"},
-    {"start":3173,"end":3189,"label":"person","score":0.8938666,"text":"директор"},
-    {"start":2797,"end":2806,"label":"organization","score":0.9349913,"text":"ГК РФ"}
+    {"start":3018,"end":3053,"label":"person","score":0.9677167,"text":"Э.-Р. М. Таль-Шнейдер"},
+    {"start":3094,"end":3110,"label":"person","score":0.9234544,"text":"директор"},
+    {"start":2869,"end":2878,"label":"organization","score":0.8191712,"text":"ГК РФ"}
   ]
 }
