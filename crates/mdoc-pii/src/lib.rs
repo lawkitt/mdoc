@@ -482,6 +482,11 @@ impl Review {
                 .iter()
                 .map(|g| g.recognizer == Some(Recognizer::Propagation))
                 .collect(),
+            whole: self
+                .variants()
+                .iter()
+                .map(|g| g.category == Category::CaseNumber)
+                .collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -624,6 +629,12 @@ impl Review {
         input.priority.extend(fresh.iter().map(|_| 0));
         input.mid_sentence.extend(fresh.iter().map(|_| false));
         input.unglued.extend(fresh.iter().map(|_| false));
+        input.whole.extend(fresh.iter().map(|text| {
+            selected.iter().any(|detection| {
+                detection.category == Category::CaseNumber
+                    && source[detection.range.clone()] == **text
+            })
+        }));
         input.originals.extend(fresh.iter().cloned());
         input.matcher = None;
         let unseen: HashSet<Arc<str>> = input

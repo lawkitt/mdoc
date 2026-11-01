@@ -728,6 +728,8 @@ mod tests {
             "In case 2026-03-12 is a non-business day, payment falls due.",
             "Case No. 12.03.2026",
             "Дело № 12",
+            "необходимо архивное дело 58239 из фонда",
+            "личное дело № 4521 работника",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }

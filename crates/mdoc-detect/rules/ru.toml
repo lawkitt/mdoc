@@ -62,7 +62,9 @@ value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabe
 min_digits = 4
 unless_guessed = ["DATE"]
 
-# "дело №", "дела №", "делу №": the number sign makes the word a label.
+# "дело №", "дела №", "делу №": the number sign makes the word a label. A
+# court case only: an archive, personnel or registry file ("архивное дело
+# 58239", "личное дело") is not one (issue #451).
 [[context]]
 category = "CASE"
 labels = ["дело", "дела", "делу"]
@@ -70,6 +72,10 @@ between = '[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
 value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
 min_digits = 4
 unless_guessed = ["DATE"]
+unless_after = [
+    "архивное", "архивного", "архивному", "архивным", "личное", "личного",
+    "личному", "кадровое", "кадрового", "учётное", "учетное", "номенклатурное",
+]
 
 # "дело", "дела", "делу" without "№" are also common words: only a number
 # with a separator, or of five digits or more, follows them as a case number
@@ -81,6 +87,10 @@ between = '[\p{Zs}\t:#]{1,4}'
 value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
 min_digits = 4
 unless_guessed = ["DATE"]
+unless_after = [
+    "архивное", "архивного", "архивному", "архивным", "личное", "личного",
+    "личному", "кадровое", "кадрового", "учётное", "учетное", "номенклатурное",
+]
 
 # Russian identifiers after their label (ADR 0092), whatever their checksum:
 # the guide marks invalid and damaged ones too. The structured rules propose
