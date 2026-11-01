@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary
 issue: 374
 kind: letter
 source: hunt-r1
-expect: boundary: gold ORG "ООО «Листовая пристань»"; proposed ORG "Листовая пристань"
 ---
 # Письмо о согласовании доступа к архивному шкафу
 

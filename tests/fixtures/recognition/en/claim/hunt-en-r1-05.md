@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary
 issue: 374
 kind: claim
 source: hunt-r1
-expect: boundary: gold ORG "Moth Lantern Events Ltd"; proposed ORG "Moth Lantern Events Ltd."
 ---
 ## Schedule accompanying a small claim
 

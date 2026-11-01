@@ -1,14 +1,13 @@
 ---
 status: known-flaw
-flaw: ru-address date-of-birth org-boundary public-body-org
-issue: 362 363 374 378
+flaw: ru-address date-of-birth public-body-org
+issue: 362 363 378
 kind: contract
 source: demo
 expect: miss: ADDRESS "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12"
 expect: miss: ADDRESS "197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3"
 expect: miss: DATE "14 марта 1988 г."
 expect: false hit: ORG "Дзержинский районный суд Санкт-Петербурга"
-expect: boundary: gold ORG "коллегия адвокатов «Елагин и партнёры»"; proposed ORG "Елагин и партнёры"
 ---
 # Соглашение об урегулировании
 

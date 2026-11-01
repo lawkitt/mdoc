@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: org-boundary person-particle-boundary
 issue: 374 403
 kind: docx
 source: hunt-r2
-expect: boundary: gold ORG "ООО «Льняная линия»"; proposed ORG "Льняная линия"
 ---
 # Акт передачи материалов для переплёта
 

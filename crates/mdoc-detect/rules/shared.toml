@@ -35,14 +35,22 @@
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
+# A `span` entry fixes a model span's boundaries, in this order:
+#   extend    = [regex…]  a span inside a match grows to the whole match
+#                         (the longest, when several hold it)
+#   trim      = […]       lowercase words that come off either edge, a
+#                         word's own final period with it, and a comma
+#                         before a trailing one
+#   strip_end = "…"       punctuation that comes off the end
+# A span left without its category's shape goes.
+#
 # A category with no entry takes any span. Manual selections try each
 # category's guesses in the order the categories first appear in the pack.
 
 # Context rules are per language.
 context = []
 
-# Span fixes, as [[span]] with `category` and `trim` words or `extend`
-# regexes. None yet.
+# Span fixes are per language.
 span = []
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.

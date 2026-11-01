@@ -102,6 +102,8 @@ struct SpanEntry {
     trim: Vec<String>,
     #[serde(default)]
     extend: Vec<String>,
+    #[serde(default)]
+    strip_end: String,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +119,56 @@ pub(crate) struct Pack {
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
+    spans: Vec<SpanFix>,
+}
+
+/// A boundary fix for one category's spans.
+struct SpanFix {
+    category: Category,
+    /// Lowercase words that come off either edge ("ms", "kc").
+    trim: Vec<String>,
+    /// A span inside a match grows to the whole match.
+    extend: Vec<Regex>,
+    /// Characters that come off the end (a sentence's period).
+    strip_end: String,
+}
+
+impl SpanFix {
+    /// `range` without its `trim` words at either edge (a comma before a
+    /// trailing one goes with it) and its `strip_end` characters.
+    fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+        let listed = |word: &str| {
+            let word = word.strip_suffix('.').unwrap_or(word).to_lowercase();
+            self.trim.contains(&word)
+        };
+        loop {
+            let text = &source[range.clone()];
+            let lead = text.len() - text.trim_start().len();
+            let tail = text.len() - text.trim_end().len();
+            range = range.start + lead..range.end - tail;
+            let text = &source[range.clone()];
+            if let Some((first, rest)) = text.split_once(char::is_whitespace)
+                && listed(first)
+            {
+                range.start = range.end - rest.len();
+                continue;
+            }
+            if let Some((rest, last)) = text.rsplit_once(char::is_whitespace)
+                && listed(last)
+            {
+                range.end = range.start + rest.trim_end_matches([',', ' ']).len();
+                continue;
+            }
+            if let Some(c) = text.chars().next_back()
+                && text.len() > c.len_utf8()
+                && self.strip_end.contains(c)
+            {
+                range.end -= c.len_utf8();
+                continue;
+            }
+            return range;
+        }
+    }
 }
 
 /// A label then its value: the value's capture group 1 is proposed.
@@ -156,6 +208,7 @@ impl Pack {
             never: Vec::new(),
             shapes: Vec::new(),
             contexts: Vec::new(),
+            spans: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -329,16 +382,34 @@ impl Pack {
             }
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
-                category(&entry.category).map_err(at)?;
-                if entry.trim.is_empty() && entry.extend.is_empty() {
-                    return Err(at("needs trim words or extend patterns".into()));
+                let category = category(&entry.category).map_err(at)?;
+                if entry.trim.is_empty() && entry.extend.is_empty() && entry.strip_end.is_empty() {
+                    return Err(at("needs trim words, extend patterns or strip_end".into()));
                 }
-                if entry.trim.iter().any(|word| word.trim().is_empty()) {
-                    return Err(at("a blank trim word".into()));
+                for word in &entry.trim {
+                    if word.is_empty() || word.chars().any(char::is_whitespace) {
+                        return Err(at(format!("{word:?} is not one word")));
+                    }
+                    if *word != word.to_lowercase() {
+                        return Err(at(format!("{word:?} is not lowercase")));
+                    }
                 }
-                for pattern in &entry.extend {
-                    Regex::new(pattern).map_err(|e| at(e.to_string()))?;
+                if entry.strip_end.chars().any(char::is_alphanumeric) {
+                    return Err(at("strip_end takes punctuation only".into()));
                 }
+                let extend = entry
+                    .extend
+                    .iter()
+                    .map(|pattern| {
+                        Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                pack.spans.push(SpanFix {
+                    category,
+                    trim: entry.trim.clone(),
+                    extend,
+                    strip_end: entry.strip_end.clone(),
+                });
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -387,6 +458,41 @@ impl Pack {
                     .filter(|word| !word.is_empty())
                     .any(|word| pattern.is_match(word) && !self.never(word))
             })
+    }
+
+    /// The `span` fixes on `detections` in `source`: each grows to an
+    /// `extend` match it lies inside, loses `trim` words at either edge and
+    /// `strip_end` characters at its end. A span left without its shape
+    /// goes.
+    pub(crate) fn fix_spans(&self, source: &str, detections: &mut Vec<Detection>) {
+        for fix in &self.spans {
+            if !detections.iter().any(|d| d.category == fix.category) {
+                continue;
+            }
+            let matches: Vec<_> = fix
+                .extend
+                .iter()
+                .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
+                .collect();
+            for detection in detections.iter_mut().filter(|d| d.category == fix.category) {
+                let range = &mut detection.range;
+                if let Some(grown) = matches
+                    .iter()
+                    .filter(|m| m.start <= range.start && range.end <= m.end)
+                    .max_by_key(|m| m.len())
+                {
+                    *range = grown.clone();
+                }
+                *range = fix.trimmed(source, range.clone());
+            }
+        }
+        detections.retain(|d| {
+            !d.range.is_empty()
+                && self.identifying(
+                    &mdoc_pii::view::decoded(&source[d.range.clone()]),
+                    d.category,
+                )
+        });
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -849,6 +955,75 @@ mod tests {
         );
     }
 
+    fn fixed(source: &str, spans: &[(&str, Category)]) -> Vec<String> {
+        let mut detections: Vec<Detection> = spans
+            .iter()
+            .map(|(text, category)| {
+                let start = source.find(text).unwrap();
+                Detection {
+                    range: start..start + text.len(),
+                    category: *category,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                }
+            })
+            .collect();
+        pack().fix_spans(source, &mut detections);
+        detections
+            .into_iter()
+            .map(|d| source[d.range].to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn span_fixes_trim_titles_keep_legal_forms_and_end_before_the_period() {
+        // Titles and post-nominals off a person (#382); initials keep theirs.
+        assert_eq!(
+            fixed(
+                "Ms Bennett met Dr. Ysolde Qhenn, KC and Jorin P.",
+                &[
+                    ("Ms Bennett", Category::Person),
+                    ("Dr. Ysolde Qhenn, KC", Category::Person),
+                    ("Jorin P.", Category::Person),
+                ]
+            ),
+            ["Bennett", "Ysolde Qhenn", "Jorin P."]
+        );
+        assert_eq!(
+            fixed(
+                "Г-жа Павлова пришла.",
+                &[("Г-жа Павлова", Category::Person)]
+            ),
+            ["Павлова"]
+        );
+        // A title alone keeps no span.
+        assert!(fixed("Dear Ms,", &[("Ms", Category::Person)]).is_empty());
+        // An organization's legal form and quotes (#374), not the period.
+        assert_eq!(
+            fixed(
+                "Истец: ООО «Северный Вектор», ответчик АО \"Ёлка\". Signed by Acme Ltd.",
+                &[
+                    ("Северный Вектор", Category::Organization),
+                    ("Ёлка", Category::Organization),
+                    ("Acme Ltd.", Category::Organization),
+                ]
+            ),
+            ["ООО «Северный Вектор»", "АО \"Ёлка\"", "Acme Ltd"]
+        );
+        // Quotes without a legal form, and a person, stay as they are.
+        assert_eq!(
+            fixed(
+                "Роман «Кедровый свет» и «Вера Снегирь»",
+                &[("Вера Снегирь", Category::Person)]
+            ),
+            ["Вера Снегирь"]
+        );
+        assert_eq!(
+            fixed("журнал «Север»", &[("Север", Category::Organization)]),
+            ["Север"]
+        );
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -888,6 +1063,15 @@ mod tests {
                 "capture",
             ),
             ("[[span]]\ncategory = \"PERSON\"", "trim"),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim = [\"Ms\"]",
+                "not lowercase",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nstrip_end = \"a.\"",
+                "punctuation only",
+            ),
+            ("[[span]]\ncategory = \"ORG\"\nextend = ['(']", "span #1"),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
                 "[[never]]\nmatch = \"whole\"\nwords = [\"a\"]\ntypo = 1",

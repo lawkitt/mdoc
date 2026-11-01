@@ -1,12 +1,11 @@
 ---
 status: known-flaw
-flaw: role-as-name title-in-person
-issue: 385 382
+flaw: role-as-name
+issue: 385
 kind: contract
 source: hunt-r1
 expect: false hit: PERSON "Owner" ×5
 expect: false hit: PERSON "Repairer" ×5
-expect: boundary: gold PERSON "Neri-Lu O'Quen"; proposed PERSON "Ms Neri-Lu O'Quen"
 ---
 # Workshop repair licence
 
