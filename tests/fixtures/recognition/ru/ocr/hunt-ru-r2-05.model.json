@@ -1,0 +1,7 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":2074,"end":2084,"label":"address","score":0.61474097,"text":"Адрес"}
+  ]
+}
