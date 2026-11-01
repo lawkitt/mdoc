@@ -77,6 +77,10 @@ struct ContextEntry {
     /// Categories whose guesses, taking the value, rule it out (a date).
     #[serde(default)]
     unless_guessed: Vec<String>,
+    /// Categories one of whose guesses must take the value (a date of birth
+    /// must look like a date).
+    #[serde(default)]
+    only_guessed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +135,7 @@ struct Context {
     min_digits: usize,
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
+    only_guessed: Vec<Category>,
 }
 
 struct Never {
@@ -282,8 +287,9 @@ impl Pack {
                     })
                     .collect();
                 let pattern = format!(
-                    // Case is ignored in the label only.
-                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))\b",
+                    // Case is ignored in the label only. Where the value
+                    // ends is checked after matching ("1988 г." ends in a dot).
+                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))",
                     labels.join("|"),
                     rust_classes(&entry.between),
                     rust_classes(&entry.value),
@@ -307,6 +313,12 @@ impl Pack {
                     .map(|token| self::category(token))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(at)?;
+                let only_guessed = entry
+                    .only_guessed
+                    .iter()
+                    .map(|token| self::category(token))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 pack.contexts.push(Context {
                     category,
                     pattern,
@@ -325,6 +337,7 @@ impl Pack {
                     min_digits: entry.min_digits,
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
+                    only_guessed,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -398,13 +411,19 @@ impl Pack {
             .flat_map(|context| {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
+                    // The value ends where a word does ("1234_5678" is one word).
+                    let ends = !source[value.end()..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
                     let before = source[..found.get(0)?.start()]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
-                    if context.unless_after.contains(&before)
+                    if !ends
+                        || context.unless_after.contains(&before)
                         || !self.takes(context, value.as_str())
                     {
                         return None;
@@ -422,13 +441,15 @@ impl Pack {
         found
     }
 
-    /// Whether `context` proposes `value`: enough digits, and no guess that
-    /// rules it out (a date).
+    /// Whether `context` proposes `value`: enough digits, no guess that rules
+    /// it out (a date), and the guess it needs if it names one (a date of
+    /// birth must look like a date).
     fn takes(&self, context: &Context, value: &str) -> bool {
+        let guessed = self.guess(value);
         value.chars().filter(char::is_ascii_digit).count() >= context.min_digits
-            && !self
-                .guess(value)
-                .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+            && !guessed.is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+            && (context.only_guessed.is_empty()
+                || guessed.is_some_and(|guessed| context.only_guessed.contains(&guessed)))
     }
 
     /// Values in Markdown table columns whose header cell is a label ("| ИНН
@@ -730,6 +751,7 @@ mod tests {
             "Дело № 12",
             "необходимо архивное дело 58239 из фонда",
             "личное дело № 4521 работника",
+            "Case No. 1234_5678. See section 1234.",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
@@ -847,6 +869,80 @@ mod tests {
             shown("Claim No 6001842/2026. The claim 6001842/2026 is settled under article 309."),
             ["6001842/2026", "6001842/2026"]
         );
+    }
+
+    /// A date in a personal context is proposed as Date, the label left out
+    /// (#363); every other date stays (ADR 0092).
+    #[test]
+    fn dates_of_birth_are_proposed_and_other_dates_stay() {
+        let dates = |source: &str| -> Vec<String> {
+            pack()
+                .context(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Date)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, date) in [
+            (
+                "Ms Maya Bennett, born 14 March 1988, National",
+                "14 March 1988",
+            ),
+            ("born on 2 May 1990.", "2 May 1990"),
+            ("**DOB:** 23 September 1991. That", "23 September 1991"),
+            ("Date of birth: March 4, 1979;", "March 4, 1979"),
+            ("дата рождения 14 марта 1988 г., СНИЛС", "14 марта 1988 г."),
+            (
+                "Дата рождения: 19 февраля 1987 года. В",
+                "19 февраля 1987 года",
+            ),
+            ("Иванов И. И., род. 14.03.1988, паспорт", "14.03.1988"),
+            ("д.р. 01.02.1990", "01.02.1990"),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            ("DOB:\n14/03/1988", "14/03/1988"),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            (
+                "DOB:
+14/03/1988",
+                "14/03/1988",
+            ),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
+        ] {
+            assert_eq!(dates(source), [date], "{source}");
+        }
+        for source in [
+            "Signed on 14 March 2026 in Bristol.",
+            "The hearing is listed for 12.03.2026.",
+            "She was born in Leeds in 1988.",
+            "born 14 Marchmont 1988",
+            "Род деятельности: 2026 год",
+            "Adobe 14 March 1988",
+        ] {
+            assert!(dates(source).is_empty(), "{source}");
+        }
+    }
+
+    /// A birth date's repeats join it, like any value's: leaving one would
+    /// show the AI the date of birth. A different date stays.
+    #[test]
+    fn a_birth_dates_repeats_join_it_and_other_dates_stay() {
+        let source = "DOB: 14/03/1988. Signed 14/03/1988, due 01/04/2026.";
+        let dates: Vec<_> = crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "DATE")
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
     }
 
     #[test]

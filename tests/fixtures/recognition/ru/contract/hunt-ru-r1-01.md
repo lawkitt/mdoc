@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary public-body-org ru-address date-of-birth
-issue: 374 378 362 363
+flaw: org-boundary public-body-org ru-address
+issue: 374 378 362
 kind: contract
 source: hunt-r1
-expect: miss: DATE "19 февраля 1987 года"
 expect: miss: ADDRESS "ул. Тихих фонарей, д. 83, кв. 16"
 expect: false hit: ORG "ГК РФ"
 expect: boundary: gold ORG "ООО «Переплётная орбита»"; proposed ORG "Переплётная орбита"

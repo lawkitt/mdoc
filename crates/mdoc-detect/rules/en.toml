@@ -90,3 +90,15 @@ value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabe
 min_digits = 4
 unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
 unless_guessed = ["DATE"]
+
+# Dates of birth (ADR 0092): a date after born, DOB or date of birth is a
+# personal date ("born 14 March 1988", "**DOB:** 23 September 1991"). Every
+# other date stays: signing, deadlines, hearings. The value must be one the
+# DATE guesses take. The label may be in the cell before or on the line
+# before ("| DOB | 14/03/1988 |", "DOB:" then the date on its own line).
+[[context]]
+category = "DATE"
+labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
+between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
+only_guessed = ["DATE"]

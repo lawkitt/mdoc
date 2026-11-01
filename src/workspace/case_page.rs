@@ -943,18 +943,17 @@ impl Workspace {
                 div().flex().flex_wrap().gap_2().children(
                     mdoc_pii::Category::ALL
                         .into_iter()
-                        .filter(|category| {
-                            !matches!(
-                                category,
-                                mdoc_pii::Category::Date | mdoc_pii::Category::Other
-                            )
-                        })
+                        .filter(|category| *category != mdoc_pii::Category::Other)
                         .map(|category| {
                             let id = id.clone();
                             let on = !case.skipped().contains(&category);
                             self.page_control(
                                 SharedString::from(format!("page-category-{}", category.token())),
-                                format!("{} {}", if on { "✓" } else { "○" }, category.label()),
+                                format!(
+                                    "{} {}",
+                                    if on { "✓" } else { "○" },
+                                    category.detection_label()
+                                ),
                                 cx,
                             )
                             .role(gpui::Role::CheckBox)

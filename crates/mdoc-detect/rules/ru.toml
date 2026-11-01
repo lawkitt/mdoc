@@ -120,3 +120,15 @@ labels = ["код карточки", "номер карточки"]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '\p{Alphabetic}{2,}-?\d{4,}'
 min_digits = 4
+
+# Dates of birth (ADR 0092): a date after "дата рождения", "д.р.", "род.",
+# "родился" is a personal date ("дата рождения 14 марта 1988 г.",
+# "Дата рождения: 19 февраля 1987 года"). Every other date stays. The value
+# must be one the DATE guesses take, a quoted day too ("«14» марта 1988 г."),
+# and the label may be in the cell before or on the line before.
+[[context]]
+category = "DATE"
+labels = ["дата рождения", "даты рождения", "д.р", "род", "родился", "родилась"]
+between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
+only_guessed = ["DATE"]

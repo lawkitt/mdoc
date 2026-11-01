@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: person-particle-boundary date-of-birth short-person-name-missed
-issue: 403 363 404
+flaw: person-particle-boundary short-person-name-missed
+issue: 403 404
 kind: power-of-attorney
 source: hunt-r2
-expect: miss: DATE "23 июня 1989 года"
 expect: miss: PERSON "Лю Бо"
 ---
 # Доверенность на получение пробного тиража

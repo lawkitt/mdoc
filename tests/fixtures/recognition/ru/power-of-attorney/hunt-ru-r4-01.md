@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: person-prefix-boundary ru-address date-of-birth
-issue: 391 362 363
+flaw: person-prefix-boundary ru-address
+issue: 391 362
 kind: power-of-attorney
 source: hunt-r4
-expect: miss: DATE "16 июля 1986 года"
 expect: miss: ADDRESS "ул. Складных вееров, д. 58, кв. 12"
 expect: boundary: gold PERSON "Лидией Игоревной Брюн"; proposed PERSON "Лидией Игоревной", PERSON "Брюн"
 ---
