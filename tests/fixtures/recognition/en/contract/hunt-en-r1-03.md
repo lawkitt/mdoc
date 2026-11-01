@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: role-as-name
 issue: 385
 kind: contract
 source: hunt-r1
-expect: false hit: PERSON "Assignee" ×3
 ---
 ## Assignment of a design licence
 

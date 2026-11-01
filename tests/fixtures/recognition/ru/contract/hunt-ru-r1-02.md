@@ -1,13 +1,10 @@
 ---
 status: known-flaw
-flaw: public-body-org defined-term-org category-word-org
-issue: 378 390 379
+flaw: defined-term-org category-word-org
+issue: 390 379
 kind: contract
 source: hunt-r1
-expect: false hit: ORG "Общество"
 expect: false hit: ORG "Комиссия"
-expect: false hit: ORG "Министерства юстиции Российской Федерации"
-expect: false hit: ORG "Организация"
 ---
 # Регламент согласования проекта договора
 

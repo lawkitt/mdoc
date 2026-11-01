@@ -27,11 +27,16 @@ trim = ["г-н", "г-жа", "господин", "госпожа"]
 match = "plural"
 words = ["г-н", "г-жа", "господин", "госпожа", "гражданин", "гражданка", "муж", "жена"]
 
+# Role stems take up to three letters of ending, but never a surname's
+# (-ов, -ев, -ин and their forms): "Подрядчиков", "Супругов", "Директоров"
+# alone are surnames (issue #450).
+#
 # Contract parties, as stems with up to three letters of ending
 # ("Заказчику", "Исполнителя", "Стороны").
 [[never]]
 match = "stem"
 ending = 3
+not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
 words = [
     "заказчик", "исполнител", "подрядчик", "арендатор", "арендодател",
     "покупател", "продав", "работник", "работодател", "сторон",
@@ -41,13 +46,67 @@ words = [
 [[never]]
 match = "stem"
 ending = 3
+not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
 words = ["истец", "истц", "ответчик", "заявител"]
 
 # Representatives and other roles ("Представителя", "Супруга", "Директору").
 [[never]]
 match = "stem"
 ending = 3
-words = ["представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор"]
+not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+words = [
+    "представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор",
+    "эксперт", "секретар", "свидетел", "собственник", "владел", "поставщик",
+]
+
+# Defined terms: "Общество", "Компания", "Организация" stand for a party
+# named elsewhere (issue #390). Their case forms are listed whole, so
+# surnames such as "Компаниец" stay.
+[[never]]
+match = "whole"
+words = [
+    "общество", "общества", "обществу", "обществом", "обществе", "компания",
+    "компании", "компанию", "компанией", "организация", "организации",
+    "организацию", "организацией",
+]
+
+# Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
+# name no one (issue #379). Case forms are listed whole, so "Банков" and
+# "Адресат" stay.
+[[never]]
+match = "whole"
+words = [
+    "снилс", "инн", "огрн", "огрнип", "кпп", "бик", "телефон", "телефона",
+    "телефону", "телефоном", "телефоне", "адрес", "адреса", "адресу",
+    "адресом", "адресе", "паспорт", "паспорта", "паспорту", "паспортом",
+    "паспорте", "банк", "банка", "банку", "банком", "банке",
+]
+
+# Words that make a job title of a role: "Независимый эксперт", "Главный
+# бухгалтер" name no one (guide rule 8). Listed whole.
+[[never]]
+match = "whole"
+words = [
+    "независимый", "независимого", "независимому", "главный", "главного",
+    "главному", "старший", "старшего", "старшему", "генеральный",
+    "генерального", "генеральному", "ведущий", "ведущего", "ведущему",
+]
+
+# Codes of law and the country: "ГК РФ", "ГПК РФ" are references, not
+# organizations (issue #378).
+[[never]]
+match = "whole"
+words = ["гк", "рф", "гпк", "апк", "ук", "коап", "нк", "тк"]
+
+# Courts and public bodies are never marked (the fixture guide's rule 8):
+# an organization span with one of these stems anywhere is dropped
+# ("Районный суд", "Верховный Суд Российской Федерации", "Министерства
+# юстиции"; issue #378).
+[[never]]
+match = "stem"
+ending = 3
+words = ["суд", "министерств", "прокуратур", "департамент", "администраци", "инспекци"]
+anywhere_in = ["ORG"]
 
 # Russian legal forms mark a manual selection as an organization
 # ("ООО «Ромашка»"). Matched as written: ASCII case folding leaves Cyrillic

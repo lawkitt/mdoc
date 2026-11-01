@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: category-word-org
 issue: 379
 kind: ocr
 source: hunt-r2
-expect: false hit: ADDRESS "Адрес"
 ---
 ПАМЯТКА П0 ПРИЁМКЕ УПАКОВКИ        копия / л. 1
 

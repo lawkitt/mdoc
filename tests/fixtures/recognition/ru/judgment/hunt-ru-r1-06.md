@@ -1,14 +1,9 @@
 ---
-status: known-flaw
-flaw: public-body-org role-as-name
-issue: 378 385
+status: pass
+flaw:
+issue:
 kind: judgment
 source: hunt-r1
-expect: false hit: ORG "Районный суд"
-expect: false hit: PERSON "Эксперт"
-expect: false hit: PERSON "Эксперту"
-expect: false hit: ORG "Верховный Суд Российской Федерации"
-expect: false hit: PERSON "Секретарь"
 ---
 # Определение о подготовке дела к разбирательству
 

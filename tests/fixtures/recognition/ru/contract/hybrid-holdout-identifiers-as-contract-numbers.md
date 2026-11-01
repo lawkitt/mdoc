@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: public-body-org
 issue: 378
 kind: contract
 source: import
-expect: false hit: ORG "ГК РФ"
 ---
 Договор № 5401000039, цена 660100000231 рублей. Срок 12.10.2026; ст. 309 ГК РФ; приложение 112-233-445 95.
 Платёжное поручение № 044525593.

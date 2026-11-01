@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: category-word-org public-body-org
 issue: 379 378
 kind: letter
 source: hunt-r5
-expect: false hit: ORG "ИНН"
-expect: false hit: ORG "ГК РФ"
 ---
 # Пересланное служебное сообщение о комплекте приложений
 

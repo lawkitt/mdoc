@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: defined-term-org
 issue: 390
 kind: docx
 source: hunt-r2
-expect: false hit: ORG "Provider" ×3
 ---
 ## Record correction agreement
 

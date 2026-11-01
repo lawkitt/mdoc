@@ -46,6 +46,18 @@ struct NeverEntry {
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
     words: Vec<String>,
+    /// Categories whose model span ending in one of these words is a role,
+    /// not a name ("Technical Reviewer", "Costs Officer").
+    #[serde(default)]
+    last_word_of: Vec<String>,
+    /// Categories whose model span with one of these words anywhere is
+    /// never proposed: courts and public bodies ("County Court").
+    #[serde(default)]
+    anywhere_in: Vec<String>,
+    /// For `stem`: endings that never count, because they make a surname
+    /// of the stem ("Подрядчиков", "Директоров").
+    #[serde(default)]
+    not_endings: Vec<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
@@ -198,6 +210,24 @@ struct Never {
     form: Form,
     ending: usize,
     words: Vec<String>,
+    last_word_of: Vec<Category>,
+    anywhere_in: Vec<Category>,
+    not_endings: Vec<String>,
+}
+
+impl Never {
+    /// Whether lowercase `word` is one of this entry's words.
+    fn has(&self, word: &str) -> bool {
+        self.words.iter().any(|listed| match self.form {
+            Form::Whole => word == listed,
+            Form::Plural => word == listed || word.strip_suffix('s') == Some(listed),
+            Form::Stem => word.strip_prefix(listed.as_str()).is_some_and(|ending| {
+                ending.chars().count() <= self.ending
+                    && ending.chars().all(char::is_alphabetic)
+                    && !self.not_endings.iter().any(|not| not == ending)
+            }),
+        })
+    }
 }
 
 struct Shape {
@@ -230,6 +260,9 @@ impl Pack {
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
+                if entry.form != Form::Stem && !entry.not_endings.is_empty() {
+                    return Err(at("only a stem takes not_endings".into()));
+                }
                 if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
@@ -244,10 +277,20 @@ impl Pack {
                         return Err(at(format!("{word:?} is listed twice")));
                     }
                 }
+                let tokens = |tokens: &[String]| {
+                    tokens
+                        .iter()
+                        .map(|token| category(token))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(at)
+                };
                 pack.never.push(Never {
                     form: entry.form,
                     ending,
                     words: entry.words,
+                    last_word_of: tokens(&entry.last_word_of)?,
+                    anywhere_in: tokens(&entry.anywhere_in)?,
+                    not_endings: entry.not_endings,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {
@@ -442,30 +485,43 @@ impl Pack {
     /// names anyone on its own, ignoring case.
     pub(crate) fn never(&self, word: &str) -> bool {
         let word = word.to_lowercase();
-        self.never.iter().any(|entry| {
-            entry.words.iter().any(|listed| match entry.form {
-                Form::Whole => word == *listed,
-                Form::Plural => word == *listed || word.strip_suffix('s') == Some(listed),
-                Form::Stem => word.strip_prefix(listed.as_str()).is_some_and(|ending| {
-                    ending.chars().count() <= entry.ending
-                        && ending.chars().all(char::is_alphabetic)
-                }),
-            })
-        })
+        self.never
+            .iter()
+            // Public-body words only veto spans that contain them: "Суднев"
+            // alone is a surname, not a court.
+            .filter(|entry| entry.anywhere_in.is_empty())
+            .any(|entry| entry.has(&word))
     }
 
-    /// Whether a model span has its category's `shape`.
+    /// Whether a model span has its category's `shape` and is not a role
+    /// phrase or public body by the `never` section.
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
+        let words = || {
+            text.split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                .filter(|word| !word.is_empty())
+        };
+        let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
+        // A legal form makes it a company, whatever else it says ("Garden
+        // Court Ltd").
+        let company = self.legal_form(text);
+        let vetoed = self.never.iter().any(|entry| {
+            (!company
+                && entry.anywhere_in.contains(&category)
+                && lowercase.iter().any(|w| entry.has(w)))
+                || (entry.last_word_of.contains(&category)
+                    && lowercase.last().is_some_and(|w| entry.has(w)))
+        });
+        if vetoed {
+            return false;
+        }
         let Some(shape) = self.shapes.iter().find(|s| s.category == category) else {
             return true;
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
             && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
             && shape.word.as_ref().is_none_or(|pattern| {
-                text.split_whitespace()
-                    .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
-                    .filter(|word| !word.is_empty())
-                    .any(|word| pattern.is_match(word) && !self.never(word))
+                words().any(|word| pattern.is_match(word) && !self.never(word))
             })
     }
 
@@ -606,6 +662,22 @@ impl Pack {
             }
         }
         found
+    }
+
+    /// Whether `text` has an organization's legal form (the ORG shape's
+    /// `guess_words`: Ltd, LLC, ООО…).
+    fn legal_form(&self, text: &str) -> bool {
+        self.shapes
+            .iter()
+            .filter(|shape| shape.category == Category::Organization)
+            .any(|shape| {
+                text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+                    shape
+                        .guess_words
+                        .iter()
+                        .any(|form| form.eq_ignore_ascii_case(word))
+                })
+            })
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -960,7 +1032,8 @@ mod tests {
         for text in [
             "Harrow & Finch Ltd",
             "Copper Kite Metrology LLP",
-            "Ofcom",
+            // One title-case word; Ofcom is a public body, never marked (#378).
+            "Vantora",
             "Elm Row Legal LLP",
             "Переплётная орбита",
             "Sable Chime Music Ltd",
@@ -1131,6 +1204,69 @@ mod tests {
             ),
             ["Smith J.", "Northbridge Legal Ltd"]
         );
+    }
+
+    /// Roles, role phrases, category words, defined terms and public bodies
+    /// are never names (#378, #379, #385, #390); names beside them still are.
+    #[test]
+    fn roles_category_words_and_public_bodies_are_never_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("Owner", Category::Person),
+            ("Assignee", Category::Person),
+            ("Technical Reviewer", Category::Person),
+            ("Эксперту", Category::Person),
+            ("Секретарь", Category::Person),
+            ("Costs Officer", Category::Organization),
+            ("Administrative Team", Category::Organization),
+            ("Provider", Category::Organization),
+            ("Общество", Category::Organization),
+            ("Email", Category::Organization),
+            ("Bank", Category::Organization),
+            ("СНИЛС", Category::Organization),
+            ("ГК РФ", Category::Organization),
+            ("Address", Category::Address),
+            ("County Court", Category::Organization),
+            ("Ministry of Justice", Category::Organization),
+            ("Employment Tribunal", Category::Organization),
+            ("Ofcom", Category::Organization),
+            ("Верховный Суд Российской Федерации", Category::Organization),
+            ("Министерства юстиции", Category::Organization),
+            ("Addresses", Category::Address),
+            ("Technical Secretaries", Category::Person),
+            ("Ministries of Justice", Category::Organization),
+            ("Managing Director", Category::Person),
+            ("Независимый эксперт", Category::Person),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("Peter Lord", Category::Person),
+            ("Иван Суднев", Category::Person),
+            ("Barclays Bank", Category::Organization),
+            ("Acme Company", Category::Organization),
+            (
+                "Общество с ограниченной ответственностью «Ромашка»",
+                Category::Organization,
+            ),
+            ("14 Fennel Court, Lincoln", Category::Address),
+            ("Garden Court Ltd", Category::Organization),
+            ("Northbridge Department Store Ltd", Category::Organization),
+            ("Cedar Arts Council", Category::Organization),
+            ("ООО «Судак»", Category::Organization),
+            ("John Clerk", Category::Person),
+            ("Суднев", Category::Person),
+            ("Банков", Category::Person),
+            ("Компаниец", Category::Person),
+            ("Подрядчиков", Category::Person),
+            ("Супругов", Category::Person),
+            ("Директоров", Category::Person),
+            ("Истцова", Category::Person),
+            ("Banks", Category::Person),
+            ("Адресат", Category::Organization),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
     }
 
     #[test]

@@ -1,13 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: category-word-org
 issue: 379
 kind: tables
 source: hunt-r2
-expect: false hit: ORG "Organisation"
-expect: false hit: ADDRESS "Address"
-expect: false hit: ORG "Email"
-expect: false hit: ORG "Bank"
 ---
 # Technical annex: packing acceptance criteria
 
