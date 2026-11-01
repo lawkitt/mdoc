@@ -6,7 +6,6 @@ kind: power-of-attorney
 source: hunt-r2
 expect: miss: DATE "23 июня 1989 года"
 expect: miss: PERSON "Лю Бо"
-expect: boundary: gold PERSON "де Лаваль"; proposed PERSON "Лаваль"
 ---
 # Доверенность на получение пробного тиража
 

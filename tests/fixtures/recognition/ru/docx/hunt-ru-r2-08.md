@@ -5,7 +5,6 @@ issue: 374 403
 kind: docx
 source: hunt-r2
 expect: boundary: gold ORG "ООО «Льняная линия»"; proposed ORG "Льняная линия"
-expect: boundary: gold PERSON "де Вос"; proposed PERSON "Вос"
 ---
 # Акт передачи материалов для переплёта
 
