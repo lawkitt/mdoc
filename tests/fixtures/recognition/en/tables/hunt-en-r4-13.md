@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: bank-slash-filter
 issue: 425
 kind: tables
 source: hunt-r4
-expect: miss: BANK "62-18-43/00492716"
-expect: boundary: gold BANK "38-47-21/00631859"; proposed PHONE "00631859"
 ---
 # Reimbursement schedule with shared appointment details
 

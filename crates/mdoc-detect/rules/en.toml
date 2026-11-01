@@ -112,3 +112,26 @@ value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabe
 min_digits = 4
 unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
 unless_guessed = ["DATE"]
+
+# A bank account after its label, whatever the model guessed: "**Bank
+# account:** 47-29-16/00318572" (sort code and account number, a slash or a
+# space between), an IBAN, or a run of 8–20 digits. The label decides, so a
+# slash is fine here though the BANK shape refuses it in an unlabelled span.
+[[context]]
+category = "BANK"
+labels = ["bank account", "account number", "account no", "sort code", "iban"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}-\d{2}-\d{2}(?:[/\p{Zs}]\d{6,10})?|[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d{8,20}'
+min_digits = 6
+
+# A staff or member ID after its label, even one of letters only
+# ("**Staff ID:** VELK-QUEN", "Employee ID: TERN-WISP"): capitals or digits
+# in hyphenated parts, or letters then digits. Never a person.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "staff id", "staff number", "employee id", "employee number", "member id",
+    "membership number", "badge number",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
