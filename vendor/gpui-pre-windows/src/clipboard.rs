@@ -37,6 +37,21 @@ static CLIPBOARD_PNG_FORMAT: LazyLock<u32> =
 static CLIPBOARD_JPG_FORMAT: LazyLock<u32> =
     LazyLock::new(|| register_clipboard_format(windows::core::w!("JFIF")));
 
+// mdoc patch: a string whose metadata is `CONCEALED_CLIPBOARD_METADATA`
+// (mdoc's restored text) also carries these formats, so clipboard history,
+// cloud clipboard sync and clipboard monitors skip it.
+/// The metadata that marks a copied string as concealed and transient.
+pub const CONCEALED_CLIPBOARD_METADATA: &str = r#"{"mdoc":"concealed"}"#;
+static EXCLUDE_FROM_MONITORS_FORMAT: LazyLock<u32> = LazyLock::new(|| {
+    register_clipboard_format(windows::core::w!(
+        "ExcludeClipboardContentFromMonitorProcessing"
+    ))
+});
+static CAN_INCLUDE_IN_HISTORY_FORMAT: LazyLock<u32> =
+    LazyLock::new(|| register_clipboard_format(windows::core::w!("CanIncludeInClipboardHistory")));
+static CAN_UPLOAD_TO_CLOUD_FORMAT: LazyLock<u32> =
+    LazyLock::new(|| register_clipboard_format(windows::core::w!("CanUploadToCloudClipboard")));
+
 static IMAGE_FORMATS_MAP: LazyLock<FxHashMap<u32, ImageFormat>> = LazyLock::new(|| {
     let mut map = FxHashMap::default();
     map.insert(*CLIPBOARD_PNG_FORMAT, ImageFormat::Png);
@@ -187,6 +202,18 @@ fn write_string(item: &ClipboardString) -> Result<()> {
 
         let wide: Vec<u16> = metadata.encode_utf16().chain(Some(0)).collect_vec();
         set_clipboard_bytes(&wide, *CLIPBOARD_METADATA_FORMAT)?;
+
+        // mdoc patch: concealed text. The two `Can…` formats take a DWORD 0;
+        // the exclusion format's presence is what counts.
+        if metadata == CONCEALED_CLIPBOARD_METADATA {
+            for format in [
+                *EXCLUDE_FROM_MONITORS_FORMAT,
+                *CAN_INCLUDE_IN_HISTORY_FORMAT,
+                *CAN_UPLOAD_TO_CLOUD_FORMAT,
+            ] {
+                set_clipboard_bytes(&[0u32], format)?;
+            }
+        }
     }
     Ok(())
 }

@@ -945,7 +945,8 @@ impl EditorState {
 
     /// Copy the selection as the raw markdown ONLY — no host clipboard
     /// flavors — for pasting literal source into rich surfaces (the context
-    /// menu's "Copy as Markdown"). Same selection/renumber rules as `copy`.
+    /// menu's "Copy as Markdown"). Same selection/renumber rules and copy
+    /// metadata as `copy`.
     pub(crate) fn copy_plain(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
             let range = self.copy_range();
@@ -954,13 +955,16 @@ impl EditorState {
             } else {
                 self.content[range].to_string()
             };
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            self.write_clipboard(text, cx);
         }
     }
 
-    /// Write a Copy/Cut payload as plain text.
+    /// Write a Copy/Cut payload as plain text, with the host's copy metadata.
     pub(super) fn write_clipboard(&self, text: String, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        cx.write_to_clipboard(match &self.copy_metadata {
+            Some(metadata) => ClipboardItem::new_string_with_metadata(text, metadata.clone()),
+            None => ClipboardItem::new_string(text),
+        });
     }
 
     /// What a copy takes: the selection — extended back over the first
@@ -1980,6 +1984,36 @@ mod tests {
             // The host still sets the text it shows.
             editor.set_text("Boris", cx);
             assert_eq!(editor.text(), "Boris");
+        });
+    }
+    #[gpui::test]
+    fn copy_metadata_tags_every_copy_and_cut(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |editor, window, cx| {
+            editor.set_text("Anna Petrova", cx);
+            editor.select_all(&SelectAll, window, cx);
+            editor.copy(&Copy, window, cx);
+            assert_eq!(cx.read_from_clipboard().unwrap().metadata(), None);
+            editor.set_copy_metadata(Some("tag".into()));
+            type CopyFn = fn(&mut EditorState, &mut Window, &mut Context<EditorState>);
+            let copies: [CopyFn; 3] = [
+                |e, w, cx| e.copy(&Copy, w, cx),
+                |e, w, cx| e.copy_plain(w, cx),
+                |e, w, cx| e.cut(&Cut, w, cx),
+            ];
+            for copy in copies {
+                cx.write_to_clipboard(ClipboardItem::new_string("before".into()));
+                editor.select_all(&SelectAll, window, cx);
+                copy(editor, window, cx);
+                let item = cx.read_from_clipboard().unwrap();
+                assert_eq!(item.text().as_deref(), Some("Anna Petrova"));
+                assert_eq!(item.metadata().map(String::as_str), Some("tag"));
+                editor.set_text("Anna Petrova", cx);
+            }
+            editor.set_copy_metadata(None);
+            editor.select_all(&SelectAll, window, cx);
+            editor.copy(&Copy, window, cx);
+            assert_eq!(cx.read_from_clipboard().unwrap().metadata(), None);
         });
     }
     #[gpui::test]

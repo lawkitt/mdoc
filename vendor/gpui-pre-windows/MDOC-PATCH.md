@@ -26,8 +26,15 @@ Local changes:
   dialog is unchanged. `gpui_windows.rs` exports it; mdoc calls it from
   `src/document_view/save_prompt.rs`, so a Save As on the way to a new case
   says why it opens.
+- `clipboard.rs` (`mdoc patch`), exported from `gpui_windows.rs`: a string
+  written with the metadata `CONCEALED_CLIPBOARD_METADATA` also carries the
+  registered formats `ExcludeClipboardContentFromMonitorProcessing`,
+  `CanIncludeInClipboardHistory` (DWORD 0) and `CanUploadToCloudClipboard`
+  (DWORD 0), so Win+V history, cloud clipboard sync and clipboard monitors
+  skip it. Every other copy is unchanged. mdoc tags restored text with it
+  (`src/restored_clipboard.rs`; recognition grill 2026-11-01, round 3).
 
-Only the save dialog title runs in the normal product application. The
+Only the save dialog title and concealed clipboard text run in the normal product application. The
 headless app entry point and runner also require debug assertions and the
 headless-renders feature.
 Validation: the app's Windows `just lint`, `just test` and
@@ -35,7 +42,8 @@ Validation: the app's Windows `just lint`, `just test` and
 DirectWrite text, paths, PNG readback, both themes, and actual Tab events.
 
 Drop this directory and the patch/dependency once the adopted GPUI family
-provides a standalone Windows headless renderer and text-system factory, and
-its `prompt_for_new_path` takes a message.
+provides a standalone Windows headless renderer and text-system factory,
+its `prompt_for_new_path` takes a message, and its clipboard can mark text
+concealed.
 When updating GPUI, re-vendor the adopted version and reapply only these
 changes; compare against the published source before updating expectations.

@@ -389,7 +389,7 @@ impl DocumentView {
         if !self.reply.restorable() {
             return;
         }
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        cx.write_to_clipboard(crate::restored_clipboard::item(
             self.reply.restored().text.clone(),
         ));
         self.copied_for_ai = false;

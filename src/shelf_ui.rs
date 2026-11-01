@@ -717,7 +717,9 @@ impl ShelfView {
                 ClipboardRow::Restore => {
                     let restored = shelf::restore_clipboard(&text, names);
                     if restored.text != text {
-                        cx.write_to_clipboard(ClipboardItem::new_string(restored.text.clone()));
+                        cx.write_to_clipboard(crate::restored_clipboard::item(
+                            restored.text.clone(),
+                        ));
                     }
                     restored.summary()
                 }

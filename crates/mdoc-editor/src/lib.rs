@@ -622,6 +622,9 @@ pub struct EditorState {
     /// Shown for reading only: no user edit changes the text. The host can
     /// still replace it (`set_text`, `replace_ranges`).
     read_only: bool,
+    /// Clipboard metadata on every copy and cut (see
+    /// [`Self::set_copy_metadata`]).
+    copy_metadata: Option<String>,
     /// A plain-text field (see [`Self::set_plain_text`]).
     plain: bool,
     focus_handle: FocusHandle,
@@ -909,6 +912,7 @@ impl EditorState {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             read_only: false,
+            copy_metadata: None,
             plain: false,
             focus_handle: cx.focus_handle(),
             content: String::new(),
@@ -1024,6 +1028,16 @@ impl EditorState {
     }
     pub fn is_read_only(&self) -> bool {
         self.read_only
+    }
+
+    /// Write every copy and cut from this editor with `metadata`, or as a
+    /// plain string with `None` (the default). A host tags text that needs
+    /// care on the clipboard, such as mdoc's restored originals.
+    pub fn set_copy_metadata(&mut self, metadata: Option<String>) {
+        self.copy_metadata = metadata;
+    }
+    pub fn copy_metadata(&self) -> Option<&str> {
+        self.copy_metadata.as_deref()
     }
 
     /// Make this a plain-text field whose text is exactly what was typed or

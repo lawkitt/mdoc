@@ -116,7 +116,7 @@ fn mapped_offset(offset: usize, marks: &[(Range<usize>, Range<usize>)], reverse:
 }
 
 impl CompareState {
-    pub(super) fn reply_editor(&self) -> &Entity<mdoc_editor::EditorState> {
+    pub(crate) fn reply_editor(&self) -> &Entity<mdoc_editor::EditorState> {
         &self.reply
     }
 }
@@ -234,6 +234,8 @@ impl DocumentView {
             editor.set_markdown_style(crate::style::markdown_style(theme), cx);
             editor.set_read_only(true, cx);
             editor.set_autoscroll(reply_scroll.clone());
+            // The restored reply holds originals.
+            editor.set_copy_metadata(Some(crate::restored_clipboard::TAG.into()));
             editor
         });
         self.pii.dismiss_popup();

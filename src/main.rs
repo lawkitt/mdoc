@@ -18,6 +18,7 @@ mod models;
 mod perf_tests;
 mod pii;
 mod preview;
+mod restored_clipboard;
 mod search_session;
 mod self_test;
 mod settings_ui;

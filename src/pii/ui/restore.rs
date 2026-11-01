@@ -186,7 +186,7 @@ impl DocumentView {
         };
         let restored = crate::shelf::restore_clipboard(&text, identities);
         if restored.text != text {
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(restored.text.clone()));
+            cx.write_to_clipboard(crate::restored_clipboard::item(restored.text.clone()));
         }
         let source = self
             .case
@@ -292,8 +292,11 @@ impl DocumentView {
         self.session.name = Some(format!("Restored – {}.md", reply.source_name));
         self.case.attach(reply.case.clone());
         self.lifecycle.keep_blank();
-        self.editor
-            .update(cx, |editor, cx| editor.set_text(reply.text.clone(), cx));
+        self.editor.update(cx, |editor, cx| {
+            editor.set_text(reply.text.clone(), cx);
+            // Copies from a Restore tab hold originals.
+            editor.set_copy_metadata(Some(crate::restored_clipboard::TAG.into()));
+        });
         let map = RestoreMap::new(reply.identities.clone());
         let restoration = map.restore(&reply.text);
         let ids = self.pii.review.seed(&reply.identities, &reply.text);

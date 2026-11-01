@@ -511,6 +511,9 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
         cx.read_from_clipboard().unwrap().text().unwrap(),
         "Anna Petrova owes Northwind Ltd; PERSON_9 is new."
     );
+    assert!(crate::restored_clipboard::is_restored(
+        &cx.read_from_clipboard().unwrap()
+    ));
 
     // A click on the not-ready row brings its tab forward at its proposal.
     shelf

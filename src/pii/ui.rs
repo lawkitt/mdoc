@@ -355,6 +355,8 @@ impl DocumentView {
         self.pii.error = None;
         self.pii.mapping = mapping::MappingUi::new(self.theme.clone(), cx);
         self.pii.restore = None;
+        self.editor
+            .update(cx, |editor, _| editor.set_copy_metadata(None));
         self.pii.decisions.clear();
         self.review_changed(cx);
     }

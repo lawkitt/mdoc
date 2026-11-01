@@ -19,6 +19,12 @@ use gpui::{
     ClipboardEntry, ClipboardItem, ClipboardString, ExternalPaths, Image, ImageFormat, hash,
 };
 
+/// mdoc patch: the metadata that marks a copied string as concealed and
+/// transient (mdoc's restored text). Such a copy also carries the
+/// nspasteboard.org marker types, so Universal Clipboard and clipboard
+/// managers skip it.
+pub const CONCEALED_CLIPBOARD_METADATA: &str = r#"{"mdoc":"concealed"}"#;
+
 pub struct Pasteboard {
     inner: StrongPtr,
     text_hash_type: StrongPtr,
@@ -203,7 +209,14 @@ impl Pasteboard {
 
     fn write_plaintext(&self, string: &ClipboardString) {
         unsafe {
-            self.inner.clearContents();
+            // mdoc patch: concealed text stays on this Mac
+            // (NSPasteboardContentsCurrentHostOnly, which also clears it), so
+            // Universal Clipboard does not carry it.
+            if string.metadata.as_deref() == Some(CONCEALED_CLIPBOARD_METADATA) {
+                let _: isize = msg_send![self.inner, prepareForNewContentsWithOptions: 1usize];
+            } else {
+                self.inner.clearContents();
+            }
 
             let text_bytes = NSData::dataWithBytes_length_(
                 nil,
@@ -229,6 +242,21 @@ impl Pasteboard {
                 );
                 self.inner
                     .setData_forType(metadata_bytes, *self.metadata_type);
+
+                // mdoc patch: concealed text; the types' presence is the mark.
+                if metadata == CONCEALED_CLIPBOARD_METADATA {
+                    for marker in [
+                        "org.nspasteboard.ConcealedType",
+                        "org.nspasteboard.TransientType",
+                    ] {
+                        let empty = NSData::dataWithBytes_length_(
+                            nil,
+                            [0u8; 0].as_ptr() as *const c_void,
+                            0,
+                        );
+                        self.inner.setData_forType(empty, ns_string(marker));
+                    }
+                }
             }
         }
     }

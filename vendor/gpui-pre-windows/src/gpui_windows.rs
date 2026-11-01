@@ -38,6 +38,8 @@ pub(crate) use window::*;
 pub(crate) use wrapper::*;
 
 pub use platform::{WindowsPlatform, set_next_save_prompt_message};
+// mdoc patch: concealed clipboard text (see clipboard.rs).
+pub use clipboard::CONCEALED_CLIPBOARD_METADATA;
 
 pub(crate) use windows::Win32::Foundation::HWND;
 

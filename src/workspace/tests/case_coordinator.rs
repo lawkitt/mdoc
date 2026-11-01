@@ -820,6 +820,10 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("Call PERSON_1 at ORG_1 today.")
         );
+        // Aliases only: a normal copy.
+        assert!(!crate::restored_clipboard::is_restored(
+            &cx.read_from_clipboard().unwrap()
+        ));
         assert!(
             view.read(cx)
                 .clipboard_notice
@@ -892,6 +896,12 @@ fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppCo
         clipboard(cx),
         "Anna Petrova thanks Northwind Traders Ltd and PERSON_9."
     );
+    let restored = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            crate::restored_clipboard::is_restored(&cx.read_from_clipboard().unwrap())
+        })
+    };
+    assert!(restored(cx));
     assert!(
         notice(cx).starts_with("Restored 2 names from this document"),
         "{}",
@@ -919,6 +929,7 @@ fn restore_clipboard_and_the_copy_keys_work_from_the_document(cx: &mut TestAppCo
         for_ai.contains("PERSON_1") && !for_ai.contains("Anna Petrova"),
         "{for_ai}"
     );
+    assert!(!restored(cx), "Copy for AI stays a normal copy");
     assert_ne!(
         for_ai,
         view.read_with(cx, |view, cx| view.editor.read(cx).text().to_string())
