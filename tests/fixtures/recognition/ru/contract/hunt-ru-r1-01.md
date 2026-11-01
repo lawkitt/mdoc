@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary public-body-org ru-address date-of-birth inflected-name-propagation
-issue: 374 378 362 363 392
+flaw: org-boundary public-body-org ru-address inflected-name-propagation
+issue: 374 378 362 392
 kind: contract
 source: hunt-r1
-expect: miss: DATE "19 февраля 1987 года"
 expect: miss: ADDRESS "ул. Тихих фонарей, д. 83, кв. 16"
 expect: miss: PERSON "Таль-Шнейдер"
 expect: false hit: ORG "ГК РФ"

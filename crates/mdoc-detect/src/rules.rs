@@ -77,6 +77,10 @@ struct ContextEntry {
     /// Categories whose guesses, taking the value, rule it out (a date).
     #[serde(default)]
     unless_guessed: Vec<String>,
+    /// Categories one of whose guesses must take the value (a date of birth
+    /// must look like a date).
+    #[serde(default)]
+    only_guessed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +130,7 @@ struct Context {
     min_digits: usize,
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
+    only_guessed: Vec<Category>,
 }
 
 struct Never {
@@ -277,8 +282,9 @@ impl Pack {
                     })
                     .collect();
                 let pattern = format!(
-                    // Case is ignored in the label only.
-                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))\b",
+                    // Case is ignored in the label only. Where the value
+                    // ends is checked after matching ("1988 г." ends in a dot).
+                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))",
                     labels.join("|"),
                     rust_classes(&entry.between),
                     rust_classes(&entry.value),
@@ -300,12 +306,19 @@ impl Pack {
                     .map(|token| self::category(token))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(at)?;
+                let only_guessed = entry
+                    .only_guessed
+                    .iter()
+                    .map(|token| self::category(token))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 pack.contexts.push(Context {
                     category,
                     pattern,
                     min_digits: entry.min_digits,
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
+                    only_guessed,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -379,17 +392,24 @@ impl Pack {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
                     let digits = value.as_str().chars().filter(char::is_ascii_digit).count();
+                    // The value ends where a word does.
+                    let ends = !source[value.end()..]
+                        .chars()
+                        .next()
+                        .is_some_and(char::is_alphanumeric);
+                    let guessed = self.guess(value.as_str());
                     let before = source[..found.get(0)?.start()]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
-                    if digits < context.min_digits
+                    if !ends
+                        || digits < context.min_digits
                         || context.unless_after.contains(&before)
-                        || self
-                            .guess(value.as_str())
-                            .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+                        || guessed.is_some_and(|g| context.unless_guessed.contains(&g))
+                        || (!context.only_guessed.is_empty()
+                            && !guessed.is_some_and(|g| context.only_guessed.contains(&g)))
                     {
                         return None;
                     }
@@ -618,6 +638,48 @@ mod tests {
             shown("Claim No 6001842/2026. The claim 6001842/2026 is settled under article 309."),
             ["6001842/2026", "6001842/2026"]
         );
+    }
+
+    /// A date in a personal context is proposed as Date, the label left out
+    /// (#363); every other date stays (ADR 0092).
+    #[test]
+    fn dates_of_birth_are_proposed_and_other_dates_stay() {
+        let dates = |source: &str| -> Vec<String> {
+            pack()
+                .context(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Date)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, date) in [
+            (
+                "Ms Maya Bennett, born 14 March 1988, National",
+                "14 March 1988",
+            ),
+            ("born on 2 May 1990.", "2 May 1990"),
+            ("**DOB:** 23 September 1991. That", "23 September 1991"),
+            ("Date of birth: March 4, 1979;", "March 4, 1979"),
+            ("дата рождения 14 марта 1988 г., СНИЛС", "14 марта 1988 г."),
+            (
+                "Дата рождения: 19 февраля 1987 года. В",
+                "19 февраля 1987 года",
+            ),
+            ("Иванов И. И., род. 14.03.1988, паспорт", "14.03.1988"),
+            ("д.р. 01.02.1990", "01.02.1990"),
+        ] {
+            assert_eq!(dates(source), [date], "{source}");
+        }
+        for source in [
+            "Signed on 14 March 2026 in Bristol.",
+            "The hearing is listed for 12.03.2026.",
+            "She was born in Leeds in 1988.",
+            "born 14 Marchmont 1988",
+            "Род деятельности: 2026 год",
+            "Adobe 14 March 1988",
+        ] {
+            assert!(dates(source).is_empty(), "{source}");
+        }
     }
 
     #[test]

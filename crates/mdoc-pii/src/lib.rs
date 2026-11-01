@@ -39,8 +39,10 @@ pub enum Category {
     /// A claim or case number after its label (ADR 0092). Its token is
     /// `CASE`, so an alias never reads as a saved case.
     CaseNumber,
-    /// Manual additions only; the detector never emits Date or Other.
+    /// Scans propose only a date of birth (ADR 0092); any other date is a
+    /// manual addition.
     Date,
+    /// Manual additions only.
     Other,
 }
 impl Category {
@@ -59,14 +61,23 @@ impl Category {
             Self::Other => "Other",
         }
     }
+    /// What Categories to detect calls the category: what scans propose of
+    /// it. Scans propose only dates of birth.
+    pub fn detection_label(self) -> &'static str {
+        match self {
+            Self::Date => "Dates of birth",
+            _ => self.label(),
+        }
+    }
     /// What scans can return, in picker order: Categories to detect lists
     /// these (ADR 0041, ADR 0076).
-    pub const DETECTED: [Self; 9] = [
+    pub const DETECTED: [Self; 10] = [
         Self::Person,
         Self::Organization,
         Self::Email,
         Self::Phone,
         Self::Address,
+        Self::Date,
         Self::CaseNumber,
         Self::Identity,
         Self::Tax,

@@ -81,3 +81,14 @@ between = '[\p{Zs}\t:#]{1,4}'
 value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
 min_digits = 4
 unless_guessed = ["DATE"]
+
+# Dates of birth (ADR 0092): a date after "дата рождения", "д.р.", "род.",
+# "родился" is a personal date ("дата рождения 14 марта 1988 г.",
+# "Дата рождения: 19 февраля 1987 года"). Every other date stays. The value
+# must be one the DATE guesses take.
+[[context]]
+category = "DATE"
+labels = ["дата рождения", "даты рождения", "д.р", "род", "родился", "родилась"]
+between = '[\p{Zs}\t:*_.,]{1,8}'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
+only_guessed = ["DATE"]
