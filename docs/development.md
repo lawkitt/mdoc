@@ -64,7 +64,8 @@ history lives in git.
 - **New finding:** a bug becomes a GitHub issue (with the patch milestone if it
   meets the patch rule); an idea goes to the end of Later. Don't reorder.
 - **Finishing an item:** the same commit deletes it from ROADMAP.md and adds
-  its CHANGELOG entry as `changes/<slug>.md`
+  its CHANGELOG entry as `changes/<slug>.md` (an iOS or Android app change:
+  `changes/ios/<slug>.md` or `changes/android/<slug>.md`)
   ([ADR 0072](adr/0072-changelog-fragments.md), format in
   [changes/README.md](../changes/README.md)); a patch commit says `fixes #n`.
 - **Item shape:** title, `[Theme]` tag, one-line source, 1–4 lines of what and
@@ -670,7 +671,7 @@ done_when = "headless renders of {what}, light and dark (local CI serves them)"
 [bookkeeping]
 roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only its own lines; do not renumber)"
 issue = "the commit that finishes it says `fixes #{number}`"
-fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
+fragment = "add `changes/{slug}.md`, or `changes/ios/{slug}.md` / `changes/android/{slug}.md` for an app change (format in `changes/README.md`)"
 
 [machines.macbook-air]
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."

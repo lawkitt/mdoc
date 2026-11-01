@@ -272,7 +272,13 @@ printf -- '- Renamed.\n' >changes/a-renamed.md
 commit 'renamed fragment, before'
 git mv changes/a-renamed.md changes/z-renamed.md
 commit 'renamed fragment'
+# App fragments feed each app's own CHANGELOG (ADR 0091); desktop leaves them.
+mkdir -p changes/ios changes/android
+printf -- '- iOS only.\n' >changes/ios/ios-only.md
+printf -- '- Android only.\n' >changes/android/android-only.md
+commit 'app fragments'
 GH_RESULT=missing
+top_fragments() { find changes -maxdepth 1 -type f | LC_ALL=C sort; }
 fragment_case() {
   n=$((n + 1))
   git -c core.autocrlf=false clone --quiet "$tmp/repo" "$tmp/release-$n"
@@ -288,7 +294,10 @@ bash scripts/release.sh 0.3.0 --yes --no-push >"$tmp/release-output"
 printf '## Unreleased\n\n## [0.3.0] - %s\n\n- Merged.\n\n- Newer.\n  continued.\n\n- Older.\n\n- Renamed.\n\n- Test release.\n' \
   "$(date +%Y-%m-%d)" >"$tmp/expected"
 diff -u "$tmp/expected" CHANGELOG.md || fail 'fragments joined out of order'
-[ "$(ls changes)" = README.md ] || fail 'fragments not deleted'
+[ "$(top_fragments)" = changes/README.md ] || fail 'fragments not deleted'
+[ -f changes/ios/ios-only.md ] && [ -f changes/android/android-only.md ] || fail 'desktop release removed app fragments'
+! grep -q 'only\.$' CHANGELOG.md || fail 'desktop release joined app fragments'
+echo 'ok: a desktop release leaves changes/ios and changes/android alone'
 [ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
 git show --name-status --format= HEAD | grep -q '^D.changes/older.md$' || fail 'fragment deletion not in the release commit'
 echo 'ok: a stable release joins fragments newest merge first and deletes them'
@@ -296,7 +305,7 @@ fragment_case
 bash scripts/release.sh 0.3.0-rc.1 --yes --no-push >"$tmp/release-output"
 grep -q '^- Merged\.$' CHANGELOG.md || fail 'pre-release did not join fragments'
 ! grep -q '^## \[' CHANGELOG.md || fail 'pre-release named a section'
-[ "$(ls changes)" = README.md ] || fail 'pre-release kept fragments'
+[ "$(top_fragments)" = changes/README.md ] || fail 'pre-release kept fragments'
 echo 'ok: a pre-release joins fragments into Unreleased'
 cd "$tmp/repo"
 printf 'Older.\n' >changes/older.md
