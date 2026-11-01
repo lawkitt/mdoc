@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: ru-address
-issue: 362
+status: pass
+flaw:
+issue:
 kind: ocr
 source: import
-expect: miss: ADDRESS "г. М0сква, ул. Кедровая, д. 42"
 ---
 ДОГОВ0Р
 Заказчик: ⟦PERSON|Анна Сергее вна Ёлкина⟧

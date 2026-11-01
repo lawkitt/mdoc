@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: uk-home-address
-issue: 361
+status: pass
+flaw:
+issue:
 kind: contract
 source: hunt-r5
-expect: miss: ADDRESS "Suite 704, 62 Kestrel Avenue, Boston, MA 02110-4826"
 ---
 ## Share transfer agreement: notice particulars
 

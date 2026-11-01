@@ -4,7 +4,7 @@ flaw: org-boundary ru-address
 issue: 374 362
 kind: contract
 source: hunt-r6
-expect: miss: ADDRESS "Псков, ул. Тихих залов, д. 29, пом. 8"
+expect: boundary: gold ADDRESS "Псков, ул. Тихих залов, д. 29, пом. 8"; proposed ADDRESS "ул. Тихих залов, д. 29, пом. 8"
 ---
 # Решение единственного участника об одобрении займа
 

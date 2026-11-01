@@ -1,7 +1,7 @@
 ---
 status: known-flaw
-flaw: table-header-context role-as-name ru-address
-issue: 397 385 362
+flaw: table-header-context role-as-name
+issue: 397 385
 kind: tables
 source: hunt-r2
 expect: miss: PERSON "Кий"
@@ -10,8 +10,6 @@ expect: miss: PERSON "Оскаровна"
 expect: miss: PERSON "Лю"
 expect: miss: PERSON "Леон"
 expect: miss: PERSON "Янович"
-expect: miss: ADDRESS "ул. Тихой бумаги, д. 61, кв. 8"
-expect: miss: ADDRESS "пер. Складных ширм, д. 24, кв. 3"
 expect: false hit: PERSON "Получатель"
 expect: boundary: gold IDENTITY "46 82 731609"; proposed PHONE "46 82 731609"
 expect: boundary: gold IDENTITY "46 83 862710"; proposed PHONE "46 83 862710"

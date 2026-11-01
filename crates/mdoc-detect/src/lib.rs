@@ -568,11 +568,21 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()
+        .chain(rules::pack().spans(&view.text))
         .chain(structured::scan(&view.text));
-    detections.extend(rules.map(|mut detection| {
-        detection.range = view.source_range(detection.range);
-        detection
-    }));
+    let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
+        .map(|mut detection| {
+            detection.range = view.source_range(detection.range);
+            detection
+        })
+        .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+    detections.extend(rules);
+    // Span matches stand only where they are the widest evidence.
+    let spans: Vec<Detection> = spans
+        .into_iter()
+        .filter(|span| stands(&detections, span))
+        .collect();
+    detections.extend(spans);
     detections
 }
 
@@ -612,6 +622,32 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
         }
     }
     found
+}
+
+/// Whether a span pattern's match stands beside the other detections. Rules
+/// win the review's conflicts, so the match gives way, and the others
+/// compete as they would without it, wherever it is not the widest
+/// evidence: a model span of its category that reaches past it (the model
+/// found more of the address), a span of another category across one of
+/// its edges ("John Smith" in "12 Oak Road, John Smith"), or another
+/// rule's span anywhere in it (a valid email). A model span inside the
+/// match ("Ленина" in "ул. Ленина, д. 5", "Larch Road" of a whole address)
+/// loses to it.
+fn stands(others: &[Detection], rule: &Detection) -> bool {
+    let range = &rule.range;
+    !others.iter().any(|span| {
+        let overlaps = span.range.start < range.end && range.start < span.range.end;
+        let inside = range.start <= span.range.start && span.range.end <= range.end;
+        let strictly_inside = range.start < span.range.start && span.range.end < range.end;
+        overlaps
+            && if span.recognizer != mdoc_pii::Recognizer::Model {
+                true
+            } else if span.category == rule.category {
+                !inside
+            } else {
+                !strictly_inside
+            }
+    })
 }
 
 fn category_of(label: &str) -> Option<Category> {

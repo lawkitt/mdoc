@@ -1,11 +1,9 @@
 ---
-status: known-flaw
-flaw: uk-home-address
-issue: 361
+status: pass
+flaw:
+issue:
 kind: letter
 source: hunt-r5
-expect: miss: ADDRESS "Suite 12C, 841 Juniper Fold Road, Albany, NY 12207-6418"
-expect: miss: ADDRESS "Apt 6D, 93 Celandine Street, Providence, RI 02903-5821"
 ---
 ## Notice of revised correspondence destination
 

@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: uk-home-address date-of-birth
-issue: 361 363
+flaw: date-of-birth
+issue: 363
 kind: contract
 source: demo
-expect: miss: ADDRESS "Flat 3, 41 Larch Road, Bristol BS6 9ZY"
 expect: miss: DATE "14 March 1988"
 ---
 # Settlement agreement

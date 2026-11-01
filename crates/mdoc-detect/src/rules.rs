@@ -110,6 +110,13 @@ struct ShapeEntry {
 #[serde(deny_unknown_fields)]
 struct SpanEntry {
     category: String,
+    /// What a whole span looks like; `{name}` stands for a part. An
+    /// entry without one fixes model spans' boundaries instead.
+    #[serde(default)]
+    pattern: Option<String>,
+    /// Named pieces of the pattern, each a regex.
+    #[serde(default)]
+    parts: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
     #[serde(default)]
@@ -131,7 +138,18 @@ pub(crate) struct Pack {
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
-    spans: Vec<SpanFix>,
+    spans: Vec<Span>,
+}
+
+/// A `span` entry: a whole span by its pattern, or a boundary fix.
+enum Span {
+    /// Proposes each match: an address from its first element to its
+    /// postcode or city.
+    Pattern {
+        category: Category,
+        pattern: Regex,
+    },
+    Fix(SpanFix),
 }
 
 /// A boundary fix for one category's spans.
@@ -435,8 +453,38 @@ impl Pack {
             for (index, entry) in file.span.iter().enumerate() {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
                 let category = category(&entry.category).map_err(at)?;
-                if entry.trim.is_empty() && entry.extend.is_empty() && entry.strip_end.is_empty() {
-                    return Err(at("needs trim words, extend patterns or strip_end".into()));
+                let fixes = !entry.trim.is_empty()
+                    || !entry.extend.is_empty()
+                    || !entry.strip_end.is_empty();
+                if let Some(pattern) = &entry.pattern {
+                    if fixes {
+                        return Err(at("a pattern takes no trim, extend or strip_end".into()));
+                    }
+                    let mut pattern = pattern.clone();
+                    for (part, regex) in &entry.parts {
+                        let name = format!("{{{part}}}");
+                        if !pattern.contains(&name) {
+                            return Err(at(format!("part {part:?} is never used")));
+                        }
+                        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+                    }
+                    let pattern =
+                        Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
+                    // An empty span is no detection: the review would
+                    // discard the whole scan.
+                    if pattern.is_match("") {
+                        return Err(at("the pattern matches an empty span".into()));
+                    }
+                    pack.spans.push(Span::Pattern { category, pattern });
+                    continue;
+                }
+                if !entry.parts.is_empty() {
+                    return Err(at("parts need a pattern".into()));
+                }
+                if !fixes {
+                    return Err(at(
+                        "needs a pattern, trim words, extend patterns or strip_end".into(),
+                    ));
                 }
                 for word in &entry.trim {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
@@ -456,12 +504,12 @@ impl Pack {
                         Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                pack.spans.push(SpanFix {
+                pack.spans.push(Span::Fix(SpanFix {
                     category,
                     trim: entry.trim.clone(),
                     extend,
                     strip_end: entry.strip_end.clone(),
-                });
+                }));
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -535,7 +583,11 @@ impl Pack {
         view: &mdoc_pii::view::View,
         detections: &mut Vec<Detection>,
     ) {
-        for fix in &self.spans {
+        let fixes = self.spans.iter().filter_map(|span| match span {
+            Span::Fix(fix) => Some(fix),
+            Span::Pattern { .. } => None,
+        });
+        for fix in fixes {
             if !detections.iter().any(|d| d.category == fix.category) {
                 continue;
             }
@@ -680,6 +732,36 @@ impl Pack {
                         .any(|form| form.eq_ignore_ascii_case(word))
                 })
             })
+    }
+
+    /// Whole spans the `span` patterns find in `source`: an address from
+    /// its first element to its postcode or city (ADR 0092).
+    pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Fix(_) => None,
+            })
+            .flat_map(|(category, pattern)| {
+                pattern
+                    .find_iter(source)
+                    // A match before a colon ends in a field's label ("12
+                    // Oak Road, Email: …"), not the address's last part.
+                    .filter(|found| {
+                        !found.is_empty()
+                            && !source[found.end()..]
+                                .trim_start_matches([' ', '\t'])
+                                .starts_with(':')
+                    })
+                    .map(move |found| Detection {
+                        range: found.range(),
+                        category,
+                        score: CONTEXT_SCORE,
+                        recognizer: Recognizer::Span,
+                    })
+            })
+            .collect()
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -1271,6 +1353,390 @@ mod tests {
         }
     }
 
+    /// One pack holds both kinds of `span` entry: a pattern proposes whole
+    /// spans, an entry without one fixes model spans' boundaries, and
+    /// neither does the other's work.
+    #[test]
+    fn span_patterns_and_span_fixes_load_from_one_pack() {
+        let pack = Pack::load(&[(
+            "test.toml",
+            "[[span]]\ncategory = \"ADDRESS\"\npattern = '{street}, {town}'\n\
+             parts.street = '\\d+ \\p{Uppercase}\\p{Alphabetic}+ Road'\n\
+             parts.town = '\\p{Uppercase}\\p{Alphabetic}+'\n\
+             [[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\n\
+             [[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\n",
+        )])
+        .unwrap();
+        let source = "Ms Bennett of Acme Ltd. lives at 41 Larch Road, Bristol.";
+        let proposed: Vec<_> = pack
+            .spans(source)
+            .into_iter()
+            .map(|d| (source[d.range].to_owned(), d.category, d.recognizer))
+            .collect();
+        assert_eq!(
+            proposed,
+            [(
+                "41 Larch Road, Bristol".to_owned(),
+                Category::Address,
+                Recognizer::Span
+            )]
+        );
+        let mut detections: Vec<Detection> = [
+            ("Ms Bennett", Category::Person),
+            ("Acme Ltd.", Category::Organization),
+            ("Larch Road, Bristol.", Category::Address),
+        ]
+        .into_iter()
+        .map(|(text, category)| {
+            let start = source.find(text).unwrap();
+            Detection {
+                range: start..start + text.len(),
+                category,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }
+        })
+        .collect();
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        let fixed: Vec<_> = detections
+            .iter()
+            .map(|d| &source[d.range.clone()])
+            .collect();
+        assert_eq!(fixed, ["Bennett", "Acme Ltd", "Larch Road, Bristol."]);
+    }
+
+    /// Addresses are found whole, from the first element to the postcode or
+    /// city (#361, #362); a city alone or a numbered court is no address
+    /// (#386).
+    #[test]
+    fn addresses_are_found_whole_and_cities_alone_are_not() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<String> {
+            pack.spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, address) in [
+            (
+                "of Flat 3, 41 Larch Road, Bristol BS6 9ZY (the Employee).",
+                "Flat 3, 41 Larch Road, Bristol BS6 9ZY",
+            ),
+            (
+                "at 42 Cedar Lane, Boston, MA 02110.",
+                "42 Cedar Lane, Boston, MA 02110",
+            ),
+            (
+                "is at 18 Brindle Mews, Leeds. Access",
+                "18 Brindle Mews, Leeds",
+            ),
+            (
+                "| 27 Wisp Lane<br>Norwich NR2 8ZZ |",
+                "27 Wisp Lane<br>Norwich NR2 8ZZ",
+            ),
+            ("Address: 42 Cedar Lane, B0ston", "42 Cedar Lane, B0ston"),
+            (
+                "<span>Unit 6, 92 Fable Street, Exeter</span>",
+                "Unit 6, 92 Fable Street, Exeter",
+            ),
+            (
+                "адрес: 191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12 (Работодатель)",
+                "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12",
+            ),
+            (
+                "Адрес: г. Москва, ул. Кедровая, д. 42, кв. 7.",
+                "г. Москва, ул. Кедровая, д. 42, кв. 7",
+            ),
+            (
+                "Адрес получателя: ул. Тихих фонарей, д. 83, кв. 16. Электронная",
+                "ул. Тихих фонарей, д. 83, кв. 16",
+            ),
+            (
+                "по адресу ул. Переплётных огней, д. 74, помещение 6, а",
+                "ул. Переплётных огней, д. 74, помещение 6",
+            ),
+            (
+                "по адресу: Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9. Ключи",
+                "Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9",
+            ),
+            (
+                "Адрес: г. М0сква, ул. Кедровая, д. 42",
+                "г. М0сква, ул. Кедровая, д. 42",
+            ),
+            // A flat after the street is no town; an index goes with a
+            // prefixed city; a house keeps a hyphenated letter.
+            (
+                "Mail to 123 Main Street, Apt 4, Boston, MA 02110 by Friday.",
+                "123 Main Street, Apt 4, Boston, MA 02110",
+            ),
+            ("at 12 Oak Road, Flat 2. Keys", "12 Oak Road, Flat 2"),
+            (
+                "at 12 Oak Road, St. Albans AL1 1AA today",
+                "12 Oak Road, St. Albans AL1 1AA",
+            ),
+            (
+                "at 12 Oak Road, Newcastle upon Tyne NE1 4AA today",
+                "12 Oak Road, Newcastle upon Tyne NE1 4AA",
+            ),
+            ("at 12 Oak Road, Leeds on Monday", "12 Oak Road, Leeds"),
+            ("at 12 Oak Road, M1 1AA today", "12 Oak Road, M1 1AA"),
+            (
+                "at 12 Oak Road, Little Snoring, Norfolk NR21 0AA today",
+                "12 Oak Road, Little Snoring, Norfolk NR21 0AA",
+            ),
+            (
+                "at 12 Oak Road, Leeds, Yorkshire today",
+                "12 Oak Road, Leeds",
+            ),
+            (
+                "Адрес: г. Москва, ул. Кедровая, д. 42-44, кв. 7.",
+                "г. Москва, ул. Кедровая, д. 42-44, кв. 7",
+            ),
+            (
+                "at 12 Oak Road, Salt Lake City, UT 84101 today",
+                "12 Oak Road, Salt Lake City, UT 84101",
+            ),
+            (
+                "at 12 Oak Road, Bury St Edmunds IP33 1AA today",
+                "12 Oak Road, Bury St Edmunds IP33 1AA",
+            ),
+            (
+                "at 8 Sunset Blvd, Los Angeles today",
+                "8 Sunset Blvd, Los Angeles",
+            ),
+            (
+                "Flat 3, 41 Larch Rd., Bristol BS6 9ZY.",
+                "Flat 3, 41 Larch Rd., Bristol BS6 9ZY",
+            ),
+            ("at 7 Elm St., Leeds today", "7 Elm St., Leeds"),
+            ("at 9 Cedar Ave. LS1 4AB today", "9 Cedar Ave. LS1 4AB"),
+            ("at 12 Oak Road, W1A 1AA today", "12 Oak Road, W1A 1AA"),
+            (
+                "Flat 2, 12 Oak Road, M1 1AA today",
+                "Flat 2, 12 Oak Road, M1 1AA",
+            ),
+            (
+                "Адрес: ул. Кедровая, д. 42, корп. 1-А, кв. 7Б.",
+                "ул. Кедровая, д. 42, корп. 1-А, кв. 7Б",
+            ),
+            (
+                "Адрес: 197101, г. Москва, ул. Кедровая, д. 42, кв. 7.",
+                "197101, г. Москва, ул. Кедровая, д. 42, кв. 7",
+            ),
+            (
+                "Адрес: г. Москва, ул. Кедровая, д. 42-А, кв. 7.",
+                "г. Москва, ул. Кедровая, д. 42-А, кв. 7",
+            ),
+            (
+                "Адрес: ул. Кедровая, д. 42/1Б, кв. 7.",
+                "ул. Кедровая, д. 42/1Б, кв. 7",
+            ),
+        ] {
+            assert_eq!(found(source), [address], "{source}");
+        }
+        // A town ends with its line: the name below is no part of it.
+        assert_eq!(
+            found("12 Oak Road, Bristol\nJohn Smith will collect it."),
+            ["12 Oak Road, Bristol"]
+        );
+        assert_eq!(
+            found("ул. Кедровая, д. 42\nкв. 7 сдана"),
+            ["ул. Кедровая, д. 42"]
+        );
+        for source in [
+            "Claim 12 High Court was listed.",
+            "under section 4.2 of the Road Traffic Act 1988",
+            "Иванов, ул. Ленина",
+            "the hearing in Cardiff on 3 May",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        for city in ["Cardiff", "Москва", "Казань"] {
+            assert!(!pack.identifying(city, Category::Address), "{city}");
+        }
+        for street in [
+            "ул. Ленина",
+            "пер. Кленовый",
+            "наб. Лесная",
+            "б-р Цветной",
+            "Cedar Court",
+            "Larch Rd",
+            "Sunset Boulevard",
+            "Mulholland Dr",
+            "Cherry Ln",
+            "Сиреневая аллея, Москва",
+            "9-я линия В.О.",
+            "The Old Rectory, Nether Compton",
+            "The Old Rectory\nNether Compton",
+        ] {
+            assert!(pack.identifying(street, Category::Address), "{street}");
+        }
+    }
+
+    /// Rules win the review's conflicts, but a span pattern's match gives
+    /// way wherever it is not the widest evidence, so it never cuts what the
+    /// model or another rule found; a model address inside it grows to it.
+    #[test]
+    fn a_model_address_is_not_cut_by_a_shorter_pattern_match() {
+        let proposed = |source: &str, model: &[(&str, &str)]| -> Vec<(String, String)> {
+            let raw: Vec<_> = model
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    crate::RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.9,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect()
+        };
+        let shown = |source: &str, model: &str| -> Vec<String> {
+            proposed(source, &[(model, "address")])
+                .into_iter()
+                .filter(|(_, category)| category == "ADDRESS")
+                .map(|(text, _)| text)
+                .collect()
+        };
+        // A person the model found after the street is no town: the match
+        // took a name, so it gives way and the person stands.
+        assert_eq!(
+            proposed(
+                "Deliver to 12 Oak Road, John Smith will collect it.",
+                &[("John Smith", "person")]
+            ),
+            [("John Smith".to_owned(), "PERSON".to_owned())]
+        );
+        // Nor is a match cut down to its house number by a span over its
+        // street, which would propose the number and its repeats.
+        assert_eq!(
+            proposed(
+                "Ship to 12 Oak Road, Leeds. Clause 12 remains applicable.",
+                &[("Oak Road, Leeds", "person")]
+            ),
+            [("Oak Road, Leeds".to_owned(), "PERSON".to_owned())]
+        );
+        // Unless the model's own address holds that name: it stays whole.
+        assert_eq!(
+            proposed(
+                "Ship to 12 Oak Road, Bath today.",
+                &[("12 Oak Road, Bath", "address"), ("Bath", "person")]
+            ),
+            [("12 Oak Road, Bath".to_owned(), "ADDRESS".to_owned())]
+        );
+        // A valid email inside the model's address still stands, at its
+        // end or within it.
+        let source = "12 Oak Road, Bristol BS6 9ZY. Email: jane@example.invalid";
+        assert!(
+            proposed(source, &[(source, "address")])
+                .contains(&("jane@example.invalid".to_owned(), "EMAIL".to_owned()))
+        );
+        let source = "12 Oak Road, Bristol BS6 9ZY. Email: jane@example.invalid. Contact us.";
+        assert!(
+            proposed(source, &[(source, "address")])
+                .contains(&("jane@example.invalid".to_owned(), "EMAIL".to_owned()))
+        );
+        // A field's label after the street is no town: the model's address
+        // stands.
+        assert_eq!(
+            proposed(
+                "Address: 12 Oak Road, Email: jane@example.invalid",
+                &[("12 Oak Road", "address")]
+            ),
+            [
+                ("12 Oak Road".to_owned(), "ADDRESS".to_owned()),
+                ("jane@example.invalid".to_owned(), "EMAIL".to_owned()),
+            ]
+        );
+        // So does an email another rule found.
+        assert_eq!(
+            proposed(
+                "Deliver to 12 Oak Road, Jane.Doe@example.invalid today.",
+                &[]
+            ),
+            [("Jane.Doe@example.invalid".to_owned(), "EMAIL".to_owned())]
+        );
+        // And a name the model split: both its parts stand.
+        assert_eq!(
+            proposed(
+                "Deliver to 12 Oak Road, John Smith will collect it. John will call.",
+                &[("John", "person"), ("Smith", "person")]
+            )
+            .into_iter()
+            .filter(|(_, category)| category == "ADDRESS")
+            .count(),
+            0
+        );
+        // A model name inside the address is the street's: the address stays.
+        assert_eq!(
+            proposed(
+                "Адрес: г. Москва, ул. Ленина, д. 5, кв. 2. Почта",
+                &[("Ленина", "person")]
+            ),
+            [(
+                "г. Москва, ул. Ленина, д. 5, кв. 2".to_owned(),
+                "ADDRESS".to_owned()
+            )]
+        );
+        let source = "Адрес: Псков, ул. Тихих залов, д. 29, пом. 8. Почта";
+        let whole = "Псков, ул. Тихих залов, д. 29, пом. 8";
+        assert_eq!(shown(source, whole), [whole]);
+        let source = "Deliver to 12 Oak Road, Little Snoring, Norfolk NR21 0AA today.";
+        let whole = "12 Oak Road, Little Snoring, Norfolk NR21 0AA";
+        assert_eq!(shown(source, whole), [whole]);
+        // The match starts before the model's span and ends inside it: the
+        // model's address, which holds the county, stands.
+        let source = "at Flat 3, 12 Oak Road, Little Snoring, Norfolk today.";
+        assert_eq!(
+            shown(source, "12 Oak Road, Little Snoring, Norfolk"),
+            ["12 Oak Road, Little Snoring, Norfolk"]
+        );
+        // A match that holds the model's span grows it to the whole address.
+        let source = "at Flat 3, 12 Oak Road, Little Snoring, Norfolk NR21 0AA today.";
+        assert_eq!(
+            shown(source, "12 Oak Road, Little Snoring, Norfolk NR21 0AA"),
+            ["Flat 3, 12 Oak Road, Little Snoring, Norfolk NR21 0AA"]
+        );
+        // An overlong model address does not lend the match its reach over a
+        // person: the two compete as without the rule, by the model's scores.
+        let source = "12 Oak Road, Leeds. Contact John Smith today.";
+        let raw = [
+            crate::RawEntity {
+                start: 0,
+                end: source.len(),
+                label: "address".into(),
+                score: 0.6,
+                text: source.into(),
+            },
+            crate::RawEntity {
+                start: source.find("John").unwrap(),
+                end: source.find(" today").unwrap(),
+                label: "person".into(),
+                score: 0.95,
+                text: "John Smith".into(),
+            },
+        ];
+        let found: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(found, [("John Smith".to_owned(), "PERSON".to_owned())]);
+        let source = "of Flat 3, 41 Larch Road, Bristol BS6 9ZY (the Employee).";
+        assert_eq!(
+            shown(source, "Larch Road, Bristol"),
+            ["Flat 3, 41 Larch Road, Bristol BS6 9ZY"]
+        );
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -1319,6 +1785,27 @@ mod tests {
                 "punctuation only",
             ),
             ("[[span]]\ncategory = \"ORG\"\nextend = ['(']", "span #1"),
+            ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nparts = { street = 'x' }",
+                "never used",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = ''",
+                "empty span",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = 'x*'",
+                "empty span",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\ntrim = [\"ms\"]",
+                "takes no trim",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nparts = { street = 'x' }",
+                "need a pattern",
+            ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
                 "[[never]]\nmatch = \"whole\"\nwords = [\"a\"]\ntypo = 1",

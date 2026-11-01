@@ -193,3 +193,20 @@ labels = ["код карточки", "номер карточки"]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '\p{Alphabetic}{2,}-?\d{4,}'
 min_digits = 4
+
+# Addresses (ADR 0092, issue #362): a street and a house ("д. 7"), after an
+# optional index, region and city, then a building and a flat or office:
+# "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12", "197101, г.
+# Москва, ул. Кедровая, д. 42-А, кв. 7", "Тверская область, г. Ржев, ул.
+# Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9".
+[[span]]
+category = "ADDRESS"
+pattern = '(?:{index},\s*(?:(?:{region},\s*)?(?:{city}|{bare_city}),\s*)?|(?:{region},\s*)?{city},\s*)?{street},\s*{house}(?:,\s*{building})*(?:,\s*{flat})?'
+parts.region = '\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:область|край)|\bРеспублика[\p{Zs}\t]\p{Uppercase}[\p{Alphabetic}-]*'
+parts.index = '\b\d{6}'
+parts.bare_city = '\p{Uppercase}[\p{Alphabetic}\d]*(?:-\p{Uppercase}[\p{Alphabetic}\d]*)*'
+parts.city = '\bг\.[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*'
+parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\.|\bб-р|\bпл\.|\bш\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?|\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:проспект|переулок|улица|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)'
+parts.house = '(?:\bд\.|\bдом)[\p{Zs}\t]*\d+(?:-\d+)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?'
+parts.building = '(?:\bкорп\.|\bкорпус|\bстр\.|\bстроение)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bлит(?:\.|ера)[\p{Zs}\t]*\p{Uppercase}\b'
+parts.flat = '(?:\bкв\.|\bквартира|\bофис|\bоф\.|\bпомещение|\bпом\.)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?'

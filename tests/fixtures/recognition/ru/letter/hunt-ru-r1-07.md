@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: person-prefix-boundary city-only-address url-encoded-name
-issue: 391 386 401
+flaw: person-prefix-boundary url-encoded-name
+issue: 391 401
 kind: letter
 source: hunt-r1
 expect: miss: PERSON "Ли-Вельт"
-expect: false hit: ADDRESS "Тверь"
 expect: boundary: gold PERSON "Лея Аркадьевна Ли-Вельт"; proposed PERSON "Лея", PERSON "Ли-Вельт"
 ---
 # Ответ на претензию о неверном тиснении
