@@ -26,8 +26,11 @@ import java.util.concurrent.TimeUnit
 import uniffi.mdoc_ffi.ModelId
 import uniffi.mdoc_ffi.Setup
 import uniffi.mdoc_ffi.SpikeInput
+import uniffi.mdoc_ffi.fp32Artifacts
 import uniffi.mdoc_ffi.linkedRuntimes
+import uniffi.mdoc_ffi.memory
 import uniffi.mdoc_ffi.reportJson
+import uniffi.mdoc_ffi.probe as probeWindow
 import uniffi.mdoc_ffi.run as runSpike
 
 object Harness {
@@ -104,6 +107,12 @@ object Harness {
                 .put("pass", !isEmulator && worst < PowerManager.THERMAL_STATUS_SEVERE),
         )
         report.put("budgets", budgets)
+        // What the scan budget might gain from settings (roadmap Android 0.1
+        // item 2): the same window under other thread counts and XNNPACK.
+        prepared.getOrNull()?.let { (data, setup) ->
+            report.put("detector_settings", detectorSettings(input(data, setup)))
+            report.put("detector_fp32", detectorFp32(context, input(data, setup)))
+        }
 
         val text = report.toString(2)
         val out = context.getExternalFilesDir(null) ?: context.filesDir
@@ -111,6 +120,64 @@ object Harness {
         text.lineSequence().forEach { Log.i("MdocSpike", it) }
         Log.i("MdocSpike", "MDOC_SPIKE_REPORT_WRITTEN ${File(out, REPORT)}")
         return text
+    }
+
+    /**
+     * The one-window probe under each detector setting: ONNX Runtime's CPU
+     * provider or XNNPACK (`GLINER2_DEVICE`), at 2, 4, 6 and 8 threads
+     * (`MDOC_DETECT_THREADS`). The app ships with CPU at 4. A setting that
+     * fails is recorded with its error; the environment is restored after.
+     */
+    private fun detectorSettings(input: SpikeInput): JSONArray {
+        val results = JSONArray()
+        for (device in listOf("cpu", "xnnpack")) {
+            for (threads in listOf(2, 4, 6, 8)) {
+                Os.setenv("GLINER2_DEVICE", device, true)
+                Os.setenv("MDOC_DETECT_THREADS", threads.toString(), true)
+                val row = JSONObject().put("device", device).put("threads", threads)
+                runCatching { probeWindow(input, false) }
+                    .onSuccess { row.put("median_seconds", it.medianSeconds).put("engine_load_seconds", it.engineLoadSeconds) }
+                    .onFailure { row.put("error", it.toString()) }
+                Log.i("MdocSpike", "detector setting $row")
+                results.put(row)
+            }
+        }
+        Os.unsetenv("GLINER2_DEVICE")
+        Os.unsetenv("MDOC_DETECT_THREADS")
+        return results
+    }
+
+    /**
+     * The FP32 export on the CPU provider at 4 threads: downloaded here from
+     * its pinned URLs (about 1.25 GB, kept for the next run), verified by the
+     * core as it loads. Its time, and the process's memory high-water mark
+     * after it, against FP16's.
+     */
+    private fun detectorFp32(context: Context, input: SpikeInput): JSONObject {
+        val row = JSONObject()
+        val root = File(context.filesDir, "models-fp32")
+        val started = SystemClock.elapsedRealtime()
+        runCatching {
+            for (artifact in fp32Artifacts()) {
+                val target = File(root, artifact.path)
+                if (target.length() == artifact.bytes.toLong()) continue
+                target.parentFile?.mkdirs()
+                download(artifact.url, target)
+            }
+        }.onFailure { return row.put("error", "download: $it") }
+        row.put("download_seconds", (SystemClock.elapsedRealtime() - started) / 1000.0)
+        Os.setenv("GLINER2_DEVICE", "cpu", true)
+        Os.setenv("MDOC_DETECT_THREADS", "4", true)
+        runCatching { probeWindow(input.copy(modelRoot = root.path), true) }
+            .onSuccess {
+                row.put("median_seconds", it.medianSeconds).put("engine_load_seconds", it.engineLoadSeconds)
+                row.put("peak_memory_bytes", memory().peakFootprintBytes.toLong())
+            }
+            .onFailure { row.put("error", it.toString()) }
+        Os.unsetenv("GLINER2_DEVICE")
+        Os.unsetenv("MDOC_DETECT_THREADS")
+        Log.i("MdocSpike", "detector fp32 $row")
+        return row
     }
 
     private fun input(data: File, setup: Setup): SpikeInput {

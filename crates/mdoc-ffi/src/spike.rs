@@ -209,6 +209,55 @@ pub struct Budget {
     pub pass: bool,
 }
 
+/// Only the one-window probe, on the same 20 pages, under whatever detector
+/// settings the platform set in the environment (`GLINER2_DEVICE`,
+/// `MDOC_DETECT_THREADS`): the Android spike times threads and XNNPACK with it.
+/// `fp32` probes the FP32 export at `input.model_root` instead of FP16.
+#[uniffi::export]
+pub fn probe(input: SpikeInput, fp32: bool) -> Result<Probe, CoreError> {
+    let fixtures = PathBuf::from(&input.fixtures);
+    let (_, text) = twenty_pages(&fixtures.join("legal-opinion.docx"))?;
+    let mut config = mdoc_store::settings::PiiConfig::default();
+    if fp32 {
+        config.model = mdoc_store::settings::PiiModel::Fp32;
+    }
+    let probe = mdoc_detect::probe_window(
+        &text,
+        &PathBuf::from(&input.model_root),
+        &PathBuf::from(&input.runtimes.onnx),
+        &config,
+        PROBE_RUNS,
+    )?;
+    Ok(probe_report(&probe))
+}
+
+/// One pinned file of a detector export the apps do not offer.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SpikeArtifact {
+    /// Where it goes under the export's root.
+    pub path: String,
+    pub url: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+/// GLiNER2's FP32 export, the desktop's alternative to FP16, for the
+/// spike to fetch and time on phones: ONNX Runtime's CPU provider may run
+/// FP32 faster than FP16 on a phone. `probe` verifies the files.
+#[uniffi::export]
+pub fn fp32_artifacts() -> Vec<SpikeArtifact> {
+    mdoc_detect::manifest_for(mdoc_store::settings::PiiModel::Fp32)
+        .files
+        .into_iter()
+        .map(|file| SpikeArtifact {
+            path: file.path,
+            url: file.url,
+            bytes: file.bytes,
+            sha256: file.sha256,
+        })
+        .collect()
+}
+
 /// Runs the whole spike once. Only conversion failing stops it; a detector
 /// or OCR failure is recorded in the report.
 #[uniffi::export]

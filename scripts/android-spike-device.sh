@@ -66,11 +66,13 @@ echo "android-spike: running on Test Lab: $* (several minutes)" >&2
 # A failed test still leaves its report to fetch; the log says which.
 "$gcloud" firebase test android run --type instrumentation \
   --app "$apk" --test "$test_apk" "${devices[@]}" \
-  --timeout 30m --no-record-video --no-performance-metrics \
+  --timeout 45m --no-record-video --no-performance-metrics \
   --directories-to-pull "$files" --results-dir "mdoc-spike-$stamp" 2>&1 | tee "$log" || true
 bucket=$(grep -o 'test-lab-[a-z0-9-]*' "$log" | head -n 1)
 [ -n "$bucket" ] || die "no results bucket in $log"
 "$gcloud" storage ls "gs://$bucket/mdoc-spike-$stamp/**/spike-report.json" 2>/dev/null | while read -r url; do
+  # gcloud on Windows ends its lines with CR, which no object name has.
+  url=${url%$'\r'}
   # gs://<bucket>/<dir>/<model>-<api>-<locale>-<orientation>/artifacts/...
   name=$(cut -d/ -f5 <<<"$url")
   "$gcloud" storage cp "$url" "$reports/$name-$stamp.json" --quiet
