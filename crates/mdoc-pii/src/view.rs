@@ -1,9 +1,13 @@
 //! The text detection and readiness read (ADR 0092, preprocessing): the
 //! source with what only hides a value's characters undone, and a map from
 //! its offsets back to the source's. HTML character references are decoded
-//! ("Ann&#97; Petrova" reads "Anna Petrova"). The source itself never
-//! changes: spans found in the view map back to whole source characters.
+//! ("Ann&#97; Petrova" reads "Anna Petrova"), soft hyphens and zero-width
+//! characters drop out ("Ма\u{ad}рина" reads "Марина") and letters written
+//! with combining marks compose, as NFC writes them ("е\u{308}" reads "ё").
+//! The source itself never changes: spans found in the view map back to
+//! whole source characters.
 use std::ops::Range;
+use unicode_normalization::UnicodeNormalization;
 
 /// The source as detection reads it, with its offsets mapped back.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,18 +89,41 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
 /// overlapping.
 fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
-    let mut at = 0;
-    while let Some(offset) = source[at..].find('&') {
-        let start = at + offset;
-        match character_reference(&source[start..]) {
-            Some((len, value)) => {
-                out.push((start..start + len, value));
-                at = start + len;
+    let mut chars = source.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        let next = chars.peek().map(|&(_, next)| next);
+        if c == '&'
+            && let Some((len, value)) = character_reference(&source[at..])
+        {
+            out.push((at..at + len, value));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+        } else if invisible(c) {
+            out.push((at..at + c.len_utf8(), String::new()));
+        } else if next.is_some_and(unicode_normalization::char::is_combining_mark) {
+            // A letter and its combining marks, as NFC writes them
+            // ("Арте\u{308}м" reads "Артём").
+            let mut end = at + c.len_utf8();
+            while let Some((i, mark)) =
+                chars.next_if(|&(_, mark)| unicode_normalization::char::is_combining_mark(mark))
+            {
+                end = i + mark.len_utf8();
             }
-            None => at = start + 1,
+            let composed: String = source[at..end].nfc().collect();
+            if composed != source[at..end] {
+                out.push((at..end, composed));
+            }
         }
     }
     out
+}
+
+/// Characters that only break a word for the eye or a renderer: the soft
+/// hyphen and zero-width spaces and joiners ("Ма\u{ad}рина" is "Марина").
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}' | '\u{feff}'
+    )
 }
 
 /// The character reference at the start of `text` (`&#97;`, `&#x61;`,
@@ -165,6 +192,21 @@ mod tests {
         assert_eq!(span("Ann"), "Ann");
         assert_eq!(span("AT&T"), "AT&T");
         assert_eq!(decoded("no references"), "no references");
+        // Invisible characters drop out and Russian letters compose.
+        let source = "Ма\u{ad}рина и Арте\u{308}м Заи\u{306}цев, pavel@\u{200b}vector.invalid";
+        let view = View::new(source);
+        assert_eq!(view.text, "Марина и Артём Зайцев, pavel@vector.invalid");
+        let span = |text: &str| {
+            let start = view.text.find(text).unwrap();
+            &source[view.source_range(start..start + text.len())]
+        };
+        assert_eq!(span("Марина"), "Ма\u{ad}рина");
+        assert_eq!(span("рина"), "рина");
+        assert_eq!(span("Ма"), "Ма");
+        assert_eq!(span("Артём Зайцев"), "Арте\u{308}м Заи\u{306}цев");
+        assert_eq!(span("ё"), "е\u{308}");
+        assert_eq!(View::new("Mae\u{308}la Runnell").text, "Maëla Runnell");
+        assert_eq!(span("pavel@vector.invalid"), "pavel@\u{200b}vector.invalid");
         assert!(View::new("plain").is_source());
     }
 }
