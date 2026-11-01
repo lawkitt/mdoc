@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":468,"end":483,"label":"person","score":0.99838334,"text":"Kaelen Renn III"},
+    {"start":60,"end":75,"label":"person","score":0.9976586,"text":"Kaelen Renn III"},
+    {"start":89,"end":118,"label":"organization","score":0.99312294,"text":"Plover Flint Restorations Ltd"},
+    {"start":576,"end":586,"label":"person","score":0.891055,"text":"respondent"},
+    {"start":1097,"end":1104,"label":"person","score":0.70048517,"text":"parties"},
+    {"start":1334,"end":1347,"label":"person","score":0.9943142,"text":"Evrin Lothick"}
+  ]
+}

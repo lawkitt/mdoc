@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":61,"end":79,"label":"person","score":0.9940659,"text":"Jorin P. Valecroft"},
+    {"start":151,"end":160,"label":"person","score":0.97859025,"text":"VELK-QUEN"},
+    {"start":95,"end":120,"label":"organization","score":0.9926541,"text":"Dapple Reed Analytics Ltd"},
+    {"start":1214,"end":1227,"label":"person","score":0.93709576,"text":"Siora Dennick"},
+    {"start":1175,"end":1184,"label":"person","score":0.8563324,"text":"VALECROFT"},
+    {"start":1186,"end":1194,"label":"person","score":0.8334602,"text":"Jorin P."}
+  ]
+}

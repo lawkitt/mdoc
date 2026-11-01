@@ -62,3 +62,6 @@ a boundary case.
 - An address with no postcode or city ends at its last element: "Адрес получателя: ⟦ADDRESS|ул. Тихих фонарей, д. 83, кв. 16⟧" (hunt-ru-r1-01).
 - "оглы" belongs to the patronymic, inside the span: "⟦PERSON|Нияз Рауф оглы Иль-Булат⟧" (hunt-ru-r1-05).
 - A name split by a line-end hyphen is one span across the break, hyphen and newline included: "⟦PERSON|Верес-\nтова Дарья Ильинична⟧" (hunt-ru-r1-04).
+- A staff or employee ID assigned to one person is `IDENTITY`, letters only too: "Staff ID: ⟦IDENTITY|VELK-QUEN⟧" (hunt-en-r3-04).
+- A surname-first name is one span, comma included: "⟦PERSON|VALECROFT, Jorin P.⟧" (hunt-en-r3-04).
+- A generational suffix belongs to the name, inside the span: "⟦PERSON|Kaelen Renn III⟧" (hunt-en-r3-08).

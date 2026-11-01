@@ -1,0 +1,17 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":73,"end":87,"label":"person","score":0.9948404,"text":"Grant Pellover"},
+    {"start":99,"end":120,"label":"organization","score":0.9605836,"text":"Sable Chime Music Ltd"},
+    {"start":73,"end":87,"label":"organization","score":0.5795194,"text":"Grant Pellover"},
+    {"start":619,"end":627,"label":"person","score":0.9418684,"text":"landlord"},
+    {"start":150,"end":158,"label":"person","score":0.8438951,"text":"landlord"},
+    {"start":509,"end":515,"label":"person","score":0.6788594,"text":"tenant"},
+    {"start":191,"end":218,"label":"address","score":0.89274967,"text":"32 Cresset Road, Nottingham"},
+    {"start":1274,"end":1287,"label":"person","score":0.9878528,"text":"Taryn Vossick"},
+    {"start":1238,"end":1252,"label":"person","score":0.9303318,"text":"Grant Pellover"},
+    {"start":690,"end":695,"label":"person","score":0.83413684,"text":"Grant"},
+    {"start":943,"end":948,"label":"person","score":0.79262483,"text":"Grant"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":50,"end":64,"label":"person","score":0.9930693,"text":"Veylin Raskett"},
+    {"start":136,"end":145,"label":"person","score":0.9750122,"text":"TERN-WISP"},
+    {"start":78,"end":104,"label":"organization","score":0.9944017,"text":"Copper Dusk Facilities Ltd"},
+    {"start":1250,"end":1264,"label":"person","score":0.98486924,"text":"Veylin Raskett"},
+    {"start":739,"end":749,"label":"person","score":0.6531269,"text":"respondent"},
+    {"start":898,"end":908,"label":"person","score":0.5068508,"text":"respondent"},
+    {"start":739,"end":749,"label":"organization","score":0.65566677,"text":"respondent"},
+    {"start":898,"end":908,"label":"organization","score":0.53849787,"text":"respondent"}
+  ]
+}

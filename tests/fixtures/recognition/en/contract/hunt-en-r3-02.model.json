@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":328,"end":341,"label":"full_name","score":0.96938217,"text":"Night Compass"},
+    {"start":252,"end":266,"label":"full_name","score":0.9678385,"text":"Silver Orchard"},
+    {"start":185,"end":199,"label":"full_name","score":0.9537081,"text":"Copper Horizon"},
+    {"start":669,"end":683,"label":"full_name","score":0.8944212,"text":"Copper Horizon"},
+    {"start":844,"end":857,"label":"full_name","score":0.83332455,"text":"Night Compass"},
+    {"start":781,"end":795,"label":"organization","score":0.94002354,"text":"Silver Orchard"}
+  ]
+}

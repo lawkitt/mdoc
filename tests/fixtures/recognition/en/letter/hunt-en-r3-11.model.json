@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":55,"end":67,"label":"person","score":0.9946774,"text":"Rhea Veldren"},
+    {"start":88,"end":115,"label":"organization","score":0.9905874,"text":"Ripple Spur Engineering Ltd"},
+    {"start":73,"end":86,"label":"organization","score":0.58859354,"text":"Accounts team"},
+    {"start":1170,"end":1182,"label":"full_name","score":0.90548956,"text":"Rhea Veldren"},
+    {"start":782,"end":814,"label":"email","score":0.99981475,"text":"rhea.veldren@mallow-post.invalid"},
+    {"start":861,"end":883,"label":"address","score":0.8177201,"text":"52 Mallow Lane, Durham"}
+  ]
+}

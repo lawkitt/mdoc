@@ -1,0 +1,19 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":91,"end":102,"label":"person","score":0.9940429,"text":"Tessa Judge"},
+    {"start":117,"end":139,"label":"organization","score":0.98347044,"text":"Oriel Tern Repairs Ltd"},
+    {"start":576,"end":585,"label":"person","score":0.98687875,"text":"defendant"},
+    {"start":498,"end":503,"label":"person","score":0.9855522,"text":"Judge"},
+    {"start":518,"end":527,"label":"person","score":0.9784259,"text":"defendant"},
+    {"start":912,"end":920,"label":"person","score":0.9541373,"text":"claimant"},
+    {"start":665,"end":673,"label":"person","score":0.9531007,"text":"claimant"},
+    {"start":936,"end":944,"label":"person","score":0.9466953,"text":"claimant"},
+    {"start":488,"end":496,"label":"person","score":0.92643696,"text":"claimant"},
+    {"start":1082,"end":1091,"label":"person","score":0.8925625,"text":"defendant"},
+    {"start":1345,"end":1356,"label":"person","score":0.88038635,"text":"Tessa Judge"},
+    {"start":1123,"end":1131,"label":"person","score":0.7999116,"text":"claimant"},
+    {"start":1069,"end":1074,"label":"person","score":0.6425446,"text":"Judge"}
+  ]
+}
