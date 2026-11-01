@@ -994,9 +994,17 @@ fn the_russian_demo_gives_pavlova_one_identity() {
             ("Марина".to_string(), 1),
             ("Павлова".to_string(), 2),
             ("Павловой".to_string(), 1),
-            ("Павлову".to_string(), 1),
         ]
     );
+    // "Павлову" is her accusative and her husband's dative: either, so an
+    // identity of its own that Same as… offers both.
+    let either = proposed(&review, "Павлову").id;
+    assert!(
+        !identity_variants(&review, pavlova)
+            .iter()
+            .any(|(w, _)| w == "Павлову")
+    );
+    assert_eq!(review.suggestions(either).len(), 2);
     assert!(proposed(&review, "Марина").recognizer() == Some(Recognizer::Propagation));
     assert_eq!(
         proposed(&review, "Маришей").recognizer(),
@@ -1020,7 +1028,7 @@ fn the_russian_demo_gives_pavlova_one_identity() {
             .iter()
             .filter(|(_, alias)| alias == "PERSON_1")
             .count(),
-        9
+        8
     );
     assert!(
         review.merge_hints().is_empty(),
@@ -1454,4 +1462,57 @@ fn signature_initials_join_their_full_name() {
     let initials = proposed(&review, "Y. Q.");
     assert_eq!(review.variant_identity(initials.id), full);
     assert_eq!(initials.recognizer(), Some(Recognizer::Propagation));
+}
+
+/// #392: a person the document names only in oblique cases still has a
+/// surname: the inflected full names are one identity, and the surname
+/// alone joins it.
+#[test]
+fn an_inflected_full_name_propagates_its_surname() {
+    let source = "Заказ гражданки Эльзы-Руты Мартыновны Таль-Шнейдер принят. \
+        Предмет выдаётся Эльзе-Руте Мартыновне Таль-Шнейдер лично. \
+        Получатель Таль-Шнейдер просит вернуть аванс.";
+    let review = ingest_names(
+        source,
+        &[
+            "Эльзы-Руты Мартыновны Таль-Шнейдер",
+            "Эльзе-Руте Мартыновне Таль-Шнейдер",
+        ],
+    );
+    let genitive =
+        review.variant_identity(proposed(&review, "Эльзы-Руты Мартыновны Таль-Шнейдер").id);
+    let dative =
+        review.variant_identity(proposed(&review, "Эльзе-Руте Мартыновне Таль-Шнейдер").id);
+    assert_eq!(genitive, dative, "one person in two cases");
+    let surname = proposed(&review, "Таль-Шнейдер");
+    assert_eq!(surname.mentions.len(), 1);
+    assert_eq!(review.variant_identity(surname.id), genitive);
+    assert_eq!(review.active_identities().len(), 1);
+}
+
+/// Review of #421: a soft-stem first name in two cases is one person, and a
+/// surname shaped like a patronymic still propagates.
+#[test]
+fn soft_stems_and_patronymic_shaped_surnames_read_back() {
+    let source = "Заявление Дарьи Ивановны Петровой принято. Ответ Дарье Ивановне Петровой \
+        направлен. Дарья согласна.";
+    let review = ingest_names(
+        source,
+        &["Дарьи Ивановны Петровой", "Дарье Ивановне Петровой"],
+    );
+    let genitive = review.variant_identity(proposed(&review, "Дарьи Ивановны Петровой").id);
+    let dative = review.variant_identity(proposed(&review, "Дарье Ивановне Петровой").id);
+    assert_eq!(genitive, dative);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Дарья").id),
+        genitive
+    );
+
+    let source = "Договор с Якубович Анны Сергеевны. Якубович подписала.";
+    let review = ingest_names(source, &["Якубович Анны Сергеевны"]);
+    let full = review.variant_identity(proposed(&review, "Якубович Анны Сергеевны").id);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Якубович").id),
+        full
+    );
 }

@@ -608,12 +608,7 @@ impl Review {
                 .unwrap_or_else(|| {
                     let next = u64::MAX - provisional.len() as u64;
                     *provisional
-                        .entry(
-                            text.split_whitespace()
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                                .to_lowercase(),
-                        )
+                        .entry(identities::normalization_key(text, Category::Person))
                         .or_insert(next)
                 });
             people.push((owner, text));

@@ -84,12 +84,13 @@ impl IdentityStore {
     }
     pub(crate) fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {
         self.normalized
-            .get(&(category, canonical(value)))
+            .get(&(category, normalization_key(value, category)))
             .copied()
             .filter(|id| self.get(*id).is_some_and(|i| i.category == category))
     }
     pub(crate) fn remember_normalized(&mut self, value: &str, category: Category, id: u64) {
-        self.normalized.insert((category, canonical(value)), id);
+        self.normalized
+            .insert((category, normalization_key(value, category)), id);
     }
     pub(crate) fn add(&mut self, identity: Identity) {
         self.definitions.insert(identity.id, Arc::new(identity));
@@ -128,6 +129,21 @@ impl IdentityStore {
     }
 }
 
+/// The key two wordings of one subject share: case, whitespace and quotes
+/// aside, and a Russian full name with a patronymic in any case, in its own
+/// word order ("Эльзы-Руты Мартыновны Таль-Шнейдер" is "Эльза-Рута
+/// Мартыновна Таль-Шнейдер").
+pub(crate) fn normalization_key(value: &str, category: Category) -> String {
+    let words = name_words(value);
+    if category == Category::Person
+        && words.len() == 3
+        && words.iter().all(|w| cyrillic(w))
+        && let Some(nominative) = crate::propagation::nominative(&words)
+    {
+        return nominative.join(" ");
+    }
+    canonical(value)
+}
 fn canonical(value: &str) -> String {
     value
         .replace(['«', '»', '“', '”'], "\"")
@@ -180,6 +196,13 @@ fn russian_surname_score(word: &str) -> u8 {
 /// The surname and given names of a full person name, or `None` when the
 /// wording is not one (a single word, initials) or the surname is ambiguous.
 pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
+    split_full_name_inflected(value).map(|(surname, given, _)| (surname, given))
+}
+/// A full name's surname and given names as the document wrote them.
+pub(crate) type Written = Option<(String, Vec<String>)>;
+/// [`split_full_name`], in the nominative when the name came inflected
+/// ("Эльзе-Руте Мартыновне Таль-Шнейдер"), with the words as written then.
+pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<String>, Written)> {
     let mut words = name_words(value);
     let full = |w: &String| {
         w.chars().filter(|c| c.is_alphabetic()).count() > 1
@@ -191,8 +214,16 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     }
     let last = words.len() - 1;
     let russian = words.iter().all(|w| cyrillic(w));
-    // An inflected name ("Павлову Дмитрию Андреевичу") gives no reliable
-    // surname, and first name + patronymic has none.
+    // An inflected name with a patronymic is read in the nominative
+    // ("Павлову Дмитрию Андреевичу": Павлов Дмитрий Андреевич).
+    let nominative = (russian && words.len() >= 3)
+        .then(|| crate::propagation::nominative(&words))
+        .flatten();
+    let mut written = None;
+    if let Some(nominative) = nominative {
+        written = Some(std::mem::replace(&mut words, nominative));
+    }
+    // Still inflected, or first name + patronymic, which has no surname.
     if russian
         && words
             .iter()
@@ -217,8 +248,9 @@ pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     } else {
         last
     };
+    let written = written.map(|mut written| (written.remove(surname), written));
     let surname = words.remove(surname);
-    (surname.chars().count() >= 3).then_some((surname, words))
+    (surname.chars().count() >= 3).then_some((surname, words, written))
 }
 /// Lowercase wordings that stand for `surname` alone: itself and, for a
 /// Russian surname, its conservative case forms ("раман" → "рамана",
