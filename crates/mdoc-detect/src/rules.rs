@@ -162,6 +162,7 @@ impl SpanFix {
             if let Some(c) = text.chars().next_back()
                 && text.len() > c.len_utf8()
                 && self.strip_end.contains(c)
+                && !(c == '.' && ends_with_initial(&text[..text.len() - 1]))
             {
                 range.end -= c.len_utf8();
                 continue;
@@ -169,6 +170,14 @@ impl SpanFix {
             return range;
         }
     }
+}
+
+/// Whether `text` ends with a single capital letter on its own, an
+/// initial whose period belongs to the name ("Белявская О. М", "Smith J").
+fn ends_with_initial(text: &str) -> bool {
+    let mut chars = text.chars().rev();
+    chars.next().is_some_and(char::is_uppercase)
+        && chars.next().is_none_or(|c| c.is_whitespace() || c == '.')
 }
 
 /// A label then its value: the value's capture group 1 is proposed.
@@ -1021,6 +1030,40 @@ mod tests {
         assert_eq!(
             fixed("журнал «Север»", &[("Север", Category::Organization)]),
             ["Север"]
+        );
+    }
+
+    #[test]
+    fn an_initial_keeps_its_period_a_sentence_loses_it() {
+        assert_eq!(
+            fixed(
+                "Исполнитель: ИП Белявская О. М. Заказчик: ООО «Ромашка».",
+                &[
+                    ("ИП Белявская О. М.", Category::Organization),
+                    ("ООО «Ромашка».", Category::Organization),
+                ]
+            ),
+            ["ИП Белявская О. М.", "ООО «Ромашка»"]
+        );
+        assert_eq!(
+            fixed(
+                "Исполнитель: ИП Белявская О.М.. Подрядчик: Альфа-Строй.",
+                &[
+                    ("ИП Белявская О.М..", Category::Organization),
+                    ("Альфа-Строй.", Category::Organization),
+                ]
+            ),
+            ["ИП Белявская О.М.", "Альфа-Строй"]
+        );
+        assert_eq!(
+            fixed(
+                "Prepared by Smith J. for Northbridge Legal Ltd.",
+                &[
+                    ("Smith J.", Category::Organization),
+                    ("Northbridge Legal Ltd.", Category::Organization),
+                ]
+            ),
+            ["Smith J.", "Northbridge Legal Ltd"]
         );
     }
 
