@@ -42,13 +42,21 @@ m70=$(at 14:50) old=$(at 09:00)
 st() { # context state description created
   printf '{"context":"%s","state":"%s","description":"%s","createdAt":"%s"}' "$@"
 }
-# number draft cross author lint-started statuses...
+# number draft cross author lint-started statuses... Without a status of
+# their own, local/ios and local/android are "Not affected"; "-<context>"
+# leaves that context without one.
 pr_node() {
-  local n=$1 draft=$2 cross=$3 author=$4 lint=$5 statuses
+  local n=$1 draft=$2 cross=$3 author=$4 lint=$5 statuses ctx
   shift 5
+  local -a all=()
+  for ctx in local/ios local/android; do
+    [[ " $* " == *"\"context\":\"$ctx\""* || " $* " == *" -$ctx "* ]] ||
+      all+=("$(st "$ctx" SUCCESS "Not affected: no core or ${ctx#local/} change (main@abc)" "$old")")
+  done
+  for ctx in "$@"; do [[ $ctx == -* ]] || all+=("$ctx"); done
   statuses=$(
     IFS=,
-    echo "$*"
+    echo "${all[*]}"
   )
   printf '{"number":%s,"isDraft":%s,"isCrossRepository":%s,"headRefName":"b%s","headRefOid":"head%s000000",' \
     "$n" "$draft" "$cross" "$n" "$n"
@@ -96,6 +104,14 @@ nodes=(
     "$(st local/windows SUCCESS Passed "$m10")")"
   "$(pr_node 15 false false User "$m60" "$(st local/macos SUCCESS Passed "$m10")" \
     "$(st local/windows PENDING "$(fb 15 1)" "$m30")")"
+  # 16: no local/ios after 20 min, local/android queued 50: both posted
+  # untested success (no hosted mobile job yet), with no dispatch.
+  "$(pr_node 16 false false User "$m20" "$(st local/macos SUCCESS Passed "$m10")" \
+    "$(st local/windows SUCCESS Passed "$m10")" -local/ios "$(st local/android PENDING Queued "$(at 15:10)")")"
+  # 17: local/ios queued 30 min is not stuck; a mobile step running 60 min is.
+  "$(pr_node 17 false false User "$m60" "$(st local/macos SUCCESS Passed "$m10")" \
+    "$(st local/windows SUCCESS Passed "$m10")" "$(st local/ios PENDING Queued "$m30")" \
+    "$(st local/android PENDING "Running just android on main@abc" "$m60")")"
 )
 printf '{"data":{"repository":{"pullRequests":{"nodes":[%s]}}}}' "$(
   IFS=,
@@ -216,6 +232,17 @@ check "a retry waits for the head's running hosted run" none head13000000 local/
 check "and spends no attempt or dispatch" eval '! dispatched b13'
 check "hosted jobs queued 70 min are retried" has head14000000 local/macos "pending	* (attempt 2); hosted run queued after 70 min	*"
 check "hosted jobs queued 30 min are left to start" none head15000000 local/windows
+adr=https://github.com/example/mdoc/blob/main/docs/adr/0091-mobile-ci-and-releases.md
+check "a stuck local/ios is posted success, saying plainly it was NOT tested (temporary)" \
+  has head16000000 local/ios "success	Hosted fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5); no runner status after 20 min	$adr"
+check "so is a stuck local/android" \
+  has head16000000 local/android "success	Hosted fallback: NOT tested; no hosted Android job yet (ADR 0091 item 5); \"Queued\" for 50 min	$adr"
+check "with no hosted run dispatched for them" eval '! dispatched b16 && ! dispatched b17'
+check "a 30-min mobile queue is not stuck" none head17000000 local/ios
+check "a mobile step running 60 min is" has head17000000 local/android "success	Hosted fallback: NOT tested; no hosted Android job yet*\"Running just android on main@abc\" for 60 min	*"
+check "a mobile status the runner settled is left alone" none head1000000 local/ios
+check "the mobile contexts have no hosted runner yet" eval '! hosted_runner local/ios && ! hosted_runner local/android'
+check "untested_job names them" [ "$(untested_job local/ios), $(untested_job local/android)" = "iOS, Android" ]
 
 # Each stuck rule on its own, at its edge.
 # shellcheck disable=SC2016 # the eval strings expand when eval runs them

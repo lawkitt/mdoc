@@ -10,7 +10,7 @@ packages.
 just ios-app    # the core, then the app, extension and test targets for the Simulator
 just ios-test   # unit, parity and UI tests on an iOS 26.1 Simulator
 just ios-test "<Simulator name>"   # another device, such as an iPad
-just mobile     # what local CI runs on the Mac, the iOS job included
+just mobile     # what local CI runs on the Mac: --ffi in local/macos, --ios (the iOS job) as local/ios
 just ios-device-test <hardware UDID>   # the device UI tests on a connected iPhone
 ```
 

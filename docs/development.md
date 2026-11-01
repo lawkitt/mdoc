@@ -27,9 +27,10 @@ Before a PR is ready, run `just lint` and the tests of the crates it changes
 headless-renders`, a script's suite with `bash scripts/test-<suite>.sh`;
 `just test` for a change to `Cargo.lock`, the toolchain or
 `.config/nextest.toml`). The checks a code PR needs green run the
-full suite on both shipped OSes: `local/windows` and `local/macos` from
-[local CI](#local-ci), and hosted `lint (ubuntu)`. A PR from a fork, or opened
-by a bot, gets the full hosted matrix instead.
+full suite on both shipped OSes and the mobile jobs: `local/windows`,
+`local/macos`, `local/ios` and `local/android` from [local CI](#local-ci), and
+hosted `lint (ubuntu)`. A PR from a fork, or opened by a bot, gets the full
+hosted matrix instead.
 
 ## Project documentation
 
@@ -227,11 +228,11 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
 | `just android-setup` | Windows: the pinned Android SDK (command-line tools, `adb`, build-tools, platform 36, the emulator and an API 36 x86_64 image with 16 KB pages), Temurin 21 and NDK r29 under `E:\Android` (`MDOC_ANDROID_HOME` overrides), each archive checked against its published size and SHA-1 or SHA-256; accepts the SDK licences. About 4 GB, once ([ADR 0089](adr/0089-android-app.md)) |
 | `just android-emulator [--window] [phone\|tablet]` | Windows: boots a Pixel 8-sized phone (`emulator-5554`) or Pixel Tablet-sized tablet (`emulator-5556`) on the pinned API 36 image with 16 KB pages, headless unless `--window`, writing its virtual device on first use; prints the adb serial. `adb -s <serial> emu kill` stops it |
-| `just android` | Windows: the Android job when the commit changes `crates/`, `Cargo.lock`, `apps/android/` or the Android scripts: `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. Windows local CI runs it after `test`, with a 40-minute limit |
+| `just android` | Windows: the Android job when the commit touches the core or android area (`scripts/ci-areas.txt`; `MDOC_ANDROID_JOB=always` or `never` overrides): `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. Windows local CI runs it as `local/android`, with a 40-minute limit |
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of local CI |
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of local CI |
 | `just android-core` | Windows or macOS: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android, then, when the commit changes `crates/`, `Cargo.lock` or `apps/`, the iOS job (`just ios-app ios-test`, shutting down the Simulator it booted); the Mac's local CI runs it after `test`, with a 40-minute limit |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which the Mac's local CI runs in `local/macos` after `test`; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted, which the Mac's local CI runs as `local/ios` with a 40-minute limit. Neither: both |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
 | `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
@@ -416,47 +417,74 @@ minutes for `just test`). Edits alone grow the cache only slowly.
 ## Local CI
 
 Local CI is the pre-merge test gate
-([ADR 0082](adr/0082-local-ci.md)): `scripts/local-ci.sh` runs on the Mac
-and on the Windows PC and posts the `local/macos` and `local/windows` commit
-statuses on each PR head. When a runner is stuck, the hosted fallback posts
-those statuses from a hosted CI run instead (below).
-`scripts/test-local-ci.sh` and `scripts/test-local-ci-fallback.sh` (part of
-`just test`) check both against fakes.
+([ADR 0082](adr/0082-local-ci.md),
+[ADR 0091](adr/0091-mobile-ci-and-releases.md)): `scripts/local-ci.sh` runs
+on the Mac and on the Windows PC. The Mac posts `local/macos` (lint, test,
+the mobile cargo check) and `local/ios` (the iOS job) on each PR head; the
+PC posts `local/windows` (lint, test) and `local/android` (the Android job).
+When a runner is stuck, the hosted fallback posts those statuses instead
+(below). `scripts/test-local-ci.sh` and `scripts/test-local-ci-fallback.sh`
+(part of `just test`) check both against fakes.
+
+**Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
+area (`none`, `ios`, `android`, `core`, `desktop`, or two of them) and a
+glob; a file takes the first line that matches it, desktop when none does,
+and a core change runs every area. Its comment says which scripts are
+desktop, shared (core) or mobile. `scripts/ci-areas.sh [<from> <to>]`
+prints the areas a change touches (`HEAD^1` to `HEAD` by default: on a
+merge ref, the PR). A new script outside `src/` and `tests/` that a mobile
+job runs needs a line there, or it counts as desktop. `ci.yml`'s
+`paths-ignore` repeats the `none` lines word for word (the suite checks).
 
 **Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
-runs only `lint (ubuntu)` on `pull_request`; its `clippy` and `test` jobs show
-as skipped. A merge needs `local/windows`, `local/macos` and `lint (ubuntu)`
-green. Fork and bot (Dependabot) PRs, which the runners never test, run the
-full hosted matrix, so third-party code is never compiled on the maintainer's
-machines before review. `main` runs the full matrix after each merge, and
-`release.yml` calls the full `ci.yml`.
+runs only `lint (ubuntu)` on `pull_request`; its `areas`, `clippy` and `test`
+jobs show as skipped. A merge needs `local/windows`, `local/macos`,
+`local/ios`, `local/android` and `lint (ubuntu)` green. Fork and bot
+(Dependabot) PRs, which the runners never test, run the full hosted matrix,
+so third-party code is never compiled on the maintainer's machines before
+review. `main` runs the full matrix after each merge, and `release.yml`
+calls the full `ci.yml`; there the `areas` job skips `clippy` and `test`
+when the change is outside the desktop and core areas (an app-only merge).
 
 **What a runner does.** Every 60 s it lists the open PRs with the machine's
-`gh` login, skipping drafts, forks and bot PRs (Dependabot). A head without
-this machine's status gets `pending` "Queued", linked to the runner's
-`status.txt`; one job runs at a time, oldest first. Each step of a running
+`gh` login, skipping drafts, forks and bot PRs (Dependabot). Each PR has two
+jobs, one per status. As soon as GitHub has the merge ref, the runner reads
+the PR's areas from the merge ref's own `scripts/ci-areas.txt`: a status
+outside them gets `success` "Not affected: no core or ios change
+(main@1a2b3c4)", a PR whose files are all in no area gets `success` "Docs
+only, not tested" on both, and a conflicting PR gets `failure` ("Conflicts
+with main"), all without a build. Any other status without this machine's
+result gets `pending` "Queued", linked to the runner's `status.txt`; one job
+runs at a time, oldest first, a PR's desktop job before its mobile one, so
+the desktop status never waits for the mobile job. Each step of a running
 job posts `pending` "Running just test on main@1a2b3c4", so GitHub shows the
 step and a status older than the longest step limit means the runner
-stopped. A job fetches
-`refs/pull/N/merge`, checks it out in the CI checkout (keeping its
-`target/`), installs the merge ref's pinned tools with `scripts/setup.sh`
-(as hosted CI's setup step does) and runs `just lint` and `just test` with
-the hosted job limits (20 and 30 minutes); the Mac then runs `just mobile`
-(40 minutes), whose iOS job runs only when the merge changes `crates/`,
-`Cargo.lock` or `apps/`, and the Windows PC runs `just android` (40
-minutes), whose Android job runs only when the merge changes `crates/`,
-`Cargo.lock`, `apps/android/` or the Android scripts
-([ADR 0089](adr/0089-android-app.md)). A runner reads its own copy of
-`local-ci.sh`, so a change to its steps takes effect after the runner is
-installed again. The runner's `PATH` puts
-`~/.cargo/bin` first, so the pinned tools win over other installs. The status, `success` or `failure`, names the base
-commit tested ("Passed on main@1a2b3c4 in 4m10s") and links to the job's
-folder. Without a build, a conflicting PR gets `failure` ("Conflicts with
-main") and a PR that touches only files in `ci.yml`'s `paths-ignore` list
-gets `success` ("Docs only, not tested"); the runner reads that list from
-the merge ref's own `ci.yml`. A newer head ends its PR's queued or running
-job (`error`, "Superseded by …"); a pending status left by a stopped runner
-runs again when it starts. On the Mac a job starts only while memory
+stopped. A job fetches `refs/pull/N/merge`, checks it out in the CI checkout
+(keeping its `target/`) and installs the merge ref's pinned tools with
+`scripts/setup.sh` (as hosted CI's setup step does). The desktop job then
+runs `just lint` and `just test` with the hosted job limits (20 and 30
+minutes), and on the Mac `just mobile --ffi` (20 minutes). The mobile job
+runs `just mobile --ios` on the Mac or `just android` on the PC (40
+minutes each, [ADR 0089](adr/0089-android-app.md)). A runner reads its own
+copy of `local-ci.sh` and `lib.sh`, so a change to them takes effect after
+the runner is installed again. The runner's `PATH` puts `~/.cargo/bin`
+first, so the pinned tools win over other installs. The status, `success`
+or `failure`, names the base commit tested ("Passed on main@1a2b3c4 in
+4m10s") and links to the job's folder (`pr-N/<head>/`, the mobile job's
+`pr-N/<head>-ios/` or `-android/`). A newer head ends its PR's queued or
+running jobs (`error`, "Superseded by …"); a pending status left by a
+stopped runner runs again when it starts.
+
+**Testing `main`.** When no PR job is queued, the runner takes the `main`
+commits after the last one it queued (`state/main-last`), oldest first, and
+tests each one in the areas it touched, against the commit before it,
+posting both statuses on that commit ("Passed on main@<commit>"; "Not
+affected" and "Docs only" as on PRs); results are under `out/main/`. On its
+first run it takes `main`'s tip only, and after a long time off the newest
+10 (`LOCAL_CI_MAIN_MAX`). A PR head that arrives waits for a running `main`
+job, then goes first. Queued `main` jobs live in `state/main-queue` and run
+again after a restart. A red local status on `main` stops merges, as a red
+hosted `main` does. On the Mac a job starts only while memory
 pressure is normal (`kern.memorystatus_vm_pressure_level` 1) and 40 GB is
 free. Not swap in use: macOS keeps swap after memory is free again, and a
 2 GB swap limit held every job from 11:58 to 15:49 UTC on 2026-10-31 with
@@ -499,7 +527,15 @@ checkout, with Python on `PATH`:
 clone the CI checkout if it is missing (its first build is cold and its
 `target/` reaches about 30 GB), copy the runner, register the agents or the
 task and add `/ci` to `tailscale serve`; existing `tailscale serve` paths are
-kept. Re-run the same command after `scripts/local-ci.sh` changes on `main`.
+kept. Re-run the same command after `scripts/local-ci.sh` or
+`scripts/lib.sh` changes on `main`; nothing updates the runner by itself
+(on 2026-11-01 the Mac still ran a copy from before the swap-gate fix and
+held PRs for it). When its copy differs from `main`'s, `status.txt` says
+so ("outdated: this runner's local-ci.sh differ from main's; re-run
+install") and the log warns.
+The area table is not copied: the runner reads it from each commit it
+tests. Never run either from the CI checkout, which sits at whatever merge
+ref it tested last.
 
 **Check the runners** (the fleet preflight). Open `/ci/status.txt` on each
 machine over the tailnet: an `updated` time within the last 3 minutes means
@@ -520,6 +556,8 @@ pending head it is not running:
 ```sh
 gh api -X POST repos/lawkitt/mdoc/statuses/<sha> -f state=pending -f context=local/macos -f description=Queued
 ```
+
+(`context=local/ios` or `local/android` for a mobile job.)
 
 **Hosted fallback.** `.github/workflows/local-ci-fallback.yml` runs
 `scripts/local-ci-fallback.sh` every 10 minutes and after each CI run. It
@@ -542,7 +580,11 @@ mobile not run" (hosted CI has no `just mobile`), or `failure` naming the
 job. A dispatch with no result in 25 minutes (cancelled or missing), or
 whose jobs are still queued after 60, is retried, three dispatches in all,
 then the context gets `error`; a retry waits while the head's hosted run is
-still going, and a newly stuck context joins that run. The merge gate does
+still going, and a newly stuck context joins that run. A stuck `local/ios`
+or `local/android` dispatches nothing: until the hosted mobile jobs exist
+([ADR 0091](adr/0091-mobile-ci-and-releases.md) item 5) it gets `success`
+"Hosted fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5)" at
+once, so a machine that is off never blocks merges (temporary). The merge gate does
 not change: a green fallback status counts like a local one. A runner that
 comes back queues every head with a fallback status, pending or finished,
 and its own result replaces the fallback's. The fallback writes only over
@@ -616,9 +658,10 @@ skill) read this section for mdoc's needs.
   runner is a build slot beside the two agent builders. Preflight: each
   machine's `/ci/status.txt` updated within the last 3 minutes. UI items'
   renders are in the `local/macos` and `local/windows` status links.
-- **Required checks:** `local/windows`, `local/macos` and `lint (ubuntu)`;
-  the lane waits for them and fixes failures, and the hub merges on the same
-  three. They run the full suite on both shipped OSes, so a lane's gate is
+- **Required checks:** `local/windows`, `local/macos`, `local/ios`,
+  `local/android` and `lint (ubuntu)`; the lane waits for them and fixes
+  failures, and the hub merges on the same five. They run the full suite on
+  both shipped OSes and the mobile jobs, so a lane's gate is
   the fast subset under [Build from source](#build-from-source): `just lint`
   and the changed crates' tests (`wsl` keeps its own gate). When a runner
   is stuck or its machine is off, the hosted fallback posts its status
@@ -652,7 +695,7 @@ read_first = [
 # headless-renders`, a script's suite `bash scripts/test-<suite>.sh`, and a
 # change to Cargo.lock, the toolchain or .config/nextest.toml runs `just test`.
 gate = ["just lint", "cargo nextest run -p <each changed crate>"]
-checks = ["local/windows", "local/macos", "lint (ubuntu)"]
+checks = ["local/windows", "local/macos", "local/ios", "local/android", "lint (ubuntu)"]
 rules = [
   "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
   "Stop and report to the hub before adding a dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or editing outside the item's area.",

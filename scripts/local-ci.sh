@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Usage: scripts/local-ci.sh [run|once|install|start|stop|status|uninstall]
 #
-# Local CI (ADR 0082). Tests each open non-draft PR from a branch in the
-# repository (never forks or bots) at refs/pull/N/merge, in a CI checkout that
-# keeps its target/, and posts the local/macos or local/windows commit status
-# on the PR head. Polls every 60 s with this machine's gh login; one job at a
-# time; a newer head replaces its PR's queued or running job. Logs, summaries
-# and renders stay in $LOCAL_CI_HOME/out for 7 days, served to the tailnet.
+# Local CI (ADR 0082, ADR 0091). Tests each open non-draft PR from a branch
+# in the repository (never forks or bots) at refs/pull/N/merge, in a CI
+# checkout that keeps its target/, and posts two commit statuses on the PR
+# head: the desktop one (local/macos or local/windows: lint, test, and on
+# the Mac the mobile cargo check) and the mobile one (local/ios on the Mac,
+# local/android on the PC), each from its own job. A status whose area the
+# PR does not touch (scripts/ci-areas.txt) gets success "Not affected" as
+# soon as the merge ref is there. Polls every 60 s with this machine's gh
+# login; one job at a time; a newer head replaces its PR's queued or running
+# jobs. With no PR queued, it tests each new main commit in the areas that
+# commit touched and posts the statuses there. Logs, summaries and renders
+# stay in $LOCAL_CI_HOME/out for 7 days, served to the tailnet.
 #
 #   run        the runner loop (what the launchd agent or scheduled task runs)
 #   once       the loop until nothing is queued or running, then exit
@@ -20,11 +26,14 @@
 # copy in $LOCAL_CI_HOME/runner, never the CI checkout it switches between
 # merge refs; re-run install (or the setup script) to update it. Settings are
 # the LOCAL_CI_* variables in config(), also read from $LOCAL_CI_HOME/runner.env.
+# The folder this copy runs from, before lib.sh moves to the repository root.
+runner_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 agent=com.lawkitt.mdoc.local-ci
 web_agent=com.lawkitt.mdoc.local-ci-web
+every_area='core desktop ios android'
 
 config() {
   local default_os=
@@ -46,7 +55,15 @@ config() {
   fi
   os=${LOCAL_CI_OS:-$default_os}
   [ -n "$os" ] || die "local CI runs on macOS or Windows (this is $(platform)); set LOCAL_CI_OS to test elsewhere"
+  # The desktop status and the mobile one (ADR 0091): the Mac runs the iOS
+  # job, the PC the Android job.
   context=local/$os
+  case "$os" in
+    macos) mobile_area=ios ;;
+    windows) mobile_area=android ;;
+    *) mobile_area=${LOCAL_CI_MOBILE_AREA:-ios} ;;
+  esac
+  mobile_context=local/$mobile_area
   repo=${LOCAL_CI_REPO:-lawkitt/mdoc}
   checkout=$LOCAL_CI_HOME/mdoc
   out=$LOCAL_CI_HOME/out
@@ -55,24 +72,27 @@ config() {
   port=${LOCAL_CI_PORT:-8787}
   poll_s=${LOCAL_CI_POLL:-60}
   tick_s=${LOCAL_CI_TICK:-5}
-  # setup installs the merge ref's pinned tools, as hosted CI's setup step does.
-  # The Mac also checks the mobile core (ADR 0085); Windows runs the Android
-  # job (ADR 0089).
+  # setup installs the merge ref's pinned tools, as hosted CI's setup step
+  # does. The Mac's desktop job also checks the mobile core (`ffi`, ADR
+  # 0085); the mobile job is the iOS job (`ios`) or the Android job
+  # (`android`, ADR 0089).
   case "$os" in
-    macos) steps=${LOCAL_CI_STEPS:-setup lint test mobile} ;;
-    windows) steps=${LOCAL_CI_STEPS:-setup lint test android} ;;
+    macos) steps=${LOCAL_CI_STEPS:-setup lint test ffi} ;;
     *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
   esac
-  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min. The
-  # mobile step also builds the iOS core and app and runs the Simulator
-  # tests when a PR changes them (ADR 0085): 40 min.
+  mobile_steps=${LOCAL_CI_MOBILE_STEPS:-setup $mobile_area}
+  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min; the mobile
+  # cargo check shares lint's. The iOS job builds the core and app and runs
+  # the Simulator tests (ADR 0085): 40 min.
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
   mobile_s=${LOCAL_CI_MOBILE_TIMEOUT:-2400}
   # The Android job builds the core for two ABIs and runs the emulator tests
-  # when a PR changes them (ADR 0089): 40 min.
+  # (ADR 0089): 40 min.
   android_s=${LOCAL_CI_ANDROID_TIMEOUT:-2400}
   keep_days=${LOCAL_CI_KEEP_DAYS:-7}
+  # After a long time off, only the newest main commits are tested.
+  main_max=${LOCAL_CI_MAIN_MAX:-10}
   # The Mac is a build slot beside two agent builders (ADR 0082): a job
   # starts at or under this kern.memorystatus_vm_pressure_level (1 normal,
   # 2 warning, 4 critical) and with this much disk free. Not swap in use:
@@ -87,149 +107,133 @@ short() { printf '%s' "${1:0:7}"; }
 
 duration() { printf '%dm%02ds' $(($1 / 60)) $(($1 % 60)); }
 
-# --- paths-ignore: ci.yml's list is the one place both read (ADR 0082) -----
+# --- areas (scripts/ci-areas.txt, ADR 0091) ----------------------------------
 
-# The first paths-ignore list in the ci.yml on stdin, one pattern per line.
-paths_ignore() {
-  awk '
-    done { next }
-    inlist {
-      if ($0 ~ /^[[:space:]]*-[[:space:]]/) {
-        sub(/^[[:space:]]*-[[:space:]]*/, "")
-        sub(/[[:space:]]+#.*$/, "")
-        gsub(/^["'\'']|["'\''][[:space:]]*$/, "")
-        print
-        next
-      }
-      done = 1
-      next
-    }
-    /^[[:space:]]*paths-ignore:/ { inlist = 1 }
-  '
+# The area a status stands for.
+area_of() {
+  if [ "$1" = "$context" ]; then echo desktop; else echo "$mobile_area"; fi
 }
 
-# A GitHub filter glob as an anchored extended regex: ** crosses directories,
-# * and ? do not.
-glob_regex() {
-  local glob=$1 re='' c i=0
-  while [ "$i" -lt "${#glob}" ]; do
-    c=${glob:i:1}
-    if [ "${glob:i:3}" = '**/' ]; then
-      re+='(.*/)?'
-      i=$((i + 3))
-      continue
-    elif [ "${glob:i:2}" = '**' ]; then
-      re+='.*'
-      i=$((i + 2))
-      continue
-    fi
-    case "$c" in
-      '*') re+='[^/]*' ;;
-      '?') re+='[^/]' ;;
-      . | \\ | + | '(' | ')' | '|' | ^ | '$' | '{' | '}' | '[' | ']') re+="\\$c" ;;
-      *) re+=$c ;;
-    esac
-    i=$((i + 1))
-  done
-  printf '^%s$' "$re"
+steps_of() {
+  if [ "$1" = "$context" ]; then echo "$steps"; else echo "$mobile_steps"; fi
 }
 
-# True when every file on stdin matches one of the globs given as arguments;
-# false for an empty list.
-only_ignored() {
-  local regexes=() glob f any=false r matched
-  for glob in "$@"; do regexes+=("$(glob_regex "$glob")"); done
-  [ "${#regexes[@]}" -gt 0 ] || return 1
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    any=true
-    matched=false
-    for r in "${regexes[@]}"; do
-      if [[ $f =~ $r ]]; then
-        matched=true
-        break
-      fi
-    done
-    $matched || return 1
-  done
-  $any
+# The areas a commit range touches, by the area table in commit $1 (every
+# area when it has none): a PR's changes since it left main, or a main
+# commit's since the one before.
+commit_areas() { # commit range
+  local table
+  if ! table=$(git -C "$checkout" show "$1:scripts/ci-areas.txt" 2>/dev/null); then
+    echo "$every_area"
+    return 0
+  fi
+  git -C "$checkout" diff --no-renames --name-only -z "$2" | changed_areas "$table"
 }
 
-# True when the PR in merge commit $1 touches only ci.yml's paths-ignore files.
-docs_only() {
-  local yml files globs=()
-  yml=$(git -C "$checkout" show "$1:.github/workflows/ci.yml" 2>/dev/null) || return 1
-  while IFS= read -r g; do [ -z "$g" ] || globs+=("$g"); done < <(paths_ignore <<<"$yml")
-  [ "${#globs[@]}" -gt 0 ] || return 1
-  files=$(git -C "$checkout" diff --no-renames --name-only "$1^1...$1^2") || return 1
-  only_ignored "${globs[@]}" <<<"$files"
+# What a status says when its job need not run: docs only, or no change in
+# its area. False when the job runs.
+settled_text() { # context areas on
+  local area
+  area=$(area_of "$1")
+  if [ -z "$2" ]; then
+    echo "Docs only, not tested ($3)"
+  elif ! affects "$area" "$2"; then
+    echo "Not affected: no core or $area change ($3)"
+  else
+    return 1
+  fi
 }
 
 # --- GitHub -----------------------------------------------------------------
 
 # One line per open PR: number, draft, cross-repository, author type,
-# mergeable, base, head, this runner's status state on the head (or NONE),
-# when it was posted and its description.
+# mergeable, base, head, then the desktop and the mobile status on the head:
+# state (or NONE), when it was posted and its description.
 # shellcheck disable=SC2016 # GraphQL variables, not shell ones
-poll_query='query($owner: String!, $name: String!, $context: String!) {
+poll_query='query($owner: String!, $name: String!, $desktop: String!, $mobile: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 50) {
       nodes {
         number isDraft isCrossRepository mergeable baseRefName headRefOid
         author { __typename }
-        commits(last: 1) { nodes { commit { status { context(name: $context) { state createdAt description } } } } }
+        commits(last: 1) { nodes { commit { status {
+          desktop: context(name: $desktop) { state createdAt description }
+          mobile: context(name: $mobile) { state createdAt description }
+        } } } }
       }
     }
   }
 }'
-poll_jq='.data.repository.pullRequests.nodes[] | [.number, .isDraft, .isCrossRepository,
-  (.author.__typename // "None"), .mergeable, .baseRefName, .headRefOid,
-  (.commits.nodes[0].commit.status.context.state // "NONE"),
-  (.commits.nodes[0].commit.status.context.createdAt // ""),
-  (.commits.nodes[0].commit.status.context.description // "")] | @tsv'
+# shellcheck disable=SC2016 # jq variables, not shell ones
+poll_jq='.data.repository.pullRequests.nodes[] | (.commits.nodes[0].commit.status // {}) as $s
+  | [.number, .isDraft, .isCrossRepository, (.author.__typename // "None"), .mergeable,
+  .baseRefName, .headRefOid,
+  ($s.desktop.state // "NONE"), ($s.desktop.createdAt // ""), ($s.desktop.description // ""),
+  ($s.mobile.state // "NONE"), ($s.mobile.createdAt // ""), ($s.mobile.description // "")] | @tsv'
 
-# Sets prs to the PRs this runner tests: not drafts, from branches in the
-# repository, opened by a user (Dependabot is a bot).
+# Sets prs to the rows this runner tests, one per PR and status, from PRs
+# that are not drafts, from branches in the repository, opened by a user
+# (Dependabot is a bot). Row fields: number, draft, cross-repository, author
+# type, mergeable, base, head, context, state, time, description; the
+# context comes before the fields that can be empty (read merges empty
+# tab-separated fields).
 poll() {
   local lines
   if ! lines=$(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f context="$context" -f query="$poll_query" --jq "$poll_jq"); then
+    -f desktop="$context" -f mobile="$mobile_context" -f query="$poll_query" --jq "$poll_jq"); then
     log "warning: could not list PRs; retrying at the next poll"
     return 1
   fi
-  prs=$(awk -F'\t' '$2 == "false" && $3 == "false" && $4 == "User"' <<<"$lines")
+  prs=$(awk -F'\t' -v OFS='\t' -v d="$context" -v m="$mobile_context" '
+    $2 == "false" && $3 == "false" && $4 == "User" {
+      print $1, $2, $3, $4, $5, $6, $7, d, $8, $9, $10
+      print $1, $2, $3, $4, $5, $6, $7, m, $11, $12, $13
+    }' <<<"$lines")
   polled=true
 }
 
-post() { # sha state description [target url]
-  local args=(api -X POST "repos/$repo/statuses/$1" -f "state=$2" -f "context=$context"
-    -f "description=${3:0:140}")
-  [ -z "${4:-}" ] || args+=(-f "target_url=$4")
+# Sets post_ok to whether GitHub took it.
+post() { # context sha state description [target url]
+  local args=(api -X POST "repos/$repo/statuses/$2" -f "state=$3" -f "context=$1"
+    -f "description=${4:0:140}")
+  [ -z "${5:-}" ] || args+=(-f "target_url=$5")
   # A lost final status would leave the head pending and run it again.
   local try
+  post_ok=true
   for try in 1 2 3; do
     if gh "${args[@]}" >/dev/null; then
-      log "$2 on $(short "$1"): $3"
+      log "$3 $1 on $(short "$2"): $4"
       return 0
     fi
     [ "$try" -eq 3 ] || sleep "$tick_s"
   done
-  log "warning: could not post $2 on $(short "$1"): $3"
+  post_ok=false
+  log "warning: could not post $3 $1 on $(short "$2"): $4"
 }
 
-pr_line() { awk -F'\t' -v n="$1" '$1 == n' <<<"$prs"; }
+pr_line() { awk -F'\t' -v n="$1" '$1 == n { print; exit }' <<<"$prs"; }
 
-drop_pr() { prs=$(awk -F'\t' -v n="$1" '$1 != n' <<<"$prs"); }
+drop_row() { prs=$(awk -F'\t' -v n="$1" -v c="$2" '!($1 == n && $8 == c)' <<<"$prs"); }
 
-# PRs waiting for this runner, oldest status first: no status yet (posted
-# "Queued" by queue_new), pending (queued, or left by a stopped runner), or
-# any status from the hosted fallback (scripts/local-ci-fallback.sh), which
-# a local result replaces.
+# Rows waiting for this runner: no status yet (posted "Queued" by
+# queue_new), pending (queued, or left by a stopped runner), or any status
+# from the hosted fallback (scripts/local-ci-fallback.sh), which a local
+# result replaces. PRs by their oldest waiting status, a PR's desktop row
+# before its mobile one even when the desktop status is newer (a step it
+# posted before a restart). Each line gains two fields: 0 (desktop) or 1,
+# and the PR's oldest status time.
 queue() {
-  awk -F'\t' -v run="${run_pr:-}" '
-    $1 != run && ($8 == "NONE" || $8 == "PENDING" || $10 ~ /^Hosted fallback/)' <<<"$prs" |
-    sort -t$'\t' -k9,9 -k1,1n
+  awk -F'\t' -v OFS='\t' -v rn="${run_pr:-}" -v rc="${run_ctx:-}" -v d="$context" '
+    !($1 == rn && $8 == rc) && ($9 == "NONE" || $9 == "PENDING" || $11 ~ /^Hosted fallback/) {
+      line[++rows] = $0; pr[rows] = $1; key[rows] = ($8 == d ? 0 : 1)
+      if (!($1 in first) || $10 < first[$1]) first[$1] = $10
+    }
+    END { for (i = 1; i <= rows; i++) print line[i], key[i], first[pr[i]] }' <<<"$prs" |
+    sort -t$'\t' -k13,13 -k1,1n -k12,12n
 }
+
+# The contexts of PR $1's queued rows.
+queued_contexts() { queue | awk -F'\t' -v n="$1" '$1 == n { print $8 }'; }
 
 # What a queued head's status says: "Queued", or why nothing starts, so a
 # stalled runner shows on GitHub, and the hosted fallback acts sooner
@@ -243,19 +247,70 @@ queued_text() {
   esac
 }
 
-# Posts a pending status on each new head, and the current queued text on
-# queued heads whose status says otherwise. Heads the hosted fallback has
+# Posts a pending status on each new row, and the current queued text on
+# queued rows whose status says otherwise. Rows the hosted fallback has
 # taken ("Hosted fallback: ...") keep their status.
 queue_new() {
-  local now n head text
+  local now n head ctx text
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   text=$(queued_text)
-  while IFS=$'\t' read -r n _ _ _ _ _ head _; do
-    post "$head" pending "$text" "${url:+$url/status.txt}"
-    prs=$(awk -F'\t' -v OFS='\t' -v n="$n" -v t="$now" -v d="$text" \
-      '$1 == n { $8 = "PENDING"; $9 = t; $10 = d } { print }' <<<"$prs")
-  done < <(awk -F'\t' -v run="${run_pr:-}" -v text="$text" '$1 != run &&
-    ($8 == "NONE" || ($8 == "PENDING" && $10 ~ /^Queued/ && $10 != text))' <<<"$prs")
+  while IFS=$'\t' read -r n _ _ _ _ _ head ctx _; do
+    post "$ctx" "$head" pending "$text" "${url:+$url/status.txt}"
+    prs=$(awk -F'\t' -v OFS='\t' -v n="$n" -v c="$ctx" -v t="$now" -v d="$text" \
+      '$1 == n && $8 == c { $9 = "PENDING"; $10 = t; $11 = d } { print }' <<<"$prs")
+  done < <(awk -F'\t' -v rn="${run_pr:-}" -v rc="${run_ctx:-}" -v text="$text" '!($1 == rn && $8 == rc) &&
+    ($9 == "NONE" || ($9 == "PENDING" && $11 ~ /^Queued/ && $11 != text))' <<<"$prs")
+}
+
+# Settles PR $1's queued rows that need no build: a conflict fails them, a
+# docs-only PR or one outside a row's area passes it. Sets settle_merge and
+# settle_base_sha to the merge ref it fetched. False while GitHub has no
+# merge ref at the head yet.
+settle() { # pr head mergeable base
+  local n=$1 head=$2 ctx text areas
+  case "$3" in
+    CONFLICTING)
+      for ctx in $(queued_contexts "$n"); do
+        post "$ctx" "$head" failure "Conflicts with $4"
+        drop_row "$n" "$ctx"
+      done
+      return 0
+      ;;
+    MERGEABLE) ;;
+    *) return 1 ;; # GitHub is still computing the merge
+  esac
+  if ! git -C "$checkout" fetch --quiet --no-tags --force origin \
+    "+refs/pull/$n/merge:refs/local-ci/merge"; then
+    log "warning: could not fetch refs/pull/$n/merge"
+    return 1
+  fi
+  settle_merge=$(git -C "$checkout" rev-parse refs/local-ci/merge)
+  if [ "$(git -C "$checkout" rev-parse --verify --quiet "$settle_merge^2")" != "$head" ]; then
+    log "#$n: merge ref not yet at $(short "$head")"
+    return 1
+  fi
+  settle_base_sha=$(git -C "$checkout" rev-parse "$settle_merge^1")
+  if ! areas=$(commit_areas "$settle_merge" "$settle_merge^1...$settle_merge^2"); then
+    log "warning: #$n: could not read its areas; running every job"
+    areas=$every_area
+  fi
+  for ctx in $(queued_contexts "$n"); do
+    text=$(settled_text "$ctx" "$areas" "$4@$(short "$settle_base_sha")") || continue
+    post "$ctx" "$head" success "$text"
+    drop_row "$n" "$ctx"
+  done
+}
+
+# Settles new heads at once, while a job runs or the Mac waits for
+# capacity, so a status outside the PR's areas does not wait in the queue.
+# Each head is settled once; start_next settles again before a job starts.
+settle_new() {
+  local n mergeable base head
+  while IFS=$'\t' read -r n _ _ _ mergeable base head _; do
+    ! grep -qxF "$head" <<<"$settled" || continue
+    settle "$n" "$head" "$mergeable" "$base" || continue
+    settled=$(printf '%s\n' "$head" "$settled" | head -n 200)
+  done < <(queue | awk -F'\t' '!seen[$1]++')
 }
 
 # --- the job ----------------------------------------------------------------
@@ -301,8 +356,8 @@ capacity_ok() {
 
 timeout_for() {
   case "$1" in
-    setup | lint) echo "$lint_s" ;;
-    mobile) echo "$mobile_s" ;;
+    setup | lint | ffi) echo "$lint_s" ;;
+    ios) echo "$mobile_s" ;;
     android) echo "$android_s" ;;
     *) echo "$test_s" ;;
   esac
@@ -312,6 +367,8 @@ timeout_for() {
 label() {
   case "$1" in
     setup) echo scripts/setup.sh ;;
+    ffi) echo "just mobile --ffi" ;;
+    ios) echo "just mobile --ios" ;;
     *) echo "just $1" ;;
   esac
 }
@@ -330,18 +387,20 @@ android_check_expected() {
 
 # Runs in the background in its own process group; output goes to log.txt.
 # Exit 0 passed, 1 a step failed (named in .step), 3 the checkout failed.
-job() { # merge-ref dir
+# The runner has settled the areas, so the mobile jobs always run.
+job() { # commit dir step...
   set +m
-  local dir=$2 step start rc
+  local commit=$1 dir=$2 step start rc
+  shift 2
   cd "$checkout" || exit 3
   unset CARGO_TARGET_DIR RUSTFLAGS MDOC_HEADLESS_ARTIFACTS
-  echo "local-ci: checkout $(git rev-parse "$1")"
-  git checkout --quiet --force --detach "$1" || exit 3
+  echo "local-ci: checkout $commit"
+  git checkout --quiet --force --detach "$commit" || exit 3
   # Keep the build cache. Git Bash rewrites a native program's argument that
   # starts with / as a Windows path (/target/ -> C:/Program Files/Git/target/),
   # which matched nothing and made every Windows job a cold build.
   MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/ || exit 3
-  for step in $steps; do
+  for step in "$@"; do
     start=$(date +%s)
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
     echo "local-ci: $(label "$step")"
@@ -350,18 +409,18 @@ job() { # merge-ref dir
       # Not through just: setup may replace the just binary.
       setup) bash scripts/setup.sh </dev/null || rc=$? ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
-      mobile)
+      ffi | ios)
         if mobile_check_expected; then
-          just "$step" || rc=$?
+          MDOC_IOS_JOB=always just mobile "--$step" || rc=$?
         else
-          echo "local-ci: this merge ref's main predates the mobile check; skipped"
+          echo "local-ci: this commit's main predates the mobile check; skipped"
         fi
         ;;
       android)
         if android_check_expected; then
-          just "$step" || rc=$?
+          MDOC_ANDROID_JOB=always just "$step" || rc=$?
         else
-          echo "local-ci: this merge ref's main predates the Android job; skipped"
+          echo "local-ci: this commit's main predates the Android job; skipped"
         fi
         ;;
       *) just "$step" || rc=$? ;;
@@ -376,29 +435,47 @@ job() { # merge-ref dir
   exit 0
 }
 
-start_job() { # pr head base base-sha
-  local dir
-  dir=$out/pr-$1/$(short "$2")
-  rm -rf "$dir"
-  # A macOS render set is about 0.5 GB: keep it for a PR's newest head only.
-  rm -rf "$out/pr-$1"/*/renders
-  mkdir -p "$dir"
-  run_pr=$1 run_head=$2 run_base=$3 run_base_sha=$4 run_dir=$dir run_start=$(date +%s)
+# A PR's job (kind: its number) or a main commit's (kind: main).
+start_job() { # kind head base base-sha context commit
+  local kind=$1 head=$2 ctx=$5 name dir area link
+  area=$(area_of "$ctx")
+  if [ "$kind" = main ]; then
+    name=main
+    link=https://github.com/$repo/commit/$head
+  else
+    name=pr-$kind
+    link=https://github.com/$repo/pull/$kind
+  fi
+  dir=$name/$(short "$head")
+  [ "$area" = desktop ] || dir+=-$area
+  rm -rf "${out:?}/$dir"
+  # A macOS render set is about 0.5 GB: keep it for a PR's (or main's)
+  # newest head only.
+  [ "$area" != desktop ] || rm -rf "$out/$name"/*/renders
+  mkdir -p "$out/$dir"
+  run_kind=$kind run_pr='' run_head=$head run_ctx=$ctx run_base=$3 run_base_sha=$4
+  run_dir=$out/$dir run_start=$(date +%s)
+  [ "$kind" = main ] || run_pr=$kind
   run_url=
-  [ -z "$url" ] || run_url=$url/pr-$1/$(short "$2")/
-  cat >"$dir/summary.txt" <<EOF
-$context: https://github.com/$repo/pull/$1
-head: $2
+  [ -z "$url" ] || run_url=$url/$dir/
+  cat >"$run_dir/summary.txt" <<EOF
+$ctx: $link
+head: $head
 base: $3 $4
 started: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
-  post "$2" pending "Running on $3@$(short "$4")" "$run_url"
+  post "$ctx" "$head" pending "Running on $3@$(short "$4")" "$run_url"
   set -m
-  job refs/local-ci/merge "$dir" </dev/null >"$dir/log.txt" 2>&1 &
+  # shellcheck disable=SC2046 # the steps are words
+  job "$6" "$run_dir" $(steps_of "$ctx") </dev/null >"$run_dir/log.txt" 2>&1 &
   run_pid=$!
   set +m
   echo "$run_pid" >"$state/job.pid"
-  log "started #$1 $(short "$2") on $3@$(short "$4") (pid $run_pid)"
+  log "started $(run_name) $ctx on $3@$(short "$4") (pid $run_pid)"
+}
+
+run_name() {
+  if [ "$run_kind" = main ]; then echo "main $(short "$run_head")"; else echo "#$run_pr $(short "$run_head")"; fi
 }
 
 # Stops the job's whole process group (cargo, rustc, test binaries).
@@ -421,10 +498,16 @@ kill_job() {
 }
 
 finish() { # state description
-  post "$run_head" "$1" "$2" "$run_url"
+  post "$run_ctx" "$run_head" "$1" "$2" "$run_url"
   echo "result: $1, $2" >>"$run_dir/summary.txt"
   rm -f "$state/job.pid" "$run_dir/.step"
-  run_pr='' run_head='' run_pid='' run_step=''
+  # A main job whose result GitHub did not take stays queued and runs
+  # again; a PR's stays pending on GitHub, which queues it again.
+  if [ "$run_kind" = main ] && $post_ok && [ -f "$state/main-queue" ]; then
+    awk -F'\t' -v s="$run_head" -v c="$run_ctx" '!($1 == s && $2 == c)' "$state/main-queue" >"$state/main-queue.new"
+    mv -f "$state/main-queue.new" "$state/main-queue"
+  fi
+  run_kind='' run_pr='' run_head='' run_ctx='' run_pid='' run_step=''
   # Statuses changed: read them again before starting the next job.
   prs=
   next_poll=0
@@ -440,11 +523,11 @@ check_job() {
     # (scripts/local-ci-fallback.sh).
     if [ "$step" != "${run_step:-}" ]; then
       run_step=$step
-      post "$run_head" pending "Running $(label "$step") on $on" "$run_url"
+      post "$run_ctx" "$run_head" pending "Running $(label "$step") on $on" "$run_url"
     fi
     limit=$(timeout_for "$step")
     if [ $(($(date +%s) - since)) -gt "$limit" ]; then
-      log "#$run_pr: $(label "$step") passed its $((limit / 60)) min limit"
+      log "$(run_name) $run_ctx: $(label "$step") passed its $((limit / 60)) min limit"
       echo "local-ci: $(label "$step") timed out after $(duration "$limit")" >>"$run_dir/log.txt"
       kill_job "$run_pid"
       finish failure "Timed out in $(label "$step") after $(duration "$limit") on $on"
@@ -462,9 +545,10 @@ check_job() {
   esac
 }
 
-# A newer head replaces a running job; a closed or drafted PR ends it.
+# A newer head replaces a running PR job; a closed or drafted PR ends it. A
+# main job always runs to the end.
 sync_running() {
-  [ -n "${run_pr:-}" ] || return 0
+  [ "${run_kind:-}" != '' ] && [ "$run_kind" != main ] || return 0
   local line head
   line=$(pr_line "$run_pr")
   head=$(cut -f7 <<<"$line")
@@ -477,41 +561,100 @@ sync_running() {
   fi
 }
 
-# Starts the first startable queued PR; settles conflicts and docs-only PRs
-# without a build. Returns 0 if a job started.
+# Starts the first startable queued row, settling those that need no build;
+# with no PR row queued, the next main commit's. Returns 0 if a job started.
 start_next() {
-  local n mergeable base head merge base_sha
+  local n mergeable base head ctx
   capacity_ok || return 1
-  while IFS=$'\t' read -r n _ _ _ mergeable base head _ _; do
-    case "$mergeable" in
-      CONFLICTING)
-        post "$head" failure "Conflicts with $base"
-        drop_pr "$n"
-        continue
-        ;;
-      MERGEABLE) ;;
-      *) continue ;; # GitHub is still computing the merge
-    esac
-    if ! git -C "$checkout" fetch --quiet --no-tags --force origin \
-      "+refs/pull/$n/merge:refs/local-ci/merge"; then
-      log "warning: could not fetch refs/pull/$n/merge"
-      continue
-    fi
-    merge=$(git -C "$checkout" rev-parse refs/local-ci/merge)
-    if [ "$(git -C "$checkout" rev-parse --verify --quiet "$merge^2")" != "$head" ]; then
-      log "#$n: merge ref not yet at $(short "$head")"
-      continue
-    fi
-    base_sha=$(git -C "$checkout" rev-parse "$merge^1")
-    if docs_only "$merge"; then
-      post "$head" success "Docs only, not tested ($base@$(short "$base_sha"))"
-      drop_pr "$n"
-      continue
-    fi
-    start_job "$n" "$head" "$base" "$base_sha"
+  while IFS=$'\t' read -r n _ _ _ mergeable base head ctx _; do
+    settle "$n" "$head" "$mergeable" "$base" || continue
+    # Settled without a build.
+    [ -n "$(queue | awk -F'\t' -v n="$n" -v c="$ctx" '$1 == n && $8 == c')" ] || continue
+    start_job "$n" "$head" "$base" "$settle_base_sha" "$ctx" "$settle_merge"
     return 0
   done < <(queue)
-  return 1
+  [ -z "$(queue)" ] || return 1
+  start_main
+}
+
+# --- main (ADR 0091) ---------------------------------------------------------
+
+# Main commits' jobs wait in $state/main-queue ("commit<TAB>context" lines),
+# which outlives a restart, behind every PR row; $state/main-last is the
+# newest main commit queued or settled.
+
+# Settles or queues the next main commits, oldest first, until a job is
+# queued or main is done. False when nothing is queued.
+queue_main() {
+  local tip last next ctx text areas commits skipped
+  if ! git -C "$checkout" fetch --quiet --no-tags --force origin "+refs/heads/main:refs/local-ci/main"; then
+    log "warning: could not fetch main"
+    return 1
+  fi
+  check_copy
+  tip=$(git -C "$checkout" rev-parse refs/local-ci/main)
+  while [ ! -s "$state/main-queue" ]; do
+    last=$(cat "$state/main-last" 2>/dev/null || true)
+    [ "$last" != "$tip" ] || return 1
+    if [ -n "$last" ] && git -C "$checkout" merge-base --is-ancestor "$last" "$tip" 2>/dev/null; then
+      commits=$(git -C "$checkout" rev-list --first-parent --reverse "$last..$tip")
+      skipped=$(($(wc -l <<<"$commits") - main_max))
+      if [ "$skipped" -gt 0 ]; then
+        log "main: $skipped older commits not tested (LOCAL_CI_MAIN_MAX=$main_max)"
+        commits=$(tail -n "$main_max" <<<"$commits")
+      fi
+      next=$(head -n 1 <<<"$commits")
+    else
+      # The first run, or main was rewritten: its tip only.
+      next=$tip
+    fi
+    areas=$(commit_areas "$next" "$next^1..$next" 2>/dev/null) || areas=$every_area
+    # Settled statuses first, then the jobs in one rename, then the cursor:
+    # a stop at any point repeats the commit rather than skips it.
+    : >"$state/main-queue.new"
+    for ctx in "$context" "$mobile_context"; do
+      if text=$(settled_text "$ctx" "$areas" "main@$(short "$next")"); then
+        post "$ctx" "$next" success "$text"
+      else
+        printf '%s\t%s\n' "$next" "$ctx" >>"$state/main-queue.new"
+      fi
+    done
+    mv -f "$state/main-queue.new" "$state/main-queue"
+    echo "$next" >"$state/main-last.new"
+    mv -f "$state/main-last.new" "$state/main-last"
+    while IFS=$'\t' read -r _ ctx; do
+      post "$ctx" "$next" pending Queued "${url:+$url/status.txt}"
+    done <"$state/main-queue"
+  done
+}
+
+# The installed runner is a copy that only install (or the Windows setup
+# script) updates: sets outdated, for status.txt, to the files that differ
+# from main's, and logs when that changes. Line endings are ignored (a
+# Windows checkout may have CRLF).
+check_copy() {
+  local f was=${outdated:-}
+  outdated=''
+  for f in local-ci.sh lib.sh; do
+    git -C "$checkout" cat-file -e "refs/local-ci/main:scripts/$f" 2>/dev/null || continue
+    cmp -s <(git -C "$checkout" show "refs/local-ci/main:scripts/$f" | tr -d '\r') \
+      <(tr -d '\r' <"$runner_dir/$f" 2>/dev/null) || outdated+="${outdated:+ and }$f"
+  done
+  if [ "$outdated" != "$was" ] && [ -n "$outdated" ]; then
+    log "warning: this runner's $outdated differ from main's; re-run install (or local-ci-setup.ps1)"
+  fi
+}
+
+# Starts the next main job, after a poll found no PR row waiting.
+start_main() {
+  local commit ctx
+  if [ ! -s "$state/main-queue" ]; then
+    $main_due || return 1
+    main_due=false
+    queue_main || return 1
+  fi
+  IFS=$'\t' read -r commit ctx <"$state/main-queue"
+  start_job main "$commit" main "$commit" "$ctx" "$commit"
 }
 
 prune() {
@@ -521,19 +664,22 @@ prune() {
 }
 
 write_status() {
-  local next=$out/.status.txt q
-  q=$(queue | awk -F'\t' '{ printf "%s#%s %s", (NR > 1 ? ", " : ""), $1, substr($7, 1, 7) }')
+  local next=$out/.status.txt q mq
+  q=$(queue | awk -F'\t' '{ printf "%s#%s %s %s", (NR > 1 ? ", " : ""), $1, substr($7, 1, 7), $8 }')
+  mq=$(awk -F'\t' '{ printf "%s%s %s", (NR > 1 ? ", " : ""), substr($1, 1, 7), $2 }' "$state/main-queue" 2>/dev/null || true)
   {
-    echo "$context runner on $(hostname)"
+    echo "$context and $mobile_context runner on $(hostname)"
     echo "updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    if [ -n "${run_pr:-}" ]; then
+    if [ -n "${run_pid:-}" ]; then
       local step='?' since
       read -r step since 2>/dev/null <"$run_dir/.step" || since=$run_start
-      echo "running: #$run_pr $(short "$run_head") on $run_base@$(short "$run_base_sha"), $(label "$step") for $(duration $(($(date +%s) - since))) ${run_url:-$run_dir}"
+      echo "running: $(run_name) $run_ctx on $run_base@$(short "$run_base_sha"), $(label "$step") for $(duration $(($(date +%s) - since))) ${run_url:-$run_dir}"
     else
       echo "running: nothing"
     fi
     echo "queue: ${q:-empty}"
+    echo "main queue: ${mq:-empty}"
+    [ -z "${outdated:-}" ] || echo "outdated: this runner's $outdated differ from main's; re-run install"
     [ -z "${waiting:-}" ] || echo "waiting: $waiting"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
@@ -575,7 +721,7 @@ kill_stale_job() {
 # shellcheck disable=SC2329 # the EXIT trap
 on_exit() {
   if [ -n "${run_pid:-}" ]; then
-    log "stopping; #$run_pr re-runs when the runner starts again"
+    log "stopping; $(run_name) $run_ctx re-runs when the runner starts again"
     kill_job "$run_pid"
     rm -f "$state/job.pid"
   fi
@@ -588,17 +734,18 @@ cmd_run() { # [once]
   mkdir -p "$out" "$state"
   lock
   if [ -z "$once" ] && [ -z "${LOCAL_CI_FOREGROUND:-}" ]; then
-    echo "local CI ($context): logging to $state/runner.log"
+    echo "local CI ($context, $mobile_context): logging to $state/runner.log"
     exec >>"$state/runner.log" 2>&1
   fi
   trap on_exit EXIT
   trap 'exit 0' TERM INT HUP
-  log "runner started: $context for $repo, checkout $checkout"
+  log "runner started: $context and $mobile_context for $repo, checkout $checkout"
   kill_stale_job
-  prs='' polled=false run_pr='' run_pid='' run_step='' waiting='' waiting_kind='' next_poll=0
+  prs='' polled=false run_kind='' run_pr='' run_head='' run_ctx='' run_pid='' run_step=''
+  waiting='' waiting_kind='' next_poll=0 settled='' main_due=false outdated='' post_ok=true
   local now
   while :; do
-    [ -z "$run_pr" ] || check_job
+    [ -z "$run_pid" ] || check_job
     now=$(date +%s)
     if [ "$now" -ge "$next_poll" ]; then
       next_poll=$((now + poll_s))
@@ -606,14 +753,16 @@ cmd_run() { # [once]
         sync_running
         # A replaced job changed statuses: read them again at once.
         [ "$next_poll" != 0 ] || continue
+        settle_new
         queue_new
+        main_due=true
       fi
       prune
     fi
-    [ -n "$run_pr" ] || start_next || true
+    [ -n "$run_pid" ] || start_next || true
     write_status
-    if [ -n "$once" ] && $polled && [ -z "$run_pr" ] && [ "$next_poll" != 0 ] &&
-      [ -z "$(queue)" ]; then
+    if [ -n "$once" ] && $polled && [ -z "$run_pid" ] && [ "$next_poll" != 0 ] &&
+      [ -z "$(queue)" ] && [ ! -s "$state/main-queue" ] && ! $main_due; then
       log "queue empty"
       return 0
     fi

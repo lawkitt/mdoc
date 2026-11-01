@@ -116,3 +116,77 @@ load_tools() {
   source scripts/tools.env
   set +a
 }
+
+# --- areas (ADR 0091) ---------------------------------------------------------
+
+# A GitHub filter glob as an anchored extended regex: ** crosses directories,
+# * and ? do not.
+glob_regex() {
+  local glob=$1 re='' c i=0
+  while [ "$i" -lt "${#glob}" ]; do
+    c=${glob:i:1}
+    if [ "${glob:i:3}" = '**/' ]; then
+      re+='(.*/)?'
+      i=$((i + 3))
+      continue
+    elif [ "${glob:i:2}" = '**' ]; then
+      re+='.*'
+      i=$((i + 2))
+      continue
+    fi
+    case "$c" in
+      '*') re+='[^/]*' ;;
+      '?') re+='[^/]' ;;
+      . | \\ | + | '(' | ')' | '|' | ^ | '$' | '{' | '}' | '[' | ']') re+="\\$c" ;;
+      *) re+=$c ;;
+    esac
+    i=$((i + 1))
+  done
+  printf '^%s$' "$re"
+}
+
+# The areas the files on stdin touch, NUL-separated as `git diff -z` prints
+# them (newline-separated output quotes unusual names, which would then match
+# no line), by the area table given as text (scripts/ci-areas.txt): each
+# file takes the areas of the table's first line that matches it, desktop
+# when none does. A table with CRLF line endings reads the same. Prints them on one line in
+# the order core, desktop, ios, android; core brings in every area. Nothing
+# (an empty line) when every file is in no area (docs only); every area for
+# an empty list of files.
+changed_areas() { # table-text
+  local areas glob f i match seen=' ' a out=''
+  local -a line_areas=() line_res=()
+  while read -r areas glob _; do
+    case "$areas" in '' | '#'*) continue ;; esac
+    [ -n "$glob" ] || die "area table: no glob after '$areas'"
+    line_areas+=("$areas")
+    line_res+=("$(glob_regex "$glob")")
+  done <<<"${1//$'\r'/}"
+  while IFS= read -r -d '' f; do
+    [ -n "$f" ] || continue
+    match=desktop
+    for i in "${!line_res[@]}"; do
+      if [[ $f =~ ${line_res[i]} ]]; then
+        match=${line_areas[i]}
+        break
+      fi
+    done
+    seen+="${match//,/ } "
+  done
+  [ "$seen" != ' ' ] || seen=' core '
+  [[ $seen != *' core '* ]] || seen=' core desktop ios android '
+  for a in core desktop ios android; do
+    [[ $seen != *" $a "* ]] || out+="${out:+ }$a"
+  done
+  echo "$out"
+}
+
+# True when the areas list ($2, from changed_areas) runs area $1's job.
+affects() { [[ " $2 " == *" $1 "* ]]; }
+
+# The areas between two commits, by this checkout's table.
+diff_areas() { # from to
+  local table
+  table=$(cat scripts/ci-areas.txt)
+  git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
+}

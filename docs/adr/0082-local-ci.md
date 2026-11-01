@@ -1,11 +1,12 @@
 # Local CI
 
 Status: Accepted, 2026-10-29; amended 2026-10-30 and 2026-10-31. Amended by
-[ADR 0091](0091-mobile-ci-and-releases.md) as its rollout lands: areas decide
-which jobs run, `local/ios` and `local/android` join the gate (five checks),
-the fallback runs hosted mobile jobs, and the runners also test `main`. Amends
-[ADR 0070](0070-ci-speed-and-script-hygiene.md) (runners, test runner,
-cache) and [ADR 0037](0037-ci-and-release-pipeline.md) (where CI runs).
+[ADR 0091](0091-mobile-ci-and-releases.md): areas decide which jobs run,
+`local/ios` and `local/android` join the gate (five checks), and the runners
+also test `main`; the hosted mobile jobs and the Mac's takeover follow in its
+rollout. Amends [ADR 0070](0070-ci-speed-and-script-hygiene.md) (runners,
+test runner, cache) and [ADR 0037](0037-ci-and-release-pipeline.md) (where
+CI runs).
 
 ## Problem
 
@@ -21,9 +22,12 @@ hub wait on CI.
 
 - **Local CI is the pre-merge test gate.** A runner on the Windows PC and one
   on the Mac test PR heads from branches in `lawkitt/mdoc`, never from forks
-  or Dependabot, at the exact commit, and post the commit statuses
-  `local/windows` and `local/macos`. Each runs `just lint` and `just test`;
-  the Mac then runs `just mobile` ([ADR 0085](0085-mobile-apps.md)).
+  or Dependabot, at the exact commit. Each posts two commit statuses, each
+  from its own job: the desktop one, `local/windows` or `local/macos` (`just
+  lint` and `just test`; the Mac then the mobile cargo check, `just mobile
+  --ffi`, [ADR 0085](0085-mobile-apps.md)), and the mobile one,
+  `local/android` (the Android job) or `local/ios` (the iOS job), as
+  [ADR 0091](0091-mobile-ci-and-releases.md) describes.
   No self-hosted GitHub Actions runners and no paid larger runners (this
   replaces ADR 0070's runner rule: on a public repository a fork PR can route
   jobs to self-hosted machines, guarded only by the approval click).
@@ -32,12 +36,14 @@ hub wait on CI.
   third-party code is never compiled on the maintainer's machines before
   review. `main` runs the full matrix after each merge, saves caches and
   uploads renders (7-day retention); a red `main` stops merges until fixed
-  or reverted. `workflow_dispatch` runs the full matrix on any branch.
-  `release.yml` keeps calling the full `ci.yml` and never depends on local
-  CI.
-- **Merge gate.** A code PR merges with `local/windows`, `local/macos` and
-  `lint (ubuntu)` green. The agent waits for them and fixes failures; the
-  hub merges one PR at a time and checks the same three. A PR that is
+  or reverted. The matrix's clippy and test jobs run only when the change
+  touches the desktop or core area (ADR 0091). `workflow_dispatch` runs the
+  full matrix on any branch. `release.yml` keeps calling the full `ci.yml`
+  and never depends on local CI.
+- **Merge gate.** A code PR merges with `local/windows`, `local/macos`,
+  `local/ios`, `local/android` and `lint (ubuntu)` green. The agent waits for
+  them and fixes failures; the hub merges one PR at a time and checks the
+  same five. A PR that is
   behind `main` but merges cleanly is not re-tested; no GitHub merge queue
   and no ruleset (`just release` pushes to `main` directly).
 - **Hosted fallback** (2026-10-31). When a head's `local/macos` or
@@ -48,22 +54,31 @@ hub wait on CI.
   posts that OS's `clippy` and `test` result under the stuck context,
   prefixed "Hosted fallback". It replaces the manual stand-in (a dispatched
   `test (windows-latest)` for `local/windows`, and nothing for
-  `local/macos`, so with the Mac off nothing merged). The gate keeps its
-  three contexts; a green fallback status counts. A runner that comes back
+  `local/macos`, so with the Mac off nothing merged). A stuck `local/ios` or
+  `local/android` is posted `success` "Hosted fallback: NOT tested; no hosted
+  iOS job yet (ADR 0091 item 5)" at once: temporary, until ADR 0091's hosted
+  mobile jobs replace it, so a machine that is off never blocks merges. The
+  gate keeps its five checks; a green fallback status counts. A runner that comes back
   still tests every head with a fallback status, finished or not, and its
   result replaces the fallback's; the fallback re-reads a status before
   writing over it. The fallback runs `main`'s
   script with `statuses: write` and `actions: write` and never checks out
   PR code. Accepted gaps: hosted CI tests the branch head, not the merge
-  ref, and has no `just mobile`, which the status says.
+  ref, and has no `just mobile` or mobile job yet, which the status says.
 - **Runner.** `scripts/local-ci.sh` behind `just local-ci`: polls open
   non-draft PRs every 60 s with the machine's `gh` login, one queue per
-  machine, a newer head of a PR replaces its older one, statuses `pending`
-  then `success` or `failure`. It tests `refs/pull/N/merge` as it stands
-  when the run starts and posts on the PR head, naming the `main` commit; a
-  PR with conflicts gets `failure`. A PR that touches only files in
-  `ci.yml`'s `paths-ignore` list (kept in one place both read) gets
-  `success` without a build. A launchd agent on the Mac; a Task Scheduler
+  machine holding each PR's desktop and mobile job (oldest status first, a
+  PR's desktop job before its mobile one), a newer head of a PR replaces its
+  older jobs, statuses `pending` then `success` or `failure`. It tests
+  `refs/pull/N/merge` as it stands when the run starts and posts on the PR
+  head, naming the `main` commit; a PR with conflicts gets `failure`.
+  Without a build, as soon as the merge ref is there, a status whose area
+  the PR does not touch (`scripts/ci-areas.txt`, ADR 0091) gets `success`
+  "Not affected", and a PR that touches only files in no area (the table's
+  `none` lines, which `ci.yml`'s `paths-ignore` repeats word for word, a
+  test checks) gets `success` "Docs only" on both. With no PR job queued, it
+  tests each new `main` commit in the areas that commit touched and posts
+  its statuses there (ADR 0091). A launchd agent on the Mac; a Task Scheduler
   task at logon on Windows, with its own clone at `D:\ci\mdoc`. The Mac
   runner is a build slot beside the two agent builders and starts a run
   only while memory pressure is normal and 40 GB is free (2026-10-31: was
@@ -133,7 +148,7 @@ hub wait on CI.
   login, as the lanes already do; only branches pushed to `lawkitt/mdoc` by
   someone with write access are tested.
 - The fleet skill reads this through fleet ADR 0017: required checks
-  (profile `checks`, set at the cutover), renders by the status links (set
+  (profile `checks`: the five gate checks), renders by the status links (set
   with the runner), ready-after-gate lanes, a watched `main`, and the hub's
   roadmap commits.
 
