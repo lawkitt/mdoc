@@ -160,10 +160,11 @@ impl Pack {
                 let at = |problem: String| format!("{name}: shape #{}: {problem}", index + 1);
                 let category = category(&entry.category).map_err(at)?;
                 let compile = |pattern: &str, whole: bool| {
+                    let pattern = rust_classes(pattern);
                     let pattern = if whole {
                         format!("^(?:{pattern})$")
                     } else {
-                        pattern.to_owned()
+                        pattern
                     };
                     Regex::new(&pattern).map_err(|e| at(e.to_string()))
                 };
@@ -307,6 +308,57 @@ impl Pack {
     }
 }
 
+/// `pattern` with `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` meaning
+/// exactly Rust's `char::is_uppercase`, `is_alphabetic` and `is_numeric`:
+/// `regex`'s Unicode tables can be a version behind the compiler's, and the
+/// rest of detection splits and trims words with Rust's.
+fn rust_classes(pattern: &str) -> String {
+    static CLASSES: OnceLock<[(&str, String); 3]> = OnceLock::new();
+    let classes = CLASSES.get_or_init(|| {
+        [
+            (r"\p{Uppercase}", class(char::is_uppercase)),
+            (r"\p{Alphabetic}", class(char::is_alphabetic)),
+            (r"\p{N}", class(char::is_numeric)),
+        ]
+    });
+    classes
+        .iter()
+        .fold(pattern.to_owned(), |pattern, (name, class)| {
+            pattern.replace(name, class)
+        })
+}
+
+/// A bracketed class of every scalar value `predicate` takes; it nests
+/// inside another class too.
+fn class(predicate: fn(char) -> bool) -> String {
+    let mut class = String::from("[");
+    let mut run: Option<(char, char)> = None;
+    let flush = |run: (char, char), class: &mut String| {
+        class.push_str(&format!(
+            "\\x{{{:X}}}-\\x{{{:X}}}",
+            run.0 as u32, run.1 as u32
+        ));
+    };
+    for c in (0..=char::MAX as u32)
+        .filter_map(char::from_u32)
+        .filter(|&c| predicate(c))
+    {
+        run = match run {
+            Some((start, end)) if end as u32 + 1 == c as u32 => Some((start, c)),
+            Some(done) => {
+                flush(done, &mut class);
+                Some((c, c))
+            }
+            None => Some((c, c)),
+        };
+    }
+    if let Some(done) = run {
+        flush(done, &mut class);
+    }
+    class.push(']');
+    class
+}
+
 /// A category by its token (`PERSON`, `ORG`, …).
 fn category(token: &str) -> Result<Category, String> {
     Category::ALL
@@ -347,6 +399,42 @@ mod tests {
         let position = |category| order.iter().position(|&c| c == category).unwrap();
         assert!(position(Category::Date) < position(Category::Phone));
         assert!(position(Category::Organization) < position(Category::Person));
+    }
+
+    /// The pack's Unicode classes follow the compiler's tables, which can be
+    /// newer than `regex`'s: U+A7CE is uppercase and U+11DE0 a digit in
+    /// Unicode 17.
+    #[test]
+    fn letters_and_digits_mean_what_rust_says() {
+        assert!('\u{A7CE}'.is_uppercase() && '\u{11DE0}'.is_numeric());
+        let pack = pack();
+        assert!(pack.identifying("\u{A7CE}a", Category::Person));
+        assert_eq!(pack.guess("\u{A7CE}a"), Some(Category::Person));
+        assert!(pack.identifying("\u{11DE0}", Category::Phone));
+        for (name, predicate) in [
+            (r"\p{Uppercase}", char::is_uppercase as fn(char) -> bool),
+            (r"\p{Alphabetic}", char::is_alphabetic),
+            (r"\p{N}", char::is_numeric),
+        ] {
+            let class = Regex::new(&format!("^{}$", rust_classes(name))).unwrap();
+            for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+                assert_eq!(
+                    class.is_match(c.encode_utf8(&mut [0; 4])),
+                    predicate(c),
+                    "{name} {c:?}"
+                );
+            }
+        }
+        // Shapes split words and trim with `\s`, as Rust does with
+        // `split_whitespace` and `trim`.
+        let space = Regex::new(r"^\s$").unwrap();
+        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            assert_eq!(
+                space.is_match(c.encode_utf8(&mut [0; 4])),
+                c.is_whitespace(),
+                "{c:?}"
+            );
+        }
     }
 
     #[test]

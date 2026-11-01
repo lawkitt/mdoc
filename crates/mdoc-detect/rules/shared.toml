@@ -23,6 +23,9 @@
 #                       category
 #   guess_words = […]   a manual selection with one of these words (ASCII
 #                       case ignored) is this category
+# In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
+# Rust's `char` predicates mean, whose Unicode tables may be newer than the
+# regex crate's.
 # A category with no entry takes any span. Manual selections try each
 # category's guesses in the order the categories first appear in the pack.
 
