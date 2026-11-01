@@ -1,12 +1,11 @@
 ---
 status: known-flaw
-flaw: org-boundary html-entities person-prefix-boundary
-issue: 374 367 391
+flaw: org-boundary person-prefix-boundary
+issue: 374 391
 kind: letter
 source: hunt-r1
 expect: boundary: gold PERSON "Лея Аркадьевна Ли-Вельт"; proposed PERSON "Лея", PERSON "Ли-Вельт"
 expect: boundary: gold ORG "ООО «Тиснёный берег»"; proposed ORG "Тиснёный берег"
-expect: boundary: gold PERSON "Ле&#1103; Ли-Вельт"; proposed PERSON "Ли-Вельт"
 ---
 # Ответ на претензию о неверном тиснении
 

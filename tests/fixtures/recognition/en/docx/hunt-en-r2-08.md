@@ -1,12 +1,10 @@
 ---
 status: known-flaw
-flaw: html-entities defined-term-org
-issue: 367 390
+flaw: defined-term-org
+issue: 390
 kind: docx
 source: hunt-r2
-expect: miss: EMAIL "ismay&#64;crane-pith.invalid"
 expect: false hit: ORG "Provider" ×3
-expect: boundary: gold PERSON "Ism&#97;y O&#39;Verren"; proposed PERSON "Verren"
 ---
 ## Record correction agreement
 
