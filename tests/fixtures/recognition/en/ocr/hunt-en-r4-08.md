@@ -1,10 +1,10 @@
 ---
-status: known-flaw
+status: model-limit
 flaw: literal-delimiter-pii
 issue: 423
 kind: ocr
 source: hunt-r4
-expect: miss: IDENTITY "LC#713624"
+reason: the model never proposes the value, so no syntax protection hides it; only a context rule for its label could find it
 ---
 RECEIVED FAX    15 DEC 2026    16:08        SHEET 2 OF 2
 REMOTE NUMBER: ⟦PHONE|+1 202 555 0168⟧

@@ -512,8 +512,10 @@ fn scan_timed(
 
 /// One span the model proposed, in document byte offsets, before any
 /// correction (ADR 0092): its label from the schema, its score at the
-/// configured threshold and its text. Recognition snapshots are these
-/// (ADR 0093).
+/// configured threshold and its text. The model reads the source's
+/// [`View`](mdoc_pii::view::View) (character references decoded); its
+/// spans are mapped back to the source's offsets and text. Recognition
+/// snapshots are these (ADR 0093).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RawEntity {
     pub start: usize,
@@ -523,17 +525,31 @@ pub struct RawEntity {
     pub text: String,
 }
 
+/// `raw`, found in `view`, in `source`'s offsets and text.
+fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>) -> Vec<RawEntity> {
+    if !view.is_source() {
+        for entity in &mut raw {
+            let range = view.source_range(entity.start..entity.end);
+            entity.text = source[range.clone()].to_owned();
+            (entity.start, entity.end) = (range.start, range.end);
+        }
+    }
+    raw
+}
+
 /// The correction stage (ADR 0092): the model's raw entities through the
 /// shape filter (`identifying`), then the rule pack's `context` rules and
-/// the structured rules over the whole source. Rules win the review's
-/// conflicts with the model. Pure: the same source and entities give the same detections, in
-/// the order a scan returns them.
+/// the structured rules over the whole source, all reading it as the model
+/// does. Rules win the review's conflicts with the model. Pure: the same
+/// source and entities give the same detections, in the order a scan
+/// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
+    let view = mdoc_pii::view::View::new(source);
     let mut detections: Vec<Detection> = raw
         .iter()
         .filter_map(|entity| {
             let category = category_of(&entity.label)?;
-            identifying(&entity.text, category).then_some(Detection {
+            identifying(&mdoc_pii::view::decoded(&entity.text), category).then_some(Detection {
                 range: entity.start..entity.end,
                 category,
                 score: entity.score,
@@ -541,8 +557,14 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
-    detections.extend(rules::pack().context(source));
-    detections.extend(structured::scan(source));
+    let rules = rules::pack()
+        .context(&view.text)
+        .into_iter()
+        .chain(structured::scan(&view.text));
+    detections.extend(rules.map(|mut detection| {
+        detection.range = view.source_range(detection.range);
+        detection
+    }));
     detections
 }
 
@@ -587,7 +609,8 @@ fn model_stage(
     let tasks = schema_tasks();
     let transformer = transformer(root, config.model)?;
     timings.tokenizer = split();
-    let windows = distinct_windows(source, &transformer, &tasks, cancel, started)?;
+    let view = mdoc_pii::view::View::new(source);
+    let windows = distinct_windows(&view.text, &transformer, &tasks, cancel, started)?;
     timings.windowing = split();
     let count = windows.len();
     progress(ScanProgress {
@@ -613,7 +636,7 @@ fn model_stage(
             windows: count,
         });
     }
-    Ok((raw, timings))
+    Ok((to_source(source, &view, raw), timings))
 }
 
 fn transformer(
@@ -738,7 +761,9 @@ impl ModelSession {
         }
         let cancel = AtomicBool::new(false);
         let started = Instant::now();
-        let windows = distinct_windows(source, &self.transformer, &self.tasks, &cancel, started)?;
+        let view = mdoc_pii::view::View::new(source);
+        let windows =
+            distinct_windows(&view.text, &self.transformer, &self.tasks, &cancel, started)?;
         let mut raw = Vec::new();
         for (text, _, starts) in windows {
             checkpoint(&cancel, started)?;
@@ -751,7 +776,7 @@ impl ModelSession {
                 &mut raw,
             )?;
         }
-        Ok(raw)
+        Ok(to_source(source, &view, raw))
     }
 }
 
@@ -933,6 +958,31 @@ mod tests {
         assert_eq!(
             guess("Павлова М.С. agreed", "Павлова М.С."),
             Category::Person
+        );
+    }
+    /// #367: the correction stage reads character references decoded, and
+    /// what it finds maps back to whole references in the source.
+    #[test]
+    fn correction_reads_character_references_decoded() {
+        let source = "Email: ismay&#64;crane-pith.invalid. Dear Ism&#97;y O&#39;Verren,";
+        let name = source.find("Ism&").unwrap()..source.len() - 1;
+        let raw = [RawEntity {
+            start: name.start,
+            end: name.end,
+            label: "person".into(),
+            score: 0.9,
+            text: source[name.clone()].into(),
+        }];
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| (&source[d.range], d.category))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("Ism&#97;y O&#39;Verren", Category::Person),
+                ("ismay&#64;crane-pith.invalid", Category::Email)
+            ]
         );
     }
     #[test]

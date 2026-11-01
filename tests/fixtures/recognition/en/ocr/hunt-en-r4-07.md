@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: literal-delimiter-pii
 issue: 423
 kind: ocr
 source: hunt-r4
-expect: miss: ORG "Fennel*Orbit Ltd"
 ---
 FAX TRANSMISSION                         PAGE 01 / 02
 FROM: ⟦PHONE|+44 7700 900641⟧

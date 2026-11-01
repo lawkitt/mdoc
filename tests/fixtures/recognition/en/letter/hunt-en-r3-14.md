@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: role-as-name email-autolink-protected
-issue: 385 411
+flaw: role-as-name
+issue: 385
 kind: letter
 source: hunt-r3
-expect: miss: EMAIL "maela.instructions@reed-opal.invalid" ×2
 expect: false hit: ORG "Records team"
 ---
 Subject: Forwarded instruction and signature comparison

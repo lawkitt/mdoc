@@ -3,6 +3,7 @@
 //! alias-shaped token that matches nothing is reported, never guessed.
 use super::{Category, Review};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
     sync::Arc,
@@ -182,8 +183,34 @@ impl RestoreMap {
     /// wording (exact, whole words), or by a lone word of a multi-word
     /// person original ("Марина" of "Марина Сергеевна"): names a
     /// pseudonymized text did not replace (ADR 0084). Counted by alias, as
-    /// a tab's mapping and its case list one person twice.
+    /// a tab's mapping and its case list one person twice. Text and
+    /// originals are read as detection reads them (`view`): "Ann&#97;
+    /// Petrova" is "Anna Petrova".
     pub fn known_names(&self, text: &str) -> usize {
+        let decoded = super::view::decoded(text);
+        let changed = |value: &str| matches!(super::view::decoded(value), Cow::Owned(_));
+        let references = self
+            .identities
+            .iter()
+            .flat_map(|identity| &identity.originals)
+            .any(|original| changed(original));
+        if !references && matches!(decoded, Cow::Borrowed(_)) {
+            return self.leftovers(text);
+        }
+        let identities = self
+            .identities
+            .iter()
+            .cloned()
+            .map(|mut identity| {
+                for original in &mut identity.originals {
+                    *original = Arc::from(super::view::decoded(original).as_ref());
+                }
+                identity
+            })
+            .collect();
+        Self::new(identities).leftovers(&decoded)
+    }
+    fn leftovers(&self, text: &str) -> usize {
         let whole = self.originals_in(text);
         // A word inside a whole original or an alias is no leftover of its
         // own: a custom alias may share a word with an original.

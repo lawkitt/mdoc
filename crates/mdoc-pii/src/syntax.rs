@@ -2,101 +2,24 @@
 use std::ops::Range;
 /// Protect letter/number-bearing grammar: list prefixes, HTML tag and attribute
 /// names, and attribute quotes. Identifying-information detection stays in GLiNER2.
+/// Only real Markdown and HTML syntax is protected, as CommonMark reads it:
+/// an autolink (`<name@domain.invalid>`) or other text in angle brackets
+/// that is not a whole tag is text, and so is a number that cannot start a
+/// list where it stands.
 pub(super) fn protected_syntax(source: &str) -> Vec<Range<usize>> {
-    let mut protected = Vec::new();
-    let mut base = 0;
-    for line in source.split_inclusive('\n') {
-        let mut start = line.len() - line.trim_start_matches([' ', '\t']).len();
-        while line[start..].starts_with('>') {
-            start += 1;
-            start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
-        }
-        let body = &line[start..];
-        if body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ") {
-            protected.push(base + start..base + start + 2);
-        }
-        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
-        if (1..=9).contains(&digits)
-            && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
-            && body
-                .as_bytes()
-                .get(digits + 1)
-                .is_some_and(u8::is_ascii_whitespace)
-        {
-            protected.push(base + start..base + start + digits + 1);
-        }
-        base += line.len();
-    }
+    let mut protected = list_markers(source);
     let bytes = source.as_bytes();
-    let name_byte = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':');
     let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] != b'<' {
-            at += 1;
-            continue;
+    while let Some(offset) = source[at..].find('<') {
+        let open = at + offset;
+        let mut parts = Vec::new();
+        match html_tag(bytes, open, &mut parts) {
+            Some(end) => {
+                protected.extend(parts);
+                at = end;
+            }
+            None => at = open + 1,
         }
-        let mut i = at + 1;
-        if bytes.get(i) == Some(&b'/') {
-            i += 1;
-        }
-        if !bytes.get(i).is_some_and(u8::is_ascii_alphabetic) {
-            at += 1;
-            continue;
-        }
-        let tag = i;
-        while bytes.get(i).is_some_and(|byte| name_byte(*byte)) {
-            i += 1;
-        }
-        protected.push(tag..i);
-        loop {
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if i >= bytes.len() || bytes[i] == b'>' {
-                break;
-            }
-            if bytes[i] == b'/' {
-                i += 1;
-                continue;
-            }
-            let name = i;
-            while bytes.get(i).is_some_and(|byte| name_byte(*byte)) {
-                i += 1;
-            }
-            if i == name {
-                break;
-            }
-            protected.push(name..i);
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if bytes.get(i) != Some(&b'=') {
-                continue;
-            }
-            i += 1;
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if let Some(quote @ (b'\'' | b'"')) = bytes.get(i).copied() {
-                protected.push(i..i + 1);
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote {
-                    i += 1;
-                }
-                if i < bytes.len() {
-                    protected.push(i..i + 1);
-                    i += 1;
-                }
-            } else {
-                while bytes
-                    .get(i)
-                    .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'>')
-                {
-                    i += 1;
-                }
-            }
-        }
-        at = i.saturating_add(1);
     }
     // Link outer delimiters remain intact, while ordinary parenthesized
     // phone/address text and balanced parentheses inside destinations are valid.
@@ -142,9 +65,135 @@ pub(super) fn protected_syntax(source: &str) -> Vec<Range<usize>> {
     }
     merged
 }
-/// Characters that only matter as Markdown structure: escapes and emphasis
-/// delimiters. A span containing them is checked structurally.
-const DELIMITERS: &[char] = &['\\', '*', '_', '~'];
+/// List item markers ("- ", "+ ", "* ", "1. ", "2) ") at the start of a
+/// line, after any block quote prefixes. A bullet can always interrupt a
+/// paragraph, but an ordered marker other than 1 cannot (CommonMark), so in
+/// "Паспорт:\n46. 18 731904" the number is text.
+pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
+    let mut markers = Vec::new();
+    let mut base = 0;
+    // Whether the line before is paragraph text, outside any list item since
+    // the last blank line, which an ordered marker other than 1 continues.
+    let mut paragraph = false;
+    let mut listed = false;
+    for line in source.split_inclusive('\n') {
+        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+        let mut start = indent;
+        while line[start..].starts_with('>') {
+            start += 1;
+            start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
+        }
+        let body = &line[start..];
+        let mut item = false;
+        if body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ") {
+            markers.push(base + start..base + start + 2);
+            item = true;
+        }
+        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+        if (1..=9).contains(&digits)
+            && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
+            && body
+                .as_bytes()
+                .get(digits + 1)
+                .is_some_and(u8::is_ascii_whitespace)
+            && !(paragraph && body[..digits].trim_start_matches('0') != "1")
+        {
+            markers.push(base + start..base + start + digits + 1);
+            item = true;
+        }
+        let blank = body.trim().is_empty();
+        listed = !blank && (listed || item);
+        paragraph = !blank && !listed && indent < 2 && !body.starts_with(['#', '|', '`', '~', '<']);
+        base += line.len();
+    }
+    markers
+}
+/// The end of the HTML tag that starts at `open`, if a whole one does, as
+/// CommonMark reads raw HTML: an open tag (`<name attr="v" flag />`) or a
+/// closing tag (`</name>`). Its name, attribute names and value quotes go
+/// to `parts`; values are text.
+fn html_tag(bytes: &[u8], open: usize, parts: &mut Vec<Range<usize>>) -> Option<usize> {
+    let space = |byte: &u8| matches!(byte, b' ' | b'\t' | b'\n' | b'\r');
+    let skip = |mut i: usize| {
+        while bytes.get(i).is_some_and(space) {
+            i += 1;
+        }
+        i
+    };
+    let mut i = open + 1;
+    let closing = bytes.get(i) == Some(&b'/');
+    if closing {
+        i += 1;
+    }
+    let name = i;
+    if !bytes.get(i).is_some_and(u8::is_ascii_alphabetic) {
+        return None;
+    }
+    while bytes
+        .get(i)
+        .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'-')
+    {
+        i += 1;
+    }
+    parts.push(name..i);
+    if closing {
+        i = skip(i);
+        return (bytes.get(i) == Some(&b'>')).then_some(i + 1);
+    }
+    loop {
+        let after = skip(i);
+        match bytes.get(after) {
+            Some(b'>') => return Some(after + 1),
+            Some(b'/') => return (bytes.get(after + 1) == Some(&b'>')).then_some(after + 2),
+            _ if after == i => return None,
+            _ => i = after,
+        }
+        // An attribute: its name, then an optional value.
+        let name = i;
+        if !bytes
+            .get(i)
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b':'))
+        {
+            return None;
+        }
+        while bytes
+            .get(i)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b':' | b'-'))
+        {
+            i += 1;
+        }
+        parts.push(name..i);
+        let equals = skip(i);
+        if bytes.get(equals) != Some(&b'=') {
+            continue;
+        }
+        i = skip(equals + 1);
+        match *bytes.get(i)? {
+            quote @ (b'\'' | b'"') => {
+                let close = i + 1 + bytes[i + 1..].iter().position(|b| *b == quote)?;
+                parts.push(i..i + 1);
+                parts.push(close..close + 1);
+                i = close + 1;
+            }
+            _ => {
+                let value = i;
+                while bytes
+                    .get(i)
+                    .is_some_and(|b| !space(b) && !b"\"'=<>`".contains(b))
+                {
+                    i += 1;
+                }
+                if i == value {
+                    return None;
+                }
+            }
+        }
+    }
+}
+/// Characters that only matter as Markdown structure: escapes, emphasis
+/// delimiters and heading marks. A span containing them is checked
+/// structurally.
+const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#'];
 /// Whether replacing `range` with a plain token leaves the Markdown structure
 /// of its block unchanged: escaped (`\_`) or literal (`____`) delimiters are
 /// text, while a span that opens or closes emphasis, or splits an escape, is not.

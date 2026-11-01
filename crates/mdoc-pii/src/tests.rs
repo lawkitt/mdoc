@@ -328,6 +328,80 @@ fn hidden_values_are_replaceable_but_html_names_quotes_and_list_prefixes_are_pro
     assert!(!valid_replacement("1"));
     assert!(!valid_replacement("PERSON_"));
 }
+/// Applies every pending mention of `detections` in `source`.
+fn applied(source: &str, detections: Vec<Detection>) -> String {
+    let mut review = Review::default();
+    review.ingest(source, detections).unwrap();
+    let mut changed = source.to_owned();
+    for (range, replacement) in plan_all(&review, source).unwrap().iter().rev() {
+        changed.replace_range(range.clone(), replacement);
+    }
+    changed
+}
+#[test]
+fn only_real_markdown_and_html_syntax_hides_a_value() {
+    // An email autolink is not a tag (#411), and a tag is protected only
+    // when it is a whole one.
+    let source = "From: <ann@x.invalid>\nTo: <bob@x.invalid> <i>Bob</i> <b class=\"Bob\">";
+    let at = |text: &str| source.find(text).unwrap();
+    let email = |text: &str| detection(at(text)..at(text) + text.len(), Category::Email);
+    assert_eq!(
+        applied(source, vec![email("ann@x.invalid"), email("bob@x.invalid")]),
+        "From: <EMAIL_1>\nTo: <EMAIL_2> <i>Bob</i> <b class=\"Bob\">"
+    );
+    assert_eq!(
+        protected_syntax(source),
+        [at("i>B")..at("i>B") + 1, at("/i>") + 1..at("/i>") + 2]
+            .into_iter()
+            .chain([at("b c")..at("b c") + 1, at("class")..at("class") + 5])
+            .chain([
+                at("\"Bob")..at("\"Bob") + 1,
+                at("Bob\">") + 3..at("Bob\">") + 4
+            ])
+            .collect::<Vec<_>>()
+    );
+    // Literal `*` and `#` inside a value are text (#423); emphasis is not.
+    let source = "Fennel*Orbit Ltd, ID LC#713624, *Ann* Lee.";
+    let at = |text: &str| source.find(text).unwrap();
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                detection(0..16, Category::Organization),
+                detection(at("LC#")..at("LC#") + 9, Category::Identity),
+                detection(at("Ann*")..at(" Lee") + 4, Category::Person),
+            ]
+        ),
+        "ORG_1, ID IDENTITY_1, *Ann* Lee."
+    );
+    // A number after a paragraph line is no list unless it is 1 (#428); a
+    // bullet is one, so its marker stays and its value is replaced.
+    let source = "Паспорт:\n46. 18 731904\nТелефон:\n+ 7 (900) 000-84-31\n\n1. a\n2. b";
+    let at = |text: &str| source.find(text).unwrap();
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                detection(at("46.")..at("46.") + 13, Category::Identity),
+                detection(at("+ 7")..at("+ 7") + 19, Category::Phone),
+            ]
+        ),
+        "Паспорт:\nIDENTITY_1\nТелефон:\n+ PHONE_1\n\n1. a\n2. b"
+    );
+    assert_eq!(
+        syntax::list_markers(source),
+        [
+            at("+ 7")..at("+ 7") + 2,
+            at("1. a")..at("1. a") + 2,
+            at("2. b")..at("2. b") + 2
+        ]
+    );
+    // Siblings and lazy lines stay in their list; a paragraph after a blank
+    // line ends it.
+    assert_eq!(syntax::list_markers("1. a\nlazy\n2. b").len(), 2);
+    assert_eq!(syntax::list_markers("1. a\n\nText\n2. b").len(), 1);
+    assert_eq!(syntax::list_markers("# Title\n2. b").len(), 1);
+}
 #[test]
 fn parenthesized_phone_values_do_not_consume_link_delimiters() {
     let source = "Call (202) 555-0101. [contact](tel:(202)555-0101)";

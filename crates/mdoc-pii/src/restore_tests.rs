@@ -573,6 +573,20 @@ fn the_russian_demos_lone_first_name_is_not_ready() {
     assert_eq!(map.known_names(&sent), 1);
 }
 
+/// #367: a character reference hides no name from readiness.
+#[test]
+fn readiness_reads_character_references_as_their_characters() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["Anna Petrova"]),
+        identity("PERSON_2", Category::Person, &["Ism&#97;y O&#39;Verren"]),
+    ]);
+    assert_eq!(map.known_names("Dear Ann&#97; Petrova,"), 1);
+    assert_eq!(map.known_names("Dear Ann&#97;,"), 1);
+    assert_eq!(map.known_names("Ismay O'Verren signed."), 1);
+    assert_eq!(map.known_names("Ism&#x61;y signed."), 1);
+    assert_eq!(map.known_names("PERSON_1 and PERSON_2 &amp; Co."), 0);
+}
+
 #[test]
 fn lone_words_skip_titles_short_and_lowercase_words_and_aliases() {
     let map = RestoreMap::new(vec![
