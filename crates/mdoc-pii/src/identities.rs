@@ -198,9 +198,11 @@ fn russian_surname_score(word: &str) -> u8 {
 pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     split_full_name_inflected(value).map(|(surname, given, _)| (surname, given))
 }
+/// A full name's surname and given names as the document wrote them.
+pub(crate) type Written = Option<(String, Vec<String>)>;
 /// [`split_full_name`], in the nominative when the name came inflected
-/// ("Эльзе-Руте Мартыновне Таль-Шнейдер"), and whether it did.
-pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<String>, bool)> {
+/// ("Эльзе-Руте Мартыновне Таль-Шнейдер"), with the words as written then.
+pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<String>, Written)> {
     let mut words = name_words(value);
     let full = |w: &String| {
         w.chars().filter(|c| c.is_alphabetic()).count() > 1
@@ -217,9 +219,9 @@ pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<Stri
     let nominative = (russian && words.len() >= 3)
         .then(|| crate::propagation::nominative(&words))
         .flatten();
-    let inflected = nominative.is_some();
+    let mut written = None;
     if let Some(nominative) = nominative {
-        words = nominative;
+        written = Some(std::mem::replace(&mut words, nominative));
     }
     // Still inflected, or first name + patronymic, which has no surname.
     if russian
@@ -246,8 +248,9 @@ pub(crate) fn split_full_name_inflected(value: &str) -> Option<(String, Vec<Stri
     } else {
         last
     };
+    let written = written.map(|mut written| (written.remove(surname), written));
     let surname = words.remove(surname);
-    (surname.chars().count() >= 3).then_some((surname, words, inflected))
+    (surname.chars().count() >= 3).then_some((surname, words, written))
 }
 /// Lowercase wordings that stand for `surname` alone: itself and, for a
 /// Russian surname, its conservative case forms ("раман" → "рамана",
