@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: public-body-org
-issue: 378
+status: pass
+flaw:
+issue:
 kind: claim
 source: hunt-r7
-expect: false hit: ORG "ГПК РФ"
 ---
 # Пояснение к обезличенному расчёту судебных расходов
 
