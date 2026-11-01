@@ -5,6 +5,7 @@
 //! just recognize --scoreboard [<folder>] [--snapshot]
 //! just recognize --refresh-snapshots [<file.md|folder>]
 //! just recognize --check [<folder>]
+//! just recognize --record-flaws [<file.md|folder>]
 //! ```
 //!
 //! A file prints its proposals marked as gold is (`⟦CATEGORY|text⟧`);
@@ -19,13 +20,16 @@
 //! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots (on the Mac, the
 //! reference platform). `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
-//! and on a model run over its 5-minute budget. Folders default to
+//! and on a model run over its 5-minute budget. `--record-flaws` writes each
+//! known-flaw fixture's flaws, from its snapshot, as its `expect:` lines:
+//! a known-flaw fixture fails on any flaw it has not recorded (the
+//! precision ratchet). Folders default to
 //! `tests/fixtures/recognition`; any folder of fixtures works (the holdout).
 use mdoc_detect::{
     ModelSession, RawEntity,
     recognition::{
         Comparison, Fixture, Scoreboard, Snapshot, Status, annotate, fixture_paths, proposals,
-        ratchet,
+        verdict, with_expected,
     },
 };
 use std::{
@@ -43,6 +47,7 @@ enum Mode {
     Scoreboard,
     Refresh,
     Check,
+    Record,
 }
 
 fn main() -> ExitCode {
@@ -60,7 +65,8 @@ fn usage() -> String {
     "usage: just recognize <file.md|folder> [--gold] [--snapshot]\n       \
      just recognize --scoreboard [<folder>] [--snapshot]\n       \
      just recognize --refresh-snapshots [<file.md|folder>]\n       \
-     just recognize --check [<folder>]"
+     just recognize --check [<folder>]\n       \
+     just recognize --record-flaws [<file.md|folder>]"
         .into()
 }
 
@@ -76,6 +82,7 @@ fn run() -> Result<bool, String> {
             "--scoreboard" => mode = Mode::Scoreboard,
             "--refresh-snapshots" => mode = Mode::Refresh,
             "--check" => mode = Mode::Check,
+            "--record-flaws" => mode = Mode::Record,
             "-h" | "--help" => {
                 println!("{}", usage());
                 return Ok(true);
@@ -107,7 +114,7 @@ fn run() -> Result<bool, String> {
     if paths.is_empty() {
         return Err(format!("no fixtures under {}", root.display()));
     }
-    let mut model = if from_snapshot {
+    let mut model = if from_snapshot || mode == Mode::Record {
         None
     } else {
         Some(Model::load()?)
@@ -145,7 +152,7 @@ fn run() -> Result<bool, String> {
                 let proposed = proposals(&fixture.source, &raw)?;
                 let comparison = Comparison::new(&fixture.gold, &proposed);
                 scoreboard.add(&fixture, &comparison, &proposed);
-                let unexpected = ratchet(fixture.expected(), comparison.passes());
+                let unexpected = verdict(&fixture, &comparison);
                 ok &= unexpected.is_none();
                 if mode == Mode::Gold {
                     let status = fixture.status.map_or("no status: pass", Status::name);
@@ -160,9 +167,9 @@ fn run() -> Result<bool, String> {
                         "ok"
                     };
                     println!("{mark} {} ({status}): {result}", path.display());
-                    print!("{}", comparison.report(&fixture.source));
-                    if let Some(why) = unexpected {
-                        println!("  {why}");
+                    match unexpected {
+                        Some(why) => println!("  {}", why.trim_end()),
+                        None => print!("{}", comparison.report(&fixture.source)),
                     }
                 }
             }
@@ -194,6 +201,28 @@ fn run() -> Result<bool, String> {
             );
             Ok(true)
         }
+        Mode::Record => {
+            let mut recorded = 0;
+            for path in &paths {
+                let fixture = Fixture::read(path)?;
+                if fixture.status != Some(Status::KnownFlaw) {
+                    continue;
+                }
+                let raw = entities(&fixture, None)?;
+                let comparison = Comparison::new(&fixture.gold, &proposals(&fixture.source, &raw)?);
+                if comparison.passes() {
+                    println!("{}: passes now: flip its status to pass", path.display());
+                    continue;
+                }
+                let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                let lines = comparison.report_lines(&fixture.source);
+                std::fs::write(path, with_expected(&text, &lines)?)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                recorded += 1;
+            }
+            println!("recorded the flaws of {recorded} known-flaw fixtures");
+            Ok(true)
+        }
         Mode::Check => {
             let model = model.as_mut().expect("model mode");
             let started = Instant::now();
@@ -218,8 +247,8 @@ fn run() -> Result<bool, String> {
                 }
                 let proposed = proposals(&fixture.source, &fresh.entities)?;
                 let comparison = Comparison::new(&fixture.gold, &proposed);
-                if let Some(why) = ratchet(fixture.expected(), comparison.passes()) {
-                    problems.push(format!("{why}\n{}", comparison.report(&fixture.source)));
+                if let Some(why) = verdict(&fixture, &comparison) {
+                    problems.push(why);
                 }
                 if !problems.is_empty() {
                     failures.push(format!("{}: {}", path.display(), problems.join("; ")));

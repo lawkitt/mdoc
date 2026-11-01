@@ -85,6 +85,9 @@ pub struct Fixture {
     pub kind: String,
     pub origin: String,
     pub reason: String,
+    /// A known-flaw fixture's recorded flaws (`expect:` lines, as
+    /// [`Comparison::report_lines`] prints them): the precision ratchet.
+    pub expect: Vec<String>,
     /// The document with its gold marks removed.
     pub source: String,
     pub gold: Vec<Span>,
@@ -111,6 +114,7 @@ impl Fixture {
             kind: String::new(),
             origin: String::new(),
             reason: String::new(),
+            expect: Vec::new(),
             source: String::new(),
             gold: Vec::new(),
         };
@@ -127,6 +131,10 @@ impl Fixture {
                 let (key, value) = line
                     .split_once(':')
                     .ok_or_else(|| format!("front matter line without `key:`: {line}"))?;
+                if key.trim() == "expect" {
+                    fixture.expect.push(value.trim().to_owned());
+                    continue;
+                }
                 let value = value.trim().trim_matches('"').trim_matches('\'').to_owned();
                 match key.trim() {
                     "status" => {
@@ -523,9 +531,17 @@ impl Comparison {
         self.misses.is_empty() && self.false_hits.is_empty() && self.boundary.is_empty()
     }
 
+    /// One line per kind of flaw, quoting the source, indented.
+    pub fn report(&self, source: &str) -> String {
+        self.report_lines(source)
+            .iter()
+            .map(|line| format!("  {line}\n"))
+            .collect()
+    }
+
     /// One line per kind of flaw, quoting the source; a flaw repeated word
     /// for word is counted (`×40`).
-    pub fn report(&self, source: &str) -> String {
+    pub fn report_lines(&self, source: &str) -> Vec<String> {
         let show = |span: &Span| format!("{} {:?}", span.category, &source[span.range.clone()]);
         let list = |spans: &[Span]| spans.iter().map(show).collect::<Vec<_>>().join(", ");
         let mut lines: Vec<(String, usize)> = Vec::new();
@@ -547,16 +563,70 @@ impl Comparison {
                 None => lines.push((line, 1)),
             }
         }
-        let mut out = String::new();
-        for (line, count) in lines {
-            if count == 1 {
-                let _ = writeln!(out, "  {line}");
-            } else {
-                let _ = writeln!(out, "  {line} ×{count}");
-            }
-        }
-        out
+        lines
+            .into_iter()
+            .map(|(line, count)| {
+                if count == 1 {
+                    line
+                } else {
+                    format!("{line} ×{count}")
+                }
+            })
+            .collect()
     }
+}
+
+/// Why a fixture's result is not as expected, if it isn't: the ratchet on
+/// its status, then, for a known-flaw fixture, its flaws against the
+/// recorded ones, so a change can't add a false hit while the fixture still
+/// fails for its old reasons (ADR 0093). A fixture without a status is
+/// expected to pass.
+pub fn verdict(fixture: &Fixture, comparison: &Comparison) -> Option<String> {
+    if let Some(why) = ratchet(fixture.expected(), comparison.passes()) {
+        return Some(format!("{why}\n{}", comparison.report(&fixture.source)));
+    }
+    if fixture.status != Some(Status::KnownFlaw) {
+        return None;
+    }
+    let mut now = comparison.report_lines(&fixture.source);
+    let mut recorded = fixture.expect.clone();
+    now.sort();
+    recorded.sort();
+    if now == recorded {
+        return None;
+    }
+    let mut out = String::from(
+        "its flaws differ from its recorded `expect:` lines; once the change is right, \
+         `just recognize --record-flaws <file>` records them",
+    );
+    for line in now.iter().filter(|line| !recorded.contains(line)) {
+        let _ = write!(out, "\n  new: {line}");
+    }
+    for line in recorded.iter().filter(|line| !now.contains(line)) {
+        let _ = write!(out, "\n  gone: {line}");
+    }
+    Some(out)
+}
+
+/// A fixture file's text with its `expect:` lines replaced by `lines`,
+/// at the end of its front matter.
+pub fn with_expected(text: &str, lines: &[String]) -> Result<String, String> {
+    let rest = text.strip_prefix("---\n").ok_or("no front matter")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("front matter has no closing `---` line")?;
+    let mut out = String::from("---\n");
+    for line in rest[..end].lines() {
+        if line.split_once(':').map(|(key, _)| key.trim()) != Some("expect") {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    for line in lines {
+        let _ = writeln!(out, "expect: {line}");
+    }
+    out.push_str(&rest[end + 1..]);
+    Ok(out)
 }
 
 /// A fixture's result against its status: `None` when it is as expected.
@@ -838,6 +908,34 @@ mod tests {
             Some("fails, but its status is pass")
         );
         assert_eq!(ratchet(Status::ModelLimit, true), None);
+    }
+
+    #[test]
+    fn a_known_flaw_fixture_fails_on_a_flaw_it_has_not_recorded() {
+        let path = Path::new("en/letter/x.md");
+        let text = "---\nstatus: known-flaw\nflaw: f\nissue: 1\nkind: letter\nsource: import\n---\n⟦PERSON|Ann⟧ wrote.\n";
+        let fixture = Fixture::parse(path, text).unwrap();
+        let missed = Comparison::new(&fixture.gold, &[]);
+        let lines = missed.report_lines(&fixture.source);
+        assert_eq!(lines, ["miss: PERSON \"Ann\""]);
+        assert!(verdict(&fixture, &missed).unwrap().contains("new: miss"));
+        let recorded = with_expected(text, &lines).unwrap();
+        assert!(recorded.ends_with("expect: miss: PERSON \"Ann\"\n---\n⟦PERSON|Ann⟧ wrote.\n"));
+        let fixture = Fixture::parse(path, &recorded).unwrap();
+        assert_eq!(verdict(&fixture, &missed), None);
+        // One more false hit while it still fails: caught.
+        let worse = Comparison::new(&fixture.gold, &[span(4..9, "ORG")]);
+        let why = verdict(&fixture, &worse).unwrap();
+        assert!(why.contains("new: false hit: ORG \"wrote\""), "{why}");
+        // Re-recording replaces the lines.
+        assert_eq!(with_expected(&recorded, &lines).unwrap(), recorded);
+        // Passing flips the status, as before.
+        let fixed = Comparison::new(&fixture.gold, &fixture.gold);
+        assert!(
+            verdict(&fixture, &fixed)
+                .unwrap()
+                .contains("flip its status")
+        );
     }
 
     #[test]

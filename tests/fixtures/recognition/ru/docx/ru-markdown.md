@@ -4,6 +4,8 @@ flaw: hidden-underscore-name ru-identifier-category
 issue: unfiled
 kind: docx
 source: import
+expect: miss: PERSON "Анна_Ёлкина" ×2
+expect: boundary: gold TAX "7701234567"; proposed PHONE "7701234567"
 ---
 | Заказчик | ИНН |
 | --- | --- |

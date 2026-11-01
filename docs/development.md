@@ -220,7 +220,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
 | `just perf` | Ignored performance tests, serially |
-| `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--check` is the detection gate. Any folder of fixtures works (the holdout) |
+| `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate. Any folder of fixtures works (the holdout) |
 | `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides); `local/macos` runs it last |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
@@ -437,9 +437,10 @@ prints the areas a change touches (`HEAD^1` to `HEAD` by default: on a
 merge ref, the PR). A new script outside `src/` and `tests/` that a mobile
 job runs needs a line there, or it counts as desktop. `ci.yml`'s
 `paths-ignore` repeats the `none` lines word for word (the suite checks).
-Only exceptions precede the `none` lines, Markdown a test reads under
-`tests/fixtures/` (the recognition fixtures, core); `paths-ignore` lists
-each after them with a `!`.
+Only exceptions precede the `none` lines: Markdown a test reads under
+`tests/fixtures/` (the recognition fixtures, core). Local CI runs them;
+hosted CI still skips them, since `paths-ignore` takes no `!` and a PR's
+hosted run is only lint, which reads no fixture.
 
 **Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
 runs only `lint (ubuntu)` on `pull_request`; its `areas`, `clippy` and `test`

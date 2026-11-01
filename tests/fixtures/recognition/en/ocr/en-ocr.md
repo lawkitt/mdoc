@@ -4,6 +4,7 @@ flaw: ocr-name-category
 issue: unfiled
 kind: ocr
 source: import
+expect: boundary: gold PERSON "A1ice M0rgan"; proposed ORG "A1ice M0rgan"
 ---
 SERVICE AGREEM ENT
 Client: ⟦PERSON|A1ice M0rgan⟧

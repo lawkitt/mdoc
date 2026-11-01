@@ -55,14 +55,11 @@ not() { ! "$@"; }
     '
   }
   ignored=$(tr -d '\r' <.github/workflows/ci.yml | paths_ignore)
-  # The lines above the first none line are exceptions to it (Markdown a
-  # test reads); paths-ignore lists them after the none lines with a `!`.
-  none=$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '
-    $1 == "none" { seen = 1; print $2; next }
-    !seen { except[++n] = $2 }
-    END { for (i = 1; i <= n; i++) print "!" except[i] }')
+  none=$(awk '$1 == "none" { print $2 }' <<<"$table")
   check "ci.yml's paths-ignore list is read" [ -n "$ignored" ]
-  check "ci.yml's paths-ignore is the table's none lines, then its exceptions, in order" [ "$ignored" = "$none" ]
+  check "ci.yml's paths-ignore is the table's none lines, in order" [ "$ignored" = "$none" ]
+  # The lines above the first none line are exceptions to it: Markdown a test
+  # reads. GitHub's paths-ignore takes no `!`, so hosted CI skips them.
   check "the exceptions are under tests/fixtures/, so a README under apps/ is docs" \
     [ -z "$(grep -vE '^[[:space:]]*(#|$)' <<<"$table" | awk '$1 == "none" { exit } { print $2 }' | grep -v '^tests/fixtures/')" ]
   check "the none lines are one block" \

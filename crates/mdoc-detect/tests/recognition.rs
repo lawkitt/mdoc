@@ -2,7 +2,7 @@
 //! fixture's committed raw model output through the correction stage and the
 //! review, against its gold and status. The Mac's detection gate
 //! (`just recognize --check`) also reruns the model to keep snapshots fresh.
-use mdoc_detect::recognition::{Comparison, Fixture, Snapshot, fixture_paths, proposals, ratchet};
+use mdoc_detect::recognition::{Comparison, Fixture, Snapshot, fixture_paths, proposals, verdict};
 use std::path::Path;
 
 #[test]
@@ -32,11 +32,7 @@ fn every_recognition_fixture_is_as_its_status_says() {
             snapshot.validate(&fixture.source)?;
             let proposed = proposals(&fixture.source, &snapshot.entities)?;
             let comparison = Comparison::new(&fixture.gold, &proposed);
-            let status = fixture.status.expect("validated");
-            match ratchet(status, comparison.passes()) {
-                Some(why) => Err(format!("{why}\n{}", comparison.report(&fixture.source))),
-                None => Ok(()),
-            }
+            verdict(&fixture, &comparison).map_or(Ok(()), Err)
         };
         if let Err(error) = check() {
             failures.push(format!("{}: {error}", path.display()));

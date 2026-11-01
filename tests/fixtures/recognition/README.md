@@ -19,7 +19,12 @@ A fixture passes when what the user would be shown (the correction stage,
 then the review's conflict rules and repeats) equals its gold exactly: no
 miss, no false hit, no boundary or category error. `pass` must pass;
 `known-flaw` must fail, and once it passes the gate fails until its status
-flips; `model-limit` is listed, never asserted.
+flips; `model-limit` is listed, never asserted. A `known-flaw` fixture also
+records its flaws as `expect:` lines in its front matter, and its flaws
+must match them: a change can't add a false hit while the fixture still
+fails for its old reasons, and a partial fix records what it fixed. `just
+recognize --record-flaws` writes them from the snapshots once a change is
+right; the diff shows every flaw added or gone.
 
 ## Commands
 
@@ -30,6 +35,7 @@ just recognize <file.md|folder> --gold --snapshot   # the same from snapshots, a
 just recognize --scoreboard [<folder>]    # recall and precision per language × category × kind
 just recognize --refresh-snapshots [<file.md|folder>]   # the Mac only
 just recognize --check [<folder>]         # the detection gate
+just recognize --record-flaws [<file.md|folder>]   # known-flaw fixtures' expect: lines
 ```
 
 The model is the installed pinned FP16 in the app data (read only, never
@@ -53,7 +59,8 @@ fixtures on the M4).
 
 Write the document by the guide, then on the Mac
 `just recognize --refresh-snapshots <file.md>` and
-`just recognize <file.md> --gold` to set its status. Commit both files.
+`just recognize <file.md> --gold` to set its status; for `known-flaw`,
+`just recognize --record-flaws <file.md>`. Commit both files.
 
 ## Imported
 
@@ -62,8 +69,9 @@ the hybrid's, word for word, so they are imported once) are here re-marked
 by the guide; the originals under `tests/fixtures/pseudonymization/` stay
 frozen for research reproduction. Re-marked: claim and case numbers after a
 label became `CASE` gold (`en-identifiers`, `ru-identifiers`,
-`hybrid-snils`, `hybrid-calibration-negative`, two negatives), and the long
-settlement's claim number and date of birth became gold. The long fixtures
+`hybrid-snils`, `hybrid-calibration-negative`, two negatives); labelled
+invalid identifiers and an invalid IBAN in two negatives became gold (rule
+6); and the long settlement's claim number and date of birth became gold. The long fixtures
 are the repeats written out. Kinds were assigned by content; mixed-language
 cases sit under the language of most of their text.
 

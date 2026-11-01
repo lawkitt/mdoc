@@ -6,9 +6,11 @@
 #   none     no job runs: docs and files no build reads. These lines are
 #            ci.yml's paths-ignore list, word for word (scripts/test-local-ci.sh
 #            fails when they disagree), and come first, so a README under
-#            apps/ or crates/ is still docs. Only exceptions precede them: a
-#            Markdown file a test reads (the recognition fixtures, ADR 0093),
-#            which paths-ignore lists after the none lines with a `!`.
+#            apps/ or crates/ is still docs. Only exceptions precede them:
+#            Markdown under tests/fixtures/ that a test reads (the recognition
+#            fixtures, ADR 0093). Local CI runs them as their area; hosted CI
+#            still skips them (paths-ignore has no exceptions, and on a PR it
+#            runs only lint, which reads no fixture).
 #   ios      the iOS job (local/ios): apps/ios/ and the iOS scripts.
 #   android  the Android job (local/android): apps/android/ and the Android
 #            scripts.

@@ -20,9 +20,11 @@ affected() {
     always) return 0 ;;
     never) return 1 ;;
   esac
+  local names
   git rev-parse --verify --quiet HEAD^1 >/dev/null || return 0
-  git diff --no-renames --name-only HEAD^1 HEAD | grep -qE \
-    '^(crates/mdoc-(detect|pii|import|store)/|tests/fixtures/recognition/|resources/pseudonymization|Cargo\.lock$|rust-toolchain\.toml$|justfile$|scripts/detection-gate\.sh$)'
+  # The whole list first: grep -q stopping early would fail the pipe.
+  names=$(git diff --no-renames --name-only HEAD^1 HEAD) || die "cannot list the change's files"
+  grep -qE '^(crates/mdoc-(detect|pii|import|store)/|tests/fixtures/recognition/|resources/pseudonymization|Cargo\.lock$|rust-toolchain\.toml$|justfile$|scripts/detection-gate\.sh$)' <<<"$names"
 }
 
 if ! affected; then

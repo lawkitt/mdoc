@@ -58,8 +58,9 @@ local-ci *args:
 
 # Recognition fixtures (ADR 0093): annotate a file or folder, --gold, --snapshot, --scoreboard, --refresh-snapshots, --check (the detection gate)
 [no-cd]
+[positional-arguments]
 recognize *args:
-    @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-detect --example recognize -- {{args}}
+    @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-detect --example recognize -- "$@"
 
 # The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; local/macos runs it
 detection-gate:

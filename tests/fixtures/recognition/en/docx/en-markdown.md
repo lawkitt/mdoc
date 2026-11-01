@@ -4,6 +4,7 @@ flaw: hidden-underscore-name
 issue: unfiled
 kind: docx
 source: import
+expect: miss: PERSON "Alice_Morgan" ×2
 ---
 | Counsel | Contact |
 | --- | --- |
