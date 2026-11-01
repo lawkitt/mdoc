@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-30 (latest: 0.2.1); accepted
+This roadmap lists open work as of 2026-11-01 (latest: 0.3.0); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -9,56 +9,88 @@ How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 
 ## Current status
 
-0.2.0 shipped on 2026-10-26 for Apple Silicon macOS and Windows x64, from
-`main` after the architecture refactoring
-([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)) and the
-rc.4 acceptance run on both platforms
-([evidence](docs/evidence/platform/2026-10-26/README.md)). Its must-fix fail
-(#167) was fixed and re-checked on macOS only; the maintainer skipped the
-remaining manual rows and the keychain launch check. Windows also ships an
-`.msi`. No PII model has passed the
+0.3.0 shipped on 2026-11-01 for Apple Silicon macOS and Windows x64: cases
+restore without surprises (restore in place, merge hints, What you did,
+Back and Forward), the macOS menu bar shelf, and the 2026-10-31 UI/UX
+survey's fixes and polish. It went stable from rc.1 with no rc.2 and no
+acceptance run, an exception to
+[ADR 0083](docs/adr/0083-fewer-release-candidates.md) recorded in the
+[2026-11-01 grill](docs/design/roadmap-grill-2026-11-01.md); a targeted run
+on the release build follows (0.3.x). No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
-releases: [CHANGELOG](CHANGELOG.md). 0.2.1 (2026-10-27) fixed the seven
-bugs from the 0.2.0 runs; its [smoke run](docs/evidence/platform/2026-10-27/README.md)
-left rows for the maintainer and found [#194](https://github.com/lawkitt/mdoc/issues/194).
+releases: [CHANGELOG](CHANGELOG.md).
 
-## 0.2.x patches
+Three tracks run in parallel and each releases when ready: desktop 0.4.0,
+iOS 0.1 (the first to ship) and Android 0.1.
 
-None planned: fixes ride in 0.3.0-rc.1, and new bugs go to the
-[0.3.0 milestone](https://github.com/lawkitt/mdoc/milestone/4). A severe bug
-in 0.2.1 can still get a patch.
+## 0.3.x
 
-## 0.3.0
+A severe bug in 0.3.0 gets a patch; other bugs go to the
+[0.4.0 milestone](https://github.com/lawkitt/mdoc/milestone/7).
 
-Restoring cases without surprises, then shortcut discovery
-([milestone](https://github.com/lawkitt/mdoc/milestone/4)). The 2026-10-22 UX
-review's polish shipped in 0.2.0. rc.1 is out and gets an install and smoke
-check only; rc.2 follows the shelf and gets the full acceptance
-([ADR 0083](docs/adr/0083-fewer-release-candidates.md), amended). Each item
-merges to `main` on its own when green.
+1. **[Release] 0.3.0 acceptance on the release build.** *From the
+   2026-11-01 grill.* 0.3.0 skipped rc.2's acceptance, so the shelf has
+   never had its section run. Run [platform acceptance](docs/platform-acceptance.md)
+   section 12, the GUI rows on #254 and #353, and an install, upgrade and
+   keychain smoke on both platforms, on the v0.3.0 release build. *Done
+   when:* the evidence is under `docs/evidence/platform/`, #254 and #353
+   are closed, and each must-fix fail is an issue in a 0.3.1 milestone.
 
-1. **[Shelf] Menu bar shelf** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)),
-   macOS: a menu bar item listing pseudonymized documents to open,
-   drag out or Copy for AI, with Pseudonymize Clipboard and Restore
-   Clipboard. *Done when:* platform acceptance section 12 passes on rc.2,
-   Windows is unchanged (no tray), and a test drags and copies ready,
-   not-ready and changed-since-review documents and finds no original in any
-   export.
-2. **[Shelf] On by default, and polish** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md),
-   [polish grill](docs/design/menu-bar-grill-2026-10-31.md#polish-grill-after-263265-merged)):
-   the switch on by default with the first-close note; prose previews with
-   Markdown hidden, two lines and "…"; case labels; an outlined Copy for AI
-   with "Copied" and ⌘1–⌘8; "N replaced" with categories on hover; the
-   Clipboard section; one footer row; vibrancy; the drag cursor, card and
-   hint. Lands before rc.2. *Done when:* rows M1–M3, M5, M7, M8 and M11 hold
-   on a local build, headless renders show the polished shelf in both
-   themes, and Windows is unchanged.
+## 0.4.0
 
-Records: [2026-10-29 grill](docs/design/roadmap-grill-2026-10-29.md),
-[2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md), [shelf grill](docs/design/menu-bar-grill-2026-10-31.md). One RC is the
-default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
-fix after rc.1 to the installer, signing, updates or the keychain forces
-another, so such work lands first.
+Fixing PII recognition flaws on the fly
+([milestone](https://github.com/lawkitt/mdoc/milestone/7)). The pinned
+model misses things no threshold recovers: neither demo's home address is
+proposed at any score and it has no date-of-birth label; a lone "Марина"
+scores 0.29, under the 0.5 cut ([probe](docs/design/roadmap-grill-2026-11-01.md#probe-what-the-model-sees-in-the-demos)).
+A correction pipeline after the model fixes them in layers: a rule pack,
+propagation in the document, the user's own lists, and a fixture for every
+flaw. Items 3–5 wait for item 1's ADR. rc.1, then full acceptance on the
+last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+Record: [2026-11-01 grill](docs/design/roadmap-grill-2026-11-01.md).
+
+1. **[Detection] Recognition design grill.** *From the 2026-11-01 grill.*
+   In a fresh session: the rule pack's format and home, how propagation
+   proposes, the user lists' scope and storage, the Case category's UI,
+   and whether name plus patronymic is a merge signal (U27, would amend
+   [ADR 0080](docs/adr/0080-merge-hint.md)). *Done when:* an ADR records
+   the pipeline and items 3–5 have Done-whens that follow it.
+2. **[Detection] Detection gate in local CI.** *From the 2026-11-01 grill.*
+   The Mac job runs the qualification corpus against the pinned FP16 model
+   on every PR touching `mdoc-detect`, `mdoc-pii` or the rule pack; each
+   fixture asserts its expected spans. The demos and #301's spans join as
+   failing fixtures. Runs beside item 1. *Done when:* a PR that breaks a
+   fixture fails local CI, and a flaw counts as fixed only when its
+   fixture passes.
+3. **[Detection] Rule pack.** *From the 2026-11-01 grill (#301).* Data,
+   not code, replacing `mdoc-detect`'s hardcoded lists: dates only in a
+   personal context (born, DOB, дата рождения, д.р.) as Date; claim and
+   case numbers in a labelled context as a new Case category (`CASE_1`);
+   EN and RU addresses; titles, roles and defined terms never proposed;
+   HTML entities decoded before detection and readiness
+   (`Ann&#97; Petrova`). *Done when:* both demos' Copy for AI hold no
+   address, date of birth or case number, and the gate passes.
+4. **[Detection] Propagation in the document.** *From the 2026-11-01
+   grill.* An applied or marked name's parts and variants elsewhere
+   (surname or first name alone, initials, Russian inflections) become
+   proposals for the same identity. *Done when:* as item 1's ADR sets, with
+   fixtures in the gate.
+5. **[Detection] The user's own lists.** *From the 2026-11-01 grill and
+   the competitor scan.* Never-propose from Keep, always-propose from a
+   manual mark (a project codename; the firm's own name, courts). *Done
+   when:* as item 1's ADR sets.
+6. **[Leaks] Hidden Office content and the restored-text clipboard.**
+   *From the competitor scan and the 2026-11-01 fix run.* Check what
+   AnyDoc carries from DOCX comments, deleted tracked changes and document
+   properties, then drop, include and scan, or warn; and mark desktop
+   copies of restored text concealed or transient, as iOS does since
+   [#321](https://github.com/lawkitt/mdoc/issues/321). *Done when:* a DOCX
+   fixture with an author name in a comment and a deleted change sends
+   neither to the AI unreviewed, and Universal Clipboard and clipboard
+   managers skip restored text.
+
+The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
+runs as an overnight hub during 0.4.0, outside the item count.
 
 ## iOS 0.1
 
@@ -75,11 +107,6 @@ green and leave desktop unchanged. Record:
    [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
    The first build waits for the measured floor and the device checklist
    (P17). *Done when:* that section passes on a TestFlight build.
-2. **[Mobile] UI polish.** *From the [iOS polish grill](docs/design/ios-polish-grill-2026-10-31.md)
-   ([ADR 0087](docs/adr/0087-ios-ui-polish.md)).* Four PRs: defects and the
-   survey test, Markdown escapes in `mdoc-markdown`, visual polish, flows.
-   *Done when:* the after survey sits beside the before set and P12, P13
-   and P16 pass in the Simulator.
 3. **[Mobile] Device UI tests on Wi-Fi.** *From the device grill
    (#295).* `just ios-device-test <udid>` is merged and its review flow
    passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition
@@ -110,22 +137,23 @@ Maintainer actions list the steps on the maintainer's side.
    ([report](docs/evidence/mobile/2026-10-31/README.md#android-adr-0089)):*
    memory, load, heat and OCR pass on all four phones, but FP16 on the CPU
    scans 3.6 to 9 times slower than the iPhone 17 Pro and misses the 60 s
-   budget everywhere; threads, XNNPACK and INT8 are untried. *Done when:*
-   each row has pass or fail against ADR 0085's budgets and Android's floor
-   constant is set from them.
-3. **[Android] App scaffold and the Android job.** `apps/android` over
-   `mdoc-ffi` with pinned, verified Gradle dependencies; JVM parity tests;
-   the Android job in `local/windows`. *Done when:* a PR touching
-   `apps/android` gets a green `local/windows` with the Android job, and the
-   parity tests match the desktop goldens, Copy for AI bytes included.
-5. **[Android] Long jobs on real phones.** The foreground service, the
-   Wi-Fi rule and resume. *Done when:* on the emulator and on a Test Lab
-   Pixel and Samsung phone an import, OCR and Find names each survive
-   leaving the app and a process kill, with no crash or ANR in
-   `ApplicationExitInfo`; and a model download does too on the emulator
-   and the friend's phone.
-7. **[Android] Device UI tests.** `just android-device-test`. *Done when:*
-   it passes on one Test Lab phone per RAM class.
+   budget everywhere; 4 threads is already fastest and XNNPACK can't load
+   the export (#349). Left: FP32, INT8 and big-core pinning on the Pixel 8
+   and Galaxy A55. *Stop rule (2026-11-01 grill):* if none fits 60 s,
+   Android 0.1 ships rules-only (identifiers, OCR, marking names by hand),
+   as iOS does below its floor, and Find names on Android goes to Later.
+   *Done when:* each row has pass or fail against ADR 0085's budgets and
+   Android's floor constant is set from them.
+3. **[Android] Device runs (items 3, 5 and 7).** *From #314 and #322.* The
+   scaffold, the Android job, the long-job test and `just
+   android-device-test` are merged; the Windows runner needs reinstalling
+   to run the Android job, and nothing has run on Test Lab yet (quota).
+   *Done when:* a PR touching `apps/android` gets a green `local/windows`
+   with the Android job; `just android-device-test` passes on one Test Lab
+   phone per RAM class; and the long jobs (import, OCR, Find names above
+   the floor) survive leaving the app and a process kill on a Test Lab
+   Pixel and Samsung phone with no crash or ANR, and a model download does
+   on the friend's phone.
 8. **[Android] Play closed test.** The Play account, the device check and
    12 testers. *Done when:* the closed test has had 12 testers opted in for
    14 days in a row.
@@ -192,21 +220,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   the review text (the 2026-10-31 survey's settlement table), so columns no
   longer line up. The source is shown as is (ADR 0085), so a fix needs a
   table block that scrolls sideways without re-rendering or moving offsets.
-- **[Detection]** The English settlement demo doesn't scan clean: the claim
-  number "6001842/2026" is not proposed (the captured-reply fixture treats it
-  as an identifier), and the role word "Employer" is replaced as an
-  organisation (ORG_2), which garbles the terms. The demos are the first thing
-  a new user scans; worth a grill on identifier coverage and role words.
-  *From the 2026-10-31 shelf GUI run.* The same grill takes street addresses
-  and dates of birth, which neither demo's Copy for AI replaces (Date is in
-  the popup's category menu but not in Settings › Detection); the readiness
-  and Share-line parts of [#301](https://github.com/lawkitt/mdoc/issues/301)
-  land in the 2026-11-01 fix run.
-- **[Cases]** Desktop copy of a restored reply and Restore Clipboard mark the
-  clipboard as transient or concealed, so Universal Clipboard and clipboard
-  managers don't carry originals off the Mac, as iOS does from
-  [#321](https://github.com/lawkitt/mdoc/issues/321). *From the 2026-11-01
-  fix run.*
 - **[Spelling]** Russian name forms such as "Маришей" get a misspelling
   underline; names, detected mentions and aliases shouldn't be spell-checked.
   *From the 2026-10-31 shelf GUI run.*
@@ -218,12 +231,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
   2026-10-31 shelf GUI run.*
-- **[Detection]** A name written with an HTML entity (`Ann&#97; Petrova`)
-  is neither detected nor caught by the readiness check, which looks for
-  known originals in the raw text; Copy for AI then hands it to the AI, which
-  reads it as the name. The shelf preview and drag card mask it since #280;
-  detection and Copy for AI need the same decoding. *From the 2026-10-31
-  shelf polish review.*
 - **[Mobile]** US spelling in the iOS and Android apps: desktop moved every
   UI string to US spelling (UI polish decision 8, #327), but the mobile apps
   still say "unrecognised" and "Licence". *From the 2026-11-01 UI polish run.*
@@ -237,6 +244,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   shown as prose; originals stay masked (a preview that still spells a known
   name is refused). Consider reusing a real block parser. *From the
   2026-10-31 shelf polish review.*
+- **[Release]** Release runs reuse `main`'s CI: the `version` job skips the
+  called CI when the release commit only bumps versions and the CHANGELOG
+  and `main` passed its parent; `smoke-package` adds the Russian fixture
+  ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)). With one RC per
+  minor it saves about 20 minutes a release. *From the 2026-10-30 grill;
+  moved from Engineering at the 2026-11-01 grill.*
 
 The 2026-10-31 UI/UX survey (build `84fafd3`, macOS, Light and Dark) adds
 the items below, polish first, then ideas. Its twelve bugs are issues
@@ -282,12 +295,6 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   source as the shelf does.
   ([U26](docs/evidence/ui-ux-survey/2026-10-31/README.md#u26-pseudonymize-clipboard-from-home))
   *From the 2026-10-31 UI/UX survey.*
-- **[Detection] Idea: name and patronymic as a merge signal.** The Russian
-  demo gives one person six aliases with a single merge hint; "Марина
-  Сергеевна" next to "Павлова Марина Сергеевна" is near-certain. Would amend
-  [ADR 0080](docs/adr/0080-merge-hint.md).
-  ([U27](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
-  *From the 2026-10-31 UI/UX survey.*
 - **[UI] Idea: keep the Source preview next to the editor.** The
   Replacements panel sits between them; and hide Source when it has nothing
   to show. ([U28](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
@@ -304,31 +311,9 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
 
 Ideas from the [2026-10-31 competitor scan](docs/design/competitor-scan-2026-10-31.md),
 roughly by expected value; each needs a grill before it is promoted, and
-some reopen a Deferred or ADR decision, as noted.
+some reopen a Deferred or ADR decision, as noted. Dates of birth, always and
+never lists, role-aware aliases and hidden Office content moved to 0.4.0.
 
-- **[Detection] To grill: dates of birth and other sensitive dates.** Both
-  demos send a date of birth to the AI (#301); ADR 0002 leaves "ordinary
-  dates" alone, and Settings has no Date category though the popup does.
-  Anoni and Doczilla replace dates, Privatiser dates of birth, Tonic
-  synthesizes them. Questions: detect only dates in a birth context, offer
-  Date in Categories, or shift dates by one per-case offset so intervals
-  survive and restore is exact. *From the 2026-10-31 competitor scan.*
-- **[Detection] To grill: always and never lists.** Privatiser and Occlira
-  keep user-wide words to always replace (a project codename, a deal
-  amount) and never replace (the firm's own name, courts, statutes);
-  Doczilla also masks sums and deal terms. mdoc decides per document or
-  case. Overlaps the Deferred cross-case dictionary; decide scope (user,
-  case), storage (encrypted like cases) and how the panel shows a listed
-  hit. *From the 2026-10-31 competitor scan.*
-- **[Detection] To grill: role-aware aliases from defined terms.**
-  Contracts name parties once ("(the Employer)") and then use the role; the
-  English demo replaces "Employer" as ORG_2. Deußer et al. (arXiv
-  2609.11335) find unique placeholders cost the AI little while shared
-  labels cost a lot; HAQQ argues role labels (`LENDER_1`) read better.
-  Questions: never propose a defined term, suggest a custom alias from it
-  (`EMPLOYER_1`), and measure alias styles on captured legal replies
-  against ADR 0002's category tokens. *From the 2026-10-31 competitor
-  scan.*
 - **[Integrations] To grill: a browser companion for chat pages.** Hush,
   Caviard, Velum Lite, Privatiser and LawRider restore inside
   chatgpt.com and claude.ai (tinted real names, hover shows the alias, a
@@ -354,13 +339,6 @@ some reopen a Deferred or ADR decision, as noted.
   Questions: headers (From/To are personal data), quoted history,
   attachments as separate tabs of one case. *From the 2026-10-31
   competitor scan.*
-- **[Import] To grill: hidden content in Office files.** Hush scans DOCX
-  comments, headers, footers and deleted tracked changes; ДоксДодыр strips
-  metadata and revision history. Check what AnyDoc carries into the
-  Markdown (comments, deleted text, document properties), then decide:
-  drop, include and scan, or warn on import. A missed author name in a
-  comment is a leak the panel never shows. *From the 2026-10-31 competitor
-  scan.*
 - **[Cases] To grill: firm-managed settings.** Doczilla lets a firm make
   pseudonymization mandatory; Harvey enforces ethical walls on every AI
   call; Velum and Anoni keep audit logs. A managed profile (macOS
@@ -485,13 +463,6 @@ Android takes what applies. Its clipboard finding is
   macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
   only once, since the case-key item outlives a profile rename and agents
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
-- **Release runs reuse `main`'s CI** ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)):
-  the `version` job skips the called CI when the release commit only bumps
-  versions and the CHANGELOG and `main` passed its parent (waiting up to ~20
-  minutes for a running one); `smoke-package` adds the Russian fixture.
-  Land before 0.3.0-rc.1. *Done when:* a tag run skips CI on a green parent,
-  runs it otherwise, and both platforms self-test both fixtures.
-
 - **GUI checks without a takeover** (fleet ADR 0019): a debug-only switch
   (`MDOC_KEEP_RENDERING=1`) in the vendored `gpui-pre-macos` keeps the display
   link running while the window is covered, so the hub's background captures
@@ -508,9 +479,6 @@ Android takes what applies. Its clipboard finding is
 - **Local CI keeps the app binary per tested head** (`/ci/pr-N/<sha>/`), so
   the hub copies it for GUI checks instead of building a 30 GB worktree.
   *From the 0.3.0 away hub.*
-- **Windows checkouts on a Dev Drive** (fleet ADR 0019): root checkout, lanes
-  1–4 (lane 4 new) and local CI's home on `E:`; the move session follows
-  `fleet/operations/2026-10-30-windows-dev-drive-move.md`.
 
 ## Deferred
 
