@@ -1,13 +1,12 @@
 ---
 status: known-flaw
-flaw: org-boundary person-prefix-boundary city-only-address url-encoded-name
-issue: 374 391 386 401
+flaw: person-prefix-boundary city-only-address url-encoded-name
+issue: 391 386 401
 kind: letter
 source: hunt-r1
 expect: miss: PERSON "Ли-Вельт"
 expect: false hit: ADDRESS "Тверь"
 expect: boundary: gold PERSON "Лея Аркадьевна Ли-Вельт"; proposed PERSON "Лея", PERSON "Ли-Вельт"
-expect: boundary: gold ORG "ООО «Тиснёный берег»"; proposed ORG "Тиснёный берег"
 ---
 # Ответ на претензию о неверном тиснении
 
