@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":70,"end":84,"label":"person","score":0.9776286,"text":"Elspeth Quenby"},
+    {"start":122,"end":127,"label":"person","score":0.6260098,"text":"Effie"},
+    {"start":285,"end":293,"label":"organization","score":0.9426125,"text":"workshop"},
+    {"start":110,"end":118,"label":"organization","score":0.88242793,"text":"workshop"},
+    {"start":122,"end":127,"label":"organization","score":0.56997234,"text":"Effie"},
+    {"start":1236,"end":1247,"label":"person","score":0.99385494,"text":"Toren Ilvek"},
+    {"start":1253,"end":1274,"label":"organization","score":0.9877114,"text":"Reed Cairn Advice Ltd"},
+    {"start":991,"end":1028,"label":"email","score":0.99881667,"text":"effie.instructions@reed-cairn.invalid"}
+  ]
+}

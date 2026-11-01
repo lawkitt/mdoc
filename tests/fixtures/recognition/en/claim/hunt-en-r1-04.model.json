@@ -1,0 +1,20 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":56,"end":98,"label":"person","score":0.9796287,"text":"Надир Оскарович Ветлин"},
+    {"start":119,"end":146,"label":"organization","score":0.9847524,"text":"Amber Quay Translations Ltd"},
+    {"start":219,"end":224,"label":"email","score":0.5339139,"text":"email"},
+    {"start":728,"end":737,"label":"person","score":0.9795506,"text":"defendant"},
+    {"start":495,"end":504,"label":"person","score":0.96391606,"text":"defendant"},
+    {"start":627,"end":635,"label":"person","score":0.95022655,"text":"claimant"},
+    {"start":569,"end":578,"label":"person","score":0.9299511,"text":"defendant"},
+    {"start":569,"end":578,"label":"organization","score":0.88856554,"text":"defendant"},
+    {"start":728,"end":737,"label":"organization","score":0.8358859,"text":"defendant"},
+    {"start":495,"end":504,"label":"organization","score":0.7898828,"text":"defendant"},
+    {"start":1098,"end":1127,"label":"person","score":0.91655886,"text":"Надир Оскарович"},
+    {"start":1474,"end":1503,"label":"person","score":0.8782098,"text":"Надир Оскарович"},
+    {"start":944,"end":956,"label":"person","score":0.77458334,"text":"Ветлин"},
+    {"start":1504,"end":1516,"label":"person","score":0.66898835,"text":"Ветлин"}
+  ]
+}

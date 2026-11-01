@@ -1,0 +1,19 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":115,"end":132,"label":"person","score":0.9658996,"text":"Ms Neri-Lu O'Quen"},
+    {"start":80,"end":98,"label":"full_name","score":0.8782098,"text":"Velvet Spindle CIC"},
+    {"start":80,"end":98,"label":"organization","score":0.94197524,"text":"Velvet Spindle CIC"},
+    {"start":168,"end":190,"label":"address","score":0.9114953,"text":"18 Brindle Mews, Leeds"},
+    {"start":577,"end":582,"label":"person","score":0.99794924,"text":"Owner"},
+    {"start":912,"end":917,"label":"person","score":0.9947392,"text":"Owner"},
+    {"start":332,"end":340,"label":"person","score":0.9942026,"text":"Repairer"},
+    {"start":876,"end":884,"label":"person","score":0.9941801,"text":"Repairer"},
+    {"start":621,"end":629,"label":"person","score":0.9863105,"text":"Repairer"},
+    {"start":1371,"end":1385,"label":"person","score":0.99792516,"text":"Neri-Lu O'Quen"},
+    {"start":1311,"end":1322,"label":"person","score":0.9950755,"text":"Evin Vossel"},
+    {"start":1042,"end":1057,"label":"phone_number","score":0.99999833,"text":"+44 7700 900731"},
+    {"start":1000,"end":1030,"label":"email","score":0.9998911,"text":"neri.lu@velvet-spindle.invalid"}
+  ]
+}
