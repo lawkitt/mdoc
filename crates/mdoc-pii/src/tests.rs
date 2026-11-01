@@ -1551,3 +1551,21 @@ fn a_case_repeat_follows_merges_and_stays_out_of_paths() {
     let prose = source.find("iara veldune").unwrap();
     assert_eq!(repeat.mentions, vec![prose..prose + "iara veldune".len()]);
 }
+
+/// #403: a surname's particle stays in its span and its identity.
+#[test]
+fn a_surname_keeps_its_particle() {
+    let source = "Я, Генриетта Яновна де Лаваль, уполномочиваю. Заказ записан на фамилию \
+        де Лаваль.";
+    let review = ingest_names(source, &["Генриетта Яновна де Лаваль"]);
+    let full = review.variant_identity(proposed(&review, "Генриетта Яновна де Лаваль").id);
+    let surname = proposed(&review, "де Лаваль");
+    assert_eq!(surname.mentions.len(), 1);
+    assert_eq!(review.variant_identity(surname.id), full);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Лаваль")
+    );
+}
