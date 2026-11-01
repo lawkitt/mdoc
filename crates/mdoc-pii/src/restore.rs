@@ -683,7 +683,7 @@ impl Review {
                     keep_default: on_step,
                     priority: 0,
                     detected: false,
-                    propagated: false,
+                    recognizer: None,
                     mid_sentence: false,
                     managed: false,
                     own: None,

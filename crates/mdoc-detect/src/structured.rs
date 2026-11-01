@@ -260,6 +260,7 @@ mod tests {
                     Recognizer::Snils => "112-233-445 95",
                     Recognizer::Ogrn => panic!("unexpected registration identifier"),
                     Recognizer::Model => panic!("structured adapter emitted model evidence"),
+                    Recognizer::Propagation => panic!("structured adapter emitted propagation"),
                 }
             );
         }
