@@ -584,23 +584,41 @@ impl Review {
             })
             .unwrap_or_default();
         selected.retain(|detection| !unseen.contains(&source[detection.range.clone()]));
-        // Forms of a full name join it when it is their one candidate
-        // (ADR 0092), so they wait for the full names and take no alias of
-        // their own.
+        // A form of a full name joins it when that is its one candidate
+        // (ADR 0092), so it waits for the full names and takes no alias of
+        // its own. Others keep their place in alias order.
+        let mut people: Vec<(u64, &str)> = Vec::new();
+        let mut provisional = HashMap::new();
+        for detection in selected.iter().filter(|d| d.category == Category::Person) {
+            let text = &source[detection.range.clone()];
+            let owner = self
+                .candidates
+                .by_original(text)
+                .and_then(|id| self.variant_identity(id))
+                .or_else(|| self.identities.normalized_identity(text, Category::Person))
+                .unwrap_or_else(|| {
+                    let next = u64::MAX - provisional.len() as u64;
+                    *provisional
+                        .entry(
+                            text.split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .to_lowercase(),
+                        )
+                        .or_insert(next)
+                });
+            people.push((owner, text));
+        }
         let known = self.known_people();
-        let full_names: Vec<&str> = selected
-            .iter()
-            .map(|detection| &source[detection.range.clone()])
-            .chain(known.iter().map(|(_, w)| w.as_ref()))
-            .collect();
-        let people = propagation::People::new(full_names.iter().map(|w| (0, *w)));
+        people.extend(known.iter().map(|(id, w)| (*id, w.as_ref())));
+        let people = propagation::People::new(people);
         let mut forms = Vec::new();
         for detection in selected {
             let text = &source[detection.range.clone()];
-            let form = (detection.category == Category::Person)
-                .then(|| propagation::parse_form(text))
-                .flatten();
-            if form.is_some_and(|form| !people.candidates(&form).link.is_empty()) {
+            let joins = detection.category == Category::Person
+                && propagation::parse_form(text)
+                    .is_some_and(|form| people.candidates(&form).target.is_some());
+            if joins {
                 forms.push(detection);
             } else {
                 self.add_seed(text, detection.category);

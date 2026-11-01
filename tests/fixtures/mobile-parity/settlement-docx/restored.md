@@ -14,7 +14,7 @@ Summary of the agreement:
 
 # Background
 
-Ms Bennett, known to colleagues as Mia, was employed by Harrow & Finch Ltd as a Senior Analyst from 2 May 2019 until 30 September 2026. Maya brought the claim above, alleging unfair dismissal. Harrow & Finch Ltd denies the claim. The parties have agreed to settle it on the terms below.
+Ms Bennett, known to colleagues as Mia, was employed by Harrow & Finch Ltd as a Senior Analyst from 2 May 2019 until 30 September 2026. Maya Bennett brought the claim above, alleging unfair dismissal. Harrow & Finch Ltd denies the claim. The parties have agreed to settle it on the terms below.
 
 # Terms
 

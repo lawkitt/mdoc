@@ -16,7 +16,7 @@ Note: names and other identifying details in this document were replaced with pl
 
 # Background
 
-PERSON_2, known to colleagues as PERSON_3, was employed by ORG_1 as a REDACTED_2 from DATE_2 until DATE_3. PERSON_4 brought the claim above, alleging unfair dismissal. ORG_1 denies the claim. The parties have agreed to settle it on the terms below.
+PERSON_2, known to colleagues as PERSON_3, was employed by ORG_1 as a REDACTED_2 from DATE_2 until DATE_3. PERSON_1 brought the claim above, alleging unfair dismissal. ORG_1 denies the claim. The parties have agreed to settle it on the terms below.
 
 # Terms
 
@@ -26,7 +26,7 @@ PERSON_2, known to colleagues as PERSON_3, was employed by ORG_1 as a REDACTED_2
 
 3\. **Withdrawal.** PERSON_2 will withdraw the claim within seven days of receiving the payment.
 
-4\. **Confidentiality.** PERSON_2 will keep the terms of this agreement confidential, except that she may disclose them to her husband, PERSON_5, to her professional advisers and as required by law.
+4\. **Confidentiality.** PERSON_2 will keep the terms of this agreement confidential, except that she may disclose them to her husband, PERSON_4, to her professional advisers and as required by law.
 
 5\. **Return of property.** PERSON_2's laptop, security pass and any documents belonging to the Employer will be returned by DATE_4.
 
@@ -37,7 +37,7 @@ PERSON_2, known to colleagues as PERSON_3, was employed by ORG_1 as a REDACTED_2
 
 # Independent advice
 
-PERSON_2 has received advice from PERSON_6 of ORG_2 on the terms and effect of this agreement.
+PERSON_2 has received advice from PERSON_5 of ORG_2 on the terms and effect of this agreement.
 
 # Contact
 

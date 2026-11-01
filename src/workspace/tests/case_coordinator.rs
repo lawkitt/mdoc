@@ -1682,7 +1682,7 @@ fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppCont
     let dir = tempfile::tempdir().unwrap();
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let path = dir.path().join("contract.md");
-    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let source = "Maya Bennett signed. Maya Benett agreed.";
     std::fs::write(&path, source).unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
@@ -1693,7 +1693,7 @@ fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppCont
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
         view.pii.set_reviewing(true);
-        for name in ["Maya Bennett", "Ms Bennett"] {
+        for name in ["Maya Bennett", "Maya Benett"] {
             let start = source.find(name).unwrap();
             view.pii
                 .review_mut()
@@ -1721,7 +1721,7 @@ fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppCont
     cx.run_until_parked();
     assert_eq!(
         store().load(&id).unwrap().dismissed_hints,
-        [("Maya Bennett".to_string(), "Ms Bennett".to_string())]
+        [("Maya Benett".to_string(), "Maya Bennett".to_string())]
     );
     // Reopen the case's member from the encrypted file.
     let session = Session {
@@ -1772,8 +1772,8 @@ fn forgotten_merge_hint_names_cannot_be_saved_as_a_new_case(cx: &mut TestAppCont
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, _| tabs.use_case_store(store()));
-    let source = "Maya Bennett signed. Ms Bennett agreed.";
-    let names = &[("Maya Bennett", Person), ("Ms Bennett", Person)];
+    let source = "Maya Bennett signed. Maya Benett agreed.";
+    let names = &[("Maya Bennett", Person), ("Maya Benett", Person)];
     let first = open_applied(&tabs, cx, dir.path(), "first.md", source, names);
     let case = tabs.update_in(cx, |tabs, window, cx| {
         tabs.create_case(first, window, cx).unwrap()
@@ -1815,7 +1815,10 @@ fn forgotten_merge_hint_names_cannot_be_saved_as_a_new_case(cx: &mut TestAppCont
         assert_ne!(case, new_case);
         let decrypted = serde_json::to_string(&store().load(&new_case).unwrap()).unwrap();
         assert!(!decrypted.contains("Maya Bennett"), "{decrypted}");
-        assert!(decrypted.contains("Ms Bennett"), "the other identity stays");
+        assert!(
+            decrypted.contains("Maya Benett"),
+            "the other identity stays"
+        );
     }
 }
 
@@ -1827,10 +1830,10 @@ fn merge_hint_does_not_rename_an_absorbed_identity_in_another_member(cx: &mut Te
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, _| tabs.use_case_store(store()));
-    let source = "Maya Bennett signed. Ms Bennett agreed. Northwind Ltd witnessed.";
+    let source = "Maya Bennett signed. Maya Benett agreed. Northwind Ltd witnessed.";
     let names = &[
         ("Maya Bennett", Person),
-        ("Ms Bennett", Person),
+        ("Maya Benett", Person),
         ("Northwind Ltd", Organization),
     ];
     let first = open_applied(&tabs, cx, dir.path(), "first.md", source, names);

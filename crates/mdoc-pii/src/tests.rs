@@ -1152,7 +1152,42 @@ fn forms_inside_link_destinations_and_identifiers_stay_out() {
     let source = "# Contract\n\nAlice Morgan represents **Alice Morgan**. \
         [contact](https://x.invalid/Alice_Morgan) Write to alice_morgan or x/Morgan.\n";
     let review = ingest_names(source, &["Alice Morgan"]);
-    let found: Vec<_> = review.variants().iter().map(|v| v.original.as_ref()).collect();
+    let found: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|v| v.original.as_ref())
+        .collect();
     assert_eq!(found, ["Alice Morgan"]);
     assert_eq!(review.remaining(), 2);
+}
+
+#[test]
+fn only_forms_that_join_wait_so_aliases_keep_source_order() {
+    let source = "Maya Bennett signed. Ms Bennett, known as Mia, agreed. Maya left. \
+        Daniel Bennett wrote.";
+    let review = ingest_names(
+        source,
+        &[
+            "Maya Bennett",
+            "Ms Bennett",
+            "Mia",
+            "Maya",
+            "Daniel Bennett",
+        ],
+    );
+    let aliases: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|v| (v.original.as_ref(), v.replacement.as_str()))
+        .collect();
+    assert_eq!(
+        aliases,
+        [
+            ("Maya Bennett", "PERSON_1"),
+            ("Ms Bennett", "PERSON_2"),
+            ("Mia", "PERSON_3"),
+            ("Daniel Bennett", "PERSON_4"),
+            ("Maya", "PERSON_1"),
+        ]
+    );
 }

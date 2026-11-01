@@ -220,7 +220,7 @@ pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             v.editor.update(cx, |e, cx| {
-                e.set_text("Maya Bennett signed. Ms Bennett agreed.", cx)
+                e.set_text("Maya Bennett signed. Maya Benett agreed.", cx)
             });
         });
     })?;
@@ -232,12 +232,16 @@ pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
                 .review_mut()
                 .ingest(
                     &text,
-                    vec![mdoc_pii::Detection {
-                        range: 0..12,
-                        category: mdoc_pii::Category::Person,
-                        score: 1.,
-                        recognizer: mdoc_pii::Recognizer::Model,
-                    }],
+                    // A slip the hint offers to merge; a short form of
+                    // the name would join it by propagation (ADR 0092).
+                    [0..12, 21..32]
+                        .map(|range| mdoc_pii::Detection {
+                            range,
+                            category: mdoc_pii::Category::Person,
+                            score: 1.,
+                            recognizer: mdoc_pii::Recognizer::Model,
+                        })
+                        .to_vec(),
                 )
                 .expect("merge hint fixture");
             assert_eq!(v.pii.review().merge_hints().len(), 1);

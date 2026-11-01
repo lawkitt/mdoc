@@ -308,7 +308,8 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
     assert_eq!(text, replaced.text);
     assert_eq!(desktop_copy_for_ai(&review, &text), copied);
 
-    // An AI that answers with the document itself gets every original back.
+    // An AI that answers with the document itself gets every original back;
+    // "Maya" alone joined her full name (ADR 0092), so it comes back as that.
     let (_, body) = copied.split_once("\n\n---\n\n").unwrap();
     let reply = format!("Summary of the agreement:\n\n{body}");
     let desktop = RestoreMap::new(review.export_identities()).restore_in_place(&reply);
@@ -317,7 +318,10 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
     assert_eq!(restored.values, desktop.values as u64);
     assert_eq!(
         restored.text,
-        format!("Summary of the agreement:\n\n{markdown}")
+        format!(
+            "Summary of the agreement:\n\n{}",
+            markdown.replacen("Maya brought", "Maya Bennett brought", 1)
+        )
     );
     golden("settlement-docx/restored.md", &restored.text);
 }
