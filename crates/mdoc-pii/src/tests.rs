@@ -1421,3 +1421,25 @@ fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
         .unwrap();
     assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
 }
+
+/// Review of #409: a surname found after a title keeps that context when
+/// linked and relinked, and the verb "miss" is no title.
+#[test]
+fn a_titled_surname_links_as_a_surname_and_miss_is_no_title() {
+    let source = "Paul Smith met James Paul. Mr Paul agreed.";
+    let mut review = ingest_names(source, &["Paul Smith", "James Paul"]);
+    let james = review.variant_identity(proposed(&review, "James Paul").id);
+    let paul = proposed(&review, "Paul").id;
+    assert_eq!(review.variant_identity(paul), james);
+    review.ingest(source, Vec::new()).unwrap();
+    assert_eq!(review.variant_identity(paul), james, "rescan");
+
+    let source = "Rose Hill signed. It was a near miss. Rose bushes were damaged.";
+    let review = ingest_names(source, &["Rose Hill"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Rose")
+    );
+}
