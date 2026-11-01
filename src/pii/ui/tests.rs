@@ -1761,6 +1761,30 @@ fn restore_tab_copies_are_restored_text(cx: &mut gpui::TestAppContext) {
         assert!(!is_restored(&cx.read_from_clipboard().unwrap()));
         assert_eq!(app.editor.read(cx).copy_metadata(), None);
     });
+    // An ordinary document's before/after shows its own text: normal copies.
+    app.update_in(cx, |app, window, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Anna Petrova signed.", cx));
+        app.pii.review.seed(
+            &[ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: Vec::new(),
+                category: Category::Person,
+                custom: false,
+                originals: vec!["Anna Petrova".into()],
+            }],
+            "Anna Petrova signed.",
+        );
+        app.pii.reviewing = true;
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
+        let compare = app.compare.as_ref().expect("before/after opens");
+        for column in compare.columns() {
+            assert_eq!(column.read(cx).copy_metadata(), None);
+        }
+        app.set_view_mode(None, window, cx);
+        app.reset_pii(cx);
+    });
     let reply = restore::RestoredReply {
         text: "PERSON_1 signed.".into(),
         identities: vec![ExportedIdentity {
@@ -1781,6 +1805,14 @@ fn restore_tab_copies_are_restored_text(cx: &mut gpui::TestAppContext) {
         assert_eq!(item.text().as_deref(), Some("Anna Petrova signed."));
         assert!(is_restored(&item));
         assert_eq!(app.editor.read(cx).copy_metadata(), Some(TAG));
+        // Before/after shows restored originals in both columns.
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        app.set_view_mode(Some(super::compare::CompareMode::Side), window, cx);
+        let compare = app.compare.as_ref().expect("before/after opens");
+        for column in compare.columns() {
+            assert_eq!(column.read(cx).copy_metadata(), Some(TAG));
+        }
+        app.set_view_mode(None, window, cx);
         app.reset_pii(cx);
         assert_eq!(app.editor.read(cx).copy_metadata(), None);
     });

@@ -119,6 +119,10 @@ impl CompareState {
     pub(crate) fn reply_editor(&self) -> &Entity<mdoc_editor::EditorState> {
         &self.reply
     }
+    #[cfg(test)]
+    pub(super) fn columns(&self) -> [&Entity<mdoc_editor::EditorState>; 2] {
+        [&self.original, &self.current]
+    }
 }
 
 #[cfg(test)]
@@ -200,12 +204,18 @@ impl DocumentView {
     }
     fn open_compare(&mut self, mode: CompareMode, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme.get();
+        // In a Restore tab both columns can show restored originals.
+        let copy_metadata = self
+            .pii
+            .restore()
+            .map(|_| crate::restored_clipboard::TAG.to_owned());
         let pane = |scroll: &gpui::ScrollHandle, window: &mut Window, cx: &mut Context<Self>| {
             let editor = cx.new(|cx| {
                 let mut editor = mdoc_editor::EditorState::new(window, cx);
                 editor.set_markdown_style(crate::style::markdown_style(theme), cx);
                 editor.set_read_only(true, cx);
                 editor.set_autoscroll(scroll.clone());
+                editor.set_copy_metadata(copy_metadata.clone());
                 editor
             });
             // A name clicked in either column selects its Replacements row.

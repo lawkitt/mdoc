@@ -201,8 +201,8 @@ pub fn prepare_cancellable(
         Some(anydoc::Format::Docx) | None
     );
     let comments = word
-        .then(|| crate::hidden_content::docx_comment_count(&source))
-        .and_then(crate::hidden_content::comments_note);
+        .then(|| crate::hidden_content::docx_comments(&source))
+        .and_then(crate::hidden_content::Comments::note);
     let warning = match (warning, comments) {
         (Some(pages), Some(comments)) => Some(format!("{pages} {comments}")),
         (pages, comments) => pages.or(comments),
