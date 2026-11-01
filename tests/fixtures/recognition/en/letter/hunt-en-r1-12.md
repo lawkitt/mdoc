@@ -1,16 +1,10 @@
 ---
 status: known-flaw
-flaw: city-only-address role-as-name public-body-org
-issue: 386 385 378
+flaw: city-only-address
+issue: 386
 kind: letter
 source: hunt-r1
-expect: false hit: PERSON "Surveyor"
-expect: false hit: PERSON "Technical Reviewer"
-expect: false hit: PERSON "Representative"
-expect: false hit: ORG "Ministry of Justice"
-expect: false hit: ORG "County Court"
 expect: false hit: ADDRESS "Cardiff"
-expect: false hit: ORG "Administrative Team"
 ---
 # Circular to independent assessors
 

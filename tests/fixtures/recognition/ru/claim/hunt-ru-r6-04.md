@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: public-body-org
 issue: 378
 kind: claim
 source: hunt-r6
-expect: false hit: ORG "ГПК РФ"
 ---
 # Обезличенное заявление о приобщении уточнённого расчёта
 
