@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":352,"end":396,"label":"person","score":0.9967649,"text":"Аркадий Павлович Эльнер"},
+    {"start":174,"end":235,"label":"person","score":0.98947036,"text":"Ирина Владиславовна Рихт-Горская"},
+    {"start":256,"end":302,"label":"organization","score":0.87482774,"text":"ООО «Плёночный переплёт»"},
+    {"start":1582,"end":1605,"label":"person","score":0.9731898,"text":"Рихт-Горской"},
+    {"start":3113,"end":3144,"label":"person","score":0.9456007,"text":"И. В. Рихт-Горская"}
+  ]
+}

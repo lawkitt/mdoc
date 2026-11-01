@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":254,"end":296,"label":"person","score":0.9957021,"text":"Агата Мироновна Штольц"},
+    {"start":190,"end":236,"label":"person","score":0.98527145,"text":"Виктор Гаврилович Лоренц"},
+    {"start":1151,"end":1180,"label":"email","score":0.9994787,"text":"agata@listispolneniya.invalid"},
+    {"start":313,"end":325,"label":"passport_number","score":0.9962783,"text":"46 92 731846"},
+    {"start":113,"end":127,"label":"tax_id","score":0.85752964,"text":"ФС 086731924"},
+    {"start":1035,"end":1055,"label":"bank_account","score":0.91505295,"text":"40817810900006847319"},
+    {"start":1929,"end":1980,"label":"person","score":0.57755494,"text":"уполномоченного сотрудника"}
+  ]
+}
