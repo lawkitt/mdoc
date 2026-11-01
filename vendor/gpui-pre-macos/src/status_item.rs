@@ -3,7 +3,10 @@
 //! anchor a `WindowKind::PopUp` window under it.
 
 use crate::ns_string;
-use cocoa::{base::id, foundation::NSRect};
+use cocoa::{
+    base::{id, nil},
+    foundation::{NSData, NSRect, NSSize},
+};
 use gpui::{Bounds, DisplayId, Pixels, point, px, size};
 use objc::{
     class,
@@ -12,18 +15,26 @@ use objc::{
     runtime::{Class, Object, Sel, YES},
     sel, sel_impl,
 };
-use std::{cell::RefCell, rc::Rc, sync::Once};
+use std::{cell::RefCell, ffi::c_void, rc::Rc, sync::Once};
 
 /// `NSSquareStatusItemLength`.
 const SQUARE_LENGTH: f64 = -2.;
 
-/// The menu bar item: an SF Symbol drawn as a template image (monochrome, no
+/// The menu bar item: its glyph, drawn as a template image (monochrome, no
 /// badge), its accessibility label, and what a click does. The callback runs
 /// inside an AppKit event; it should only queue work for the app.
 pub struct StatusItem {
-    pub symbol: &'static str,
+    pub image: StatusImage,
     pub label: &'static str,
     pub on_click: Box<dyn Fn()>,
+}
+
+/// A square glyph `points` wide, as PNGs at one or more scales (say 1x and
+/// 2x), black on transparent. Only the shape counts: AppKit tints a template
+/// image to suit the menu bar.
+pub struct StatusImage {
+    pub points: f64,
+    pub pngs: &'static [&'static [u8]],
 }
 
 struct Installed {
@@ -82,15 +93,10 @@ pub fn set_status_item(item: Option<StatusItem>) {
         }
         let _: id = msg_send![status, retain];
         let button: id = msg_send![status, button];
-        let image: id = msg_send![
-            class!(NSImage),
-            imageWithSystemSymbolName: ns_string(item.symbol)
-            accessibilityDescription: ns_string(item.label)
-        ];
+        let image = template_image(&item.image, item.label);
         if image.is_null() {
             let _: () = msg_send![button, setTitle: ns_string("mdoc")];
         } else {
-            let _: () = msg_send![image, setTemplate: YES];
             let _: () = msg_send![button, setImage: image];
         }
         let _: () = msg_send![button, setToolTip: ns_string(item.label)];
@@ -104,6 +110,35 @@ pub fn set_status_item(item: Option<StatusItem>) {
                 on_click: item.on_click.into(),
             })
         });
+    }
+}
+
+/// An autoreleased template `NSImage` with one representation per PNG that
+/// decodes, each `points` square; nil when none does.
+unsafe fn template_image(glyph: &StatusImage, label: &str) -> id {
+    unsafe {
+        let size = NSSize::new(glyph.points, glyph.points);
+        let image: id = msg_send![class!(NSImage), alloc];
+        let image: id = msg_send![image, initWithSize: size];
+        let mut added = false;
+        for png in glyph.pngs {
+            let data = NSData::dataWithBytes_length_(nil, png.as_ptr() as *const c_void, png.len() as u64);
+            let rep: id = msg_send![class!(NSBitmapImageRep), imageRepWithData: data];
+            if rep.is_null() {
+                continue;
+            }
+            let _: () = msg_send![rep, setSize: size];
+            let _: () = msg_send![image, addRepresentation: rep];
+            added = true;
+        }
+        if !added {
+            let _: () = msg_send![image, release];
+            return nil;
+        }
+        let _: () = msg_send![image, setTemplate: YES];
+        let _: () = msg_send![image, setAccessibilityDescription: ns_string(label)];
+        let _: id = msg_send![image, autorelease];
+        image
     }
 }
 

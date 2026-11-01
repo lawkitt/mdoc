@@ -64,7 +64,7 @@ pub use platform::{
 };
 // mdoc patch (ADR 0084): the menu bar shelf.
 pub use presence::{hide_window, set_dock_visible, set_window_height_keeping_top};
-pub use status_item::{StatusItem, set_status_item, status_item_bounds};
+pub use status_item::{StatusImage, StatusItem, set_status_item, status_item_bounds};
 pub use window::{DragCard, start_text_and_file_drag};
 
 trait BoolExt {

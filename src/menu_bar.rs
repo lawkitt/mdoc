@@ -396,7 +396,13 @@ fn show_item(cx: &mut App) {
     {
         let async_cx = cx.to_async();
         gpui_macos::set_status_item(Some(gpui_macos::StatusItem {
-            symbol: "doc.text",
+            image: gpui_macos::StatusImage {
+                points: 18.,
+                pngs: &[
+                    include_bytes!("../resources/icons/menubar.png"),
+                    include_bytes!("../resources/icons/menubar@2x.png"),
+                ],
+            },
             label: "mdoc",
             on_click: Box::new(move || on_item_click(&async_cx)),
         }));

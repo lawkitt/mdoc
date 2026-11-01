@@ -22,8 +22,9 @@ Local changes, marked `mdoc patch`:
   `src/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
   asks about unsaved work like ⌘Q (ADR 0071).
 - `status_item.rs` (new), exported from `gpui_macos.rs`: `set_status_item`
-  shows one `NSStatusItem` whose button draws an SF Symbol as a template
-  image and calls back on click, or removes it; `status_item_bounds` gives
+  shows one `NSStatusItem` whose button draws a `StatusImage` (the app's
+  PNGs at 1x and 2x, loaded as one template `NSImage`) and calls back on
+  click, or removes it; `status_item_bounds` gives
   the button's display and bounds (top-left origin) so a
   `WindowKind::PopUp` window can open under it. `window.rs`'s
   `display_id_for_screen` is `pub(crate)` for it. mdoc uses them in

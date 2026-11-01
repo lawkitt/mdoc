@@ -6,11 +6,14 @@
 #     in the Dock and Finder);
 #   - Windows .ico and resources/icons/icon.png: full-bleed;
 #   - iOS AppIcon: 1024 px, opaque, the drawing enlarged so its rounded
-#     corners fall outside the square (iOS applies its own mask).
+#     corners fall outside the square (iOS applies its own mask);
+#   - macOS menu bar icon: build/menubar.svg (the M alone, black on
+#     transparent) at 18 and 36 px, drawn as an 18 pt template image.
 # Requires macOS's sips and iconutil, plus Python 3 (standard library only).
 set -euo pipefail
 cd "$(dirname "$0")/.." # repo root
 SOURCE="build/appicon.svg"
+MENUBAR="build/menubar.svg"
 
 for tool in sips iconutil python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -87,12 +90,17 @@ sips -c 1024 1024 "$TMP/ios-large.png" --out "$TMP/ios-crop.png" >/dev/null
 sips -s format jpeg -s formatOptions 100 "$TMP/ios-crop.png" --out "$TMP/ios.jpg" >/dev/null
 sips -s format png "$TMP/ios.jpg" --out "$TMP/ios.png" >/dev/null
 
+# macOS menu bar: 1x and 2x of the 18 pt template image.
+render "$MENUBAR" 18 "$TMP/menubar.png"
+render "$MENUBAR" 36 "$TMP/menubar@2x.png"
+
 # Publish only after every format has been generated successfully.
 mkdir -p build/windows resources/icons
 cp "$TMP/1024.png" resources/icons/icon.png
 cp "$TMP/icon.ico" build/windows/icon.ico
 cp "$TMP/icon.ico" resources/icons/icon.ico
 cp "$TMP/icon.icns" resources/icons/icon.icns
+cp "$TMP/menubar.png" "$TMP/menubar@2x.png" resources/icons/
 cp "$TMP/ios.png" apps/ios/mdoc/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 
-echo "Regenerated: build/windows/icon.ico, resources/icons/icon.{png,ico,icns}, the iOS AppIcon"
+echo "Regenerated: build/windows/icon.ico, resources/icons/icon.{png,ico,icns}, resources/icons/menubar{,@2x}.png, the iOS AppIcon"

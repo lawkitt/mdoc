@@ -262,7 +262,7 @@ another editor since its last save.
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| M1 | On a fresh profile the monochrome icon (no badge) shows at launch and Settings › General › "Show mdoc in the menu bar" is on | | |
+| M1 | On a fresh profile the monochrome M icon (no badge) shows at launch and Settings › General › "Show mdoc in the menu bar" is on | | |
 | M2 | The first close of the last window shows the note "mdoc is still in the menu bar…" under the icon, once only; mdoc keeps running and leaves the Dock; a shelf row click reopens the same tabs, unsaved text and undo included. **Quit when windows close** in the note turns the switch off | | |
 | M3 | The shelf lists at most 8 documents, most recent first; titles have no `.md`, a case shows as a tinted label and no case shows none; each preview is two wrapped lines of prose ending in "…", with no Markdown syntax and no page numbers; the meta line reads "… ago · N words · N replaced" and hovering the count lists categories; only aliases, never originals | | |
 | M4 | Dragging a ready document into the ChatGPT web composer inserts its text; dropping it in Finder saves a `.md` whose name has no original (e.g. "PERSON_1 settlement.md") | | |
