@@ -1424,3 +1424,29 @@ fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
         .unwrap();
     assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
 }
+
+/// #392: a person the document names only in oblique cases still has a
+/// surname: the inflected full names are one identity, and the surname
+/// alone joins it.
+#[test]
+fn an_inflected_full_name_propagates_its_surname() {
+    let source = "Заказ гражданки Эльзы-Руты Мартыновны Таль-Шнейдер принят. \
+        Предмет выдаётся Эльзе-Руте Мартыновне Таль-Шнейдер лично. \
+        Получатель Таль-Шнейдер просит вернуть аванс.";
+    let review = ingest_names(
+        source,
+        &[
+            "Эльзы-Руты Мартыновны Таль-Шнейдер",
+            "Эльзе-Руте Мартыновне Таль-Шнейдер",
+        ],
+    );
+    let genitive =
+        review.variant_identity(proposed(&review, "Эльзы-Руты Мартыновны Таль-Шнейдер").id);
+    let dative =
+        review.variant_identity(proposed(&review, "Эльзе-Руте Мартыновне Таль-Шнейдер").id);
+    assert_eq!(genitive, dative, "one person in two cases");
+    let surname = proposed(&review, "Таль-Шнейдер");
+    assert_eq!(surname.mentions.len(), 1);
+    assert_eq!(review.variant_identity(surname.id), genitive);
+    assert_eq!(review.active_identities().len(), 1);
+}

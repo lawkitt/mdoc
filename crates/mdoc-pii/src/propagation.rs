@@ -8,7 +8,7 @@
 //! fixed suffix table, not morphology) and nicknames from [`nicknames`].
 use super::{
     Category, Recognizer, Review, exact_boundary,
-    identities::{TITLES, cyrillic, name_words, split_full_name, surname_forms},
+    identities::{TITLES, cyrillic, name_words, split_full_name_inflected, surname_forms},
     intersects, safe_span,
     syntax::protected_syntax,
 };
@@ -271,6 +271,158 @@ fn patronymic_forms(word: &str) -> Vec<String> {
     forms
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Case {
+    Nominative,
+    Genitive,
+    Dative,
+    Accusative,
+    Instrumental,
+    Prepositional,
+}
+
+/// A patronymic's gender, case and nominative ("мартыновны" → feminine,
+/// genitive, "мартыновна"), or `None` for no patronymic.
+fn patronymic_case(word: &str) -> Option<(bool, Case, String)> {
+    for stem in ["овн", "евн", "ичн"] {
+        if let Some(i) = word.rfind(stem) {
+            let base = &word[..i + stem.len()];
+            let case = match &word[i + stem.len()..] {
+                "а" => Case::Nominative,
+                "ы" => Case::Genitive,
+                "е" => Case::Dative,
+                "у" => Case::Accusative,
+                "ой" | "ою" => Case::Instrumental,
+                _ => return None,
+            };
+            return Some((true, case, format!("{base}а")));
+        }
+    }
+    for stem in ["ович", "евич", "ич"] {
+        if let Some(i) = word.rfind(stem) {
+            let base = &word[..i + stem.len()];
+            let case = match &word[i + stem.len()..] {
+                "" => Case::Nominative,
+                "а" => Case::Genitive,
+                "у" => Case::Dative,
+                "ем" => Case::Instrumental,
+                "е" => Case::Prepositional,
+                _ => return None,
+            };
+            return Some((false, case, base.to_owned()));
+        }
+    }
+    None
+}
+
+/// One word of a Russian name back in the nominative, by a fixed table of
+/// endings for its gender and case; a woman's surname that ends in a
+/// consonant ("Таль-Шнейдер") does not decline.
+fn decline_back(word: &str, feminine: bool, case: Case) -> String {
+    let swap = |pairs: &[(&str, &str)]| {
+        pairs.iter().find_map(|(from, to)| {
+            word.strip_suffix(from)
+                .filter(|stem| stem.chars().count() >= 2)
+                .map(|stem| format!("{stem}{to}"))
+        })
+    };
+    let hissing = |stem: &str| stem.ends_with(['г', 'к', 'х', 'ж', 'ш', 'ч', 'щ', 'ц']);
+    let soft = |stem: &str| {
+        if stem.ends_with(['а', 'е', 'и', 'о', 'у', 'ы', 'э', 'ю', 'я']) {
+            format!("{stem}й")
+        } else {
+            format!("{stem}ь")
+        }
+    };
+    const FEM_OBLIQUE: [(&str, &str); 7] = [
+        ("овой", "ова"),
+        ("евой", "ева"),
+        ("ёвой", "ёва"),
+        ("иной", "ина"),
+        ("ыной", "ына"),
+        ("ской", "ская"),
+        ("цкой", "цкая"),
+    ];
+    let declined = match (feminine, case) {
+        (_, Case::Nominative) => None,
+        (true, Case::Genitive) => swap(&FEM_OBLIQUE)
+            .or_else(|| swap(&[("ии", "ия"), ("ы", "а")]))
+            .or_else(|| {
+                let stem = word.strip_suffix('и')?;
+                Some(format!("{stem}{}", if hissing(stem) { "а" } else { "я" }))
+            }),
+        (true, Case::Dative | Case::Prepositional) => {
+            swap(&FEM_OBLIQUE).or_else(|| swap(&[("ии", "ия"), ("е", "а")]))
+        }
+        (true, Case::Accusative) => swap(&[
+            ("ову", "ова"),
+            ("еву", "ева"),
+            ("ёву", "ёва"),
+            ("ину", "ина"),
+            ("ыну", "ына"),
+            ("скую", "ская"),
+            ("цкую", "цкая"),
+            ("ию", "ия"),
+            ("у", "а"),
+            ("ю", "я"),
+        ]),
+        (true, Case::Instrumental) => swap(&FEM_OBLIQUE)
+            .or_else(|| swap(&[("ией", "ия"), ("ой", "а")]))
+            .or_else(|| {
+                let stem = word.strip_suffix("ей")?;
+                Some(format!("{stem}{}", if hissing(stem) { "а" } else { "я" }))
+            }),
+        (false, Case::Genitive | Case::Accusative) => {
+            swap(&[("ского", "ский"), ("цкого", "цкий"), ("ия", "ий")])
+                .or_else(|| word.strip_suffix('я').map(soft))
+                .or_else(|| swap(&[("а", "")]))
+        }
+        (false, Case::Dative) => swap(&[("скому", "ский"), ("цкому", "цкий"), ("ию", "ий")])
+            .or_else(|| word.strip_suffix('ю').map(soft))
+            .or_else(|| swap(&[("у", "")])),
+        (false, Case::Instrumental) => swap(&[
+            ("ским", "ский"),
+            ("цким", "цкий"),
+            ("овым", "ов"),
+            ("евым", "ев"),
+            ("ёвым", "ёв"),
+            ("иным", "ин"),
+            ("ыным", "ын"),
+            ("ием", "ий"),
+        ])
+        .or_else(|| word.strip_suffix("ем").map(soft))
+        .or_else(|| swap(&[("ом", "")])),
+        (false, Case::Prepositional) => {
+            swap(&[("ском", "ский"), ("цком", "цкий"), ("ии", "ий")]).or_else(|| swap(&[("е", "")]))
+        }
+    };
+    declined.unwrap_or_else(|| word.to_owned())
+}
+
+/// A Russian full name with an inflected patronymic, back in the nominative
+/// ("эльзы-руты мартыновны таль-шнейдер" → "эльза-рута мартыновна
+/// таль-шнейдер"); `None` when it has no patronymic or is nominative.
+pub(crate) fn nominative(words: &[String]) -> Option<Vec<String>> {
+    let p = words.iter().position(|w| patronymic_like(w))?;
+    let (feminine, case, lemma) = patronymic_case(&words[p])?;
+    (case != Case::Nominative).then(|| {
+        words
+            .iter()
+            .enumerate()
+            .map(|(i, word)| {
+                if i == p {
+                    lemma.clone()
+                } else {
+                    word.split('-')
+                        .map(|part| decline_back(part, feminine, case))
+                        .collect::<Vec<_>>()
+                        .join("-")
+                }
+            })
+            .collect()
+    })
+}
+
 /// The forms of `surname` that name its own bearer: a feminine surname's
 /// masculine forms ("Павлов", "Павловым") name a relative, so they never
 /// link to her, though they are still proposed.
@@ -382,6 +534,10 @@ struct Person {
     /// A full name, so a form may join it; a surname with initials only
     /// blocks ("Петров И.И." beside "Петрова Марина": "Петрову" is either).
     target: bool,
+    /// Known only from an inflected full name: it never outvotes a name
+    /// written in the nominative ("Павлову Дмитрию Андреевичу" beside
+    /// "Павлова Марина Сергеевна" leaves "Павлова" hers).
+    weak: bool,
     surname_forms: HashSet<String>,
     own_surname_forms: HashSet<String>,
     /// The first name's forms and its nicknames' (full names only).
@@ -389,7 +545,7 @@ struct Person {
     patronymic_forms: HashSet<String>,
 }
 impl Person {
-    fn new(owner: u64, surname: String, given: Vec<String>, target: bool) -> Self {
+    fn new(owner: u64, surname: String, given: Vec<String>, target: bool, weak: bool) -> Self {
         let first_forms = match given.first() {
             Some(first) if target => given_forms(first)
                 .into_iter()
@@ -401,10 +557,24 @@ impl Person {
             [_, second] if target => patronymic_forms(second).into_iter().collect(),
             _ => HashSet::new(),
         };
+        // A woman's surname that ends in a consonant does not decline.
+        let feminine = given.get(1).is_some_and(|p| p.ends_with("на"));
+        let own_surname_forms = if feminine
+            && cyrillic(&surname)
+            && surname
+                .chars()
+                .next_back()
+                .is_some_and(|c| !"аеёиоуыэюяйь".contains(c))
+        {
+            HashSet::from([surname.clone()])
+        } else {
+            own_surname_forms(&surname).into_iter().collect()
+        };
         Self {
             owner,
+            weak,
             surname_forms: surname_forms(&surname).into_iter().collect(),
-            own_surname_forms: own_surname_forms(&surname).into_iter().collect(),
+            own_surname_forms,
             surname,
             given,
             target,
@@ -434,11 +604,11 @@ impl People {
     pub(crate) fn new<'a>(names: impl IntoIterator<Item = (u64, &'a str)>) -> Self {
         let mut people = Vec::new();
         for (owner, wording) in names {
-            if let Some((surname, given)) = split_full_name(wording) {
-                people.push(Person::new(owner, surname, given, true));
+            if let Some((surname, given, inflected)) = split_full_name_inflected(wording) {
+                people.push(Person::new(owner, surname, given, true, inflected));
             } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
                 let given = initials.iter().map(char::to_string).collect();
-                people.push(Person::new(owner, surname, given, false));
+                people.push(Person::new(owner, surname, given, false, false));
             }
         }
         Self(people)
@@ -452,6 +622,8 @@ impl People {
     }
     pub(crate) fn candidates(&self, form: &Form) -> Candidates {
         let mut found = Candidates::default();
+        // Owners linked by a name written in the nominative (or a blocker).
+        let mut strong = BTreeSet::new();
         for person in &self.0 {
             // A name with initials does not block its own form.
             if let Form::Initials { surname, initials } = form
@@ -495,12 +667,21 @@ impl People {
             };
             if links {
                 found.link.insert(person.owner);
+                if !(person.target && person.weak) {
+                    strong.insert(person.owner);
+                }
             }
             // A surname with initials alone proposes nothing: only full
             // names propagate.
             found.proposed |= person.target && (proposes || links);
         }
-        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
+        // A name known only inflected never outvotes a nominative one.
+        let linked: Vec<u64> = if strong.is_empty() {
+            found.link.iter().copied().collect()
+        } else {
+            strong.into_iter().collect()
+        };
+        if let [owner] = linked[..] {
             found.target = self
                 .0
                 .iter()
@@ -960,6 +1141,58 @@ mod tests {
             target(&["Maya Bennett", "Daniel Bennett"], "D. Bennett"),
             Some(2)
         );
+    }
+
+    #[test]
+    fn inflected_full_names_read_in_the_nominative() {
+        let nominative_of = |name: &str| {
+            let words: Vec<String> = name.split(' ').map(str::to_lowercase).collect();
+            nominative(&words).map(|w| w.join(" "))
+        };
+        for (inflected, base) in [
+            (
+                "Эльзы-Руты Мартыновны Таль-Шнейдер",
+                "эльза-рута мартыновна таль-шнейдер",
+            ),
+            (
+                "Эльзе-Руте Мартыновне Таль-Шнейдер",
+                "эльза-рута мартыновна таль-шнейдер",
+            ),
+            ("Марину Сергеевну Павлову", "марина сергеевна павлова"),
+            ("Петровой Анной Игоревной", "петрова анна игоревна"),
+            ("Павлову Дмитрию Андреевичу", "павлов дмитрий андреевич"),
+            ("Сергеем Ивановичем Петровым", "сергей иванович петров"),
+            ("Чайковского Ивана Петровича", "чайковский иван петрович"),
+            ("Дмитрии Игоревиче Орлове", "дмитрий игоревич орлов"),
+        ] {
+            assert_eq!(
+                nominative_of(inflected).as_deref(),
+                Some(base),
+                "{inflected}"
+            );
+        }
+        assert_eq!(
+            nominative_of("Павлова Марина Сергеевна"),
+            None,
+            "nominative"
+        );
+        assert_eq!(nominative_of("Maya Bennett"), None);
+    }
+
+    #[test]
+    fn a_name_known_only_inflected_never_outvotes_a_nominative_one() {
+        // The Russian demo: her husband only in the dative.
+        let names = ["Павлова Марина Сергеевна", "Павлову Дмитрию Андреевичу"];
+        for form in ["Павлова", "Павлову"] {
+            assert_eq!(target(&names, form), Some(1), "{form}");
+        }
+        // Alone, it is the one candidate.
+        assert_eq!(target(&["Павлову Дмитрию Андреевичу"], "Павлов"), Some(1));
+        let names = ["Эльзы-Руты Мартыновны Таль-Шнейдер"];
+        assert_eq!(target(&names, "Таль-Шнейдер"), Some(1));
+        // A woman's consonant surname does not decline: "Таль-Шнейдера" is
+        // someone else's.
+        assert_eq!(target(&names, "Таль-Шнейдера"), None);
     }
 
     #[test]
