@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: case-number
 issue: 364
 kind: claim
 source: hunt-r1
-expect: miss: CASE "2-7318/2026"
 ---
 # Исковое заявление о возврате платы за хранение
 

@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary case-number
-issue: 374 364
+flaw: org-boundary
+issue: 374
 kind: claim
 source: hunt-r1
-expect: miss: CASE "Q7ZX/8421/26"
 expect: boundary: gold ORG "Moth Lantern Events Ltd"; proposed ORG "Moth Lantern Events Ltd."
 ---
 ## Schedule accompanying a small claim
