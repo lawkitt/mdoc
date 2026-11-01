@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":289,"end":331,"label":"person","score":0.97272736,"text":"Кира Ярославовна Гельц"},
+    {"start":237,"end":265,"label":"organization","score":0.8749347,"text":"АО «Сухой свет»"},
+    {"start":790,"end":814,"label":"email","score":0.9991865,"text":"gelc@prilozhenie.invalid"},
+    {"start":512,"end":524,"label":"tax_id","score":0.9558167,"text":"508614372930"},
+    {"start":659,"end":671,"label":"tax_id","score":0.84325075,"text":"508691742303"}
+  ]
+}

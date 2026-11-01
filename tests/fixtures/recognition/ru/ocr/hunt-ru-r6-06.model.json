@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":107,"end":145,"label":"full_name","score":0.9365177,"text":"Вера Арсеньевна Крум"},
+    {"start":239,"end":266,"label":"email","score":0.9999702,"text":"krum@vozvratsredstv.invalid"},
+    {"start":162,"end":174,"label":"passport_number","score":0.9993513,"text":"46I7 82О634"},
+    {"start":215,"end":226,"label":"national_id_number","score":0.9906961,"text":"58273196425"},
+    {"start":186,"end":198,"label":"iban","score":0.5907202,"text":"508641732966"},
+    {"start":650,"end":662,"label":"iban","score":0.52284175,"text":"508673142984"}
+  ]
+}

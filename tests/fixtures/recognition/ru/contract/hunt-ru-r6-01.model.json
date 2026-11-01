@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":279,"end":327,"label":"person","score":0.9978002,"text":"Василиса Петровна Корнель"},
+    {"start":196,"end":232,"label":"person","score":0.9942697,"text":"Олег Андреевич Линц"},
+    {"start":126,"end":149,"label":"organization","score":0.83999664,"text":"Евгений Лорн"},
+    {"start":249,"end":259,"label":"passport_number","score":0.99909955,"text":"4693841726"},
+    {"start":1921,"end":1944,"label":"email","score":0.99917364,"text":"board@odobrenie.invalid"},
+    {"start":2612,"end":2630,"label":"person","score":0.6204491,"text":"директора"}
+  ]
+}
