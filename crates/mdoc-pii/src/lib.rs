@@ -128,6 +128,9 @@ pub struct Variant {
     managed: bool,
     /// The identity it falls back to without one candidate.
     own: Option<u64>,
+    /// Propagation found it only after a title: a surname, never a first
+    /// name, when its candidates are counted.
+    surname: bool,
 }
 impl Variant {
     /// What proposed it first; `None` for a manual mark, a case or a
@@ -723,6 +726,7 @@ impl Review {
             mid_sentence: false,
             managed: false,
             own: None,
+            surname: false,
         });
         id
     }

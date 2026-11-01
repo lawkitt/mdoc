@@ -635,7 +635,7 @@ fn date_and_other_have_their_own_tokens_and_existing_tokens_stay_reserved() {
 fn partial_name_replace_keeps_the_containing_identity_whole() {
     let source = include_str!("../../../docs/product-media/Settlement agreement.md");
     let mut review = Review::default();
-    // Added by hand, with "Ms Bennett" and "Maya" they propose kept.
+    // Added by hand, with "Bennett" and "Maya" they propose kept.
     let mut full = Vec::new();
     for value in ["Maya Bennett", "Daniel Bennett"] {
         let start = source.find(value).unwrap();
@@ -644,7 +644,7 @@ fn partial_name_replace_keeps_the_containing_identity_whole() {
             .unwrap();
         full.push((id, review.variant_identity(id).unwrap()));
     }
-    for form in ["Ms Bennett", "Maya"] {
+    for form in ["Bennett", "Maya"] {
         let id = proposed(&review, form).id;
         review.keep(id, None);
     }
@@ -743,8 +743,10 @@ fn a_scan_proposes_title_surname_and_possessive_forms_of_a_full_name() {
                 .unwrap()
         })
         .to_vec();
-    let short = proposed(&review, "Ms Bennett");
-    // Five plain mentions and "Ms Bennett's"; "Ms Maya Bennett" stays whole.
+    // The surname after each title, the title outside the span (guide rule
+    // 1): five plain mentions and "Ms Bennett's"; "Ms Maya Bennett" stays
+    // whole.
+    let short = proposed(&review, "Bennett");
     assert_eq!(short.mentions.len(), 6);
     assert!(
         short
@@ -777,7 +779,7 @@ fn a_surname_or_first_name_with_one_candidate_joins_it() {
         Priya and Paul agreed with Ms Raman.";
     let review = ingest_names(source, &["Priya Raman", "James Paul"]);
     let raman = review.variant_identity(proposed(&review, "Priya Raman").id);
-    for short in ["Raman", "Dr. Raman", "Ms Raman", "Priya"] {
+    for short in ["Raman", "Priya"] {
         let variant = proposed(&review, short);
         assert!(
             variant.recognizer() == Some(Recognizer::Propagation),
@@ -785,17 +787,19 @@ fn a_surname_or_first_name_with_one_candidate_joins_it() {
         );
         assert_eq!(review.variant_identity(variant.id), raman, "{short}");
     }
-    assert_eq!(proposed(&review, "Raman").mentions.len(), 1, "Raman's");
+    // "Raman's", and after "Dr." and "Ms", titles outside the span.
+    assert_eq!(proposed(&review, "Raman").mentions.len(), 3);
     let paul = review.variant_identity(proposed(&review, "James Paul").id);
     assert_eq!(review.variant_identity(proposed(&review, "Paul").id), paul);
     // Every name takes the next alias; the forms take none.
     assert_eq!(review.active_identities().len(), 2);
-    // Titles in any case stay part of the wording; the verb "miss" does not.
+    // Titles in any case mark a surname and stay outside it; the verb
+    // "miss" is no title.
     let source = "Priya Raman signed. MR RAMAN, mr Raman and DR. Raman \
         did not miss Raman.";
     let review = ingest_names(source, &["Priya Raman"]);
-    for short in ["MR RAMAN", "mr Raman", "DR. Raman", "Raman"] {
-        assert_eq!(proposed(&review, short).mentions.len(), 1, "{short}");
+    for (short, count) in [("RAMAN", 1), ("Raman", 3)] {
+        assert_eq!(proposed(&review, short).mentions.len(), count, "{short}");
     }
     // A surname that is also another person's first name has two
     // candidates: proposed with its own identity, Same as… offers both.
@@ -1079,10 +1083,10 @@ fn an_applied_name_propagates_to_new_text() {
     let mut review = ingest_names(source, &["Priya Raman"]);
     let text = crate::restore::tests::apply_pending(&mut review, source, 1);
     let identity = review.applied()[0].step.identity;
-    let source = format!("{text} Later Ms Raman and Priya agreed.");
+    let source = format!("{text} Later Raman and Priya agreed.");
     review.refresh(&source);
     review.ingest(&source, Vec::new()).unwrap();
-    for form in ["Ms Raman", "Priya"] {
+    for form in ["Raman", "Priya"] {
         assert_eq!(
             review.variant_identity(proposed(&review, form).id),
             Some(identity),
@@ -1096,7 +1100,7 @@ fn a_joined_form_moves_when_another_person_shares_it() {
     let source = "Maya Bennett signed. Ms Bennett agreed. Daniel Bennett wrote.";
     let mut review = ingest_names(source, &["Maya Bennett"]);
     let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
-    let short = proposed(&review, "Ms Bennett").id;
+    let short = proposed(&review, "Bennett").id;
     assert_eq!(review.variant_identity(short), maya);
     // A second scan finds her husband: "Ms Bennett" may be either.
     review = {
@@ -1262,7 +1266,7 @@ fn a_marks_links_stay_automatic_and_follow_its_undo() {
     // own undo step.
     let source = "Maya Bennett signed. Ms Bennett agreed. Daniel Bennett wrote.";
     let mut review = ingest_names(source, &["Maya Bennett"]);
-    let short = proposed(&review, "Ms Bennett").id;
+    let short = proposed(&review, "Bennett").id;
     let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
     assert_eq!(review.variant_identity(short), maya);
     let before = review.identity_snapshot();
@@ -1290,7 +1294,7 @@ fn applied_forms_stay_and_detached_forms_can_rejoin() {
     let mut review = ingest_names(source, &["Maya Bennett"]);
     let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
     let text = crate::restore::tests::apply_pending(&mut review, source, 1);
-    assert_eq!(text, "PERSON_1 signed. PERSON_1 agreed.");
+    assert_eq!(text, "PERSON_1 signed. Ms PERSON_1 agreed.");
     let source = format!("{text} Ms Bennett and Daniel Bennett wrote.");
     review.refresh(&source);
     let daniel = source.find("Daniel").unwrap();
@@ -1303,7 +1307,7 @@ fn applied_forms_stay_and_detached_forms_can_rejoin() {
             )],
         )
         .unwrap();
-    let short = proposed(&review, "Ms Bennett").id;
+    let short = proposed(&review, "Bennett").id;
     assert_eq!(
         review.variant_identity(short),
         maya,
@@ -1322,20 +1326,13 @@ fn applied_forms_stay_and_detached_forms_can_rejoin() {
             )],
         )
         .unwrap();
-    let short = proposed(&review, "Ms Bennett").id;
+    let short = proposed(&review, "Bennett").id;
     let own = review.variant_identity(short);
     let maya = review.variant_identity(proposed(&review, "Maya Bennett").id);
     assert_ne!(own, maya);
-    // The respelled wording joins the detached form, not Maya.
-    let caps = source.find("MS BENNETT").unwrap();
-    review
-        .ingest(
-            source,
-            vec![detection(caps..caps + "MS BENNETT".len(), Category::Person)],
-        )
-        .unwrap();
+    // The respelled wording moved with it, not to Maya.
     assert_eq!(
-        review.variant_identity(proposed(&review, "MS BENNETT").id),
+        review.variant_identity(proposed(&review, "BENNETT").id),
         own
     );
     // Daniel kept everywhere: Maya is the one candidate again.
@@ -1423,4 +1420,26 @@ fn a_rescan_keeps_a_marked_or_seeded_variants_recognizer() {
         .ingest(source, vec![detection(0..3, Category::Person)])
         .unwrap();
     assert_eq!(proposed(&seeded, "Ann").recognizer(), None);
+}
+
+/// Review of #409: a surname found after a title keeps that context when
+/// linked and relinked, and the verb "miss" is no title.
+#[test]
+fn a_titled_surname_links_as_a_surname_and_miss_is_no_title() {
+    let source = "Paul Smith met James Paul. Mr Paul agreed.";
+    let mut review = ingest_names(source, &["Paul Smith", "James Paul"]);
+    let james = review.variant_identity(proposed(&review, "James Paul").id);
+    let paul = proposed(&review, "Paul").id;
+    assert_eq!(review.variant_identity(paul), james);
+    review.ingest(source, Vec::new()).unwrap();
+    assert_eq!(review.variant_identity(paul), james, "rescan");
+
+    let source = "Rose Hill signed. It was a near miss. Rose bushes were damaged.";
+    let review = ingest_names(source, &["Rose Hill"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Rose")
+    );
 }

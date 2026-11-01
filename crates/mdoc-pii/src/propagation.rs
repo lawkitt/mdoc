@@ -518,14 +518,40 @@ impl People {
     }
 }
 
+/// `wording` as a form; `surname`: found only after a title, so a word is
+/// a surname, never a first name.
+fn form_in_context(wording: &str, surname: bool) -> Option<Form> {
+    match parse_form(wording)? {
+        Form::Word { word, .. } if surname => Some(Form::Word { word, titled: true }),
+        form => Some(form),
+    }
+}
+
 static TOKEN: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\p{L}+(?:['’-]\p{Lu}\p{L}*)*").expect("name token"));
 
 /// Whether the text before `start` on its line ends a sentence: a line
 /// start, a list marker, a table cell or sentence punctuation.
+/// A courtesy title before a surname, in any case; lowercase "miss" is the
+/// verb ("a near miss").
+fn is_title(word: &str) -> bool {
+    word != "miss" && TITLES.contains(&word.to_lowercase().as_str())
+}
+
 pub(crate) fn sentence_start(source: &str, start: usize) -> bool {
     let line = &source[source[..start].rfind('\n').map_or(0, |i| i + 1)..start];
     let before = line.trim_end_matches(|c: char| c.is_whitespace() || "*_\"'«“„‘([".contains(c));
+    // "Mr. Hill": a title's period ends no sentence.
+    let titled = before.strip_suffix('.').is_some_and(|b| {
+        let word = b
+            .rsplit(|c: char| !c.is_alphabetic())
+            .next()
+            .unwrap_or_default();
+        is_title(word)
+    });
+    if titled {
+        return false;
+    }
     let marker = before.trim_start();
     marker.is_empty()
         || matches!(marker, "-" | "+" | ">")
@@ -542,7 +568,7 @@ fn find_forms(
     source: &str,
     people: &People,
     covered: &[Range<usize>],
-) -> Vec<(Range<usize>, bool)> {
+) -> Vec<(Range<usize>, bool, bool)> {
     let protected = protected_syntax(source);
     let tokens: Vec<Range<usize>> = TOKEN.find_iter(source).map(|m| m.range()).collect();
     let capital = |k: usize| {
@@ -569,7 +595,8 @@ fn find_forms(
     while i < tokens.len() {
         let start = tokens[i].start;
         // Candidate spans at `i`, longest first, each with the token after it.
-        let mut tries: Vec<(Range<usize>, usize)> = Vec::new();
+        // `true`: a surname after a title, which stays outside the span.
+        let mut tries: Vec<(Range<usize>, usize, bool)> = Vec::new();
         if initial(i) {
             // Initials before the surname: "М. С. Павлова", "M. Bennett".
             let last = if initial(i + 1) && blank(tokens[i].end + 1, tokens[i + 1].start) {
@@ -578,12 +605,12 @@ fn find_forms(
                 i
             };
             if word(last + 1) && blank(tokens[last].end + 1, tokens[last + 1].start) {
-                tries.push((start..tokens[last + 1].end, last + 2));
+                tries.push((start..tokens[last + 1].end, last + 2, false));
             }
         } else {
             let title = &source[tokens[i].clone()];
             // Lowercase "miss" is the verb.
-            let titled = title != "miss" && TITLES.contains(&title.to_lowercase().as_str());
+            let titled = is_title(title);
             // Initials after it: "Павловой М. С.", "Павлова М.С.".
             if word(i)
                 && initial(i + 1)
@@ -591,26 +618,36 @@ fn find_forms(
                 && blank(tokens[i].end, tokens[i + 1].start)
             {
                 if initial(i + 2) && blank(tokens[i + 1].end + 1, tokens[i + 2].start) {
-                    tries.push((start..tokens[i + 2].end + 1, i + 3));
+                    tries.push((start..tokens[i + 2].end + 1, i + 3, false));
                 }
-                tries.push((start..tokens[i + 1].end + 1, i + 2));
+                tries.push((start..tokens[i + 1].end + 1, i + 2, false));
             }
-            // A title in any case and a surname ("Ms Raman", "dr. Raman"),
-            // or first name + patronymic.
+            // A title in any case and a surname ("Ms Raman", "dr. Raman"):
+            // the surname alone, the title outside the span as the guide
+            // keeps it; or first name + patronymic.
             if (titled || word(i)) && word(i + 1) {
                 let gap =
                     tokens[i].end + usize::from(titled && source[tokens[i].end..].starts_with('.'));
                 if gap < tokens[i + 1].start && blank(gap, tokens[i + 1].start) {
-                    tries.push((start..tokens[i + 1].end, i + 2));
+                    if titled {
+                        tries.push((tokens[i + 1].clone(), i + 2, true));
+                    } else {
+                        tries.push((start..tokens[i + 1].end, i + 2, false));
+                    }
                 }
             }
             if word(i) {
-                tries.push((tokens[i].clone(), i + 1));
+                tries.push((tokens[i].clone(), i + 1, false));
             }
         }
-        let accepted = tries.into_iter().find_map(|(range, next)| {
+        let accepted = tries.into_iter().find_map(|(range, next, after_title)| {
             let text = &source[range.clone()];
-            let form = parse_form(text)?;
+            // After a title the word is a surname, never a first name.
+            let form = match parse_form(text)? {
+                Form::Word { word, .. } if after_title => Form::Word { word, titled: true },
+                _ if after_title => return None,
+                form => form,
+            };
             // Touching `_`, `/`, `@` or `\` it is part of an identifier, a
             // path or an address ("x.invalid/Alice_Morgan").
             let glued = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
@@ -621,13 +658,13 @@ fn find_forms(
                 && !intersects(covered, &range)
                 && exact_boundary(source, &range, text)
                 && people.candidates(&form).proposed;
-            let common = matches!(&form, Form::Word { word, titled: false } if common_word(word));
-            (usable && !(common && sentence_start(source, range.start)))
-                .then_some((range, common, next))
+            let common = matches!(&form, Form::Word { word, .. } if common_word(word));
+            (usable && !(common && !after_title && sentence_start(source, range.start)))
+                .then_some((range, common, next, after_title))
         });
         match accepted {
-            Some((range, common, next)) => {
-                found.push((range, common));
+            Some((range, common, next, after_title)) => {
+                found.push((range, common, after_title));
                 i = next;
             }
             None => i += 1,
@@ -703,17 +740,28 @@ impl Review {
                 _ => covered.push(span),
             }
         }
-        let mut added = Vec::new();
-        for (range, common) in find_forms(source, &people, &covered) {
+        // Each wording once; a surname when every place it was found
+        // follows a title ("Mr Paul": James Paul, not Paul Smith).
+        let mut found: Vec<(&str, bool, bool)> = Vec::new();
+        for (range, common, after_title) in find_forms(source, &people, &covered) {
             let wording = &source[range];
+            match found.iter_mut().find(|(w, ..)| *w == wording) {
+                Some((_, _, surname)) => *surname &= after_title,
+                None => found.push((wording, common, after_title)),
+            }
+        }
+        let mut added = Vec::new();
+        for (wording, common, surname) in found {
             if self.candidates.by_original(wording).is_some() {
                 continue;
             }
-            let target = parse_form(wording).and_then(|form| people.candidates(&form).target);
+            let target =
+                form_in_context(wording, surname).and_then(|form| people.candidates(&form).target);
             let id = self.seed_form(wording, target);
             if let Some(variant) = self.candidates.variant_mut(id) {
                 variant.recognizer = Some(Recognizer::Propagation);
                 variant.mid_sentence = common;
+                variant.surname = surname;
                 variant.keep_default = marked;
             }
             if marked {
@@ -746,7 +794,8 @@ impl Review {
                         .any(|a| a.step.original_shared().as_ref() == v.original.as_ref())
             })
             .filter_map(|v| {
-                let target = parse_form(&v.original).and_then(|f| people.candidates(&f).target);
+                let target = form_in_context(&v.original, v.surname)
+                    .and_then(|f| people.candidates(&f).target);
                 let current = self.variant_identity(v.id)?;
                 let desired = match target {
                     Some(target) => Some(target),
@@ -968,7 +1017,7 @@ mod tests {
         let found = |source: &str| -> Vec<String> {
             find_forms(source, &people(&names), &[])
                 .into_iter()
-                .map(|(r, _)| source[r].to_owned())
+                .map(|(r, ..)| source[r].to_owned())
                 .collect()
         };
         assert_eq!(found("We met Rose. Rose agreed; a rose."), ["Rose"]);
@@ -976,7 +1025,11 @@ mod tests {
             found("- Rose left\n1. Rose\n| Rose |"),
             Vec::<String>::new()
         );
-        assert_eq!(found("Call Ms Hill. Hill agreed."), ["Ms Hill"]);
+        // A title marks a surname wherever it stands, and stays outside the
+        // span (guide rule 1); a title's period ends no sentence.
+        assert_eq!(found("Call Ms Hill. Hill agreed."), ["Hill"]);
+        assert_eq!(found("Mr. Hill agreed."), ["Hill"]);
+        assert!(!sentence_start("Mr. Hill", 4));
         assert!(sentence_start("**Rose**", 2));
         assert!(!sentence_start("said “Rose", 6 + "“".len()));
         // A name that is no ordinary word counts anywhere.
@@ -984,7 +1037,7 @@ mod tests {
         let source = "Марина ушла. Мира нет.";
         let found: Vec<_> = find_forms(source, &people(&names), &[])
             .into_iter()
-            .map(|(r, common)| (&source[r], common))
+            .map(|(r, common, _)| (&source[r], common))
             .collect();
         assert_eq!(found, [("Марина", false)]);
     }
@@ -995,7 +1048,7 @@ mod tests {
         let source = "Павловой М. С. и М.С. Павлова; Марина Сергеевна, Марине и Павловой.";
         let found: Vec<_> = find_forms(source, &people(&names), &[])
             .into_iter()
-            .map(|(r, _)| &source[r])
+            .map(|(r, ..)| &source[r])
             .collect();
         assert_eq!(
             found,

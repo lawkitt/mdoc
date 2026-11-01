@@ -687,6 +687,7 @@ impl Review {
                     mid_sentence: false,
                     managed: false,
                     own: None,
+                    surname: false,
                 });
                 if on_step {
                     self.set_kept(self.next_id, false);
