@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":114,"end":125,"label":"person","score":0.99346113,"text":"Dalen Quist"},
+    {"start":63,"end":74,"label":"person","score":0.98789966,"text":"Eira O'Venn"},
+    {"start":76,"end":108,"label":"email","score":0.9980506,"text":"eira.o'venn@copper-skein.invalid"},
+    {"start":127,"end":162,"label":"email","score":0.9973166,"text":"dalen.dispatch@copper-skein.invalid"},
+    {"start":1186,"end":1197,"label":"person","score":0.9961306,"text":"Eira O'Venn"},
+    {"start":817,"end":828,"label":"person","score":0.9905143,"text":"Eira O'Venn"},
+    {"start":761,"end":772,"label":"person","score":0.9826243,"text":"Dalen Quist"},
+    {"start":774,"end":809,"label":"email","score":0.9994558,"text":"dalen.dispatch@copper-skein.invalid"},
+    {"start":830,"end":862,"label":"email","score":0.98255754,"text":"eira.o'venn@copper-skein.invalid"}
+  ]
+}

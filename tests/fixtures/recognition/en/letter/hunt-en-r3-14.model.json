@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":63,"end":77,"label":"full_name","score":0.971779,"text":"Maëla Runnell"},
+    {"start":121,"end":133,"label":"organization","score":0.55817646,"text":"Records team"},
+    {"start":79,"end":115,"label":"email","score":0.9993148,"text":"maela.instructions@reed-opal.invalid"},
+    {"start":1057,"end":1071,"label":"person","score":0.974092,"text":"Maëla Runnell"},
+    {"start":615,"end":630,"label":"person","score":0.9628831,"text":"Maëla Runnell"},
+    {"start":632,"end":668,"label":"email","score":0.9992621,"text":"maela.instructions@reed-opal.invalid"}
+  ]
+}
