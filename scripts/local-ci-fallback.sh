@@ -266,7 +266,8 @@ tick() {
   local -A want=() active=() dispatched=() branch_of=() head_of=()
   local -a claims=() aheads=()
   local sep=$'\x1f' i=0
-  mapfile -t aheads < <(ahead_counts "$lines")
+  # A read loop, not mapfile: macOS's /bin/bash is 3.2.
+  while IFS= read -r ahead; do aheads+=("$ahead"); done < <(ahead_counts "$lines")
   while IFS=$'\x1f' read -r pr branch head ctx state desc at seen; do
     ahead=${aheads[i]:-0}
     i=$((i + 1))
