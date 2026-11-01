@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":51,"end":65,"label":"person","score":0.99597704,"text":"Aoife McLarnen"},
+    {"start":82,"end":108,"label":"organization","score":0.98372257,"text":"Juniper Quoin Archives LLC"},
+    {"start":1304,"end":1317,"label":"person","score":0.99190676,"text":"Orlan MacRusk"},
+    {"start":784,"end":801,"label":"person","score":0.9817357,"text":"Çağla O'Vennick"},
+    {"start":814,"end":836,"label":"phone_number","score":0.9998911,"text":"+1 (202) 555-0164 x207"}
+  ]
+}

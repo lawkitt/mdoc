@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":60,"end":75,"label":"person","score":0.9960699,"text":"Džana MacQuern"},
+    {"start":87,"end":115,"label":"organization","score":0.99065995,"text":"Thistle Wren Exhibitions Ltd"},
+    {"start":500,"end":508,"label":"organization","score":0.6426568,"text":"defender"},
+    {"start":223,"end":231,"label":"organization","score":0.5971968,"text":"defender"},
+    {"start":122,"end":130,"label":"organization","score":0.53421766,"text":"Defender"},
+    {"start":1324,"end":1339,"label":"person","score":0.99212325,"text":"Niamh O'Kelrick"},
+    {"start":967,"end":974,"label":"organization","score":0.5283357,"text":"pursuer"},
+    {"start":1273,"end":1309,"label":"email","score":0.99898374,"text":"dzana.accounts@thistle-quern.invalid"},
+    {"start":1241,"end":1264,"label":"address","score":0.93306583,"text":"44 Rowan Quay, Stirling"}
+  ]
+}
