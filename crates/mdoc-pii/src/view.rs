@@ -29,7 +29,10 @@ impl View {
         let mut text = String::with_capacity(source.len());
         let mut edits = Vec::new();
         let mut copied = 0;
-        for (range, replacement) in rewrites(source) {
+        let mut rewrites = rewrites(source);
+        rewrites.extend(table_headers(source));
+        rewrites.sort_by_key(|(range, _)| (range.start, range.end));
+        for (range, replacement) in rewrites {
             text.push_str(&source[copied..range.start]);
             let start = text.len();
             text.push_str(&replacement);
@@ -175,6 +178,84 @@ pub fn line_break_tag(text: &str) -> Option<usize> {
     let after = text[rest.len()..].trim_start_matches(' ');
     let after = after.strip_prefix('/').unwrap_or(after);
     after.starts_with('>').then(|| text.len() - after.len() + 1)
+}
+
+/// Each table cell read with its column header ("| Кий |" under
+/// "| Фамилия |" reads "| Фамилия: Кий |"): a value alone in a cell loses
+/// what it is (ADR 0092, table cells read as sentences). The headers are
+/// inserted in the view only; a span over one maps to the cell.
+fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
+    let mut out = Vec::new();
+    let mut lines = Vec::new();
+    let mut at = 0;
+    for line in source.split_inclusive('\n') {
+        lines.push((at, line.trim_end_matches(['\r', '\n'])));
+        at += line.len();
+    }
+    let mut row = 0;
+    while row + 1 < lines.len() {
+        let (_, header) = lines[row];
+        let (_, delimiter) = lines[row + 1];
+        if !header.contains('|') || !delimiter_row(delimiter) {
+            row += 1;
+            continue;
+        }
+        let names: Vec<String> = cells(header)
+            .into_iter()
+            .map(|cell| {
+                header[cell]
+                    .trim_matches(|c: char| c.is_whitespace() || c == '*')
+                    .to_owned()
+            })
+            .collect();
+        row += 2;
+        while let Some(&(start, line)) = lines.get(row).filter(|(_, line)| line.contains('|')) {
+            for (cell, name) in cells(line).into_iter().zip(&names) {
+                let value = &line[cell.clone()];
+                let content = cell.start + value.len() - value.trim_start().len();
+                if !name.is_empty()
+                    && !value.trim().is_empty()
+                    && name.chars().any(char::is_alphabetic)
+                {
+                    out.push((start + content..start + content, format!("{name}: ")));
+                }
+            }
+            row += 1;
+        }
+    }
+    out
+}
+
+/// A GFM table's delimiter row: "| --- | :-: |".
+fn delimiter_row(line: &str) -> bool {
+    let cells = cells(line);
+    !cells.is_empty()
+        && cells.iter().all(|cell| {
+            let cell = line[cell.clone()].trim();
+            let dashes = cell.trim_start_matches(':').trim_end_matches(':');
+            !dashes.is_empty() && dashes.bytes().all(|b| b == b'-')
+        })
+}
+
+/// The cells of a table row, between its unescaped pipes.
+fn cells(line: &str) -> Vec<Range<usize>> {
+    let mut pipes: Vec<usize> = line
+        .match_indices('|')
+        .map(|(i, _)| i)
+        .filter(|&i| !line[..i].ends_with('\\'))
+        .collect();
+    let body = line.trim();
+    let offset = line.len() - line.trim_start().len();
+    if !body.starts_with('|') {
+        pipes.insert(0, offset.wrapping_sub(1));
+    }
+    if !body.ends_with('|') || body.len() == 1 {
+        pipes.push(offset + body.len());
+    }
+    pipes
+        .windows(2)
+        .map(|pair| pair[0].wrapping_add(1)..pair[1])
+        .collect()
 }
 
 /// Link and image destinations ("](clients/Alice_Morgan)"): hidden source
@@ -399,6 +480,18 @@ mod tests {
         };
         assert_eq!(span("Анна Ёлкина"), "%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина");
         assert_eq!(span("Liora Nesket"), "Liora%20Nesket");
+        // A table cell reads with its column header; a span over the
+        // header maps to the cell, one only over it to nothing.
+        let source = "| Фамилия | **Паспорт** | |\n| --- | :-: | --- |\n| Кий | 46 82 731609 | x |\n|  | a\\|b | |\n\nНе | таблица";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "| Фамилия | **Паспорт** | |\n| --- | :-: | --- |\n| Фамилия: Кий | Паспорт: 46 82 731609 | x |\n|  | Паспорт: a\\|b | |\n\nНе | таблица"
+        );
+        let at = |text: &str| view.text.find(text).unwrap();
+        let span = |range: Range<usize>| &source[view.source_range(range)];
+        assert_eq!(span(at("Фамилия: Кий")..at(" | Паспорт: 46")), "Кий");
+        assert_eq!(span(at("Фамилия: Кий")..at(": Кий")), "");
         // Full-width forms read as ASCII.
         let view = View::new("Паспорт ４６８２\u{3000}７３１６０４.");
         assert_eq!(view.text, "Паспорт 4682 731604.");

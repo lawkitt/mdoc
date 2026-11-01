@@ -2,12 +2,12 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":192,"end":204,"label":"person","score":0.9820827,"text":"Alice_Morgan"},
-    {"start":38,"end":50,"label":"full_name","score":0.9812029,"text":"Alice Morgan"},
-    {"start":302,"end":314,"label":"person","score":0.9644556,"text":"Alice Morgan"},
-    {"start":221,"end":233,"label":"person","score":0.9542227,"text":"Alice Morgan"},
-    {"start":53,"end":74,"label":"email","score":0.9997852,"text":"alice@example.invalid"},
-    {"start":255,"end":276,"label":"email","score":0.99975467,"text":"alice@example.invalid"},
-    {"start":93,"end":114,"label":"email","score":0.99957615,"text":"alice@example.invalid"}
+    {"start":192,"end":204,"label":"person","score":0.9863632,"text":"Alice_Morgan"},
+    {"start":302,"end":314,"label":"person","score":0.97090924,"text":"Alice Morgan"},
+    {"start":38,"end":50,"label":"person","score":0.9701269,"text":"Alice Morgan"},
+    {"start":221,"end":233,"label":"person","score":0.96146154,"text":"Alice Morgan"},
+    {"start":53,"end":74,"label":"email","score":0.9996699,"text":"alice@example.invalid"},
+    {"start":255,"end":276,"label":"email","score":0.99963313,"text":"alice@example.invalid"},
+    {"start":93,"end":114,"label":"email","score":0.9993013,"text":"alice@example.invalid"}
   ]
 }

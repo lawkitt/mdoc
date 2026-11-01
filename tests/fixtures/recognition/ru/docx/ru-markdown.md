@@ -4,7 +4,7 @@ flaw: ru-identifier-category
 issue: 380
 kind: docx
 source: import
-expect: boundary: gold TAX "7701234567"; proposed PHONE "7701234567"
+expect: boundary: gold TAX "7701234567"; proposed IDENTITY "7701234567"
 ---
 | Заказчик | ИНН |
 | --- | --- |

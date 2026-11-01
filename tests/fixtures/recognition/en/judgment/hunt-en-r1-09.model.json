@@ -5,8 +5,9 @@
     {"start":132,"end":142,"label":"person","score":0.9107044,"text":"Respondent"},
     {"start":56,"end":65,"label":"person","score":0.8964329,"text":"Applicant"},
     {"start":372,"end":384,"label":"organization","score":0.94068086,"text":"County Court"},
-    {"start":1151,"end":1159,"label":"organization","score":0.97680235,"text":"Registry"},
-    {"start":1247,"end":1252,"label":"organization","score":0.9256343,"text":"Court"},
-    {"start":1178,"end":1191,"label":"organization","score":0.897336,"text":"Costs Officer"}
+    {"start":1178,"end":1191,"label":"person","score":0.9446894,"text":"Costs Officer"},
+    {"start":1151,"end":1159,"label":"organization","score":0.99413466,"text":"Registry"},
+    {"start":1247,"end":1252,"label":"organization","score":0.98538435,"text":"Court"},
+    {"start":1178,"end":1191,"label":"organization","score":0.8140528,"text":"Costs Officer"}
   ]
 }

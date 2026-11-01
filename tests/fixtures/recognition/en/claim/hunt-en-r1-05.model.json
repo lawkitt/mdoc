@@ -2,17 +2,16 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":77,"end":92,"label":"person","score":0.99719906,"text":"Vesper Drenwick"},
-    {"start":128,"end":152,"label":"organization","score":0.99346113,"text":"Moth Lantern Events Ltd."},
-    {"start":848,"end":861,"label":"person","score":0.99122095,"text":"A. Q. Ternell"},
-    {"start":760,"end":768,"label":"person","score":0.648355,"text":"claimant"},
-    {"start":778,"end":783,"label":"organization","score":0.7779753,"text":"court"},
-    {"start":579,"end":588,"label":"organization","score":0.73335636,"text":"defendant"},
-    {"start":713,"end":722,"label":"organization","score":0.6893056,"text":"defendant"},
-    {"start":907,"end":922,"label":"phone_number","score":0.9999906,"text":"+44 7700 90O842"},
-    {"start":1297,"end":1312,"label":"person","score":0.98858035,"text":"Vesper Drenwick"},
-    {"start":1124,"end":1132,"label":"person","score":0.6043989,"text":"claimant"},
-    {"start":1026,"end":1033,"label":"person","score":0.5897164,"text":"witness"},
-    {"start":1189,"end":1197,"label":"person","score":0.5268905,"text":"claimant"}
+    {"start":77,"end":92,"label":"person","score":0.9973061,"text":"Vesper Drenwick"},
+    {"start":128,"end":152,"label":"organization","score":0.99097973,"text":"Moth Lantern Events Ltd."},
+    {"start":760,"end":768,"label":"person","score":0.80639565,"text":"claimant"},
+    {"start":626,"end":634,"label":"person","score":0.60358137,"text":"customer"},
+    {"start":579,"end":588,"label":"person","score":0.55112076,"text":"defendant"},
+    {"start":579,"end":588,"label":"organization","score":0.78972054,"text":"defendant"},
+    {"start":778,"end":783,"label":"organization","score":0.74186105,"text":"court"},
+    {"start":713,"end":722,"label":"organization","score":0.7213508,"text":"defendant"},
+    {"start":1297,"end":1312,"label":"person","score":0.9856076,"text":"Vesper Drenwick"},
+    {"start":848,"end":861,"label":"person","score":0.98155975,"text":"A. Q. Ternell"},
+    {"start":907,"end":922,"label":"phone_number","score":0.99998546,"text":"+44 7700 90O842"}
   ]
 }

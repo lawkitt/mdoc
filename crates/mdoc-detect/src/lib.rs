@@ -533,6 +533,8 @@ fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>)
             entity.text = source[range.clone()].to_owned();
             (entity.start, entity.end) = (range.start, range.end);
         }
+        // A span over a table header the view inserted names no source text.
+        raw.retain(|entity| entity.start < entity.end);
     }
     raw
 }
@@ -563,9 +565,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .context(&view.text)
         .into_iter()
         .chain(structured::scan(&view.text));
-    detections.extend(rules.map(|mut detection| {
+    detections.extend(rules.filter_map(|mut detection| {
         detection.range = view.source_range(detection.range);
-        detection
+        (!detection.range.is_empty()).then_some(detection)
     }));
     detections
 }
@@ -592,7 +594,10 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
                 continue;
             }
             let range = view.source_range(at..end);
-            if source[range.clone()] != text && !model.iter().any(|d| d.range == range) {
+            if !range.is_empty()
+                && source[range.clone()] != text
+                && !model.iter().any(|d| d.range == range)
+            {
                 found.push(Detection {
                     range,
                     ..*detection
