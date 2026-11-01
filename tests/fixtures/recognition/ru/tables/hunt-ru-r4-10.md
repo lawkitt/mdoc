@@ -1,11 +1,7 @@
 ---
-status: known-flaw
-flaw: invalid-identifier-missed
-issue: 381
+status: pass
 kind: tables
 source: hunt-r4
-expect: miss: IDENTITY "CARD-918264"
-expect: miss: IDENTITY "CARD-827153"
 ---
 # Сводная таблица акционеров для сверки уведомлений
 
