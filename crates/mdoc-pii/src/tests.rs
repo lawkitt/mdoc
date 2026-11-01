@@ -1443,3 +1443,15 @@ fn a_titled_surname_links_as_a_surname_and_miss_is_no_title() {
             .all(|v| v.original.as_ref() != "Rose")
     );
 }
+
+/// #387: signature initials of a known full name join it.
+#[test]
+fn signature_initials_join_their_full_name() {
+    let source = "The assessor, Dr Ysolde Qhenn, signed. She used the initials Y. Q. \
+        on the sheet. Recorded by Ceryn Nove.";
+    let review = ingest_names(source, &["Ysolde Qhenn", "Ceryn Nove"]);
+    let full = review.variant_identity(proposed(&review, "Ysolde Qhenn").id);
+    let initials = proposed(&review, "Y. Q.");
+    assert_eq!(review.variant_identity(initials.id), full);
+    assert_eq!(initials.recognizer(), Some(Recognizer::Propagation));
+}
