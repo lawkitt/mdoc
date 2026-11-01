@@ -224,14 +224,16 @@ fn safe_span(value: &str) -> bool {
 }
 /// A detected span the review can take: like `safe_span`, but a literal
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
-/// is text when replacing the span leaves its block's structure as it was.
+/// is text when replacing the span leaves its block's structure as it was,
+/// and so is a line break inside a wrapped value ("Brin-\nsett").
 fn detected_span(source: &str, range: &Range<usize>) -> bool {
     let value = &source[range.clone()];
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
         && !value.starts_with('_')
         && !value.ends_with('_')
-        && !value.chars().any(|ch| "\n\r[]<>`|".contains(ch))
+        && !value.chars().any(|ch| "[]<>`|".contains(ch))
+        && view::wrapped_value(source, range)
         && plain_text_span(source, range.clone())
 }
 /// Like `safe_span`, but escapes and emphasis characters are allowed; the
