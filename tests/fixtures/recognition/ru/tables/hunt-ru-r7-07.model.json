@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":847,"end":867,"label":"person","score":0.56859547,"text":"Директоров"},
+    {"start":847,"end":867,"label":"person","score":0.5682361,"text":"Директоров"},
     {"start":789,"end":801,"label":"iban","score":0.9295684,"text":"508714632927"},
     {"start":878,"end":890,"label":"iban","score":0.8951566,"text":"508769314271"},
     {"start":1585,"end":1593,"label":"organization","score":0.9238675,"text":"ОГРН"},
-    {"start":2205,"end":2236,"label":"email","score":0.9990034,"text":"registry@svodkreditorov.invalid"}
+    {"start":2205,"end":2236,"label":"email","score":0.99899954,"text":"registry@svodkreditorov.invalid"}
   ]
 }
