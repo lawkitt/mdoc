@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: org-boundary fullwidth-identifier-missed case-number
-issue: 374 405 364
+flaw: org-boundary fullwidth-identifier-missed
+issue: 374 405
 kind: docx
 source: hunt-r2
-expect: miss: CASE "2-8641/2026"
 expect: miss: IDENTITY "４６８２ ７３１６０４"
 expect: miss: TAX "５０８６１４７２９０３１"
 expect: miss: BANK "４０８１７８１０９００００７３１６４２５"
