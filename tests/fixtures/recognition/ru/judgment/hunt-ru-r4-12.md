@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: digit-false-hit case-number
-issue: 375 364
+flaw: digit-false-hit
+issue: 375
 kind: judgment
 source: hunt-r4
-expect: miss: CASE "2-9638/2026"
 expect: false hit: TAX "ФС 086731924"
 ---
 # Исполнительный лист
