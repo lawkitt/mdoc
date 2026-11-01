@@ -584,11 +584,16 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
     if view.is_source() {
         return Vec::new();
     }
+    // Each wording once per category: a wording the model gave two
+    // categories gets both, and the review's conflict rules choose, as they
+    // do where it is visible.
     let mut seen = std::collections::HashSet::new();
+    let proposed: std::collections::HashSet<_> =
+        model.iter().map(|d| (d.range.start, d.range.end)).collect();
     let mut found = Vec::new();
     for detection in model {
         let text = view.text[view.view_range(detection.range.clone())].to_owned();
-        if !seen.insert(text.clone()) {
+        if !seen.insert((text.clone(), detection.category)) {
             continue;
         }
         for (at, _) in view.text.match_indices(&text) {
@@ -598,7 +603,7 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
                 continue;
             }
             let range = view.source_range(at..end);
-            if source[range.clone()] != text && !model.iter().any(|d| d.range == range) {
+            if source[range.clone()] != text && !proposed.contains(&(range.start, range.end)) {
                 found.push(Detection {
                     range,
                     ..*detection
@@ -1078,6 +1083,40 @@ mod tests {
         );
         let source = "Write to [mail](mailto:alice_morgan@example.invalid?subject=a_b).";
         assert_eq!(found(source, &[]), ["alice_morgan@example.invalid"]);
+        let source = "Write to [mail](mailto:alice_morgan&#64;example.invalid).";
+        assert_eq!(found(source, &[]), ["alice_morgan&#64;example.invalid"]);
+        let source = "Write to [mail](mailto:alice_morgan&commat;example.invalid).";
+        assert_eq!(found(source, &[]), ["alice_morgan&commat;example.invalid"]);
+        // Spaces may come before a destination.
+        let source = "Client: Liora Nesket. [x]( https://b.invalid/Liora%20Nesket)";
+        assert_eq!(
+            found(source, &[person(source, "Liora Nesket")]),
+            ["Liora Nesket", "Liora%20Nesket"]
+        );
+    }
+
+    /// A wording the model gave two categories is copied to its other
+    /// spellings with both, whichever came first; the review chooses.
+    #[test]
+    fn a_respelling_keeps_every_category_the_model_gave() {
+        let source = "Amber. [x](%41mber)";
+        let raw = [("person", 0.6), ("organization", 0.9)].map(|(label, score)| RawEntity {
+            start: 0,
+            end: 5,
+            label: label.into(),
+            score,
+            text: "Amber".into(),
+        });
+        let mut found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .filter(|d| &source[d.range.clone()] == "%41mber")
+            .map(|d| (d.category, d.score))
+            .collect();
+        found.sort_by(|a, b| a.1.total_cmp(&b.1));
+        assert_eq!(
+            found,
+            [(Category::Person, 0.6), (Category::Organization, 0.9)]
+        );
     }
     #[test]
     fn titles_role_and_category_words_are_never_proposed() {

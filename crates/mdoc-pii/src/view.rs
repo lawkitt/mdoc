@@ -184,7 +184,20 @@ fn link_destinations(source: &str) -> Vec<Range<usize>> {
     let bytes = source.as_bytes();
     let mut out = Vec::new();
     for (open, _) in source.match_indices("](") {
-        let start = open + 2;
+        // Spaces or tabs, and one line ending, may come first ("]( url)").
+        let mut start = open + 2;
+        while matches!(bytes.get(start), Some(b' ' | b'\t')) {
+            start += 1;
+        }
+        if bytes.get(start) == Some(&b'\r') {
+            start += 1;
+        }
+        if bytes.get(start) == Some(&b'\n') {
+            start += 1;
+            while matches!(bytes.get(start), Some(b' ' | b'\t')) {
+                start += 1;
+            }
+        }
         let mut depth = 0;
         let mut end = start;
         while let Some(&byte) = bytes.get(end) {
@@ -207,17 +220,32 @@ fn link_destinations(source: &str) -> Vec<Range<usize>> {
     out
 }
 
-/// Whether `at` in `destination` is inside an email address
-/// ("mailto:alice_morgan@example.invalid"), whose underscores are its own.
+/// Whether the underscore at `at` in `destination` is in an email address's
+/// local part ("mailto:alice_morgan@example.invalid", "&#64;" or "%40" for
+/// its "@"), whose underscores are its own.
 fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
-    const PARTS: [char; 6] = ['/', '?', '#', '&', '=', ':'];
-    let start = source[destination.start..at]
-        .rfind(PARTS)
-        .map_or(destination.start, |i| destination.start + i + 1);
-    let end = source[at..destination.end]
-        .find(PARTS)
-        .map_or(destination.end, |i| at + i);
-    source[start..end].contains('@')
+    let mut i = at;
+    while i < destination.end {
+        let rest = &source[i..destination.end];
+        if rest.starts_with('@') || rest.starts_with("%40") {
+            return true;
+        }
+        let c = rest.chars().next().unwrap_or_default();
+        if c == '&' {
+            match character_reference(rest) {
+                Some((_, value)) if value == "@" => return true,
+                Some((len, _)) => i += len,
+                // A query's "&" ends the part.
+                None => return false,
+            }
+            continue;
+        }
+        if matches!(c, '/' | '?' | '#' | '=' | ':') {
+            return false;
+        }
+        i += c.len_utf8();
+    }
+    false
 }
 
 /// The percent-encoded character at the start of `text` ("%20", or the
