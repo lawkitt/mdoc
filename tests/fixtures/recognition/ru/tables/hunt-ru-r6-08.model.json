@@ -2,10 +2,10 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":792,"end":836,"label":"full_name","score":0.9867261,"text":"Лидия Арсеньевна Горель"},
+    {"start":792,"end":836,"label":"full_name","score":0.9866749,"text":"Лидия Арсеньевна Горель"},
     {"start":694,"end":736,"label":"full_name","score":0.97737074,"text":"Сергей Михайлович Круц"},
-    {"start":749,"end":769,"label":"bank_account","score":0.96577066,"text":"40817810900007482136"},
-    {"start":849,"end":869,"label":"bank_account","score":0.963984,"text":"40817810900008643217"},
-    {"start":2108,"end":2141,"label":"email","score":0.99890554,"text":"calculation@svodplatezhey.invalid"}
+    {"start":749,"end":769,"label":"bank_account","score":0.96596384,"text":"40817810900007482136"},
+    {"start":849,"end":869,"label":"bank_account","score":0.9641868,"text":"40817810900008643217"},
+    {"start":2108,"end":2141,"label":"email","score":0.99890983,"text":"calculation@svodplatezhey.invalid"}
   ]
 }
