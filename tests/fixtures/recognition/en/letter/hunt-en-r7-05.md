@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: soft-hyphen-name
-issue: 420
+status: pass
+flaw:
+issue:
 kind: letter
 source: hunt-r7
-expect: boundary: gold EMAIL "nerila.\u{200b}reply@purl-fern.invalid"; proposed EMAIL "reply@purl-fern.invalid"
 ---
 # Without prejudice: proposed resolution of the repair account
 

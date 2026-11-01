@@ -5,8 +5,6 @@ issue: 420 426
 kind: ocr
 source: hunt-r7
 expect: false hit: ORG "LOWER EDGE"
-expect: boundary: gold PERSON "Avelina Curn\u{200b}ell"; proposed PERSON "Avelina Curn"
-expect: boundary: gold EMAIL "collection.\u{200b}receipt@quoin-fern.invalid"; proposed EMAIL "receipt@quoin-fern.invalid"
 ---
 FAX COPY / COLLECTION RECORD                 PAGE 1 OF 1
 SENT: 01 FEB 2027  09:38                     RESULT: OK

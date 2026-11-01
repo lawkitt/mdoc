@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":131,"end":143,"label":"person","score":0.9884026,"text":"Avelina Curn"},
-    {"start":222,"end":244,"label":"organization","score":0.98031855,"text":"Quoin Fern Records Ltd"},
-    {"start":178,"end":204,"label":"email","score":0.8040984,"text":"receipt@quoin-fern.invalid"},
+    {"start":131,"end":149,"label":"person","score":0.99692464,"text":"Avelina Curn​ell"},
+    {"start":222,"end":244,"label":"organization","score":0.9867261,"text":"Quoin Fern Records Ltd"},
+    {"start":164,"end":204,"label":"email","score":0.9957187,"text":"collection.​receipt@quoin-fern.invalid"},
     {"start":520,"end":527,"label":"organization","score":0.88798404,"text":"Company"},
     {"start":1060,"end":1070,"label":"organization","score":0.6684475,"text":"LOWER EDGE"}
   ]

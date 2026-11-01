@@ -2,9 +2,9 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":67,"end":80,"label":"person","score":0.9978926,"text":"Nerila O'Venn"},
-    {"start":94,"end":121,"label":"organization","score":0.9930961,"text":"Purl Fern Installations Ltd"},
-    {"start":1057,"end":1071,"label":"person","score":0.9880849,"text":"Meryn MacQuell"},
-    {"start":738,"end":761,"label":"email","score":0.9859364,"text":"reply@purl-fern.invalid"}
+    {"start":67,"end":80,"label":"person","score":0.997144,"text":"Nerila O'Venn"},
+    {"start":94,"end":121,"label":"organization","score":0.99293363,"text":"Purl Fern Installations Ltd"},
+    {"start":728,"end":761,"label":"email","score":0.99861145,"text":"nerila.​reply@purl-fern.invalid"},
+    {"start":1057,"end":1071,"label":"person","score":0.99356186,"text":"Meryn MacQuell"}
   ]
 }
