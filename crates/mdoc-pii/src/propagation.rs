@@ -1052,7 +1052,10 @@ mod tests {
         );
         // Inside an existing mention it is part of it.
         let start = source.find("iara veldune").unwrap();
-        let covered = vec![start - 8..start + 12];
+        let covered = [Range {
+            start: start - 8,
+            end: start + 12,
+        }];
         assert_eq!(case_repeats(source, &names, &covered), ["IARA  VELDUNE"]);
     }
 
