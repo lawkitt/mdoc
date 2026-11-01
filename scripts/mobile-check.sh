@@ -1,31 +1,45 @@
 #!/usr/bin/env bash
-# Usage: scripts/mobile-check.sh
-# The mobile check (ADR 0085), run by the Mac's local CI after lint and test:
-# `cargo check` of mdoc-ffi for iOS (device and Simulator) and Android, so
-# desktop-only code cannot creep into the core; then, when the commit
-# changes crates/, Cargo.lock or apps/ (on a merge ref, against its main),
-# the iOS job: the core, the app and its tests on a Simulator of the pinned
-# Xcode and runtime (scripts/tools.env, ADR 0091), shut down afterwards if
-# this run booted it. macOS only.
-# MDOC_IOS_JOB=always or never overrides the path check.
+# Usage: scripts/mobile-check.sh [--ffi | --ios]
+# The mobile check (ADR 0085, ADR 0091), macOS only. `--ffi`: `cargo check`
+# of mdoc-ffi for iOS (device and Simulator) and Android, so desktop-only
+# code cannot creep into the core; the Mac's local CI runs it in
+# local/macos. `--ios`: the iOS job, when the commit touches the ios area of
+# scripts/ci-areas.txt (on a merge ref, against its main): the core, the app
+# and its tests on a Simulator of the pinned Xcode and runtime
+# (scripts/tools.env), shut down afterwards if this run booted it; the Mac's
+# local CI runs it as local/ios. Neither: both, as `just mobile`.
+# MDOC_IOS_JOB=always or never overrides the area check (local CI sets
+# always: it has already decided).
 source "$(dirname "$0")/lib.sh"
 
 [ "$(uname -s)" = Darwin ] || die "the mobile check runs on macOS"
 
-targets=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-linux-android)
-rustup target add "${targets[@]}"
+case "${1:-}" in
+  --ffi) ffi=true ios=false ;;
+  --ios) ffi=false ios=true ;;
+  '') ffi=true ios=true ;;
+  *) die "usage: scripts/mobile-check.sh [--ffi | --ios]" ;;
+esac
 
-# Android's C dependencies (ring, onig) build with the NDK's clang, for
-# API 31: Android 12, the app's minSdk (ADR 0089).
-ndk=$(scripts/install-android-ndk.sh)
-bin=$ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin
-export CC_aarch64_linux_android=$bin/aarch64-linux-android31-clang
-export AR_aarch64_linux_android=$bin/llvm-ar
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
-for target in "${targets[@]}"; do
-  echo "mobile-check: mdoc-ffi for $target"
-  cargo check --locked -p mdoc-ffi --target "$target"
-done
+ffi_check() {
+  local ndk bin target
+  local targets=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-linux-android)
+  rustup target add "${targets[@]}"
+  # Android's C dependencies (ring, onig) build with the NDK's clang, for
+  # API 31: Android 12, the app's minSdk (ADR 0089).
+  ndk=$(scripts/install-android-ndk.sh)
+  bin=$ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin
+  export CC_aarch64_linux_android=$bin/aarch64-linux-android31-clang
+  export AR_aarch64_linux_android=$bin/llvm-ar
+  export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
+  for target in "${targets[@]}"; do
+    echo "mobile-check: mdoc-ffi for $target"
+    cargo check --locked -p mdoc-ffi --target "$target"
+  done
+}
+
+! $ffi || ffi_check
+$ios || exit 0
 
 # --- the iOS job ------------------------------------------------------------
 
@@ -35,14 +49,11 @@ ios_changed() {
     never) return 1 ;;
   esac
   git rev-parse --verify --quiet HEAD^1 >/dev/null || return 0
-  # Not piped into grep -q: an early exit would fail the pipeline.
-  local changed
-  changed=$(git diff --name-only HEAD^1 HEAD)
-  grep -qE '^(crates/|Cargo\.lock$|apps/)' <<<"$changed"
+  affects ios "$(diff_areas HEAD^1 HEAD)"
 }
 
 if ! ios_changed; then
-  echo "mobile-check: no core or app change; the iOS job is skipped"
+  echo "mobile-check: no core or ios change (scripts/ci-areas.txt); the iOS job is skipped"
   exit 0
 fi
 

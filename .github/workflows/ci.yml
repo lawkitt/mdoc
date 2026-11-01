@@ -5,14 +5,18 @@ name: CI
 # models, the OCR download) stay out of everyday CI; release.yml adds the OCR
 # smoke test to the test jobs through the `smoke-ocr` input.
 #
-# Local CI is the pre-merge test gate (ADR 0082): a PR from a branch in this
-# repository, opened by a user, runs only `lint (ubuntu)` here, and the
-# maintainer's machines post `local/windows` and `local/macos`. Fork and bot
-# (Dependabot) PRs, which local CI never runs, get the full matrix, as do
-# `main`, manual runs and release.yml's call.
+# Local CI is the pre-merge test gate (ADR 0082, ADR 0091): a PR from a
+# branch in this repository, opened by a user, runs only `lint (ubuntu)` here,
+# and the maintainer's machines post `local/windows`, `local/macos`,
+# `local/ios` and `local/android`. Fork and bot (Dependabot) PRs, which local
+# CI never runs, get the full matrix, as do `main`, manual runs and
+# release.yml's call; the areas job skips clippy and test for a change outside
+# the desktop and core areas (scripts/ci-areas.txt).
 on:
   push:
     branches: [main]
+    # The `none` lines of scripts/ci-areas.txt, word for word: files no job
+    # reads (scripts/test-local-ci.sh fails when the two disagree).
     paths-ignore: &ignored
       - "**/*.md"
       - "LICENSE"
@@ -94,21 +98,50 @@ jobs:
       - run: just lint-scripts
       - run: just lint
 
-  # The shipped targets: clippy and the full test suite, as parallel jobs so
-  # the slow Windows test build doesn't wait for clippy (ADR 0070). On
+  # Which areas the change touches (scripts/ci-areas.txt, ADR 0091). Clippy
+  # and test run only for the desktop and core areas: a change to only the
+  # iOS or Android app or their scripts skips them (lint (ubuntu) still runs).
+  # A PR's merge commit is diffed against its base, a push against the commit
+  # before it; a manual run or a release call runs every area. On
   # pull_request only for the PRs local CI skips: from a fork (a deleted
   # fork's head repo is null, so it counts) or opened by anything but a user.
   # The complement of scripts/local-ci.sh's poll() filter, drafts aside. The
   # first two clauses repeat lint (ubuntu)'s release-commit and closed skip.
-  clippy:
-    name: clippy (${{ matrix.runner }})
-    if: &full-matrix >-
+  areas:
+    name: areas
+    if: >-
       ${{ github.event.action != 'closed' &&
       !(github.event_name == 'push' && github.ref_type == 'branch' &&
       startsWith(github.event.head_commit.message, 'release: v')) &&
       (github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name != github.repository ||
       github.event.pull_request.user.type != 'User') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      areas: ${{ steps.areas.outputs.areas }}
+      desktop: ${{ steps.areas.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The commit and its first parent.
+          fetch-depth: 2
+
+      - id: areas
+        run: scripts/ci-areas.sh --github >>"$GITHUB_OUTPUT"
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          RELEASE_CALL: ${{ inputs.release-call }}
+
+  # The shipped targets: clippy and the full test suite, as parallel jobs so
+  # the slow Windows test build doesn't wait for clippy (ADR 0070), when the
+  # areas job says the desktop area changed.
+  clippy:
+    name: clippy (${{ matrix.runner }})
+    needs: areas
+    if: &desktop ${{ needs.areas.outputs.desktop == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +159,8 @@ jobs:
 
   test:
     name: test (${{ matrix.runner }})
-    if: *full-matrix
+    needs: areas
+    if: *desktop
     strategy:
       fail-fast: false
       matrix:

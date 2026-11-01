@@ -25,19 +25,33 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
 
 ### Where tests run
 
-- **Areas.** One path table in the repository splits changes into areas:
-  **desktop** (`src/`, `tests/`, desktop scripts), **core** (`crates/`,
-  `Cargo.lock`), **ios** (`apps/ios/`, the iOS scripts) and **android**
-  (`apps/android/`, the Android scripts). Both local runners and `ci.yml`
-  follow it, and a test fails when a copy disagrees with it. A core change
-  runs every area; a Swift-only PR runs no desktop test or Android job; an
-  Android-only PR runs no iOS job. This replaces the iOS job's `apps/`
-  filter and the Android job's own list.
-- **Statuses.** `local/ios` (the Mac) and `local/android` (the PC) join
-  `local/macos` and `local/windows`; a PR outside an area gets an immediate
-  `success` "not affected". The merge gate is five checks: the four local
-  statuses and `lint (ubuntu)`. The desktop statuses no longer wait for a
-  mobile job.
+- **Areas.** One path table, `scripts/ci-areas.txt`, splits changes into
+  areas: **desktop** (`src/`, `tests/`, `vendor/`, `.github/` and the
+  desktop scripts: release, packaging, smoke tests, local CI), **core**
+  (`crates/`, `Cargo.lock`, the workspace manifest, the toolchain, the
+  justfile and the scripts every job runs: `lib.sh`, `tools.env`, `setup.sh`
+  and what it runs), **ios** (`apps/ios/`, the iOS scripts) and **android**
+  (`apps/android/`, the Android scripts). A file takes the areas of the
+  table's first line that matches it, desktop when none does; a script two
+  areas run belongs to both (`mobile-check.sh`, `install-android-ndk.sh`).
+  Files in no area (`none`: docs) run nothing. A core change runs every
+  area; a Swift-only PR runs no desktop test or Android job; an
+  Android-only PR runs no iOS job. `local-ci.sh`, `mobile-check.sh` and
+  `android-check.sh` read the table; `ci.yml`'s `areas` job reads it
+  through `scripts/ci-areas.sh` and runs hosted clippy and test only for
+  desktop or core. `ci.yml`'s `paths-ignore` is the table's `none` lines,
+  word for word, and `scripts/test-local-ci.sh` fails when they disagree;
+  so `lint (ubuntu)` still runs on a mobile-only PR, and a required check
+  is never left unreported.
+- **Statuses.** `local/ios` (the Mac's iOS job, `just mobile --ios`) and
+  `local/android` (the PC's Android job, `just android`) join `local/macos`
+  (lint, test, and the mobile cargo check, `just mobile --ffi`) and
+  `local/windows` (lint, test). Each status is its own job in the runner's
+  queue, a PR's desktop job before its mobile one, so the desktop statuses
+  never wait for a mobile job. A status outside the PR's areas gets
+  `success` "Not affected: no core or ios change" as soon as GitHub has the
+  merge ref, without queueing; a docs-only PR passes all of them. The merge
+  gate is five checks: the four local statuses and `lint (ubuntu)`.
 - **Mobile tests stay local.** Hosted CI runs no app tests on `main` or on
   the maintainer's PRs (ADR 0082's reason stands). The exceptions are the
   fallback, Dependabot and fork PRs, and release runs, below.
@@ -48,6 +62,13 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
   after 45 minutes, the hosted iOS job. A result posted by the takeover or
   the fallback names where it ran; a runner that comes back replaces it,
   as ADR 0082 says.
+- **Temporary fallback, until rollout item 5.** There is no takeover or
+  hosted mobile job yet. A `local/ios` or `local/android` stuck past ADR
+  0082's thresholds is posted `success` "Hosted fallback: NOT tested; no
+  hosted iOS job yet (ADR 0091 item 5)" (`scripts/local-ci-fallback.sh`),
+  the gap the desktop fallback had for mobile before, so a machine that is
+  off never blocks merges. A runner that comes back tests the head and
+  replaces it. Item 5 removes this.
 - **Hosted mobile jobs.** iOS on `macos-26`: the core, the app, XCTest and
   XCUITest on the pinned Simulator. Android on `ubuntu-latest` with KVM
   (hosted arm64 macOS runners have no nested virtualization): the core, the
@@ -58,9 +79,15 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
   0089's "every recipe runs in Git Bash" with "and on macOS and Linux".
   The Mac's emulator runs `arm64-v8a`, the shipped ABI; the PC's runs
   `x86_64`.
-- **Local runners test `main`.** After its PR queue empties, each runner
-  tests each new `main` commit in the areas that commit touched and posts
-  its statuses there; a red one stops merges, as a red hosted `main` does.
+- **Local runners test `main`.** When its PR queue is empty, each runner
+  takes the `main` commits after the last one it queued, oldest first (the
+  newest 10 after a long time off, the tip on its first run), and tests
+  each in the areas that commit touched (against the commit before it),
+  posting its statuses there; "Not affected" and "Docs only" as on PRs. It
+  is the lowest priority: a PR head that arrives waits for a running `main`
+  job, then goes before the next one. Queued `main` jobs are kept in the
+  runner's state and survive a restart. A red one stops merges, as a red
+  hosted `main` does.
 - **Minified Android build in local CI.** When the android area changes,
   the Android job also builds the minified release-like variant, so R8
   removing classes UniFFI loads at run time fails the PR.
@@ -152,7 +179,9 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
 ## Invariants
 
 - No PR merges without a real result for each affected area: a local run,
-  a takeover or a hosted fallback, never a waiver.
+  a takeover or a hosted fallback, never a waiver. Until rollout item 5,
+  the temporary fallback's "NOT tested" mobile status is the one exception,
+  and says so.
 - Third-party code reaches the maintainer's machines only after review:
   Dependabot and fork PRs build on hosted runners only, and Gradle
   verification metadata is never regenerated locally for an unreviewed
@@ -164,8 +193,8 @@ away for hours, reliable and fast; hosted runners slowed the PR gate before
 
 ## Consequences
 
-- The fleet profile's required `checks` grows from three to five when the
-  new statuses go live (fleet ADR 0017).
+- The fleet profile's required `checks` is the five gate checks (fleet ADR
+  0017); the fleet watcher's own `checks` setting follows it.
 - The Mac runner may run Android jobs as a takeover, adding emulator load
   to the busiest machine. Memory and disk alone are not enough of a gate:
   on 2026-11-01 an Android emulator (about 440% CPU, load average above

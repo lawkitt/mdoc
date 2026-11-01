@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Usage: scripts/local-ci-fallback.sh
 #
-# The hosted fallback for local CI (ADR 0082). When a PR head's local/macos
-# or local/windows status is stuck, it dispatches the full hosted CI run on
-# the PR branch and, when that run's clippy and test jobs for the same OS
-# finish, posts their result under the stuck context, so the merge gate
-# (lint (ubuntu), local/windows, local/macos) stays the same.
+# The hosted fallback for local CI (ADR 0082, ADR 0091). When a PR head's
+# local/macos or local/windows status is stuck, it dispatches the full hosted
+# CI run on the PR branch and, when that run's clippy and test jobs for the
+# same OS finish, posts their result under the stuck context, so the merge
+# gate (lint (ubuntu) and the four local statuses) stays the same. A stuck
+# local/ios or local/android is posted success at once, saying it was not
+# tested: there is no hosted mobile job yet (temporary, below).
 # .github/workflows/local-ci-fallback.yml runs it every 10 minutes and after
 # each CI run, with the workflow's token; it never checks out PR code.
 #
@@ -24,12 +26,18 @@
 # dispatch with no result in 25 min (cancelled or missing) or still queued
 # after 60 min is retried, 3 dispatches in all, then the context gets error.
 # Hosted CI has no `just mobile`: a local/macos it posts says so.
+#
+# TEMPORARY (ADR 0091 rollout item 5 replaces it with the hosted iOS and
+# Android jobs): a stuck local/ios or local/android gets success "Hosted
+# fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5)", the same
+# gap the desktop fallback had for mobile, so a machine that is off never
+# blocks merges. A runner that comes back tests the head and replaces it.
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 repo=${LOCAL_CI_REPO:-lawkitt/mdoc}
 prefix="Hosted fallback"
-contexts=(local/macos local/windows)
+contexts=(local/macos local/windows local/ios local/android)
 no_status_min=${FALLBACK_NO_STATUS_MIN:-15}
 waiting_min=${FALLBACK_WAITING_MIN:-15}
 running_min=${FALLBACK_RUNNING_MIN:-50}
@@ -37,12 +45,23 @@ queued_min=${FALLBACK_QUEUED_MIN:-45}
 retry_min=${FALLBACK_RETRY_MIN:-25}
 queued_retry_min=${FALLBACK_QUEUED_RETRY_MIN:-60}
 max_attempts=${FALLBACK_MAX_ATTEMPTS:-3}
+adr_url=https://github.com/$repo/blob/main/docs/adr/0091-mobile-ci-and-releases.md
 
 # The hosted runner that stands in for each context: ci.yml's shipped matrix.
 hosted_runner() {
   case "$1" in
     local/macos) echo macos-26 ;;
     local/windows) echo windows-latest ;;
+    *) return 1 ;;
+  esac
+}
+
+# The job a mobile context stands for, which nothing hosted runs yet
+# (TEMPORARY, ADR 0091 item 5); false for the desktop contexts.
+untested_job() {
+  case "$1" in
+    local/ios) echo iOS ;;
+    local/android) echo Android ;;
     *) return 1 ;;
   esac
 }
@@ -215,7 +234,7 @@ tick() {
   local sep=$'\x1f'
   while IFS=$'\x1f' read -r pr branch head ctx state desc at seen; do
     branch_of[$pr]=$branch head_of[$pr]=$head
-    if [ "$state" = PENDING ] && [[ $desc == "$prefix"* ]]; then
+    if [ "$state" = PENDING ] && [[ $desc == "$prefix"* ]] && ! untested_job "$ctx" >/dev/null; then
       attempt=$(attempt_of "$desc")
       age=$(((t - at) / 60))
       checks=$(fetch_check_runs "$head") || {
@@ -256,6 +275,13 @@ tick() {
       continue
     fi
     reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t") || continue
+    # TEMPORARY (ADR 0091 item 5): no hosted mobile job to dispatch yet.
+    if job=$(untested_job "$ctx"); then
+      post_over "$head" "$ctx" "$state" "$desc" success \
+        "$prefix: NOT tested; no hosted $job job yet (ADR 0091 item 5); $reason" "$adr_url" &&
+        log "#$pr $ctx: posted untested success ($reason)"
+      continue
+    fi
     want[$pr]=1
     claims+=("$pr$sep$ctx${sep}new${sep}1$sep$reason$sep$state$sep$desc")
   done <<<"$lines"

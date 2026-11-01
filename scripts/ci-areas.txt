@@ -1,0 +1,67 @@
+# The area table (ADR 0091): which CI jobs a change runs. One line per
+# glob: the areas it belongs to (comma-separated), then a GitHub filter glob
+# (`**` crosses directories, `*` and `?` do not). A file takes the areas of
+# the first line that matches it; a file no line matches is desktop.
+#
+#   none     no job runs: docs and files no build reads. These lines are
+#            ci.yml's paths-ignore list, word for word (scripts/test-local-ci.sh
+#            fails when they disagree), and come first, so a README under
+#            apps/ or crates/ is still docs.
+#   ios      the iOS job (local/ios): apps/ios/ and the iOS scripts.
+#   android  the Android job (local/android): apps/android/ and the Android
+#            scripts.
+#   core     every area: the Rust core and what every job builds with (the
+#            toolchain, the workspace manifest and lock, the justfile, and
+#            the shared scripts lib.sh, tools.env and setup.sh with what it
+#            runs). The table itself is core.
+#   desktop  local/macos and local/windows (lint, test, and on the Mac the
+#            mobile cargo check), and hosted clippy and test: src/, tests/,
+#            vendor/, build/, resources/, .github/ and every script not
+#            listed here (the desktop scripts: release, packaging, smoke
+#            tests, local CI and its suites).
+#
+# A script two areas run belongs to both: mobile-check.sh is the Mac's
+# desktop cargo check (`--ffi`) and the iOS job; install-android-ndk.sh
+# serves that cargo check and the Android job.
+#
+# scripts/ci-areas.sh prints the areas a change touches; local-ci.sh,
+# mobile-check.sh, android-check.sh and ci.yml's areas job all read this file.
+
+none                  **/*.md
+none                  LICENSE
+none                  .gitignore
+none                  build/appicon.svg
+none                  docs/**
+none                  .github/workflows/actionlint.yml
+none                  .github/dependabot.yml
+
+ios                   apps/ios/**
+ios                   tools/ios-spike/**
+ios                   scripts/build-ios-core.sh
+ios                   scripts/ios-*.sh
+ios                   scripts/ios-*.swift
+
+android               apps/android/**
+android               tools/android-spike/**
+android               scripts/build-android-core.sh
+android               scripts/install-android-sdk.sh
+android               scripts/android-*.sh
+android               scripts/android-*.py
+
+desktop,ios           scripts/mobile-check.sh
+desktop,android       scripts/install-android-ndk.sh
+
+core                  crates/**
+core                  Cargo.lock
+core                  Cargo.toml
+core                  rust-toolchain.toml
+core                  .cargo/**
+core                  justfile
+core                  scripts/ci-areas.txt
+core                  scripts/ci-areas.sh
+core                  scripts/lib.sh
+core                  scripts/tools.env
+core                  scripts/setup.sh
+core                  scripts/install-actionlint.sh
+core                  scripts/install-shfmt.sh
+core                  scripts/doctor.sh

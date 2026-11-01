@@ -148,8 +148,8 @@ Maintainer actions list the steps on the maintainer's side.
    scaffold, the Android job, the long-job test and `just
    android-device-test` are merged; the Windows runner needs reinstalling
    to run the Android job, and nothing has run on Test Lab yet (quota).
-   *Done when:* a PR touching `apps/android` gets a green `local/windows`
-   with the Android job; `just android-device-test` passes on one Test Lab
+   *Done when:* a PR touching `apps/android` gets a green `local/android`
+   from the Android job; `just android-device-test` passes on one Test Lab
    phone per RAM class; and the long jobs (import, OCR, Find names above
    the floor) survive leaving the app and a process kill on a Test Lab
    Pixel and Samsung phone with no crash or ANR, and a model download does
@@ -170,13 +170,6 @@ apps to internal tracks and drafts
 [mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2–4
 touch separate files and run as parallel lanes; 5 builds on 2 and 3.
 
-2. **[CI] Areas, mobile statuses and testing `main`.** One path table
-   (desktop, core, ios, android) that `local-ci.sh`, `ci.yml` and the check
-   scripts follow, with a test that fails when they disagree; `local/ios`
-   and `local/android` statuses with "not affected" for other PRs; runners
-   test new `main` commits once their queue is empty. *Done when:* a
-   Swift-only PR runs only the iOS job, a core PR runs all four statuses,
-   and the fleet profile requires five checks.
 3. **[CI] Android scripts on macOS and Linux.** `android-check.sh`, the SDK,
    NDK and emulator scripts run on the Mac (`arm64-v8a` emulator) and on
    Ubuntu with KVM as well as the PC; the Android job also builds the
@@ -192,8 +185,10 @@ touch separate files and run as parallel lanes; 5 builds on 2 and 3.
    `just test-release` covers both folders, before the next desktop release.
 5. **[CI] Takeover, hosted mobile jobs and Dependabot.** The Mac takes a
    `local/android` stuck 15 minutes; the hosted fallback runs the hosted
-   iOS (`macos-26`, pinned Xcode) and Android (`ubuntu-latest`, KVM) jobs;
-   Dependabot and fork PRs run them in their areas; a dispatched workflow
+   iOS (`macos-26`, pinned Xcode) and Android (`ubuntu-latest`, KVM) jobs,
+   replacing its temporary "NOT tested" mobile statuses
+   (`untested_job` in `scripts/local-ci-fallback.sh`); the `areas` job in
+   `ci.yml` gates them; Dependabot and fork PRs run them in their areas; a dispatched workflow
    regenerates Gradle verification metadata as a reviewable diff. *Done
    when:* a stuck-runner drill posts each path, and a Gradle Dependabot PR
    goes green after its metadata commit.

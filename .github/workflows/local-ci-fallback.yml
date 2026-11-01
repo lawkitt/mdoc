@@ -3,10 +3,11 @@ name: Local CI fallback
 # When a PR head's local/macos or local/windows status is stuck (the machine
 # is off or asleep, or its runner stopped or is out of capacity), dispatch
 # the full hosted CI run on the PR branch and post its result under that
-# context (ADR 0082). The rules are in scripts/local-ci-fallback.sh. Runs
-# main's copy of the script with this workflow's token and never checks out
-# or runs PR code: the dispatched ci.yml run does that, with its own
-# read-only permissions.
+# context (ADR 0082). A stuck local/ios or local/android is posted success
+# "NOT tested" until the hosted mobile jobs exist (temporary, ADR 0091). The
+# rules are in scripts/local-ci-fallback.sh. Runs main's copy of the script
+# with this workflow's token and never checks out or runs PR code: the
+# dispatched ci.yml run does that, with its own read-only permissions.
 on:
   schedule:
     # GitHub may start a scheduled run late; the thresholds allow for it.
@@ -36,7 +37,7 @@ jobs:
       checks: read
       contents: read
       pull-requests: read
-      # Post local/macos and local/windows.
+      # Post local/macos, local/windows, local/ios and local/android.
       statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

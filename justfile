@@ -89,7 +89,7 @@ android-setup:
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
-# The Android job: core, JVM parity tests, app, emulator tests, when they changed; Windows local CI runs it (ADR 0089)
+# The Android job: core, JVM parity tests, app, emulator tests, when the android area changed; Windows local CI runs it as local/android (ADR 0089, 0091)
 android:
     scripts/android-check.sh
 
@@ -105,9 +105,9 @@ android-device-test *devices:
 android-core:
     scripts/build-android-core.sh
 
-# cargo check of mdoc-ffi for iOS and Android; the Mac's local CI runs it (ADR 0085)
-mobile:
-    scripts/mobile-check.sh
+# cargo check of mdoc-ffi for iOS and Android (--ffi), then the iOS job when the ios area changed (--ios); the Mac's local CI runs each (ADR 0085, 0091)
+mobile *args:
+    scripts/mobile-check.sh {{args}}
 
 # Build this machine's installers into dist/
 package:

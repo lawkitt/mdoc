@@ -421,14 +421,16 @@ and Windows x64. Other platforms build from source, unsupported.
 newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038](docs/adr/0038-update-check.md)).
 
 **Local CI**: the pre-merge test gate on the maintainer's Windows PC and Mac:
-a runner that tests PR heads from branches in the repository and posts a
-local status for each OS. Hosted CI keeps the Ubuntu lint on PRs, `main` and
-releases ([ADR 0082](docs/adr/0082-local-ci.md)).
+a runner on each that tests PR heads from branches in the repository, and
+new `main` commits when no PR waits, and posts a desktop and a mobile local
+status. Hosted CI keeps the Ubuntu lint on PRs, `main` and releases
+([ADR 0082](docs/adr/0082-local-ci.md)).
 
-**Local status**: the `local/windows` or `local/macos` commit status local CI
-posts on a PR head; with `lint (ubuntu)`, the checks a code PR needs green.
-`local/ios` and `local/android` join them as
-[ADR 0091](docs/adr/0091-mobile-ci-and-releases.md) lands.
+**Local status**: a commit status local CI posts on a PR head or `main`
+commit: `local/windows` and `local/macos` (desktop), `local/android` and
+`local/ios` (mobile), each from its own job; "Not affected" when the change
+is outside its area. With `lint (ubuntu)`, the five checks a code PR needs
+green ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 
 **CI checkout**: local CI's own clone of the repository on a machine, separate
 from lanes and worktrees, with its own `target/`.
@@ -505,18 +507,19 @@ release after the first, to catch what simulators and emulators miss.
 phones by RAM class, and a friend's phone weekly by hand ([ADR 0089](docs/adr/0089-android-app.md)).
 
 **Android job**: the run that builds the Android core and app and runs the
-JVM parity tests and the emulator tests, when a PR touches the core or the
-android area: today inside `local/windows`, and as the `local/android`
-status once [ADR 0091](docs/adr/0091-mobile-ci-and-releases.md) lands, on
-the PC, the Mac by takeover, or hosted Linux ([ADR 0089](docs/adr/0089-android-app.md)).
+JVM parity tests and the emulator tests, when a change touches the core or
+the android area (`just android`); posted as `local/android` from the PC,
+and later the Mac by takeover or hosted Linux
+([ADR 0089](docs/adr/0089-android-app.md), [ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 
 **iOS job**: the Mac's build of the iOS core and app with XCTest and
-XCUITest on the pinned Simulator, when a PR touches the core or the ios
-area; posted as `local/ios` ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+XCUITest on the pinned Simulator, when a change touches the core or the ios
+area (`just mobile --ios`); posted as `local/ios` ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 
-**Area**: one of desktop, core, ios and android, from the repository's one
-path table; a change runs the jobs of the areas it touches, and a core
-change runs all of them ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+**Area**: one of desktop, core, ios and android, from the one path table
+`scripts/ci-areas.txt`; a change runs the jobs of the areas it touches, a
+core change runs all of them, and files in no area (docs) run none
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 
 **Takeover**: the Mac's local CI running a `local/android` job the PC left
 stuck for 15 minutes, before the hosted fallback
