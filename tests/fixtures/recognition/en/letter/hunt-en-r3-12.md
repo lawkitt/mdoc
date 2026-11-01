@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: email-local-part-boundary
 issue: 412
 kind: letter
 source: hunt-r3
-expect: boundary: gold EMAIL "eira.o'venn@copper-skein.invalid"; proposed EMAIL "venn@copper-skein.invalid" ×2
 ---
 Subject: Re: correction to the delivery acknowledgement
 
