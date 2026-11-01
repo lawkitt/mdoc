@@ -43,54 +43,62 @@ Fixing PII recognition flaws on the fly
 model misses things no threshold recovers: neither demo's home address is
 proposed at any score and it has no date-of-birth label; a lone "Марина"
 scores 0.29, under the 0.5 cut ([probe](docs/design/roadmap-grill-2026-11-01.md#probe-what-the-model-sees-in-the-demos)).
-A correction pipeline after the model fixes them in layers: a rule pack,
-propagation in the document, the user's own lists, and a fixture for every
-flaw. Items 3–5 wait for item 1's ADR. rc.1, then full acceptance on the
-last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
-Record: [2026-11-01 grill](docs/design/roadmap-grill-2026-11-01.md).
+A correction pipeline after the model fixes them in layers
+([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md)), and a flaw
+hunt loop finds, records and fixes them with the maintainer away
+([ADR 0093](docs/adr/0093-flaw-hunt-loop.md)): Codex hunters, an Opus
+curator and Opus fixers, a strict fixture ratchet and a private holdout.
+Items 3 and 4 run as loops once item 2 merges. rc.1, then full acceptance
+on the last RC; no stable without it ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
+[recognition grill](docs/design/recognition-grill-2026-11-01.md).
 
-1. **[Detection] Recognition design grill.** *From the 2026-11-01 grill.*
-   In a fresh session: the rule pack's format and home, how propagation
-   proposes, the user lists' scope and storage, the Case category's UI,
-   and whether name plus patronymic is a merge signal (U27, would amend
-   [ADR 0080](docs/adr/0080-merge-hint.md)). *Done when:* an ADR records
-   the pipeline and items 3–5 have Done-whens that follow it.
-2. **[Detection] Detection gate in local CI.** *From the 2026-11-01 grill.*
-   The Mac job runs the qualification corpus against the pinned FP16 model
-   on every PR touching `mdoc-detect`, `mdoc-pii` or the rule pack; each
-   fixture asserts its expected spans. The demos and #301's spans join as
-   failing fixtures. Runs beside item 1. *Done when:* a PR that breaks a
-   fixture fails local CI, and a flaw counts as fixed only when its
-   fixture passes.
-3. **[Detection] Rule pack.** *From the 2026-11-01 grill (#301).* Data,
-   not code, replacing `mdoc-detect`'s hardcoded lists: dates only in a
-   personal context (born, DOB, дата рождения, д.р.) as Date; claim and
-   case numbers in a labelled context as a new Case category (`CASE_1`);
-   EN and RU addresses; titles, roles and defined terms never proposed;
-   HTML entities decoded before detection and readiness
-   (`Ann&#97; Petrova`). *Done when:* both demos' Copy for AI hold no
-   address, date of birth or case number, and the gate passes.
+2. **[Detection] Detection gate in local CI.** *From the 2026-11-01
+   grills.* The fixture format of ADR 0093
+   (`tests/fixtures/recognition/`, one file per fixture with its Mac
+   snapshot), the hybrid and render corpora imported and re-marked by the
+   [guide](tests/fixtures/recognition/GUIDE.md), `just recognize <file.md>
+   [--gold] [--snapshot]`, snapshot-based tests in `just test`, and the
+   model run in `local/macos` (stale snapshots fail, strict `known-flaw`).
+   *Done when:* a PR breaking a fixture fails local CI, and #301's and the
+   demos' spans are `known-flaw` fixtures.
+3. **[Detection] Rule pack.** *From the 2026-11-01 grills (#301).* ADR
+   0092's TOML pack replaces `mdoc-detect`'s hardcoded lists and
+   `guess_category`'s shapes; personal-context dates, the Case number
+   category (`CASE_1`) in Settings and the popup, anchored EN and RU addresses,
+   `never` for titles, roles and defined terms, HTML entities decoded
+   before detection and readiness. Groundwork (loader, lists moved, no
+   behaviour change) starts beside item 2; then a fix loop on hunted flaw
+   classes. *Done when:* both demos' Copy for AI hold no address, date of
+   birth or case number; every rule-pack flaw class is closed or
+   `model-limit`; the rule-pack cells are saturated.
 4. **[Detection] Propagation in the document.** *From the 2026-11-01
-   grill.* An applied or marked name's parts and variants elsewhere
-   (surname or first name alone, initials, Russian inflections) become
-   proposals for the same identity. *Done when:* as item 1's ADR sets, with
-   fixtures in the gate.
-5. **[Detection] The user's own lists.** *From the 2026-11-01 grill and
-   the competitor scan.* Never-propose from Keep, always-propose from a
-   manual mark (a project codename; the firm's own name, courts). *Done
-   when:* as item 1's ADR sets.
+   grills (U27).* ADR 0092's propagation: an applied or marked name's
+   forms (surname or first name alone, first name + patronymic, surname
+   with initials, inflections, nicknames) become proposals linked to it
+   when the candidate is unique. *Done when:* in the Russian demo,
+   Павлова's six aliases become one and "Марина" links; every propagation
+   flaw class is closed or `model-limit`; those cells are saturated.
+5. **[Detection] The user's own lists.** *From the 2026-11-01 grills and
+   the competitor scan.* ADR 0092's Never (from Keep) and Always (from a
+   manual mark) per case, and user-wide lists in Settings › Detection, in
+   the keychain-protected store. *Done when:* a Keep in case A doesn't hide
+   the wording in case B; the user-wide lists apply everywhere and survive
+   a restart.
 6. **[Leaks] Hidden Office content and the restored-text clipboard.**
-   *From the competitor scan and the 2026-11-01 fix run.* Check what
-   AnyDoc carries from DOCX comments, deleted tracked changes and document
-   properties, then drop, include and scan, or warn; and mark desktop
-   copies of restored text concealed or transient, as iOS does since
+   *From the competitor scan and the 2026-11-01 grills.* Check what the
+   pinned AnyDoc carries from DOCX comments, deleted tracked changes and
+   document properties, then drop all three (the import note counts
+   dropped comments); mark desktop copies of restored text concealed and
+   transient (macOS pasteboard types; Windows clipboard-history and
+   monitor exclusion), as iOS does since
    [#321](https://github.com/lawkitt/mdoc/issues/321). *Done when:* a DOCX
    fixture with an author name in a comment and a deleted change sends
-   neither to the AI unreviewed, and Universal Clipboard and clipboard
-   managers skip restored text.
+   neither to the AI, and Universal Clipboard, Windows clipboard history
+   and clipboard managers skip restored text.
 
 The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
-runs as an overnight hub during 0.4.0, outside the item count.
+runs as a separate overnight hub during 0.4.0, outside the item count.
 
 ## iOS 0.1
 

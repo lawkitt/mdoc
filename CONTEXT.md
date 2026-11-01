@@ -188,15 +188,50 @@ needs it ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)). Signed
 macOS builds move it to the data protection keychain, which never asks
 ([ADR 0045](docs/adr/0045-prompt-free-case-key.md)).
 
-**Variant proposal**: a suggested link between a shorter or inflected form
-("Ms Raman", "Raman's", "Рамана") and a known identity. Always reviewed, never
-linked automatically; a first name alone is not proposed
-([ADR 0068](docs/adr/0068-short-and-inflected-name-variants.md)).
+**Variant proposal**: a suggested form ("Ms Raman", "Raman's", "Рамана",
+"Марина", "Мариша") of a known identity. A form of an applied or marked
+name with exactly one candidate joins that identity as a proposal; with
+two or more it stays separate with a merge hint
+([ADR 0068](docs/adr/0068-short-and-inflected-name-variants.md),
+[ADR 0092](docs/adr/0092-recognition-correction-pipeline.md)).
+
+**Propagation**: proposing an applied or marked name's forms elsewhere in
+the document (recognizer `Propagation`, ADR 0092).
+
+**Rule pack**: the TOML data in `crates/mdoc-detect/rules/` that corrects
+the model: `never`, `context`, `shape`, `span` and `variants` sections
+(ADR 0092).
+
+**Case number**: the category of a claim or case number after a label
+(Claim No, Дело №); aliases `CASE_1`. Code: `Category::CaseNumber`, so it
+never reads as a saved case (ADR 0092).
+
+**Always and Never lists**: wordings always or never proposed, per case
+(from manual marks and Keep) and user-wide (Settings › Detection; ADR 0092).
+
+**Flaw**: a miss, false hit or wrong boundary against the
+[annotation guide](tests/fixtures/recognition/GUIDE.md); a **flaw class**
+is the flaws one fix cures, one issue each (label `flaw`,
+[ADR 0093](docs/adr/0093-flaw-hunt-loop.md)).
+
+**Recognition fixture**: one synthetic document with `⟦CATEGORY|text⟧`
+gold, a status (`pass`, `known-flaw`, `model-limit`) and a **snapshot**,
+its raw model output made on the Mac (ADR 0093).
+
+**Detection gate**: the `local/macos` model run over every recognition
+fixture; a stale snapshot or an unexpected result fails it (ADR 0093).
+
+**Hunter, curator, fixer**: the flaw hunt loop's roles: Codex writes
+documents and reports flaws, an Opus curator audits gold and lands fixtures,
+an Opus fixer fixes a flaw class (ADR 0093).
+
+**Holdout**: recognition documents kept in the private
+`lawkitt/mdoc-holdout`, run only by the hub, to catch overfitting.
 
 **Merge hint**: a dismissible line under an identity in the Replacements
 panel, "Looks like Maya Bennett · Merge", for two identities that very likely
-name the same subject. Never applied automatically; Merge is one undo step;
-no score is shown ([ADR 0080](docs/adr/0080-merge-hint.md)).
+name the same subject when no form links them. Never applied automatically;
+Merge is one undo step; no score is shown ([ADR 0080](docs/adr/0080-merge-hint.md)).
 
 **Decision history**: the document's list of pseudonymization decisions with
 times, from the header clock button; a click travels undo to that entry.

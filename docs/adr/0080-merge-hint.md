@@ -2,6 +2,8 @@
 
 Status: Accepted, 2026-10-29. Amends
 [ADR 0068](0068-short-and-inflected-name-variants.md) (proposed forms).
+Amended by [ADR 0092](0092-recognition-correction-pipeline.md) (first name
++ patronymic and fully matching initials are signals).
 
 ## Problem
 
