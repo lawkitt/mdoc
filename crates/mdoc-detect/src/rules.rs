@@ -474,7 +474,12 @@ impl Pack {
     /// names anyone on its own, ignoring case.
     pub(crate) fn never(&self, word: &str) -> bool {
         let word = word.to_lowercase();
-        self.never.iter().any(|entry| entry.has(&word))
+        self.never
+            .iter()
+            // Public-body words only veto spans that contain them: "Суднев"
+            // alone is a surname, not a court.
+            .filter(|entry| entry.anywhere_in.is_empty())
+            .any(|entry| entry.has(&word))
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -486,8 +491,13 @@ impl Pack {
                 .filter(|word| !word.is_empty())
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
+        // A legal form makes it a company, whatever else it says ("Garden
+        // Court Ltd").
+        let company = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
-            (entry.anywhere_in.contains(&category) && lowercase.iter().any(|w| entry.has(w)))
+            (!company
+                && entry.anywhere_in.contains(&category)
+                && lowercase.iter().any(|w| entry.has(w)))
                 || (entry.last_word_of.contains(&category)
                     && lowercase.last().is_some_and(|w| entry.has(w)))
         });
@@ -641,6 +651,22 @@ impl Pack {
             }
         }
         found
+    }
+
+    /// Whether `text` has an organization's legal form (the ORG shape's
+    /// `guess_words`: Ltd, LLC, ООО…).
+    fn legal_form(&self, text: &str) -> bool {
+        self.shapes
+            .iter()
+            .filter(|shape| shape.category == Category::Organization)
+            .any(|shape| {
+                text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+                    shape
+                        .guess_words
+                        .iter()
+                        .any(|form| form.eq_ignore_ascii_case(word))
+                })
+            })
     }
 
     /// The first category, in pack order, whose guesses take a manual
@@ -1153,6 +1179,11 @@ mod tests {
             ("Ofcom", Category::Organization),
             ("Верховный Суд Российской Федерации", Category::Organization),
             ("Министерства юстиции", Category::Organization),
+            ("Addresses", Category::Address),
+            ("Technical Secretaries", Category::Person),
+            ("Ministries of Justice", Category::Organization),
+            ("Managing Director", Category::Person),
+            ("Независимый эксперт", Category::Person),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
@@ -1166,6 +1197,16 @@ mod tests {
                 Category::Organization,
             ),
             ("14 Fennel Court, Lincoln", Category::Address),
+            ("Garden Court Ltd", Category::Organization),
+            ("Northbridge Department Store Ltd", Category::Organization),
+            ("Cedar Arts Council", Category::Organization),
+            ("ООО «Судак»", Category::Organization),
+            ("John Clerk", Category::Person),
+            ("Суднев", Category::Person),
+            ("Банков", Category::Person),
+            ("Компаниец", Category::Person),
+            ("Banks", Category::Person),
+            ("Адресат", Category::Organization),
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }

@@ -53,23 +53,37 @@ words = [
 ]
 
 # Defined terms: "Общество", "Компания", "Организация" stand for a party
-# named elsewhere (issue #390), as stems ("Обществу", "Компании").
-[[never]]
-match = "stem"
-ending = 3
-words = ["обществ", "компани", "организаци"]
-
-# Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
-# name no one (issue #379).
+# named elsewhere (issue #390). Their case forms are listed whole, so
+# surnames such as "Компаниец" stay.
 [[never]]
 match = "whole"
-words = ["снилс", "инн", "огрн", "огрнип", "кпп", "бик"]
+words = [
+    "общество", "общества", "обществу", "обществом", "обществе", "компания",
+    "компании", "компанию", "компанией", "организация", "организации",
+    "организацию", "организацией",
+]
 
-# The same for words that inflect ("Телефона", "Адресу"), as stems.
+# Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
+# name no one (issue #379). Case forms are listed whole, so "Банков" and
+# "Адресат" stay.
 [[never]]
-match = "stem"
-ending = 3
-words = ["телефон", "адрес", "паспорт", "банк"]
+match = "whole"
+words = [
+    "снилс", "инн", "огрн", "огрнип", "кпп", "бик", "телефон", "телефона",
+    "телефону", "телефоном", "телефоне", "адрес", "адреса", "адресу",
+    "адресом", "адресе", "паспорт", "паспорта", "паспорту", "паспортом",
+    "паспорте", "банк", "банка", "банку", "банком", "банке",
+]
+
+# Words that make a job title of a role: "Независимый эксперт", "Главный
+# бухгалтер" name no one (guide rule 8). Listed whole.
+[[never]]
+match = "whole"
+words = [
+    "независимый", "независимого", "независимому", "главный", "главного",
+    "главному", "старший", "старшего", "старшему", "генеральный",
+    "генерального", "генеральному", "ведущий", "ведущего", "ведущему",
+]
 
 # Codes of law and the country: "ГК РФ", "ГПК РФ" are references, not
 # organizations (issue #378).

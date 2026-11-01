@@ -62,8 +62,10 @@ words = ["people", "person", "individual"]
 match = "whole"
 words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this", "that", "said"]
 
-# Job roles that end a phrase: "Technical Reviewer", "Costs Officer",
-# "Administrative Team" are roles, not people or organizations, also alone.
+# Job roles: never a name alone ("Surveyor"), and an organization span
+# ending in one is a team or office, not a company ("Costs Officer",
+# "Administrative Team"). A person's span keeps a surname that is also a
+# role ("John Clerk").
 [[never]]
 match = "plural"
 words = [
@@ -71,27 +73,50 @@ words = [
     "expert", "registrar", "assessor", "inspector", "adjudicator", "mediator",
     "arbitrator", "clerk",
 ]
-last_word_of = ["PERSON", "ORG"]
+last_word_of = ["ORG"]
 
-# Category words: "Email", "Bank", "Address" in a table header name no one
-# (issue #379).
+# The same roles' -ies plurals.
 [[never]]
-match = "plural"
+match = "whole"
+words = ["secretaries"]
+
+# Words that make a job title of a role: "Technical Reviewer", "Managing
+# Director" name no one (guide rule 8). Matched whole.
+[[never]]
+match = "whole"
 words = [
-    "email", "e-mail", "phone", "telephone", "address", "organisation",
-    "organization", "bank", "account", "passport", "name",
+    "technical", "managing", "senior", "junior", "chief", "deputy",
+    "assistant", "executive", "independent", "administrative",
+]
+
+# Category words: "Email", "Address", "Bank" in a table header name no one
+# (issue #379). Matched whole, with their plurals listed, so the surname
+# "Banks" stays.
+[[never]]
+match = "whole"
+words = [
+    "email", "emails", "e-mail", "phone", "phones", "telephone", "address",
+    "addresses", "organisation", "organisations", "organization",
+    "organizations", "bank", "account", "accounts", "passport", "name",
+    "names",
 ]
 
 # Courts and public bodies are never marked (the fixture guide's rule 8):
 # an organization span with one of these words anywhere is dropped ("County
-# Court", "Ministry of Justice", "Employment Tribunal", "Ofcom"; issue #378).
+# Court", "Ministry of Justice", "Employment Tribunal", "Ofcom"; issue #378)
+# unless it has a legal form ("Garden Court Ltd" is a company).
 [[never]]
 match = "plural"
 words = [
-    "court", "tribunal", "ministry", "registry", "department", "council",
-    "ombudsman", "government", "parliament", "police", "ofcom", "ofgem",
-    "ofwat", "hmrc", "acas",
+    "court", "tribunal", "ministry", "registry", "ombudsman", "government",
+    "parliament", "police", "ofcom", "ofgem", "ofwat", "hmrc", "acas",
 ]
+anywhere_in = ["ORG"]
+
+# The same bodies' -ies plurals ("Ministries of Justice").
+[[never]]
+match = "whole"
+words = ["ministries", "registries"]
 anywhere_in = ["ORG"]
 
 # English legal forms mark a manual selection as an organization
