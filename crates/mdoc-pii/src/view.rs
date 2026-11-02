@@ -347,10 +347,14 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
             })
             .collect();
         row += 2;
-        while let Some(&(start, line)) = lines
-            .get(row)
-            .filter(|(_, line)| line.contains('|') && !block_start(line))
-        {
+        // Up to the next table's header, which a delimiter row follows.
+        while let Some(&(start, line)) = lines.get(row).filter(|(_, line)| {
+            line.contains('|')
+                && !block_start(line)
+                && !lines
+                    .get(row + 1)
+                    .is_some_and(|(_, next)| delimiter_row(next))
+        }) {
             for (cell, name) in cells(line).into_iter().zip(&names) {
                 let Some(name) = name else { continue };
                 let value = &line[cell.clone()];
@@ -784,6 +788,10 @@ mod tests {
             "| Notes | ИНН | Name |\n| --- | --- | --- |\n| x\\\\| ИНН: 508614729031 | Bob 1234567890 |\n# Итог | 1234567890\n- a | 1234567890"
         );
         assert!(View::new("| ИНН |\n| ::---:: |\n| 1234567890 |").is_source());
+        assert_eq!(
+            View::new("| ИНН |\n| --- |\n| 7701234567 |\n| Цена |\n| --- |\n| 1234567890 |").text,
+            "| ИНН |\n| --- |\n| ИНН: 7701234567 |\n| Цена |\n| --- |\n| 1234567890 |"
+        );
         assert!(View::new("# ИНН | x\n| --- | --- |\n| 1234567890 | 1 |").is_source());
         assert_eq!(header_name(" **Account No.:** "), "account");
         assert_eq!(header_name("Расчётный  счёт"), "расчетный счет");
