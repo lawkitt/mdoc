@@ -49,8 +49,11 @@ if [ -n "$pr" ]; then
     awk -F '\t' -v pr="$pr" -v branch="$branch" -v sha="$sha" '
       $2 == branch || $3 == sha || index($2, "gh-readonly-queue/") == 1 && $2 ~ ("/pr-" pr "-") { print $1 }
     ') || die "cannot list the runs"
+  # A failed query stops the fetch: skipping that run would apply an older
+  # run's snapshots.
   for id in $candidates; do
-    if [ -n "$(snapshot_artifacts "$id")" ]; then
+    names=$(snapshot_artifacts "$id") || die "cannot list run $id's artifacts"
+    if [ -n "$names" ]; then
       run=$id
       break
     fi
@@ -58,7 +61,8 @@ if [ -n "$pr" ]; then
   [ -n "$run" ] || die "no run of PR #$pr has regenerated snapshots (a passing gate uploads none)"
 fi
 
-[ -n "$(snapshot_artifacts "$run")" ] || die "run $run has no detection-snapshots artifact (passed, expired or not a detection run)"
+names=$(snapshot_artifacts "$run") || die "cannot list run $run's artifacts"
+[ -n "$names" ] || die "run $run has no detection-snapshots artifact (passed, expired or not a detection run)"
 # Which run, so a reviewer can tell it is the one wanted (a newer run may
 # have passed).
 gh run view "$run" --json workflowName,headBranch,headSha,createdAt \

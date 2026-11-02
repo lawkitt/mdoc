@@ -26,6 +26,7 @@ case "$*" in
   'api repos/{owner}/{repo}/actions/runs/'*)
     id=${2#repos/\{owner\}/\{repo\}/actions/runs/}
     id=${id%%/*}
+    [ "$id" != "${GH_API_FAILS:-}" ] || { echo "HTTP 503" >&2 && exit 1; }
     awk -v id="$id" '$1 == id { print $2 }' "$GH_ARTIFACTS" ;;
   "run download "*" --pattern detection-snapshots-* --dir "*)
     while read -r path; do
@@ -65,6 +66,15 @@ fetch 523 || fail "PR fetch exited non-zero: $(cat "$tmp/out")"
 grep -q '^run download 9000000003 ' "$GH_LOG" || fail "PR fetch downloaded: $(grep download "$GH_LOG")"
 grep -q '^run 9000000003: ' "$tmp/out" || fail "does not name the run: $(cat "$tmp/out")"
 grep -q 'wrote 1 snapshot(s) from run 9000000003' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
+
+# A newer run whose artifacts cannot be listed stops the fetch, rather than
+# falling back to an older run's snapshots.
+GH_API_FAILS=9000000004 fetch 523 && fail "a failed artifact query fell back to an older run"
+grep -q "cannot list run 9000000004's artifacts" "$tmp/out" || fail "query-failure message: $(cat "$tmp/out")"
+! grep -q '^run download' "$GH_LOG" || fail "a failed artifact query still downloaded"
+[ "$(cat "$fixture.model.json")" = old ] || fail "a failed artifact query wrote a snapshot"
+GH_API_FAILS=9000000005 fetch 9000000005 && fail "a failed artifact query of the run fetched"
+grep -q "cannot list run 9000000005's artifacts" "$tmp/out" || fail "run query-failure message: $(cat "$tmp/out")"
 
 # A PR URL and a run URL; a long number is a run.
 fetch https://github.com/lawkitt/mdoc/pull/523 || fail "PR URL: $(cat "$tmp/out")"
