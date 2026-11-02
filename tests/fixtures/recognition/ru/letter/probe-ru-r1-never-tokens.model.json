@@ -1,0 +1,29 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":159,"end":177,"label":"person","score":0.7814974,"text":"ДД.ММ.ГГГГ"},
+    {"start":425,"end":440,"label":"person","score":0.7590468,"text":"ДД.ММ.ГГ."},
+    {"start":292,"end":311,"label":"person","score":0.6910805,"text":"ДД.ММ.ГГГГ."},
+    {"start":50,"end":56,"label":"organization","score":0.9899864,"text":"ЭДО"},
+    {"start":749,"end":755,"label":"organization","score":0.9880849,"text":"ЭДО"},
+    {"start":572,"end":578,"label":"organization","score":0.84117436,"text":"ЕИО"},
+    {"start":885,"end":901,"label":"organization","score":0.5876473,"text":"Интернет"},
+    {"start":516,"end":522,"label":"organization","score":0.5496708,"text":"МЧД"},
+    {"start":477,"end":483,"label":"organization","score":0.5146747,"text":"КЭП"},
+    {"start":352,"end":367,"label":"passport_number","score":0.9704087,"text":"ХХ.ХХ.ХХ."},
+    {"start":1733,"end":1773,"label":"person","score":0.9620363,"text":"Глеб Арсеньевич Тувин"},
+    {"start":1010,"end":1037,"label":"person","score":0.9462997,"text":"Ирина Павловна"},
+    {"start":1304,"end":1310,"label":"organization","score":0.8464508,"text":"АПС"},
+    {"start":1292,"end":1300,"label":"organization","score":0.8255898,"text":"СОУЭ"},
+    {"start":1447,"end":1474,"label":"organization","score":0.7889086,"text":"АСУ «Экспресс»"},
+    {"start":1243,"end":1275,"label":"organization","score":0.7384805,"text":"АО «ТТН-Логистик»"},
+    {"start":1390,"end":1400,"label":"organization","score":0.6971968,"text":"Сетка"},
+    {"start":1158,"end":1164,"label":"organization","score":0.6743722,"text":"ТТН"},
+    {"start":1150,"end":1154,"label":"organization","score":0.66562796,"text":"ТН"},
+    {"start":1677,"end":1707,"label":"organization","score":0.6004227,"text":"КонсультантПлюс"},
+    {"start":1071,"end":1077,"label":"organization","score":0.5854567,"text":"ТКО"},
+    {"start":1186,"end":1201,"label":"organization","score":0.56973296,"text":"Бета-Ойл"},
+    {"start":1170,"end":1176,"label":"organization","score":0.52444035,"text":"АЗС"}
+  ]
+}

@@ -117,6 +117,10 @@ struct ShapeEntry {
     /// ("повести «…»", not "Роман «…»" or "рассказал «…»").
     #[serde(default)]
     quotes_after: Vec<String>,
+    /// Words as written: with them, a quoted span is a title or product
+    /// after one of these words too ("ПО «…»", "АСУ «…»").
+    #[serde(default)]
+    quotes_after_words: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -279,6 +283,7 @@ struct Shape {
     guess_words: Vec<String>,
     quotes: Vec<(char, char)>,
     quotes_after: Vec<String>,
+    quotes_after_words: Vec<String>,
 }
 
 impl Pack {
@@ -360,6 +365,7 @@ impl Pack {
                     && entry.guess_words.is_empty()
                     && entry.forbid_quotes.is_empty()
                     && entry.quotes_after.is_empty()
+                    && entry.quotes_after_words.is_empty()
                 {
                     return Err(at("no rules".into()));
                 }
@@ -378,6 +384,16 @@ impl Pack {
                     .collect::<Result<Vec<_>, _>>()?;
                 if !entry.quotes_after.is_empty() && quotes.is_empty() {
                     return Err(at("quotes_after needs forbid_quotes".into()));
+                }
+                if !entry.quotes_after_words.is_empty() && quotes.is_empty() {
+                    return Err(at("quotes_after_words needs forbid_quotes".into()));
+                }
+                if let Some(word) = entry
+                    .quotes_after_words
+                    .iter()
+                    .find(|word| word.is_empty() || !word.chars().all(char::is_alphanumeric))
+                {
+                    return Err(at(format!("{word:?} is not one word")));
                 }
                 if let Some(stem) = entry.quotes_after.iter().find(|stem| {
                     stem.is_empty()
@@ -413,6 +429,7 @@ impl Pack {
                             guess_words: Vec::new(),
                             quotes: Vec::new(),
                             quotes_after: Vec::new(),
+                            quotes_after_words: Vec::new(),
                         });
                         pack.shapes.last_mut().expect("just pushed")
                     }
@@ -427,6 +444,7 @@ impl Pack {
                 shape.guess_words.extend(entry.guess_words);
                 shape.quotes.extend(quotes);
                 shape.quotes_after.extend(entry.quotes_after);
+                shape.quotes_after_words.extend(entry.quotes_after_words);
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -713,9 +731,10 @@ impl Pack {
 
     /// Whether a model span at `range` of `source` has its category's
     /// `shape`, its surroundings included: wrapped exactly in a forbidden
-    /// quote pair, after a `quotes_after` word, it is a title ("повести
-    /// «Кедровый свет»"); a name quoted elsewhere stays ("назван «Иван
-    /// Петров»").
+    /// quote pair, or holding one, after a `quotes_after` or
+    /// `quotes_after_words` word, it is a title or a product ("повести
+    /// «Кедровый свет»", "ПО «Контур»"); a name quoted elsewhere stays
+    /// ("назван «Иван Петров»").
     /// `text` is the span as the shape reads it (entities decoded).
     pub(crate) fn identifying_at(
         &self,
@@ -726,6 +745,11 @@ impl Pack {
     ) -> bool {
         if source.get(range.clone()).is_none() {
             return false;
+        }
+        // Checked once grown: "АЗС" in "ООО «АЗС»" is a company's name, not
+        // the abbreviation (#481).
+        if self.grows_to_company(source, range.clone(), category) {
+            return true;
         }
         let quoted = self
             .shapes
@@ -744,11 +768,32 @@ impl Pack {
                 }
                 let head = mdoc_pii::view::decoded(&source[from..range.start]);
                 let tail = mdoc_pii::view::decoded(&source[range.end..to]);
-                let Some(before) = head.chars().next_back() else {
+                // The span may hold its own quotes ("«Контур»" after "ПО").
+                let inner = text.trim();
+                let own = shape.quotes.iter().any(|(open, close)| {
+                    inner.len() > open.len_utf8() + close.len_utf8()
+                        && inner.starts_with(*open)
+                        && inner.ends_with(*close)
+                });
+                let before = if own {
+                    inner.chars().next()
+                } else {
+                    head.chars().next_back()
+                };
+                let Some(before) = before else {
                     return false;
                 };
-                let after = tail.chars().next();
-                let written = head[..head.len() - before.len_utf8()]
+                let after = if own {
+                    inner.chars().next_back()
+                } else {
+                    tail.chars().next()
+                };
+                let lead = if own {
+                    &head[..]
+                } else {
+                    &head[..head.len() - before.len_utf8()]
+                };
+                let written = lead
                     .trim_end()
                     .rsplit(|c: char| !c.is_alphanumeric())
                     .next()
@@ -761,7 +806,9 @@ impl Pack {
                     .quotes
                     .iter()
                     .any(|(open, close)| before == *open && after == Some(*close))
-                    && (shape.quotes_after.is_empty()
+                    && (shape.quotes_after.is_empty() && shape.quotes_after_words.is_empty()
+                        // An abbreviation as written: "ПО «Контур»", not "по «…»".
+                        || shape.quotes_after_words.iter().any(|listed| *listed == written)
                         || cue
                             && shape.quotes_after.iter().any(|stem| {
                                 word.strip_prefix(stem.as_str())
@@ -896,6 +943,37 @@ impl Pack {
                         .iter()
                         .any(|form| form.eq_ignore_ascii_case(word))
                 })
+            })
+    }
+
+    /// Whether a `span` fix of `category` grows the span at `range` of
+    /// `source` to a name with a legal form ("АЗС" in "ООО «АЗС»"), so its
+    /// shape is checked on the grown span (`fix_spans`). Fixes stay on
+    /// one line, so only the span's lines are searched.
+    fn grows_to_company(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        category: Category,
+    ) -> bool {
+        let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        let end = source[range.end..]
+            .find('\n')
+            .map_or(source.len(), |at| range.end + at);
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == category => Some(fix),
+                _ => None,
+            })
+            .flat_map(|fix| &fix.extend)
+            .flat_map(|pattern| pattern.find_iter(&source[start..end]))
+            .any(|found| {
+                let found_range = start + found.start()..start + found.end();
+                found_range.start <= range.start
+                    && range.end <= found_range.end
+                    && found_range.len() > range.len()
+                    && self.legal_form(found.as_str())
             })
     }
 
@@ -1689,6 +1767,168 @@ mod tests {
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }
+    }
+
+    /// Date masks (#487), common abbreviations (#481), the Internet,
+    /// software and site domains (#488) are no names; companies that share
+    /// their words keep them.
+    #[test]
+    fn masks_abbreviations_the_internet_and_products_are_no_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("ДД.ММ.ГГГГ", Category::Organization),
+            ("ДД.ММ.ГГГГ", Category::Person),
+            ("ДД.ММ.ГГГГ", Category::Date),
+            ("ДД.ММ.ГГ", Category::Organization),
+            ("ХХ.ХХ.ХХ", Category::Person),
+            ("XX.XX.XXXX", Category::Organization),
+            ("дд/мм/гггг", Category::Organization),
+            ("«ДД.ММ.ГГГГ»", Category::Organization),
+            ("ДД.ММ.ГГГГ г.", Category::Organization),
+            ("ХХ.ХХ.ХХ №№", Category::Organization),
+            ("ДД.ММ.ГГГГ №-осн", Category::Organization),
+            ("ДД.ММ.ГГГГ уроженца", Category::Person),
+            ("ТКО", Category::Organization),
+            ("ТН", Category::Organization),
+            ("ТТН", Category::Organization),
+            ("АЗС", Category::Organization),
+            ("СОУЭ", Category::Organization),
+            ("АПС", Category::Organization),
+            ("МЧД", Category::Organization),
+            ("КЭП", Category::Organization),
+            ("ЭП", Category::Organization),
+            ("ЕИО", Category::Organization),
+            ("ЭДО", Category::Organization),
+            ("МЧД", Category::Person),
+            ("Интернет", Category::Organization),
+            ("«Интернет»", Category::Organization),
+            ("Интернета", Category::Organization),
+            ("Интернете", Category::Organization),
+            ("сети «Интернет»", Category::Organization),
+            (
+                "информационно-телекоммуникационной сети «Интернет»",
+                Category::Organization,
+            ),
+            (
+                "информационно-телекоммуникационная сеть Интернет",
+                Category::Organization,
+            ),
+            ("КонсультантПлюс", Category::Organization),
+            ("{КонсультантПлюс}", Category::Organization),
+            ("Ватсап", Category::Organization),
+            ("Ватсапе", Category::Organization),
+            ("WhatsApp", Category::Organization),
+            ("Телеграм", Category::Organization),
+            ("ПО «Контур»", Category::Organization),
+            ("АСУ «Экспресс»", Category::Organization),
+            ("программы «Сетка»", Category::Organization),
+            ("NALOG.GOV.RU", Category::Organization),
+            ("M4D.NALOG.GOV.RU", Category::Organization),
+            ("example.invalid", Category::Organization),
+            ("https://www.sait-primer.ru/", Category::Organization),
+            ("сайт.рф", Category::Organization),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("ООО «Контур»", Category::Organization),
+            ("АО «ТТН-Логистик»", Category::Organization),
+            ("ООО «АЗС»", Category::Organization),
+            ("АЗС ООО «Бета-Ойл»", Category::Organization),
+            ("ООО «КонсультантПлюс»", Category::Organization),
+            ("ООО «Интернет Решения»", Category::Organization),
+            ("Интернет Решения", Category::Organization),
+            ("Сети «Ромашка»", Category::Organization),
+            ("Сбербанк Онлайн", Category::Organization),
+            ("Яндекс.Такси", Category::Organization),
+            ("E.ON", Category::Organization),
+            ("Alfa.Bank", Category::Organization),
+            ("J.P.Morgan", Category::Organization),
+            ("М.Г.", Category::Person),
+            ("Х. М. Гусейнов", Category::Person),
+            ("Дмитрий Дымов", Category::Person),
+            ("12.03.2026", Category::Date),
+            ("Тнеева", Category::Person),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
+    }
+
+    /// In context: a product's name in «» after the word for it is no
+    /// company, inside the quotes or with them (#488); a company named
+    /// like an abbreviation or product keeps its name (#481).
+    #[test]
+    fn a_product_in_guillemets_is_no_company_and_a_company_stays() {
+        let corrected = |source: &str, spans: &[&str]| -> Vec<String> {
+            let mut detections: Vec<Detection> = spans
+                .iter()
+                .filter_map(|text| {
+                    let start = source.find(text).unwrap();
+                    let range = start..start + text.len();
+                    pack()
+                        .identifying_at(source, range.clone(), text, Category::Organization)
+                        .then_some(Detection {
+                            range,
+                            category: Category::Organization,
+                            score: 0.9,
+                            recognizer: Recognizer::Model,
+                        })
+                })
+                .collect();
+            pack().fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+            detections
+                .into_iter()
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        let none: [String; 0] = [];
+        for (source, span) in [
+            ("расчёт выполнен посредством ПО «Сетка» и", "Сетка"),
+            ("расчёт выполнен посредством ПО «Сетка» и", "«Сетка»"),
+            ("билеты оформлены в АСУ «Экспресс» и", "Экспресс"),
+            ("в программе «Сетка» за", "Сетка"),
+            ("в группах мессенджера «Ватсап» и", "Ватсап"),
+            ("данные системы «Гарант» и", "«Гарант»"),
+            ("размещено в сети «Интернет» на", "Интернет"),
+        ] {
+            assert_eq!(corrected(source, &[span]), none, "{source}: {span}");
+        }
+        for (source, span, whole) in [
+            ("договор с ООО «Контур» от", "Контур", "ООО «Контур»"),
+            (
+                "на АЗС ООО «Бета-Ойл» в",
+                "АЗС ООО «Бета-Ойл»",
+                "ООО «Бета-Ойл»",
+            ),
+            ("товар передан ООО «АЗС» в", "АЗС", "ООО «АЗС»"),
+            (
+                "перевозчик АО «ТТН-Логистик» в",
+                "ТТН-Логистик",
+                "АО «ТТН-Логистик»",
+            ),
+            (
+                "лицензия ООО «КонсультантПлюс» на",
+                "КонсультантПлюс",
+                "ООО «КонсультантПлюс»",
+            ),
+            // "по" is a preposition, not ПО.
+            ("по «Сетке» и", "Сетке", "Сетке"),
+            // An app's name waits for the guide (#484).
+            (
+                "в приложении «Сбербанк Онлайн» и",
+                "Сбербанк Онлайн",
+                "Сбербанк Онлайн",
+            ),
+        ] {
+            assert_eq!(corrected(source, &[span]), [whole], "{source}: {span}");
+        }
+        // A person's name in its own quotes after a work's word is a title.
+        assert!(!pack().identifying_at(
+            "рукопись повести «Кедровый свет».",
+            32..61,
+            "«Кедровый свет»",
+            Category::Person
+        ));
     }
 
     /// One pack holds both kinds of `span` entry: a pattern proposes whole
