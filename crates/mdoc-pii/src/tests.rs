@@ -1924,3 +1924,30 @@ fn a_whole_name_leaves_the_users_decisions_on_its_parts() {
         c.range == second || c.range.end <= second.start || second.end <= c.range.start
     }));
 }
+
+/// #466 option 1: a scan's date of birth counts only after its label word,
+/// so the same date elsewhere stays (GUIDE rule 4), across edits and a
+/// second labelled mention; marked by hand, every mention counts.
+#[test]
+fn a_birth_date_counts_only_after_its_label_until_marked_by_hand() {
+    let source = "DOB: 14/03/1988. Signed 14/03/1988. Again, DOB 14/03/1988.";
+    let mut review = Review::default();
+    let start = source.find("14/03/1988").unwrap();
+    review
+        .ingest(source, vec![detection(start..start + 10, Category::Date)])
+        .unwrap();
+    let mentions = |review: &Review| proposed(review, "14/03/1988").mentions.clone();
+    let labelled = source.rfind("14/03/1988").unwrap();
+    assert_eq!(
+        mentions(&review),
+        [start..start + 10, labelled..labelled + 10]
+    );
+    let edited = format!("Note. {source}");
+    review.refresh(&edited);
+    assert_eq!(mentions(&review).len(), 2);
+    let signed = edited.find("Signed ").unwrap() + "Signed ".len();
+    review
+        .add_manual(&edited, signed..signed + 10, Category::Date)
+        .unwrap();
+    assert_eq!(mentions(&review).len(), 3);
+}

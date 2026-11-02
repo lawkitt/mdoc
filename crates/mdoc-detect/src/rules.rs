@@ -2097,11 +2097,11 @@ mod tests {
         }
     }
 
-    /// A birth date's repeats join it, like any value's: leaving one would
-    /// show the AI the date of birth. A different date stays.
+    /// A birth date's repeat elsewhere is another date and stays, like any
+    /// other date (#466 option 1, GUIDE rule 4); a labelled repeat counts.
     #[test]
-    fn a_birth_dates_repeats_join_it_and_other_dates_stay() {
-        let source = "DOB: 14/03/1988. Signed 14/03/1988, due 01/04/2026.";
+    fn a_birth_dates_repeat_elsewhere_stays_unmarked() {
+        let source = "DOB: 14/03/1988. Signed 14/03/1988, due 01/04/2026. DOB 14/03/1988.";
         let dates: Vec<_> = crate::recognition::proposals(source, &[])
             .unwrap()
             .into_iter()

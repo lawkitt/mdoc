@@ -712,6 +712,7 @@ impl Review {
                     detected: false,
                     recognizer: None,
                     mid_sentence: false,
+                    cues: None,
                     managed: false,
                     own: None,
                     surname: false,

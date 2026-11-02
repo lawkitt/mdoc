@@ -25,6 +25,9 @@ pub struct DiscoveryInput {
     /// Case numbers: a repeat counts only standing alone, never inside a
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
+    /// Dates of birth: a mention counts only after one of its cue words
+    /// ([`cue_before`]); `None` counts every mention.
+    pub(super) cues: Vec<Option<Vec<String>>>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -82,6 +85,9 @@ impl DiscoveryInput {
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
                 && !(self.whole[*index] && !whole_value(source, range))
+                && self.cues[*index]
+                    .as_ref()
+                    .is_none_or(|cues| cues.contains(&cue_before(source, range.start)))
         });
         // A hit inside a longer one never splits it, whatever its priority: a
         // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
@@ -130,6 +136,24 @@ impl DiscoveryInput {
             tokens,
         })
     }
+}
+
+/// The word that ends within 12 characters before `start`, lowercase:
+/// a date of birth's label ("DOB: ", "| Дата рождения | ", "род. ").
+/// Empty when there is none.
+pub(crate) fn cue_before(source: &str, start: usize) -> String {
+    let before = &source[..start];
+    let Some(end) = before
+        .char_indices()
+        .rev()
+        .take(12)
+        .find(|(_, c)| c.is_alphanumeric())
+        .map(|(i, c)| i + c.len_utf8())
+    else {
+        return String::new();
+    };
+    let word = before[..end].trim_end_matches(char::is_alphanumeric);
+    before[word.len()..end].to_lowercase()
 }
 
 /// Whether `range` stands alone as a value: not joined to a longer
@@ -198,7 +222,26 @@ pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::whole_value;
+    use super::{cue_before, whole_value};
+
+    #[test]
+    fn a_cue_is_the_word_just_before() {
+        for (source, cue) in [
+            ("DOB: 14/03/1988", "dob"),
+            ("| Дата рождения | 14.03.1988", "рождения"),
+            ("Иванов И. И., род. 14.03.1988", "род"),
+            ("DOB:\n14/03/1988", "dob"),
+            ("Signed 14/03/1988", "signed"),
+            ("14/03/1988", ""),
+            ("x            14/03/1988", ""),
+        ] {
+            assert_eq!(
+                cue_before(source, source.find('1').unwrap()),
+                cue,
+                "{source}"
+            );
+        }
+    }
 
     #[test]
     fn a_value_stands_alone_only_outside_identifiers_numbers_and_amounts() {
