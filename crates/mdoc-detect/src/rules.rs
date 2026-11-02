@@ -60,7 +60,12 @@ struct NeverEntry {
     form: Form,
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
+    #[serde(default)]
     words: Vec<String>,
+    /// For `pattern`: regexes; a span matching one outside quotes is a
+    /// court, public body, law or place ("Department of Labor").
+    #[serde(default)]
+    patterns: Vec<String>,
     /// Categories whose model span ending in one of these words is a role,
     /// not a name ("Technical Reviewer", "Costs Officer").
     #[serde(default)]
@@ -84,6 +89,8 @@ enum Form {
     Plural,
     /// The stem and up to `ending` letters.
     Stem,
+    /// No words: `patterns` that match a phrase in the span.
+    Pattern,
 }
 
 #[derive(Deserialize)]
@@ -149,6 +156,11 @@ struct SpanEntry {
     /// Named pieces of the pattern, each a regex.
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
+    /// By category, what a model span the pattern's match holds looks like
+    /// with what follows it, its own text the `span` group: such a span is
+    /// part of the match, not a span of its own. The parts work here too.
+    #[serde(default)]
+    absorbs: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
     #[serde(default)]
@@ -201,6 +213,11 @@ enum Span {
     Pattern {
         category: Category,
         pattern: Regex,
+        /// A model span of the category, read from its start by the regex
+        /// (anchored there) as its `span` group, is the match's own part
+        /// where the match holds it: a building's name in an address is no
+        /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
+        absorbs: Vec<(Category, Regex)>,
     },
     Fix(SpanFix),
 }
@@ -294,6 +311,7 @@ struct Never {
     form: Form,
     ending: usize,
     words: Vec<String>,
+    patterns: Vec<Regex>,
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
@@ -310,6 +328,7 @@ impl Never {
                     && ending.chars().all(char::is_alphabetic)
                     && !self.not_endings.iter().any(|not| not == ending)
             }),
+            Form::Pattern => false,
         })
     }
 }
@@ -353,9 +372,24 @@ impl Pack {
                 if entry.form != Form::Stem && !entry.not_endings.is_empty() {
                     return Err(at("only a stem takes not_endings".into()));
                 }
-                if entry.words.is_empty() {
+                if entry.form == Form::Pattern {
+                    if entry.patterns.is_empty() || !entry.words.is_empty() {
+                        return Err(at("a pattern entry needs patterns and no words".into()));
+                    }
+                    if entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty() {
+                        return Err(at("a pattern entry needs anywhere_in alone".into()));
+                    }
+                } else if !entry.patterns.is_empty() {
+                    return Err(at("only a pattern entry takes patterns".into()));
+                } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                let patterns = entry
+                    .patterns
+                    .iter()
+                    .map(|pattern| Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 for word in &entry.words {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
@@ -378,6 +412,7 @@ impl Pack {
                     form: entry.form,
                     ending,
                     words: entry.words,
+                    patterns,
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
@@ -589,11 +624,32 @@ impl Pack {
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
-                    pack.spans.push(Span::Pattern { category, pattern });
+                    let mut absorbs = Vec::new();
+                    for (name, regex) in &entry.absorbs {
+                        let absorbed = self::category(name).map_err(at)?;
+                        let regex =
+                            entry
+                                .parts
+                                .iter()
+                                .fold(regex.to_owned(), |regex, (part, piece)| {
+                                    regex.replace(&format!("{{{part}}}"), &format!("(?:{piece})"))
+                                });
+                        let regex = Regex::new(&rust_classes(&format!(r"\A(?:{regex})")))
+                            .map_err(|e| at(e.to_string()))?;
+                        if !regex.capture_names().flatten().any(|group| group == "span") {
+                            return Err(at(format!("absorbs.{name} has no `span` group")));
+                        }
+                        absorbs.push((absorbed, regex));
+                    }
+                    pack.spans.push(Span::Pattern {
+                        category,
+                        pattern,
+                        absorbs,
+                    });
                     continue;
                 }
-                if !entry.parts.is_empty() {
-                    return Err(at("parts need a pattern".into()));
+                if !entry.parts.is_empty() || !entry.absorbs.is_empty() {
+                    return Err(at("parts and absorbs need a pattern".into()));
                 }
                 if !fixes {
                     return Err(at(
@@ -759,6 +815,65 @@ impl Pack {
                     .iter()
                     .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
             })
+            || self
+                .never
+                .iter()
+                .filter(|entry| entry.anywhere_in.contains(&category))
+                .flat_map(|entry| &entry.patterns)
+                .any(|pattern| pattern.is_match(&outside))
+    }
+
+    /// Abbreviations `text` defines beside a court, public body or law
+    /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
+    /// capitals whose letters are the title's initials in order. Each is the
+    /// body or law wherever it stands (#378); a company's ("Quillon Freight
+    /// LLC (“QF”)") is not, and one the text also defines beside anything
+    /// else is ambiguous and stays.
+    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+        static DEFINED: OnceLock<Regex> = OnceLock::new();
+        let defined = DEFINED.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                // The title: capitalized words, and the small words and
+                // years between them, across a line break too.
+                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n",
+                r"[\p{Zs}\t]*)(?:\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in",
+                r"|to|with|&|\d{4}))*)",
+                // A citation may stand between: ", 740 ILCS 14/1".
+                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?\s*\(",
+                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
+                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+            )))
+            .expect("abbreviation pattern")
+        });
+        let mut public = std::collections::HashSet::new();
+        let mut other = std::collections::HashSet::new();
+        for found in defined.captures_iter(text) {
+            let (Some(title), Some(short)) = (found.get(1), found.get(2)) else {
+                continue;
+            };
+            let (title, short) = (title.as_str(), short.as_str());
+            let letters: Vec<char> = short
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .flat_map(char::to_lowercase)
+                .collect();
+            let mut initials = title
+                .split(|c: char| c.is_whitespace() || c == '-')
+                .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+                .flat_map(char::to_lowercase);
+            let spelt = letters.len() >= 2
+                && letters
+                    .iter()
+                    .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+            let short = short.trim_end_matches('.').to_owned();
+            if spelt && self.public_body(title, Category::Organization) {
+                public.insert(short);
+            } else {
+                other.insert(short);
+            }
+        }
+        public.retain(|short| !other.contains(short));
+        public
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -859,9 +974,17 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        let abbreviations = self.public_abbreviations(&view.text);
         detections.retain(|d| {
+            let text = &view.text[view.view_range(d.range.clone())];
             !d.range.is_empty()
-                && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
+                && self.identifying(text, d.category)
+                && !(matches!(d.category, Category::Organization | Category::Person)
+                    && abbreviations.contains(
+                        text.trim_matches(|c: char| !c.is_alphanumeric())
+                            .trim_end_matches("’s")
+                            .trim_end_matches("'s"),
+                    ))
         });
     }
 
@@ -1230,13 +1353,44 @@ impl Pack {
             })
     }
 
+    /// Whether a model span of `category` at `at` of `text`, inside a
+    /// `span` pattern's match of `matched` at `within`, is that match's own
+    /// part (its `absorbs`), read within the match alone: "Harrow House"
+    /// before ", 12 Pellin Street" is the address's building, not a company;
+    /// a number after the match ("…, Chatham House, 12 March") is none of it.
+    pub(crate) fn absorbs(
+        &self,
+        text: &str,
+        matched: Category,
+        within: std::ops::Range<usize>,
+        category: Category,
+        at: std::ops::Range<usize>,
+    ) -> bool {
+        self.spans.iter().any(|span| match span {
+            Span::Pattern {
+                category: of,
+                absorbs,
+                ..
+            } if *of == matched => absorbs.iter().any(|(absorbed, regex)| {
+                *absorbed == category
+                    && regex
+                        .captures(&text[at.start..within.end])
+                        .and_then(|found| found.name("span"))
+                        .is_some_and(|span| span.range() == (0..at.len()))
+            }),
+            _ => false,
+        })
+    }
+
     /// Whole spans the `span` patterns find in `source`: an address from
     /// its first element to its postcode or city (ADR 0092).
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
         self.spans
             .iter()
             .filter_map(|span| match span {
-                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Pattern {
+                    category, pattern, ..
+                } => Some((*category, pattern)),
                 Span::Fix(_) => None,
             })
             .flat_map(|(category, pattern)| {
@@ -2257,6 +2411,236 @@ mod tests {
         );
     }
 
+    /// English courts, agencies, departments, offices, laws and codes are
+    /// no organizations and no people (#378), nor is a country, state or
+    /// city (#478); companies with their legal form, and private bodies that
+    /// share a word with them, stay.
+    #[test]
+    fn english_public_bodies_laws_and_places_are_no_organizations() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        for text in [
+            // Departments, offices, agencies and bureaus.
+            "Department of Justice",
+            "U.S. Department of Labor",
+            "Dep't of Labor",
+            "Department for Work and Pensions",
+            "Ashmoor County Probation Department",
+            "Office of the Attorney General",
+            "Home Office",
+            "Clerk's Office",
+            "Agency for International Development",
+            "National Security Agency",
+            "Bureau of Prisons",
+            "Census Bureau",
+            // Commissions, legislatures, services and councils.
+            "Federal Election Commission",
+            "Securities and Exchange Commission",
+            "Commission on Civil Rights",
+            "National Labor Relations Board",
+            "Board of Education",
+            "Ashmoor County Board of Supervisors",
+            "Congress",
+            "the Legislature",
+            "Senate Judiciary Committee",
+            "Social Security Administration",
+            "Internal Revenue Service",
+            "Crown Prosecution Service",
+            "Ashmoor City Council",
+            "HM Treasury",
+            "HM Land Registry",
+            "His Majesty's Revenue and Customs",
+            // Short names.
+            "IRS",
+            "the IRS",
+            "U.S. FDA",
+            "CMA",
+            "EEOC",
+            "OHRP",
+            "SEC",
+            "EAT",
+            "the ET",
+            // Prosecutors and ministers.
+            "Attorney General",
+            "Attorney-General's Office",
+            "U.S. Attorney",
+            "District Attorney",
+            "Secretary of State",
+            // Courts by circuit, district and division.
+            "1st Cir",
+            "9th Cir.",
+            "Ninth Circuit",
+            "Federal Circuit",
+            "Northern District of Ashmoria",
+            "Chancery Division",
+            "King's Bench Division",
+            // Laws, codes and rules.
+            "Gaming Act 2031",
+            "Biometric Information Privacy Act",
+            "the First Amendment",
+            "Data Protection Regulations",
+            "Bankruptcy Code",
+            "Code of Federal Regulations",
+            "18 U.S.C.",
+            "Civil Procedure Rules",
+            "Federal Rules of Evidence",
+            // Places alone, together, and after "State of" and the like.
+            "Pakistan",
+            "North Macedonia",
+            "Republic of Korea",
+            "Illinois",
+            "Massachusetts",
+            "United States",
+            "United States of America",
+            "the United Kingdom",
+            "U.S.",
+            "U.S",
+            "USA",
+            "Boston",
+            "New York",
+            "State",
+            "States",
+            "Federal",
+            "Georgia v. Alabama",
+            "Washington, D.C.",
+            "State of Ashmoria",
+            "STATE OF ASHMORIA",
+            "Commonwealth of Brindlemoor",
+            "People of the State of Ashmoria",
+            "Town of Brindle",
+            "District of Columbia",
+            "Ashmoor County",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            // A legal form keeps a company, whatever public or place word
+            // it has; none cuts it.
+            "Bank of America, N.A.",
+            "State Street Corporation",
+            "Georgia-Pacific LLC",
+            "Georgia-Pacific",
+            "Federal Express Corp.",
+            "Federal Express",
+            "Quillon Freight LLC",
+            "Brindle Court Ltd",
+            "Ashmoor Department Store Ltd",
+            "State of Ashmoria Holdings LLC",
+            "Congress Street Partners LLP",
+            // Private bodies that share a word with a public one.
+            "Northbridge Department Store",
+            "Acme Talent Agency",
+            "Cedar Arts Council",
+            "Law Offices of Quill & Venn",
+            "New York Life",
+            "Boston Scientific",
+            "Ohio Valley Freight",
+            "United Airlines",
+            "Washington Post",
+            "Delaware North",
+            // Short names and words of public bodies that companies share
+            // (review of #515).
+            "CMA CGM",
+            "SEC Newgate",
+            "Commission Junction",
+            "The Republic of Tea",
+            "Ashmoor Advisory Board",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        for text in [
+            "HMRC",
+            "Gaming Act 1968",
+            "Biometric Information Privacy Act",
+            "Ashmoor County Probation Department",
+            "Department of Justice",
+            "Federal Election Commission",
+            "High Court of Justice",
+            "State of Ashmoria",
+            "Town of Plymouth",
+            "Ninth Circuit",
+            "Chancery Division",
+            "Attorney General",
+            "Bankruptcy Code",
+            "National Labor Relations Board",
+            "IRS",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Georgia Quill",
+            "Virginia Ashby",
+            "Washington Vale",
+            "Sec. Brindle",
+            "Justice Brindle",
+            "Attorney General Brindle",
+            "Pakistan",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        // A place's name after "Town of" grows to the place and goes, as an
+        // organization or a person; the other side of a caption stays.
+        assert_eq!(
+            fixed(
+                "The Town of Brindle (Illinois) sued; Town of Plymouth v. Orrin Quill.",
+                &[
+                    ("Brindle", Category::Organization),
+                    ("Illinois", Category::Organization),
+                    ("Plymouth", Category::Person),
+                    ("Orrin Quill", Category::Person),
+                ]
+            ),
+            ["Orrin Quill"]
+        );
+        // An abbreviation defined beside a law or a public body is the law
+        // or the body wherever it stands; a company's stays.
+        assert_eq!(
+            fixed(
+                "Under the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), \
+                 and the Equal Employment Opportunity Commission (EEOC) rules, \
+                 Quillon Freight LLC (“QF”) answered. BIPA applies; the EEOC \
+                 agreed; BIPA’s terms bind QF.",
+                &[
+                    ("BIPA", Category::Organization),
+                    ("EEOC", Category::Person),
+                    ("BIPA’s", Category::Person),
+                    ("QF", Category::Organization),
+                ]
+            ),
+            ["QF"]
+        );
+        // A title wrapped across a line, LF or CRLF.
+        for source in [
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+        ] {
+            let at = source.rfind("BIPA").unwrap();
+            let mut detections = vec![Detection {
+                range: at..at + 4,
+                category: Category::Organization,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }];
+            pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+            assert!(detections.is_empty(), "{source:?}");
+        }
+        // An abbreviation the text also defines for something else is
+        // ambiguous and stays.
+        let source = "the Data Protection Act (“DPA”); DPA Microphones (“DPA”) supplied                       it. DPA invoiced us.";
+        let at = source.rfind("DPA").unwrap();
+        let mut detections = vec![Detection {
+            range: at..at + 3,
+            category: Category::Organization,
+            score: 0.9,
+            recognizer: Recognizer::Model,
+        }];
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        assert_eq!(detections.len(), 1);
+    }
+
     /// Date masks (#487), common abbreviations (#481), the Internet,
     /// software and site domains (#488) are no names; companies that share
     /// their words keep them.
@@ -2724,6 +3108,426 @@ mod tests {
             "The Old Rectory\nNether Compton",
         ] {
             assert!(pack.identifying(street, Category::Address), "{street}");
+        }
+    }
+
+    /// US and UK addresses from PDF and text layers (#498): the "City, ST
+    /// ZIP" line under the street, suites, floors and buildings, compass
+    /// parts, spelled-out states and capitals, whole from the first element
+    /// to the postcode, never the country after it.
+    #[test]
+    fn us_and_uk_addresses_over_two_lines_are_found_whole() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<String> {
+            pack.spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        // The issue's reproduction: two addresses, the country left out.
+        assert_eq!(
+            found(
+                "Notices to Larkfield Supply LLC, 4410 W. Quarry Parkway, Suite 210\n\
+                 Brindlecombe, OH 45999, and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        for (source, address) in [
+            // A line break, with no comma, before the "City, ST ZIP" line;
+            // capitals, a compass part, two spaces before the ZIP.
+            (
+                "Contractor:\n1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999\nPhone",
+                "1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999",
+            ),
+            (
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687\r\n",
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687",
+            ),
+            (
+                "Wrenfield LLP\n  1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999\n",
+                "1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999",
+            ),
+            (
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+            ),
+            // A Markdown hard break.
+            (
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+            ),
+            // Dotted compass parts and the street words #361 lacked.
+            (
+                "at 2121 Quillon Ave. N.W., Wexford, DC 20997 since",
+                "2121 Quillon Ave. N.W., Wexford, DC 20997",
+            ),
+            (
+                "at 8001 Harl Tansey Fwy., Brindlecombe, TX 75999.",
+                "8001 Harl Tansey Fwy., Brindlecombe, TX 75999",
+            ),
+            (
+                "at 6910 Network Pl., Slocombe, IN 46999.",
+                "6910 Network Pl., Slocombe, IN 46999",
+            ),
+            (
+                "at 2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773 by",
+                "2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773",
+            ),
+            // A state spelled out or dotted before its ZIP.
+            (
+                "at 1600 Pellin Hill Road, Brindlecombe, Georgia 30999.",
+                "1600 Pellin Hill Road, Brindlecombe, Georgia 30999",
+            ),
+            (
+                "Room 640, 500 Larch Street, New York, N.Y. 10999.",
+                "Room 640, 500 Larch Street, New York, N.Y. 10999",
+            ),
+            (
+                "at 12 Oak Road, Slocombe, New Hampshire 03999.",
+                "12 Oak Road, Slocombe, New Hampshire 03999",
+            ),
+            // A ZIP wrapped onto the next line; "Ft." before a town.
+            (
+                "at 151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999 (you)",
+                "151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999",
+            ),
+            // A building name, on the street's line or its own, and a street
+            // without a number after it.
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\nEngland",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ, UK",
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+            (
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+            ),
+            // A street without a number before its postcode.
+            (
+                "Royal Courts of Justice\nStrand, Slocombe, WC2A 9ZZ\n",
+                "Strand, Slocombe, WC2A 9ZZ",
+            ),
+            (
+                "at One Pellin Place, Brindlecombe, GA 30999.",
+                "One Pellin Place, Brindlecombe, GA 30999",
+            ),
+            // A country after the postcode stays out.
+            (
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                "12 Oak Road, Slocombe SL9 9ZZ",
+            ),
+            // A surname that is also a building word is no building.
+            ("Jane Chambers, 12 Oak Road, Leeds", "12 Oak Road, Leeds"),
+            (
+                "Brindle Medical Center\n3939 Harl Blvd.\nSlocombe, UT 84999",
+                "3939 Harl Blvd.\nSlocombe, UT 84999",
+            ),
+            // A suite on its own line after the street.
+            (
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB\n",
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB",
+            ),
+        ] {
+            assert_eq!(found(source), [address], "{source}");
+        }
+        for source in [
+            // After a line break a town needs its postcode.
+            "12 Oak Road\nLeeds",
+            "12 Oak Road\nJohn Smith AB will call",
+            // No street: a building and a town, a court, a town and its
+            // postcode alone (#506), a P.O. box (#506).
+            "Brindle House, Leeds",
+            "High Court, Slocombe WC2A 9ZZ",
+            "BRANWICK, CO 81999",
+            "Brindlecombe, OH 45999",
+            "P.O. Box 36060, Brindlecombe, CA 94999",
+            // A street without a number needs its postcode.
+            "Brindle Road, Leeds",
+            "Strand, Leeds",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        // A building, room or mail-stop part is no company, bank account or
+        // identity document; a company named with one of their words stays
+        // a company.
+        for (text, category) in [
+            ("Bldg 499", Category::Organization),
+            ("Suite 210", Category::Organization),
+            ("10th Floor", Category::Organization),
+            ("Suite 210, 3rd Floor", Category::Organization),
+            ("Building 179A", Category::Organization),
+            ("Mail Stop K9-24", Category::Organization),
+            ("Room 2.104", Category::Bank),
+            ("Building 179A", Category::Bank),
+            ("Mail Stop K9-24", Category::Identity),
+            ("Apt 4B", Category::Identity),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for name in [
+            "Brindle Building Society",
+            "Pellin House",
+            "Harrow Mail Ltd",
+            "Harrow Floor Services",
+            "Suite Seven Studios",
+        ] {
+            assert!(pack.identifying(name, Category::Organization), "{name}");
+        }
+        // So a model's building part no longer costs the whole address.
+        let source = "Building 179A, 12 Oak Road\nLeeds LS1 4AB\n";
+        let start = source.find("Building").unwrap();
+        let raw = [crate::RawEntity {
+            start,
+            end: start + "Building 179A".len(),
+            label: "organization".into(),
+            score: 0.9,
+            text: "Building 179A".into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            shown,
+            [(
+                "Building 179A, 12 Oak Road\nLeeds LS1 4AB".to_owned(),
+                "ADDRESS".to_owned()
+            )]
+        );
+        // A model's address loses the country and the word "address" at
+        // its edges.
+        assert_eq!(
+            fixed(
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK.",
+                &[(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK",
+                    Category::Address
+                )]
+            ),
+            ["Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "at 12 Pellin Street address.",
+                &[("12 Pellin Street address", Category::Address)]
+            ),
+            ["12 Pellin Street"]
+        );
+        // A country of several words, too; "United" leading a building's
+        // name goes, but the span pattern's match holds what is left.
+        assert_eq!(
+            fixed(
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                &[(
+                    "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                    Category::Address
+                )]
+            ),
+            ["12 Oak Road, Slocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "of 4 Oak Road, Brindlecombe, OH 45999, United States of America.",
+                &[(
+                    "of 4 Oak Road, Brindlecombe, OH 45999, United States of America",
+                    Category::Address
+                )]
+            ),
+            ["4 Oak Road, Brindlecombe, OH 45999"]
+        );
+        let source = "United House, 12 Pellin Street\nSlocombe SL9 9ZZ\n";
+        let raw = [crate::RawEntity {
+            start: 0,
+            end: source.trim_end().len(),
+            label: "address".into(),
+            score: 0.9,
+            text: source.trim_end().into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(shown, [source.trim_end()]);
+    }
+
+    /// #498: the review keeps an address the pattern found over its own
+    /// lines with the sentence going on after it, but only when it ends in
+    /// its number before a word apart (`mdoc_pii::view::wrapped_value`).
+    #[test]
+    fn an_address_over_lines_is_proposed_with_text_after_it() {
+        let shown = |source: &str| -> Vec<String> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "ADDRESS")
+                .map(|span| source[span.range].to_owned())
+                .collect()
+        };
+        let found = |source: &str| -> Vec<String> {
+            pack()
+                .spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert_eq!(
+            shown(
+                "Notices to 4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999, and to \
+                 Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        // The pattern reads a next field's first word as a town, or stops
+        // inside a room number: the review keeps neither (review of #508).
+        let source = "Lives at 12 Oak Road,\nDate of birth: 14/03/1988.";
+        assert_eq!(found(source), ["12 Oak Road,\nDate"]);
+        assert!(shown(source).is_empty());
+        let source = "Lives at 12 Oak Road\nRoom 2/3 with Ann.";
+        assert_eq!(found(source), ["12 Oak Road\nRoom 2"]);
+        assert!(shown(source).is_empty());
+    }
+
+    /// #498 on the real model: it reads the building's name before a house
+    /// number as a company. That company is the address's own part, and the
+    /// address stands whole; a company named like a building with no street
+    /// after it, or not ending in a building word, stays a company.
+    #[test]
+    fn a_building_name_before_its_street_is_the_address_not_a_company() {
+        let shown = |source: &str, model: &[(&str, &str)]| -> Vec<(String, String)> {
+            let raw: Vec<_> = model
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    crate::RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.98,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect()
+        };
+        let pair = |text: &str, category: &str| (text.to_owned(), category.to_owned());
+        // The fixture's snapshot: the building a company, the rest an
+        // address with its country.
+        assert_eq!(
+            shown(
+                "Notices to Larkfield Supply LLC and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK.\n",
+                &[
+                    ("Larkfield Supply LLC", "organization"),
+                    ("Harrow House", "organization"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ\nUK", "address"),
+                ]
+            ),
+            [
+                pair("Larkfield Supply LLC", "ORG"),
+                pair(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+                    "ADDRESS"
+                ),
+            ]
+        );
+        // On its own line, or with a suite before the street; the model
+        // finding no address at all.
+        for (source, building, address) in [
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                "Harrow House",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996\n",
+                "Ardley Building",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(building, "organization")]),
+                [pair(address, "ADDRESS")],
+                "{source}"
+            );
+        }
+        // A company named like a building: with its legal form, with no
+        // street after it, not ending in a building word, or before a
+        // number that is no street.
+        for (source, model, proposed) in [
+            (
+                "Harrow House Ltd agreed to pay.\n",
+                &[("Harrow House Ltd", "organization")][..],
+                &[("Harrow House Ltd", "ORG")][..],
+            ),
+            (
+                "Harrow House agreed to pay.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+            (
+                "Notices to Harrow House Ltd, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Harrow House Ltd", "organization")],
+                &[
+                    ("Harrow House Ltd", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Notices to Tower Records, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Tower Records", "organization")],
+                &[
+                    ("Tower Records", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Harrow House, 12 March 2026, Slocombe.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+            // A number after the match is none of it (review of #508): the
+            // pattern's "12 Oak Road, Chatham House" gives way as before.
+            (
+                "Lives at 12 Oak Road, Chatham House, 12 March 2026.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
+            ),
+            // An address the review turns down (text after its town on its
+            // last line) leaves the company standing (review of #508).
+            (
+                "Chatham House\n10 St James's Square, London, UK.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
+            ),
+        ] {
+            let proposed: Vec<_> = proposed.iter().map(|(t, c)| pair(t, c)).collect();
+            assert_eq!(shown(source, model), proposed, "{source}");
         }
     }
 
@@ -3278,6 +4082,18 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nparts = { street = 'x' }",
                 "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nabsorbs = { ORG = '(?P<span>x)' }",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { ORG = 'x' }",
+                "no `span` group",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { NOPE = '(?P<span>x)' }",
+                "span #1",
             ),
             (
                 "[[span]]\ncategory = \"PERSON\"\nperson_before = [\"decl\"]",

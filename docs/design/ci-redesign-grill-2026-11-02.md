@@ -185,3 +185,37 @@ All seven recommendations accepted.
 [ADR 0095](../adr/0095-ci-on-a-merge-queue.md), ROADMAP's CI redesign
 section, and glossary terms (merge queue, queue commit, fast tier, test
 tier, `merge-gate`, quarantine list) in [CONTEXT.md](../../CONTEXT.md).
+
+### Round 4: the fleet side and who implements (asked and agreed 2026-11-02)
+
+All eight recommendations accepted; the fleet side is fleet ADR 0021
+("Merge queues", in the `fleet` repository, merged at the cutover).
+
+24. **This session is the CI redesign hub** (`fleet-hubs`: `lawkitt/mdoc
+    ci-redesign`): lanes for items 2a–2e within the Mac's builder cap, a
+    Windows Desktop session for item 4, Codex reviews of code and script
+    PRs; it merges CI redesign PRs only, run 3's hubs keep theirs.
+25. **Beside run 3:** items 1–5 never change what the current gate requires;
+    each CI-changing merge is announced to both hubs (a message to the Mac
+    hub, a "**CI redesign hub**" comment on #471); the cutover happens only
+    between run 3 waves, announced 30 minutes ahead, after both hubs answer
+    "idle".
+26. **Interim:** the `zip` ignore now (#519); #510's fix stays with the Mac
+    hub's lane; the Mac CI checkout's `target/` deleted between jobs (done
+    11:15Z: 62 GB free before, 136 GB after).
+27. **Renders before the queue:** a UI lane dispatches the hosted macOS
+    desktop job on its branch with a `screens` input; the job uploads those
+    PNGs as a small artifact beside the full set.
+28. **Fleet ADR 0021:** profile `merge_queue = true`; `checks` `["lint
+    (ubuntu)", "merge-gate"]` with a fast `gate`; the hub's gate decides when
+    to enqueue (`gh pr merge --auto`, never `--admin`); no one-at-a-time and
+    no hand re-test; `fleet-watch` events `queued`, `dequeued`, `merged`;
+    base red from the nightly or `main`'s cache builds; preflight checks the
+    PC runner's heartbeat; the runner no longer counts as a Mac build slot.
+29. **The config PR merges at the cutover;** after `sync-fleet.sh` both hubs
+    are told to re-invoke the `fleet` skill, and this session reloads it.
+30. **The maintainer approves, at the moment:** the ruleset and merge queue,
+    uninstalling the Mac runner, reinstalling the PC runner in queue mode.
+31. **Budget:** the same 65% weekly Opus line as run 3; Codex Sol past it;
+    run 3 has priority on the Mac's builder slots; with both providers
+    limited, remaining items are parked with their state written down.

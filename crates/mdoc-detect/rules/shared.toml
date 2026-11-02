@@ -30,7 +30,10 @@
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
-# `s`) or as a `stem` with up to `ending` letters. Optionally:
+# `s`) or as a `stem` with up to `ending` letters. An entry matched as
+# `pattern` lists `patterns` instead, regexes: a model span of its
+# `anywhere_in` categories (required) that matches one outside quotes goes
+# like a court ("Department of Labor", "Massachusetts" alone). Optionally:
 #   last_word_of = [category…]  a model span of these categories ending in
 #                               one of the words is dropped (a role phrase)
 #   not_endings  = [ending…]    for a stem: endings that never count (a

@@ -216,6 +216,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just setup` / `just doctor` | Install / check the pinned toolchain and tools |
 | `just check` | `fmt-check`, `deny`, `lint-scripts`, `lint`, `test` — the CI gate |
 | `just lint-scripts` | `shellcheck` and `shfmt -d` over `scripts/` |
+| `just test-tier <tier>` | One test tier (ADR 0095): `unit`, `app`, `renders`, `recognition`, `scripts` or `quarantined` |
 | `just smoke-ocr` | Downloads the pinned OCR runtime and recognizes the EN/RU fixtures (release gate) |
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
@@ -247,13 +248,26 @@ Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
 
 `just test` runs the workspace tests with cargo-nextest, configured in
-`.config/nextest.toml`: a slow-test warning at 60 s, a kill at 2 minutes, and
-the render test one minute past its own watchdog (10 minutes on macOS, 20 on
-Windows); no retries. Doctests, which nextest does not run, follow through
-`cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)). The script suites
-(release, CI cache cleanup, local CI runner) need no build, so
-`scripts/test.sh` runs them beside the Rust tests and prints their output
-after them. Hosted CI jobs stop at
+`.config/nextest.toml`: a slow-test warning at 30 s, a kill at 2 minutes, the
+app package's tests at most 4 at a time, and the render test one minute past
+its own watchdog (10 minutes on macOS, 20 on Windows); no retries. A slow
+test is a bug to fix, not a limit to raise. Doctests, which nextest does not
+run, follow through `cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)).
+The script suites (release, CI cache cleanup, local CI runner, the quarantine
+list) need no build, so `scripts/test.sh` runs them beside the Rust tests and
+prints their output after them.
+
+`just test-tier <tier>` runs one test tier, as CI's jobs will
+([ADR 0095](adr/0095-ci-on-a-merge-queue.md)): `unit` (the crates, without
+the recognition fixtures, and the doctests), `app` (the app package without
+the render test), `renders`, `recognition` (the fixtures on their
+snapshots), `scripts` (the suites and the quarantine check), or
+`quarantined`. Tests never retry. A test that flakes twice goes into
+`.config/quarantine.txt` (`<nextest filter>  #<issue>  <expires
+YYYY-MM-DD>`) by PR, with its issue: every tier leaves it out, `just
+test-tier quarantined` runs the list alone without failing, and a line past
+its date fails the `scripts` tier until the test is fixed or the date is
+renewed in a PR that says why. Hosted CI jobs stop at
 15 (lint), 20 (clippy) and 30 (test) minutes, and after each `main` run a
 cache cleanup job deletes older generations of the cargo caches it saved.
 
