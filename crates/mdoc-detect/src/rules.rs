@@ -633,21 +633,50 @@ impl Pack {
     /// Whether a model span has its category's `shape` and is not a role
     /// phrase or public body by the `never` section.
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
+        self.shaped(text, category) && !self.public_body(text, category)
+    }
+
+    /// Whether a span is a court or other public body by the `never`
+    /// section's `anywhere_in` words. A legal form makes it a company,
+    /// whatever else it says ("Garden Court Ltd"), and a word in quotes is
+    /// a name ("Банк «Город»"). The correction stage asks this only after
+    /// the span fixes, so a company's inner name ("Северная область Строй")
+    /// first grows to its legal form.
+    fn public_body(&self, text: &str, category: Category) -> bool {
+        if self.legal_form(text) {
+            return false;
+        }
+        // Quotes around the whole span hide nothing: "«Арбитражный суд»".
+        let outside = unquoted(text);
+        let outside = if outside.chars().any(char::is_alphanumeric) {
+            outside
+        } else {
+            text.to_owned()
+        };
+        outside
+            .split_whitespace()
+            .map(|word| {
+                word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                    .to_lowercase()
+            })
+            .any(|word| {
+                self.never
+                    .iter()
+                    .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
+            })
+    }
+
+    /// Whether a model span has its category's `shape` and is not a role
+    /// phrase by the `never` section; public bodies are not checked.
+    fn shaped(&self, text: &str, category: Category) -> bool {
         let words = || {
             text.split_whitespace()
                 .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
                 .filter(|word| !word.is_empty())
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
-        // A legal form makes it a company, whatever else it says ("Garden
-        // Court Ltd").
-        let company = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
-            (!company
-                && entry.anywhere_in.contains(&category)
-                && lowercase.iter().any(|w| entry.has(w)))
-                || (entry.last_word_of.contains(&category)
-                    && lowercase.last().is_some_and(|w| entry.has(w)))
+            entry.last_word_of.contains(&category) && lowercase.last().is_some_and(|w| entry.has(w))
         });
         if vetoed {
             return false;
@@ -826,7 +855,10 @@ impl Pack {
                                     .is_some_and(|ending| NOUN_ENDINGS.contains(&ending))
                             }))
             });
-        self.identifying(text, category) && !quoted
+        // Public bodies wait for the span fixes (`fix_spans`): "Судак" in
+        // "ООО «Судак»" grows to its legal form before a court's stem in it
+        // could drop it.
+        self.shaped(text, category) && !quoted
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -1046,6 +1078,46 @@ impl Pack {
             })
             .map(|shape| shape.category)
     }
+}
+
+/// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
+/// "ГКУ «Дирекция района»" is "ГКУ ". An unclosed quote stays as it is.
+fn unquoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(['«', '"', '“']) {
+        let quote = rest[open..].chars().next().expect("found");
+        let after = &rest[open + quote.len_utf8()..];
+        let close = match quote {
+            '«' => {
+                let mut depth = 1;
+                after.char_indices().find_map(|(at, c)| {
+                    match c {
+                        '«' => depth += 1,
+                        '»' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(at)
+                })
+            }
+            '"' => after.find('"'),
+            _ => after.find('”'),
+        };
+        out.push_str(&rest[..open]);
+        match close {
+            Some(at) => {
+                out.push(' ');
+                let closing = after[at..].chars().next().expect("found");
+                rest = &after[at + closing.len_utf8()..];
+            }
+            None => {
+                out.push(quote);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the
@@ -1790,6 +1862,156 @@ mod tests {
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }
+    }
+
+    /// Courts, public bodies, state institutions and laws in their case
+    /// forms and abbreviations are no organizations (#378), nor is a
+    /// country, region or city alone or as a body's tail (#478); companies,
+    /// banks and a company named after the country stay.
+    #[test]
+    fn public_bodies_laws_and_places_are_no_organizations() {
+        let pack = pack();
+        for text in [
+            // Courts.
+            "Арбитражный суд Северной области",
+            "Арбитражного суда Северо-Западного округа",
+            "Верховного Суда Российской Федерации",
+            "АС Северной области",
+            "ФАС Восточного округа",
+            "14 ААС",
+            "Пленума ВС РФ",
+            "ВС РФ",
+            "Судебная коллегия",
+            "Коллегия",
+            // Ministries, services, agencies and their territorial units.
+            "ФНС России",
+            "МИФНС России № 9",
+            "Федеральной налоговой службы",
+            "ГУ МВД России по Северной области",
+            "Отдел МВД России по Ольховскому району",
+            "ГИАЗ ОМВД России",
+            "Ольховского ГОСП УФССП",
+            "отдела судебных приставов по Центральному округу",
+            "Минтруда России",
+            "Управлением Росреестра по Северной области",
+            "Правительства Северной области",
+            "Мэрию муниципального образования",
+            "ГБ МСЭ",
+            // State institutions.
+            "ГКУ города Ольховска",
+            "Федерального казенного учреждения",
+            "государственного бюджетного учреждения",
+            // Codes and laws.
+            "Гражданского кодекса Российской Федерации",
+            "Арбитражного процессуального кодекса",
+            "Кодекса Российской Федерации об административных правонарушениях",
+            "Гражданский кодекс РФ",
+            "АПК РФ",
+            "КоАП РФ",
+            "Федерального закона",
+            "Федеральным законом",
+            "Конституции Российской Федерации",
+            // Places, alone or as a tail.
+            "РОССИЙСКОЙ ФЕДЕРАЦИИ",
+            "Российской Федерации",
+            "Российская Федерация",
+            "России",
+            "субъектов Российской Федерации",
+            "Именем Российской Федерации",
+            "Северной области",
+            "Кедровской Республики",
+            "Ольховскому району",
+            "Ольховскому краю",
+            "городу Ольховску",
+            "г. Ольховска",
+            "ПГТ Ольховка",
+            "Ольховского муниципального района Северной области",
+        ] {
+            assert!(!pack.identifying(text, Category::Organization), "{text}");
+        }
+        for text in [
+            "ООО «Россия-Трейд»",
+            "ООО «Россия»",
+            "Банк «Россия»",
+            "Сбербанк России",
+            "ПАО Сбербанк",
+            "АО «Северный банк»",
+            "Российский союз автостраховщиков",
+            "ООО «Северная область Строй»",
+            "ИП Ветлин, г. Ольховск",
+            "Федерация футбола России",
+            "коллегия адвокатов «Елагин и партнёры»",
+            "ООО «Отделстрой»",
+            "ООО «Судак»",
+            "Ромашка-Плюс",
+            // A name in quotes is a name, whatever words it has.
+            "Банк «Город»",
+            "Банк «Северный край»",
+        ] {
+            assert!(pack.identifying(text, Category::Organization), "{text}");
+        }
+        for text in [
+            "ФКЗ РФ",
+            "ФЗ",
+            "ФЗ № 127-ФЗ",
+            "Федерального закона от 12.03.2026 № 418-ФЗ",
+            "ГКУ «Дирекция парков»",
+            "Суд «Северный»",
+            "«Арбитражный суд Северной области»",
+        ] {
+            assert!(!pack.identifying(text, Category::Organization), "{text}");
+        }
+        assert_eq!(
+            unquoted("ГКУ «Центр «Северный» снабжения» и суд"),
+            "ГКУ   и суд"
+        );
+        assert_eq!(unquoted("Банк \"Город\", суд «Север"), "Банк  , суд «Север");
+        // Gone whole, wherever the model's span starts: an institution's
+        // quoted name with it, a court's tail.
+        assert!(
+            fixed(
+                "Ответчик: ГКУ города Ольховска «Дирекция парков».",
+                &[
+                    ("ГКУ города Ольховска", Category::Organization),
+                    ("Дирекция парков", Category::Organization),
+                ]
+            )
+            .is_empty()
+        );
+        for source in [
+            "третье лицо — Федеральное казенное учреждение «Центр снабжения».",
+            "третье лицо — ГБУ Северной области «Центр снабжения».",
+            "третье лицо — ГБУЗ Республики Сосновия «Центр снабжения».",
+            "третье лицо — ГКУ г. Ольховска «Центр снабжения».",
+            "третье лицо — ГБУ города Нижнего Ольховска «Центр снабжения».",
+            "третье лицо — ГКУ Северо-Ольховского автономного округа «Центр снабжения».",
+        ] {
+            assert!(
+                fixed(source, &[("Центр снабжения", Category::Organization)]).is_empty(),
+                "{source}"
+            );
+        }
+        // Never across another name: a company's legal form ends the
+        // institution's reach.
+        assert_eq!(
+            fixed(
+                "ГКУ и ООО «Ромашка-Плюс»",
+                &[("Ромашка-Плюс", Category::Organization)]
+            ),
+            ["ООО «Ромашка-Плюс»"]
+        );
+        assert_eq!(
+            fixed(
+                "Именем Российской Федерации Арбитражный суд Северной области \
+                 рассмотрел иск ООО «Ромашка-Плюс».",
+                &[
+                    ("Российской Федерации", Category::Organization),
+                    ("Северной области", Category::Organization),
+                    ("Ромашка-Плюс", Category::Organization),
+                ]
+            ),
+            ["ООО «Ромашка-Плюс»"]
+        );
     }
 
     /// Date masks (#487), common abbreviations (#481), the Internet,

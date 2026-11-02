@@ -1077,6 +1077,46 @@ mod tests {
             ]
         );
     }
+    /// #378, #478: through the whole correction stage, a company's inner
+    /// name grows to its legal form before the public-body words could drop
+    /// it, while courts, institutions and places go.
+    #[test]
+    fn correction_keeps_companies_and_drops_public_bodies_and_places() {
+        let source = "Именем Российской Федерации Арбитражный суд Северной области                       рассмотрел иск ООО «Северная область Строй» к ООО «Судак»                       с участием ГБУ Северной области «Центр снабжения»; платёж                       прошёл через Банк «Город».";
+        let raw: Vec<RawEntity> = [
+            "Российской Федерации",
+            "Северной области",
+            "Северная область Строй",
+            "Судак",
+            "Центр снабжения",
+            "Банк «Город»",
+        ]
+        .into_iter()
+        .map(|text| {
+            let start = source.find(text).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: "organization".into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        })
+        .collect();
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| (&source[d.range], d.category))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("ООО «Северная область Строй»", Category::Organization),
+                ("ООО «Судак»", Category::Organization),
+                ("Банк «Город»", Category::Organization),
+            ]
+        );
+    }
+
     /// #397: the model reads an identifier column's cells with their
     /// header; a span over the header and the value maps to the cell, one
     /// only over the header goes, and a label rule finds the value.
