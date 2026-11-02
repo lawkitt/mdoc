@@ -59,6 +59,11 @@
 #                       category
 #   guess_words = […]   a manual selection with one of these words (ASCII
 #                       case ignored) is this category
+#   forbid_quotes = ["«»"…]  a model span wrapped exactly in one of these
+#                       quote pairs is not this category
+#   quotes_after  = […] lowercase stems: then only after a word written in
+#                       lowercase that is one with a noun's case ending
+#                       ("повести «…»", not "Роман «…»", "рассказал «…»")
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
@@ -116,6 +121,24 @@ category = "PERSON"
 word = '^\p{Uppercase}'
 guess = [
     '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
+]
+
+# A name wrapped exactly in «» after a common noun for a work or a product
+# is a title ("повести «Кедровый свет»"), not a person. A name quoted
+# elsewhere stays a person ("назван «Иван Петров»", "по прозвищу «…»",
+# "Роман «Сокол»"), and so does one after a company's legal form, which the
+# ORG span holds ("ООО «Вера Снегирь»"): never dropped, at worst the wrong
+# category.
+[[shape]]
+category = "PERSON"
+forbid_quotes = ["«»"]
+quotes_after = [
+    "повест", "роман", "рассказ", "новелл", "книг", "рукопис", "сборник",
+    "стих", "поэм", "пьес", "сценари", "журнал", "газет", "издани", "стать",
+    "фильм", "сериал", "мультфильм", "песн", "альбом", "спектакл",
+    "постановк", "картин", "произведени", "проект", "программ", "сайт",
+    "приложени", "бренд", "марк", "знак", "игра", "игры", "игре", "игру",
+    "шоу", "передач", "выставк", "фестивал", "конкурс",
 ]
 
 # Emails need an `@` and a dotted domain; the model also tags the word

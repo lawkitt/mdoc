@@ -92,6 +92,7 @@ pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
 /// Whether a model span has its category's shape in the rule pack; the model
 /// also tags the words for things ("email", "phone number", "companies") and
 /// titles and roles on their own ("Ms", "husband"; issue #302).
+#[cfg(test)]
 fn identifying(text: &str, category: Category) -> bool {
     rules::pack().identifying(text, category)
 }
@@ -553,12 +554,14 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             let category = category_of(&entity.label)?;
             // Read as the model read it: "%41lice" in a link target is "Alice".
             let text = &view.text[view.view_range(entity.start..entity.end)];
-            identifying(text, category).then_some(Detection {
-                range: entity.start..entity.end,
-                category,
-                score: entity.score,
-                recognizer: mdoc_pii::Recognizer::Model,
-            })
+            rules::pack()
+                .identifying_at(source, entity.start..entity.end, text, category)
+                .then_some(Detection {
+                    range: entity.start..entity.end,
+                    category,
+                    score: entity.score,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                })
         })
         .collect();
     rules::pack().fix_spans(source, &view, &mut detections);

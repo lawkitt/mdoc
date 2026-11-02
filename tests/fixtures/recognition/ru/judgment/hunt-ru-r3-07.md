@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: project-title-as-person
-issue: 415
+status: pass
+flaw:
+issue:
 kind: judgment
 source: hunt-r3
-expect: false hit: PERSON "Кедровый свет"
 ---
 # Апелляционное определение по спору об использовании рукописи
 
