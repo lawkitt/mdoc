@@ -146,18 +146,29 @@ pub(crate) fn cue_before(source: &str, start: usize) -> String {
     column_header(source, start).unwrap_or_else(|| label_before(source, start))
 }
 
-/// The label ending within 12 characters before `start` ("DOB: ", "род. "):
-/// its last word, and the word before when that is lowercase or the last
-/// is short, so "born on" is not "Signed on" and "Bennett born" is "born".
+/// The label before `start` ("DOB: ", "род. "), across spaces, one line
+/// break and up to 12 other marks: its last word, and the word before when
+/// that is lowercase, the last is short, or both are capitalised alike. So
+/// "born on" is not "Signed on", "BIRTH DATE" is not "SIGNING DATE", and
+/// "Bennett born" is "born".
 fn label_before(source: &str, start: usize) -> String {
     let before = &source[..start];
-    let Some(end) = before
-        .char_indices()
-        .rev()
-        .take(12)
-        .find(|(_, c)| c.is_alphanumeric())
-        .map(|(i, c)| i + c.len_utf8())
-    else {
+    let (mut marks, mut breaks, mut end) = (0, 0, None);
+    for (i, c) in before.char_indices().rev() {
+        if c.is_alphanumeric() {
+            end = Some(i + c.len_utf8());
+            break;
+        }
+        if c == '\n' {
+            breaks += 1;
+        } else if !c.is_whitespace() {
+            marks += 1;
+        }
+        if breaks > 1 || marks > 12 {
+            break;
+        }
+    }
+    let Some(end) = end else {
         return String::new();
     };
     let rest = before[..end].trim_end_matches(char::is_alphanumeric);
@@ -166,13 +177,37 @@ fn label_before(source: &str, start: usize) -> String {
         return word.to_lowercase();
     };
     let previous = &rest[rest.trim_end_matches(char::is_alphanumeric).len()..];
-    if previous.starts_with(char::is_lowercase)
-        || (!previous.is_empty() && word.chars().count() <= 2)
-    {
+    // 0: lowercase, 1: capitalised, 2: capitals.
+    let shape = |w: &str| {
+        if !w.chars().any(char::is_lowercase) {
+            2
+        } else if w.starts_with(char::is_uppercase) {
+            1
+        } else {
+            0
+        }
+    };
+    let joins = !previous.is_empty()
+        && previous.chars().all(char::is_alphabetic)
+        && (shape(previous) == 0 || shape(previous) == shape(word) || word.chars().count() <= 2);
+    if joins {
         format!("{previous} {word}").to_lowercase()
     } else {
         word.to_lowercase()
     }
+}
+
+/// Byte offsets of a table row's cell pipes; an escaped `\|` is text.
+fn pipes(row: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut escaped = false;
+    for (i, c) in row.char_indices() {
+        if c == '|' && !escaped {
+            found.push(i);
+        }
+        escaped = c == '\\' && !escaped;
+    }
+    found
 }
 
 /// The header cell of the table column `start` is in: up the table's rows
@@ -182,7 +217,7 @@ fn column_header(source: &str, start: usize) -> Option<String> {
     if !source[line_start..].trim_start().starts_with('|') {
         return None;
     }
-    let column = source[line_start..start].matches('|').count();
+    let column = pipes(&source[line_start..start]).len();
     let mut rows = source[..line_start].lines().rev();
     loop {
         let row = rows.next()?.trim();
@@ -194,8 +229,10 @@ fn column_header(source: &str, start: usize) -> Option<String> {
                 .chars()
                 .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
         {
-            let cell = rows.next()?.trim_start().split('|').nth(column)?;
-            let label = cell
+            let header = rows.next()?;
+            let cells = pipes(header);
+            let from = cells.get(column.checked_sub(1)?)? + 1;
+            let label = header[from..cells.get(column).copied().unwrap_or(header.len())]
                 .trim_matches(|c: char| c == '*' || c == '_' || c == ':' || c.is_whitespace())
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -277,6 +314,7 @@ mod tests {
     #[test]
     fn a_cue_is_a_dates_column_header_or_label() {
         let table = "| Name | DOB |\n| --- | --- |\n| Maya Bennett | 14/03/1988 |";
+        let escaped = "| Note | DOB |\n| --- | --- |\n| A \\| B | 14/03/1988 |";
         let longer = "| Name | **Дата рождения** |\n|-|-|\n| x | y |\n| PERSON_1 | 14.03.1988 |";
         for (source, date, cue) in [
             ("DOB: 14/03/1988", "14/03/1988", "dob"),
@@ -292,8 +330,14 @@ mod tests {
             (table, "14/03/1988", "dob"),
             (longer, "14.03.1988", "дата рождения"),
             ("| DOB | 14/03/1988 |", "14/03/1988", "dob"),
+            (escaped, "14/03/1988", "dob"),
+            ("BIRTH DATE: 14/03/1988", "14/03/1988", "birth date"),
+            ("SIGNING DATE: 14/03/1988", "14/03/1988", "signing date"),
+            ("Maya Bennett DOB 14/03/1988", "14/03/1988", "dob"),
+            ("PERSON_1 DOB 14/03/1988", "14/03/1988", "dob"),
+            ("DOB:\n            14/03/1988", "14/03/1988", "dob"),
             ("14/03/1988", "14/03/1988", ""),
-            ("x            14/03/1988", "14/03/1988", ""),
+            ("x ------------- 14/03/1988", "14/03/1988", ""),
         ] {
             assert_eq!(
                 cue_before(source, source.rfind(date).unwrap()),

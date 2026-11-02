@@ -1990,6 +1990,15 @@ fn a_birth_dates_label_is_its_column_or_its_label_words() {
     let source = "born on 2 May 1990. Signed on 2 May 1990.";
     let review = ingest_birth_dates(source, &["2 May 1990"]);
     assert_eq!(mention_count(&review, "2 May 1990"), 1);
+    let source = "BIRTH DATE: 14/03/1988. SIGNING DATE: 14/03/1988.";
+    let review = ingest_birth_dates(source, &["14/03/1988"]);
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
+    // An escaped pipe in the row is text, so editing the note keeps it.
+    let source = "| Note | DOB |\n| --- | --- |\n| A \\| B | 14/03/1988 |\n\nSigned 14/03/1988.";
+    let mut review = ingest_birth_dates(source, &["14/03/1988"]);
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
+    review.refresh(&source.replace("A \\| B", "A"));
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
 }
 
 /// Review of #439: a date on the Always list counts every mention, even

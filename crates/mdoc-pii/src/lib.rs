@@ -732,10 +732,15 @@ impl Review {
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
-        // every mention (ADR 0092).
+        // every mention (ADR 0092), and so does a date whose label is not
+        // found, rather than every other unlabelled date.
         let unlimited: HashSet<&str> = selected
             .iter()
-            .filter(|detection| detection.recognizer != Recognizer::Context)
+            .filter(|detection| {
+                detection.recognizer != Recognizer::Context
+                    || (detection.category == Category::Date
+                        && discovery::cue_before(source, detection.range.start).is_empty())
+            })
             .map(|detection| &source[detection.range.clone()])
             .collect();
         for detection in selected {
