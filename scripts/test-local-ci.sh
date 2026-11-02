@@ -80,7 +80,7 @@ not() { ! "$@"; }
     check "$* -> ${want:-no area}" [ "$(areas_of "$@")" = "$want" ]
   }
   routes ios apps/ios/mdoc/App/MdocApp.swift
-  routes ios apps/ios/mdoc.xcodeproj/project.pbxproj scripts/build-ios-core.sh scripts/ios-survey.sh scripts/ios-scan-pages.swift
+  routes ios apps/ios/mdoc.xcodeproj/project.pbxproj scripts/build-ios-core.sh scripts/ios-survey.sh scripts/ios-toolchain.sh scripts/ios-scan-pages.swift
   routes android apps/android/app/build.gradle.kts
   routes android scripts/build-android-core.sh scripts/android-emulator.sh scripts/android-package-xml.py scripts/install-android-sdk.sh
   routes "core desktop recognition ios android" crates/mdoc-ffi/src/lib.rs

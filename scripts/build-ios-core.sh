@@ -21,6 +21,9 @@ pdfium_device_sha="cda317b85a6dd06fa8c2965f7108149f21296b3622352f0f29c78f0047ea3
 pdfium_simulator_sha="eaa56dacce4f0aa819d646199cfb84bf9e6eebd22a1d185394be5a3415d93455"
 
 export IPHONEOS_DEPLOYMENT_TARGET=26.0
+# The pinned toolchain's iOS targets; a hosted runner has none yet.
+targets=(aarch64-apple-ios aarch64-apple-ios-sim)
+rustup target add "${targets[@]}"
 out=target/ios
 deps=$out/deps
 rm -rf "$out/MdocCore.xcframework" "$out/pdfium.xcframework" "$out/swift" "$out/stage"
@@ -40,10 +43,13 @@ rm -rf "$deps/onnxruntime" && mkdir "$deps/onnxruntime"
 unzip -q "$deps/onnxruntime.zip" -d "$deps/onnxruntime"
 ort=$deps/onnxruntime/onnxruntime.xcframework
 
+# Both targets in one cargo run, so one's single-threaded LTO overlaps the
+# other's compiling.
+cargo build --locked --profile mobile -p mdoc-ffi --lib "${targets[@]/#/--target=}"
+
 # slice <rust-target> <ort-slice> <pdfium-archive> <pdfium-sha>
 slice() {
   local target=$1 stage=$out/stage/$1
-  cargo build --locked --profile mobile -p mdoc-ffi --lib --target "$target"
   mkdir -p "$stage/lib" "$stage/pdfium.framework"
   # One arm64 static library: the core, then ONNX Runtime for the core's
   # reference to OrtGetApiBase to pull in.
