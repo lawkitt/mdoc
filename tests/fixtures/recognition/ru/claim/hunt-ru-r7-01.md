@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: role-stem-surname-collision date-of-birth
-issue: 450 363
+flaw: role-stem-surname-collision
+issue: 450
 kind: claim
 source: hunt-r7
-expect: miss: DATE "17.09.1994"
 expect: boundary: gold PERSON "Подрядчиков"; proposed ORG "Подрядчиков"
 ---
 # Дополнение к иску о возврате остатка аванса

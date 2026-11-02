@@ -1,10 +1,9 @@
 ---
 status: known-flaw
-flaw: email-local-part-boundary date-of-birth
-issue: 412 363
+flaw: email-local-part-boundary
+issue: 412
 kind: contract
 source: hunt-r3
-expect: miss: DATE "27 марта 1990 года"
 expect: boundary: gold EMAIL "_roman@kadry.invalid"; proposed EMAIL "roman@kadry.invalid"
 ---
 # Трудовой договор с хранителем читального зала

@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: date-of-birth
-issue: 363
+status: pass
+flaw:
+issue:
 kind: contract
 source: import
-expect: miss: DATE "14 March 1988" ×40
 ---
 ## Section
 

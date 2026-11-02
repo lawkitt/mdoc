@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: date-of-birth
-issue: 363
+status: pass
+flaw:
+issue:
 kind: contract
 source: hunt-r1
-expect: miss: DATE "19 февраля 1987 года"
 ---
 # Договор реставрации семейного альбома
 

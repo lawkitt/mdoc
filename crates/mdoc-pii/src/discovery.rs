@@ -25,6 +25,9 @@ pub struct DiscoveryInput {
     /// Case numbers: a repeat counts only standing alone, never inside a
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
+    /// Dates of birth: a mention counts only after one of its cue words
+    /// ([`cue_before`]); `None` counts every mention.
+    pub(super) cues: Vec<Option<Vec<String>>>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -82,6 +85,9 @@ impl DiscoveryInput {
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
                 && !(self.whole[*index] && !whole_value(source, range))
+                && self.cues[*index]
+                    .as_ref()
+                    .is_none_or(|cues| cues.contains(&cue_before(source, range.start)))
         });
         // A hit inside a longer one never splits it, whatever its priority: a
         // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
@@ -129,6 +135,111 @@ impl DiscoveryInput {
             matcher: Some(matcher),
             tokens,
         })
+    }
+}
+
+/// What labels a date of birth at `start`, lowercase (#466): the header of
+/// its table column ("| Name | DOB |"), else the label just before it. A
+/// neighbouring value takes no part, so replacing a name beside the date
+/// keeps it. Empty when there is none.
+pub(crate) fn cue_before(source: &str, start: usize) -> String {
+    column_header(source, start).unwrap_or_else(|| label_before(source, start))
+}
+
+/// The label before `start` ("DOB: ", "род. "), across spaces, one line
+/// break and up to 12 other marks: its last word, and the word before when
+/// that is lowercase, the last is short, or both are capitalised alike. So
+/// "born on" is not "Signed on", "BIRTH DATE" is not "SIGNING DATE", and
+/// "Bennett born" is "born".
+fn label_before(source: &str, start: usize) -> String {
+    let before = &source[..start];
+    let (mut marks, mut breaks, mut end) = (0, 0, None);
+    for (i, c) in before.char_indices().rev() {
+        if c.is_alphanumeric() {
+            end = Some(i + c.len_utf8());
+            break;
+        }
+        if c == '\n' {
+            breaks += 1;
+        } else if !c.is_whitespace() {
+            marks += 1;
+        }
+        if breaks > 1 || marks > 12 {
+            break;
+        }
+    }
+    let Some(end) = end else {
+        return String::new();
+    };
+    let rest = before[..end].trim_end_matches(char::is_alphanumeric);
+    let word = &before[rest.len()..end];
+    let Some(rest) = rest.strip_suffix([' ', '\t']) else {
+        return word.to_lowercase();
+    };
+    let previous = &rest[rest.trim_end_matches(char::is_alphanumeric).len()..];
+    // 0: lowercase, 1: capitalised, 2: capitals.
+    let shape = |w: &str| {
+        if !w.chars().any(char::is_lowercase) {
+            2
+        } else if w.starts_with(char::is_uppercase) {
+            1
+        } else {
+            0
+        }
+    };
+    let joins = !previous.is_empty()
+        && previous.chars().all(char::is_alphabetic)
+        && (shape(previous) == 0 || shape(previous) == shape(word) || word.chars().count() <= 2);
+    if joins {
+        format!("{previous} {word}").to_lowercase()
+    } else {
+        word.to_lowercase()
+    }
+}
+
+/// Byte offsets of a table row's cell pipes; an escaped `\|` is text.
+fn pipes(row: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut escaped = false;
+    for (i, c) in row.char_indices() {
+        if c == '|' && !escaped {
+            found.push(i);
+        }
+        escaped = c == '\\' && !escaped;
+    }
+    found
+}
+
+/// The header cell of the table column `start` is in: up the table's rows
+/// to the one a delimiter row ("| --- |") follows.
+fn column_header(source: &str, start: usize) -> Option<String> {
+    let line_start = source[..start].rfind('\n').map_or(0, |i| i + 1);
+    if !source[line_start..].trim_start().starts_with('|') {
+        return None;
+    }
+    let column = pipes(&source[line_start..start]).len();
+    let mut rows = source[..line_start].lines().rev();
+    loop {
+        let row = rows.next()?.trim();
+        if !row.starts_with('|') {
+            return None;
+        }
+        if row.contains('-')
+            && row
+                .chars()
+                .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
+        {
+            let header = rows.next()?;
+            let cells = pipes(header);
+            let from = cells.get(column.checked_sub(1)?)? + 1;
+            let label = header[from..cells.get(column).copied().unwrap_or(header.len())]
+                .trim_matches(|c: char| c == '*' || c == '_' || c == ':' || c.is_whitespace())
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            return (!label.is_empty()).then_some(label);
+        }
     }
 }
 
@@ -198,7 +309,43 @@ pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::whole_value;
+    use super::{cue_before, whole_value};
+
+    #[test]
+    fn a_cue_is_a_dates_column_header_or_label() {
+        let table = "| Name | DOB |\n| --- | --- |\n| Maya Bennett | 14/03/1988 |";
+        let escaped = "| Note | DOB |\n| --- | --- |\n| A \\| B | 14/03/1988 |";
+        let longer = "| Name | **Дата рождения** |\n|-|-|\n| x | y |\n| PERSON_1 | 14.03.1988 |";
+        for (source, date, cue) in [
+            ("DOB: 14/03/1988", "14/03/1988", "dob"),
+            ("| Дата рождения | 14.03.1988", "14.03.1988", "рождения"),
+            ("Иванов И. И., род. 14.03.1988", "14.03.1988", "род"),
+            ("DOB:\n14/03/1988", "14/03/1988", "dob"),
+            ("Signed 14/03/1988", "14/03/1988", "signed"),
+            ("born on 2 May 1990", "2 May", "born on"),
+            ("Born on 2 May 1990", "2 May", "born on"),
+            ("Signed on 2 May 1990", "2 May", "signed on"),
+            ("Maya Bennett born 14 March 1988", "14 March", "born"),
+            ("Date of birth: 14/03/1988", "14/03/1988", "of birth"),
+            (table, "14/03/1988", "dob"),
+            (longer, "14.03.1988", "дата рождения"),
+            ("| DOB | 14/03/1988 |", "14/03/1988", "dob"),
+            (escaped, "14/03/1988", "dob"),
+            ("BIRTH DATE: 14/03/1988", "14/03/1988", "birth date"),
+            ("SIGNING DATE: 14/03/1988", "14/03/1988", "signing date"),
+            ("Maya Bennett DOB 14/03/1988", "14/03/1988", "dob"),
+            ("PERSON_1 DOB 14/03/1988", "14/03/1988", "dob"),
+            ("DOB:\n            14/03/1988", "14/03/1988", "dob"),
+            ("14/03/1988", "14/03/1988", ""),
+            ("x ------------- 14/03/1988", "14/03/1988", ""),
+        ] {
+            assert_eq!(
+                cue_before(source, source.rfind(date).unwrap()),
+                cue,
+                "{source}"
+            );
+        }
+    }
 
     #[test]
     fn a_value_stands_alone_only_outside_identifiers_numbers_and_amounts() {
