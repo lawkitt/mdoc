@@ -221,7 +221,8 @@ value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
 # AVENUE\nBRANWICK, CO  81999", "Harrow House, 12 Pellin Street\nSlocombe
 # SL9 9ZZ"); after a line break, or in capitals, a town needs its
 # postcode. A flat, suite, floor, building or room may come before the
-# street or, up to three, after it ("1023 15th Street, N.W., 10th Floor");
+# street or, up to three, after it, on its line or the next ("1023 15th
+# Street, N.W., 10th Floor", "12 Oak Road\nSuite 210\nLeeds LS1 4AB");
 # a building name ("Harrow House", "Ardley Building") before it, on its own
 # line or not. Not "Chambers", "Hall" or "Lodge", which are surnames too,
 # nor "Center", the end of many an organization's name: the model's name
@@ -238,7 +239,7 @@ value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
 # wait for #506.
 [[span]]
 category = "ADDRESS"
-pattern = '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:{sep}{flat}){0,3}|{street}(?:{sep}{flat}){1,3}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:{sep}{flat}){0,3})(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})?|{street}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})|{named}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode})'
+pattern = '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}){flat}){0,3}|{street}(?:(?:{sep}|{nl}){flat}){1,3}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})?|{street}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})|{named}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode})'
 parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor|FLOOR)\b|(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b)'
 parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS)\b'
 parts.street = '\b\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4}(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
@@ -251,24 +252,33 @@ parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|(?:[A-Z]{2}|[A-
 
 # A country or the word "address" at the edge of a model's address is no
 # part of it: "… OX2 0EL\nUK" ends at the postcode, "… Street address" at
-# the street (guide rule 3, #498).
+# the street (guide rule 3, #498). A country of several words goes word by
+# word ("United Kingdom", "United States of America"); "United" at an
+# address's start is a building's name ("United House"), which the span
+# pattern keeps whole.
 [[span]]
 category = "ADDRESS"
-trim = ["uk", "u.k", "usa", "u.s.a", "england", "scotland", "address"]
+trim = [
+    "uk", "u.k", "usa", "u.s.a", "england", "scotland", "united", "kingdom",
+    "states", "of", "america", "address",
+]
 
-# A building, floor, room or mail-stop part of an address is no company,
-# bank account or identity document: "Bldg 499", "Room 2.104", "Mail Stop
-# 3-B" (#498). Not "building" or "house" in an organization: "Brindle
-# Building Society" and "Pellin House" may be companies.
+# A building, floor, room or mail-stop part of an address alone is no
+# company: "Bldg 499", "10th Floor", "Suite 210, 3rd Floor", "Mail Stop
+# K9-24" (#498). A company named with one of the words stays ("Harrow Floor
+# Services", "Brindle Building Society").
+[[shape]]
+category = "ORG"
+forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor)(?:\s*,\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mail\s*stop|unit|apt\.?|apartment|flat)\s*#?\s*(?:[a-z]?\d[\w.-]*|[a-z])\b|\d+(?:st|nd|rd|th)\s+floor|(?:ground|first|second|third|lower|upper)\s+floor))*\s*$']
+
+# Nor is such a part, anywhere in the span, a bank account or an identity
+# document: "Room 2.104", "Building 179A", "Mail Stop K9-24".
 [[never]]
 match = "plural"
-words = ["suite", "floor", "bldg", "room", "mailstop"]
-anywhere_in = ["ORG", "BANK", "IDENTITY"]
-
-# The same for numbers alone, where a word cannot name a company anyway.
-[[never]]
-match = "plural"
-words = ["building", "apt", "apartment", "flat", "unit", "ste", "rm", "mail", "stop"]
+words = [
+    "suite", "ste", "floor", "bldg", "building", "room", "rm", "mailstop",
+    "mail", "stop", "apt", "apartment", "flat", "unit",
+]
 anywhere_in = ["BANK", "IDENTITY"]
 
 # Dates of birth (ADR 0092): a date after born, DOB or date of birth is a

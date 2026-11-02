@@ -2118,6 +2118,11 @@ mod tests {
                 "Brindle Medical Center\n3939 Harl Blvd.\nSlocombe, UT 84999",
                 "3939 Harl Blvd.\nSlocombe, UT 84999",
             ),
+            // A suite on its own line after the street.
+            (
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB\n",
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB",
+            ),
         ] {
             assert_eq!(found(source), [address], "{source}");
         }
@@ -2139,12 +2144,15 @@ mod tests {
             assert!(found(source).is_empty(), "{source}");
         }
         // A building, room or mail-stop part is no company, bank account or
-        // identity document; a building society or a publisher stays a
-        // company.
+        // identity document; a company named with one of their words stays
+        // a company.
         for (text, category) in [
             ("Bldg 499", Category::Organization),
             ("Suite 210", Category::Organization),
             ("10th Floor", Category::Organization),
+            ("Suite 210, 3rd Floor", Category::Organization),
+            ("Building 179A", Category::Organization),
+            ("Mail Stop K9-24", Category::Organization),
             ("Room 2.104", Category::Bank),
             ("Building 179A", Category::Bank),
             ("Mail Stop K9-24", Category::Identity),
@@ -2156,9 +2164,33 @@ mod tests {
             "Brindle Building Society",
             "Pellin House",
             "Harrow Mail Ltd",
+            "Harrow Floor Services",
+            "Suite Seven Studios",
         ] {
             assert!(pack.identifying(name, Category::Organization), "{name}");
         }
+        // So a model's building part no longer costs the whole address.
+        let source = "Building 179A, 12 Oak Road\nLeeds LS1 4AB\n";
+        let start = source.find("Building").unwrap();
+        let raw = [crate::RawEntity {
+            start,
+            end: start + "Building 179A".len(),
+            label: "organization".into(),
+            score: 0.9,
+            text: "Building 179A".into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            shown,
+            [(
+                "Building 179A, 12 Oak Road\nLeeds LS1 4AB".to_owned(),
+                "ADDRESS".to_owned()
+            )]
+        );
         // A model's address loses the country and the word "address" at
         // its edges.
         assert_eq!(
@@ -2178,6 +2210,42 @@ mod tests {
             ),
             ["12 Pellin Street"]
         );
+        // A country of several words, too; "United" leading a building's
+        // name goes, but the span pattern's match holds what is left.
+        assert_eq!(
+            fixed(
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                &[(
+                    "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                    Category::Address
+                )]
+            ),
+            ["12 Oak Road, Slocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "of 4 Oak Road, Brindlecombe, OH 45999, United States of America.",
+                &[(
+                    "of 4 Oak Road, Brindlecombe, OH 45999, United States of America",
+                    Category::Address
+                )]
+            ),
+            ["4 Oak Road, Brindlecombe, OH 45999"]
+        );
+        let source = "United House, 12 Pellin Street\nSlocombe SL9 9ZZ\n";
+        let raw = [crate::RawEntity {
+            start: 0,
+            end: source.trim_end().len(),
+            label: "address".into(),
+            score: 0.9,
+            text: source.trim_end().into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(shown, [source.trim_end()]);
     }
 
     /// Rules win the review's conflicts, but a span pattern's match gives
