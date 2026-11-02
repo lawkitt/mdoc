@@ -42,6 +42,13 @@
 #                               the words anywhere outside quotes is dropped
 #                               (a court) after the span fixes, unless it
 #                               has a legal form
+#   unless_named = true         common words ("He", "Program", "French"):
+#                               no name alone, but in a person's span a
+#                               name after a title ("Mr He") or where
+#                               another person span has the word beside a
+#                               name ("Dawn French"); decided after the span
+#                               fixes. An initial before one names no one
+#                               ("B. General Terms")
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
@@ -58,7 +65,8 @@
 #                         earlier spans grow first
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period with it, and a comma
-#                         before a trailing one
+#                         before a trailing one; or phrases of them,
+#                         single-spaced ("in re"), with a word left beside
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period
 #   person_before = […]   for ORG: lowercase words that, ending a span, make

@@ -1,0 +1,23 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":241,"end":256,"label":"full_name","score":0.99,"text":"Ossian Draycott"},
+    {"start":402,"end":410,"label":"full_name","score":0.97,"text":"Draycott"},
+    {"start":322,"end":332,"label":"organization","score":0.74,"text":"Law School"},
+    {"start":21,"end":23,"label":"full_name","score":0.71,"text":"He"},
+    {"start":72,"end":81,"label":"full_name","score":0.66,"text":"Christian"},
+    {"start":361,"end":366,"label":"organization","score":0.63,"text":"Islam"},
+    {"start":11,"end":19,"label":"full_name","score":0.62,"text":"Judgment"},
+    {"start":270,"end":274,"label":"full_name","score":0.61,"text":"York"},
+    {"start":124,"end":131,"label":"full_name","score":0.6,"text":"Program"},
+    {"start":193,"end":201,"label":"full_name","score":0.59,"text":"American"},
+    {"start":33,"end":35,"label":"full_name","score":0.58,"text":"In"},
+    {"start":107,"end":109,"label":"organization","score":0.57,"text":"It"},
+    {"start":281,"end":288,"label":"full_name","score":0.57,"text":"Federal"},
+    {"start":169,"end":183,"label":"full_name","score":0.56,"text":"Maltese lawyer"},
+    {"start":93,"end":99,"label":"full_name","score":0.55,"text":"Others"},
+    {"start":147,"end":157,"label":"full_name","score":0.54,"text":"B. General"},
+    {"start":214,"end":236,"label":"full_name","score":0.53,"text":"United States Citizens"}
+  ]
+}
