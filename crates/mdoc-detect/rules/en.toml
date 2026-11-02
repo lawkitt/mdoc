@@ -39,6 +39,12 @@ trim = ["anor", "ors"]
 category = "ORG"
 strip_end = ".,;:&"
 
+# A tax number's label stays outside its span: the model's "EIN 98-7654321"
+# is "98-7654321" (guide rule 6, issue #480).
+[[span]]
+category = "TAX"
+trim = ["ein", "tin", "itin", "utr"]
+
 # A declaration or an affidavit is a person's: the model's organization
 # "Ostrand Decl." is the person "Ostrand" when a person's span names them
 # ("Mr Ivo Ostrand"; guide rule 1, issue #499).

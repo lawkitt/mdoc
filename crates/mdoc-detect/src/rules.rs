@@ -2752,7 +2752,7 @@ mod tests {
             U.S. Bank paid; USC agreed; GB 123 4567 89 is the VAT number.\n\n\
             J. Ostrand\n";
         let raw = [
-            ("98-7654321", "tax_id"),
+            ("EIN 98-7654321", "tax_id"),
             ("+1 (202) 555-0164", "phone_number"),
             ("U.S. Bank", "organization"),
             ("USC", "organization"),
