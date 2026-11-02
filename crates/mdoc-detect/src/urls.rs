@@ -3,24 +3,18 @@
 //! domains. Read on the source itself, not the view: an address is written
 //! as it is, and the view reads a link target's "_" as a space.
 use crate::rules;
-use mdoc_pii::{Category, Detection, Recognizer};
+use mdoc_pii::{Category, Detection, Recognizer, web};
 use regex::Regex;
 use std::{ops::Range, sync::OnceLock};
 
 /// A web address is rule evidence that wins over any other inside it.
 const URL_SCORE: f32 = 1.0;
 
-/// Characters that end an address wherever they are: spaces, quotes, angle
-/// brackets, a table's pipe and Markdown code.
-fn stop(c: char) -> bool {
-    c.is_whitespace() || "<>\"'«»“”‘’|`".contains(c)
-}
-
 fn candidates() -> &'static Regex {
     static CANDIDATES: OnceLock<Regex> = OnceLock::new();
     CANDIDATES.get_or_init(|| {
         Regex::new(
-            r#"(?i)\b(?:(?:https?|ftp)://|www\.)[^\s<>"'«»“”‘’|`]+|[\p{L}\p{N}][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}][\p{L}\p{N}_-]*)+(?::\d{1,5})?(?:[/?#][^\s<>"'«»“”‘’|`]*)?"#,
+            r#"(?i)(?:(?:https?|ftp)://|www\.)[^\s<>"'«»“”‘’|`]+|[\p{L}\p{N}][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}][\p{L}\p{N}_-]*)+(?::\d{1,5})?(?:[/?#][^\s<>"'«»“”‘’|`]*)?"#,
         )
         .expect("web address pattern")
     })
@@ -51,38 +45,29 @@ pub(crate) fn whole(text: &str) -> bool {
         .is_some_and(|(range, _)| *range == (lead..lead + trimmed.len()))
 }
 
-/// Every web address in `source` with its host, in order.
+/// Every web address in `source` with its host, in order. Candidates come
+/// from the pattern; where each starts and ends is [`web`]'s, which
+/// discovery shares.
 fn find(source: &str) -> Vec<(Range<usize>, String)> {
     let mut found = Vec::new();
     let mut at = 0;
-    // An address may end before its match does (at a Markdown link's "]"),
-    // so the next search starts where the address ends.
     while let Some(m) = candidates().find_at(source, at) {
-        at = m.end();
-        let before = source[..m.start()].chars().rev().find(|c| !invisible(*c));
-        let text = m.as_str();
-        let lower = text.to_ascii_lowercase();
-        let scheme = ["http://", "https://", "ftp://"]
-            .iter()
-            .find(|scheme| lower.starts_with(**scheme))
-            .map_or(0, |scheme| scheme.len());
-        let www = scheme == 0 && lower.starts_with("www.");
-        let explicit = scheme > 0 || www;
-        // Glued to a word, a path or an email ("alice@ivanov-law.ru").
-        let glued = if explicit {
-            before.is_some_and(char::is_alphanumeric)
+        let start = m.start();
+        let first = m.as_str().chars().next().map_or(1, char::len_utf8);
+        // An address may end before its match does (at a Markdown link's
+        // "]"), so the next search starts where the address ends.
+        let end = web::end(source, start);
+        let glued = web::glued_before(source, start);
+        at = if glued {
+            m.end()
         } else {
-            before.is_some_and(|c| c.is_alphanumeric() || "@./\\-_:%#=&+~".contains(c))
+            end.max(start + first)
         };
-        if glued || (!explicit && email_domain(source, m.start())) {
-            continue;
-        }
-        let end = m.start() + trimmed_len(text);
-        at = end.max(m.start() + text.chars().next().map_or(1, char::len_utf8));
-        let address = &source[m.start()..end];
+        let address = &source[start..end];
+        let scheme = web::scheme_len(address);
+        let explicit = web::explicit(address);
         let rest = &address[scheme..];
-        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-        let authority = &rest[..authority_end];
+        let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
         // A user's name and password before the host belong to the address.
         let host_port = if explicit {
             authority
@@ -95,54 +80,17 @@ fn find(source: &str) -> Vec<(Range<usize>, String)> {
             .rsplit_once(':')
             .filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit()))
             .map_or(host_port, |(host, _)| host);
-        if host.is_empty() || (www && !host.contains('.')) {
+        let www = scheme == 0 && explicit;
+        if glued
+            || host.is_empty()
+            || (www && !host.contains('.'))
+            || (!explicit && !bare_domain(source, start, end, host, authority))
+        {
             continue;
         }
-        if !explicit && !bare_domain(source, m.start(), end, host, authority) {
-            continue;
-        }
-        found.push((m.start()..end, host.to_owned()));
+        found.push((start..end, host.to_owned()));
     }
     found
-}
-
-/// Invisible characters the view drops (`mdoc_pii::view`): a zero-width
-/// space or a soft hyphen glues what is on either side.
-fn invisible(c: char) -> bool {
-    matches!(
-        c,
-        '\u{ad}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}' | '\u{feff}'
-    )
-}
-
-/// Whether the domain at `start` is an email's, wrapped after its "@"
-/// ("ksen.rav@" then "svod.invalid" on the next line) or split by spaces.
-fn email_domain(source: &str, start: usize) -> bool {
-    // An "@" written as a reference or percent-encoded.
-    let lower =
-        source[source.floor_char_boundary(start.saturating_sub(8))..start].to_ascii_lowercase();
-    if ["&#64;", "&#x40;", "&commat;", "%40"]
-        .iter()
-        .any(|at| lower.ends_with(at))
-    {
-        return true;
-    }
-    let mut breaks = 0;
-    for c in source[..start].chars().rev() {
-        match c {
-            '@' | '＠' => return true,
-            '\n' => {
-                breaks += 1;
-                if breaks > 1 {
-                    return false;
-                }
-            }
-            ' ' | '\t' | '\r' => {}
-            c if invisible(c) => {}
-            _ => return false,
-        }
-    }
-    false
 }
 
 /// Whether a bare domain is written as an address: a known zone, a letter
@@ -169,44 +117,6 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
         && zone.chars().all(char::is_alphabetic)
         && (name.chars().count() >= 2 || path)
         && name.chars().any(char::is_alphabetic)
-}
-
-/// The length of the address that starts `text`: up to an unbalanced
-/// closing bracket (a Markdown link's or a sentence's), without trailing
-/// punctuation.
-fn trimmed_len(text: &str) -> usize {
-    let mut depth = [0usize; 2];
-    let mut end = 0;
-    for (i, c) in text.char_indices() {
-        if stop(c) {
-            break;
-        }
-        let pair = match c {
-            '(' | ')' => 0,
-            '[' | ']' => 1,
-            _ => usize::MAX,
-        };
-        if matches!(c, '(' | '[') {
-            depth[pair] += 1;
-        } else if matches!(c, ')' | ']') {
-            if depth[pair] == 0 {
-                break;
-            }
-            depth[pair] -= 1;
-        }
-        end = i + c.len_utf8();
-    }
-    let mut address = &text[..end];
-    loop {
-        let shorter = address.trim_end_matches(['.', ',', ';', ':', '!', '?', '*', '…']);
-        // A bracket the address opened and did not close goes too.
-        let shorter = shorter.strip_suffix(['(', '[']).unwrap_or(shorter);
-        if shorter.len() == address.len() {
-            break;
-        }
-        address = shorter;
-    }
-    address.len()
 }
 
 #[cfg(test)]

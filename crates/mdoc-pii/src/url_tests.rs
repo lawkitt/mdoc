@@ -205,3 +205,54 @@ fn web_address_comes_right_after_email_and_older_tokens_are_unchanged() {
     assert_eq!(Category::DETECTED[3], Category::Url);
     assert_eq!(Category::Url.label(), "Web address");
 }
+
+#[test]
+fn a_kept_email_keeps_its_domain_when_the_address_is_applied() {
+    let source = "www.private.invalid and alice@www.private.invalid";
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                url(source, "www.private.invalid"),
+                found(
+                    source,
+                    "alice@www.private.invalid",
+                    Category::Email,
+                    Recognizer::Email,
+                ),
+            ],
+        )
+        .unwrap();
+    let email = review
+        .variants()
+        .iter()
+        .find(|v| v.category == Category::Email)
+        .unwrap()
+        .id;
+    review.keep(email, None);
+    assert_eq!(
+        replaced(&review, source),
+        "URL_1 and alice@www.private.invalid"
+    );
+}
+
+#[test]
+fn a_known_address_never_replaces_the_start_of_a_longer_one() {
+    let source = "https://private.invalid/doc, https://private.invalid/doc(SecretToken), \
+                  https://private.invalid/doc;token=Secret and https://private.invalid/doc/2.";
+    let mut review = Review::default();
+    review.refresh(source);
+    review
+        .add_manual(
+            source,
+            0.."https://private.invalid/doc".len(),
+            Category::Url,
+        )
+        .unwrap();
+    assert_eq!(
+        replaced(&review, source),
+        "URL_1, https://private.invalid/doc(SecretToken), \
+         https://private.invalid/doc;token=Secret and https://private.invalid/doc/2."
+    );
+}

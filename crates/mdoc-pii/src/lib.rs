@@ -14,6 +14,7 @@ pub mod restore;
 mod syntax;
 pub mod tracking;
 pub mod view;
+pub mod web;
 use candidates::Candidates;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
 use std::{

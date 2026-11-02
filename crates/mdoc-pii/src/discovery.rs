@@ -26,7 +26,7 @@ pub struct DiscoveryInput {
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
     /// Web addresses (ADR 0094): a mention is a whole address
-    /// ([`whole_url`]), and one shields the names, emails and IDs inside it
+    /// ([`crate::web::whole`]), and one shields the names, emails and IDs inside it
     /// even when kept.
     pub(super) url: Vec<bool>,
     /// Dates of birth: a mention counts only after one of its cue words
@@ -83,7 +83,7 @@ impl DiscoveryInput {
         let url_hit = |index: usize, range: &Range<usize>| {
             self.url[index]
                 && exact_boundary(source, range, &self.originals[index])
-                && whole_url(source, range)
+                && crate::web::whole(source, range)
         };
         // A web address, proposed, kept or replaced, holds what is inside it.
         let shields: Vec<Range<usize>> = hits
@@ -100,7 +100,7 @@ impl DiscoveryInput {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
-                && (!self.url[*index] || whole_url(source, range))
+                && (!self.url[*index] || crate::web::whole(source, range))
                 && !shielded(range)
                 && !crosses_syntax(&protected, source, range)
                 && plain_text_span(source, range.clone())
@@ -263,27 +263,6 @@ fn column_header(source: &str, start: usize) -> Option<String> {
             return (!label.is_empty()).then_some(label);
         }
     }
-}
-
-/// Whether `range` is a whole web address where it stands: not part of a
-/// longer one ("ivanov-law.ru" of "https://ivanov-law.ru/about" or of
-/// "mail.ivanov-law.ru"), nor an email's domain. A sentence's period may
-/// follow it.
-pub(crate) fn whole_url(source: &str, range: &Range<usize>) -> bool {
-    let before = source[..range.start].chars().next_back();
-    let mut after = source[range.end..].chars();
-    let (a1, a2) = (after.next(), after.next());
-    // One with a scheme or `www.` starts where it says, even after a field's
-    // colon or an attribute's "=" ("Website:https://…", "href=https://…").
-    let lower = source[range.clone()].to_ascii_lowercase();
-    let explicit = ["http://", "https://", "ftp://", "www."]
-        .iter()
-        .any(|start| lower.starts_with(start));
-    let glued_before =
-        before.is_some_and(|c| c.is_alphanumeric() || (!explicit && "./-_@:%~+=&#".contains(c)));
-    let glued_after = a1.is_some_and(|c| c.is_alphanumeric() || "/-_@%~+=&#?".contains(c))
-        || (a1.is_some_and(|c| ".:".contains(c)) && a2.is_some_and(char::is_alphanumeric));
-    !glued_before && !glued_after
 }
 
 /// Whether `range` stands alone as a value: not joined to a longer

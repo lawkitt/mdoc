@@ -430,7 +430,15 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
     ) {
         // Only a line break the replaced value held is part of it: one
         // the replacement exposes ("Ann\<br>" ends in an escape) is syntax.
-        (Ok(before), Ok(after)) => shape(&before, &local) == shape(&after, &(0..0)),
+        // A URI autolink's placeholder ("<X>") reads as the text it holds.
+        (Ok(before), Ok(after)) => {
+            let placeholder = if uri_autolink(block, &local) {
+                local.start..local.start + 1
+            } else {
+                0..0
+            };
+            shape(&before, &local) == shape(&after, &placeholder)
+        }
         _ => false,
     }
 }
@@ -444,20 +452,42 @@ static AS_TEXT: markdown::mdast::Node = markdown::mdast::Node::Text(markdown::md
     value: String::new(),
     position: None,
 });
-/// Whether `node` is a link written as its own text ("https://…",
-/// "www.…") wholly inside `value`.
+/// Whether `value` of `block` is a URI autolink's whole address
+/// ("<https://…>").
+fn uri_autolink(block: &str, value: &std::ops::Range<usize>) -> bool {
+    block[..value.start].ends_with('<')
+        && block[value.end..].starts_with('>')
+        && crate::web::explicit(&block[value.clone()])
+}
+/// Whether `node` reads as plain text for `value`: a link written as its
+/// own text ("https://…", "www.…") wholly inside it, a URI autolink around
+/// exactly it ("<https://…>"), or the replacement's "<X>" in its place.
 fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>) -> bool {
     use markdown::mdast::Node;
-    let Node::Link(link) = node else {
+    let (children, at) = match node {
+        Node::Link(link) => (link.children.as_slice(), link.position.as_ref()),
+        Node::Html(html) => {
+            return html.position.as_ref().is_some_and(|at| {
+                at.start.offset + 1 == value.start && at.end.offset == value.end + 1
+            }) && value.len() == 1;
+        }
+        _ => return false,
+    };
+    let Some(at) = at else {
         return false;
     };
-    let Some(at) = link.position.as_ref() else {
-        return false;
-    };
-    value.start <= at.start.offset
-        && at.end.offset <= value.end
-        && matches!(link.children.as_slice(), [Node::Text(text)]
-            if text.value.len() == at.end.offset - at.start.offset)
+    let len = at.end.offset - at.start.offset;
+    match children {
+        [Node::Text(text)] if value.start <= at.start.offset && at.end.offset <= value.end => {
+            text.value.len() == len
+        }
+        [Node::Text(text)] => {
+            at.start.offset + 1 == value.start
+                && at.end.offset == value.end + 1
+                && text.value.len() + 2 == len
+        }
+        _ => false,
+    }
 }
 fn shape(
     node: &markdown::mdast::Node,

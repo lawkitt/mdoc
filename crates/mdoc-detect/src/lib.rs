@@ -1224,6 +1224,18 @@ mod tests {
                 "Form: site.invalid/?email=alice@mail.invalid",
                 "site.invalid/?email=alice@mail.invalid",
             ),
+            (
+                "_https://private.invalid/Alice_ wrote.",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "__https://private.invalid/Alice__ wrote.",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "Profile: <https://private.invalid/alice_r>.",
+                "https://private.invalid/alice_r",
+            ),
         ] {
             let mut review = mdoc_pii::Review::default();
             review.ingest(source, correct(source, &[])).unwrap();
