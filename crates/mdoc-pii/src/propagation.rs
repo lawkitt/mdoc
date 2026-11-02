@@ -590,20 +590,25 @@ struct Person {
 }
 impl Person {
     /// Whether `words` (a [`Form::Whole`]) are this person's first name and
-    /// own surname, in either order, with their patronymic between or after
-    /// them or none. A person known without one takes any Russian
-    /// patronymic there ("Лея Аркадьевна Ли-Вельт" for "Лея Ли-Вельт"). Each
-    /// word is this person's, so two people side by side ("Лидией Игоревной
-    /// Ренц") are never one.
+    /// own surname, with their patronymic between them or none; a Russian
+    /// name may also put the surname first ("Брюн Лидии Игоревне"). A person
+    /// known without a patronymic takes any Russian one there ("Лея
+    /// Аркадьевна Ли-Вельт" for "Лея Ли-Вельт"). Each word is this
+    /// person's, so two people side by side ("Лидией Игоревной Ренц") are
+    /// never one.
     fn named_whole(&self, words: &[String]) -> bool {
         let first = |w: &String| self.first_forms.contains(w);
         let surname = |w: &String| self.own_surname_forms.contains(w);
         let middle = |w: &String| {
             self.patronymic_forms.contains(w) || (self.given.len() == 1 && patronymic_like(w))
         };
+        let russian = words.iter().all(|w| cyrillic(w));
         match words {
-            [a, b] => first(a) && surname(b) || surname(a) && first(b),
-            [a, b, c] => first(a) && middle(b) && surname(c) || surname(a) && first(b) && middle(c),
+            [a, b] => first(a) && surname(b) || russian && surname(a) && first(b),
+            [a, b, c] => {
+                first(a) && middle(b) && surname(c)
+                    || russian && surname(a) && first(b) && middle(c)
+            }
             _ => false,
         }
     }
@@ -1038,15 +1043,38 @@ fn find_forms(
             let titled = is_title(title);
             // A whole name, before its parts: "Лидией Игоревной Брюн", not
             // "Лидией Игоревной" and "Брюн" (#391).
+            // The surname may carry particles: "Генриетта Яновна де Лаваль".
+            let spaced = |k: usize| {
+                tokens.get(k + 1).is_some_and(|next| {
+                    tokens[k].end < next.start && blank(tokens[k].end, next.start)
+                })
+            };
+            let surname_from = |k: usize| {
+                let mut last = k;
+                while last < k + 2
+                    && tokens
+                        .get(last)
+                        .is_some_and(|t| is_particle(&source[t.clone()]))
+                    && spaced(last)
+                {
+                    last += 1;
+                }
+                word(last).then_some(last)
+            };
             if word(i)
-                && word(i + 1)
-                && word(i + 2)
-                && tokens[i].end < tokens[i + 1].start
-                && blank(tokens[i].end, tokens[i + 1].start)
-                && tokens[i + 1].end < tokens[i + 2].start
-                && blank(tokens[i + 1].end, tokens[i + 2].start)
+                && spaced(i)
+                && let Some(second) = surname_from(i + 1)
             {
-                tries.push((start..tokens[i + 2].end, i + 3, false));
+                if second == i + 1
+                    && spaced(i + 1)
+                    && let Some(third) = surname_from(i + 2)
+                {
+                    tries.push((start..tokens[third].end, third + 1, false));
+                }
+                // "Генриетта де Лаваль"; two plain words are tried below.
+                if second > i + 1 {
+                    tries.push((start..tokens[second].end, second + 1, false));
+                }
             }
             // Initials after it: "Павловой М. С.", "Павлова М.С.".
             if word(i)
@@ -1820,6 +1848,18 @@ mod tests {
         assert_eq!(whole(&["Лея Ли-Вельт"], "Ли-Вельт Лея Аркадьевна"), Some(1));
         assert_eq!(whole(&notary, "Еленой Брюн"), None);
         assert_eq!(whole(&["Maya Bennett"], "Maya Rose Bennett"), None);
+        // Surname first only in Russian: "Hill Grant" is not Grant Hill.
+        assert_eq!(whole(&["Grant Hill"], "Hill Grant"), None);
+        assert_eq!(whole(&["Grant Hill"], "Grant Hill"), Some(1));
+        // A surname's particles belong to it.
+        let lavalle = ["Генриетта Яновна де Лаваль"];
+        assert_eq!(
+            found(
+                &lavalle,
+                "Подписала Генриеттой Яновной де Лаваль; Генриетта де Лаваль"
+            ),
+            ["Генриеттой Яновной де Лаваль", "Генриетта де Лаваль"]
+        );
         assert_eq!(parse_whole("Ms Maya Bennett"), None);
         assert_eq!(parse_whole("Maya R. Bennett"), None);
     }
