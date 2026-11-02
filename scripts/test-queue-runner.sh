@@ -409,7 +409,9 @@ git_ rev-parse HEAD >"$FAKE/next-main"
 git_ push --quiet "$FAKE_ORIGIN" HEAD:refs/heads/hold/next-main
 bump=$(prefix=upd/main/ qc 13 bump src/lib.rs)
 echo "13 User false" >>"$FAKE/prs.tsv"
-QUEUE_CI_HOME=$uhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-update QUEUE_CI_PREFIXES=upd/main/ \
+# Its own 2-minute limit: on hosted Windows, Git Bash takes over 15 s for the
+# checkout and lint alone (#525's first main run timed out there).
+QUEUE_CI_HOME=$uhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-update QUEUE_CI_PREFIXES=upd/main/ QUEUE_CI_TIMEOUT=120 \
   run_once windows "$tmp/update.log" "$uhome/runner/scripts/queue-runner.sh"
 line_of() { grep -n "$1" "$tmp/update.log" | head -1 | cut -d: -f1; }
 check "the job that brought it finishes" has "$bump" "$W" "success	Passed in *"
