@@ -482,6 +482,28 @@ green ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 **CI checkout**: local CI's own clone of the repository on a machine, separate
 from lanes and worktrees, with its own `target/`.
 
+**Merge queue**: GitHub's queue on `main`; it tests `main` plus a group of
+1–4 queued PRs once, on a **queue commit** (`gh-readonly-queue/main/*`),
+and merges the group when it passes. Replaces local CI's per-head gate at
+ADR 0095's cutover ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+
+**Fast tier**: what every PR head runs on hosted Ubuntu: `lint (ubuntu)`,
+the `unit` and `scripts` tiers and `just mobile --ffi`; the full suite
+runs only on queue commits ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+
+**Test tier**: a named slice of `just test` with its own timeouts: `unit`,
+`app` (GPUI workspace tests), `renders`, `recognition` (fixtures on their
+snapshots) and `scripts` ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+
+**`merge-gate`**: the one aggregate required status beside `lint (ubuntu)`:
+on a PR head, green when the fast tier passed; on a queue commit, when
+every affected full job passed, each named with where it ran
+([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+
+**Quarantine list**: `.config/quarantine.txt`, tests CI excludes for a
+while: a nextest filter, its issue and an expiry date past which the fast
+tier fails ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+
 **Release gate**: checks a release must pass on every shipped target: the OCR
 smoke test before packaging, and the packaged-app self-test (`just
 smoke-package`) on the built artifact itself.
@@ -570,7 +592,8 @@ core change runs all of them, and files in no area (docs) run none
 
 **Takeover**: the Mac's local CI running a `local/android` job the PC left
 stuck for 15 minutes, before the hosted fallback
-([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)) Dropped by
+[ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md).
 
 **Hosted mobile jobs**: the iOS job on a hosted `macos-26` runner and the
 Android job on hosted `ubuntu-latest` with KVM; they run only as the

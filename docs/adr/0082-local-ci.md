@@ -1,6 +1,8 @@
 # Local CI
 
-Status: Accepted, 2026-10-29; amended 2026-10-30, 2026-10-31 and 2026-11-01
+Status: Superseded by [ADR 0095](0095-ci-on-a-merge-queue.md) (2026-11-02),
+which takes effect at its cutover; until then this describes what runs.
+Accepted, 2026-10-29; amended 2026-10-30, 2026-10-31 and 2026-11-01
 (overflow and recognition-only jobs, below). Amended by
 [ADR 0091](0091-mobile-ci-and-releases.md): areas decide which jobs run,
 `local/ios` and `local/android` join the gate (five checks), and the runners

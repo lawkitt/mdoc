@@ -147,7 +147,9 @@ Maintainer actions list the steps on the maintainer's side.
 
 Mobile tests stay on local CI with a real fallback, and agents release the
 apps to internal tracks and drafts
-([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). Record:
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)
+moves the iOS job and the Android fallback to hosted runners (CI redesign,
+below). Record:
 [mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
 touch separate files and run as parallel lanes; 5 builds on both.
 
@@ -157,15 +159,12 @@ touch separate files and run as parallel lanes; 5 builds on both.
    minified release-like variant. *Done when:* `just android` passes on the
    Mac and on a dispatched `ubuntu-latest` run, and a deliberately missing
    R8 keep rule fails it.
-5. **[CI] Takeover, hosted mobile jobs and Dependabot.** The Mac takes a
-   `local/android` stuck 15 minutes; the hosted fallback runs the hosted
-   iOS (`macos-26`, pinned Xcode) and Android (`ubuntu-latest`, KVM) jobs,
-   replacing its temporary "NOT tested" mobile statuses
-   (`untested_job` in `scripts/local-ci-fallback.sh`); the `areas` job in
-   `ci.yml` gates them; Dependabot and fork PRs run them in their areas; a
-   dispatched workflow regenerates Gradle verification metadata as a
-   reviewable diff. *Done when:* a stuck-runner drill posts each path, and
-   a Gradle Dependabot PR goes green after its metadata commit.
+5. **[CI] Dependabot and Gradle metadata.** Dependabot and fork PRs run
+   the hosted jobs of their areas; a dispatched workflow regenerates Gradle
+   verification metadata as a reviewable diff. The Mac takeover is dropped
+   and the hosted mobile jobs move to CI redesign item 2
+   ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)). *Done when:* a
+   Gradle Dependabot PR goes green after its metadata commit.
 6. **[Release] iOS release workflow.** After ROADMAP iOS item 1's first
    TestFlight build by hand: `just release-ios`, `ios-v*` tags from `main`,
    hosted tests on the Release configuration, Apple-managed signing,
@@ -179,6 +178,63 @@ touch separate files and run as parallel lanes; 5 builds on both.
    universal APK in a draft GitHub Release with SHA256SUMS and provenance,
    notes from `changes/android/`. *Done when:* an agent produces that draft
    with no maintainer step.
+
+## CI redesign
+
+The full suite runs once per merge-queue group on hosted runners and the
+PC, PR heads run a fast tier, and the Mac stops being a CI runner
+([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)). Record:
+[CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md). Until
+item 6, ADR 0082 and ADR 0091 describe what runs. Interim, before item 1
+and independent of it: a dated `deny.toml` ignore for the `zip` advisory
+(`main` is red), #510's fix and then closing #513, and deleting the Mac CI
+checkout's `target/`.
+
+1. **[CI] Test tiers.** nextest filtersets and test groups for `unit`,
+   `app` (at most 4 threads), `renders`, `recognition` and `scripts`, with
+   ADR 0095's timeouts; `.config/quarantine.txt` with its expiry check;
+   test builds behind a seam for OS security and identity services, with a
+   guard test, and the rule in development.md. *Done when:* each tier runs
+   alone by name, an expired quarantine line fails, and the guard test
+   fails on a test that calls the signature query.
+2. **[CI] Hosted jobs.** Parallel lanes on separate files: (a) the macOS
+   desktop full tier on `macos-26`, and the script suites under `/bin/bash`
+   3.2; (b) the iOS job on `macos-26` with the pinned Xcode; (c) the
+   Android job on Ubuntu with KVM, after Mobile CI/CD item 3; (d) the
+   detection gate: the byte-for-byte snapshot experiment on a hosted runner
+   (re-record there if it fails), the cached FP16 model, sharding past 3
+   minutes, and `just snapshots-fetch <pr>`; (e) the fast tier (`unit`,
+   `scripts`, `just mobile --ffi`) on Ubuntu, with any crate that cannot
+   test on Linux moved to macOS. *Done when:* each job passes on a
+   dispatched run of `main` and fails a deliberately broken branch.
+3. **[CI] The `merge-gate` aggregator.** A hosted workflow that runs
+   `main`'s script, never PR code, and posts `merge-gate` on PR heads (fast
+   tier) and queue commits (every affected full job, each named with where
+   it ran), with the recognition-code area in `scripts/ci-areas.txt`.
+   *Done when:* a PR head and a queue commit each get a status that names
+   what ran, and a missing job keeps it pending.
+4. **[CI] PC runner for the queue.** Tests `gh-readonly-queue/main/*`
+   commits only, in two slots (Windows desktop and Android), posts `ci/*`;
+   heartbeat; hosted fallback after a 10-minute stale heartbeat or start;
+   fork and bot groups never run on the PC; self-update from `main`;
+   `target/` and output retention with `rm`; reports and failing tests on
+   the tailnet page. *Done when:* a drill with the PC's runner stopped
+   merges through hosted Windows and Android.
+5. **[CI] Shadow trial.** The queue setup runs beside the current gate on 5
+   PRs. *Done when:* both agree on those 5 and the new setup fails a
+   deliberately broken PR in each tier.
+6. **[CI] Cutover.** The ruleset on `main` (`lint (ubuntu)` and
+   `merge-gate` required, the maintainer's bypass for `just release`), the
+   merge queue (groups of 1–4, 5-minute wait, concurrency 2), agents
+   enqueueing with `gh pr merge --auto`; the Mac runner uninstalled and its
+   CI checkout removed; development.md's Local CI section rewritten; the
+   fleet profile's checks changed in the fleet repository. *Done when:* a
+   hub merges a group of PRs through the queue with no hand re-test.
+7. **[CI] `main` and supply chain.** `main` pushes run cache-saving builds
+   only; a nightly full run of every hosted job opens an issue when red;
+   cargo-deny advisories move to `Cargo.lock` PRs and a daily run that
+   opens an issue. *Done when:* a nightly drill with a broken fallback job
+   opens an issue.
 
 ## Later
 
@@ -493,16 +549,9 @@ Android takes what applies. Its clipboard finding is
   stay live. *Done when:* an experiment shows covered captures update and
   whether background keys reach GPUI, and `docs/development.md` (Fleet) says
   which GUI rows still need focus. *From the 0.3.0 away hub.*
-- **Local CI with two hubs:** the Mac runner tests one PR at a time, so two
-  hubs queued 8–9 PRs and waits reached 30–45 minutes (the hosted fallback
-  starts at 45). Measure a second Mac slot or a shorter fallback wait.
-  *From the 2026-11-01 UI polish run.*
 - **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
   checks run on a scratch profile instead of moving the user's
   `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
-- **Local CI keeps the app binary per tested head** (`/ci/pr-N/<sha>/`), so
-  the hub copies it for GUI checks instead of building a 30 GB worktree.
-  *From the 0.3.0 away hub.*
 
 ## Deferred
 
