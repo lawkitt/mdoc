@@ -171,13 +171,20 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
             out.push((at..at + 1, " ".into()));
         } else if c == '_'
             && hidden.is_none()
-            && (!before.is_some_and(char::is_alphanumeric) && next.is_some_and(char::is_alphabetic)
+            && before != Some('_')
+            && let run = source[at..].len() - source[at..].trim_start_matches('_').len()
+            && run <= 3
+            && let after = source[at + run..].chars().next()
+            && (!before.is_some_and(char::is_alphanumeric)
+                && after.is_some_and(char::is_alphabetic)
                 || before.is_some_and(char::is_alphabetic)
-                    && !next.is_some_and(char::is_alphanumeric))
+                    && !after.is_some_and(char::is_alphanumeric))
             && !in_address(source, at)
         {
-            // "_Alva Ruskett_": emphasis marks are syntax, not the name's.
-            out.push((at..at + 1, String::new()));
+            // "_Alva Ruskett_", "__ИНН__:": emphasis marks are syntax, not
+            // the name's.
+            out.push((at..at + run, String::new()));
+            while chars.next_if(|&(i, _)| i < at + run).is_some() {}
         } else if c == '['
             && hidden.is_none()
             && let Some(len) = footnote_reference(source, at)
@@ -395,11 +402,13 @@ fn spaced_word(line: &str, start: usize) -> Vec<Range<usize>> {
 }
 
 /// Whether a letter-spaced run stands apart from the text on one side,
-/// `side` read outward from the run: nothing, punctuation or a tab within
-/// two spaces, or a word three spaces away or more, as a column's is. A
-/// word closer makes the run initials or an enumeration ("J R R  Tolkien").
+/// `side` read outward from the run past its emphasis marks: nothing,
+/// punctuation within two spaces, or a word three spaces or tabs away or
+/// more, as a column's is. A word closer makes the run initials or an
+/// enumeration ("J R R  Tolkien", "**J R R** Tolkien").
 fn stands_apart(side: &str) -> bool {
-    let text = side.trim_start_matches(' ');
+    let side = side.trim_start_matches(['*', '_', '~']);
+    let text = side.trim_start_matches([' ', '\t']);
     let gap = side.len() - text.len();
     text.chars()
         .next()
@@ -810,7 +819,10 @@ fn halfwidth(c: char) -> Option<char> {
 /// non-space characters around it holds an "@" ("_roman@kadry.invalid" keeps
 /// its underscore).
 fn in_address(source: &str, at: usize) -> bool {
-    let start = source[..at].rfind(char::is_whitespace).map_or(0, |i| i + 1);
+    let start = source[..at]
+        .char_indices()
+        .rfind(|&(_, c)| c.is_whitespace())
+        .map_or(0, |(i, c)| i + c.len_utf8());
     let end = source[at..]
         .find(char::is_whitespace)
         .map_or(source.len(), |i| at + i);
@@ -989,6 +1001,8 @@ mod tests {
             // Initials and one-letter words next to a word.
             "J. R. R. Tolkien and J R R Tolkien",
             "J R R  Tolkien",
+            "**J R R** Tolkien and J R R\tTolkien",
+            "Smith *J R R*",
             "Я и я.",
             "D e l v a  R o s k",
             "Signed by A B C Holdings",
@@ -1021,16 +1035,21 @@ mod tests {
     /// value (`**ИНН**[^1]:`); a footnote's definition stays.
     #[test]
     fn footnote_references_drop_out() {
-        let source = "**ИНН**[^1]: 508614372930\n**ИНН[^tax]:** 1\nKira Gelts[^n2] signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a";
+        let source = "__ИНН__[^1]: 508614372930\n**ИНН[^tax]:** 1\nKira Gelts[^n2] signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a";
         let view = View::new(source);
         assert_eq!(
             view.text,
-            "**ИНН**: 508614372930\n**ИНН:** 1\nKira Gelts signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a"
+            "ИНН: 508614372930\n**ИНН:** 1\nKira Gelts signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a"
         );
         let at = |text: &str| view.text.find(text).unwrap();
         let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
         assert_eq!(span("Kira Gelts"), "Kira Gelts");
-        assert_eq!(span("ИНН**: 5"), "ИНН**[^1]: 5");
+        assert_eq!(span("ИНН: 5"), "ИНН__[^1]: 5");
+        assert_eq!(View::new("**ИНН**[^1]: 1").text, "**ИНН**: 1");
+        // An underscore run past emphasis is a blank, and "\u{a0}" is one
+        // character before an emphasis mark.
+        assert_eq!(View::new("Name ____Ann").text, "Name ____Ann");
+        assert_eq!(View::new("\u{a0}_Alva Ruskett_").text, "\u{a0}Alva Ruskett");
     }
 
     /// #397: a cell of an identifier column reads with its header; a name
