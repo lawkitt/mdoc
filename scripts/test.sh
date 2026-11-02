@@ -63,7 +63,7 @@ only() {
   exit "$rc"
 }
 
-# shellcheck disable=SC2329 # run through only
+# shellcheck disable=SC2317,SC2329 # run through only
 unit() {
   nextest "$unit_filter" && doctests
 }
