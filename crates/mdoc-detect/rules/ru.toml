@@ -336,9 +336,13 @@ pattern = '\b\d{1,4}-(?:ФЗ|ФКЗ|КЗ|ОЗ|РЗ)\b|(?:\b(?:ст\.|стать(
 
 # The number of a court act, an order or a transfer document is a
 # reference, no tax or other identifier: "Определение Верховного Суда РФ
-# от 12.03.2031 № 305-ЭС31-1234", "Постановление № 17", "УПД № 412" (guide
-# rule 8, issue #480). Only the number after "№" is the reference: a value
-# between, such as "ИНН 7701234567", stays. A case number keeps its label's
-# rule ("по делу № А40-…").
+# от 12.03.2031 № 305-ЭС31-1234", "Определение судебной коллегии по
+# экономическим спорам Верховного Суда РФ … №", "Приказ Минфина России от
+# 01.02.2031 № 12н", "Постановление № 17", "УПД № 412" (guide rule 8, issue
+# #480). Between the act and its "№" only its author (capitalized words and
+# a court's own words) and its date: "Постановление направлено владельцу
+# паспорта № 4512345678" holds a passport number, and "ИНН 7701234567"
+# before a "№" stays. A case number keeps its label's rule ("по делу №
+# А40-…").
 [[reference]]
-pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ)\p{Alphabetic}{0,4}[^№\n]{0,160}?№[\p{Zs}\t]*)\p{Alphabetic}{0,4}\d[\p{Alphabetic}\d/-]*'
+pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ)\p{Alphabetic}{0,4}(?:[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}.-]*|от|г\.|\d{1,2}\.\d{1,2}\.\d{2,4}|суда|судебной|коллегии|по|экономическим|гражданским|административным|уголовным|делам|спорам|арбитражного|округа|пленума|президиума)){0,16}[\p{Zs}\t]*№[\p{Zs}\t]*)\p{Alphabetic}{0,4}\d[\p{Alphabetic}\d/-]*'

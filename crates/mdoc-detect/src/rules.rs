@@ -767,13 +767,16 @@ impl Pack {
         text: &str,
         category: Category,
     ) -> bool {
-        if source.get(range.clone()).is_none() || self.in_reference(source, range.clone()) {
+        if source.get(range.clone()).is_none() {
             return false;
         }
         // Checked once grown: "АЗС" in "ООО «АЗС»" is a company's name, not
-        // the abbreviation (#481).
+        // the abbreviation (#481), and so is "C.F.R." in "ООО «C.F.R.»".
         if self.grows_to_company(source, range.clone(), category) {
             return true;
+        }
+        if self.in_reference(source, range.clone()) {
+            return false;
         }
         let quoted = self
             .shapes
@@ -844,22 +847,46 @@ impl Pack {
 
     /// Whether `range` of `source` lies inside a `reference` match, a legal
     /// reference ("424 U.S. at 38", "статьи 431 ГК РФ"): no identifier,
-    /// address or name (guide rule 8). References stay on their lines, so
-    /// only the span's lines are searched.
+    /// address or name (guide rule 8). The span's lines are searched as
+    /// detection reads them ("&sect;" is "§"), and again with the line on
+    /// each side joined where a citation may wrap onto it ("904 F.2d\n275,
+    /// 277"): a soft break between two lines of running text.
     fn in_reference(&self, source: &str, range: std::ops::Range<usize>) -> bool {
         if self.references.is_empty() {
             return false;
         }
-        let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
-        let end = source[range.end..]
-            .find('\n')
-            .map_or(source.len(), |at| range.end + at);
-        let lines = &source[start..end];
-        self.references.iter().any(|pattern| {
-            span_ranges(pattern, lines)
-                .into_iter()
-                .any(|found| start + found.start <= range.start && range.end <= start + found.end)
-        })
+        let line_start = |at: usize| source[..at].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |i| at + i);
+        let start = line_start(range.start);
+        let end = line_end(range.end);
+        let inside = |from: usize, text: &str| {
+            let view = mdoc_pii::view::View::new(text);
+            let span = view.view_range(range.start - from..range.end - from);
+            self.references.iter().any(|pattern| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            })
+        };
+        if inside(start, &source[start..end]) {
+            return true;
+        }
+        let mut wide = start..end;
+        if start > 0 {
+            let before = line_start(start - 1);
+            if soft_break(&source[before..start - 1], &source[start..end]) {
+                wide.start = before;
+            }
+        }
+        if end < source.len() {
+            let after = line_end(end + 1);
+            if soft_break(&source[line_start(end)..end], &source[end + 1..after]) {
+                wide.end = after;
+            }
+        }
+        // One space for each line break: offsets stay the source's.
+        let lines = &source[wide.clone()];
+        lines.contains('\n') && inside(wide.start, &lines.replace(['\r', '\n'], " "))
     }
 
     /// An organization span ending in a `person_before` word ("Ostrand
@@ -1195,6 +1222,22 @@ fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
         };
     }
     ranges
+}
+
+/// Whether the break between lines `first` and `second` may wrap running
+/// text: neither is blank, a heading or a table row, and the second opens
+/// no quote, list item or numbered item.
+fn soft_break(first: &str, second: &str) -> bool {
+    let (first, second) = (first.trim(), second.trim());
+    let numbered = second
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with(['.', ')'])
+        && second.starts_with(|c: char| c.is_ascii_digit());
+    !first.is_empty()
+        && !second.is_empty()
+        && !first.starts_with(['|', '#'])
+        && !second.starts_with(['|', '#', '>', '-', '*', '+'])
+        && !numbered
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -2758,12 +2801,63 @@ mod tests {
             shown(source, &raw),
             pairs(&[("7701234567", "TAX"), ("+7 (495) 123-45-67", "PHONE")])
         );
-        // An INN between a court act and its number stays.
+        // A court's own words may sit between the act and its number.
+        let source = "Определение судебной коллегии по экономическим спорам Верховного Суда РФ \
+            от 12.03.2031 № 305-ЭС31-1234, Приказ Минфина России от 01.02.2031 № 12н";
+        assert_eq!(
+            shown(source, &[("305-ЭС31-1234", "tax_id"), ("12н", "tax_id")]),
+            []
+        );
+        // A value between an act and a "№" stays, and so does a number
+        // after "№" that is no act's.
         let source = "Постановление в отношении ООО «Вега», ИНН 7701234567, № 17";
         assert_eq!(
-            shown(source, &[("7701234567", "tax_id"), ("17", "tax_id")]),
+            shown(source, &[("7701234567", "tax_id")]),
             pairs(&[("7701234567", "TAX")])
         );
+        let source = "Постановление направлено владельцу паспорта № 4512345678.";
+        assert_eq!(
+            shown(source, &[("4512345678", "passport_number")]),
+            pairs(&[("4512345678", "IDENTITY")])
+        );
+    }
+
+    /// A citation is found as detection reads it: through character
+    /// references and across a soft line break. A company named like a
+    /// code keeps its name; a blank line, a table row or a list item ends
+    /// the citation (#480, #499).
+    #[test]
+    fn citations_wrapped_or_encoded_are_found_and_neighbours_stay() {
+        for source in [
+            "under 26 U.S.C. &sect; 6212 the notice",
+            "under 26 U.S.C.\n6212 the notice",
+            "under 26 U.S.C.\r\n6212 the notice",
+        ] {
+            assert_eq!(shown(source, &[("6212", "tax_id")]), [], "{source:?}");
+        }
+        assert_eq!(
+            shown(
+                "see 904 F.2d\n275, 277, and",
+                &[("904 F.2d\n275, 277", "phone_number")]
+            ),
+            []
+        );
+        assert_eq!(
+            shown("ООО «C.F.R.» paid.", &[("C.F.R.", "organization")]),
+            pairs(&[("ООО «C.F.R.»", "ORG")])
+        );
+        for source in [
+            "Under 26 U.S.C.\n\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\r\n\r\n123-45-6789 is the number.",
+            "## Under 26 U.S.C.\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\n1. 123-45-6789 is the number.",
+        ] {
+            assert_eq!(
+                shown(source, &[("123-45-6789", "tax_id")]),
+                pairs(&[("123-45-6789", "TAX")]),
+                "{source:?}"
+            );
+        }
     }
 
     /// "& Anor" and "& Ors" come off a party and name no one; a declaration
