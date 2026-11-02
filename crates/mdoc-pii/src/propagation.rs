@@ -1059,9 +1059,10 @@ fn find_forms(
                 }
                 tries.push((start..tokens[last].end, last + 1, false));
             }
-            let title = &source[tokens[i].clone()];
+            // As read, so a title split over lines stays a title.
+            let title = crate::view::unwrapped(&source[tokens[i].clone()]);
             // Lowercase "miss" is the verb.
-            let titled = is_title(title);
+            let titled = is_title(&title);
             // A whole name, before its parts: "Лидией Игоревной Брюн", not
             // "Лидией Игоревной" and "Брюн" (#391).
             // The surname may carry particles: "Генриетта Яновна де Лаваль".
@@ -1680,6 +1681,13 @@ mod tests {
         );
         let whole = parse_whole("Верес-\nтова Дарья Ильинична").unwrap();
         assert_eq!(people(&names).candidates(&whole).target, Some(1));
+        // A title split over lines stays a title, outside the span.
+        let source = "Later M-\nr Paul signed.";
+        let found: Vec<_> = find_forms(source, &people(&["James Paul"]), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Paul"]);
     }
 
     #[test]

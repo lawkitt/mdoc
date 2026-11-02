@@ -569,6 +569,14 @@ fn a_name_form_split_by_a_line_end_hyphen_is_one_span() {
         "Мастер {name}.\n\n> Приняла заказ: Верес-\nтова Дарья Ильинична.\n> Упаковка исправна."
     );
     assert_eq!(spans(&source), ["Верес-\nтова Дарья Ильинична"]);
+    // The name restores as written whole, not with the line's hyphen.
+    let mut review = Review::default();
+    let start = source.find(name).unwrap();
+    let detected = detection(start..start + name.len(), Category::Person);
+    review.ingest(&source, vec![detected]).unwrap();
+    let exported = review.export_identities();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].originals[0].as_ref(), name);
     assert_eq!(
         applied(&source, {
             let start = source.find(name).unwrap();
