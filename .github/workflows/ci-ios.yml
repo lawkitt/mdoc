@@ -19,9 +19,6 @@ on:
         description: The commit to test; empty for the triggering ref.
         type: string
         default: ""
-  # Temporary, while the PR that adds this file is a draft: its pushes run it.
-  pull_request:
-    paths: [.github/workflows/ci-ios.yml]
 
 permissions:
   contents: read
@@ -40,13 +37,6 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      # TEMPORARY, draft only: saves this branch's Rust cache to time a warm run.
-      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
-        with:
-          prefix-key: v0-ios-warm-probe
-          save-if: true
-          cache-on-failure: true
-
       # The pinned Xcode for every later step, and the pinned Simulator
       # runtime and device, downloaded when the image lacks them.
       - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
@@ -57,14 +47,10 @@ jobs:
           MDOC_IOS_JOB: always
 
       - name: Test results
-        if: always() # TEMPORARY, draft only: failure()
+        if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-xcresult-${{ github.run_attempt }}
           path: target/ios/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
-
-      # TEMPORARY, draft only: keeps DerivedData out of the probe's cache.
-      - if: always()
-        run: rm -rf target/ios/DerivedData
