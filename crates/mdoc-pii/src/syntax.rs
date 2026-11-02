@@ -68,7 +68,9 @@ pub(super) fn protected_syntax(source: &str) -> Vec<Range<usize>> {
 /// List item markers ("- ", "+ ", "* ", "1. ", "2) ") at the start of a
 /// line, after any block quote prefixes. A bullet can always interrupt a
 /// paragraph, but an ordered marker other than 1 cannot (CommonMark), so in
-/// "Паспорт:\n46. 18 731904" the number is text.
+/// "Паспорт:\n46. 18 731904" the number is text. A "+" before a digit that
+/// would interrupt a paragraph is the value's own sign, not a list of one:
+/// in "Телефон:\n+ 7 (900) 000-84-31" the phone keeps its plus (#428).
 pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
     let mut markers = Vec::new();
     let mut base = 0;
@@ -85,7 +87,12 @@ pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
         }
         let body = &line[start..];
         let mut item = false;
-        if body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ") {
+        let sign = paragraph
+            && body.starts_with("+ ")
+            && body[2..]
+                .trim_start_matches([' ', '\t'])
+                .starts_with(|c: char| c.is_ascii_digit());
+        if (body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ")) && !sign {
             markers.push(base + start..base + start + 2);
             item = true;
         }

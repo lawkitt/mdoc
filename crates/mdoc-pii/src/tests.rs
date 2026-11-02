@@ -398,28 +398,81 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
         ),
         "ORG_1, ID IDENTITY_1, *Ann* Lee."
     );
-    // A number after a paragraph line is no list unless it is 1 (#428); a
-    // bullet is one, so its marker stays and its value is replaced.
-    let source = "Паспорт:\n46. 18 731904\nТелефон:\n+ 7 (900) 000-84-31\n\n1. a\n2. b";
+    // A number after a paragraph line is no list unless it is 1, and a "+"
+    // before a digit there is the value's sign (#428); a real list item's
+    // marker stays and its value is replaced.
+    let source = "Паспорт:\n46. 18 7319О4\nТелефон:\n+ 7 (900) 000-84-31\n\n1. Ann Lee\n2. Bob Ray\n* Cy Fox\n+ 7 Dee Sun";
     let at = |text: &str| source.find(text).unwrap();
+    let span = |text: &str, category| detection(at(text)..at(text) + text.len(), category);
     assert_eq!(
         applied(
             source,
             vec![
-                detection(at("46.")..at("46.") + 13, Category::Identity),
-                detection(at("+ 7")..at("+ 7") + 19, Category::Phone),
+                span("46. 18 7319О4", Category::Identity),
+                span("+ 7 (900) 000-84-31", Category::Phone),
+                span("1. Ann Lee", Category::Person),
+                span("Bob Ray", Category::Person),
+                span("* Cy Fox", Category::Person),
+                span("+ 7 Dee Sun", Category::Person),
             ]
         ),
-        "Паспорт:\nIDENTITY_1\nТелефон:\n+ PHONE_1\n\n1. a\n2. b"
+        "Паспорт:\nIDENTITY_1\nТелефон:\nPHONE_1\n\n1. PERSON_1\n2. PERSON_2\n* PERSON_3\n+ PERSON_4"
     );
     assert_eq!(
         syntax::list_markers(source),
         [
-            at("+ 7")..at("+ 7") + 2,
-            at("1. a")..at("1. a") + 2,
-            at("2. b")..at("2. b") + 2
+            at("1. Ann")..at("1. Ann") + 2,
+            at("2. Bob")..at("2. Bob") + 2,
+            at("* Cy")..at("* Cy") + 2,
+            at("+ 7 Dee")..at("+ 7 Dee") + 2,
         ]
     );
+    // Mid-line or after a label on its line, a number or a "+" is text.
+    let source = "Passport 46. 18 7319О4, phone: + 7 (900) 000-84-31.";
+    let at = |text: &str| source.find(text).unwrap();
+    assert!(protected_syntax(source).is_empty());
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                detection(at("46.")..at("46.") + 14, Category::Identity),
+                detection(at("+ 7")..at("+ 7") + 19, Category::Phone),
+            ]
+        ),
+        "Passport IDENTITY_1, phone: PHONE_1."
+    );
+    // At a document's or block's start, a "+" item is a list, and inside a
+    // list a "+" before a digit is a nested item.
+    assert_eq!(syntax::list_markers("+ 7 (900) 000-84-31").len(), 1);
+    assert_eq!(syntax::list_markers("Phone:\n\n+ 7 (900) 000").len(), 1);
+    assert_eq!(syntax::list_markers("- Phone:\n+ 7 (900) 000").len(), 2);
+    // A span crossing real syntax is refused: emphasis, a heading's marker,
+    // a list marker inside it, an HTML tag.
+    let source = "# Ann Lee\n\n*Bob* Ray and Cy\n- Fox\n\nDee <b>Sun</b> Eve\n\nTo **Gil Ho**.";
+    let at = |text: &str| source.find(text).unwrap();
+    let span = |text: &str| detection(at(text)..at(text) + text.len(), Category::Person);
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                span("# Ann Lee"),
+                span("Bob* Ray"),
+                span("Cy\n- Fox"),
+                span("Sun</b> Eve"),
+                span("Gil Ho"),
+            ]
+        ),
+        "# Ann Lee\n\n*Bob* Ray and Cy\n- Fox\n\nDee <b>Sun</b> Eve\n\nTo **PERSON_1**."
+    );
+    // A manual mark takes a literal `#` or `*` too, but not a heading's own
+    // marker or an emphasis delimiter.
+    let source = "# Title\n\nID LC#713624 of Fennel*Orbit Ltd and *Ann* Lee.";
+    let at = |text: &str| source.find(text).unwrap();
+    let manual = |text: &str| Review::validate_manual(source, at(text)..at(text) + text.len());
+    assert_eq!(manual("LC#713624"), Ok("LC#713624"));
+    assert_eq!(manual("Fennel*Orbit Ltd"), Ok("Fennel*Orbit Ltd"));
+    assert!(manual("# Title").is_err());
+    assert!(manual("Ann* Lee").is_err());
     // Siblings and lazy lines stay in their list; a paragraph after a blank
     // line ends it.
     assert_eq!(syntax::list_markers("1. a\nlazy\n2. b").len(), 2);
