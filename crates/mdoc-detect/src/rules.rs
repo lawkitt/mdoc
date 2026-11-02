@@ -36,6 +36,8 @@ struct File {
     span: Vec<SpanEntry>,
     #[serde(default)]
     variants: Vec<VariantsEntry>,
+    #[serde(default)]
+    reference: Vec<ReferenceEntry>,
 }
 
 #[derive(Deserialize)]
@@ -45,7 +47,12 @@ struct NeverEntry {
     form: Form,
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
+    #[serde(default)]
     words: Vec<String>,
+    /// For `pattern`: regexes; a span matching one outside quotes is a
+    /// court, public body, law or place ("Department of Labor").
+    #[serde(default)]
+    patterns: Vec<String>,
     /// Categories whose model span ending in one of these words is a role,
     /// not a name ("Technical Reviewer", "Costs Officer").
     #[serde(default)]
@@ -69,6 +76,8 @@ enum Form {
     Plural,
     /// The stem and up to `ending` letters.
     Stem,
+    /// No words: `patterns` that match a phrase in the span.
+    Pattern,
 }
 
 #[derive(Deserialize)]
@@ -134,12 +143,31 @@ struct SpanEntry {
     /// Named pieces of the pattern, each a regex.
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
+    /// By category, what a model span the pattern's match holds looks like
+    /// with what follows it, its own text the `span` group: such a span is
+    /// part of the match, not a span of its own. The parts work here too.
+    #[serde(default)]
+    absorbs: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
     #[serde(default)]
     extend: Vec<String>,
     #[serde(default)]
     strip_end: String,
+    #[serde(default)]
+    person_before: Vec<String>,
+}
+
+/// A legal reference or other marker no model span inside is (guide rule 8):
+/// "424 U.S. at 38", "26 U.S.C. § 6212", "127-ФЗ".
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReferenceEntry {
+    /// What the reference looks like; `{name}` stands for a part, and a
+    /// group named `lead` or `tail` is context it leaves out.
+    pattern: String,
+    #[serde(default)]
+    parts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -156,6 +184,8 @@ pub(crate) struct Pack {
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
     spans: Vec<Span>,
+    /// Legal references: a model span inside a match is never proposed.
+    references: Vec<Regex>,
 }
 
 /// A `span` entry: a whole span by its pattern, or a boundary fix.
@@ -165,6 +195,11 @@ enum Span {
     Pattern {
         category: Category,
         pattern: Regex,
+        /// A model span of the category, read from its start by the regex
+        /// (anchored there) as its `span` group, is the match's own part
+        /// where the match holds it: a building's name in an address is no
+        /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
+        absorbs: Vec<(Category, Regex)>,
     },
     Fix(SpanFix),
 }
@@ -178,6 +213,10 @@ struct SpanFix {
     extend: Vec<Regex>,
     /// Characters that come off the end (a sentence's period).
     strip_end: String,
+    /// Lowercase words that, ending an organization span, make it a
+    /// person's document: "Ostrand Decl." is the declaration of a person
+    /// named Ostrand.
+    person_before: Vec<String>,
 }
 
 impl SpanFix {
@@ -254,6 +293,7 @@ struct Never {
     form: Form,
     ending: usize,
     words: Vec<String>,
+    patterns: Vec<Regex>,
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
@@ -270,6 +310,7 @@ impl Never {
                     && ending.chars().all(char::is_alphabetic)
                     && !self.not_endings.iter().any(|not| not == ending)
             }),
+            Form::Pattern => false,
         })
     }
 }
@@ -295,6 +336,7 @@ impl Pack {
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
+            references: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -310,9 +352,24 @@ impl Pack {
                 if entry.form != Form::Stem && !entry.not_endings.is_empty() {
                     return Err(at("only a stem takes not_endings".into()));
                 }
-                if entry.words.is_empty() {
+                if entry.form == Form::Pattern {
+                    if entry.patterns.is_empty() || !entry.words.is_empty() {
+                        return Err(at("a pattern entry needs patterns and no words".into()));
+                    }
+                    if entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty() {
+                        return Err(at("a pattern entry needs anywhere_in alone".into()));
+                    }
+                } else if !entry.patterns.is_empty() {
+                    return Err(at("only a pattern entry takes patterns".into()));
+                } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                let patterns = entry
+                    .patterns
+                    .iter()
+                    .map(|pattern| Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 for word in &entry.words {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
@@ -335,6 +392,7 @@ impl Pack {
                     form: entry.form,
                     ending,
                     words: entry.words,
+                    patterns,
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
@@ -537,45 +595,52 @@ impl Pack {
                 let category = category(&entry.category).map_err(at)?;
                 let fixes = !entry.trim.is_empty()
                     || !entry.extend.is_empty()
-                    || !entry.strip_end.is_empty();
+                    || !entry.strip_end.is_empty()
+                    || !entry.person_before.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
-                        return Err(at("a pattern takes no trim, extend or strip_end".into()));
+                        return Err(at(
+                            "a pattern takes no trim, extend, strip_end or person_before".into(),
+                        ));
                     }
-                    let mut pattern = pattern.clone();
-                    for (part, regex) in &entry.parts {
-                        let name = format!("{{{part}}}");
-                        if !pattern.contains(&name) {
-                            return Err(at(format!("part {part:?} is never used")));
+                    let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
+                    let mut absorbs = Vec::new();
+                    for (name, regex) in &entry.absorbs {
+                        let absorbed = self::category(name).map_err(at)?;
+                        let regex =
+                            entry
+                                .parts
+                                .iter()
+                                .fold(regex.to_owned(), |regex, (part, piece)| {
+                                    regex.replace(&format!("{{{part}}}"), &format!("(?:{piece})"))
+                                });
+                        let regex = Regex::new(&rust_classes(&format!(r"\A(?:{regex})")))
+                            .map_err(|e| at(e.to_string()))?;
+                        if !regex.capture_names().flatten().any(|group| group == "span") {
+                            return Err(at(format!("absorbs.{name} has no `span` group")));
                         }
-                        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+                        absorbs.push((absorbed, regex));
                     }
-                    let pattern =
-                        Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
-                    // An empty span is no detection: the review would
-                    // discard the whole scan.
-                    if pattern.is_match("") {
-                        return Err(at("the pattern matches an empty span".into()));
-                    }
-                    if let Some(group) = pattern
-                        .capture_names()
-                        .flatten()
-                        .find(|group| !["lead", "tail"].contains(group))
-                    {
-                        return Err(at(format!("group {group:?} is not `lead` or `tail`")));
-                    }
-                    pack.spans.push(Span::Pattern { category, pattern });
+                    pack.spans.push(Span::Pattern {
+                        category,
+                        pattern,
+                        absorbs,
+                    });
                     continue;
                 }
-                if !entry.parts.is_empty() {
-                    return Err(at("parts need a pattern".into()));
+                if !entry.parts.is_empty() || !entry.absorbs.is_empty() {
+                    return Err(at("parts and absorbs need a pattern".into()));
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, extend patterns or strip_end".into(),
+                        "needs a pattern, trim words, extend patterns, strip_end or person_before"
+                            .into(),
                     ));
                 }
-                for word in &entry.trim {
+                if !entry.person_before.is_empty() && category != Category::Organization {
+                    return Err(at("only an ORG fix takes person_before".into()));
+                }
+                for word in entry.trim.iter().chain(&entry.person_before) {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
                     }
@@ -598,7 +663,13 @@ impl Pack {
                     trim: entry.trim.clone(),
                     extend,
                     strip_end: entry.strip_end.clone(),
+                    person_before: entry.person_before.clone(),
                 }));
+            }
+            for (index, entry) in file.reference.iter().enumerate() {
+                let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
+                pack.references
+                    .push(with_parts(&entry.pattern, &entry.parts).map_err(at)?);
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -664,6 +735,65 @@ impl Pack {
                     .iter()
                     .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
             })
+            || self
+                .never
+                .iter()
+                .filter(|entry| entry.anywhere_in.contains(&category))
+                .flat_map(|entry| &entry.patterns)
+                .any(|pattern| pattern.is_match(&outside))
+    }
+
+    /// Abbreviations `text` defines beside a court, public body or law
+    /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
+    /// capitals whose letters are the title's initials in order. Each is the
+    /// body or law wherever it stands (#378); a company's ("Quillon Freight
+    /// LLC (“QF”)") is not, and one the text also defines beside anything
+    /// else is ambiguous and stays.
+    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+        static DEFINED: OnceLock<Regex> = OnceLock::new();
+        let defined = DEFINED.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                // The title: capitalized words, and the small words and
+                // years between them, across a line break too.
+                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n",
+                r"[\p{Zs}\t]*)(?:\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in",
+                r"|to|with|&|\d{4}))*)",
+                // A citation may stand between: ", 740 ILCS 14/1".
+                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?\s*\(",
+                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
+                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+            )))
+            .expect("abbreviation pattern")
+        });
+        let mut public = std::collections::HashSet::new();
+        let mut other = std::collections::HashSet::new();
+        for found in defined.captures_iter(text) {
+            let (Some(title), Some(short)) = (found.get(1), found.get(2)) else {
+                continue;
+            };
+            let (title, short) = (title.as_str(), short.as_str());
+            let letters: Vec<char> = short
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .flat_map(char::to_lowercase)
+                .collect();
+            let mut initials = title
+                .split(|c: char| c.is_whitespace() || c == '-')
+                .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+                .flat_map(char::to_lowercase);
+            let spelt = letters.len() >= 2
+                && letters
+                    .iter()
+                    .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+            let short = short.trim_end_matches('.').to_owned();
+            if spelt && self.public_body(title, Category::Organization) {
+                public.insert(short);
+            } else {
+                other.insert(short);
+            }
+        }
+        public.retain(|short| !other.contains(short));
+        public
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -763,9 +893,18 @@ impl Pack {
                     };
             }
         }
+        self.person_documents(source, detections);
+        let abbreviations = self.public_abbreviations(&view.text);
         detections.retain(|d| {
+            let text = &view.text[view.view_range(d.range.clone())];
             !d.range.is_empty()
-                && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
+                && self.identifying(text, d.category)
+                && !(matches!(d.category, Category::Organization | Category::Person)
+                    && abbreviations.contains(
+                        text.trim_matches(|c: char| !c.is_alphanumeric())
+                            .trim_end_matches("’s")
+                            .trim_end_matches("'s"),
+                    ))
         });
     }
 
@@ -787,9 +926,12 @@ impl Pack {
             return false;
         }
         // Checked once grown: "АЗС" in "ООО «АЗС»" is a company's name, not
-        // the abbreviation (#481).
+        // the abbreviation (#481), and so is "C.F.R." in "ООО «C.F.R.»".
         if self.grows_to_company(source, range.clone(), category) {
             return true;
+        }
+        if self.in_reference(source, range.clone()) {
+            return false;
         }
         let quoted = self
             .shapes
@@ -859,6 +1001,105 @@ impl Pack {
         // "ООО «Судак»" grows to its legal form before a court's stem in it
         // could drop it.
         self.shaped(text, category) && !quoted
+    }
+
+    /// Whether `range` of `source` lies inside a `reference` match, a legal
+    /// reference ("424 U.S. at 38", "статьи 431 ГК РФ"): no identifier,
+    /// address or name (guide rule 8). The span's lines are searched as
+    /// detection reads them ("&sect;" is "§"), and again with the line on
+    /// each side joined where a citation may wrap onto it ("904 F.2d\n275,
+    /// 277"): a soft break between two lines of running text.
+    fn in_reference(&self, source: &str, range: std::ops::Range<usize>) -> bool {
+        if self.references.is_empty() {
+            return false;
+        }
+        let line_start = |at: usize| source[..at].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |i| at + i);
+        let start = line_start(range.start);
+        let end = line_end(range.end);
+        let inside = |from: usize, text: &str| {
+            let view = mdoc_pii::view::View::new(text);
+            let span = view.view_range(range.start - from..range.end - from);
+            self.references.iter().any(|pattern| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            })
+        };
+        if inside(start, &source[start..end]) {
+            return true;
+        }
+        let mut wide = start..end;
+        if start > 0 {
+            let before = line_start(start - 1);
+            if soft_break(&source[before..start - 1], &source[start..end]) {
+                wide.start = before;
+            }
+        }
+        if end < source.len() {
+            let after = line_end(end + 1);
+            if soft_break(&source[line_start(end)..end], &source[end + 1..after]) {
+                wide.end = after;
+            }
+        }
+        // One space for each line break: offsets stay the source's.
+        let lines = &source[wide.clone()];
+        lines.contains('\n') && inside(wide.start, &lines.replace(['\r', '\n'], " "))
+    }
+
+    /// An organization span ending in a `person_before` word ("Ostrand
+    /// Decl.") becomes the person before it ("Ostrand") when a person's span
+    /// holds each of that name's words: a declaration is a person's, never
+    /// a company.
+    fn person_documents(&self, source: &str, detections: &mut [Detection]) {
+        let words: Vec<&String> = self
+            .spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) => Some(&fix.person_before),
+                Span::Pattern { .. } => None,
+            })
+            .flatten()
+            .collect();
+        if words.is_empty() {
+            return;
+        }
+        let name_words = |text: &str| -> Vec<String> {
+            text.split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned)
+                .collect()
+        };
+        let people: Vec<Vec<String>> = detections
+            .iter()
+            .filter(|d| d.category == Category::Person)
+            .map(|d| name_words(&source[d.range.clone()]))
+            .collect();
+        for detection in detections
+            .iter_mut()
+            .filter(|d| d.category == Category::Organization)
+        {
+            let text = source[detection.range.clone()].trim_end();
+            let Some((name, last)) = text.rsplit_once(char::is_whitespace) else {
+                continue;
+            };
+            let last = last.trim_end_matches('.').to_lowercase();
+            let name = name.trim_end();
+            let wanted = name_words(name);
+            if !words.iter().any(|word| **word == last)
+                || wanted.is_empty()
+                || !people
+                    .iter()
+                    .any(|person| wanted.iter().all(|word| person.contains(word)))
+            {
+                continue;
+            }
+            let at = detection.range.start + (text.len() - text.trim_start().len());
+            let name = name.trim_start();
+            detection.range = at..at + name.len();
+            detection.category = Category::Person;
+        }
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -1032,13 +1273,44 @@ impl Pack {
             })
     }
 
+    /// Whether a model span of `category` at `at` of `text`, inside a
+    /// `span` pattern's match of `matched` at `within`, is that match's own
+    /// part (its `absorbs`), read within the match alone: "Harrow House"
+    /// before ", 12 Pellin Street" is the address's building, not a company;
+    /// a number after the match ("…, Chatham House, 12 March") is none of it.
+    pub(crate) fn absorbs(
+        &self,
+        text: &str,
+        matched: Category,
+        within: std::ops::Range<usize>,
+        category: Category,
+        at: std::ops::Range<usize>,
+    ) -> bool {
+        self.spans.iter().any(|span| match span {
+            Span::Pattern {
+                category: of,
+                absorbs,
+                ..
+            } if *of == matched => absorbs.iter().any(|(absorbed, regex)| {
+                *absorbed == category
+                    && regex
+                        .captures(&text[at.start..within.end])
+                        .and_then(|found| found.name("span"))
+                        .is_some_and(|span| span.range() == (0..at.len()))
+            }),
+            _ => false,
+        })
+    }
+
     /// Whole spans the `span` patterns find in `source`: an address from
     /// its first element to its postcode or city (ADR 0092).
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
         self.spans
             .iter()
             .filter_map(|span| match span {
-                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Pattern {
+                    category, pattern, ..
+                } => Some((*category, pattern)),
                 Span::Fix(_) => None,
             })
             .flat_map(|(category, pattern)| {
@@ -1078,6 +1350,35 @@ impl Pack {
             })
             .map(|shape| shape.category)
     }
+}
+
+/// `pattern` with each `{name}` replaced by `parts.name`, compiled: every
+/// part used, no empty match (an empty span is no detection: the review
+/// would discard the whole scan) and no group but `lead` and `tail`.
+fn with_parts(
+    pattern: &str,
+    parts: &std::collections::BTreeMap<String, String>,
+) -> Result<Regex, String> {
+    let mut pattern = pattern.to_owned();
+    for (part, regex) in parts {
+        let name = format!("{{{part}}}");
+        if !pattern.contains(&name) {
+            return Err(format!("part {part:?} is never used"));
+        }
+        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+    }
+    let pattern = Regex::new(&rust_classes(&pattern)).map_err(|e| e.to_string())?;
+    if pattern.is_match("") {
+        return Err("the pattern matches an empty span".into());
+    }
+    if let Some(group) = pattern
+        .capture_names()
+        .flatten()
+        .find(|group| !["lead", "tail"].contains(group))
+    {
+        return Err(format!("group {group:?} is not `lead` or `tail`"));
+    }
+    Ok(pattern)
 }
 
 /// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
@@ -1150,6 +1451,22 @@ fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
         };
     }
     ranges
+}
+
+/// Whether the break between lines `first` and `second` may wrap running
+/// text: neither is blank, a heading or a table row, and the second opens
+/// no quote, list item or numbered item.
+fn soft_break(first: &str, second: &str) -> bool {
+    let (first, second) = (first.trim(), second.trim());
+    let numbered = second
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with(['.', ')'])
+        && second.starts_with(|c: char| c.is_ascii_digit());
+    !first.is_empty()
+        && !second.is_empty()
+        && !first.starts_with(['|', '#'])
+        && !second.starts_with(['|', '#', '>', '-', '*', '+'])
+        && !numbered
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -1267,7 +1584,7 @@ mod tests {
             let lines: Vec<&str> = file.1.lines().collect();
             for (index, line) in lines.iter().enumerate() {
                 let opens = line.starts_with("[[")
-                    || ["never", "context", "shape", "span", "variants"]
+                    || ["never", "context", "shape", "span", "variants", "reference"]
                         .iter()
                         .any(|section| line.starts_with(&format!("{section} =")));
                 if opens {
@@ -2014,6 +2331,236 @@ mod tests {
         );
     }
 
+    /// English courts, agencies, departments, offices, laws and codes are
+    /// no organizations and no people (#378), nor is a country, state or
+    /// city (#478); companies with their legal form, and private bodies that
+    /// share a word with them, stay.
+    #[test]
+    fn english_public_bodies_laws_and_places_are_no_organizations() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        for text in [
+            // Departments, offices, agencies and bureaus.
+            "Department of Justice",
+            "U.S. Department of Labor",
+            "Dep't of Labor",
+            "Department for Work and Pensions",
+            "Ashmoor County Probation Department",
+            "Office of the Attorney General",
+            "Home Office",
+            "Clerk's Office",
+            "Agency for International Development",
+            "National Security Agency",
+            "Bureau of Prisons",
+            "Census Bureau",
+            // Commissions, legislatures, services and councils.
+            "Federal Election Commission",
+            "Securities and Exchange Commission",
+            "Commission on Civil Rights",
+            "National Labor Relations Board",
+            "Board of Education",
+            "Ashmoor County Board of Supervisors",
+            "Congress",
+            "the Legislature",
+            "Senate Judiciary Committee",
+            "Social Security Administration",
+            "Internal Revenue Service",
+            "Crown Prosecution Service",
+            "Ashmoor City Council",
+            "HM Treasury",
+            "HM Land Registry",
+            "His Majesty's Revenue and Customs",
+            // Short names.
+            "IRS",
+            "the IRS",
+            "U.S. FDA",
+            "CMA",
+            "EEOC",
+            "OHRP",
+            "SEC",
+            "EAT",
+            "the ET",
+            // Prosecutors and ministers.
+            "Attorney General",
+            "Attorney-General's Office",
+            "U.S. Attorney",
+            "District Attorney",
+            "Secretary of State",
+            // Courts by circuit, district and division.
+            "1st Cir",
+            "9th Cir.",
+            "Ninth Circuit",
+            "Federal Circuit",
+            "Northern District of Ashmoria",
+            "Chancery Division",
+            "King's Bench Division",
+            // Laws, codes and rules.
+            "Gaming Act 2031",
+            "Biometric Information Privacy Act",
+            "the First Amendment",
+            "Data Protection Regulations",
+            "Bankruptcy Code",
+            "Code of Federal Regulations",
+            "18 U.S.C.",
+            "Civil Procedure Rules",
+            "Federal Rules of Evidence",
+            // Places alone, together, and after "State of" and the like.
+            "Pakistan",
+            "North Macedonia",
+            "Republic of Korea",
+            "Illinois",
+            "Massachusetts",
+            "United States",
+            "United States of America",
+            "the United Kingdom",
+            "U.S.",
+            "U.S",
+            "USA",
+            "Boston",
+            "New York",
+            "State",
+            "States",
+            "Federal",
+            "Georgia v. Alabama",
+            "Washington, D.C.",
+            "State of Ashmoria",
+            "STATE OF ASHMORIA",
+            "Commonwealth of Brindlemoor",
+            "People of the State of Ashmoria",
+            "Town of Brindle",
+            "District of Columbia",
+            "Ashmoor County",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            // A legal form keeps a company, whatever public or place word
+            // it has; none cuts it.
+            "Bank of America, N.A.",
+            "State Street Corporation",
+            "Georgia-Pacific LLC",
+            "Georgia-Pacific",
+            "Federal Express Corp.",
+            "Federal Express",
+            "Quillon Freight LLC",
+            "Brindle Court Ltd",
+            "Ashmoor Department Store Ltd",
+            "State of Ashmoria Holdings LLC",
+            "Congress Street Partners LLP",
+            // Private bodies that share a word with a public one.
+            "Northbridge Department Store",
+            "Acme Talent Agency",
+            "Cedar Arts Council",
+            "Law Offices of Quill & Venn",
+            "New York Life",
+            "Boston Scientific",
+            "Ohio Valley Freight",
+            "United Airlines",
+            "Washington Post",
+            "Delaware North",
+            // Short names and words of public bodies that companies share
+            // (review of #515).
+            "CMA CGM",
+            "SEC Newgate",
+            "Commission Junction",
+            "The Republic of Tea",
+            "Ashmoor Advisory Board",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        for text in [
+            "HMRC",
+            "Gaming Act 1968",
+            "Biometric Information Privacy Act",
+            "Ashmoor County Probation Department",
+            "Department of Justice",
+            "Federal Election Commission",
+            "High Court of Justice",
+            "State of Ashmoria",
+            "Town of Plymouth",
+            "Ninth Circuit",
+            "Chancery Division",
+            "Attorney General",
+            "Bankruptcy Code",
+            "National Labor Relations Board",
+            "IRS",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Georgia Quill",
+            "Virginia Ashby",
+            "Washington Vale",
+            "Sec. Brindle",
+            "Justice Brindle",
+            "Attorney General Brindle",
+            "Pakistan",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        // A place's name after "Town of" grows to the place and goes, as an
+        // organization or a person; the other side of a caption stays.
+        assert_eq!(
+            fixed(
+                "The Town of Brindle (Illinois) sued; Town of Plymouth v. Orrin Quill.",
+                &[
+                    ("Brindle", Category::Organization),
+                    ("Illinois", Category::Organization),
+                    ("Plymouth", Category::Person),
+                    ("Orrin Quill", Category::Person),
+                ]
+            ),
+            ["Orrin Quill"]
+        );
+        // An abbreviation defined beside a law or a public body is the law
+        // or the body wherever it stands; a company's stays.
+        assert_eq!(
+            fixed(
+                "Under the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), \
+                 and the Equal Employment Opportunity Commission (EEOC) rules, \
+                 Quillon Freight LLC (“QF”) answered. BIPA applies; the EEOC \
+                 agreed; BIPA’s terms bind QF.",
+                &[
+                    ("BIPA", Category::Organization),
+                    ("EEOC", Category::Person),
+                    ("BIPA’s", Category::Person),
+                    ("QF", Category::Organization),
+                ]
+            ),
+            ["QF"]
+        );
+        // A title wrapped across a line, LF or CRLF.
+        for source in [
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+        ] {
+            let at = source.rfind("BIPA").unwrap();
+            let mut detections = vec![Detection {
+                range: at..at + 4,
+                category: Category::Organization,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }];
+            pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+            assert!(detections.is_empty(), "{source:?}");
+        }
+        // An abbreviation the text also defines for something else is
+        // ambiguous and stays.
+        let source = "the Data Protection Act (“DPA”); DPA Microphones (“DPA”) supplied                       it. DPA invoiced us.";
+        let at = source.rfind("DPA").unwrap();
+        let mut detections = vec![Detection {
+            range: at..at + 3,
+            category: Category::Organization,
+            score: 0.9,
+            recognizer: Recognizer::Model,
+        }];
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        assert_eq!(detections.len(), 1);
+    }
+
     /// Date masks (#487), common abbreviations (#481), the Internet,
     /// software and site domains (#488) are no names; companies that share
     /// their words keep them.
@@ -2484,6 +3031,426 @@ mod tests {
         }
     }
 
+    /// US and UK addresses from PDF and text layers (#498): the "City, ST
+    /// ZIP" line under the street, suites, floors and buildings, compass
+    /// parts, spelled-out states and capitals, whole from the first element
+    /// to the postcode, never the country after it.
+    #[test]
+    fn us_and_uk_addresses_over_two_lines_are_found_whole() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<String> {
+            pack.spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        // The issue's reproduction: two addresses, the country left out.
+        assert_eq!(
+            found(
+                "Notices to Larkfield Supply LLC, 4410 W. Quarry Parkway, Suite 210\n\
+                 Brindlecombe, OH 45999, and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        for (source, address) in [
+            // A line break, with no comma, before the "City, ST ZIP" line;
+            // capitals, a compass part, two spaces before the ZIP.
+            (
+                "Contractor:\n1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999\nPhone",
+                "1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999",
+            ),
+            (
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687\r\n",
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687",
+            ),
+            (
+                "Wrenfield LLP\n  1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999\n",
+                "1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999",
+            ),
+            (
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+            ),
+            // A Markdown hard break.
+            (
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+            ),
+            // Dotted compass parts and the street words #361 lacked.
+            (
+                "at 2121 Quillon Ave. N.W., Wexford, DC 20997 since",
+                "2121 Quillon Ave. N.W., Wexford, DC 20997",
+            ),
+            (
+                "at 8001 Harl Tansey Fwy., Brindlecombe, TX 75999.",
+                "8001 Harl Tansey Fwy., Brindlecombe, TX 75999",
+            ),
+            (
+                "at 6910 Network Pl., Slocombe, IN 46999.",
+                "6910 Network Pl., Slocombe, IN 46999",
+            ),
+            (
+                "at 2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773 by",
+                "2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773",
+            ),
+            // A state spelled out or dotted before its ZIP.
+            (
+                "at 1600 Pellin Hill Road, Brindlecombe, Georgia 30999.",
+                "1600 Pellin Hill Road, Brindlecombe, Georgia 30999",
+            ),
+            (
+                "Room 640, 500 Larch Street, New York, N.Y. 10999.",
+                "Room 640, 500 Larch Street, New York, N.Y. 10999",
+            ),
+            (
+                "at 12 Oak Road, Slocombe, New Hampshire 03999.",
+                "12 Oak Road, Slocombe, New Hampshire 03999",
+            ),
+            // A ZIP wrapped onto the next line; "Ft." before a town.
+            (
+                "at 151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999 (you)",
+                "151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999",
+            ),
+            // A building name, on the street's line or its own, and a street
+            // without a number after it.
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\nEngland",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ, UK",
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+            (
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+            ),
+            // A street without a number before its postcode.
+            (
+                "Royal Courts of Justice\nStrand, Slocombe, WC2A 9ZZ\n",
+                "Strand, Slocombe, WC2A 9ZZ",
+            ),
+            (
+                "at One Pellin Place, Brindlecombe, GA 30999.",
+                "One Pellin Place, Brindlecombe, GA 30999",
+            ),
+            // A country after the postcode stays out.
+            (
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                "12 Oak Road, Slocombe SL9 9ZZ",
+            ),
+            // A surname that is also a building word is no building.
+            ("Jane Chambers, 12 Oak Road, Leeds", "12 Oak Road, Leeds"),
+            (
+                "Brindle Medical Center\n3939 Harl Blvd.\nSlocombe, UT 84999",
+                "3939 Harl Blvd.\nSlocombe, UT 84999",
+            ),
+            // A suite on its own line after the street.
+            (
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB\n",
+                "12 Oak Road\nSuite 210\nLeeds LS1 4AB",
+            ),
+        ] {
+            assert_eq!(found(source), [address], "{source}");
+        }
+        for source in [
+            // After a line break a town needs its postcode.
+            "12 Oak Road\nLeeds",
+            "12 Oak Road\nJohn Smith AB will call",
+            // No street: a building and a town, a court, a town and its
+            // postcode alone (#506), a P.O. box (#506).
+            "Brindle House, Leeds",
+            "High Court, Slocombe WC2A 9ZZ",
+            "BRANWICK, CO 81999",
+            "Brindlecombe, OH 45999",
+            "P.O. Box 36060, Brindlecombe, CA 94999",
+            // A street without a number needs its postcode.
+            "Brindle Road, Leeds",
+            "Strand, Leeds",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        // A building, room or mail-stop part is no company, bank account or
+        // identity document; a company named with one of their words stays
+        // a company.
+        for (text, category) in [
+            ("Bldg 499", Category::Organization),
+            ("Suite 210", Category::Organization),
+            ("10th Floor", Category::Organization),
+            ("Suite 210, 3rd Floor", Category::Organization),
+            ("Building 179A", Category::Organization),
+            ("Mail Stop K9-24", Category::Organization),
+            ("Room 2.104", Category::Bank),
+            ("Building 179A", Category::Bank),
+            ("Mail Stop K9-24", Category::Identity),
+            ("Apt 4B", Category::Identity),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for name in [
+            "Brindle Building Society",
+            "Pellin House",
+            "Harrow Mail Ltd",
+            "Harrow Floor Services",
+            "Suite Seven Studios",
+        ] {
+            assert!(pack.identifying(name, Category::Organization), "{name}");
+        }
+        // So a model's building part no longer costs the whole address.
+        let source = "Building 179A, 12 Oak Road\nLeeds LS1 4AB\n";
+        let start = source.find("Building").unwrap();
+        let raw = [crate::RawEntity {
+            start,
+            end: start + "Building 179A".len(),
+            label: "organization".into(),
+            score: 0.9,
+            text: "Building 179A".into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            shown,
+            [(
+                "Building 179A, 12 Oak Road\nLeeds LS1 4AB".to_owned(),
+                "ADDRESS".to_owned()
+            )]
+        );
+        // A model's address loses the country and the word "address" at
+        // its edges.
+        assert_eq!(
+            fixed(
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK.",
+                &[(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK",
+                    Category::Address
+                )]
+            ),
+            ["Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "at 12 Pellin Street address.",
+                &[("12 Pellin Street address", Category::Address)]
+            ),
+            ["12 Pellin Street"]
+        );
+        // A country of several words, too; "United" leading a building's
+        // name goes, but the span pattern's match holds what is left.
+        assert_eq!(
+            fixed(
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                &[(
+                    "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                    Category::Address
+                )]
+            ),
+            ["12 Oak Road, Slocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "of 4 Oak Road, Brindlecombe, OH 45999, United States of America.",
+                &[(
+                    "of 4 Oak Road, Brindlecombe, OH 45999, United States of America",
+                    Category::Address
+                )]
+            ),
+            ["4 Oak Road, Brindlecombe, OH 45999"]
+        );
+        let source = "United House, 12 Pellin Street\nSlocombe SL9 9ZZ\n";
+        let raw = [crate::RawEntity {
+            start: 0,
+            end: source.trim_end().len(),
+            label: "address".into(),
+            score: 0.9,
+            text: source.trim_end().into(),
+        }];
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(shown, [source.trim_end()]);
+    }
+
+    /// #498: the review keeps an address the pattern found over its own
+    /// lines with the sentence going on after it, but only when it ends in
+    /// its number before a word apart (`mdoc_pii::view::wrapped_value`).
+    #[test]
+    fn an_address_over_lines_is_proposed_with_text_after_it() {
+        let shown = |source: &str| -> Vec<String> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "ADDRESS")
+                .map(|span| source[span.range].to_owned())
+                .collect()
+        };
+        let found = |source: &str| -> Vec<String> {
+            pack()
+                .spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert_eq!(
+            shown(
+                "Notices to 4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999, and to \
+                 Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        // The pattern reads a next field's first word as a town, or stops
+        // inside a room number: the review keeps neither (review of #508).
+        let source = "Lives at 12 Oak Road,\nDate of birth: 14/03/1988.";
+        assert_eq!(found(source), ["12 Oak Road,\nDate"]);
+        assert!(shown(source).is_empty());
+        let source = "Lives at 12 Oak Road\nRoom 2/3 with Ann.";
+        assert_eq!(found(source), ["12 Oak Road\nRoom 2"]);
+        assert!(shown(source).is_empty());
+    }
+
+    /// #498 on the real model: it reads the building's name before a house
+    /// number as a company. That company is the address's own part, and the
+    /// address stands whole; a company named like a building with no street
+    /// after it, or not ending in a building word, stays a company.
+    #[test]
+    fn a_building_name_before_its_street_is_the_address_not_a_company() {
+        let shown = |source: &str, model: &[(&str, &str)]| -> Vec<(String, String)> {
+            let raw: Vec<_> = model
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    crate::RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.98,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect()
+        };
+        let pair = |text: &str, category: &str| (text.to_owned(), category.to_owned());
+        // The fixture's snapshot: the building a company, the rest an
+        // address with its country.
+        assert_eq!(
+            shown(
+                "Notices to Larkfield Supply LLC and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK.\n",
+                &[
+                    ("Larkfield Supply LLC", "organization"),
+                    ("Harrow House", "organization"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ\nUK", "address"),
+                ]
+            ),
+            [
+                pair("Larkfield Supply LLC", "ORG"),
+                pair(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+                    "ADDRESS"
+                ),
+            ]
+        );
+        // On its own line, or with a suite before the street; the model
+        // finding no address at all.
+        for (source, building, address) in [
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                "Harrow House",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996\n",
+                "Ardley Building",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(building, "organization")]),
+                [pair(address, "ADDRESS")],
+                "{source}"
+            );
+        }
+        // A company named like a building: with its legal form, with no
+        // street after it, not ending in a building word, or before a
+        // number that is no street.
+        for (source, model, proposed) in [
+            (
+                "Harrow House Ltd agreed to pay.\n",
+                &[("Harrow House Ltd", "organization")][..],
+                &[("Harrow House Ltd", "ORG")][..],
+            ),
+            (
+                "Harrow House agreed to pay.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+            (
+                "Notices to Harrow House Ltd, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Harrow House Ltd", "organization")],
+                &[
+                    ("Harrow House Ltd", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Notices to Tower Records, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Tower Records", "organization")],
+                &[
+                    ("Tower Records", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Harrow House, 12 March 2026, Slocombe.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+            // A number after the match is none of it (review of #508): the
+            // pattern's "12 Oak Road, Chatham House" gives way as before.
+            (
+                "Lives at 12 Oak Road, Chatham House, 12 March 2026.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
+            ),
+            // An address the review turns down (text after its town on its
+            // last line) leaves the company standing (review of #508).
+            (
+                "Chatham House\n10 St James's Square, London, UK.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
+            ),
+        ] {
+            let proposed: Vec<_> = proposed.iter().map(|(t, c)| pair(t, c)).collect();
+            assert_eq!(shown(source, model), proposed, "{source}");
+        }
+    }
+
     /// Rules win the review's conflicts, but a span pattern's match gives
     /// way wherever it is not the widest evidence, so it never cuts what the
     /// model or another rule found; a model address inside it grows to it.
@@ -2721,6 +3688,236 @@ mod tests {
         assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
     }
 
+    /// What the user is shown for the model's `raw` spans (text and label,
+    /// each found at its first place): the correction stage and the review.
+    fn shown(source: &str, raw: &[(&str, &str)]) -> Vec<(String, String)> {
+        let raw: Vec<crate::RawEntity> = raw
+            .iter()
+            .map(|(text, label)| {
+                let start = source
+                    .find(text)
+                    .unwrap_or_else(|| panic!("{text:?} not in the source"));
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.8,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect()
+    }
+
+    fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+        expected
+            .iter()
+            .map(|(text, category)| ((*text).to_owned(), (*category).to_owned()))
+            .collect()
+    }
+
+    /// US and UK citations are no identifiers, addresses or names: reporter,
+    /// Westlaw and law-report citations, codes and their abbreviations,
+    /// sections, the record and a form's outline letter (guide rule 8,
+    /// issues #499 and #480).
+    #[test]
+    fn english_legal_references_are_never_proposed() {
+        let source = "As held at 912 F.3d 455, 460 and 77 N.E.2d 310, and 424 U.S. at 38 \
+            (527 U.S. 706; 33 A.D.3d 352; 904 F.2d 275, 277), under 26 U.S.C. § 6212, \
+            31 U.S.C. 3903, I.R.C. § 61, 48 CFR 52.212-1, FAR 52.212-1, 34 CFR §300.8, \
+            E.O. 13526, Release No. 34-98765, 2031 WL 1234567, [2031] STC 412 and ICR 801 \
+            (Tr. 112-14; Tr. 435-36; ECF Doc. #12-3; 123sa; see n. 14; Id. at 41; \
+            ROA.977), for tax year 2029/30, the U.S. District Court ruled.\n\nJ. Additional Questions\n";
+        let raw = [
+            ("912 F.3d 455, 460 and 77 N.E.2d 310", "address"),
+            ("424 U.S. at 38", "address"),
+            ("U.S.", "organization"),
+            ("A.D.", "person"),
+            ("904 F.2d 275, 277", "phone_number"),
+            ("6212", "tax_id"),
+            ("31 U.S.C. 3903", "bank_account"),
+            ("S.C.", "person"),
+            ("R.C.", "person"),
+            ("48 CFR 52.212-1", "tax_id"),
+            ("FAR 52.212-1", "tax_id"),
+            ("300.8", "tax_id"),
+            ("13526", "tax_id"),
+            ("34-98765", "tax_id"),
+            ("2031 WL 1234567", "tax_id"),
+            ("STC 412", "tax_id"),
+            ("ICR 801", "bank_account"),
+            ("Tr. 112-14", "tax_id"),
+            ("435-36", "tax_id"),
+            ("#12-3", "tax_id"),
+            ("123sa", "tax_id"),
+            ("n. 14", "passport_number"),
+            ("Id. at 41", "passport_number"),
+            ("ROA.977", "national_id_number"),
+            ("2029/30", "tax_id"),
+            ("J.", "person"),
+        ];
+        assert_eq!(shown(source, &raw), []);
+        assert_eq!(
+            shown("Before the U.S. District Court.", &[("U.S.", "person")]),
+            []
+        );
+        // The same abbreviation as a span alone, whatever its neighbours.
+        for text in ["U.S.", "U.K.", " U.S.A. "] {
+            assert!(!pack().identifying(text, Category::Organization), "{text}");
+            assert!(!pack().identifying(text, Category::Person), "{text}");
+        }
+    }
+
+    /// A real identifier beside a citation stays: a tax number, a case
+    /// number after its label, a phone, a company, a person, a university.
+    #[test]
+    fn identifiers_beside_a_citation_stay() {
+        let source = "Under 26 U.S.C. § 6212 (EIN 98-7654321), Case No. 1:26-cv-01234 \
+            (citing 424 U.S. at 38), call +1 (202) 555-0164 (904 F.2d 275, 277). \
+            U.S. Bank paid; USC agreed; GB 123 4567 89 is the VAT number.\n\n\
+            J. Ostrand\n";
+        let raw = [
+            ("EIN 98-7654321", "tax_id"),
+            ("+1 (202) 555-0164", "phone_number"),
+            ("U.S. Bank", "organization"),
+            ("USC", "organization"),
+            ("GB 123 4567 89", "tax_id"),
+            ("J. Ostrand", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("98-7654321", "TAX"),
+                ("1:26-cv-01234", "CASE"),
+                ("+1 (202) 555-0164", "PHONE"),
+                ("U.S. Bank", "ORG"),
+                ("USC", "ORG"),
+                ("GB 123 4567 89", "TAX"),
+                ("J. Ostrand", "PERSON"),
+            ])
+        );
+        // A tax year is no tax number; a number in another shape stays.
+        assert!(!pack().identifying("2014/15", Category::Tax));
+        assert!(!pack().identifying("2014-2015", Category::Tax));
+        assert!(pack().identifying("98-7654321", Category::Tax));
+        assert!(pack().identifying("123-45-6789", Category::Tax));
+    }
+
+    /// Russian law, article and court-act numbers are no tax numbers; the
+    /// INN beside them stays (guide rule 8, issue #480).
+    #[test]
+    fn russian_legal_references_are_never_proposed() {
+        let source = "на основании Федерального закона от 26.10.2002 № 127-ФЗ, Федерального \
+            закона № 999-ФЗ и статьи 431 ГК РФ, ст. 428 ГК РФ, п. 2 ст. 450 ГК РФ, \
+            Определения Верховного Суда РФ от 12.03.2031 № 305-ЭС31-1234 и УПД № 412, \
+            ИНН 7701234567, тел. +7 (495) 123-45-67";
+        let raw = [
+            ("127-ФЗ", "tax_id"),
+            ("999-ФЗ", "tax_id"),
+            ("431 ГК РФ", "tax_id"),
+            ("428 ГК РФ", "tax_id"),
+            ("450", "tax_id"),
+            ("305-ЭС31-1234", "tax_id"),
+            ("412", "tax_id"),
+            ("7701234567", "tax_id"),
+            ("+7 (495) 123-45-67", "phone_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("7701234567", "TAX"), ("+7 (495) 123-45-67", "PHONE")])
+        );
+        // A court's own words may sit between the act and its number.
+        let source = "Определение судебной коллегии по экономическим спорам Верховного Суда РФ \
+            от 12.03.2031 № 305-ЭС31-1234, Приказ Минфина России от 01.02.2031 № 12н";
+        assert_eq!(
+            shown(source, &[("305-ЭС31-1234", "tax_id"), ("12н", "tax_id")]),
+            []
+        );
+        // A value between an act and a "№" stays, and so does a number
+        // after "№" that is no act's.
+        let source = "Постановление в отношении ООО «Вега», ИНН 7701234567, № 17";
+        assert_eq!(
+            shown(source, &[("7701234567", "tax_id")]),
+            pairs(&[("7701234567", "TAX")])
+        );
+        let source = "Постановление направлено владельцу паспорта № 4512345678.";
+        assert_eq!(
+            shown(source, &[("4512345678", "passport_number")]),
+            pairs(&[("4512345678", "IDENTITY")])
+        );
+    }
+
+    /// A citation is found as detection reads it: through character
+    /// references and across a soft line break. A company named like a
+    /// code keeps its name; a blank line, a table row or a list item ends
+    /// the citation (#480, #499).
+    #[test]
+    fn citations_wrapped_or_encoded_are_found_and_neighbours_stay() {
+        for source in [
+            "under 26 U.S.C. &sect; 6212 the notice",
+            "under 26 U.S.C.\n6212 the notice",
+            "under 26 U.S.C.\r\n6212 the notice",
+        ] {
+            assert_eq!(shown(source, &[("6212", "tax_id")]), [], "{source:?}");
+        }
+        assert_eq!(
+            shown(
+                "see 904 F.2d\n275, 277, and",
+                &[("904 F.2d\n275, 277", "phone_number")]
+            ),
+            []
+        );
+        assert_eq!(
+            shown("ООО «C.F.R.» paid.", &[("C.F.R.", "organization")]),
+            pairs(&[("ООО «C.F.R.»", "ORG")])
+        );
+        for source in [
+            "Under 26 U.S.C.\n\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\r\n\r\n123-45-6789 is the number.",
+            "## Under 26 U.S.C.\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\n1. 123-45-6789 is the number.",
+        ] {
+            assert_eq!(
+                shown(source, &[("123-45-6789", "tax_id")]),
+                pairs(&[("123-45-6789", "TAX")]),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// "& Anor" and "& Ors" come off a party and name no one; a declaration
+    /// is its declarant's, a person's (issue #499).
+    #[test]
+    fn citation_words_and_declarations_are_no_companies() {
+        let source = "The claim by Pellow Holdings Ltd & Anor and Vey Ltd & Ors fails. Mr Ivo \
+            Ostrand confirms it (Ostrand Decl. ¶ 3; Ruel Decl. ¶ 4).";
+        let raw = [
+            ("Pellow Holdings Ltd & Anor", "organization"),
+            ("Vey Ltd", "organization"),
+            ("Ors", "organization"),
+            ("Ivo Ostrand", "person"),
+            ("Ostrand Decl", "organization"),
+            ("Ruel Decl", "organization"),
+        ];
+        // "Ruel" is no known person: the span stays as the model gave it.
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Pellow Holdings Ltd", "ORG"),
+                ("Vey Ltd", "ORG"),
+                ("Ivo Ostrand", "PERSON"),
+                ("Ostrand", "PERSON"),
+                ("Ruel Decl", "ORG"),
+            ])
+        );
+        assert!(!pack().identifying("Anor", Category::Person));
+        assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -2805,6 +4002,38 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nparts = { street = 'x' }",
                 "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nabsorbs = { ORG = '(?P<span>x)' }",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { ORG = 'x' }",
+                "no `span` group",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { NOPE = '(?P<span>x)' }",
+                "span #1",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nperson_before = [\"decl\"]",
+                "only an ORG fix",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nperson_before = [\"Decl\"]",
+                "not lowercase",
+            ),
+            (
+                "[[reference]]\npattern = 'x*'",
+                "reference #1: the pattern matches an empty span",
+            ),
+            (
+                "[[reference]]\npattern = '\\d+'\nparts = { code = 'x' }",
+                "never used",
+            ),
+            (
+                "[[reference]]\npattern = '(?P<code>x)'",
+                "is not `lead` or `tail`",
             ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
