@@ -242,7 +242,9 @@ value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
 # ("Harrow House" of "Harrow House, 12 Pellin Street\nSlocombe SL9
 # 9ZZ"): a company span that is just the match's building name, with a
 # comma or a line break and a house number (a flat or suite between) after
-# it, is the address's own and goes (`absorbs`). A company named so but with no
+# it, within the match, is the address's own (`absorbs`): the match stands
+# over it, and the review takes the address, or the company where it turns
+# the address down. A company named so but with no
 # street after it ("Harrow House Ltd agreed", "Harrow House agreed") or
 # not ending in a building word ("Tower Records") stays a company.
 [[span]]

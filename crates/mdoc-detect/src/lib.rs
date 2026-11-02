@@ -585,7 +585,8 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
     detections.extend(rules);
     // A model span a match holds as its own part ("Harrow House" of an
-    // address) is no evidence against it, and goes where the match stands.
+    // address) is no evidence against it. It stays for the review, which
+    // takes the match over it, or it where the review turns the match down.
     let absorbed = |detection: &Detection, span: &Detection| {
         detection.recognizer == mdoc_pii::Recognizer::Model
             && span.range.start <= detection.range.start
@@ -593,6 +594,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             && rules::pack().absorbs(
                 &view.text,
                 span.category,
+                view.view_range(span.range.clone()),
                 detection.category,
                 view.view_range(detection.range.clone()),
             )
@@ -609,7 +611,6 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             )
         })
         .collect();
-    detections.retain(|detection| !spans.iter().any(|span| absorbed(detection, span)));
     detections.extend(spans);
     detections
 }

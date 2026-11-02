@@ -1067,13 +1067,15 @@ impl Pack {
     }
 
     /// Whether a model span of `category` at `at` of `text`, inside a
-    /// `span` pattern's match of `matched`, is that match's own part (its
-    /// `absorbs`): "Harrow House" before ", 12 Pellin Street" is the
-    /// address's building, not a company.
+    /// `span` pattern's match of `matched` at `within`, is that match's own
+    /// part (its `absorbs`), read within the match alone: "Harrow House"
+    /// before ", 12 Pellin Street" is the address's building, not a company;
+    /// a number after the match ("…, Chatham House, 12 March") is none of it.
     pub(crate) fn absorbs(
         &self,
         text: &str,
         matched: Category,
+        within: std::ops::Range<usize>,
         category: Category,
         at: std::ops::Range<usize>,
     ) -> bool {
@@ -1085,7 +1087,7 @@ impl Pack {
             } if *of == matched => absorbs.iter().any(|(absorbed, regex)| {
                 *absorbed == category
                     && regex
-                        .captures(&text[at.start..])
+                        .captures(&text[at.start..within.end])
                         .and_then(|found| found.name("span"))
                         .is_some_and(|span| span.range() == (0..at.len()))
             }),
@@ -2946,6 +2948,20 @@ mod tests {
                 "Harrow House, 12 March 2026, Slocombe.\n",
                 &[("Harrow House", "organization")],
                 &[("Harrow House", "ORG")],
+            ),
+            // A number after the match is none of it (review of #508): the
+            // pattern's "12 Oak Road, Chatham House" gives way as before.
+            (
+                "Lives at 12 Oak Road, Chatham House, 12 March 2026.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
+            ),
+            // An address the review turns down (text after its town on its
+            // last line) leaves the company standing (review of #508).
+            (
+                "Chatham House\n10 St James's Square, London, UK.\n",
+                &[("Chatham House", "organization")],
+                &[("Chatham House", "ORG")],
             ),
         ] {
             let proposed: Vec<_> = proposed.iter().map(|(t, c)| pair(t, c)).collect();
