@@ -403,7 +403,13 @@ impl Panel {
             format!(
                 "Version {} · {}",
                 env!("CARGO_PKG_VERSION"),
-                mdoc_store::cases::build_identity()
+                // A test build is never signed; asking macOS reads the whole
+                // folder the test binary sits in (#510).
+                if cfg!(test) {
+                    "Dev"
+                } else {
+                    mdoc_store::cases::build_identity()
+                }
             ),
             div(),
             theme,
