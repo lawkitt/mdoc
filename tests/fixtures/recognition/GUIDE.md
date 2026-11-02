@@ -50,8 +50,9 @@ of birth and claim number become gold, so they start as `known-flaw`.
   and URL domains under `.invalid`; no copied real document text. CC0-1.0.
 - Front matter: `status` (`pass`, `known-flaw`, `model-limit`), `flaw`
   (class), `issue`, `kind` (contract, claim, judgment, power-of-attorney,
-  letter, ocr, docx, tables), `source` (`hunt-rN`, `import`, `demo`), and
-  for `model-limit` a `reason`.
+  letter, ocr, docx, tables), `source` (`hunt-rN`, `probe-rN` for a probe
+  round's synthetic reproduction, `import`, `demo`), and for `model-limit`
+  a `reason`.
 - A negative fixture marks nothing; its job is precision.
 
 ## Examples

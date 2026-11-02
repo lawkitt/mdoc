@@ -33,6 +33,15 @@ extend = [
     '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
 ]
 
+# Common abbreviations (the never words below) come off an organization's
+# edges: "АЗС ООО «Бета-Ойл»" is "ООО «Бета-Ойл»" (guide rule 2, issue #481).
+[[span]]
+category = "ORG"
+trim = [
+    "тко", "тн", "ттн", "азс", "соуэ", "апс", "аупс", "аспт", "мчд", "кэп",
+    "укэп", "нэп", "пэп", "эп", "эцп", "еио", "эдо", "уц",
+]
+
 # Titles and the words for spouses: "г-жа", "муж" name no one on their own.
 [[never]]
 match = "plural"
@@ -93,6 +102,48 @@ words = [
     "паспорте", "банк", "банка", "банку", "банком", "банке",
 ]
 
+# Common abbreviations name no one (guide rule 8, issue #481): waste and
+# waybills ("вывоз ТКО", "по ТН № 15", "ТТН"), a petrol station ("на
+# АЗС"), fire systems ("СОУЭ", "АПС") and e-signature and e-document terms
+# ("МЧД", "КЭП", "ЭП", "ЕИО", "ЭДО"). They do not decline, so they are
+# listed whole. A company that shares one keeps it by its other words or
+# legal form ("АО «ТТН-Логистик»", "ООО «АЗС»").
+[[never]]
+match = "whole"
+words = [
+    "тко", "тн", "ттн", "азс", "соуэ", "апс", "аупс", "аспт", "мчд", "кэп",
+    "укэп", "нэп", "пэп", "эп", "эцп", "еио", "эдо", "уц",
+]
+
+# The Internet is no organization, in any form, nor is the statutory
+# phrase around it: "сети «Интернет»", "информационно-телекоммуникационной
+# сети Интернет" (guide rule 2, issue #488). Listed whole and dropped only
+# when a span has no other word, so "Интернет Решения" and "Сети «Ромашка»"
+# stay.
+[[never]]
+match = "whole"
+words = [
+    "интернет", "интернета", "интернету", "интернетом", "интернете", "сеть",
+    "сети", "сетью", "сетей", "информационно-телекоммуникационная",
+    "информационно-телекоммуникационной", "информационно-телекоммуникационную",
+    "всемирная", "всемирной", "всемирную", "глобальная", "глобальной",
+    "глобальную",
+]
+
+# Software, messengers and legal databases are products, not the company
+# that makes them: "переписка в Ватсапе", "система КонсультантПлюс" (guide
+# rule 2, issue #488). Their case forms take up to three letters. The
+# company keeps its name by its legal form ("ООО «КонсультантПлюс»").
+[[never]]
+match = "stem"
+ending = 3
+words = ["ватсап", "вотсап", "вацап", "телеграм", "вайбер", "консультантплюс"]
+
+# The same products in Latin letters.
+[[never]]
+match = "whole"
+words = ["whatsapp", "telegram", "viber"]
+
 # Words that make a job title of a role: "Независимый эксперт", "Главный
 # бухгалтер" name no one (guide rule 8). Listed whole.
 [[never]]
@@ -125,6 +176,40 @@ anywhere_in = ["ORG"]
 [[shape]]
 category = "ORG"
 guess_words = ["ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "ИП"]
+
+# A date mask in a blank or depersonalised form is no date, organization or
+# person: "ДД.ММ.ГГГГ", "ДД.ММ.ГГ", "ХХ.ХХ.ХХ", "__.__.____", alone or before
+# a number sign ("ХХ.ХХ.ХХ №") or a word the model took with it
+# ("ДД.ММ.ГГГГ уроженца"). Two letters at least in a group, so initials
+# ("М.Г.") stay (guide rules 4 and 8, issue #487).
+[[shape]]
+category = "ORG"
+forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
+
+# The same mask as a person.
+[[shape]]
+category = "PERSON"
+forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
+
+# The same mask as a date.
+[[shape]]
+category = "DATE"
+forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
+
+# A product's name in quotes after the word for it is no organization: "ПО
+# «Контур»", "АСУ «Экспресс»", "программы «Сетка»", "мессенджера «Ватсап»",
+# "Система «Гарант»" at a sentence's start (guide rule 2, issue #488), and
+# neither is the whole phrase. A company keeps it by its legal form ("ООО
+# «Контур»"). An app's name ("приложение «…»") waits for the guide (#484).
+[[shape]]
+category = "ORG"
+forbid = [
+    '^\s*(?:ПО|АСУ)\s*(?:«[^«»]*»|"[^"]*")\s*$',
+    '(?i)^\s*(?:программ|мессенджер|систем)\p{Alphabetic}{0,3}\s*(?:«[^«»]*»|"[^"]*")\s*$',
+]
+forbid_quotes = ["«»", '""']
+quotes_after = ["программ", "мессенджер", "систем"]
+quotes_after_words = ["ПО", "АСУ", "Программа", "Мессенджер", "Система"]
 
 # Dates with a Russian month name: "12 марта 2026 г.", "«12» марта 2026".
 [[shape]]

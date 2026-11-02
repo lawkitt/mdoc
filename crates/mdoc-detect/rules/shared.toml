@@ -73,6 +73,9 @@
 #   quotes_after  = […] lowercase stems: then only after a word written in
 #                       lowercase that is one with a noun's case ending
 #                       ("повести «…»", not "Роман «…»", "рассказал «…»")
+#   quotes_after_words = […]  or after one of these words as written ("ПО
+#                       «…»", not "по «…»"); a span holding its own quotes
+#                       counts as wrapped
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
@@ -114,10 +117,14 @@ forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
 guess = ['[ +()\-\x{a0}]*(?:[0-9][ +()\-\x{a0}]*){7,}']
 
 # Organizations: a capital or digit, and a word that is not a never word
-# ("the Employer" is not one). Continental legal forms mark one.
+# ("the Employer" is not one). Continental legal forms mark one. A bare site
+# domain is no organization ("NALOG.GOV.RU", "example.invalid", "сайт.рф";
+# issue #488): two letters or more before a common zone, so "E.ON" and
+# "Alfa.Bank" stay.
 [[shape]]
 category = "ORG"
 require = ['[\p{Uppercase}\p{N}]']
+forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
 word = '.'
 guess_words = ["GmbH", "AG", "SA", "BV"]
 
