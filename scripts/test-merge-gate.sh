@@ -62,7 +62,8 @@ eq "$(check_verdict "ci/windows (hosted)" <<<"$runs")" "skipped - 0"
 eq "$(check_verdict "fast (ubuntu)" <<<"$runs")" "failure https://fast 1793617500"
 eq "$(check_verdict ci/android <<<"$runs")" "missing - 0"
 for c in stale neutral cancelled action_required; do
-  eq "$(check_verdict ci/ios <<<"{\"check_runs\": [{\"id\": 1, \"name\": \"ci/ios\", \"status\": \"completed\", \"conclusion\": \"$c\", \"html_url\": \"https://i\"}]}")" "failure https://i 0"
+  one=$(printf '{"check_runs": [{"id": 1, "name": "ci/ios", "status": "completed", "conclusion": "%s", "html_url": "https://i"}]}' "$c")
+  eq "$(check_verdict ci/ios <<<"$one")" "failure https://i 0"
 done
 # A shard alone is not the gate: only the summary job counts.
 eq "$(check_verdict ci/detection <<<'{"check_runs": [{"id": 2, "name": "ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1"}]}')" "missing - 0"
