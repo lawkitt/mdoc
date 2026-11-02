@@ -16,3 +16,12 @@ slow-timeout = { period = "60s", terminate-after = 11 }
 filter = "binary_id(mdoc::headless_renders)"
 platform = 'cfg(target_os = "windows")'
 slow-timeout = { period = "60s", terminate-after = 21 }
+
+# Interim (#510): on the Mac's local CI the app's workspace UI tests stall
+# together for 80–120 s and time out, while hosted macOS runs them in about
+# a second. Kill them at 5 min on macOS until #510 finds the shared wait;
+# remove this override with that fix.
+[[profile.default.overrides]]
+filter = "binary_id(mdoc::bin/mdoc) & test(/^workspace::tests::/)"
+platform = 'cfg(target_os = "macos")'
+slow-timeout = { period = "60s", terminate-after = 5 }
