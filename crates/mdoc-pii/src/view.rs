@@ -387,7 +387,8 @@ fn spaced_word(line: &str, start: usize) -> Vec<Range<usize>> {
             .map(char::len_utf8)
             .sum();
         let end = at + c.len_utf8() + marks;
-        if line[end..].starts_with(char::is_alphanumeric) {
+        // A note marker after a letter is no letter of a word ("И Н Н¹:").
+        if line[end..].starts_with(|c: char| c.is_alphanumeric() && !note_marker(c)) {
             break;
         }
         letters.push(at..end);
@@ -402,15 +403,17 @@ fn spaced_word(line: &str, start: usize) -> Vec<Range<usize>> {
 }
 
 /// Whether a letter-spaced run stands apart from the text on one side,
-/// `side` read outward from the run past its emphasis marks: nothing,
+/// `side` read outward from the run past emphasis and note marks: nothing,
 /// punctuation within two spaces, or a word three spaces or tabs away or
 /// more, as a column's is. A word closer makes the run initials or an
-/// enumeration ("J R R  Tolkien", "**J R R** Tolkien").
+/// enumeration ("J R R  Tolkien", "**J R R** **Tolkien**").
 fn stands_apart(side: &str) -> bool {
-    let side = side.trim_start_matches(['*', '_', '~']);
-    let text = side.trim_start_matches([' ', '\t']);
-    let gap = side.len() - text.len();
-    text.chars()
+    let marks = |c: char| matches!(c, '*' | '_' | '~') || note_marker(c);
+    let side = side.trim_start_matches(marks);
+    let text = side.trim_start_matches(char::is_whitespace);
+    let gap = side[..side.len() - text.len()].chars().count();
+    text.trim_start_matches(marks)
+        .chars()
         .next()
         .is_none_or(|c| gap >= 3 || !c.is_alphanumeric())
 }
@@ -997,11 +1000,14 @@ mod tests {
             "DELVA ROSK   Date"
         );
         assert_eq!(View::new("Подпись: И\u{306} О Ж").text, "Подпись: ЙОЖ");
+        assert_eq!(View::new("И Н Н¹: 5").text, "ИНН ¹: 5");
+        assert_eq!(View::new("J R R¹ Tolkien").text, "J R R ¹ Tolkien");
         for source in [
             // Initials and one-letter words next to a word.
             "J. R. R. Tolkien and J R R Tolkien",
             "J R R  Tolkien",
             "**J R R** Tolkien and J R R\tTolkien",
+            "**J R R** **Tolkien** and J R R\u{a0}Tolkien",
             "Smith *J R R*",
             "Я и я.",
             "D e l v a  R o s k",
