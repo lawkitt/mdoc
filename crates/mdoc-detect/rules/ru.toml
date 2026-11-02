@@ -16,6 +16,17 @@ extend = [
     '\b(?:ООО|ОАО|ЗАО|ПАО|АО|НКО|АНО|[Кк]оллегия адвокатов|[Аа]двокатское бюро)\s*"[^"\n]+"',
 ]
 
+# A state or municipal institution's quoted name belongs to the institution,
+# so the public-body `never` words below reach it: the model's "Организатор
+# перевозок" in "ГКУ города Москвы «Организатор перевозок»" grows to the
+# whole of it and goes (guide rule 8, issue #378).
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*)?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*)?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+]
+
 # Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
 # rule 1, #382).
 [[span]]
@@ -103,20 +114,94 @@ words = [
     "генерального", "генеральному", "ведущий", "ведущего", "ведущему",
 ]
 
-# Codes of law and the country: "ГК РФ", "ГПК РФ" are references, not
-# organizations (issue #378).
+# Codes of law, short court names and the country: "ГК РФ", "ГПК РФ", "ВС
+# РФ", "Российской Федерации" in "Именем Российской Федерации" or after a
+# court's name are references or places, not organizations (issues #378,
+# #478). Listed whole and dropped only when a span has no other word, so
+# "Российский союз автостраховщиков", "Сбербанк России" and "Банк «Россия»"
+# stay.
 [[never]]
 match = "whole"
-words = ["гк", "рф", "гпк", "апк", "ук", "коап", "нк", "тк"]
+words = [
+    "гк", "рф", "гпк", "апк", "ук", "коап", "нк", "тк", "упк", "жк", "ск",
+    "зк", "бк", "кас", "вс", "ас", "россии", "россию", "россией", "российская",
+    "российской", "российскую", "федерация", "федерации", "федерацию",
+    "федерацией", "именем", "коллегия", "коллегии", "коллегию", "коллегией",
+]
+
+# "Субъект" and its forms: "субъектов Российской Федерации" is no body.
+[[never]]
+match = "stem"
+ending = 3
+words = ["субъект"]
 
 # Courts and public bodies are never marked (the fixture guide's rule 8):
 # an organization span with one of these stems anywhere is dropped
 # ("Районный суд", "Верховный Суд Российской Федерации", "Министерства
-# юстиции"; issue #378).
+# юстиции", "Судебная коллегия", "Управлением Росреестра", "отдела
+# судебных приставов", "Правительства … области"; issue #378), unless it
+# has a legal form. A state or municipal institution is a public body
+# ("Федерального казенного учреждения", "государственного бюджетного
+# учреждения").
 [[never]]
 match = "stem"
 ending = 3
-words = ["суд", "министерств", "прокуратур", "департамент", "администраци", "инспекци"]
+words = [
+    "суд", "судебн", "министерств", "прокуратур", "департамент", "администраци",
+    "инспекци", "правительств", "управлени", "отдел", "отделени", "комитет",
+    "пристав", "полици", "пленум", "федеральн", "государственн", "муниципальн",
+    "казенн", "казённ", "бюджетн", "минтруд", "минфин", "минюст", "минздрав",
+    "минпромторг", "минтранс", "минсельхоз", "минспорт", "минстро", "росреестр",
+    "росгварди", "роспотребнадзор", "ростехнадзор", "роскомнадзор",
+    "росприроднадзор", "росимуществ", "росстат", "роструд",
+]
+anywhere_in = ["ORG"]
+
+# The same bodies' abbreviations and indeclinable names, matched whole:
+# "ГУ МВД России по …", "МИФНС России № 46", "УФССП", "17 ААС", "ГКУ
+# города Москвы", "ГБ МСЭ по … области" (issue #378).
+[[never]]
+match = "whole"
+words = [
+    "фнс", "ифнс", "мифнс", "уфнс", "мвд", "умвд", "омвд", "овд", "гибдд",
+    "мчс", "фссп", "уфссп", "гуфссп", "осп", "росп", "госп", "загс", "гиаз", "пфр", "сфр",
+    "фсс", "фас", "фсин", "уфсин", "фсб", "фмс", "уфмс", "гку", "гбу", "гау",
+    "фгбу", "фгку", "фку", "мку", "мбу", "гбоу", "фгбоу", "мбоу", "гбуз", "мсэ",
+    "аас", "минэнерго", "минэкономразвития", "минобороны", "минприроды",
+    "минцифры", "минкультуры", "минпросвещения", "минобрнауки", "мэрия", "мэрии",
+    "мэрию", "мэрией",
+]
+anywhere_in = ["ORG"]
+
+# Codes and laws by their full names: "Гражданского кодекса Российской
+# Федерации", "Федерального закона", "Конституции Российской Федерации"
+# (guide rule 8, issue #378).
+[[never]]
+match = "stem"
+ending = 3
+words = ["кодекс", "закон", "конституци"]
+anywhere_in = ["ORG"]
+
+# A region, district, city or settlement is a place, not an organization,
+# alone or as a public body's tail: "Брянской области", "Краснодарскому
+# краю", "Карачаево-Черкесской Республики", "Аскизскому району", "городу
+# Москве", "ПГТ Тельманово" (guide rules 2 and 3, issue #478). A company
+# keeps a place in its name by its legal form ("ООО «Брянская область
+# Строй»").
+[[never]]
+match = "stem"
+ending = 3
+words = ["област", "республик", "район", "округ", "поселк", "посёлк", "станиц"]
+anywhere_in = ["ORG"]
+
+# The same places' designators that are matched whole: "края" and "города"
+# are common words in other forms.
+[[never]]
+match = "whole"
+words = [
+    "край", "края", "краю", "краем", "крае", "город", "города", "городу",
+    "городом", "городе", "г", "пгт", "поселок", "посёлок",
+]
 anywhere_in = ["ORG"]
 
 # Russian legal forms mark a manual selection as an organization

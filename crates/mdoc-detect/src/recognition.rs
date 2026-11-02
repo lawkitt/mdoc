@@ -187,13 +187,15 @@ impl Fixture {
                 KINDS.join(", ")
             ));
         }
-        let hunt = self
-            .origin
-            .strip_prefix("hunt-r")
-            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
-        if !(hunt || ["import", "demo"].contains(&self.origin.as_str())) {
+        // A hunt round, or a probe round's synthetic reproduction (ADR 0093).
+        let round = ["hunt-r", "probe-r"].iter().any(|prefix| {
+            self.origin
+                .strip_prefix(prefix)
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        });
+        if !(round || ["import", "demo"].contains(&self.origin.as_str())) {
             return Err(format!(
-                "source `{}` is not import, demo or hunt-rN",
+                "source `{}` is not import, demo, hunt-rN or probe-rN",
                 self.origin
             ));
         }

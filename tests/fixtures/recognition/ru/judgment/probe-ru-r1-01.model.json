@@ -1,0 +1,31 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":78,"end":117,"label":"full_name","score":0.51303566,"text":"РОССИЙСКОЙ ФЕДЕРАЦИИ"},
+    {"start":2,"end":63,"label":"organization","score":0.9285385,"text":"Арбитражный суд Северной области"},
+    {"start":78,"end":117,"label":"organization","score":0.90829307,"text":"РОССИЙСКОЙ ФЕДЕРАЦИИ"},
+    {"start":446,"end":472,"label":"person","score":0.98269093,"text":"Кулагиной Д. С."},
+    {"start":314,"end":344,"label":"person","score":0.93306583,"text":"Верховцевой Л. А."},
+    {"start":905,"end":983,"label":"organization","score":0.9730365,"text":"Управление Росреестра по Северной области"},
+    {"start":604,"end":627,"label":"organization","score":0.9273633,"text":"Россия-Трейд"},
+    {"start":847,"end":901,"label":"organization","score":0.91774607,"text":"Дирекция дорожного хозяйства"},
+    {"start":223,"end":284,"label":"organization","score":0.8534248,"text":"Арбитражный суд Северной области"},
+    {"start":806,"end":844,"label":"organization","score":0.8003801,"text":"ГКУ города Ольховска"},
+    {"start":557,"end":591,"label":"organization","score":0.77338755,"text":"ООО «Ромашка-Плюс»"},
+    {"start":985,"end":1035,"label":"organization","score":0.761893,"text":"Межрайонная ИФНС России № 9"},
+    {"start":1614,"end":1638,"label":"organization","score":0.94313854,"text":"ГУ МВД России"},
+    {"start":1782,"end":1866,"label":"organization","score":0.8480936,"text":"Пленума Верховного Суда Российской Федерации"},
+    {"start":1393,"end":1427,"label":"organization","score":0.7779753,"text":"АО «Банк Кедровый»"},
+    {"start":1220,"end":1299,"label":"organization","score":0.71997464,"text":"Гражданского кодекса Российской Федерации"},
+    {"start":2375,"end":2485,"label":"organization","score":0.66377795,"text":"Арбитражного процессуального кодекса Российской Федерации"},
+    {"start":2150,"end":2214,"label":"organization","score":0.5690146,"text":"Конституцией Российской Федерации"},
+    {"start":3273,"end":3301,"label":"person","score":0.94757545,"text":"Л. А. Верховцева"},
+    {"start":3072,"end":3155,"label":"organization","score":0.9783019,"text":"Четырнадцатый арбитражный апелляционный суд"},
+    {"start":2826,"end":2872,"label":"organization","score":0.9695557,"text":"отдел судебных приставов"},
+    {"start":3167,"end":3228,"label":"organization","score":0.93183565,"text":"Арбитражный суд Северной области"},
+    {"start":2948,"end":2973,"label":"organization","score":0.8807971,"text":"ГУФССП России"},
+    {"start":2590,"end":2613,"label":"organization","score":0.8281064,"text":"Ромашка-Плюс"},
+    {"start":2530,"end":2564,"label":"organization","score":0.78349185,"text":"ООО «Россия-Трейд»"}
+  ]
+}
