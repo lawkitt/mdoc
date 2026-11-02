@@ -263,13 +263,16 @@ fn outside_line_breaks(source: &str, range: &Range<usize>) -> String {
     out.push_str(&source[at..range.end]);
     out
 }
-/// Like `safe_span`, but escapes and emphasis characters are allowed; the
-/// caller checks them structurally with `plain_text_span`.
+/// Like `safe_span`, but escapes, emphasis characters and a literal `#`
+/// ("LC#713624") are allowed; the caller checks them structurally with
+/// `plain_text_span`, so a heading's own marker stays syntax.
 fn manual_span(value: &str) -> bool {
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
-        && !value.chars().any(|ch| "\n\r[]<>`|#$".contains(ch))
+        && !value.chars().any(|ch| "\n\r[]<>`|$".contains(ch))
 }
+/// Whether `range` is whole words; a note marker after a word ("Durnell¹")
+/// is a word of its own.
 fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
     let left = original.chars().next().is_some_and(char::is_alphanumeric)
         && source[..range.start]
@@ -283,7 +286,7 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
         && source[range.end..]
             .chars()
             .next()
-            .is_some_and(char::is_alphanumeric);
+            .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c));
     !left && !right
 }
 fn interval_conflict(occupied: &BTreeMap<usize, usize>, range: &Range<usize>) -> bool {
@@ -592,8 +595,8 @@ impl Review {
         }) {
             return Err("Invalid detector offsets; scan discarded.".into());
         }
-        // A span that starts with a list item's marker ("+ 7 (900) …" on a
-        // line of its own) keeps its value: the marker stays syntax.
+        // A span that starts with a list item's marker ("- Ann Lee" as the
+        // model may read it) keeps its value: the marker stays syntax.
         let markers = syntax::list_markers(source);
         for detection in &mut detections {
             let range = &mut detection.range;

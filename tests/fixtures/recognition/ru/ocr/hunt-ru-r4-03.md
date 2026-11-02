@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: list-prefix-identifier
 issue: 428
 kind: ocr
 source: hunt-r4
-expect: boundary: gold PHONE "+ 7 (900) 000-84-31"; proposed PHONE "7 (900) 000-84-31"
 ---
 НОТАРИАЛЬНАЯ К0ПИЯ                 лист 1 / 1
 

@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: superscript-note-name
 issue: 442
 kind: tables
 source: hunt-r6
-expect: miss: PERSON "Nerella Vaskett"
 ---
 ## Distribution and verification matrix
 
