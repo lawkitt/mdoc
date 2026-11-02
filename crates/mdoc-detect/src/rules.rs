@@ -47,7 +47,12 @@ struct NeverEntry {
     form: Form,
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
+    #[serde(default)]
     words: Vec<String>,
+    /// For `pattern`: regexes; a span matching one outside quotes is a
+    /// court, public body, law or place ("Department of Labor").
+    #[serde(default)]
+    patterns: Vec<String>,
     /// Categories whose model span ending in one of these words is a role,
     /// not a name ("Technical Reviewer", "Costs Officer").
     #[serde(default)]
@@ -71,6 +76,8 @@ enum Form {
     Plural,
     /// The stem and up to `ending` letters.
     Stem,
+    /// No words: `patterns` that match a phrase in the span.
+    Pattern,
 }
 
 #[derive(Deserialize)]
@@ -276,6 +283,7 @@ struct Never {
     form: Form,
     ending: usize,
     words: Vec<String>,
+    patterns: Vec<Regex>,
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
@@ -292,6 +300,7 @@ impl Never {
                     && ending.chars().all(char::is_alphabetic)
                     && !self.not_endings.iter().any(|not| not == ending)
             }),
+            Form::Pattern => false,
         })
     }
 }
@@ -333,9 +342,24 @@ impl Pack {
                 if entry.form != Form::Stem && !entry.not_endings.is_empty() {
                     return Err(at("only a stem takes not_endings".into()));
                 }
-                if entry.words.is_empty() {
+                if entry.form == Form::Pattern {
+                    if entry.patterns.is_empty() || !entry.words.is_empty() {
+                        return Err(at("a pattern entry needs patterns and no words".into()));
+                    }
+                    if entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty() {
+                        return Err(at("a pattern entry needs anywhere_in alone".into()));
+                    }
+                } else if !entry.patterns.is_empty() {
+                    return Err(at("only a pattern entry takes patterns".into()));
+                } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                let patterns = entry
+                    .patterns
+                    .iter()
+                    .map(|pattern| Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 for word in &entry.words {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
@@ -358,6 +382,7 @@ impl Pack {
                     form: entry.form,
                     ending,
                     words: entry.words,
+                    patterns,
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
@@ -679,6 +704,65 @@ impl Pack {
                     .iter()
                     .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
             })
+            || self
+                .never
+                .iter()
+                .filter(|entry| entry.anywhere_in.contains(&category))
+                .flat_map(|entry| &entry.patterns)
+                .any(|pattern| pattern.is_match(&outside))
+    }
+
+    /// Abbreviations `text` defines beside a court, public body or law
+    /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
+    /// capitals whose letters are the title's initials in order. Each is the
+    /// body or law wherever it stands (#378); a company's ("Quillon Freight
+    /// LLC (“QF”)") is not, and one the text also defines beside anything
+    /// else is ambiguous and stays.
+    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+        static DEFINED: OnceLock<Regex> = OnceLock::new();
+        let defined = DEFINED.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                // The title: capitalized words, and the small words and
+                // years between them, across a line break too.
+                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n",
+                r"[\p{Zs}\t]*)(?:\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in",
+                r"|to|with|&|\d{4}))*)",
+                // A citation may stand between: ", 740 ILCS 14/1".
+                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?\s*\(",
+                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
+                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+            )))
+            .expect("abbreviation pattern")
+        });
+        let mut public = std::collections::HashSet::new();
+        let mut other = std::collections::HashSet::new();
+        for found in defined.captures_iter(text) {
+            let (Some(title), Some(short)) = (found.get(1), found.get(2)) else {
+                continue;
+            };
+            let (title, short) = (title.as_str(), short.as_str());
+            let letters: Vec<char> = short
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .flat_map(char::to_lowercase)
+                .collect();
+            let mut initials = title
+                .split(|c: char| c.is_whitespace() || c == '-')
+                .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+                .flat_map(char::to_lowercase);
+            let spelt = letters.len() >= 2
+                && letters
+                    .iter()
+                    .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+            let short = short.trim_end_matches('.').to_owned();
+            if spelt && self.public_body(title, Category::Organization) {
+                public.insert(short);
+            } else {
+                other.insert(short);
+            }
+        }
+        public.retain(|short| !other.contains(short));
+        public
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -779,9 +863,17 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        let abbreviations = self.public_abbreviations(&view.text);
         detections.retain(|d| {
+            let text = &view.text[view.view_range(d.range.clone())];
             !d.range.is_empty()
-                && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
+                && self.identifying(text, d.category)
+                && !(matches!(d.category, Category::Organization | Category::Person)
+                    && abbreviations.contains(
+                        text.trim_matches(|c: char| !c.is_alphanumeric())
+                            .trim_end_matches("’s")
+                            .trim_end_matches("'s"),
+                    ))
         });
     }
 
@@ -2175,6 +2267,236 @@ mod tests {
             ),
             ["ООО «Ромашка-Плюс»"]
         );
+    }
+
+    /// English courts, agencies, departments, offices, laws and codes are
+    /// no organizations and no people (#378), nor is a country, state or
+    /// city (#478); companies with their legal form, and private bodies that
+    /// share a word with them, stay.
+    #[test]
+    fn english_public_bodies_laws_and_places_are_no_organizations() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        for text in [
+            // Departments, offices, agencies and bureaus.
+            "Department of Justice",
+            "U.S. Department of Labor",
+            "Dep't of Labor",
+            "Department for Work and Pensions",
+            "Ashmoor County Probation Department",
+            "Office of the Attorney General",
+            "Home Office",
+            "Clerk's Office",
+            "Agency for International Development",
+            "National Security Agency",
+            "Bureau of Prisons",
+            "Census Bureau",
+            // Commissions, legislatures, services and councils.
+            "Federal Election Commission",
+            "Securities and Exchange Commission",
+            "Commission on Civil Rights",
+            "National Labor Relations Board",
+            "Board of Education",
+            "Ashmoor County Board of Supervisors",
+            "Congress",
+            "the Legislature",
+            "Senate Judiciary Committee",
+            "Social Security Administration",
+            "Internal Revenue Service",
+            "Crown Prosecution Service",
+            "Ashmoor City Council",
+            "HM Treasury",
+            "HM Land Registry",
+            "His Majesty's Revenue and Customs",
+            // Short names.
+            "IRS",
+            "the IRS",
+            "U.S. FDA",
+            "CMA",
+            "EEOC",
+            "OHRP",
+            "SEC",
+            "EAT",
+            "the ET",
+            // Prosecutors and ministers.
+            "Attorney General",
+            "Attorney-General's Office",
+            "U.S. Attorney",
+            "District Attorney",
+            "Secretary of State",
+            // Courts by circuit, district and division.
+            "1st Cir",
+            "9th Cir.",
+            "Ninth Circuit",
+            "Federal Circuit",
+            "Northern District of Ashmoria",
+            "Chancery Division",
+            "King's Bench Division",
+            // Laws, codes and rules.
+            "Gaming Act 2031",
+            "Biometric Information Privacy Act",
+            "the First Amendment",
+            "Data Protection Regulations",
+            "Bankruptcy Code",
+            "Code of Federal Regulations",
+            "18 U.S.C.",
+            "Civil Procedure Rules",
+            "Federal Rules of Evidence",
+            // Places alone, together, and after "State of" and the like.
+            "Pakistan",
+            "North Macedonia",
+            "Republic of Korea",
+            "Illinois",
+            "Massachusetts",
+            "United States",
+            "United States of America",
+            "the United Kingdom",
+            "U.S.",
+            "U.S",
+            "USA",
+            "Boston",
+            "New York",
+            "State",
+            "States",
+            "Federal",
+            "Georgia v. Alabama",
+            "Washington, D.C.",
+            "State of Ashmoria",
+            "STATE OF ASHMORIA",
+            "Commonwealth of Brindlemoor",
+            "People of the State of Ashmoria",
+            "Town of Brindle",
+            "District of Columbia",
+            "Ashmoor County",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            // A legal form keeps a company, whatever public or place word
+            // it has; none cuts it.
+            "Bank of America, N.A.",
+            "State Street Corporation",
+            "Georgia-Pacific LLC",
+            "Georgia-Pacific",
+            "Federal Express Corp.",
+            "Federal Express",
+            "Quillon Freight LLC",
+            "Brindle Court Ltd",
+            "Ashmoor Department Store Ltd",
+            "State of Ashmoria Holdings LLC",
+            "Congress Street Partners LLP",
+            // Private bodies that share a word with a public one.
+            "Northbridge Department Store",
+            "Acme Talent Agency",
+            "Cedar Arts Council",
+            "Law Offices of Quill & Venn",
+            "New York Life",
+            "Boston Scientific",
+            "Ohio Valley Freight",
+            "United Airlines",
+            "Washington Post",
+            "Delaware North",
+            // Short names and words of public bodies that companies share
+            // (review of #515).
+            "CMA CGM",
+            "SEC Newgate",
+            "Commission Junction",
+            "The Republic of Tea",
+            "Ashmoor Advisory Board",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        for text in [
+            "HMRC",
+            "Gaming Act 1968",
+            "Biometric Information Privacy Act",
+            "Ashmoor County Probation Department",
+            "Department of Justice",
+            "Federal Election Commission",
+            "High Court of Justice",
+            "State of Ashmoria",
+            "Town of Plymouth",
+            "Ninth Circuit",
+            "Chancery Division",
+            "Attorney General",
+            "Bankruptcy Code",
+            "National Labor Relations Board",
+            "IRS",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Georgia Quill",
+            "Virginia Ashby",
+            "Washington Vale",
+            "Sec. Brindle",
+            "Justice Brindle",
+            "Attorney General Brindle",
+            "Pakistan",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        // A place's name after "Town of" grows to the place and goes, as an
+        // organization or a person; the other side of a caption stays.
+        assert_eq!(
+            fixed(
+                "The Town of Brindle (Illinois) sued; Town of Plymouth v. Orrin Quill.",
+                &[
+                    ("Brindle", Category::Organization),
+                    ("Illinois", Category::Organization),
+                    ("Plymouth", Category::Person),
+                    ("Orrin Quill", Category::Person),
+                ]
+            ),
+            ["Orrin Quill"]
+        );
+        // An abbreviation defined beside a law or a public body is the law
+        // or the body wherever it stands; a company's stays.
+        assert_eq!(
+            fixed(
+                "Under the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), \
+                 and the Equal Employment Opportunity Commission (EEOC) rules, \
+                 Quillon Freight LLC (“QF”) answered. BIPA applies; the EEOC \
+                 agreed; BIPA’s terms bind QF.",
+                &[
+                    ("BIPA", Category::Organization),
+                    ("EEOC", Category::Person),
+                    ("BIPA’s", Category::Person),
+                    ("QF", Category::Organization),
+                ]
+            ),
+            ["QF"]
+        );
+        // A title wrapped across a line, LF or CRLF.
+        for source in [
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+        ] {
+            let at = source.rfind("BIPA").unwrap();
+            let mut detections = vec![Detection {
+                range: at..at + 4,
+                category: Category::Organization,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }];
+            pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+            assert!(detections.is_empty(), "{source:?}");
+        }
+        // An abbreviation the text also defines for something else is
+        // ambiguous and stays.
+        let source = "the Data Protection Act (“DPA”); DPA Microphones (“DPA”) supplied                       it. DPA invoiced us.";
+        let at = source.rfind("DPA").unwrap();
+        let mut detections = vec![Detection {
+            range: at..at + 3,
+            category: Category::Organization,
+            score: 0.9,
+            recognizer: Recognizer::Model,
+        }];
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        assert_eq!(detections.len(), 1);
     }
 
     /// Date masks (#487), common abbreviations (#481), the Internet,
