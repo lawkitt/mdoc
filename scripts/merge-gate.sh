@@ -10,7 +10,9 @@
 #   A queue commit (a branch under gh-readonly-queue/main/, or ci-shadow/main/
 #   for the shadow trial): green only when every job its areas need passed,
 #   each named with where it ran. Hosted jobs (queue.yml) are check runs
-#   named ci/macos, ci/ios and ci/detection (<shard>); the PC posts commit
+#   named ci/macos, ci/ios and ci/detection (the detection gate's summary of
+#   its shards); a check counts only when it concluded success, or skipped
+#   as not affected; anything else fails. The PC posts commit
 #   statuses ci/windows and ci/android, and refreshes a pending one at least
 #   every 5 minutes while it runs (its heartbeat).
 #
@@ -18,7 +20,8 @@
 # with os=windows, ci-android.yml) when the PC has posted nothing 10 minutes
 # after the commit appeared, when its pending status is 10 minutes old (a
 # stale heartbeat), or at once when the group holds a fork or bot PR, which
-# never runs on the PC. Whichever result comes first counts.
+# never runs on the PC. Whichever result finished first counts. A renamed
+# file counts in the areas of both its old and its new path.
 #
 # .github/workflows/merge-gate.yml runs main's copy of this script every 5
 # minutes and after statuses and CI runs, with statuses: write and actions:
@@ -41,18 +44,26 @@ jq() { command jq "$@" | tr -d '\r'; }
 # --- GitHub (replaced by fakes in scripts/test-merge-gate.sh) ----------------
 
 # shellcheck disable=SC2016 # GraphQL variables, not shell ones
-heads_query='query($owner: String!, $name: String!) {
+heads_query='query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: OPEN, first: 50) {
-      nodes {
-        number isDraft headRefOid
-        files(first: 100) { totalCount nodes { path } }
-      }
+    pullRequests(states: OPEN, first: 50, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number isDraft headRefOid }
     }
   }
 }'
 
-fetch_heads() { gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -f query="$heads_query"; }
+# Every open PR: `<number> <draft> <head>` lines, all pages.
+fetch_heads() {
+  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query="$heads_query" |
+    jq -r '.data.repository.pullRequests.nodes[] | "\(.number) \(.isDraft) \(.headRefOid)"'
+}
+
+# A PR's changed paths, a rename's old path too, one per line (GitHub lists
+# at most 3000 files).
+fetch_pr_files() {
+  gh api --paginate "repos/$repo/pulls/$1/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'
+}
 
 # The queue commits: `<branch> <sha>` lines.
 fetch_queue() {
@@ -71,7 +82,10 @@ fetch_compare() { gh api "repos/$repo/compare/$1...$2"; }
 # When a commit was made, in epoch seconds.
 fetch_commit_time() { gh api "repos/$repo/commits/$1" --jq '.commit.committer.date | fromdateiso8601'; }
 
-fetch_check_runs() { gh api "repos/$repo/commits/$1/check-runs?per_page=100"; }
+# Every check run on a commit, all pages, as one {"check_runs": [...]}.
+fetch_check_runs() {
+  gh api --paginate "repos/$repo/commits/$1/check-runs?per_page=100" --jq '.check_runs[]' | jq -s '{check_runs: .}'
+}
 
 fetch_status() { gh api "repos/$repo/commits/$1/status?per_page=100"; }
 
@@ -105,21 +119,23 @@ areas_of() {
   tr '\n' '\0' | changed_areas "$(cat scripts/ci-areas.txt)"
 }
 
-# A check run's verdict from check-runs JSON on stdin: the newest run of
-# each job named $1, alone or after a caller's "<job> / " (a called
-# workflow's job), or, when $1 ends in "(", every shard "$1<n>)". Prints
-# success <count>, failure <url>, skipped, pending or missing.
+# A job's verdict from check-runs JSON on stdin: the newest run of each
+# check named $1, alone or after a caller's "<job> / " (a called workflow's
+# job). Prints `<verdict> <url> <finished-epoch>`: success (every one
+# concluded success), failure (one concluded anything but success or
+# skipped: stale and neutral prove nothing), skipped (all skipped: not
+# affected), pending or missing; `-` and 0 when there is nothing to name.
 check_verdict() { # name
   jq -r --arg n "$1" '
     def base: .name | sub("^.* / "; "");
-    def wanted: if ($n | endswith("(")) then (base | startswith($n)) else base == $n end;
-    [.check_runs[] | select(wanted)] | group_by(.name) | map(max_by(.id)) as $runs
-    | if ($runs | length) == 0 then "missing"
-      elif any($runs[]; .status == "completed" and (.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required"))
-        then ([$runs[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")] | first | "failure \(.html_url)")
-      elif all($runs[]; .status == "completed" and .conclusion == "skipped") then "skipped"
-      elif all($runs[]; .status == "completed") then "success \([$runs[] | select(.conclusion == "success")] | length)"
-      else "pending" end'
+    def t: if .completed_at then (.completed_at | fromdateiso8601) else 0 end;
+    [.check_runs[] | select(base == $n)] | group_by(.name) | map(max_by(.id)) as $runs
+    | ($runs | map(select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped"))) as $bad
+    | if ($runs | length) == 0 then "missing - 0"
+      elif ($bad | length) > 0 then ($bad | min_by(t) | "failure \(.html_url) \(t)")
+      elif any($runs[]; .status != "completed") then "pending - 0"
+      elif all($runs[]; .conclusion == "skipped") then "skipped - 0"
+      else ($runs | map(select(.conclusion == "success")) | max_by(t) | "success \(.html_url) \(t)") end'
 }
 
 # A status context's latest state, its time and its URL from combined-status
@@ -163,36 +179,37 @@ group_prs() {
 }
 
 # A PC job's state (windows or android): `<verdict> <where> <url>`, where the
-# verdict is success, failure, pending or fallback (run it hosted now).
+# verdict is success, failure, pending or fallback (run it hosted now). The
+# PC's result and a hosted fallback's: the one that finished first counts; a
+# PC `error` (the runner's own trouble) falls back instead of failing.
 pc_job() { # pc-status-line hosted-verdict hosted-dispatched third-party commit-age-min now
-  local state at url hv=$2 dispatched=$3 third=$4 age=$5 t=$6 hosted_url=-
+  local state at url hv hurl hat dispatched=$3 third=$4 age=$5 t=$6 pc_done=false hosted_done=false
   read -r state at url <<<"$1"
-  case "$hv" in failure*) hosted_url=${hv#failure } ;; esac
-  # The first result counts.
-  if [ "$state" = success ]; then
-    echo "success PC $url"
+  read -r hv hurl hat <<<"$2"
+  case "$state" in success | failure) pc_done=true ;; esac
+  case "$hv" in success | failure) hosted_done=true ;; esac
+  if $pc_done && $hosted_done; then
+    if [ "${hat:-0}" -lt "${at:-0}" ]; then pc_done=false; else hosted_done=false; fi
+  fi
+  if $pc_done; then
+    echo "$state PC $url"
     return 0
   fi
-  case "$hv" in success*)
-    echo "success hosted -"
-    return 0
-    ;;
-  esac
-  if [ "$state" = failure ] || [ "$state" = error ]; then
-    echo "failure PC $url"
+  if $hosted_done; then
+    echo "$hv hosted $hurl"
     return 0
   fi
-  case "$hv" in failure*)
-    echo "failure hosted $hosted_url"
-    return 0
-    ;;
-  esac
   if [ "$dispatched" -gt 0 ] || [ "$hv" = pending ]; then
     echo "pending hosted -"
     return 0
   fi
   if [ "$third" = true ]; then
     echo "fallback hosted third-party"
+    return 0
+  fi
+  # A runner error is the PC's trouble, not a test result.
+  if [ "$state" = error ]; then
+    echo "fallback hosted pc-error"
     return 0
   fi
   if [ "$state" = none ]; then
@@ -213,7 +230,6 @@ queue_gate() {
   awk -v run="$1" '
     {
       job = $1; v = $2; where = $3; url = $4
-      gsub(/_/, " ", where)
       if (v == "success") ok = ok (ok ? ", " : "") job (where != "" && where != "-" ? " (" where ")" : "")
       else if (v == "skipped") na = na (na ? ", " : "") job
       else if (v == "failure") { bad = bad (bad ? ", " : "") job (where != "" && where != "-" ? " (" where ")" : ""); if (badurl == "" && url != "-") badurl = url }
@@ -238,17 +254,21 @@ settle() { # sha state description url current-status-json
 }
 
 heads_pass() {
-  local json draft head total files areas checks verdict line state desc status
-  json=$(fetch_heads) || {
+  local list n draft head files areas checks verdict line state desc status rc=0
+  list=$(fetch_heads) || {
     log "could not list PRs"
     return 1
   }
-  while IFS=$'\t' read -r _ draft head total files; do
-    [ "$draft" = false ] || continue
-    if [ "$total" -gt 100 ]; then
+  while read -r n draft head; do
+    [ -n "$head" ] && [ "$draft" = false ] || continue
+    files=$(fetch_pr_files "$n") || {
+      rc=1
+      continue
+    }
+    if [ "$(wc -l <<<"$files")" -ge 3000 ]; then
       areas='core desktop recognition ios android'
     else
-      areas=$(tr ',' '\n' <<<"$files" | areas_of)
+      areas=$(areas_of <<<"$files")
     fi
     checks=$(fetch_check_runs "$head") || continue
     verdict=$(check_verdict "fast (ubuntu)" <<<"$checks")
@@ -257,8 +277,8 @@ heads_pass() {
     desc=${line#*|}
     status=$(fetch_status "$head") || continue
     settle "$head" "$state" "$desc" "$run_url" "$status"
-  done < <(jq -r '.data.repository.pullRequests.nodes[]
-    | [.number, .isDraft, .headRefOid, .files.totalCount, ([.files.nodes[].path] | join(","))] | @tsv' <<<"$json")
+  done <<<"$list"
+  return "$rc"
 }
 
 queue_pass() {
@@ -274,7 +294,7 @@ queue_pass() {
     if [ "$(jq '.files | length' <<<"$cmp")" -ge 300 ]; then
       areas='core desktop recognition ios android'
     else
-      areas=$(jq -r '.files[].filename' <<<"$cmp" | areas_of)
+      areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of)
     fi
     jobs=$(needed_jobs "$areas")
     checks=$(fetch_check_runs "$sha") || continue
@@ -290,23 +310,15 @@ queue_pass() {
     local lines=''
     for job in $jobs; do
       case "$job" in
-        macos | ios)
-          hv=$(check_verdict "ci/$job" <<<"$checks")
-          read -r v u <<<"$hv"
-          case "$v" in success) where=hosted u=- ;; failure) where=hosted ;; *) where=- u=- ;; esac
-          [ "$v" != missing ] || v=pending
-          lines+="$job $v $where ${u:--}"$'\n'
-          ;;
-        detection)
-          hv=$(check_verdict "ci/detection (" <<<"$checks")
-          read -r v u <<<"$hv"
+        macos | ios | detection)
+          read -r v u _ <<<"$(check_verdict "ci/$job" <<<"$checks")"
           case "$v" in
-            success) where="${u}_shards" u=- ;;
+            success) where=hosted u=- ;;
             failure) where=hosted ;;
+            missing) v=pending where=- u=- ;;
             *) where=- u=- ;;
           esac
-          [ "$v" != missing ] || v=pending
-          lines+="$job $v $where ${u:--}"$'\n'
+          lines+="$job $v $where $u"$'\n'
           ;;
         windows | android)
           local wf=ci-desktop.yml extra=os=windows

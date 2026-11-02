@@ -47,25 +47,26 @@ eq "$(head_gate "desktop" missing)" "pending|Waiting for the fast tier: fast (ub
 echo "ok: a PR head's gate"
 
 runs='{"check_runs": [
-  {"id": 1, "name": "queue / ci/macos", "status": "completed", "conclusion": "failure", "html_url": "https://old"},
-  {"id": 5, "name": "queue / ci/macos", "status": "completed", "conclusion": "success", "html_url": "https://mac"},
-  {"id": 2, "name": "detection / ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1"},
-  {"id": 3, "name": "detection / ci/detection (2)", "status": "completed", "conclusion": "success", "html_url": "https://d2"},
+  {"id": 1, "name": "queue / ci/macos", "status": "completed", "conclusion": "failure", "html_url": "https://old", "completed_at": "2026-11-02T11:00:00Z"},
+  {"id": 5, "name": "queue / ci/macos", "status": "completed", "conclusion": "success", "html_url": "https://mac", "completed_at": "2026-11-02T11:30:00Z"},
+  {"id": 2, "name": "detection / ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1", "completed_at": "2026-11-02T11:20:00Z"},
+  {"id": 3, "name": "detection / ci/detection", "status": "completed", "conclusion": "success", "html_url": "https://d", "completed_at": "2026-11-02T11:21:00Z"},
   {"id": 4, "name": "ios / ci/ios", "status": "in_progress", "conclusion": null, "html_url": "https://ios"},
   {"id": 6, "name": "ci/windows (hosted)", "status": "completed", "conclusion": "skipped", "html_url": "https://w"},
-  {"id": 7, "name": "fast (ubuntu)", "status": "completed", "conclusion": "timed_out", "html_url": "https://fast"}
+  {"id": 7, "name": "fast (ubuntu)", "status": "completed", "conclusion": "timed_out", "html_url": "https://fast", "completed_at": "2026-11-02T11:05:00Z"}
 ]}'
-eq "$(check_verdict ci/macos <<<"$runs")" "success 1"
-eq "$(check_verdict "ci/detection (" <<<"$runs")" "success 2"
-eq "$(check_verdict ci/ios <<<"$runs")" "pending"
-eq "$(check_verdict "ci/windows (hosted)" <<<"$runs")" "skipped"
-eq "$(check_verdict "fast (ubuntu)" <<<"$runs")" "failure https://fast"
-eq "$(check_verdict ci/android <<<"$runs")" "missing"
-shard_fail='{"check_runs": [
-  {"id": 2, "name": "ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1"},
-  {"id": 3, "name": "ci/detection (2)", "status": "completed", "conclusion": "failure", "html_url": "https://d2"}]}'
-eq "$(check_verdict "ci/detection (" <<<"$shard_fail")" "failure https://d2"
-echo "ok: check-run verdicts (newest run, called jobs, shards)"
+eq "$(check_verdict ci/macos <<<"$runs")" "success https://mac 1793619000"
+eq "$(check_verdict ci/detection <<<"$runs")" "success https://d 1793618460"
+eq "$(check_verdict ci/ios <<<"$runs")" "pending - 0"
+eq "$(check_verdict "ci/windows (hosted)" <<<"$runs")" "skipped - 0"
+eq "$(check_verdict "fast (ubuntu)" <<<"$runs")" "failure https://fast 1793617500"
+eq "$(check_verdict ci/android <<<"$runs")" "missing - 0"
+for c in stale neutral cancelled action_required; do
+  eq "$(check_verdict ci/ios <<<"{\"check_runs\": [{\"id\": 1, \"name\": \"ci/ios\", \"status\": \"completed\", \"conclusion\": \"$c\", \"html_url\": \"https://i\"}]}")" "failure https://i 0"
+done
+# A shard alone is not the gate: only the summary job counts.
+eq "$(check_verdict ci/detection <<<'{"check_runs": [{"id": 2, "name": "ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1"}]}')" "missing - 0"
+echo "ok: check-run verdicts (newest run, called jobs, only success passes)"
 
 statuses='{"statuses": [
   {"context": "ci/windows", "state": "pending", "updated_at": "2026-11-02T12:00:00Z", "target_url": "https://pc/w"},
@@ -75,23 +76,28 @@ eq "$(status_of ci/android <<<"$statuses")" "none 0 -"
 echo "ok: status lines"
 
 t=1793620800 # 2026-11-02T12:00:00Z
-eq "$(pc_job "success $t https://pc" missing 0 false 30 "$t")" "success PC https://pc"
-eq "$(pc_job "pending $t https://pc" "success 1" 1 false 30 "$t")" "success hosted -"
-eq "$(pc_job "failure $t https://pc" pending 1 false 30 "$t")" "failure PC https://pc"
-eq "$(pc_job "none 0 -" "failure https://h" 1 false 30 "$t")" "failure hosted https://h"
-eq "$(pc_job "none 0 -" missing 0 true 0 "$t")" "fallback hosted third-party"
-eq "$(pc_job "none 0 -" missing 0 false 9 "$t")" "pending PC -"
-eq "$(pc_job "none 0 -" missing 0 false 10 "$t")" "fallback hosted silent"
-eq "$(pc_job "pending $((t - 540)) https://pc" missing 0 false 30 "$t")" "pending PC https://pc"
-eq "$(pc_job "pending $((t - 600)) https://pc" missing 0 false 30 "$t")" "fallback hosted stale"
-eq "$(pc_job "none 0 -" missing 1 false 30 "$t")" "pending hosted -"
-echo "ok: PC jobs: first result counts, fallback when silent, stale or third-party"
+eq "$(pc_job "success $t https://pc" "missing - 0" 0 false 30 "$t")" "success PC https://pc"
+eq "$(pc_job "pending $t https://pc" "success https://h $t" 1 false 30 "$t")" "success hosted https://h"
+eq "$(pc_job "failure $t https://pc" "pending - 0" 1 false 30 "$t")" "failure PC https://pc"
+eq "$(pc_job "none 0 -" "failure https://h $t" 1 false 30 "$t")" "failure hosted https://h"
+# Both finished: the earlier result counts, either way round.
+eq "$(pc_job "failure $((t - 60)) https://pc" "success https://h $t" 1 false 30 "$t")" "failure PC https://pc"
+eq "$(pc_job "success $t https://pc" "failure https://h $((t - 60))" 1 false 30 "$t")" "failure hosted https://h"
+eq "$(pc_job "success $((t - 60)) https://pc" "failure https://h $t" 1 false 30 "$t")" "success PC https://pc"
+eq "$(pc_job "none 0 -" "missing - 0" 0 true 0 "$t")" "fallback hosted third-party"
+eq "$(pc_job "error $t https://pc" "missing - 0" 0 false 30 "$t")" "fallback hosted pc-error"
+eq "$(pc_job "none 0 -" "missing - 0" 0 false 9 "$t")" "pending PC -"
+eq "$(pc_job "none 0 -" "missing - 0" 0 false 10 "$t")" "fallback hosted silent"
+eq "$(pc_job "pending $((t - 540)) https://pc" "missing - 0" 0 false 30 "$t")" "pending PC https://pc"
+eq "$(pc_job "pending $((t - 600)) https://pc" "missing - 0" 0 false 30 "$t")" "fallback hosted stale"
+eq "$(pc_job "none 0 -" "missing - 0" 1 false 30 "$t")" "pending hosted -"
+echo "ok: PC jobs: the first result counts, fallback when silent, stale, erroring or third-party"
 
 eq "$(printf 'Web address category (#514)\nMerge pull request #77 from x/y\nfix: no number\n' | group_prs | tr '\n' ' ')" "514 77 "
 echo "ok: PR numbers from commit subjects"
 
-eq "$(printf 'macos success hosted -\nwindows success PC https://pc\ndetection success 2_shards -\n' | queue_gate https://run)" \
-  "success|Passed: macos (hosted), windows (PC), detection (2 shards)|https://run"
+eq "$(printf 'macos success hosted -\nwindows success PC https://pc\ndetection success hosted -\n' | queue_gate https://run)" \
+  "success|Passed: macos (hosted), windows (PC), detection (hosted)|https://run"
 eq "$(printf 'macos success hosted -\nios skipped - -\n' | queue_gate https://run)" \
   "success|Passed: macos (hosted); not affected: ios|https://run"
 eq "$(printf 'macos success hosted -\nwindows failure PC https://pc\nios pending - -\n' | queue_gate https://run)" \
@@ -107,15 +113,14 @@ posted="$tmp/posted" dispatched="$tmp/dispatched"
 : >"$posted"
 : >"$dispatched"
 now() { echo 1793620800; }
-fetch_heads() {
-  cat <<'JSON'
-{"data": {"repository": {"pullRequests": {"nodes": [
-  {"number": 1, "isDraft": false, "headRefOid": "aaaa", "files": {"totalCount": 1, "nodes": [{"path": "docs/x.md"}]}},
-  {"number": 2, "isDraft": false, "headRefOid": "bbbb", "files": {"totalCount": 1, "nodes": [{"path": "src/main.rs"}]}},
-  {"number": 3, "isDraft": true, "headRefOid": "cccc", "files": {"totalCount": 1, "nodes": [{"path": "src/main.rs"}]}},
-  {"number": 4, "isDraft": false, "headRefOid": "dddd", "files": {"totalCount": 1, "nodes": [{"path": "src/main.rs"}]}}
-]}}}}
-JSON
+fetch_heads() { printf '1 false aaaa\n2 false bbbb\n3 true cccc\n4 false dddd\n5 false eeee\n'; }
+fetch_pr_files() {
+  case "$1" in
+    1) echo docs/x.md ;;
+    # A rename out of the iOS app into docs: both paths count.
+    5) printf 'docs/App.swift.md\napps/ios/mdoc/App.swift\n' ;;
+    *) echo src/main.rs ;;
+  esac
 }
 fetch_check_runs() {
   case "$1" in
@@ -137,7 +142,7 @@ fetch_queue() { echo "gh-readonly-queue/main/pr-514-mmmm qqqq"; }
 fetch_compare() {
   # The \n escapes are JSON's, for jq.
   # shellcheck disable=SC2028
-  echo '{"files": [{"filename": "Cargo.lock"}], "commits": [{"commit": {"message": "Web address category (#514)\n\nbody"}}]}'
+  echo '{"files": [{"filename": "docs/lock.md", "previous_filename": "Cargo.lock"}], "commits": [{"commit": {"message": "Web address category (#514)\n\nbody"}}]}'
 }
 fetch_commit_time() { echo $((1793620800 - 720)); }
 fetch_pr() { echo "User false"; }
@@ -146,15 +151,16 @@ dispatch() { echo "$*" >>"$dispatched"; }
 
 heads_pass
 eq "$(sort "$posted")" "aaaa success Docs only: no job runs
-bbbb success Fast tier passed (unit, scripts); the full suite runs in the merge queue"
-echo "ok: heads: docs only, fast tier passed, drafts and unchanged statuses left alone"
+bbbb success Fast tier passed (unit, scripts); the full suite runs in the merge queue
+eeee pending Waiting for the fast tier: fast (ubuntu)"
+echo "ok: heads: docs only, fast tier passed, a rename counts both paths, drafts and unchanged statuses left alone"
 
 : >"$posted"
 queue_pass
-# Cargo.lock is core: every job. macos passed, ios runs, detection passed,
+# Cargo.lock (renamed away) is core: every job. macos passed, ios runs, detection passed,
 # windows passed on the PC, android silent for 12 minutes: dispatched hosted.
 eq "$(cat "$dispatched")" "ci-android.yml gh-readonly-queue/main/pr-514-mmmm qqqq"
-eq "$(cat "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (2 shards)"
+eq "$(cat "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (hosted)"
 echo "ok: queue: jobs by area, a silent PC job falls back, the gate waits"
 
 # A bot PR in the group: Windows and Android go hosted at once, even with the
