@@ -21,6 +21,7 @@ echo "$*" >>"$GH_LOG"
 case "$*" in
   'pr view 523 --json headRefName,headRefOid --jq '*) echo "mac/ci-detection abc123" ;;
   'pr view '*) echo "no such PR" >&2 && exit 1 ;;
+  'run view '*' --json workflowName,headBranch,headSha,createdAt --jq '*) echo "run $3: Queue on q at ddd, 2026-11-02" ;;
   'run list --limit 200 --json databaseId,headBranch,headSha --jq '*) cat "$GH_RUNS" ;;
   'api repos/{owner}/{repo}/actions/runs/'*)
     id=${2#repos/\{owner\}/\{repo\}/actions/runs/}
@@ -62,7 +63,7 @@ echo "$snapshot" >"$GH_FILES"
 fetch 523 || fail "PR fetch exited non-zero: $(cat "$tmp/out")"
 [ "$(cat "$fixture.model.json")" = new ] || fail "PR fetch did not write the snapshot"
 grep -q '^run download 9000000003 ' "$GH_LOG" || fail "PR fetch downloaded: $(grep download "$GH_LOG")"
-grep -q '1 newer run(s) of PR #523' "$tmp/out" || fail "no note on the newer run: $(cat "$tmp/out")"
+grep -q '^run 9000000003: ' "$tmp/out" || fail "does not name the run: $(cat "$tmp/out")"
 grep -q 'wrote 1 snapshot(s) from run 9000000003' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
 
 # A PR URL and a run URL; a long number is a run.

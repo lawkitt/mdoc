@@ -49,19 +49,21 @@ if [ -n "$pr" ]; then
     awk -F '\t' -v pr="$pr" -v branch="$branch" -v sha="$sha" '
       $2 == branch || $3 == sha || index($2, "gh-readonly-queue/") == 1 && $2 ~ ("/pr-" pr "-") { print $1 }
     ') || die "cannot list the runs"
-  newer=0
   for id in $candidates; do
     if [ -n "$(snapshot_artifacts "$id")" ]; then
       run=$id
       break
     fi
-    newer=$((newer + 1))
   done
   [ -n "$run" ] || die "no run of PR #$pr has regenerated snapshots (a passing gate uploads none)"
-  [ "$newer" -eq 0 ] || echo "note: $newer newer run(s) of PR #$pr have no regenerated snapshots; check they are still wanted" >&2
 fi
 
 [ -n "$(snapshot_artifacts "$run")" ] || die "run $run has no detection-snapshots artifact (passed, expired or not a detection run)"
+# Which run, so a reviewer can tell it is the one wanted (a newer run may
+# have passed).
+gh run view "$run" --json workflowName,headBranch,headSha,createdAt \
+  --jq '"run '"$run"': " + .workflowName + " on " + .headBranch + " at " + .headSha[0:8] + ", " + .createdAt' ||
+  die "cannot read run $run"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 gh run download "$run" --pattern 'detection-snapshots-*' --dir "$tmp" || die "cannot download run $run's artifacts"
