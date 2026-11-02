@@ -124,6 +124,11 @@ if [ "$1" = -X ]; then
 fi
 case "$1" in
   */git/matching-refs/heads/*)
+    # GitHub stops answering once, mid-job.
+    if [ -e "$FAKE/stall" ]; then
+      rm -f "$FAKE/stall"
+      exec sleep 30
+    fi
     p=${1#*/git/matching-refs/heads/}
     git --git-dir="$FAKE_ORIGIN" for-each-ref --format='%(refname:lstrip=2) %(objectname)' "refs/heads/${p%/}"
     ;;
@@ -158,7 +163,10 @@ case "$behavior $1" in
     exit 100
     ;;
   "beat test") sleep 4 ;;
-  "slow test") sleep 60 ;;
+  "slow test")
+    touch "$FAKE/stall"
+    sleep 60
+    ;;
   "vanish lint")
     drop_branch
     sleep 60
@@ -198,6 +206,11 @@ cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 ! read -r -t 1 _ || exit 5
 behavior=$({ cat apps/android/ci-behavior ci-behavior 2>/dev/null || true; } | head -n 1)
 echo "${behavior:-none} setup" >>"$FAKE/just.log"
+# A download that fails once.
+if [ "$behavior" = setupflake ] && [ ! -e "$FAKE/setup-flaked" ]; then
+  touch "$FAKE/setup-flaked"
+  exit 1
+fi
 EOF
 git_ add -A
 GIT_COMMITTER_DATE="1767225600 +0000" git_ commit --quiet -m base
@@ -233,8 +246,9 @@ slow=$(qc 9 slow src/lib.rs)
 vanish=$(qc 10 vanish src/lib.rs)
 toolchain=$(qc 11 toolchain rust-toolchain.toml src/lib.rs)
 merged=$(qc 12 merged src/lib.rs)
+flake=$(qc 14 setupflake src/lib.rs)
 {
-  for n in 1 2 3 7 8 9 10 11 12; do echo "$n User false"; done
+  for n in 1 2 3 7 8 9 10 11 12 14; do echo "$n User false"; done
   echo "4 User true"
   echo "5 Bot false"
 } >"$FAKE/prs.tsv"
@@ -245,6 +259,8 @@ export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=
 # A 15 s job limit: room for the 4 s heartbeat job while just test runs this
 # beside nextest (scripts/test.sh); the slow one sleeps 60 s.
 export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=15 QUEUE_CI_MIN_FREE_GB=0
+# A stalled gh call ends after 3 s (the fake stalls for 30).
+export QUEUE_CI_NET_TIMEOUT=3
 export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
@@ -310,6 +326,11 @@ check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
 check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 0m15s	*"
+check "a stalled gh call during it is ended, and the next poll goes on" \
+  grep -q "warning: could not list the queue" "$tmp/windows.log"
+check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test " ] &&
+  grep -q "^scripts/setup.sh: failed once; retried" "$wout/${flake:0:7}/summary.txt"'
+check "and the job passes" has "$flake" "$W" "success	Passed in *"
 check "a commit the queue dropped stops its job" has "$vanish" "$W" "error	Stopped: the queue dropped this commit	*"
 check "before its next step" [ "$(ran vanish)" = "setup lint " ]
 check "a commit merged on another result stops too" has "$merged" "$W" "error	Stopped: merged before this job finished	*"

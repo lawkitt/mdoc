@@ -21,7 +21,9 @@
 #     failure "Failed in <step>" or "Timed out in <step>", or error for a
 #     runner error or a commit the queue dropped while it ran. Each links its
 #     log folder.
-# Whole-job limits: 30 minutes (windows), 40 (android). Upkeep: a job starts
+# Whole-job limits: 30 minutes (windows), 40 (android); gh calls and fetches
+# end after a minute, so a stalled one cannot hold the limit or the heartbeat
+# up; setup retries once, tests never. Upkeep: a job starts
 # only with 40 GB free (a pending status says so once, so the heartbeat goes
 # stale and merge-gate falls back), deletes target/ first when it is over
 # 60 GB or rust-toolchain.toml changed, and output older than 7 days or past
@@ -73,6 +75,8 @@ config() {
   tick_s=${QUEUE_CI_TICK:-5}
   # merge-gate takes a pending status 10 minutes old for a PC that is off.
   heartbeat_s=${QUEUE_CI_HEARTBEAT:-240}
+  # The longest a gh call or fetch may take.
+  net_s=${QUEUE_CI_NET_TIMEOUT:-60}
   # The job's area (scripts/ci-areas.txt), steps and whole-job limit (ADR 0095).
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
@@ -101,19 +105,37 @@ label() {
 
 g() { git -C "$checkout" "$@"; }
 
+# Runs a network command, ended after net_s: a stalled gh or git fetch would
+# otherwise stop the heartbeat and the job's time limit with it.
+bounded() { # command...
+  local pid watch rc=0
+  "$@" &
+  pid=$!
+  # Its own output closed, so a command substitution does not wait for it.
+  (sleep "$net_s" && kill -TERM "$pid" 2>/dev/null) >/dev/null 2>&1 &
+  watch=$!
+  wait "$pid" || rc=$?
+  kill "$watch" 2>/dev/null || true
+  wait "$watch" 2>/dev/null || true
+  return "$rc"
+}
+
+# A fetch from origin, bounded.
+fetch() { bounded git -C "$checkout" fetch --quiet --no-tags --force origin "$@"; }
+
 # --- GitHub -----------------------------------------------------------------
 
 # The queue commits: `<branch> <sha>` lines. False when GitHub cannot be read.
 list_queue() {
   local p
   for p in $prefixes; do
-    gh api --paginate "repos/$repo/git/matching-refs/heads/$p" \
+    bounded gh api --paginate "repos/$repo/git/matching-refs/heads/$p" \
       --jq '.[] | "\(.ref | sub("^refs/heads/"; "")) \(.object.sha)"' || return 1
   done
 }
 
 # `<author type> <cross-repository>` of PR $1; false when GitHub has no such PR.
-pr_kind() { gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
+pr_kind() { bounded gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
 
 # Sets post_ok to whether GitHub took it.
 post() { # sha state description [target url]
@@ -123,7 +145,7 @@ post() { # sha state description [target url]
   local try
   post_ok=true
   for try in 1 2 3; do
-    if gh "${args[@]}" >/dev/null; then
+    if bounded gh "${args[@]}" >/dev/null; then
       log "$2 $context on $(short "$1"): $3"
       return 0
     fi
@@ -222,7 +244,7 @@ poll() {
     log "warning: could not list the queue; retrying at the next poll"
     return 1
   fi
-  if ! g fetch --quiet --no-tags --force origin "+refs/heads/main:refs/queue-ci/main"; then
+  if ! fetch "+refs/heads/main:refs/queue-ci/main"; then
     log "warning: could not fetch main; retrying at the next poll"
     return 1
   fi
@@ -238,7 +260,7 @@ poll() {
     if [ -z "$sha" ] || [ "$sha" = "$run_sha" ]; then continue; fi
     ! is_done "$sha" || continue
     [[ $queued != *" $sha "* ]] || continue
-    if ! g fetch --quiet --no-tags --force origin "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
+    if ! fetch "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
       [ "$(g rev-parse "refs/queue-ci/c/$sha")" != "$sha" ]; then
       log "warning: could not fetch $branch at $(short "$sha")"
       continue
@@ -324,8 +346,15 @@ job() { # sha dir clean-reason
     echo "queue-runner: $(label "$step")"
     rc=0
     case "$step" in
-      # Not through just: setup may replace the just binary.
-      setup) bash scripts/setup.sh </dev/null || rc=$? ;;
+      # Not through just: setup may replace the just binary. Its downloads
+      # are infrastructure: one retry, logged (ADR 0095); tests never retry.
+      setup)
+        if ! bash scripts/setup.sh </dev/null; then
+          echo "queue-runner: scripts/setup.sh failed; retrying once"
+          echo "scripts/setup.sh: failed once; retried" >>"$dir/summary.txt"
+          bash scripts/setup.sh </dev/null || rc=$?
+        fi
+        ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test || rc=$? ;;
       android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
       *) just "$step" || rc=$? ;;
@@ -421,6 +450,13 @@ check_job() {
     return 0
   fi
   wait "$run_pid" || rc=$?
+  # Ended past the limit while this loop was held up: it still timed out.
+  if [ "$elapsed" -gt "$limit_s" ]; then
+    read -r step _ 2>/dev/null <"$run_dir/.step" || step=$run_step
+    echo "queue-runner: ended after $(duration "$elapsed"), past its $(duration "$limit_s") limit" >>"$run_dir/log.txt"
+    finish failure "Timed out in $(label "$step") after $(duration "$limit_s")"
+    return 0
+  fi
   case "$rc" in
     0) finish success "Passed in $(duration "$elapsed")" ;;
     1)

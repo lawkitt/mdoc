@@ -105,6 +105,17 @@ if ($Uninstall) {
     return
 }
 
+# The local CI web task serves its own -Root's out folder: only one under
+# this -Root serves this output, and a second server cannot share its port.
+$localWeb = Get-ScheduledTask -TaskName $localWebTaskName -ErrorAction SilentlyContinue
+if ($localWeb) {
+    $served = $null
+    if ($localWeb.Actions[0].Arguments -match "--directory '([^']+)'") { $served = $Matches[1] }
+    if ($served -ne $outArg) {
+        throw "'$localWebTaskName' serves $served, not $outArg: install with that task's -Root, or remove it first (local-ci-setup.ps1 -Uninstall)"
+    }
+}
+
 foreach ($tool in 'git', 'gh', 'just', 'cargo', 'tailscale') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool not found on PATH" }
 }
@@ -175,7 +186,7 @@ foreach ($job in $Jobs) {
 }
 
 # The results: the local CI web task serves $out already; else this one.
-if (-not (Get-ScheduledTask -TaskName $localWebTaskName -ErrorAction SilentlyContinue)) {
+if (-not $localWeb) {
     # A real Python, not the Microsoft Store stub in WindowsApps.
     $python = Get-Command python.exe -All -ErrorAction SilentlyContinue |
         Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
