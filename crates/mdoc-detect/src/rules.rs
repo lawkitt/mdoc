@@ -104,6 +104,15 @@ struct ShapeEntry {
     guess: Vec<String>,
     #[serde(default)]
     guess_words: Vec<String>,
+    /// Quote pairs ("«»"): a model span wrapped exactly in one is a title,
+    /// not this category.
+    #[serde(default)]
+    forbid_quotes: Vec<String>,
+    /// Lowercase stems: with them, a quoted span is a title only after a
+    /// word written in lowercase that is one with a noun's ending
+    /// ("повести «…»", not "Роман «…»" or "рассказал «…»").
+    #[serde(default)]
+    quotes_after: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -202,6 +211,14 @@ impl SpanFix {
     }
 }
 
+/// What may follow a `quotes_after` stem: a noun's case endings ("повести",
+/// "романом"), never a verb's ("рассказал", "играл").
+const NOUN_ENDINGS: &[&str] = &[
+    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь", "ом", "ем", "ой", "ей", "ою", "ью", "ах",
+    "ях", "ам", "ям", "ов", "ев", "ий", "ия", "ие", "ию", "ии", "ая", "ое", "ые", "й", "ами",
+    "ями",
+];
+
 /// Whether `text` ends with a single capital letter on its own, an
 /// initial whose period belongs to the name ("Белявская О. М", "Smith J").
 fn ends_with_initial(text: &str) -> bool {
@@ -255,6 +272,8 @@ struct Shape {
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
+    quotes: Vec<(char, char)>,
+    quotes_after: Vec<String>,
 }
 
 impl Pack {
@@ -334,8 +353,33 @@ impl Pack {
                     && entry.word.is_none()
                     && entry.guess.is_empty()
                     && entry.guess_words.is_empty()
+                    && entry.forbid_quotes.is_empty()
+                    && entry.quotes_after.is_empty()
                 {
                     return Err(at("no rules".into()));
+                }
+                let quotes = entry
+                    .forbid_quotes
+                    .iter()
+                    .map(|pair| {
+                        let mut chars = pair.chars();
+                        match (chars.next(), chars.next(), chars.next()) {
+                            (Some(open), Some(close), None) => Ok((open, close)),
+                            _ => Err(at(format!(
+                                "{pair:?} is not an opening and a closing quote"
+                            ))),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if !entry.quotes_after.is_empty() && quotes.is_empty() {
+                    return Err(at("quotes_after needs forbid_quotes".into()));
+                }
+                if let Some(stem) = entry.quotes_after.iter().find(|stem| {
+                    stem.is_empty()
+                        || !stem.chars().all(char::is_alphanumeric)
+                        || **stem != stem.to_lowercase()
+                }) {
+                    return Err(at(format!("{stem:?} is not a lowercase stem")));
                 }
                 if let Some(word) = entry
                     .guess_words
@@ -362,6 +406,8 @@ impl Pack {
                             word: None,
                             guess: Vec::new(),
                             guess_words: Vec::new(),
+                            quotes: Vec::new(),
+                            quotes_after: Vec::new(),
                         });
                         pack.shapes.last_mut().expect("just pushed")
                     }
@@ -374,6 +420,8 @@ impl Pack {
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
+                shape.quotes.extend(quotes);
+                shape.quotes_after.extend(entry.quotes_after);
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -612,6 +660,66 @@ impl Pack {
             !d.range.is_empty()
                 && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
         });
+    }
+
+    /// Whether a model span at `range` of `source` has its category's
+    /// `shape`, its surroundings included: wrapped exactly in a forbidden
+    /// quote pair, after a `quotes_after` word, it is a title ("повести
+    /// «Кедровый свет»"); a name quoted elsewhere stays ("назван «Иван
+    /// Петров»").
+    /// `text` is the span as the shape reads it (entities decoded).
+    pub(crate) fn identifying_at(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        text: &str,
+        category: Category,
+    ) -> bool {
+        if source.get(range.clone()).is_none() {
+            return false;
+        }
+        let quoted = self
+            .shapes
+            .iter()
+            .find(|s| s.category == category)
+            .is_some_and(|shape| {
+                // Both sides as detection reads them: references decoded,
+                // invisible characters gone ("&laquo;", "свет\u{200b}»").
+                let mut from = range.start.saturating_sub(96);
+                while !source.is_char_boundary(from) {
+                    from += 1;
+                }
+                let mut to = (range.end + 32).min(source.len());
+                while !source.is_char_boundary(to) {
+                    to -= 1;
+                }
+                let head = mdoc_pii::view::decoded(&source[from..range.start]);
+                let tail = mdoc_pii::view::decoded(&source[range.end..to]);
+                let Some(before) = head.chars().next_back() else {
+                    return false;
+                };
+                let after = tail.chars().next();
+                let written = head[..head.len() - before.len_utf8()]
+                    .trim_end()
+                    .rsplit(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or_default();
+                // A cue is a common noun: "Роман «Сокол»" names a person
+                // called Роман, whose nickname stays.
+                let word = written.to_lowercase();
+                let cue = word == written;
+                shape
+                    .quotes
+                    .iter()
+                    .any(|(open, close)| before == *open && after == Some(*close))
+                    && (shape.quotes_after.is_empty()
+                        || cue
+                            && shape.quotes_after.iter().any(|stem| {
+                                word.strip_prefix(stem.as_str())
+                                    .is_some_and(|ending| NOUN_ENDINGS.contains(&ending))
+                            }))
+            });
+        self.identifying(text, category) && !quoted
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -1165,6 +1273,75 @@ mod tests {
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
+    }
+
+    /// A name wrapped exactly in «» is a title, not a person; one beside
+    /// quotes, or in straight quotes, stays.
+    #[test]
+    fn a_name_in_guillemets_is_a_title() {
+        let person = |source: &str, name: &str| {
+            let start = source.find(name).unwrap();
+            pack().identifying_at(source, start..start + name.len(), name, Category::Person)
+        };
+        assert!(!person(
+            "рукопись повести «Кедровый свет».",
+            "Кедровый свет"
+        ));
+        for source in [
+            "рукопись повести &laquo;Кедровый свет&raquo;.",
+            "рукопись повести &#171;Кедровый свет&#187;.",
+            "рукопись повести &#xAB;Кедровый свет&#xBB;.",
+        ] {
+            assert!(!person(source, "Кедровый свет"), "{source}");
+        }
+        assert!(person("Истец «Иван Петров» и", "Петров"));
+        assert!(person("Истец &laquo;Иван Петров", "Петров"));
+        // A real name in «» elsewhere stays a person, quotes written out or
+        // as references.
+        for source in [
+            "В заявлении потерпевший назван «Иван Петров».",
+            "В заявлении потерпевший назван &laquo;Иван Петров&raquo;.",
+            "по прозвищу «Лёша Гром» в",
+            "Игрок «Лёша Гром» дал показания",
+            "Свидетель записал имя коллеги «Иван Петров».",
+            "товарищ «Иван Петров» пришёл",
+            "программист «Иван Петров» в",
+            "Свидетель Роман «Сокол» дал показания",
+            "Об этом рассказал «Иван Петров».",
+            "в команде играл «Иван Петров» и",
+            "его друг Марк «Сокол» в",
+            // A company named after a person is the ORG span's; the person
+            // span stays rather than leave the name unproposed.
+            "ООО «Вера Снегирь» в",
+            "коллегии «Вера Снегирь» в",
+        ] {
+            let name = ["Лёша Гром", "Сокол", "Вера Снегирь"]
+                .into_iter()
+                .find(|name| source.contains(name))
+                .unwrap_or("Иван Петров");
+            assert!(person(source, name), "{source}");
+        }
+        // A work, a product or a company named in «» is no person.
+        for (source, name) in [
+            ("роман «Анна Каренина» в", "Анна Каренина"),
+            ("журнал «Вера Снегирь» за", "Вера Снегирь"),
+            ("товарный знак «Иван Царевич» в", "Иван Царевич"),
+            ("повести&nbsp;«Кедровый свет» в", "Кедровый свет"),
+            (
+                "повести&#160;&laquo;Кедровый свет&raquo; в",
+                "Кедровый свет",
+            ),
+            ("в игре «Иван Царевич» за", "Иван Царевич"),
+            ("в его рассказе «Иван Петров» есть", "Иван Петров"),
+            ("над романом «Анна Каренина» в", "Анна Каренина"),
+            ("сценарий «Иван Царевич» для", "Иван Царевич"),
+            ("повести «Кедровый свет\u{200b}» в", "Кедровый свет"),
+            ("повести \u{200b}«Кедровый свет» в", "Кедровый свет"),
+        ] {
+            assert!(!person(source, name), "{source}");
+        }
+        assert!(person("Истец Иван Петров.", "Иван Петров"));
+        assert!(person("name=\"Alice Morgan\"", "Alice Morgan"));
     }
 
     /// What the review shows: a case number's other mentions join it, and a
@@ -1745,6 +1922,18 @@ mod tests {
                 "not lowercase",
             ),
             ("[[never]]\nmatch = \"stem\"\nwords = [\"истц\"]", "ending"),
+            (
+                "[[shape]]\ncategory = \"PERSON\"\nforbid_quotes = [\"«\"]",
+                "not an opening and a closing quote",
+            ),
+            (
+                "[[shape]]\ncategory = \"PERSON\"\nquotes_after = [\"повест\"]",
+                "needs forbid_quotes",
+            ),
+            (
+                "[[shape]]\ncategory = \"PERSON\"\nforbid_quotes = [\"«»\"]\nquotes_after = [\"Повест\"]",
+                "lowercase stem",
+            ),
             (
                 "[[never]]\nmatch = \"whole\"\nwords = [\"the\", \"the\"]",
                 "twice",
