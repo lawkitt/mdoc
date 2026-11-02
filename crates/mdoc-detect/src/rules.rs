@@ -1991,6 +1991,195 @@ mod tests {
         }
     }
 
+    /// US and UK addresses from PDF and text layers (#498): the "City, ST
+    /// ZIP" line under the street, suites, floors and buildings, compass
+    /// parts, spelled-out states and capitals, whole from the first element
+    /// to the postcode, never the country after it.
+    #[test]
+    fn us_and_uk_addresses_over_two_lines_are_found_whole() {
+        let pack = pack();
+        let found = |source: &str| -> Vec<String> {
+            pack.spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        // The issue's reproduction: two addresses, the country left out.
+        assert_eq!(
+            found(
+                "Notices to Larkfield Supply LLC, 4410 W. Quarry Parkway, Suite 210\n\
+                 Brindlecombe, OH 45999, and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        for (source, address) in [
+            // A line break, with no comma, before the "City, ST ZIP" line;
+            // capitals, a compass part, two spaces before the ZIP.
+            (
+                "Contractor:\n1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999\nPhone",
+                "1800 S RIO VERDE AVENUE\nBRANWICK, CO  81999",
+            ),
+            (
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687\r\n",
+                "1625 L. Street, NW\r\nWexford, DC 20999-5687",
+            ),
+            (
+                "Wrenfield LLP\n  1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999\n",
+                "1909 K St. N.W., Suite 600  \n  Wexford D.C. 20999",
+            ),
+            (
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+                "1023 15th Street, N.W., 10th Floor\nWexford, DC  20995",
+            ),
+            // A Markdown hard break.
+            (
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+                "12 Oak Road\\\nBrindlecombe, OH 45999",
+            ),
+            // Dotted compass parts and the street words #361 lacked.
+            (
+                "at 2121 Quillon Ave. N.W., Wexford, DC 20997 since",
+                "2121 Quillon Ave. N.W., Wexford, DC 20997",
+            ),
+            (
+                "at 8001 Harl Tansey Fwy., Brindlecombe, TX 75999.",
+                "8001 Harl Tansey Fwy., Brindlecombe, TX 75999",
+            ),
+            (
+                "at 6910 Network Pl., Slocombe, IN 46999.",
+                "6910 Network Pl., Slocombe, IN 46999",
+            ),
+            (
+                "at 2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773 by",
+                "2251 Quarry Blvd. SE, Bldg 499, Kestle AFB, NM 87999-2773",
+            ),
+            // A state spelled out or dotted before its ZIP.
+            (
+                "at 1600 Pellin Hill Road, Brindlecombe, Georgia 30999.",
+                "1600 Pellin Hill Road, Brindlecombe, Georgia 30999",
+            ),
+            (
+                "Room 640, 500 Larch Street, New York, N.Y. 10999.",
+                "Room 640, 500 Larch Street, New York, N.Y. 10999",
+            ),
+            (
+                "at 12 Oak Road, Slocombe, New Hampshire 03999.",
+                "12 Oak Road, Slocombe, New Hampshire 03999",
+            ),
+            // A ZIP wrapped onto the next line; "Ft." before a town.
+            (
+                "at 151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999 (you)",
+                "151 Nob Hill Road, Suite 321, Ft. Brindle, FL\n33999",
+            ),
+            // A building name, on the street's line or its own, and a street
+            // without a number after it.
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\nEngland",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ, UK",
+                "Brindle House, Brindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+                "Brindle House\nBrindle Road\nSlocombe SL9 7ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+            (
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+                "7th Floor\n31 St. Brin Avenue\nBrindlecombe, MA 02999",
+            ),
+            // A street without a number before its postcode.
+            (
+                "Royal Courts of Justice\nStrand, Slocombe, WC2A 9ZZ\n",
+                "Strand, Slocombe, WC2A 9ZZ",
+            ),
+            (
+                "at One Pellin Place, Brindlecombe, GA 30999.",
+                "One Pellin Place, Brindlecombe, GA 30999",
+            ),
+            // A country after the postcode stays out.
+            (
+                "12 Oak Road, Slocombe SL9 9ZZ, United Kingdom",
+                "12 Oak Road, Slocombe SL9 9ZZ",
+            ),
+            // A surname that is also a building word is no building.
+            ("Jane Chambers, 12 Oak Road, Leeds", "12 Oak Road, Leeds"),
+            (
+                "Brindle Medical Center\n3939 Harl Blvd.\nSlocombe, UT 84999",
+                "3939 Harl Blvd.\nSlocombe, UT 84999",
+            ),
+        ] {
+            assert_eq!(found(source), [address], "{source}");
+        }
+        for source in [
+            // After a line break a town needs its postcode.
+            "12 Oak Road\nLeeds",
+            "12 Oak Road\nJohn Smith AB will call",
+            // No street: a building and a town, a court, a town and its
+            // postcode alone (#506), a P.O. box (#506).
+            "Brindle House, Leeds",
+            "High Court, Slocombe WC2A 9ZZ",
+            "BRANWICK, CO 81999",
+            "Brindlecombe, OH 45999",
+            "P.O. Box 36060, Brindlecombe, CA 94999",
+            // A street without a number needs its postcode.
+            "Brindle Road, Leeds",
+            "Strand, Leeds",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        // A building, room or mail-stop part is no company, bank account or
+        // identity document; a building society or a publisher stays a
+        // company.
+        for (text, category) in [
+            ("Bldg 499", Category::Organization),
+            ("Suite 210", Category::Organization),
+            ("10th Floor", Category::Organization),
+            ("Room 2.104", Category::Bank),
+            ("Building 179A", Category::Bank),
+            ("Mail Stop K9-24", Category::Identity),
+            ("Apt 4B", Category::Identity),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for name in [
+            "Brindle Building Society",
+            "Pellin House",
+            "Harrow Mail Ltd",
+        ] {
+            assert!(pack.identifying(name, Category::Organization), "{name}");
+        }
+        // A model's address loses the country and the word "address" at
+        // its edges.
+        assert_eq!(
+            fixed(
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK.",
+                &[(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK",
+                    Category::Address
+                )]
+            ),
+            ["Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ"]
+        );
+        assert_eq!(
+            fixed(
+                "at 12 Pellin Street address.",
+                &[("12 Pellin Street address", Category::Address)]
+            ),
+            ["12 Pellin Street"]
+        );
+    }
+
     /// Rules win the review's conflicts, but a span pattern's match gives
     /// way wherever it is not the widest evidence, so it never cuts what the
     /// model or another rule found; a model address inside it grows to it.
