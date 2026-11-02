@@ -124,7 +124,7 @@ guess = ['[ +()\-\x{a0}]*(?:[0-9][ +()\-\x{a0}]*){7,}']
 [[shape]]
 category = "ORG"
 require = ['[\p{Uppercase}\p{N}]']
-forbid = ['(?i)^\s*(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?\s*$']
+forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
 word = '.'
 guess_words = ["GmbH", "AG", "SA", "BV"]
 

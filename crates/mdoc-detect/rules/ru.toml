@@ -196,20 +196,20 @@ forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.
 category = "DATE"
 forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
 
-# A product's name in «» after the word for it is no organization: "ПО
+# A product's name in quotes after the word for it is no organization: "ПО
 # «Контур»", "АСУ «Экспресс»", "программы «Сетка»", "мессенджера «Ватсап»",
-# "системы «Гарант»" (guide rule 2, issue #488), and neither is the whole
-# phrase. A company keeps it by its legal form ("ООО «Контур»"). An app's
-# name ("приложение «…»") waits for the guide (#484).
+# "Система «Гарант»" at a sentence's start (guide rule 2, issue #488), and
+# neither is the whole phrase. A company keeps it by its legal form ("ООО
+# «Контур»"). An app's name ("приложение «…»") waits for the guide (#484).
 [[shape]]
 category = "ORG"
 forbid = [
-    '^\s*(?:ПО|АСУ)\s*«[^«»]*»\s*$',
-    '(?i)^\s*(?:программ|мессенджер|систем)\p{Alphabetic}{0,3}\s*«[^«»]*»\s*$',
+    '^\s*(?:ПО|АСУ)\s*(?:«[^«»]*»|"[^"]*")\s*$',
+    '(?i)^\s*(?:программ|мессенджер|систем)\p{Alphabetic}{0,3}\s*(?:«[^«»]*»|"[^"]*")\s*$',
 ]
-forbid_quotes = ["«»"]
+forbid_quotes = ["«»", '""']
 quotes_after = ["программ", "мессенджер", "систем"]
-quotes_after_words = ["ПО", "АСУ"]
+quotes_after_words = ["ПО", "АСУ", "Программа", "Мессенджер", "Система"]
 
 # Dates with a Russian month name: "12 марта 2026 г.", "«12» марта 2026".
 [[shape]]

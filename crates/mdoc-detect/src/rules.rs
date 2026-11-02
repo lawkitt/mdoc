@@ -720,7 +720,15 @@ impl Pack {
                     .max_by_key(|m| m.len())
                     .cloned()
                     .unwrap_or(range);
-                detections[i].range = fix.trimmed(source, grown);
+                let trimmed = fix.trimmed(source, grown.clone());
+                // A trim never leaves a company's legal form alone: "АО ТТН"
+                // stays whole, "АЗС ООО «Бета-Ойл»" loses "АЗС".
+                detections[i].range =
+                    if trimmed != grown && self.only_legal_form(&source[trimmed.clone()]) {
+                        grown
+                    } else {
+                        trimmed
+                    };
             }
         }
         detections.retain(|d| {
@@ -946,9 +954,19 @@ impl Pack {
             })
     }
 
-    /// Whether a `span` fix of `category` grows the span at `range` of
-    /// `source` to a name with a legal form ("АЗС" in "ООО «АЗС»"), so its
-    /// shape is checked on the grown span (`fix_spans`). Fixes stay on
+    /// Whether `text`'s words are all legal forms ("АО", "LLC").
+    fn only_legal_form(&self, text: &str) -> bool {
+        let mut words = text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .peekable();
+        words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// Whether an organization `span` fix grows the span at `range` of
+    /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
+    /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
+    /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
     /// one line, so only the span's lines are searched.
     fn grows_to_company(
         &self,
@@ -956,6 +974,9 @@ impl Pack {
         range: std::ops::Range<usize>,
         category: Category,
     ) -> bool {
+        if category != Category::Organization {
+            return false;
+        }
         let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
         let end = source[range.end..]
             .find('\n')
@@ -973,7 +994,6 @@ impl Pack {
                 found_range.start <= range.start
                     && range.end <= found_range.end
                     && found_range.len() > range.len()
-                    && self.legal_form(found.as_str())
             })
     }
 
@@ -1827,6 +1847,7 @@ mod tests {
             ("example.invalid", Category::Organization),
             ("https://www.sait-primer.ru/", Category::Organization),
             ("сайт.рф", Category::Organization),
+            ("«EXAMPLE.GOV.RU»", Category::Organization),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
@@ -1890,6 +1911,9 @@ mod tests {
             ("в группах мессенджера «Ватсап» и", "Ватсап"),
             ("данные системы «Гарант» и", "«Гарант»"),
             ("размещено в сети «Интернет» на", "Интернет"),
+            ("расчёт выполнен в ПО \"Сетка\" и", "Сетка"),
+            ("расчёт выполнен в ПО \"Сетка\" и", "ПО \"Сетка\""),
+            ("Система «Сетка» считает", "Сетка"),
         ] {
             assert_eq!(corrected(source, &[span]), none, "{source}: {span}");
         }
@@ -1901,6 +1925,10 @@ mod tests {
                 "ООО «Бета-Ойл»",
             ),
             ("товар передан ООО «АЗС» в", "АЗС", "ООО «АЗС»"),
+            ("оператор АНО «ЭДО» в", "ЭДО", "АНО «ЭДО»"),
+            // A trim never leaves a legal form alone.
+            ("перевозчик АО ТТН в", "АО ТТН", "АО ТТН"),
+            ("carrier ТТН LLC in", "ТТН LLC", "ТТН LLC"),
             (
                 "перевозчик АО «ТТН-Логистик» в",
                 "ТТН-Логистик",
