@@ -378,6 +378,7 @@ class Documents(
             FfiCategory.PERSON -> Category.Person
             FfiCategory.ORGANIZATION -> Category.Organization
             FfiCategory.EMAIL -> Category.Email
+            FfiCategory.URL -> Category.Url
             FfiCategory.PHONE -> Category.Phone
             FfiCategory.ADDRESS -> Category.Address
             FfiCategory.IDENTITY -> Category.Identity
@@ -392,6 +393,7 @@ class Documents(
             Category.Person -> FfiCategory.PERSON
             Category.Organization -> FfiCategory.ORGANIZATION
             Category.Email -> FfiCategory.EMAIL
+            Category.Url -> FfiCategory.URL
             Category.Phone -> FfiCategory.PHONE
             Category.Address -> FfiCategory.ADDRESS
             Category.Identity -> FfiCategory.IDENTITY

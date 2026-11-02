@@ -20,6 +20,7 @@ enum class Category(@StringRes val label: Int, val token: String) {
     Person(R.string.category_person, "PERSON"),
     Organization(R.string.category_organization, "ORG"),
     Email(R.string.category_email, "EMAIL"),
+    Url(R.string.category_url, "URL"),
     Phone(R.string.category_phone, "PHONE"),
     Address(R.string.category_address, "ADDRESS"),
     Date(R.string.category_date, "DATE"),

@@ -1259,6 +1259,10 @@ fn detection_categories_save_on_change_by_mouse_and_keyboard(cx: &mut TestAppCon
     }
     assert!(cx.debug_bounds("settings-detect-REDACTED").is_none());
     assert!(cx.debug_bounds("settings-detect-DATE").is_some());
+    // Web address comes right after Email (ADR 0094).
+    let top = |id: &str| cx.debug_bounds(id).unwrap().origin.y;
+    assert!(top("settings-detect-EMAIL") < top("settings-detect-URL"));
+    assert!(top("settings-detect-URL") < top("settings-detect-PHONE"));
     assert!(skip(&shared).is_empty());
 
     click(cx, "settings-detect-ADDRESS");

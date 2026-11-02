@@ -42,6 +42,7 @@ class ParityTest {
         "PERSON" -> Category.PERSON
         "ORG" -> Category.ORGANIZATION
         "EMAIL" -> Category.EMAIL
+        "URL" -> Category.URL
         "PHONE" -> Category.PHONE
         "ADDRESS" -> Category.ADDRESS
         "IDENTITY" -> Category.IDENTITY

@@ -591,13 +591,15 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
     // A web address inside a labelled case number or legal reference is
     // part of it (guide rule 8); any other wins over what is inside it.
+    // A domain inside an email is the email's ("ismay&#64;crane-pith.invalid").
     let addresses: Vec<Detection> = urls::scan(source)
         .into_iter()
         .filter(|url| {
             !rules.iter().any(|rule| {
-                rule.recognizer == mdoc_pii::Recognizer::Context
-                    && rule.range.start < url.range.end
-                    && url.range.start < rule.range.end
+                let overlaps = rule.range.start < url.range.end && url.range.start < rule.range.end;
+                let inside = rule.range.start <= url.range.start && url.range.end <= rule.range.end;
+                (rule.recognizer == mdoc_pii::Recognizer::Context && overlaps)
+                    || (rule.category == Category::Email && inside)
             })
         })
         .collect();
@@ -1189,8 +1191,11 @@ mod tests {
             score: 0.9,
             text: "Liora Nesket".into(),
         }];
+        // The web address around a spelling is proposed too, and wins in the
+        // review (ADR 0094); the spellings stand for files and paths.
         let found: Vec<_> = correct(source, &raw)
             .into_iter()
+            .filter(|d| d.category != Category::Url)
             .map(|d| &source[d.range])
             .collect();
         assert_eq!(found, ["Liora Nesket", "Liora%20Nesket", "Liora_Nesket"]);
@@ -1214,6 +1219,7 @@ mod tests {
         let found = |source: &str, raw: &[RawEntity]| -> Vec<String> {
             correct(source, raw)
                 .into_iter()
+                .filter(|d| d.category != Category::Url)
                 .map(|d| source[d.range].to_owned())
                 .collect()
         };

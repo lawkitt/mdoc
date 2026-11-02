@@ -59,7 +59,7 @@ fn find(source: &str) -> Vec<(Range<usize>, String)> {
     // so the next search starts where the address ends.
     while let Some(m) = candidates().find_at(source, at) {
         at = m.end();
-        let before = source[..m.start()].chars().next_back();
+        let before = source[..m.start()].chars().rev().find(|c| !invisible(*c));
         let text = m.as_str();
         let lower = text.to_ascii_lowercase();
         let scheme = ["http://", "https://", "ftp://"]
@@ -74,7 +74,7 @@ fn find(source: &str) -> Vec<(Range<usize>, String)> {
         } else {
             before.is_some_and(|c| c.is_alphanumeric() || "@./\\-_:%#=&+~".contains(c))
         };
-        if glued {
+        if glued || (!explicit && email_domain(source, m.start())) {
             continue;
         }
         let end = m.start() + trimmed_len(text);
@@ -102,6 +102,45 @@ fn find(source: &str) -> Vec<(Range<usize>, String)> {
         found.push((m.start()..end, host.to_owned()));
     }
     found
+}
+
+/// Invisible characters the view drops (`mdoc_pii::view`): a zero-width
+/// space or a soft hyphen glues what is on either side.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}' | '\u{feff}'
+    )
+}
+
+/// Whether the domain at `start` is an email's, wrapped after its "@"
+/// ("ksen.rav@" then "svod.invalid" on the next line) or split by spaces.
+fn email_domain(source: &str, start: usize) -> bool {
+    // An "@" written as a reference or percent-encoded.
+    let lower = source[source.floor_char_boundary(start.saturating_sub(8))..start]
+        .to_ascii_lowercase();
+    if ["&#64;", "&#x40;", "&commat;", "%40"]
+        .iter()
+        .any(|at| lower.ends_with(at))
+    {
+        return true;
+    }
+    let mut breaks = 0;
+    for c in source[..start].chars().rev() {
+        match c {
+            '@' | '＠' => return true,
+            '\n' => {
+                breaks += 1;
+                if breaks > 1 {
+                    return false;
+                }
+            }
+            ' ' | '\t' | '\r' => {}
+            c if invisible(c) => {}
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Whether a bare domain is written as an address: a known zone, a letter
@@ -232,6 +271,8 @@ mod tests {
             "mos-gorsud.ru, garant.ru, NALOG.GOV.RU, https://www.courtlistener.com/opinion/1/",
             "https://msk.sudrf.ru/modules.php?name=sud_delo",
             "files/site.ru and C:\\docs\\site.ru",
+            "<pavel@\u{200b}vector.invalid>, ksen.rav@\nsvod.invalid, a&#64;b-c.invalid",
+            "the email uses the reserved example.com domain",
             "ООО«Север».Москва",
         ] {
             assert_eq!(urls(source), Vec::<&str>::new(), "{source}");

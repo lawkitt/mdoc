@@ -111,6 +111,7 @@
     <string name="category_person">Person</string>
     <string name="category_organization">Organization</string>
     <string name="category_email">Email</string>
+    <string name="category_url">Web address</string>
     <string name="category_phone">Phone</string>
     <string name="category_address">Address</string>
     <string name="category_date">Date</string>

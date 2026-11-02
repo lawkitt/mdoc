@@ -9,6 +9,7 @@ extension Category {
         case .person: .systemBlue
         case .organization: .systemPurple
         case .email: .systemTeal
+        case .url: .systemMint
         case .phone: .systemGreen
         case .address: .systemOrange
         case .date: .systemBrown
@@ -27,6 +28,7 @@ extension Category {
         case .person: "person"
         case .organization: "building.2"
         case .email: "envelope"
+        case .url: "link"
         case .phone: "phone"
         case .address: "mappin.and.ellipse"
         case .date: "calendar"

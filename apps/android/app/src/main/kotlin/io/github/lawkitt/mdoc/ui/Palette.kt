@@ -13,6 +13,7 @@ object Palette {
         Category.Person -> if (dark) 0xFF4FA3FF else 0xFF0A6CD9
         Category.Organization -> if (dark) 0xFFC58CFF else 0xFF8A3FD1
         Category.Email -> if (dark) 0xFF5CD6E8 else 0xFF0A8A9E
+        Category.Url -> if (dark) 0xFF63E6BE else 0xFF0B7D5E
         Category.Phone -> if (dark) 0xFF5FD97A else 0xFF1E8C3A
         Category.Address -> if (dark) 0xFFFFA64D else 0xFFC25E00
         Category.Date -> if (dark) 0xFFD1A877 else 0xFF8A5F2E

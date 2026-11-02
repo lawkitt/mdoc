@@ -20,8 +20,8 @@ source: hunt-r2
 
 1.2 The signed statement will be stored in the client folder. The following references link to the exported documents:
 
-- [Statement of ⟦PERSON|Liora Nesket⟧](https://bundle.invalid/clients/⟦PERSON|Liora%20Nesket⟧/signed.pdf)
-- [Adviser correspondence](https://bundle.invalid/advisers/⟦PERSON|Tovan%20Pellis⟧/notes)
+- [Statement of ⟦PERSON|Liora Nesket⟧](⟦URL|https://bundle.invalid/clients/Liora%20Nesket/signed.pdf⟧)
+- [Adviser correspondence](⟦URL|https://bundle.invalid/advisers/Tovan%20Pellis/notes⟧)
 
 1.3 The client must check the numbered exhibits against the index. An exhibit description is not a substitute for reading the document itself. Any missing page should be reported before the filing copy is approved.
 

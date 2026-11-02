@@ -187,7 +187,7 @@ private final class FakeState: @unchecked Sendable {
     // MARK: Detection
 
     /// What the structured rules find without the detector.
-    static let structured: Set<Category> = [.email, .phone, .identity, .tax, .bank]
+    static let structured: Set<Category> = [.email, .url, .phone, .identity, .tax, .bank]
 
     /// Finds fixture entities in the recognized source, longest wording
     /// first, and adds them to the document's case. Below the device floor
@@ -327,7 +327,7 @@ private final class FakeState: @unchecked Sendable {
     // MARK: Restore
 
     private static let aliasPattern = try! NSRegularExpression(
-        pattern: #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|CASE|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#,
+        pattern: #"\b(?<prefix>PERSON|ORG|EMAIL|URL|PHONE|ADDRESS|IDENTITY|TAX|BANK|CASE|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#,
         options: [.caseInsensitive])
 
     /// Lenient on case and `_`/`-`/space separators; a loose form counts

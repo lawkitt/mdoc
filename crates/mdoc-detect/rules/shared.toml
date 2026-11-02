@@ -225,9 +225,10 @@ zones = [
     "uz", "ua", "ru", "su", "рф", "рус", "invalid", "example", "test",
 ]
 # International and common-law public and legal sites: any `.gov`, `.int`
-# and `.mil`, the EU's and the UN's.
+# and `.mil`, the EU's and the UN's; and the domains reserved for examples
+# (RFC 2606), which point to no one ("the reserved example.com domain").
 public = [
-    "gov", "int", "mil", "europa.eu", "un.org", "echr.coe.int",
+    "gov", "int", "mil", "example.com", "example.org", "example.net", "europa.eu", "un.org", "echr.coe.int",
     "curia.europa.eu", "eur-lex.europa.eu", "courtlistener.com",
     "law.cornell.edu", "supremecourt.gov",
 ]
