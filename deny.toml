@@ -37,6 +37,7 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
+    { id = "RUSTSEC-2026-0429", reason = "zip extract() aborts on a symlink entry with a huge declared size (GHSA-q7v9-x93c-xqv3). We never extract to disk; docxide-pdf reads entries with by_name; blocked on docxide-pdf requiring zip ^8." },
     # zstd 0.13 / zstd-safe 7 (added 2026-10-27): fixed only in zstd 0.14.3 and
     # zstd-safe 8.2, but zip 8 requires zstd ^0.13 and docxide-pdf requires zip ^8.
     # zip 8 builds zstd without features (no `legacy`, no `seekable`) and calls only

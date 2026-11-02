@@ -7,6 +7,6 @@
     {"start":292,"end":317,"label":"organization","score":0.8410439,"text":"Льняная линия"},
     {"start":1212,"end":1234,"label":"email","score":0.99858963,"text":"yana@peredacha.invalid"},
     {"start":1301,"end":1312,"label":"passport_number","score":0.7036513,"text":"4687-731604"},
-    {"start":2834,"end":2853,"label":"full_name","score":0.94920063,"text":"Роман Чэнь"}
+    {"start":2834,"end":2853,"label":"full_name","score":0.9472836,"text":"Роман Чэнь"}
   ]
 }

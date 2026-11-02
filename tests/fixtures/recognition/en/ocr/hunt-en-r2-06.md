@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: letter-spaced-name
 issue: 400
 kind: ocr
 source: hunt-r2
-expect: miss: PERSON "D E L V A   R O S K"
 ---
 RELEASE OF TEMPORARY EXHIBIT
 

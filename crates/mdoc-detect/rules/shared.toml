@@ -35,7 +35,9 @@
 #   not_endings  = [ending…]    for a stem: endings that never count (a
 #                               surname's "-ов" after a role stem)
 #   anywhere_in  = [category…]  a model span of these categories with one of
-#                               the words anywhere is dropped (a court)
+#                               the words anywhere outside quotes is dropped
+#                               (a court) after the span fixes, unless it
+#                               has a legal form
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands

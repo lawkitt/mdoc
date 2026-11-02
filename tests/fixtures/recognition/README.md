@@ -36,6 +36,7 @@ just recognize --scoreboard [<folder>]    # recall and precision per language ×
 just recognize --refresh-snapshots [<file.md|folder>]   # the Mac only
 just recognize --check [<folder>]         # the detection gate
 just recognize --record-flaws [<file.md|folder>]   # known-flaw fixtures' expect: lines
+just import <file> > <id>.import.md       # mdoc's own import of a probe's original
 ```
 
 The model is the installed pinned FP16 in the app data (read only, never
@@ -47,6 +48,9 @@ folder or a `language` front matter key, a document without `status` is
 expected to pass, and one without a snapshot runs the model. `--gold` exits
 1 when a document is not as expected; `--scoreboard` prints aggregates only
 and exits 0. A plain Markdown file without front matter is annotated too.
+Judge probes on `just import <file> > <id>.import.md`, not on other
+converters' text: `pdftotext` or `textutil` output has flaws mdoc's import
+does not, and the reverse.
 
 `just test` runs every fixture on its snapshot on each OS
 (`crates/mdoc-detect/tests/recognition.rs`). `local/macos` also runs `just
