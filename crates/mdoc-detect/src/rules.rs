@@ -859,23 +859,14 @@ impl Pack {
                 Span::Fix(_) => None,
             })
             .flat_map(|(category, pattern)| {
-                pattern
-                    .captures_iter(source)
-                    // The `lead` and `tail` groups are context around the
-                    // span ("адресу " before a city), not part of it.
-                    .map(|found| {
-                        let whole = found.get(0).expect("group 0 is the match");
-                        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
-                        let end = found.name("tail").map_or(whole.end(), |tail| tail.start());
-                        start..end.max(start)
-                    })
+                span_ranges(pattern, source)
+                    .into_iter()
                     // A match before a colon ends in a field's label ("12
                     // Oak Road, Email: …"), not the address's last part.
                     .filter(|range| {
-                        !range.is_empty()
-                            && !source[range.end..]
-                                .trim_start_matches([' ', '\t'])
-                                .starts_with(':')
+                        !source[range.end..]
+                            .trim_start_matches([' ', '\t'])
+                            .starts_with(':')
                     })
                     .map(move |range| Detection {
                         range,
@@ -904,6 +895,38 @@ impl Pack {
             })
             .map(|shape| shape.category)
     }
+}
+
+/// A span pattern's matches without their `lead` and `tail` groups, the
+/// context around a span ("адресу " before a city). Each search starts
+/// where the last span ended, so one address's tail ("; ") can be the next
+/// one's lead.
+fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut at = 0;
+    while at <= source.len()
+        && let Some(found) = pattern.captures_at(source, at)
+    {
+        let whole = found.get(0).expect("group 0 is the match");
+        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+        let end = found
+            .name("tail")
+            .map_or(whole.end(), |tail| tail.start())
+            .max(start);
+        if start < end {
+            ranges.push(start..end);
+        }
+        at = if end > at {
+            end
+        } else {
+            whole.start()
+                + source[whole.start()..]
+                    .chars()
+                    .next()
+                    .map_or(1, char::len_utf8)
+        };
+    }
+    ranges
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -1773,6 +1796,29 @@ mod tests {
             ),
         ] {
             assert_eq!(found(source), [address], "{source}");
+        }
+        // A reverse address ends at its index; one address's end can lead
+        // the next; a city of several words takes its "г.".
+        for (source, addresses) in [
+            (
+                "| кв. 9, д. 32, ул. Ленина, Тверь, 170000 |",
+                &["кв. 9, д. 32, ул. Ленина, Тверь, 170000"][..],
+            ),
+            (
+                "кв. 9, д. 5, ул. Ленина, г. Нижний Новгород, 603000.",
+                &["кв. 9, д. 5, ул. Ленина, г. Нижний Новгород, 603000"],
+            ),
+            (
+                "д. 1, ул. Ленина, Псков; Тверь, ул. Мира, д. 2",
+                &["д. 1, ул. Ленина, Псков", "Тверь, ул. Мира, д. 2"],
+            ),
+            (
+                "Адрес: г. Нижний Новгород, ул. Ленина, д. 5.",
+                &["г. Нижний Новгород, ул. Ленина, д. 5"],
+            ),
+            ("Нижний Новгород, ул. Ленина, д. 5", &["ул. Ленина, д. 5"]),
+        ] {
+            assert_eq!(found(source), addresses, "{source}");
         }
         // A town ends with its line: the name below is no part of it.
         assert_eq!(
