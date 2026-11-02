@@ -185,6 +185,12 @@ touch separate files and run as parallel lanes; 5 builds on both.
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
+- **[Recognition]** Real-text fixtures: commit public real documents as
+  fixtures, each with a licence check, which loosens ADR 0093's CC0 rule.
+  *From the 2026-11-02 grill (#471).*
+- **[Recognition]** A real-document eval set: a private, annotated holdout of
+  public real documents that scores recognition on real text and is never
+  in a fixer's brief. *From the 2026-11-02 grill (#471).*
 - **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*

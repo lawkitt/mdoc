@@ -1,6 +1,6 @@
 # Recognition correction pipeline
 
-Status: Accepted, 2026-11-01. Amends
+Status: Accepted, 2026-11-01; amended 2026-11-02 (#383). Amends
 [ADR 0002](0002-reviewable-local-pseudonymization.md) (ordinary dates stay),
 [ADR 0068](0068-short-and-inflected-name-variants.md) (proposed, never
 linked; first names) and [ADR 0080](0080-merge-hint.md) (initials).
@@ -56,12 +56,13 @@ Fine-tuning needs training data, a new pinned export and requalification.
   popup's category menu has Date and Case number; Case number takes the
   next category colour.
 - **Propagation proposes, linked when the candidate is unique.** When a
-  full name is applied or marked, its forms elsewhere in the document
+  full name is proposed, applied or marked, its forms elsewhere in the document
   (surname alone, first name alone, first name + patronymic, surname with
   initials, ADR 0068's inflections, the same for first names, `variants`
   nicknames) become proposals with recognizer `Propagation`. A form with
-  exactly one candidate full name joins that identity: the user's Apply or
-  mark of the full name is the linking action. A form with two or more
+  exactly one candidate full name joins that identity as a proposal, before
+  any Apply; nothing is replaced until the user applies it, and a linked form
+  restores to the identity's primary wording. A form with two or more
   candidates keeps ADR 0068's own identity and ADR 0080's hint. The popup
   can unlink one mention. A form that is also a common word ("Rose",
   "Мира") is proposed only capitalised mid-sentence.

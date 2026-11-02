@@ -1,6 +1,6 @@
 # Flaw hunt loop
 
-Status: Accepted, 2026-11-01. Applies
+Status: Accepted, 2026-11-01; amended 2026-11-02 (probe corpus). Applies
 [ADR 0092](0092-recognition-correction-pipeline.md); runs under the fleet's
 hub (fleet ADR 0019).
 
@@ -13,7 +13,7 @@ homework or fitting rules to the sentences they wrote.
 
 ## Decision
 
-- **Roles.** A **hunter** (Codex Sol, on the Windows PC) writes realistic
+- **Roles.** A **hunter** (Codex Sol; Opus when Codex is limited) writes realistic
   synthetic legal documents from slots, so their gold is known by
   construction, runs `just recognize --gold` and reports each miss, false
   hit and boundary error. A **curator** (an Opus hub sub-agent) audits each
@@ -28,6 +28,9 @@ homework or fitting rules to the sentences they wrote.
   render corpora are imported; their originals stay frozen for research
   reproduction. Fixtures are synthetic and CC0: no real people, no copied
   document text.
+  A fixture may follow a probe document's structure (sections, tables,
+  signature blocks, identifier formats); its prose and every value stay
+  invented, and the curator checks no sentence matches the probe.
 - **Status and the ratchet.** `pass`, `known-flaw` (expected to fail;
   strict, so the gate fails when it starts passing until it flips) and
   `model-limit` (no layer can fix it; the curator's reason; listed for the
@@ -53,10 +56,19 @@ homework or fitting rules to the sentences they wrote.
   5 fix merges and at the run's end and logs aggregates only. Falling
   holdout recall, or holdout gains under half the fixture gains over two
   checkpoints, pauses the fixers and parks a decision.
+- **Probes.** Real public documents (court decisions, filed contracts,
+  government files and forms, EN and RU) are probes, never fixtures: they
+  live only in the private `lawkitt/mdoc-probes` with their source and
+  licence, never with mdoc's output. A **judge** (Opus) reads a probe beside
+  `just recognize <file>` and lists misses, false hits and boundary errors
+  against the guide; a second, fresh judge confirms each. A confirmed
+  finding becomes a flaw issue and a synthetic reproduction for the
+  curator. Briefs, issues and PRs quote at most the span in question.
 - **Coverage and stopping.** Kinds: contract, claim, judgment, power of
   attorney, letter, OCR scan, DOCX-converted, tables; each in EN and RU. A
   cell is saturated after two hunt rounds with no new kind of flaw; the
-  hunter moves on. The loop ends when every cell is saturated and no
+  hunter moves on. The loop ends when every cell is saturated, one probe
+  round of about 50 documents per language confirms no new class, and no
   `known-flaw` is left, or by the fleet's stops.
 - **Autonomy.** Agents decide alone: rule-pack data, pipeline code in
   `mdoc-detect` and `mdoc-pii` within ADR 0092, fixtures, the guide's
@@ -73,4 +85,5 @@ homework or fitting rules to the sentences they wrote.
   holdout still measures what both miss.
 
 Terms: [glossary](../../CONTEXT.md). References:
-[grill](../design/recognition-grill-2026-11-01.md).
+[grill](../design/recognition-grill-2026-11-01.md); probe corpus:
+[#471](https://github.com/lawkitt/mdoc/issues/471).
