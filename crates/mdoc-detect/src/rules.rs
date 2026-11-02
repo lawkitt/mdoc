@@ -2248,6 +2248,47 @@ mod tests {
         assert_eq!(shown, [source.trim_end()]);
     }
 
+    /// #498: the review keeps an address the pattern found over its own
+    /// lines with the sentence going on after it, but only when it ends in
+    /// its number before a word apart (`mdoc_pii::view::wrapped_value`).
+    #[test]
+    fn an_address_over_lines_is_proposed_with_text_after_it() {
+        let shown = |source: &str| -> Vec<String> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "ADDRESS")
+                .map(|span| source[span.range].to_owned())
+                .collect()
+        };
+        let found = |source: &str| -> Vec<String> {
+            pack()
+                .spans(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Address)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert_eq!(
+            shown(
+                "Notices to 4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999, and to \
+                 Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ\nUK."
+            ),
+            [
+                "4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999",
+                "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+            ]
+        );
+        // The pattern reads a next field's first word as a town, or stops
+        // inside a room number: the review keeps neither (review of #508).
+        let source = "Lives at 12 Oak Road,\nDate of birth: 14/03/1988.";
+        assert_eq!(found(source), ["12 Oak Road,\nDate"]);
+        assert!(shown(source).is_empty());
+        let source = "Lives at 12 Oak Road\nRoom 2/3 with Ann.";
+        assert_eq!(found(source), ["12 Oak Road\nRoom 2"]);
+        assert!(shown(source).is_empty());
+    }
+
     /// Rules win the review's conflicts, but a span pattern's match gives
     /// way wherever it is not the widest evidence, so it never cuts what the
     /// model or another rule found; a model address inside it grows to it.

@@ -578,6 +578,24 @@ fn a_rule_address_over_lines_is_one_span_before_more_text() {
         ),
         "Notices to ADDRESS_1, and to Ann.\nTo 9 Elm Way\nLeeds LS2 7XY, or 3 Fir Row\n\nYork YO1 7AA, or 5 Ash Lane  \nBath BA1 1AA, or Cove\nHill Ltd, and ADDRESS_2, then."
     );
+    // Not ending in its number, or ending inside one: the line-end guard.
+    let source = "At 12 Oak Road,\nDate of birth: 14/03/1988, 7 Elm Way\nRoom 2/3 and on.";
+    let span = |text: &str| {
+        let start = source.find(text).unwrap();
+        Detection {
+            range: start..start + text.len(),
+            category: Category::Address,
+            score: 0.9,
+            recognizer: Span,
+        }
+    };
+    assert_eq!(
+        applied(
+            source,
+            vec![span("12 Oak Road,\nDate"), span("7 Elm Way\nRoom 2")]
+        ),
+        source
+    );
 }
 /// #402: a value over the lines of a table cell (`<br>`) is one span; a
 /// tag that is not a line break, or one at the span's edge, is syntax.
