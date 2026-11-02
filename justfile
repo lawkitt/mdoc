@@ -62,6 +62,12 @@ local-ci *args:
 recognize *args:
     @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-detect --example recognize -- "$@"
 
+# What mdoc's own import makes of a file, as Markdown on stdout: judge probes on this (ADR 0093)
+[no-cd]
+[positional-arguments]
+import *args:
+    @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-import --example convert -- "$@"
+
 # The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; local/macos runs it
 detection-gate:
     scripts/detection-gate.sh

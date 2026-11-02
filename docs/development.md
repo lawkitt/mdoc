@@ -221,6 +221,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just check-all` | `check` + both smoke recipes |
 | `just perf` | Ignored performance tests, serially |
 | `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate. Any folder of fixtures works (the holdout) |
+| `just import <file>` | What mdoc's own import makes of a file, as Markdown on stdout (warning and errors on stderr); a PDF needing OCR uses the installed OCR models (read only; `MDOC_OCR_ROOT` points elsewhere). Judge probes on this text, not on another converter's (ADR 0093) |
 | `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides); `local/macos` runs it last |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
