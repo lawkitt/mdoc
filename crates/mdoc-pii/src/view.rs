@@ -6,7 +6,9 @@
 //! with combining marks compose, as NFC writes them ("е\u{308}" reads "ё").
 //! A table cell under an identifier column's header reads with it
 //! ("Паспорт: 46 82 731609"); the header is inserted, so a span only over it
-//! maps to an empty source range. The source itself never changes: spans found in the view map back to
+//! maps to an empty source range. Letter-spaced words read whole ("И Н Н"
+//! reads "ИНН") and footnote references drop out (`**ИНН**[^1]:` reads
+//! `**ИНН**:`). The source itself never changes: spans found in the view map back to
 //! whole source characters.
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
@@ -32,6 +34,17 @@ impl View {
         let mut edits = Vec::new();
         let mut copied = 0;
         let mut rewrites = rewrites(source);
+        let spaced: Vec<_> = letter_spacing(source)
+            .into_iter()
+            .filter(|(range, _)| {
+                let index = rewrites.partition_point(|(other, _)| other.end <= range.start);
+                rewrites
+                    .get(index)
+                    .is_none_or(|(other, _)| range.end <= other.start)
+            })
+            .collect();
+        rewrites.extend(spaced);
+        rewrites.sort_by_key(|(range, _)| (range.start, range.end));
         let headers = table_headers(source);
         // A header goes in only between rewritten parts, never inside one.
         let inside = |at: usize| {
@@ -165,6 +178,15 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         {
             // "_Alva Ruskett_": emphasis marks are syntax, not the name's.
             out.push((at..at + 1, String::new()));
+        } else if c == '['
+            && hidden.is_none()
+            && let Some(len) = footnote_reference(source, at)
+        {
+            // "**ИНН**[^1]:" reads "**ИНН**:", a label before its value;
+            // "Durnell[^2]" reads "Durnell".
+            out.push((at..at + len, String::new()));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+            previous = before;
         } else if note_marker(c) && before.is_some_and(char::is_alphabetic) {
             // "Avelina Durnell¹": a note marker is a word of its own.
             out.push((at..at + c.len_utf8(), format!(" {c}")));
@@ -221,6 +243,162 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
+}
+
+/// The length of the footnote reference at `at` in `source` (`[^1]`,
+/// `[^tax]`: no whitespace or brackets in its label), unless it starts a
+/// line and a colon follows, as its definition does.
+fn footnote_reference(source: &str, at: usize) -> Option<usize> {
+    let label = source[at..].strip_prefix("[^")?;
+    let len = label.find(|c: char| c.is_whitespace() || matches!(c, '[' | ']'))?;
+    if len == 0 || !label[len..].starts_with(']') {
+        return None;
+    }
+    let end = at + 2 + len + 1;
+    let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+    let definition = source[line_start..at]
+        .trim_start_matches([' ', '\t'])
+        .is_empty()
+        && source[end..].starts_with(':');
+    (!definition).then_some(end - at)
+}
+
+/// Letter-spaced words, as OCR and spaced-out captions write them
+/// (#400, #448): "D E L V A   R O S K" reads "DELVA ROSK", "И Н Н:" reads
+/// "ИНН:". A word is single letters each one space apart, two at least and
+/// one word of three at least, starting with a capital and the rest of one
+/// case, all of one script (Latin or Cyrillic); two spaces or more part the
+/// words, and read as one. The run stands apart: a word one space away on
+/// either side makes initials or an enumeration of it ("J R Tolkien",
+/// "пункты А Б В утратили"), and lowercase one-letter words ("и в с",
+/// "a b c") never start a word. The spaces only are rewritten, so a span
+/// over the word maps to its letters and the spaces between them.
+fn letter_spacing(source: &str) -> Vec<(Range<usize>, String)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for line in source.split_inclusive('\n') {
+        spaced_line(line.trim_end_matches(['\r', '\n']), at, &mut out);
+        at += line.len();
+    }
+    out
+}
+
+/// [`letter_spacing`]'s rewrites in `line`, which starts at `offset`.
+fn spaced_line(line: &str, offset: usize, out: &mut Vec<(Range<usize>, String)>) {
+    let word_char =
+        |c: char| c.is_alphanumeric() || unicode_normalization::char::is_combining_mark(c);
+    let mut at = 0;
+    while at < line.len() {
+        let c = line[at..].chars().next().unwrap_or_default();
+        let starts = c.is_alphabetic() && !line[..at].chars().next_back().is_some_and(word_char);
+        let group = starts.then(|| spaced_group(line, at)).flatten();
+        let Some(words) = group else {
+            at += c.len_utf8();
+            continue;
+        };
+        let end = words
+            .last()
+            .and_then(|word| word.last())
+            .map_or(at, |letter| letter.end);
+        for (index, word) in words.iter().enumerate() {
+            for pair in word.windows(2) {
+                out.push((offset + pair[0].end..offset + pair[1].start, String::new()));
+            }
+            if let Some(next) = words.get(index + 1) {
+                let gap = word.last().map_or(0, |l| l.end)..next[0].start;
+                out.push((offset + gap.start..offset + gap.end, " ".into()));
+            }
+        }
+        at = end;
+    }
+}
+
+/// The letter-spaced words starting at `start` of `line`, each its letters'
+/// ranges, when they make a run [`letter_spacing`] reads whole.
+fn spaced_group(line: &str, start: usize) -> Option<Vec<Vec<Range<usize>>>> {
+    let first = spaced_word(line, start);
+    if first.len() < 2 {
+        return None;
+    }
+    let mut words = vec![first];
+    loop {
+        let end = words
+            .last()
+            .and_then(|word| word.last())
+            .map_or(start, |l| l.end);
+        let rest = &line[end..];
+        let gap = rest.len() - rest.trim_start_matches(' ').len();
+        if gap < 2 {
+            break;
+        }
+        let word = spaced_word(line, end + gap);
+        if word.len() < 2 {
+            break;
+        }
+        words.push(word);
+    }
+    let letter = |range: &Range<usize>| line[range.clone()].chars().next().unwrap_or_default();
+    let script = |c: char| match c {
+        'A'..='Z' | 'a'..='z' | '\u{c0}'..='\u{24f}' => Some(0),
+        '\u{400}'..='\u{52f}' => Some(1),
+        _ => None,
+    };
+    let first_script = script(letter(&words[0][0]))?;
+    let shaped = words.iter().all(|word| {
+        let rest: Vec<char> = word[1..].iter().map(letter).collect();
+        word.len() >= 2
+            && letter(&word[0]).is_uppercase()
+            && (rest.iter().all(|c| c.is_uppercase()) || rest.iter().all(|c| c.is_lowercase()))
+            && word.iter().all(|l| script(letter(l)) == Some(first_script))
+    });
+    let end = words.last()?.last()?.end;
+    (shaped
+        && words.iter().any(|word| word.len() >= 3)
+        && stands_apart(line[..start].chars().rev().collect::<String>().as_str())
+        && stands_apart(&line[end..]))
+    .then_some(words)
+}
+
+/// The single letters, one space apart, starting at `start` of `line` (a
+/// letter keeps its combining marks); a letter a word goes on from ends
+/// them before it.
+fn spaced_word(line: &str, start: usize) -> Vec<Range<usize>> {
+    let mut letters = Vec::new();
+    let mut at = start;
+    loop {
+        let mut chars = line[at..].chars();
+        let Some(c) = chars.next().filter(|c| c.is_alphabetic()) else {
+            break;
+        };
+        let marks: usize = chars
+            .take_while(|&m| unicode_normalization::char::is_combining_mark(m))
+            .map(char::len_utf8)
+            .sum();
+        let end = at + c.len_utf8() + marks;
+        if line[end..].starts_with(char::is_alphanumeric) {
+            break;
+        }
+        letters.push(at..end);
+        let rest = &line[end..];
+        if rest.starts_with(' ') && rest[1..].starts_with(char::is_alphabetic) {
+            at = end + 1;
+        } else {
+            break;
+        }
+    }
+    letters
+}
+
+/// Whether a letter-spaced run stands apart from the text on one side,
+/// `side` read outward from the run: nothing, two spaces or more, or
+/// punctuation within one space. A word one space away makes the run
+/// initials or an enumeration.
+fn stands_apart(side: &str) -> bool {
+    let text = side.trim_start_matches(' ');
+    let gap = side.len() - text.len();
+    text.chars()
+        .next()
+        .is_none_or(|c| gap >= 2 || !c.is_alphanumeric())
 }
 
 /// The length of an HTML line break tag at the start of `text`: `<br>`,
@@ -774,6 +952,74 @@ mod tests {
             "Melora Brin-\nsett"
         );
         assert!(View::new("plain").is_source());
+    }
+
+    /// #400, #448: a letter-spaced name or label reads as its words, and a
+    /// span over them maps to the spaced source.
+    #[test]
+    fn letter_spaced_words_read_whole() {
+        let source =
+            "Caption:\n\nD E L V A   R O S K\nИ Н Н: 508641732966\nС Н И Л С: 1\n| Ё Л К А |";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "Caption:\n\nDELVA ROSK\nИНН: 508641732966\nСНИЛС: 1\n| ЁЛКА |"
+        );
+        let at = |text: &str| view.text.find(text).unwrap();
+        let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
+        assert_eq!(span("DELVA ROSK"), "D E L V A   R O S K");
+        assert_eq!(span("ROSK"), "R O S K");
+        assert_eq!(span("DELVA"), "D E L V A");
+        assert_eq!(span("ИНН"), "И Н Н");
+        assert_eq!(span("508641732966"), "508641732966");
+        let name = source.find("R O S K").unwrap();
+        assert_eq!(&view.text[view.view_range(name..name + 7)], "ROSK");
+        // A capital and lowercase letters, and combining marks, are one word.
+        assert_eq!(View::new("D e l v a  R o s k").text, "Delva Rosk");
+        assert_eq!(View::new("Подпись: И\u{306} О Ж").text, "Подпись: ЙОЖ");
+        for source in [
+            // Initials and one-letter words next to a word.
+            "J. R. R. Tolkien and J R R Tolkien",
+            "Signed by A B C Holdings",
+            "Пункты А Б В утратили силу.",
+            "и в с к о у я",
+            "Сторона А и Сторона Б, к о у",
+            // Lowercase enumerations and two letters.
+            "options a b c are open",
+            "a b c",
+            "A B",
+            "A B   C D",
+            // Table rows and separators.
+            "| a | b | c |\n|---|---|---|\n|A|B|C|",
+            "+ - - - +",
+            // Letters of two scripts, or of mixed case.
+            "C H И Л C",
+            "A b C d",
+            // Two spaces between letters are no letter spacing.
+            "D  E  L  V  A",
+        ] {
+            assert!(
+                View::new(source).is_source(),
+                "{source}: {}",
+                View::new(source).text
+            );
+        }
+    }
+
+    /// #448: a footnote reference reads as nothing, so a label keeps its
+    /// value (`**ИНН**[^1]:`); a footnote's definition stays.
+    #[test]
+    fn footnote_references_drop_out() {
+        let source = "**ИНН**[^1]: 508614372930\n**ИНН[^tax]:** 1\nKira Gelts[^n2] signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n[^ x] [^] [^a";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "**ИНН**: 508614372930\n**ИНН:** 1\nKira Gelts signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n[^ x] [^] [^a"
+        );
+        let at = |text: &str| view.text.find(text).unwrap();
+        let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
+        assert_eq!(span("Kira Gelts"), "Kira Gelts");
+        assert_eq!(span("ИНН**: 5"), "ИНН**[^1]: 5");
     }
 
     /// #397: a cell of an identifier column reads with its header; a name

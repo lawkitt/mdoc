@@ -478,7 +478,9 @@ impl Pack {
                 let pattern = format!(
                     // Case is ignored in the label only. Where the value
                     // ends is checked after matching ("1988 г." ends in a dot).
-                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))",
+                    // A note marker may follow the label ("ИНН¹:", which
+                    // the view reads "ИНН ¹:"; #448).
+                    r"(?i)\b(?:{})\b(?-i:(?:\p{{Zs}}?[¹²³⁰⁴-⁹]+)?(?:{})((?:{})))",
                     labels.join("|"),
                     rust_classes(&entry.between),
                     rust_classes(&entry.value),

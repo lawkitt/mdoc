@@ -1205,6 +1205,25 @@ mod tests {
         }
     }
 
+    /// #448: a letter-spaced label, one in emphasis with a footnote and
+    /// one with a note marker keep their value's category.
+    #[test]
+    fn spaced_and_footnoted_labels_keep_their_value() {
+        for (source, value) in [
+            ("И Н Н: 508641732966\n", "508641732966"),
+            ("**ИНН**[^1]: 508614372930\n\n[^1]: Note.", "508614372930"),
+            ("**ИНН[^tax]:** 508614372930", "508614372930"),
+            ("ИНН¹: 508614372930", "508614372930"),
+        ] {
+            let found: Vec<_> = correct(source, &[])
+                .into_iter()
+                .filter(|d| d.recognizer == mdoc_pii::Recognizer::Context)
+                .map(|d| (&source[d.range], d.category))
+                .collect();
+            assert_eq!(found, [(value, Category::Tax)], "{source}");
+        }
+    }
+
     /// A wording the model gave two categories is copied to its other
     /// spellings with both, whichever came first; the review chooses.
     #[test]
