@@ -1,0 +1,3601 @@
+Reading additional input from stdin...
+OpenAI Codex v0.166.0
+--------
+workdir: E:\t3\worktrees\mdoc\windows-lane-4
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a19bc7-b5b6-74f1-a587-a7e081e2d729
+--------
+user
+Review git diff origin/main...HEAD in this repo: ranked correctness bugs, real companies wrongly dropped, and missed requirements of the English parts of issues #378 and #478.
+warning: Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.
+  user (C:\Users\tebri\.codex\config.toml): `windows_wsl_setup_acknowledged` is ignored.
+warning: Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.
+  user (C:\Users\tebri\.codex\config.toml): `windows_wsl_setup_acknowledged` is ignored.
+codex
+I’ll review the diff against `origin/main`, read the English requirements in #378 and #478, and trace any matching changes for correctness and wrongly dropped companies. I’m using the fleet skill for the repository review workflow.
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'git status --short; git remote -v; git diff --stat origin/main...HEAD' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content C:/Users/tebri/.agents/skills/fleet/SKILL.md' in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 1650ms:
+warning: unable to access 'C:\Users\tebri/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\tebri/.config/git/ignore': Permission denied
+?? .review-r1/
+origin	https://github.com/lawkitt/mdoc.git (fetch)
+origin	https://github.com/lawkitt/mdoc.git (push)
+ changes/android/rules-en-public-bodies.md          |  10 +
+ changes/ios/rules-en-public-bodies.md              |  10 +
+ changes/rules-en-public-bodies.md                  |  10 +
+ crates/mdoc-detect/rules/en.toml                   | 190 +++++++++++++++-
+ crates/mdoc-detect/rules/shared.toml               |   4 +
+ crates/mdoc-detect/src/lib.rs                      |  51 +++++
+ crates/mdoc-detect/src/rules.rs                    | 248 ++++++++++++++++++++-
+ .../en/judgment/probe-en-r1-public-bodies.md       |  16 ++
+ .../judgment/probe-en-r1-public-bodies.model.json  |  28 +++
+ 9 files changed, 561 insertions(+), 6 deletions(-)
+
+ succeeded in 855ms:
+---
+name: fleet
+description: The user's machines (macbook-air, ubuntu, wsl, windows) and accounts - choosing machine, provider and model tier by usage, dispatching Claude Desktop sessions (local or SSH) and Codex threads through t3-<machine> tools, running a milestone as hub, cross-provider PR reviews, GUI checks by computer use, config sync. Use when planning or dispatching work, checking remote sessions, acting as hub, reviewing a PR, running GUI checks, working on ubuntu, or after changing config.
+---
+
+# Fleet
+
+Tailnet `tail7af8eb.ts.net`; each worker's T3 tools are `t3-<machine>`.
+Records and decisions: the `fleet` repo.
+
+| Machine | CPU | GPU | RAM | Use |
+|---|---|---|---|---|
+| `macbook-air` | Apple M4, 10 cores | M4 | 24 GB | Hub; macOS work |
+| `ubuntu` | i3-6006U, 4 threads | none | 7 GB | Light or always-on Linux |
+| `wsl` | Ryzen 9 3900X, 24 threads | RTX 2070 SUPER 8 GB (CUDA) | 15 GB | Heavy Linux, GPU |
+| `windows` | Ryzen 9 3900X, 24 threads | RTX 2070 SUPER 8 GB | 32 GB | Windows builds, heavy work, GPU |
+
+`wsl` and `windows` are one PC: both are offline when it is off.
+
+## Accounts
+
+- **Claude:** one Max (20x) account (the user's gmail): the hub's login and
+  the direct login on `wsl` and `windows`. No proxy pool (ADR 0015). Extra
+  usage stays disabled, so a Claude limit stops the hub after its handoff
+  ([hub.md](hub.md#provider-ladder), ADR 0019).
+- **Codex:** one account on every machine. Reviews Opus PRs, runs Terra
+  sub-agents; Sol builds while Claude is limited.
+- **`acceptance`** on `windows` and `macbook-air`: GUI runs only ([gui.md](gui.md)).
+
+## Git
+
+Checkouts at `~/Developer/<owner>/<repo>`; code moves only through GitHub.
+On `windows` everything goes on the `E:` Dev Drive (ReFS): checkouts at
+`E:\Developer\<owner>\<repo>`, lanes at `E:\t3\worktrees\<repo>\<lane>`.
+A project not yet moved stays at `C:\Users\tebri\Developer\...` (`config`
+and `fleet` among them) and moves when it is idle. (ADR 0019, decision 23) Commit as the user; machine-only settings in
+`~/.config/git/config`. Workers push `<machine>/<topic>` branches and open
+their own PRs.
+
+## Hard rules
+
+- **A limit never blocks work** (5-hour or weekly; builder or reviewer):
+  switch provider or runtime, skip the review, never sleep until a reset.
+  The only wait is a lane's retry of a capacity or network error. The one
+  stop: the hub at a Claude limit while extra usage is disabled writes its
+  handoff and stops; Codex lanes go on. (ADR 0016, 0019)
+- The always-on instructions apply: only `macbook-air` steers other
+  machines, the `ubuntu` safety rules, no secrets in chat, files or URLs.
+- Offline machine: say so and stop. Never fall back to `ubuntu` unasked.
+- Never `git stash` in a repository with worktrees (the stash is shared); to
+  test without a change, `git diff â€¦ | git apply -R`, then restore. (ADR 0012)
+- The hub keeps a project's root checkout on `main`; every other session
+  works in its own worktree. (ADR 0010)
+- Pass model and options explicitly in every dispatch and child task. (ADR 0009)
+- `df -h` on the machine before large jobs.
+- **No approval prompt reaches an away user** except the one-time
+  computer-use grant at preflight and decisions. Lanes follow the brief's
+  `rm` rules; the hub's own shell uses `mv -f` or `${VAR:?}` paths, never a
+  bare `rm -f "$VAR/â€¦"`. (ADR 0019, decision 9)
+- Never set `CLAUDE_CODE_ENTRYPOINT`; the fleet starts no `claude -p`
+  (except `fleet-usage`'s model-free usage probe): Agent SDK and `claude -p`
+  drain the 5-hour window 1.6â€“2.9Ã— faster. Claude work runs in Desktop
+  sessions and hub sub-agents; T3 Claude threads only where
+  [plan.md](plan.md#runtime) says. (ADR 0015, 0016)
+- Every worktree keeps its own `target/`; a shared one builds stale
+  workspace crates. (ADR 0015)
+
+## Read when the task needs it
+
+- Machine, runtime, provider, tier, usage, capacity, lanes, preflight: [plan.md](plan.md).
+- Desktop sessions, sub-agents, T3 threads, event-driven turns, `fleet-brief`, stacks, `t3-*` auth: [dispatch.md](dispatch.md).
+- What a project tells the fleet (profile, required checks, renders): [profile.md](profile.md).
+- Running a milestone as hub: [hub.md](hub.md).
+- Reviewing a PR (`fleet-review`): [review.md](review.md).
+- GUI, installer or accessibility checks: [gui.md](gui.md).
+- A `config` change was merged: [sync.md](sync.md).
+
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'rg -n "378|478|companies|company|windows-lane-4" C:/Users/tebri/.codex/memories/MEMORY.md' in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 483ms:
+852:- rollout_summaries/2026-10-28T02-09-42-bI7R-create_tab_numbering_changelog_fragment.md (cwd=\\?\C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2, rollout_path=C:\Users\tebri\.codex\sessions\2026\10\28\rollout-2026-10-28T05-09-42-01a18045-3784-7183-9f03-58d60f23904f.jsonl, updated_at=2026-10-28T02:10:06+00:00, thread_id=01a18045-3784-7183-9f03-58d60f23904f, success; fragment-only task)
+2139:- rollout_summaries/2026-10-31T18-43-14-yIDe-pr_332_issue_306_review_request.md (cwd=\\?\E:\t3\worktrees\mdoc\windows-lane-4, rollout_path=C:\Users\tebri\.codex\sessions\2026\10\31\rollout-2026-10-31T21-43-14-01a19345-e798-7a33-b1a8-0da8339376c0.jsonl, updated_at=2026-10-31T18:43:22+00:00, thread_id=01a19345-e798-7a33-b1a8-0da8339376c0, uncertain; request only)
+
+mcp: codex_apps/github.fetch_issue started
+mcp: codex_apps/github.fetch_issue started
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'git diff origin/main...HEAD -- crates/mdoc-detect/src/rules.rs crates/mdoc-detect/src/lib.rs' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content C:/Users/tebri/.agents/skills/fleet/review.md' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "rg --files -g AGENTS.md -g '*378*' -g '*478*'; git rev-parse HEAD" in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'git diff origin/main...HEAD -- crates/mdoc-detect/rules/en.toml crates/mdoc-detect/rules/shared.toml changes/rules-en-public-bodies.md' in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 181ms:
+diff --git a/crates/mdoc-detect/src/lib.rs b/crates/mdoc-detect/src/lib.rs
+index 9ffc6bbc..3de6dc0b 100644
+--- a/crates/mdoc-detect/src/lib.rs
++++ b/crates/mdoc-detect/src/lib.rs
+@@ -1117,6 +1117,57 @@ mod tests {
+         );
+     }
+ 
++    /// #378, #478 in English: through the whole correction stage, public
++    /// bodies, laws, their defined abbreviations and places go, as
++    /// organizations or people, while companies with a public or place word
++    /// in their name stay whole.
++    #[test]
++    fn correction_drops_english_public_bodies_and_places_and_keeps_companies() {
++        let source = "The Ashmoor County Probation Department, HMRC and the 9th Cir. applied \
++                      the Gaming Act 2031 (“GA”) to Quillon Freight LLC of Boston. The State \
++                      of Ashmoria and the Town of Brindle (Illinois) sued Georgia-Quillon \
++                      Paper LLC and State Street Quillon Corp; GA binds them.";
++        let raw: Vec<RawEntity> = [
++            ("Ashmoor County Probation Department", "organization"),
++            ("HMRC", "person"),
++            ("9th Cir", "organization"),
++            ("Gaming Act 2031", "person"),
++            ("Quillon Freight LLC", "organization"),
++            ("Boston", "organization"),
++            ("State of Ashmoria", "organization"),
++            ("Brindle", "organization"),
++            ("Illinois", "organization"),
++            ("Georgia-Quillon Paper LLC", "organization"),
++            ("State Street Quillon Corp", "organization"),
++            // The abbreviation where it is used, not where it is defined.
++            ("GA", "organization"),
++        ]
++        .into_iter()
++        .map(|(text, label)| {
++            let start = source.rfind(text).unwrap();
++            RawEntity {
++                start,
++                end: start + text.len(),
++                label: label.into(),
++                score: 0.9,
++                text: text.into(),
++            }
++        })
++        .collect();
++        let found: Vec<_> = correct(source, &raw)
++            .into_iter()
++            .map(|d| (&source[d.range], d.category))
++            .collect();
++        assert_eq!(
++            found,
++            [
++                ("Quillon Freight LLC", Category::Organization),
++                ("Georgia-Quillon Paper LLC", Category::Organization),
++                ("State Street Quillon Corp", Category::Organization),
++            ]
++        );
++    }
++
+     /// #397: the model reads an identifier column's cells with their
+     /// header; a span over the header and the value maps to the cell, one
+     /// only over the header goes, and a label rule finds the value.
+diff --git a/crates/mdoc-detect/src/rules.rs b/crates/mdoc-detect/src/rules.rs
+index 90941664..78b0f92f 100644
+--- a/crates/mdoc-detect/src/rules.rs
++++ b/crates/mdoc-detect/src/rules.rs
+@@ -121,6 +121,12 @@ struct ShapeEntry {
+     /// after one of these words too ("ПО «…»", "АСУ «…»").
+     #[serde(default)]
+     quotes_after_words: Vec<String>,
++    /// A model span matching one of these outside quotes is a court, public
++    /// body, law or place: dropped after the span fixes, like a `never`
++    /// entry's `anywhere_in` words, unless it has a legal form
++    /// ("Department of Labor", "State of Ashmoria", "Massachusetts").
++    #[serde(default)]
++    body: Vec<String>,
+ }
+ 
+ #[derive(Deserialize)]
+@@ -284,6 +290,7 @@ struct Shape {
+     quotes: Vec<(char, char)>,
+     quotes_after: Vec<String>,
+     quotes_after_words: Vec<String>,
++    body: Vec<Regex>,
+ }
+ 
+ impl Pack {
+@@ -366,6 +373,7 @@ impl Pack {
+                     && entry.forbid_quotes.is_empty()
+                     && entry.quotes_after.is_empty()
+                     && entry.quotes_after_words.is_empty()
++                    && entry.body.is_empty()
+                 {
+                     return Err(at("no rules".into()));
+                 }
+@@ -411,6 +419,7 @@ impl Pack {
+                 }
+                 let require = compile_all(&entry.require, false)?;
+                 let forbid = compile_all(&entry.forbid, false)?;
++                let body = compile_all(&entry.body, false)?;
+                 let word = entry
+                     .word
+                     .as_deref()
+@@ -430,6 +439,7 @@ impl Pack {
+                             quotes: Vec::new(),
+                             quotes_after: Vec::new(),
+                             quotes_after_words: Vec::new(),
++                            body: Vec::new(),
+                         });
+                         pack.shapes.last_mut().expect("just pushed")
+                     }
+@@ -445,6 +455,7 @@ impl Pack {
+                 shape.quotes.extend(quotes);
+                 shape.quotes_after.extend(entry.quotes_after);
+                 shape.quotes_after_words.extend(entry.quotes_after_words);
++                shape.body.extend(body);
+             }
+             for (index, entry) in file.context.iter().enumerate() {
+                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
+@@ -664,6 +675,56 @@ impl Pack {
+                     .iter()
+                     .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
+             })
++            || self
++                .shapes
++                .iter()
++                .filter(|shape| shape.category == category)
++                .flat_map(|shape| &shape.body)
++                .any(|pattern| pattern.is_match(&outside))
++    }
++
++    /// Abbreviations `text` defines beside a court, public body or law
++    /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
++    /// capitals whose letters are the title's initials in order. Each is the
++    /// body or law wherever it stands (#378); a company's ("Quillon Freight
++    /// LLC (“QF”)") is not.
++    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
++        static DEFINED: OnceLock<Regex> = OnceLock::new();
++        let defined = DEFINED.get_or_init(|| {
++            Regex::new(&rust_classes(concat!(
++                // The title: capitalized words, and the small words and
++                // years between them.
++                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:[\p{Zs}\t]+(?:\p{Uppercase}",
++                r"[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in|to|with|&|\d{4}))*)",
++                // A citation may stand between: ", 740 ILCS 14/1".
++                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?[\p{Zs}\t]*\(",
++                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
++                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
++            )))
++            .expect("abbreviation pattern")
++        });
++        defined
++            .captures_iter(text)
++            .filter_map(|found| {
++                let title = found.get(1)?.as_str();
++                let short = found.get(2)?.as_str();
++                let letters: Vec<char> = short
++                    .chars()
++                    .filter(|c| c.is_alphabetic())
++                    .flat_map(char::to_lowercase)
++                    .collect();
++                let mut initials = title
++                    .split(|c: char| c.is_whitespace() || c == '-')
++                    .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
++                    .flat_map(char::to_lowercase);
++                let spelt = letters.len() >= 2
++                    && letters
++                        .iter()
++                        .all(|letter| initials.by_ref().any(|initial| initial == *letter));
++                (spelt && self.public_body(title, Category::Organization))
++                    .then(|| short.trim_end_matches('.').to_owned())
++            })
++            .collect()
+     }
+ 
+     /// Whether a model span has its category's `shape` and is not a role
+@@ -763,9 +824,17 @@ impl Pack {
+                     };
+             }
+         }
++        let abbreviations = self.public_abbreviations(&view.text);
+         detections.retain(|d| {
++            let text = &view.text[view.view_range(d.range.clone())];
+             !d.range.is_empty()
+-                && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
++                && self.identifying(text, d.category)
++                && !(matches!(d.category, Category::Organization | Category::Person)
++                    && abbreviations.contains(
++                        text.trim_matches(|c: char| !c.is_alphanumeric())
++                            .trim_end_matches("’s")
++                            .trim_end_matches("'s"),
++                    ))
+         });
+     }
+ 
+@@ -2014,6 +2083,183 @@ mod tests {
+         );
+     }
+ 
++    /// English courts, agencies, departments, offices, laws and codes are
++    /// no organizations and no people (#378), nor is a country, state or
++    /// city (#478); companies with their legal form, and private bodies that
++    /// share a word with them, stay.
++    #[test]
++    fn english_public_bodies_laws_and_places_are_no_organizations() {
++        let pack = pack();
++        let org = |text: &str| pack.identifying(text, Category::Organization);
++        let person = |text: &str| pack.identifying(text, Category::Person);
++        for text in [
++            // Departments, offices, agencies and bureaus.
++            "Department of Justice",
++            "U.S. Department of Labor",
++            "Dep't of Labor",
++            "Department for Work and Pensions",
++            "Ashmoor County Probation Department",
++            "Office of the Attorney General",
++            "Home Office",
++            "Clerk's Office",
++            "Agency for International Development",
++            "National Security Agency",
++            "Bureau of Prisons",
++            "Census Bureau",
++            // Commissions, legislatures, services and councils.
++            "Federal Election Commission",
++            "Congress",
++            "the Legislature",
++            "Senate Judiciary Committee",
++            "Social Security Administration",
++            "Internal Revenue Service",
++            "Crown Prosecution Service",
++            "Ashmoor City Council",
++            "HM Treasury",
++            "HM Land Registry",
++            "His Majesty's Revenue and Customs",
++            // Short names.
++            "IRS",
++            "EEOC",
++            "OHRP",
++            "SEC",
++            "EAT",
++            "the ET",
++            // Prosecutors and ministers.
++            "Attorney General",
++            "Attorney-General's Office",
++            "U.S. Attorney",
++            "District Attorney",
++            "Secretary of State",
++            // Courts by circuit, district and division.
++            "1st Cir",
++            "9th Cir.",
++            "Ninth Circuit",
++            "Federal Circuit",
++            "Northern District of Ashmoria",
++            "Chancery Division",
++            "King's Bench Division",
++            // Laws, codes and rules.
++            "Gaming Act 2031",
++            "Biometric Information Privacy Act",
++            "the First Amendment",
++            "Data Protection Regulations",
++            "Bankruptcy Code",
++            "Code of Federal Regulations",
++            "18 U.S.C.",
++            "Civil Procedure Rules",
++            "Federal Rules of Evidence",
++            // Places alone, together, and after "State of" and the like.
++            "Pakistan",
++            "Illinois",
++            "Massachusetts",
++            "United States",
++            "United States of America",
++            "the United Kingdom",
++            "U.S.",
++            "U.S",
++            "USA",
++            "Boston",
++            "New York",
++            "State",
++            "States",
++            "Federal",
++            "Georgia v. Alabama",
++            "Washington, D.C.",
++            "State of Ashmoria",
++            "STATE OF ASHMORIA",
++            "Commonwealth of Brindlemoor",
++            "People of the State of Ashmoria",
++            "Town of Brindle",
++            "District of Columbia",
++            "Ashmoor County",
++        ] {
++            assert!(!org(text), "{text}");
++        }
++        for text in [
++            // A legal form keeps a company, whatever public or place word
++            // it has; none cuts it.
++            "Bank of America, N.A.",
++            "State Street Corporation",
++            "Georgia-Pacific LLC",
++            "Georgia-Pacific",
++            "Federal Express Corp.",
++            "Federal Express",
++            "Quillon Freight LLC",
++            "Brindle Court Ltd",
++            "Ashmoor Department Store Ltd",
++            "State of Ashmoria Holdings LLC",
++            "Congress Street Partners LLP",
++            // Private bodies that share a word with a public one.
++            "Northbridge Department Store",
++            "Acme Talent Agency",
++            "Cedar Arts Council",
++            "Law Offices of Quill & Venn",
++            "New York Life",
++            "Boston Scientific",
++            "Ohio Valley Freight",
++            "United Airlines",
++            "Washington Post",
++            "Delaware North",
++        ] {
++            assert!(org(text), "{text}");
++        }
++        for text in [
++            "HMRC",
++            "Gaming Act 1968",
++            "Biometric Information Privacy Act",
++            "Ashmoor County Probation Department",
++            "Department of Justice",
++            "Federal Election Commission",
++            "High Court of Justice",
++            "State of Ashmoria",
++            "Town of Plymouth",
++        ] {
++            assert!(!person(text), "{text}");
++        }
++        for text in [
++            "Georgia Quill",
++            "Virginia Ashby",
++            "Washington Vale",
++            "Sec. Brindle",
++            "Justice Brindle",
++            "Pakistan",
++        ] {
++            assert!(person(text), "{text}");
++        }
++        // A place's name after "Town of" grows to the place and goes, as an
++        // organization or a person; the other side of a caption stays.
++        assert_eq!(
++            fixed(
++                "The Town of Brindle (Illinois) sued; Town of Plymouth v. Orrin Quill.",
++                &[
++                    ("Brindle", Category::Organization),
++                    ("Illinois", Category::Organization),
++                    ("Plymouth", Category::Person),
++                    ("Orrin Quill", Category::Person),
++                ]
++            ),
++            ["Orrin Quill"]
++        );
++        // An abbreviation defined beside a law or a public body is the law
++        // or the body wherever it stands; a company's stays.
++        assert_eq!(
++            fixed(
++                "Under the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), \
++                 and the Equal Employment Opportunity Commission (EEOC) rules, \
++                 Quillon Freight LLC (“QF”) answered. BIPA applies; the EEOC \
++                 agreed; BIPA’s terms bind QF.",
++                &[
++                    ("BIPA", Category::Organization),
++                    ("EEOC", Category::Person),
++                    ("BIPA’s", Category::Person),
++                    ("QF", Category::Organization),
++                ]
++            ),
++            ["QF"]
++        );
++    }
++
+     /// Date masks (#487), common abbreviations (#481), the Internet,
+     /// software and site domains (#488) are no names; companies that share
+     /// their words keep them.
+
+ succeeded in 167ms:
+diff --git a/changes/rules-en-public-bodies.md b/changes/rules-en-public-bodies.md
+new file mode 100644
+index 00000000..089bc869
+--- /dev/null
++++ b/changes/rules-en-public-bodies.md
+@@ -0,0 +1,10 @@
++- **English courts, public bodies, laws and place names are no longer
++  proposed as organizations or people.** Departments, offices, agencies,
++  bureaus, commissions, Congress, circuits ("9th Cir."), tribunals' short
++  names ("HMRC", "EAT"), Acts, amendments, codes ("18 U.S.C.") and an
++  abbreviation defined beside one ("… Privacy Act (“BIPA”)") are dropped,
++  and so are a country, US state or major city alone, "State", "States"
++  and "Federal" alone, and a place after "State of" or "Town of" ("State
++  of …", "Town of …"); companies by their legal form ("… LLC", "… Corp.")
++  stay whole ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md),
++  #378, #478).
+diff --git a/crates/mdoc-detect/rules/en.toml b/crates/mdoc-detect/rules/en.toml
+index 2d64fd9c..bdc748bc 100644
+--- a/crates/mdoc-detect/rules/en.toml
++++ b/crates/mdoc-detect/rules/en.toml
+@@ -111,23 +111,203 @@ words = [
+ ]
+ 
+ # Courts and public bodies are never marked (the fixture guide's rule 8):
+-# an organization span with one of these words anywhere is dropped ("County
+-# Court", "Ministry of Justice", "Employment Tribunal", "Ofcom"; issue #378)
+-# unless it has a legal form ("Garden Court Ltd" is a company).
++# an organization or person span with one of these words anywhere is
++# dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
++# "Ofcom", "HMRC" as a person, "EEOC"; issue #378) unless it has a legal
++# form ("Garden Court Ltd" is a company).
+ [[never]]
+ match = "plural"
+ words = [
+     "court", "tribunal", "ministry", "registry", "ombudsman", "government",
+     "parliament", "police", "ofcom", "ofgem", "ofwat", "hmrc", "acas",
++    "commission", "congress", "legislature", "senate", "judiciary",
++    "probation", "administration", "hmcts", "uksc", "ewca", "ewhc", "ukut",
++    "ukftt", "ukeat", "scotus", "ohrp", "eeoc", "nlrb", "osha", "doj", "irs",
++    "fbi", "dhs", "hhs", "uspto", "ptab", "cfpb", "ftc", "fcc", "fda", "epa",
++    "dwp", "fca", "cma", "sfo", "uscis", "dea", "atf", "nhtsa", "faa", "ntsb",
++    "usda", "nih", "cdc",
+ ]
+-anywhere_in = ["ORG"]
++anywhere_in = ["ORG", "PERSON"]
+ 
+ # The same bodies' -ies plurals ("Ministries of Justice").
+ [[never]]
+ match = "whole"
+-words = ["ministries", "registries"]
++words = ["ministries", "registries", "agencies"]
++anywhere_in = ["ORG", "PERSON"]
++
++# Laws are never marked either: an Act, an amendment, a regulation, a
++# statute or a constitution by its title, as an organization or a person
++# ("Gaming Act 1968", "the First Amendment"; guide rule 8, issue #378).
++[[never]]
++match = "plural"
++words = ["act", "amendment", "regulation", "statute", "constitution"]
++anywhere_in = ["ORG", "PERSON"]
++
++# Short names that are other words too name a public body only in an
++# organization span ("SEC", "ICO", "CPS"; a person's "Sec." is a title).
++[[never]]
++match = "plural"
++words = ["sec", "ico", "cps"]
+ anywhere_in = ["ORG"]
+ 
++# Words that make a public body or a place of a person span, though a
++# company may have them ("Northbridge Department Store", "Acme Talent
++# Agency"): "Ashmoor County Probation Department" is no one (#378).
++[[never]]
++match = "plural"
++words = ["department", "agency", "bureau", "office", "county", "district", "council"]
++anywhere_in = ["PERSON"]
++
++# Public bodies, laws and courts by their phrases, for an organization
++# (issue #378). A legal form keeps a company; words in quotes are a name.
++[[shape]]
++category = "ORG"
++body = [
++    # Departments, offices, agencies and bureaus of a state or the Crown:
++    # "Department of Justice", "Dep't of Labor", "Probation Department",
++    # "Office of the Attorney General", "Home Office", "Clerk's Office",
++    # "Agency for …", "National Security Agency", "Bureau of Prisons".
++    '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
++    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
++    '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
++    '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
++    '(?i)\b(?:federal|national|state|environment(?:al)?|intelligence|defen[cs]e|regulatory|government(?:al)?|enforcement|revenue|central|border|nuclear|space)(?:[\p{Zs}\t]+\p{Alphabetic}+){0,2}[\p{Zs}\t]+agenc(?:y|ies)\b',
++    '(?i)\bbureaus?[\p{Zs}\t]+of\b',
++    '(?i)\b(?:federal|national|census|government|state|county|city|consumer[\p{Zs}\t]+financial[\p{Zs}\t]+protection)[\p{Zs}\t]+bureau\b',
++    # Services, councils and the Treasury of a state: "Internal Revenue
++    # Service", "Crown Prosecution Service", "City Council", "HM Treasury",
++    # "HM Land Registry", "His Majesty's Revenue and Customs".
++    '(?i)\b(?:internal[\p{Zs}\t]+revenue|postal|secret|marshals?|forest|national[\p{Zs}\t]+park|prison|probation|immigration|customs|border|crown[\p{Zs}\t]+prosecution|civil|foreign|national[\p{Zs}\t]+health|public[\p{Zs}\t]+health|child[\p{Zs}\t]+protective|social|health[\p{Zs}\t]+and[\p{Zs}\t]+human|citizenship[\p{Zs}\t]+and[\p{Zs}\t]+immigration|fish[\p{Zs}\t]+and[\p{Zs}\t]+wildlife|courts[\p{Zs}\t]+and[\p{Zs}\t]+tribunals)[\p{Zs}\t]+services?\b',
++    '(?i)\binternal[\p{Zs}\t]+revenue\b|\brevenue[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+customs\b',
++    '(?i)\b(?:city|county|borough|district|parish|town|metropolitan|municipal|privy|security)[\p{Zs}\t]+council\b',
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+|hm[\p{Zs}\t]+|h\.[\p{Zs}\t]?m\.[\p{Zs}\t]+|u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+)?treasury(?:[\p{Zs}\t]+department)?[\s\p{P}]*$',
++    '(?i)^[\s\p{P}]*(?:hm|h\.[\p{Zs}\t]?m\.|(?:her|his)[\p{Zs}\t]+majesty[\x27’]s)[\p{Zs}\t]',
++    # Prosecutors and ministers: "Attorney General", "U.S. Attorney",
++    # "District Attorney", "Secretary of State".
++    '(?i)\battorneys?[\p{Zs}\t-]+generals?\b',
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?\b',
++    '(?i)\bsecretary[\p{Zs}\t]+of[\p{Zs}\t]+state\b',
++    # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
++    # Circuit", "Northern District of …", "Chancery Division", and the
++    # employment tribunals' short names alone ("ET", "EAT").
++    '(?i)(?:^|[\s\p{P}])(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|d\.[\p{Zs}\t]?c\.|federal)[\p{Zs}\t]+cir(?:cuit\b|\.|[\s\p{P}]|$)',
++    '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
++    '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
++    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:EAT|ET)[\s\p{P}]*$',
++    # Codes and rules of law: "Bankruptcy Code", "Code of Federal
++    # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
++    # Evidence".
++    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
++    '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
++    '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
++]
++
++# A country, state or city is a place, not an organization: alone, several
++# together, or as both sides of a caption ("Pakistan", "Illinois", "United
++# States", the "U.S." of "18 U.S.C.", "Boston", "Georgia v. Alabama"), and
++# so are "State", "States" and "Federal" alone (guide rules 2 and 3, issue
++# #478). Any other word keeps the name ("Bank of America", "State Street",
++# "New York Life", "Georgia-Pacific"). So does a place after "State of",
++# "Town of" and the like ("State of Ashmoria", "People of the State of …",
++# "District of Columbia") and a county by its name ("Ashmoor County").
++[[shape]]
++category = "ORG"
++body = [
++    '''(?ix) ^[\s\p{P}]* (?: (?:
++        the | of | and | v | vs | people | state | states | federal
++        | commonwealth | nation | republic | kingdom | united[\p{Zs}\t]+states
++        | united[\p{Zs}\t]+kingdom | united[\p{Zs}\t]+nations | america | usa
++        | u\.[\p{Zs}\t]?s\.?(?:[\p{Zs}\t]?a\.?)? | us | uk | u\.[\p{Zs}\t]?k\.? | eu
++        | european[\p{Zs}\t]+union | europe | great[\p{Zs}\t]+britain | britain
++        | england | wales | scotland | northern[\p{Zs}\t]+ireland | ireland
++        | d\.[\p{Zs}\t]?c\.?
++        | alabama | alaska | arizona | arkansas | california | colorado
++        | connecticut | delaware | florida | georgia | hawaii | idaho | illinois
++        | indiana | iowa | kansas | kentucky | louisiana | maine | maryland
++        | massachusetts | michigan | minnesota | mississippi | missouri | montana
++        | nebraska | nevada | new[\p{Zs}\t]+hampshire | new[\p{Zs}\t]+jersey
++        | new[\p{Zs}\t]+mexico | new[\p{Zs}\t]+york | north[\p{Zs}\t]+carolina
++        | north[\p{Zs}\t]+dakota | ohio | oklahoma | oregon | pennsylvania
++        | rhode[\p{Zs}\t]+island | south[\p{Zs}\t]+carolina | south[\p{Zs}\t]+dakota
++        | tennessee | texas | utah | vermont | virginia | washington
++        | west[\p{Zs}\t]+virginia | wisconsin | wyoming
++        | district[\p{Zs}\t]+of[\p{Zs}\t]+columbia | puerto[\p{Zs}\t]+rico | guam
++        | american[\p{Zs}\t]+samoa | virgin[\p{Zs}\t]+islands
++        | northern[\p{Zs}\t]+mariana[\p{Zs}\t]+islands
++        | afghanistan | albania | algeria | andorra | angola | argentina | armenia
++        | australia | austria | azerbaijan | bahamas | bahrain | bangladesh
++        | barbados | belarus | belgium | belize | benin | bhutan | bolivia
++        | bosnia | botswana | brazil | brunei | bulgaria | burkina[\p{Zs}\t]+faso
++        | burundi | cambodia | cameroon | canada | chile | china | colombia | congo
++        | costa[\p{Zs}\t]+rica | croatia | cuba | cyprus | czechia
++        | czech[\p{Zs}\t]+republic | denmark | djibouti
++        | dominican[\p{Zs}\t]+republic | ecuador | egypt | el[\p{Zs}\t]+salvador
++        | eritrea | estonia | eswatini | ethiopia | fiji | finland | france | gabon
++        | gambia | germany | ghana | greece | grenada | guatemala | guinea | guyana
++        | haiti | honduras | hong[\p{Zs}\t]+kong | hungary | iceland | india
++        | indonesia | iran | iraq | israel | italy | jamaica | japan | jordan
++        | kazakhstan | kenya | korea | south[\p{Zs}\t]+korea | north[\p{Zs}\t]+korea
++        | kosovo | kuwait | kyrgyzstan | laos | latvia | lebanon | lesotho
++        | liberia | libya | liechtenstein | lithuania | luxembourg | madagascar
++        | malawi | malaysia | maldives | mali | malta | mauritania | mauritius
++        | mexico | moldova | monaco | mongolia | montenegro | morocco | mozambique
++        | myanmar | namibia | nepal | netherlands | new[\p{Zs}\t]+zealand
++        | nicaragua | niger | nigeria | norway | oman | pakistan | palestine
++        | panama | papua[\p{Zs}\t]+new[\p{Zs}\t]+guinea | paraguay | peru
++        | philippines | poland | portugal | qatar | romania | russia
++        | russian[\p{Zs}\t]+federation | rwanda | saudi[\p{Zs}\t]+arabia | senegal
++        | serbia | sierra[\p{Zs}\t]+leone | singapore | slovakia | slovenia
++        | somalia | south[\p{Zs}\t]+africa | south[\p{Zs}\t]+sudan | spain
++        | sri[\p{Zs}\t]+lanka | sudan | suriname | sweden | switzerland | syria
++        | taiwan | tajikistan | tanzania | thailand | togo | trinidad | tobago
++        | tunisia | turkey | türkiye | turkmenistan | uganda | ukraine
++        | united[\p{Zs}\t]+arab[\p{Zs}\t]+emirates | uae | uruguay | uzbekistan
++        | venezuela | vietnam | yemen | zambia | zimbabwe
++        | new[\p{Zs}\t]+york[\p{Zs}\t]+city | los[\p{Zs}\t]+angeles | chicago
++        | houston | philadelphia | san[\p{Zs}\t]+antonio | san[\p{Zs}\t]+diego
++        | dallas | san[\p{Zs}\t]+jose | austin | jacksonville
++        | san[\p{Zs}\t]+francisco | indianapolis | seattle | denver | boston
++        | detroit | nashville | memphis | baltimore | milwaukee | albuquerque
++        | tucson | fresno | sacramento | atlanta | miami | oakland | minneapolis
++        | cleveland | new[\p{Zs}\t]+orleans | pittsburgh | st\.?[\p{Zs}\t]+louis
++        | cincinnati | tampa | honolulu | las[\p{Zs}\t]+vegas
++        | salt[\p{Zs}\t]+lake[\p{Zs}\t]+city | kansas[\p{Zs}\t]+city | newark
++        | omaha | raleigh | charlotte | london | manchester | birmingham | leeds
++        | liverpool | bristol | sheffield | newcastle | nottingham | leicester
++        | cardiff | edinburgh | glasgow | belfast | southampton | coventry | paris
++        | berlin | moscow | tokyo | beijing | toronto | sydney | dublin | brussels
++        | geneva
++    ) (?:[\s\p{P}]+|$) )+ $''',
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?:state|states|commonwealth|city|town|village|borough|county|township|parish|republic|kingdom|province|territory|municipality|district)[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[^\s\p{P}]+(?:[\p{Zs}\t]+[^\s\p{P}]+){0,2}[\s\p{P}]*$',
++    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
++]
++
++# A place's name after "City of", "Town of" and the like belongs to it, so
++# the place goes whole: the model's "Brindle" in "Town of Brindle", as an
++# organization (issue #478).
++[[span]]
++category = "ORG"
++extend = [
++    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
++]
++
++# The same for a person: "Town of Plymouth" names no one (issue #478).
++[[span]]
++category = "PERSON"
++extend = [
++    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
++]
++
++# A place after "State of", "Town of" and the like is no person
++# (issue #478).
++[[shape]]
++category = "PERSON"
++body = [
++    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
++]
++
+ # English legal forms mark a manual selection as an organization
+ # ("Acme Ltd.").
+ [[shape]]
+diff --git a/crates/mdoc-detect/rules/shared.toml b/crates/mdoc-detect/rules/shared.toml
+index 76705291..a9ff4c19 100644
+--- a/crates/mdoc-detect/rules/shared.toml
++++ b/crates/mdoc-detect/rules/shared.toml
+@@ -78,6 +78,10 @@
+ #   quotes_after_words = […]  or after one of these words as written ("ПО
+ #                       «…»", not "по «…»"); a span holding its own quotes
+ #                       counts as wrapped
++#   body    = [regex…]  a model span matching one outside quotes is a court,
++#                       public body, law or place, dropped after the span
++#                       fixes unless it has a legal form, like `anywhere_in`
++#                       words ("Department of Labor", "Massachusetts")
+ # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
+ # Rust's `char` predicates mean, whose Unicode tables may be newer than the
+ # regex crate's.
+
+ succeeded in 189ms:
+9410e0640c5ddf035f357e73727e1ee67f287706
+
+mcp: codex_apps/github.fetch_issue (completed)
+ succeeded in 372ms:
+# Review
+
+Every PR that changes code or scripts; docs-only PRs skip it. Always main
+tier and cross-provider, never same-provider. It runs right after the PR is
+marked ready, beside CI. (ADR 0016, 0017)
+
+**Minor changes skip it** (the user's call, 2026-11-02): a version or
+release-manifest bump, copy or wording, a config value, a dependency pin,
+or another small change with no new logic. CI is enough; merge on green.
+When unsure whether a change is minor, it is not: run the review.
+
+| Author | Reviewer | Reviewer limited |
+|---|---|---|
+| Opus | Codex `gpt-6.1-sol`, `{"reasoningEffort": "high"}`, by `fleet-review` | Skipped: "Review: skipped, Codex limited" in the PR body |
+| Codex Sol | `claude-opus-5-5`, effort `high`, a fresh hub sub-agent | Skipped while extra usage is disabled (the default, ADR 0019); when enabled, on extra usage until the cap |
+
+**Never queued:** nothing waits for a reviewer's reset, at merge or release;
+a skipped review is not run later. (ADR 0016, decision 36)
+
+```sh
+sh ~/Developer/tebriz91/config/scripts/fleet-review.sh lawkitt/mdoc#215
+sh ~/Developer/tebriz91/config/scripts/fleet-review.sh lawkitt/mdoc#218 --prepare --json
+sh ~/Developer/tebriz91/config/scripts/fleet-review.sh lawkitt/mdoc#218 --post /path/findings.md
+```
+
+It reads the author from the `Fleet-Author:` line (else Claude Code's
+trailers; `--author` otherwise) and reviews the PR head in a scratch
+worktree against its base (a layer: its parent). Details:
+`scripts/fleet-review.md` in config.
+
+- **Opus PRs:** the lane runs `fleet-review` (Codex read-only, findings
+  posted). Exit 75: Codex limited, review skipped, said in the PR body.
+- **Codex PRs:** when ready, the hub runs `--prepare`, a fresh `Agent`
+  sub-agent (model `opus`, effort high, read-only in the scratch directory)
+  writes findings to a file, `--post FILE` posts them and cleans up; the hub
+  sends them to the thread. No `claude -p`.
+- A Claude lane on native `windows` asks Codex through `delegate_task`, and
+  skips the same way when Codex is limited.
+- The author fixes each finding or answers it in the PR body under
+  "Review". A second round only after substantial fixes or a restack that
+  changed code, carrying the earlier findings.
+- By hand: ask for ranked correctness bugs and missed requirements; give the
+  diff against the base, the goal and the project's rules. A merged PR can
+  be reviewed too; findings become a fix item.
+- `@codex` on PRs only for PRs the user opens by hand.
+
+mcp: codex_apps/github.fetch_issue (completed)
+mcp: codex_apps/github.fetch_issue_comments started
+mcp: codex_apps/github.fetch_issue_comments started
+mcp: codex_apps/github.fetch_issue_comments (failed)
+mcp: codex_apps/github.fetch_issue_comments (failed)
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "git diff origin/main...HEAD -- crates/mdoc-detect/tests/fixtures/en/judgment/probe-en-r1-public-bodies.md crates/mdoc-detect/tests/fixtures/en/judgment/probe-en-r1-public-bodies.model.json; rg -n \"public_body|identifying\\(|fn word|fn words|has_legal|legal_form|outside_quotes|quoted\" crates/mdoc-detect/src/rules.rs; rg -n \"rule 8|public bod|country|private bod\" docs crates/mdoc-detect/tests -g '*.md'" in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-ChildItem -Force -Name; Get-Content crates/mdoc-detect/src/rules.rs | Select-Object -Skip 560 -First 330' in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 221ms:
+115:    /// Lowercase stems: with them, a quoted span is a title only after a
+120:    /// Words as written: with them, a quoted span is a title or product
+646:    pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
+647:        self.shaped(text, category) && !self.public_body(text, category)
+656:    fn public_body(&self, text: &str, category: Category) -> bool {
+657:        if self.legal_form(text) {
+661:        let outside = unquoted(text);
+724:                (spelt && self.public_body(title, Category::Organization))
+820:                    if trimmed != grown && self.only_legal_form(&source[trimmed.clone()]) {
+831:                && self.identifying(text, d.category)
+845:    /// «Кедровый свет»", "ПО «Контур»"); a name quoted elsewhere stays
+863:        let quoted = self
+930:        self.shaped(text, category) && !quoted
+1047:    fn legal_form(&self, text: &str) -> bool {
+1062:    fn only_legal_form(&self, text: &str) -> bool {
+1067:        words.peek().is_some() && words.all(|word| self.legal_form(word))
+1154:fn unquoted(text: &str) -> String {
+1368:        assert!(pack.identifying("\u{A7CE}a", Category::Person));
+1370:        assert!(pack.identifying("\u{11DE0}", Category::Phone));
+1513:        let keeps = |text: &str, category| pack().identifying(text, category);
+1546:        let org = |text: &str| pack().identifying(text, Category::Organization);
+1719:    fn span_fixes_trim_titles_keep_legal_forms_and_end_before_the_period() {
+1905:            assert!(!pack.identifying(text, category), "{text}");
+1932:            assert!(pack.identifying(text, category), "{text}");
+1999:            assert!(!pack.identifying(text, Category::Organization), "{text}");
+2020:            assert!(pack.identifying(text, Category::Organization), "{text}");
+2031:            assert!(!pack.identifying(text, Category::Organization), "{text}");
+2034:            unquoted("ГКУ «Центр «Северный» снабжения» и суд"),
+2037:        assert_eq!(unquoted("Банк \"Город\", суд «Север"), "Банк  , суд «Север");
+2039:        // quoted name with it, a court's tail.
+2093:        let org = |text: &str| pack.identifying(text, Category::Organization);
+2094:        let person = |text: &str| pack.identifying(text, Category::Person);
+2323:            assert!(!pack.identifying(text, category), "{text}");
+2345:            assert!(pack.identifying(text, category), "{text}");
+2712:            assert!(!pack.identifying(city, Category::Address), "{city}");
+2729:            assert!(pack.identifying(street, Category::Address), "{street}");
+docs\design\recognition-grill-2026-11-01.md:194:  Always (courts and public bodies are not proposed by default).
+
+ succeeded in 584ms:
+.cargo
+.config
+.github
+.review-r1
+apps
+build
+changes
+crates
+docs
+resources
+scripts
+src
+target
+tests
+tools
+vendor
+.editorconfig
+.git
+.gitattributes
+.gitignore
+.shellcheckrc
+about.hbs
+about.toml
+build.rs
+Cargo.lock
+Cargo.toml
+CHANGELOG.md
+CONTEXT.md
+deny.toml
+justfile
+LICENSE
+LICENSE-APP-STORES.md
+README.md
+ROADMAP.md
+rust-toolchain.toml
+THIRD-PARTY-LICENSES.html
+                        }
+                        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+                    }
+                    let pattern =
+                        Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
+                    // An empty span is no detection: the review would
+                    // discard the whole scan.
+                    if pattern.is_match("") {
+                        return Err(at("the pattern matches an empty span".into()));
+                    }
+                    if let Some(group) = pattern
+                        .capture_names()
+                        .flatten()
+                        .find(|group| !["lead", "tail"].contains(group))
+                    {
+                        return Err(at(format!("group {group:?} is not `lead` or `tail`")));
+                    }
+                    pack.spans.push(Span::Pattern { category, pattern });
+                    continue;
+                }
+                if !entry.parts.is_empty() {
+                    return Err(at("parts need a pattern".into()));
+                }
+                if !fixes {
+                    return Err(at(
+                        "needs a pattern, trim words, extend patterns or strip_end".into(),
+                    ));
+                }
+                for word in &entry.trim {
+                    if word.is_empty() || word.chars().any(char::is_whitespace) {
+                        return Err(at(format!("{word:?} is not one word")));
+                    }
+                    if *word != word.to_lowercase() {
+                        return Err(at(format!("{word:?} is not lowercase")));
+                    }
+                }
+                if entry.strip_end.chars().any(char::is_alphanumeric) {
+                    return Err(at("strip_end takes punctuation only".into()));
+                }
+                let extend = entry
+                    .extend
+                    .iter()
+                    .map(|pattern| {
+                        Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                pack.spans.push(Span::Fix(SpanFix {
+                    category,
+                    trim: entry.trim.clone(),
+                    extend,
+                    strip_end: entry.strip_end.clone(),
+                }));
+            }
+            for (index, entry) in file.variants.iter().enumerate() {
+                let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
+                if entry.name.trim().is_empty() {
+                    return Err(at("no name".into()));
+                }
+                if entry.forms.is_empty()
+                    || entry
+                        .forms
+                        .iter()
+                        .any(|form| form.trim().is_empty() || *form == entry.name)
+                {
+                    return Err(at("needs forms, none blank or the name itself".into()));
+                }
+            }
+        }
+        Ok(pack)
+    }
+
+    /// Whether `word` is a title, role, determiner or other word that never
+    /// names anyone on its own, ignoring case.
+    pub(crate) fn never(&self, word: &str) -> bool {
+        let word = word.to_lowercase();
+        self.never
+            .iter()
+            // Public-body words only veto spans that contain them: "Ð¡ÑƒÐ´Ð½ÐµÐ²"
+            // alone is a surname, not a court.
+            .filter(|entry| entry.anywhere_in.is_empty())
+            .any(|entry| entry.has(&word))
+    }
+
+    /// Whether a model span has its category's `shape` and is not a role
+    /// phrase or public body by the `never` section.
+    pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
+        self.shaped(text, category) && !self.public_body(text, category)
+    }
+
+    /// Whether a span is a court or other public body by the `never`
+    /// section's `anywhere_in` words. A legal form makes it a company,
+    /// whatever else it says ("Garden Court Ltd"), and a word in quotes is
+    /// a name ("Ð‘Ð°Ð½Ðº Â«Ð“Ð¾Ñ€Ð¾Ð´Â»"). The correction stage asks this only after
+    /// the span fixes, so a company's inner name ("Ð¡ÐµÐ²ÐµÑ€Ð½Ð°Ñ Ð¾Ð±Ð»Ð°ÑÑ‚ÑŒ Ð¡Ñ‚Ñ€Ð¾Ð¹")
+    /// first grows to its legal form.
+    fn public_body(&self, text: &str, category: Category) -> bool {
+        if self.legal_form(text) {
+            return false;
+        }
+        // Quotes around the whole span hide nothing: "Â«ÐÑ€Ð±Ð¸Ñ‚Ñ€Ð°Ð¶Ð½Ñ‹Ð¹ ÑÑƒÐ´Â»".
+        let outside = unquoted(text);
+        let outside = if outside.chars().any(char::is_alphanumeric) {
+            outside
+        } else {
+            text.to_owned()
+        };
+        outside
+            .split_whitespace()
+            .map(|word| {
+                word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                    .to_lowercase()
+            })
+            .any(|word| {
+                self.never
+                    .iter()
+                    .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
+            })
+            || self
+                .shapes
+                .iter()
+                .filter(|shape| shape.category == category)
+                .flat_map(|shape| &shape.body)
+                .any(|pattern| pattern.is_match(&outside))
+    }
+
+    /// Abbreviations `text` defines beside a court, public body or law
+    /// ("Biometric Privacy Act (â€œBPAâ€)", "Department of Justice (DOJ)"):
+    /// capitals whose letters are the title's initials in order. Each is the
+    /// body or law wherever it stands (#378); a company's ("Quillon Freight
+    /// LLC (â€œQFâ€)") is not.
+    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+        static DEFINED: OnceLock<Regex> = OnceLock::new();
+        let defined = DEFINED.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                // The title: capitalized words, and the small words and
+                // years between them.
+                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'â€™.&-]*(?:[\p{Zs}\t]+(?:\p{Uppercase}",
+                r"[\p{Alphabetic}\p{N}'â€™.&-]*|of|and|the|for|on|in|to|with|&|\d{4}))*)",
+                // A citation may stand between: ", 740 ILCS 14/1".
+                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?[\p{Zs}\t]*\(",
+                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[â€œ\x22â€˜']?",
+                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[â€\x22â€™']?\)",
+            )))
+            .expect("abbreviation pattern")
+        });
+        defined
+            .captures_iter(text)
+            .filter_map(|found| {
+                let title = found.get(1)?.as_str();
+                let short = found.get(2)?.as_str();
+                let letters: Vec<char> = short
+                    .chars()
+                    .filter(|c| c.is_alphabetic())
+                    .flat_map(char::to_lowercase)
+                    .collect();
+                let mut initials = title
+                    .split(|c: char| c.is_whitespace() || c == '-')
+                    .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+                    .flat_map(char::to_lowercase);
+                let spelt = letters.len() >= 2
+                    && letters
+                        .iter()
+                        .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+                (spelt && self.public_body(title, Category::Organization))
+                    .then(|| short.trim_end_matches('.').to_owned())
+            })
+            .collect()
+    }
+
+    /// Whether a model span has its category's `shape` and is not a role
+    /// phrase by the `never` section; public bodies are not checked.
+    fn shaped(&self, text: &str, category: Category) -> bool {
+        let words = || {
+            text.split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                .filter(|word| !word.is_empty())
+        };
+        let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
+        let vetoed = self.never.iter().any(|entry| {
+            entry.last_word_of.contains(&category) && lowercase.last().is_some_and(|w| entry.has(w))
+        });
+        if vetoed {
+            return false;
+        }
+        let Some(shape) = self.shapes.iter().find(|s| s.category == category) else {
+            return true;
+        };
+        shape.require.iter().all(|pattern| pattern.is_match(text))
+            && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
+            && shape.word.as_ref().is_none_or(|pattern| {
+                words().any(|word| pattern.is_match(word) && !self.never(word))
+            })
+    }
+
+    /// The `span` fixes on `detections` in `source`: each grows to an
+    /// `extend` match it lies inside, loses `trim` words at either edge and
+    /// `strip_end` characters at its end. A span left without its shape
+    /// goes, read as `view` reads it.
+    pub(crate) fn fix_spans(
+        &self,
+        source: &str,
+        view: &mdoc_pii::view::View,
+        detections: &mut Vec<Detection>,
+    ) {
+        let fixes = self.spans.iter().filter_map(|span| match span {
+            Span::Fix(fix) => Some(fix),
+            Span::Pattern { .. } => None,
+        });
+        for fix in fixes {
+            if !detections.iter().any(|d| d.category == fix.category) {
+                continue;
+            }
+            let matches: Vec<_> = fix
+                .extend
+                .iter()
+                .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
+                .collect();
+            // In reading order: a span never grows into part of another
+            // span of its category, so in "Ð’ÐµÑ‚Ð»Ð¸Ð½ Ð. Ðž. Ð‘Ñ€ÑŽÐ½ Ð›. Ð˜." the
+            // initials after "Ð’ÐµÑ‚Ð»Ð¸Ð½" stay his.
+            let mut order: Vec<usize> = (0..detections.len())
+                .filter(|&i| detections[i].category == fix.category)
+                .collect();
+            order.sort_by_key(|&i| detections[i].range.start);
+            for &i in &order {
+                let range = detections[i].range.clone();
+                let crosses = |m: &std::ops::Range<usize>| {
+                    order.iter().any(|&j| {
+                        let other = &detections[j].range;
+                        j != i
+                            && other.start < m.end
+                            && m.start < other.end
+                            && !(m.start <= other.start && other.end <= m.end)
+                    })
+                };
+                // A person never grows back over a role or title before
+                // it ("ÐžÑ‚Ð²ÐµÑ‚Ñ‡Ð¸Ðº" in "ÐžÑ‚Ð²ÐµÑ‚Ñ‡Ð¸Ðº Ð. Ðž." for the model's "Ð.
+                // Ðž."); after it such a word is a surname ("J. R. Clerk").
+                let over_never = |m: &std::ops::Range<usize>| {
+                    fix.category == Category::Person
+                        && source[m.start..range.start]
+                            .split(|c: char| !c.is_alphanumeric() && c != '-')
+                            .any(|word| !word.is_empty() && self.never(word))
+                };
+                let grown = matches
+                    .iter()
+                    .filter(|m| {
+                        m.start <= range.start
+                            && range.end <= m.end
+                            && !crosses(m)
+                            && !over_never(m)
+                    })
+                    .max_by_key(|m| m.len())
+                    .cloned()
+                    .unwrap_or(range);
+                let trimmed = fix.trimmed(source, grown.clone());
+                // A trim never leaves a company's legal form alone: "ÐÐž Ð¢Ð¢Ð"
+                // stays whole, "ÐÐ—Ð¡ ÐžÐžÐž Â«Ð‘ÐµÑ‚Ð°-ÐžÐ¹Ð»Â»" loses "ÐÐ—Ð¡".
+                detections[i].range =
+                    if trimmed != grown && self.only_legal_form(&source[trimmed.clone()]) {
+                        grown
+                    } else {
+                        trimmed
+                    };
+            }
+        }
+        let abbreviations = self.public_abbreviations(&view.text);
+        detections.retain(|d| {
+            let text = &view.text[view.view_range(d.range.clone())];
+            !d.range.is_empty()
+                && self.identifying(text, d.category)
+                && !(matches!(d.category, Category::Organization | Category::Person)
+                    && abbreviations.contains(
+                        text.trim_matches(|c: char| !c.is_alphanumeric())
+                            .trim_end_matches("â€™s")
+                            .trim_end_matches("'s"),
+                    ))
+        });
+    }
+
+    /// Whether a model span at `range` of `source` has its category's
+    /// `shape`, its surroundings included: wrapped exactly in a forbidden
+    /// quote pair, or holding one, after a `quotes_after` or
+    /// `quotes_after_words` word, it is a title or a product ("Ð¿Ð¾Ð²ÐµÑÑ‚Ð¸
+    /// Â«ÐšÐµÐ´Ñ€Ð¾Ð²Ñ‹Ð¹ ÑÐ²ÐµÑ‚Â»", "ÐŸÐž Â«ÐšÐ¾Ð½Ñ‚ÑƒÑ€Â»"); a name quoted elsewhere stays
+    /// ("Ð½Ð°Ð·Ð²Ð°Ð½ Â«Ð˜Ð²Ð°Ð½ ÐŸÐµÑ‚Ñ€Ð¾Ð²Â»").
+    /// `text` is the span as the shape reads it (entities decoded).
+    pub(crate) fn identifying_at(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        text: &str,
+        category: Category,
+    ) -> bool {
+        if source.get(range.clone()).is_none() {
+            return false;
+        }
+        // Checked once grown: "ÐÐ—Ð¡" in "ÐžÐžÐž Â«ÐÐ—Ð¡Â»" is a company's name, not
+        // the abbreviation (#481).
+        if self.grows_to_company(source, range.clone(), category) {
+            return true;
+        }
+        let quoted = self
+            .shapes
+            .iter()
+            .find(|s| s.category == category)
+            .is_some_and(|shape| {
+                // Both sides as detection reads them: references decoded,
+                // invisible characters gone ("&laquo;", "ÑÐ²ÐµÑ‚\u{200b}Â»").
+                let mut from = range.start.saturating_sub(96);
+                while !source.is_char_boundary(from) {
+                    from += 1;
+                }
+                let mut to = (range.end + 32).min(source.len());
+                while !source.is_char_boundary(to) {
+                    to -= 1;
+                }
+                let head = mdoc_pii::view::decoded(&source[from..range.start]);
+                let tail = mdoc_pii::view::decoded(&source[range.end..to]);
+                // The span may hold its own quotes ("Â«ÐšÐ¾Ð½Ñ‚ÑƒÑ€Â»" after "ÐŸÐž").
+                let inner = text.trim();
+                let own = shape.quotes.iter().any(|(open, close)| {
+                    inner.len() > open.len_utf8() + close.len_utf8()
+                        && inner.starts_with(*open)
+                        && inner.ends_with(*close)
+                });
+                let before = if own {
+                    inner.chars().next()
+                } else {
+                    head.chars().next_back()
+
+mcp: codex_apps/github.fetch_issue_comments started
+mcp: codex_apps/github.fetch_issue_comments started
+mcp: codex_apps/github.fetch_issue_comments (completed)
+mcp: codex_apps/github.fetch_issue_comments (completed)
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'git diff --name-only origin/main...HEAD; Get-Content -Encoding utf8 crates/mdoc-detect/src/rules.rs | Select-Object -Skip 1010 -First 65; Get-Content -Encoding utf8 crates/mdoc-detect/src/lib.rs | Select-Object -First 290' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 crates/mdoc-detect/rules/en.toml | Select-Object -Skip 305 -First 190' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "rg --files tests docs | rg 'GUIDE|guide|public-bodies|0092|0093'; Get-Content -Encoding utf8 crates/mdoc-detect/src/rules.rs | Select-Object -Skip 2190 -First 85" in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 424ms:
+category = "PERSON"
+body = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
+]
+
+# English legal forms mark a manual selection as an organization
+# ("Acme Ltd.").
+[[shape]]
+category = "ORG"
+guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+
+# An English name of an organization is in title case or carries a legal
+# form; words in sentence case are a document kind, a heading or a team
+# ("Distribution register", "Lasting power of attorney", "Accounts team").
+[[shape]]
+category = "ORG"
+forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
+
+# Dates with an English month name: "12 March 2026" (a Russian "г." after
+# the year still counts) and "March 12, 2026".
+[[shape]]
+category = "DATE"
+guess = [
+    '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+    '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
+]
+
+# Claim and case numbers after their label (ADR 0092): "Claim No.
+# 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
+# "Claim No CL-2026-000123". The value is the whole identifier. Statute,
+# article and clause numbers have no such label and stay unmarked. A value
+# needs four digits: the review proposes a wording everywhere it appears,
+# and "Claim No. 12" would mark "article 12" too. A date is not one.
+[[context]]
+category = "CASE"
+labels = [
+    "claim no", "claim number", "case no", "case number", "proceedings no",
+    "proceedings number", "proceedings are numbered",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# "case" alone is also a common word ("in case 30 days pass", "in case
+# 2026-03-12 is a holiday"): after it only a number with a separator, or of
+# five digits or more, is a case number ("case 202-555-0169"), never after
+# "in", "just" and the like, and never a date.
+[[context]]
+category = "CASE"
+labels = ["case"]
+between = '[\p{Zs}\t:№#]{1,4}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)+|\d{5,}'
+min_digits = 4
+unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
+unless_guessed = ["DATE"]
+
+# A bank account after its label, whatever the model guessed: "**Bank
+# account:** 47-29-16/00318572" (sort code and account number, a slash or a
+# space between), an IBAN, or a run of 8–20 digits. The label decides, so a
+# slash is fine here though the BANK shape refuses it in an unlabelled span.
+[[context]]
+category = "BANK"
+labels = ["bank account", "account number", "account no", "sort code", "iban"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}-\d{2}-\d{2}(?:[/\p{Zs}]\d{6,10})?|[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d{8,20}'
+min_digits = 6
+
+# A staff or member ID after its label, even one of letters only
+# ("**Staff ID:** VELK-QUEN", "Employee ID: TERN-WISP"): capitals or digits
+# in hyphenated parts, or letters then digits. Never a person.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "staff id", "staff number", "employee id", "employee number", "member id",
+    "membership number", "badge number",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
+
+# Addresses (ADR 0092, issue #361): a house number and a street word,
+# with a flat or unit before or after it, then the town and postcode:
+# "Flat 3, 41 Larch Road, Bristol BS6 9ZY", "123 Main Street, Apt 4,
+# Boston, MA 02110", "27 Wisp Lane<br>Norwich NR2 8ZZ". Two elements at
+# least, so a number before "High Court" alone is not an address. The
+# first alternative that matches wins, so a flat comes before a town, and
+# a whole postcode before a town ("M1 1AA" is no town "M1"); two places
+# (a village and its county) come only before a postcode. A
+# town may start with "St." ("St. Albans"), run to three words ("Salt Lake
+# City", "Bury St Edmunds") and have "upon" in it ("Newcastle upon Tyne").
+# Within a part only spaces and tabs separate words: a town ends at the end
+# of its line ("Bristol", not "Bristol\nJohn").
+[[span]]
+category = "ADDRESS"
+pattern = '{flat}{sep}{street}(?:(?:{sep}|\s+){postcode}|(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?))?|{street}{sep}{flat}(?:(?:{sep}|\s+){postcode}|(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?))?|{street}(?:{sep}|\s+){postcode}|{street}(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?)'
+parts.flat = '\b(?:Flat|Unit|Apartment|Apt\.?|Suite|Room)[\p{Zs}\t]+\d+[A-Za-z]?'
+parts.street = '\b\d+[A-Za-z]?[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr)\b\.?)'
+parts.sep = ',\s*|\s*<br\s*/?>\s*'
+parts.town = '(?:St\.?[\p{Zs}\t]+)?\p{Uppercase}[\p{Ll}\d][\p{Alphabetic}\d\x27’-]*(?:[\p{Zs}\t]+(?:upon[\p{Zs}\t]+)?\p{Uppercase}\p{Ll}[\p{Alphabetic}\x27’-]*){0,2}'
+parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|[A-Z]{2}[\p{Zs}\t]\d{5}(?:-\d{4})?)\b'
+
+# Dates of birth (ADR 0092): a date after born, DOB or date of birth is a
+# personal date ("born 14 March 1988", "**DOB:** 23 September 1991"). Every
+# other date stays: signing, deadlines, hearings. The value must be one the
+# DATE guesses take. The label may be in the cell before or on the line
+# before ("| DOB | 14/03/1988 |", "DOB:" then the date on its own line).
+[[context]]
+category = "DATE"
+labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
+between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
+only_guessed = ["DATE"]
+
+ succeeded in 497ms:
+changes/android/rules-en-public-bodies.md
+changes/ios/rules-en-public-bodies.md
+changes/rules-en-public-bodies.md
+crates/mdoc-detect/rules/en.toml
+crates/mdoc-detect/rules/shared.toml
+crates/mdoc-detect/src/lib.rs
+crates/mdoc-detect/src/rules.rs
+tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md
+tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json
+                        .to_lowercase();
+                    self.contexts
+                        .iter()
+                        .find(|context| context.labels.contains(&label))
+                })
+                .collect();
+            row += 2;
+            // Up to the next table's header, which a delimiter row follows.
+            while row < lines.len()
+                && is_table_row(lines[row].1)
+                && !lines
+                    .get(row + 1)
+                    .is_some_and(|(_, next)| is_delimiter_row(next))
+            {
+                let (line_at, line) = lines[row];
+                for (cell, context) in cells(line, line_at).into_iter().zip(&columns) {
+                    if let Some(context) = context
+                        && context.value.is_match(&source[cell.clone()])
+                        && self.takes(context, &source[cell.clone()])
+                    {
+                        found.push(Detection {
+                            range: cell,
+                            category: context.category,
+                            score: CONTEXT_SCORE,
+                            recognizer: Recognizer::Context,
+                        });
+                    }
+                }
+                row += 1;
+            }
+        }
+        found
+    }
+
+    /// Whether `text` has an organization's legal form (the ORG shape's
+    /// `guess_words`: Ltd, LLC, ООО…).
+    fn legal_form(&self, text: &str) -> bool {
+        self.shapes
+            .iter()
+            .filter(|shape| shape.category == Category::Organization)
+            .any(|shape| {
+                text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+                    shape
+                        .guess_words
+                        .iter()
+                        .any(|form| form.eq_ignore_ascii_case(word))
+                })
+            })
+    }
+
+    /// Whether `text`'s words are all legal forms ("АО", "LLC").
+    fn only_legal_form(&self, text: &str) -> bool {
+        let mut words = text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .peekable();
+        words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// Whether an organization `span` fix grows the span at `range` of
+    /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
+    /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
+    /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
+    /// one line, so only the span's lines are searched.
+    fn grows_to_company(
+//! Experimental, offline GLiNER2 integration. Network access belongs only to
+//! explicit setup. One bounded scan runs at a time; each scan drops its engine.
+pub mod lists;
+pub mod recognition;
+mod rules;
+mod structured;
+mod windows;
+use gliner2_rs::{
+    ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
+    processor::SchemaTransformer,
+};
+use mdoc_pii::{Category, Detection};
+use serde::{Deserialize, Serialize};
+
+/// Why detection setup, its checks or a scan failed.
+#[derive(Debug, thiserror::Error)]
+pub enum DetectError {
+    #[error(transparent)]
+    Permit(#[from] mdoc_import::model_work::PermitError),
+    #[error(transparent)]
+    Download(#[from] mdoc_import::model_download::DownloadError),
+    #[error(transparent)]
+    Runtime(#[from] mdoc_import::ocr::SetupError),
+    #[error("Could not find local application storage.")]
+    NoStorage,
+    #[error("Automatic scanning is unavailable on this platform. Manual review is available.")]
+    SetupUnsupported,
+    #[error("Automatic scanning is unavailable on this platform.")]
+    ScanUnsupported,
+    #[error("Detection threshold must be finite and between 0 and 1.")]
+    InvalidThreshold,
+    #[error("Set up the experimental model before scanning.")]
+    NotSetUp,
+    #[error(
+        "Automatic scanning supports up to 2 MiB. Add selections manually in larger documents."
+    )]
+    TooLarge,
+    #[error("Another document is scanning. Retry when it finishes.")]
+    Busy,
+    #[error("Scan cancelled.")]
+    Cancelled,
+    #[error("Scan exceeded two minutes. Review a smaller document or add selections manually.")]
+    TooSlow,
+    #[error(
+        "A source word exceeds the model token limit. Add selections manually; no partial scan was accepted."
+    )]
+    WordTooLong,
+    #[error("Detector returned invalid source offsets; scan discarded.")]
+    InvalidOffsets,
+    /// GLiNER2 or its tokenizer failed, in its words.
+    #[error("{0}")]
+    Engine(String),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
+use windows::bounded_windows;
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+pub const SUPPORTED: bool = mdoc_import::ocr::SUPPORTED;
+
+/// Guess a manual selection's category without a model, correctable in the
+/// popup (ADR 0025): a structured rule covering exactly the selection
+/// (evaluated on its line, so labels count), else the rule pack's guesses (a
+/// date, a phone, a legal form, a name shape for Person), else Other.
+pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
+    let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[range.end..]
+        .find('\n')
+        .map_or(source.len(), |i| range.end + i);
+    let line = &source[line_start..line_end];
+    let local = range.start - line_start..range.end - line_start;
+    if let Some(detection) = structured::scan(line)
+        .into_iter()
+        .find(|d| d.range == local)
+    {
+        return detection.category;
+    }
+    rules::pack()
+        .guess(&source[range])
+        .unwrap_or(Category::Other)
+}
+
+/// Whether a model span has its category's shape in the rule pack; the model
+/// also tags the words for things ("email", "phone number", "companies") and
+/// titles and roles on their own ("Ms", "husband"; issue #302).
+#[cfg(test)]
+fn identifying(text: &str, category: Category) -> bool {
+    rules::pack().identifying(text, category)
+}
+const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_INPUT_TOKENS: usize = 512;
+const MAX_SCAN_TIME: Duration = Duration::from_secs(120);
+static INFERENCE: Mutex<()> = Mutex::new(());
+
+const FAMILIES: &[&[(&str, Category)]] = &[
+    &[
+        ("person", Category::Person),
+        ("full_name", Category::Person),
+    ],
+    &[("organization", Category::Organization)],
+    &[
+        ("email", Category::Email),
+        ("phone_number", Category::Phone),
+        ("address", Category::Address),
+    ],
+    &[
+        ("passport_number", Category::Identity),
+        ("national_id_number", Category::Identity),
+        ("tax_id", Category::Tax),
+    ],
+    &[
+        ("bank_account", Category::Bank),
+        ("iban", Category::Bank),
+        ("routing_number", Category::Bank),
+    ],
+];
+
+#[derive(Deserialize)]
+pub struct Manifest {
+    pub id: String,
+    pub revision: String,
+    pub repository: String,
+    pub license: String,
+    pub files: Vec<Artifact>,
+}
+#[derive(Deserialize)]
+pub struct Artifact {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+    pub url: String,
+}
+pub fn manifest_for(model: mdoc_store::settings::PiiModel) -> Manifest {
+    let source = match model {
+        mdoc_store::settings::PiiModel::Fp16 => {
+            include_str!("../../../resources/pseudonymization-model.json")
+        }
+        mdoc_store::settings::PiiModel::Fp32 => {
+            include_str!("../../../resources/pseudonymization-fp32-model.json")
+        }
+    };
+    serde_json::from_str(source).expect("pinned model manifest")
+}
+pub fn precision(model: mdoc_store::settings::PiiModel) -> gliner2_rs::Precision {
+    match model {
+        mdoc_store::settings::PiiModel::Fp16 => gliner2_rs::Precision::Fp16,
+        mdoc_store::settings::PiiModel::Fp32 => gliner2_rs::Precision::Fp32,
+    }
+}
+/// Attribution for exactly the files setup offers, including ONNX exports.
+pub fn source_and_license(model: mdoc_store::settings::PiiModel) -> (String, String) {
+    let manifest = manifest_for(model);
+    (
+        format!("Hugging Face · {}", manifest.repository),
+        manifest.license,
+    )
+}
+/// The pinned export's id and revision, as its folder is named
+/// ("gliner2-pii-fp16-e5948986"); recognition snapshots record it.
+pub fn model_name(model: mdoc_store::settings::PiiModel) -> String {
+    let manifest = manifest_for(model);
+    format!("{}-{}", manifest.id, &manifest.revision[..8])
+}
+pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, DetectError> {
+    mdoc_store::app_paths::data_local_dir()
+        .map(|root| root.join("mdoc/pseudonymization").join(model_name(model)))
+        .ok_or(DetectError::NoStorage)
+}
+
+/// Model files and the shared runtime, matching `check_reserved`.
+pub fn model_files(
+    root: &Path,
+    ocr_root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Vec<PathBuf> {
+    manifest_for(model)
+        .files
+        .iter()
+        .map(|file| root.join(&file.path))
+        .chain(std::iter::once(mdoc_import::ocr::onnx_runtime_path(
+            ocr_root,
+        )))
+        .collect()
+}
+/// Bytes setup still needs for `model` under `root` (see [`root_for`]),
+/// including the shared ONNX Runtime under `ocr_root` (`ocr::root`). Without
+/// a root, everything is still to download.
+pub fn pending(
+    model: mdoc_store::settings::PiiModel,
+    root: Option<&Path>,
+    ocr_root: Option<&Path>,
+) -> mdoc_import::model_download::Pending {
+    let files = manifest_for(model).files;
+    let missing: Vec<u64> = files
+        .iter()
+        .filter(|file| {
+            root.is_none_or(|root| {
+                mdoc_import::model_download::missing(&root.join(&file.path), file.bytes)
+            })
+        })
+        .map(|file| file.bytes)
+        .collect();
+    mdoc_import::model_download::Pending {
+        full: files.iter().map(|file| file.bytes).sum::<u64>()
+            + mdoc_import::ocr::onnx_runtime_size(),
+        model: missing.iter().sum(),
+        runtime: mdoc_import::ocr::onnx_runtime_pending(ocr_root),
+    }
+}
+fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
+    for artifact in manifest_for(model).files {
+        mdoc_import::model_download::verify(
+            &root.join(&artifact.path),
+            artifact.bytes,
+            &artifact.sha256,
+        )?;
+    }
+    Ok(())
+}
+pub fn setup_config(
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &mdoc_import::model_download::Progress,
+) -> Result<(), DetectError> {
+    if !SUPPORTED {
+        return Err(DetectError::SetupUnsupported);
+    }
+    let _permit =
+        mdoc_import::model_work::Permit::acquire_for("installing pseudonymization model")?;
+    setup_reserved(config, progress).map(|_| ())
+}
+/// The caller retains model admission through publishing its setup result.
+/// Metadata is captured after downloads, immediately before final validation.
+pub fn setup_reserved(
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &mdoc_import::model_download::Progress,
+) -> Result<mdoc_store::model_state::Files, DetectError> {
+    if !SUPPORTED {
+        return Err(DetectError::SetupUnsupported);
+    }
+    let root = root_for(config.model)?;
+    fs::create_dir_all(&root)?;
+    for artifact in manifest_for(config.model).files {
+        mdoc_import::model_download::fetch(
+            &artifact.url,
+            artifact.bytes,
+            &artifact.sha256,
+            &root.join(&artifact.path),
+            progress,
+        )?;
+    }
+    progress.check()?;
+    mdoc_import::ocr::onnx_runtime_with_progress(progress)?;
+    let licenses = root.join("licenses");
+    fs::create_dir_all(&licenses)?;
+    for (name, text) in [
+        (
+            "Apache-2.0.txt",
+            include_str!("../../../resources/gliner2-license.txt"),
+        ),
+        (
+            "gliner2-NOTICE.txt",
+            include_str!("../../../resources/gliner2-notice.txt"),
+        ),
+        (
+            "Microsoft-MIT.txt",
+            include_str!("../../../resources/pseudonymization-microsoft-license.txt"),
+        ),
+    ] {
+        fs::write(licenses.join(name), text)?;
+    }
+    fs::write(
+        licenses.join("MODEL-NOTICE.txt"),
+        format!(
+            "Experimental unmodified {}.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder: Microsoft mDeBERTa-v3-base, MIT.\nPinned model card retained in README.md. Shared ONNX notices: mdoc/ocr/v1/licenses/onnx.\n",
+            config.model.name()
+        ),
+    )?;
+    progress.phase("Checking runtime");
+    progress.check()?;
+    let before = mdoc_store::model_state::Files::read(&model_files(
+        &root,
+
+ succeeded in 493ms:
+tests\fixtures\recognition\GUIDE.md
+tests\fixtures\recognition\en\judgment\probe-en-r1-public-bodies.model.json
+tests\fixtures\recognition\en\judgment\probe-en-r1-public-bodies.md
+docs\adr\0093-flaw-hunt-loop.md
+docs\adr\0092-recognition-correction-pipeline.md
+            "State of Ashmoria Holdings LLC",
+            "Congress Street Partners LLP",
+            // Private bodies that share a word with a public one.
+            "Northbridge Department Store",
+            "Acme Talent Agency",
+            "Cedar Arts Council",
+            "Law Offices of Quill & Venn",
+            "New York Life",
+            "Boston Scientific",
+            "Ohio Valley Freight",
+            "United Airlines",
+            "Washington Post",
+            "Delaware North",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        for text in [
+            "HMRC",
+            "Gaming Act 1968",
+            "Biometric Information Privacy Act",
+            "Ashmoor County Probation Department",
+            "Department of Justice",
+            "Federal Election Commission",
+            "High Court of Justice",
+            "State of Ashmoria",
+            "Town of Plymouth",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Georgia Quill",
+            "Virginia Ashby",
+            "Washington Vale",
+            "Sec. Brindle",
+            "Justice Brindle",
+            "Pakistan",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        // A place's name after "Town of" grows to the place and goes, as an
+        // organization or a person; the other side of a caption stays.
+        assert_eq!(
+            fixed(
+                "The Town of Brindle (Illinois) sued; Town of Plymouth v. Orrin Quill.",
+                &[
+                    ("Brindle", Category::Organization),
+                    ("Illinois", Category::Organization),
+                    ("Plymouth", Category::Person),
+                    ("Orrin Quill", Category::Person),
+                ]
+            ),
+            ["Orrin Quill"]
+        );
+        // An abbreviation defined beside a law or a public body is the law
+        // or the body wherever it stands; a company's stays.
+        assert_eq!(
+            fixed(
+                "Under the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), \
+                 and the Equal Employment Opportunity Commission (EEOC) rules, \
+                 Quillon Freight LLC (“QF”) answered. BIPA applies; the EEOC \
+                 agreed; BIPA’s terms bind QF.",
+                &[
+                    ("BIPA", Category::Organization),
+                    ("EEOC", Category::Person),
+                    ("BIPA’s", Category::Person),
+                    ("QF", Category::Organization),
+                ]
+            ),
+            ["QF"]
+        );
+    }
+
+    /// Date masks (#487), common abbreviations (#481), the Internet,
+    /// software and site domains (#488) are no names; companies that share
+    /// their words keep them.
+    #[test]
+    fn masks_abbreviations_the_internet_and_products_are_no_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("ДД.ММ.ГГГГ", Category::Organization),
+            ("ДД.ММ.ГГГГ", Category::Person),
+            ("ДД.ММ.ГГГГ", Category::Date),
+            ("ДД.ММ.ГГ", Category::Organization),
+            ("ХХ.ХХ.ХХ", Category::Person),
+            ("XX.XX.XXXX", Category::Organization),
+
+codex
+The issue comments require handling public bodies and laws labeled as PERSON, defined abbreviations, and place names inside citations. The diff covers many of these cases, but some new filters appear broad enough to drop private organizations. I’m checking concrete examples and the remaining gaps.
+web search: 
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command '$n=0; Get-Content -Encoding utf8 crates/mdoc-detect/rules/en.toml | ForEach-Object { $n++; if($n -le 335) { '"'{0,4}: {1}' -f "'$n,$_ }}' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 tests/fixtures/recognition/GUIDE.md; Get-Content -Encoding utf8 docs/adr/0092-recognition-correction-pipeline.md; git diff origin/main...HEAD -- tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'rg -n "fn correct|fix_spans|identifying_at" crates/mdoc-detect/src/lib.rs; Get-Content -Encoding utf8 crates/mdoc-detect/src/rules.rs | Select-Object -Skip 1065 -First 120; Get-Content -Encoding utf8 crates/mdoc-detect/rules/shared.toml | Select-Object -Skip 90 -First 100' in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 480ms:
+   1: # mdoc's rule pack, part 2 of 3: English. Sections and fields are described
+   2: # in shared.toml.
+   3: 
+   4: 
+   5: # No English nicknames yet.
+   6: variants = []
+   7: 
+   8: # Titles and post-nominals stay outside a person's span: "Ms Bennett" is
+   9: # proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
+  10: # #382). A title's period goes with it.
+  11: [[span]]
+  12: category = "PERSON"
+  13: trim = [
+  14:     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
+  15:     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+  16:     "kc", "qc", "esq", "phd",
+  17: ]
+  18: 
+  19: # Two initials before a surname belong to the name: the model's "Quill" in
+  20: # "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after
+  21: # it: "Smith J" is a judge's title. Only spaces between, never a line.
+  22: [[span]]
+  23: category = "PERSON"
+  24: extend = [
+  25:     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
+  26: ]
+  27: 
+  28: # An organization ends with its legal form, not the sentence's period or
+  29: # comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
+  30: # Ltd" (#374).
+  31: [[span]]
+  32: category = "ORG"
+  33: strip_end = ".,;:"
+  34: 
+  35: # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
+  36: # French and German titles turn up in English documents too.
+  37: [[never]]
+  38: match = "plural"
+  39: words = [
+  40:     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
+  41:     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+  42: ]
+  43: 
+  44: # Family words: "her husband" names no one.
+  45: [[never]]
+  46: match = "plural"
+  47: words = ["husband", "wife", "spouse", "partner", "father", "mother", "daughter"]
+  48: 
+  49: # Roles in a matter or a contract: "the Employer", "Her Adviser", "Parties"
+  50: # (issue #302).
+  51: [[never]]
+  52: match = "plural"
+  53: words = [
+  54:     "adviser", "advisor", "solicitor", "barrister", "counsel", "lawyer",
+  55:     "attorney", "client", "employer", "employee", "claimant", "respondent",
+  56:     "applicant", "defendant", "plaintiff", "appellant", "party", "parties",
+  57:     "buyer", "seller", "landlord", "tenant", "lessor", "lessee", "licensor",
+  58:     "licensee", "contractor", "customer", "supplier", "company", "director",
+  59:     "witness", "judge", "owner", "repairer", "assignee", "assignor", "principal",
+  60:     "provider",
+  61: ]
+  62: 
+  63: # The words for people themselves ("People").
+  64: [[never]]
+  65: match = "plural"
+  66: words = ["people", "person", "individual"]
+  67: 
+  68: # Determiners around a role name no one either ("The Employer"). Matched
+  69: # whole only.
+  70: [[never]]
+  71: match = "whole"
+  72: words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this", "that", "said"]
+  73: 
+  74: # Job roles: never a name alone ("Surveyor"), and an organization span
+  75: # ending in one is a team or office, not a company ("Costs Officer",
+  76: # "Administrative Team"). A person's span keeps a surname that is also a
+  77: # role ("John Clerk").
+  78: [[never]]
+  79: match = "plural"
+  80: words = [
+  81:     "officer", "reviewer", "team", "surveyor", "representative", "secretary",
+  82:     "expert", "registrar", "assessor", "inspector", "adjudicator", "mediator",
+  83:     "arbitrator", "clerk",
+  84: ]
+  85: last_word_of = ["ORG"]
+  86: 
+  87: # The same roles' -ies plurals.
+  88: [[never]]
+  89: match = "whole"
+  90: words = ["secretaries"]
+  91: 
+  92: # Words that make a job title of a role: "Technical Reviewer", "Managing
+  93: # Director" name no one (guide rule 8). Matched whole.
+  94: [[never]]
+  95: match = "whole"
+  96: words = [
+  97:     "technical", "managing", "senior", "junior", "chief", "deputy",
+  98:     "assistant", "executive", "independent", "administrative",
+  99: ]
+ 100: 
+ 101: # Category words: "Email", "Address", "Bank" in a table header name no one
+ 102: # (issue #379). Matched whole, with their plurals listed, so the surname
+ 103: # "Banks" stays.
+ 104: [[never]]
+ 105: match = "whole"
+ 106: words = [
+ 107:     "email", "emails", "e-mail", "phone", "phones", "telephone", "address",
+ 108:     "addresses", "organisation", "organisations", "organization",
+ 109:     "organizations", "bank", "account", "accounts", "passport", "name",
+ 110:     "names",
+ 111: ]
+ 112: 
+ 113: # Courts and public bodies are never marked (the fixture guide's rule 8):
+ 114: # an organization or person span with one of these words anywhere is
+ 115: # dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
+ 116: # "Ofcom", "HMRC" as a person, "EEOC"; issue #378) unless it has a legal
+ 117: # form ("Garden Court Ltd" is a company).
+ 118: [[never]]
+ 119: match = "plural"
+ 120: words = [
+ 121:     "court", "tribunal", "ministry", "registry", "ombudsman", "government",
+ 122:     "parliament", "police", "ofcom", "ofgem", "ofwat", "hmrc", "acas",
+ 123:     "commission", "congress", "legislature", "senate", "judiciary",
+ 124:     "probation", "administration", "hmcts", "uksc", "ewca", "ewhc", "ukut",
+ 125:     "ukftt", "ukeat", "scotus", "ohrp", "eeoc", "nlrb", "osha", "doj", "irs",
+ 126:     "fbi", "dhs", "hhs", "uspto", "ptab", "cfpb", "ftc", "fcc", "fda", "epa",
+ 127:     "dwp", "fca", "cma", "sfo", "uscis", "dea", "atf", "nhtsa", "faa", "ntsb",
+ 128:     "usda", "nih", "cdc",
+ 129: ]
+ 130: anywhere_in = ["ORG", "PERSON"]
+ 131: 
+ 132: # The same bodies' -ies plurals ("Ministries of Justice").
+ 133: [[never]]
+ 134: match = "whole"
+ 135: words = ["ministries", "registries", "agencies"]
+ 136: anywhere_in = ["ORG", "PERSON"]
+ 137: 
+ 138: # Laws are never marked either: an Act, an amendment, a regulation, a
+ 139: # statute or a constitution by its title, as an organization or a person
+ 140: # ("Gaming Act 1968", "the First Amendment"; guide rule 8, issue #378).
+ 141: [[never]]
+ 142: match = "plural"
+ 143: words = ["act", "amendment", "regulation", "statute", "constitution"]
+ 144: anywhere_in = ["ORG", "PERSON"]
+ 145: 
+ 146: # Short names that are other words too name a public body only in an
+ 147: # organization span ("SEC", "ICO", "CPS"; a person's "Sec." is a title).
+ 148: [[never]]
+ 149: match = "plural"
+ 150: words = ["sec", "ico", "cps"]
+ 151: anywhere_in = ["ORG"]
+ 152: 
+ 153: # Words that make a public body or a place of a person span, though a
+ 154: # company may have them ("Northbridge Department Store", "Acme Talent
+ 155: # Agency"): "Ashmoor County Probation Department" is no one (#378).
+ 156: [[never]]
+ 157: match = "plural"
+ 158: words = ["department", "agency", "bureau", "office", "county", "district", "council"]
+ 159: anywhere_in = ["PERSON"]
+ 160: 
+ 161: # Public bodies, laws and courts by their phrases, for an organization
+ 162: # (issue #378). A legal form keeps a company; words in quotes are a name.
+ 163: [[shape]]
+ 164: category = "ORG"
+ 165: body = [
+ 166:     # Departments, offices, agencies and bureaus of a state or the Crown:
+ 167:     # "Department of Justice", "Dep't of Labor", "Probation Department",
+ 168:     # "Office of the Attorney General", "Home Office", "Clerk's Office",
+ 169:     # "Agency for …", "National Security Agency", "Bureau of Prisons".
+ 170:     '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
+ 171:     '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
+ 172:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
+ 173:     '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
+ 174:     '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
+ 175:     '(?i)\b(?:federal|national|state|environment(?:al)?|intelligence|defen[cs]e|regulatory|government(?:al)?|enforcement|revenue|central|border|nuclear|space)(?:[\p{Zs}\t]+\p{Alphabetic}+){0,2}[\p{Zs}\t]+agenc(?:y|ies)\b',
+ 176:     '(?i)\bbureaus?[\p{Zs}\t]+of\b',
+ 177:     '(?i)\b(?:federal|national|census|government|state|county|city|consumer[\p{Zs}\t]+financial[\p{Zs}\t]+protection)[\p{Zs}\t]+bureau\b',
+ 178:     # Services, councils and the Treasury of a state: "Internal Revenue
+ 179:     # Service", "Crown Prosecution Service", "City Council", "HM Treasury",
+ 180:     # "HM Land Registry", "His Majesty's Revenue and Customs".
+ 181:     '(?i)\b(?:internal[\p{Zs}\t]+revenue|postal|secret|marshals?|forest|national[\p{Zs}\t]+park|prison|probation|immigration|customs|border|crown[\p{Zs}\t]+prosecution|civil|foreign|national[\p{Zs}\t]+health|public[\p{Zs}\t]+health|child[\p{Zs}\t]+protective|social|health[\p{Zs}\t]+and[\p{Zs}\t]+human|citizenship[\p{Zs}\t]+and[\p{Zs}\t]+immigration|fish[\p{Zs}\t]+and[\p{Zs}\t]+wildlife|courts[\p{Zs}\t]+and[\p{Zs}\t]+tribunals)[\p{Zs}\t]+services?\b',
+ 182:     '(?i)\binternal[\p{Zs}\t]+revenue\b|\brevenue[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+customs\b',
+ 183:     '(?i)\b(?:city|county|borough|district|parish|town|metropolitan|municipal|privy|security)[\p{Zs}\t]+council\b',
+ 184:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+|hm[\p{Zs}\t]+|h\.[\p{Zs}\t]?m\.[\p{Zs}\t]+|u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+)?treasury(?:[\p{Zs}\t]+department)?[\s\p{P}]*$',
+ 185:     '(?i)^[\s\p{P}]*(?:hm|h\.[\p{Zs}\t]?m\.|(?:her|his)[\p{Zs}\t]+majesty[\x27’]s)[\p{Zs}\t]',
+ 186:     # Prosecutors and ministers: "Attorney General", "U.S. Attorney",
+ 187:     # "District Attorney", "Secretary of State".
+ 188:     '(?i)\battorneys?[\p{Zs}\t-]+generals?\b',
+ 189:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?\b',
+ 190:     '(?i)\bsecretary[\p{Zs}\t]+of[\p{Zs}\t]+state\b',
+ 191:     # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
+ 192:     # Circuit", "Northern District of …", "Chancery Division", and the
+ 193:     # employment tribunals' short names alone ("ET", "EAT").
+ 194:     '(?i)(?:^|[\s\p{P}])(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|d\.[\p{Zs}\t]?c\.|federal)[\p{Zs}\t]+cir(?:cuit\b|\.|[\s\p{P}]|$)',
+ 195:     '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
+ 196:     '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
+ 197:     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:EAT|ET)[\s\p{P}]*$',
+ 198:     # Codes and rules of law: "Bankruptcy Code", "Code of Federal
+ 199:     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
+ 200:     # Evidence".
+ 201:     '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
+ 202:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
+ 203:     '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
+ 204:     '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
+ 205: ]
+ 206: 
+ 207: # A country, state or city is a place, not an organization: alone, several
+ 208: # together, or as both sides of a caption ("Pakistan", "Illinois", "United
+ 209: # States", the "U.S." of "18 U.S.C.", "Boston", "Georgia v. Alabama"), and
+ 210: # so are "State", "States" and "Federal" alone (guide rules 2 and 3, issue
+ 211: # #478). Any other word keeps the name ("Bank of America", "State Street",
+ 212: # "New York Life", "Georgia-Pacific"). So does a place after "State of",
+ 213: # "Town of" and the like ("State of Ashmoria", "People of the State of …",
+ 214: # "District of Columbia") and a county by its name ("Ashmoor County").
+ 215: [[shape]]
+ 216: category = "ORG"
+ 217: body = [
+ 218:     '''(?ix) ^[\s\p{P}]* (?: (?:
+ 219:         the | of | and | v | vs | people | state | states | federal
+ 220:         | commonwealth | nation | republic | kingdom | united[\p{Zs}\t]+states
+ 221:         | united[\p{Zs}\t]+kingdom | united[\p{Zs}\t]+nations | america | usa
+ 222:         | u\.[\p{Zs}\t]?s\.?(?:[\p{Zs}\t]?a\.?)? | us | uk | u\.[\p{Zs}\t]?k\.? | eu
+ 223:         | european[\p{Zs}\t]+union | europe | great[\p{Zs}\t]+britain | britain
+ 224:         | england | wales | scotland | northern[\p{Zs}\t]+ireland | ireland
+ 225:         | d\.[\p{Zs}\t]?c\.?
+ 226:         | alabama | alaska | arizona | arkansas | california | colorado
+ 227:         | connecticut | delaware | florida | georgia | hawaii | idaho | illinois
+ 228:         | indiana | iowa | kansas | kentucky | louisiana | maine | maryland
+ 229:         | massachusetts | michigan | minnesota | mississippi | missouri | montana
+ 230:         | nebraska | nevada | new[\p{Zs}\t]+hampshire | new[\p{Zs}\t]+jersey
+ 231:         | new[\p{Zs}\t]+mexico | new[\p{Zs}\t]+york | north[\p{Zs}\t]+carolina
+ 232:         | north[\p{Zs}\t]+dakota | ohio | oklahoma | oregon | pennsylvania
+ 233:         | rhode[\p{Zs}\t]+island | south[\p{Zs}\t]+carolina | south[\p{Zs}\t]+dakota
+ 234:         | tennessee | texas | utah | vermont | virginia | washington
+ 235:         | west[\p{Zs}\t]+virginia | wisconsin | wyoming
+ 236:         | district[\p{Zs}\t]+of[\p{Zs}\t]+columbia | puerto[\p{Zs}\t]+rico | guam
+ 237:         | american[\p{Zs}\t]+samoa | virgin[\p{Zs}\t]+islands
+ 238:         | northern[\p{Zs}\t]+mariana[\p{Zs}\t]+islands
+ 239:         | afghanistan | albania | algeria | andorra | angola | argentina | armenia
+ 240:         | australia | austria | azerbaijan | bahamas | bahrain | bangladesh
+ 241:         | barbados | belarus | belgium | belize | benin | bhutan | bolivia
+ 242:         | bosnia | botswana | brazil | brunei | bulgaria | burkina[\p{Zs}\t]+faso
+ 243:         | burundi | cambodia | cameroon | canada | chile | china | colombia | congo
+ 244:         | costa[\p{Zs}\t]+rica | croatia | cuba | cyprus | czechia
+ 245:         | czech[\p{Zs}\t]+republic | denmark | djibouti
+ 246:         | dominican[\p{Zs}\t]+republic | ecuador | egypt | el[\p{Zs}\t]+salvador
+ 247:         | eritrea | estonia | eswatini | ethiopia | fiji | finland | france | gabon
+ 248:         | gambia | germany | ghana | greece | grenada | guatemala | guinea | guyana
+ 249:         | haiti | honduras | hong[\p{Zs}\t]+kong | hungary | iceland | india
+ 250:         | indonesia | iran | iraq | israel | italy | jamaica | japan | jordan
+ 251:         | kazakhstan | kenya | korea | south[\p{Zs}\t]+korea | north[\p{Zs}\t]+korea
+ 252:         | kosovo | kuwait | kyrgyzstan | laos | latvia | lebanon | lesotho
+ 253:         | liberia | libya | liechtenstein | lithuania | luxembourg | madagascar
+ 254:         | malawi | malaysia | maldives | mali | malta | mauritania | mauritius
+ 255:         | mexico | moldova | monaco | mongolia | montenegro | morocco | mozambique
+ 256:         | myanmar | namibia | nepal | netherlands | new[\p{Zs}\t]+zealand
+ 257:         | nicaragua | niger | nigeria | norway | oman | pakistan | palestine
+ 258:         | panama | papua[\p{Zs}\t]+new[\p{Zs}\t]+guinea | paraguay | peru
+ 259:         | philippines | poland | portugal | qatar | romania | russia
+ 260:         | russian[\p{Zs}\t]+federation | rwanda | saudi[\p{Zs}\t]+arabia | senegal
+ 261:         | serbia | sierra[\p{Zs}\t]+leone | singapore | slovakia | slovenia
+ 262:         | somalia | south[\p{Zs}\t]+africa | south[\p{Zs}\t]+sudan | spain
+ 263:         | sri[\p{Zs}\t]+lanka | sudan | suriname | sweden | switzerland | syria
+ 264:         | taiwan | tajikistan | tanzania | thailand | togo | trinidad | tobago
+ 265:         | tunisia | turkey | türkiye | turkmenistan | uganda | ukraine
+ 266:         | united[\p{Zs}\t]+arab[\p{Zs}\t]+emirates | uae | uruguay | uzbekistan
+ 267:         | venezuela | vietnam | yemen | zambia | zimbabwe
+ 268:         | new[\p{Zs}\t]+york[\p{Zs}\t]+city | los[\p{Zs}\t]+angeles | chicago
+ 269:         | houston | philadelphia | san[\p{Zs}\t]+antonio | san[\p{Zs}\t]+diego
+ 270:         | dallas | san[\p{Zs}\t]+jose | austin | jacksonville
+ 271:         | san[\p{Zs}\t]+francisco | indianapolis | seattle | denver | boston
+ 272:         | detroit | nashville | memphis | baltimore | milwaukee | albuquerque
+ 273:         | tucson | fresno | sacramento | atlanta | miami | oakland | minneapolis
+ 274:         | cleveland | new[\p{Zs}\t]+orleans | pittsburgh | st\.?[\p{Zs}\t]+louis
+ 275:         | cincinnati | tampa | honolulu | las[\p{Zs}\t]+vegas
+ 276:         | salt[\p{Zs}\t]+lake[\p{Zs}\t]+city | kansas[\p{Zs}\t]+city | newark
+ 277:         | omaha | raleigh | charlotte | london | manchester | birmingham | leeds
+ 278:         | liverpool | bristol | sheffield | newcastle | nottingham | leicester
+ 279:         | cardiff | edinburgh | glasgow | belfast | southampton | coventry | paris
+ 280:         | berlin | moscow | tokyo | beijing | toronto | sydney | dublin | brussels
+ 281:         | geneva
+ 282:     ) (?:[\s\p{P}]+|$) )+ $''',
+ 283:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?:state|states|commonwealth|city|town|village|borough|county|township|parish|republic|kingdom|province|territory|municipality|district)[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[^\s\p{P}]+(?:[\p{Zs}\t]+[^\s\p{P}]+){0,2}[\s\p{P}]*$',
+ 284:     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
+ 285: ]
+ 286: 
+ 287: # A place's name after "City of", "Town of" and the like belongs to it, so
+ 288: # the place goes whole: the model's "Brindle" in "Town of Brindle", as an
+ 289: # organization (issue #478).
+ 290: [[span]]
+ 291: category = "ORG"
+ 292: extend = [
+ 293:     '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+ 294: ]
+ 295: 
+ 296: # The same for a person: "Town of Plymouth" names no one (issue #478).
+ 297: [[span]]
+ 298: category = "PERSON"
+ 299: extend = [
+ 300:     '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+ 301: ]
+ 302: 
+ 303: # A place after "State of", "Town of" and the like is no person
+ 304: # (issue #478).
+ 305: [[shape]]
+ 306: category = "PERSON"
+ 307: body = [
+ 308:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
+ 309: ]
+ 310: 
+ 311: # English legal forms mark a manual selection as an organization
+ 312: # ("Acme Ltd.").
+ 313: [[shape]]
+ 314: category = "ORG"
+ 315: guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+ 316: 
+ 317: # An English name of an organization is in title case or carries a legal
+ 318: # form; words in sentence case are a document kind, a heading or a team
+ 319: # ("Distribution register", "Lasting power of attorney", "Accounts team").
+ 320: [[shape]]
+ 321: category = "ORG"
+ 322: forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
+ 323: 
+ 324: # Dates with an English month name: "12 March 2026" (a Russian "г." after
+ 325: # the year still counts) and "March 12, 2026".
+ 326: [[shape]]
+ 327: category = "DATE"
+ 328: guess = [
+ 329:     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+ 330:     '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
+ 331: ]
+ 332: 
+ 333: # Claim and case numbers after their label (ADR 0092): "Claim No.
+ 334: # 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
+ 335: # "Claim No CL-2026-000123". The value is the whole identifier. Statute,
+
+ succeeded in 475ms:
+# Annotation guide
+
+What a recognition fixture marks, and where each span starts and ends
+([ADR 0092](../../../docs/adr/0092-recognition-correction-pipeline.md),
+[ADR 0093](../../../docs/adr/0093-flaw-hunt-loop.md)). Gold is
+`⟦CATEGORY|text⟧`; anything unmarked must not be proposed. The rules are
+the maintainer's: agents add examples, never change a rule (a change is a
+`decision` issue).
+
+## Rules
+
+1. **Person** (`PERSON`): a name, or any part or form of one, of a real or
+   fictional individual. Each mention is its own span: "Павловой",
+   "Ms Bennett's" (span "Bennett"), "М. С.", "Мариша". A title, role or
+   determiner is never inside the span ("Ms ⟦PERSON|Bennett⟧", "the
+   Employer", "Заказчик") and never a span on its own.
+2. **Organization** (`ORG`): a named company, firm or private body, with
+   its legal form ("⟦ORG|Northbridge Legal Ltd⟧", "⟦ORG|ООО «Север»⟧").
+   Courts, tribunals, ministries and other public bodies are not spans
+   (a user adds one to Always). Defined terms ("the Company", "Общество")
+   are not spans.
+3. **Address** (`ADDRESS`): a street address, from its first element (flat,
+   house, street or index) to its postcode or city, whichever ends it:
+   "⟦ADDRESS|Flat 3, 41 Larch Road, Bristol BS6 9ZY⟧",
+   "⟦ADDRESS|197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3⟧".
+   A city or country alone is not an address.
+4. **Date** (`DATE`): only a date in a personal context: next to born, DOB,
+   date of birth, дата рождения, д.р., род. The label is outside the span
+   ("born ⟦DATE|14 March 1988⟧"). Every other date stays unmarked:
+   signing, deadlines, hearings, statutes.
+5. **Case number** (`CASE`): a claim or case number after a label (Claim No, Case
+   No, Дело №, номер дела); the label is outside the span ("Claim No
+   ⟦CASE|6001842/2026⟧"). Statute, article, section and contract-clause
+   numbers stay unmarked.
+6. **Identifiers** (`EMAIL`, `PHONE`, `IDENTITY`, `TAX`, `BANK`): the value
+   only, without its label; an invalid or OCR-damaged value is still
+   marked.
+7. **Hidden source** (link targets, image alt text, HTML) is marked like
+   visible text.
+8. **Never marked:** amounts, percentages, legal references, defined terms,
+   roles, titles, job titles, generic category words ("email", "телефон"),
+   laws, courts and public bodies.
+
+## Fixtures
+
+Imported corpora are re-marked by these rules: the settlement demo's date
+of birth and claim number become gold, so they start as `known-flaw`.
+
+- Synthetic only: invented people, organisations and identifiers; email
+  and URL domains under `.invalid`; no copied real document text. CC0-1.0.
+- Front matter: `status` (`pass`, `known-flaw`, `model-limit`), `flaw`
+  (class), `issue`, `kind` (contract, claim, judgment, power-of-attorney,
+  letter, ocr, docx, tables), `source` (`hunt-rN`, `probe-rN` for a probe
+  round's synthetic reproduction, `import`, `demo`), and for `model-limit`
+  a `reason`.
+- A negative fixture marks nothing; its job is precision.
+
+## Examples
+
+Agents add examples here, one line each, when a curator rejects or settles
+a boundary case.
+
+- An address with no postcode or city ends at its last element: "Адрес получателя: ⟦ADDRESS|ул. Тихих фонарей, д. 83, кв. 16⟧" (hunt-ru-r1-01).
+- A Russian address that opens with its region keeps the region inside: "⟦ADDRESS|Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9⟧" (hunt-ru-r5-02).
+- "оглы" belongs to the patronymic, inside the span: "⟦PERSON|Нияз Рауф оглы Иль-Булат⟧" (hunt-ru-r1-05).
+- A name split by a line-end hyphen is one span across the break, hyphen and newline included: "⟦PERSON|Верес-\nтова Дарья Ильинична⟧" (hunt-ru-r1-04).
+- A staff or employee ID assigned to one person is `IDENTITY`, letters only too: "Staff ID: ⟦IDENTITY|VELK-QUEN⟧" (hunt-en-r3-04).
+- A surname-first name is one span, comma included: "⟦PERSON|VALECROFT, Jorin P.⟧" (hunt-en-r3-04), "⟦PERSON|Маркович, Савелий Игоревич⟧" (hunt-ru-r3-04).
+- A generational suffix belongs to the name, inside the span: "⟦PERSON|Kaelen Renn III⟧" (hunt-en-r3-08).
+- Post-nominal letters (KC, QC, LLB) are outside the span, like a title: "⟦PERSON|Gavira Vennick⟧ KC" (hunt-en-r8-01).
+- A surname's lower-case particle is inside the span: "⟦PERSON|Генриетта Яновна де Лаваль⟧", "на фамилию ⟦PERSON|де Лаваль⟧" (hunt-ru-r2-01).
+- A lower-case legal form opens the ORG span like «ООО»: "⟦ORG|адвокатское бюро «Валерия Конц»⟧" (hunt-ru-r6-05).
+- Name parts in separate table columns are each their own span: "| ⟦PERSON|Кий⟧ | ⟦PERSON|Ева⟧ | ⟦PERSON|Оскаровна⟧ |" (hunt-ru-r2-09).
+- Name parts in a passport's machine-readable zone are each a PERSON span, without the filler «<»: "P<RUS⟦PERSON|KRENC⟧<<⟦PERSON|LIDIIA⟧<⟦PERSON|ARSENEVNA⟧<<<" (hunt-ru-r7-05).
+- An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
+- A phone extension belongs to the number, inside the span: "⟦PHONE|+1 (202) 555-0164 x207⟧" (hunt-en-r5-07).
+- The title of a work is not a span, even when it reads like a name: «Кедровый свет» (hunt-ru-r3-07).
+- An invisible character inside a name or value (soft hyphen, zero-width space, combining mark) stays inside the span (hunt-ru-r3-05, hunt-ru-r3-08, hunt-ru-r3-11).
+- A writ's series and number is a court document reference and stays unmarked: «Серия и номер исполнительного листа: ФС 086731924» (hunt-ru-r4-12).
+- A notary is a person, not a public body: «Нотариус: ⟦PERSON|Лидия Игоревна Брюн⟧» (hunt-ru-r4-01).
+# Recognition correction pipeline
+
+Status: Accepted, 2026-11-01; amended 2026-11-02 (#383). Amends
+[ADR 0002](0002-reviewable-local-pseudonymization.md) (ordinary dates stay),
+[ADR 0068](0068-short-and-inflected-name-variants.md) (proposed, never
+linked; first names) and [ADR 0080](0080-merge-hint.md) (initials).
+How flaws are found and fixed: [ADR 0093](0093-flaw-hunt-loop.md).
+
+## Problem
+
+The pinned GLiNER2 model misses what no threshold recovers: neither demo's
+home address at any score, no date-of-birth label, a claim number only as a
+garbled 0.14 address span, "Марина" alone at 0.29 (#301). The corrections
+mdoc has are hardcoded lists in `mdoc-detect` (`TITLES_AND_ROLES`,
+`DETERMINERS`, `RU_ROLE_STEMS`, `LEGAL_FORMS`), and a short form of a name
+gets an alias of its own: the Russian demo gives one person six (U27).
+Fine-tuning needs training data, a new pinned export and requalification.
+
+## Decision
+
+- **A correction pipeline after the model, in layers.** At scan time in
+  `mdoc-detect`: model → `never` and `shape` filters → `context` rules →
+  structured identifiers (email, INN, SNILS, OGRN) → `span` fixes → the
+  user's lists. After a decision, in `mdoc-pii`: propagation. Each
+  detection keeps its recognizer (`Model`, a rule, `Propagation`,
+  `UserList`). The pipeline targets devices that run the model; the
+  no-model path (`scan_rules`) is not a target.
+- **The rule pack is data compiled in.** TOML in
+  `crates/mdoc-detect/rules/{shared,en,ru}.toml`, read with `include_str!`
+  and validated by a unit test, each entry commented. Sections:
+  - `never`: titles, roles, determiners, category words, defined terms;
+    never a name on their own.
+  - `context`: a label proposes a category for the value beside it.
+  - `shape`: what a span of each category must look like (today's
+    `identifying`).
+  - `span`: boundary fixes (trim a title, extend an address to its
+    postcode).
+  - `variants`: nicknames for given names (Марина → Мариша; Elizabeth →
+    Liz), used only for names already in the document.
+
+  `guess_category`'s legal forms and date and name shapes move in, so
+  manual marks and the model share one source.
+- **Dates only in a personal context.** A date next to born, DOB, date of
+  birth, дата рождения, д.р., род. is proposed as Date; other dates stay.
+  No date shifting.
+- **Case number: a new category** (`Category::CaseNumber`, token `CASE`,
+  aliases `CASE_1`; named so it never reads as a saved case). Claim and
+  case numbers in a labelled context only (Claim No, Case No, Дело №,
+  номер дела), so statute and article numbers stay. It restores like any alias.
+- **Addresses: anchor and extend.** Anchors: a postcode shape (UK, US ZIP,
+  RU six-digit index) or a street-type word with a house number (Road,
+  Street, Flat; ул., проспект, переулок, д., кв., офис). The span extends
+  to the clause or line boundary.
+- **Settings and the popup.** Settings › Detection › Categories to detect
+  gains "Dates of birth" and "Case numbers", both on by default; the
+  popup's category menu has Date and Case number; Case number takes the
+  next category colour.
+- **Propagation proposes, linked when the candidate is unique.** When a
+  full name is proposed, applied or marked, its forms elsewhere in the document
+  (surname alone, first name alone, first name + patronymic, surname with
+  initials, ADR 0068's inflections, the same for first names, `variants`
+  nicknames) become proposals with recognizer `Propagation`. A form with
+  exactly one candidate full name joins that identity as a proposal, before
+  any Apply; nothing is replaced until the user applies it, and a linked form
+  restores to the identity's primary wording. A form with two or more
+  candidates keeps ADR 0068's own identity and ADR 0080's hint. The popup
+  can unlink one mention. A form that is also a common word ("Rose",
+  "Мира") is proposed only capitalised mid-sentence.
+- **Link signals (U27)**, unique candidate only: first name + patronymic;
+  surname with every initial matching. An initial that matches a different
+  given name breaks the link.
+- **The user's lists.** Keep on an identity adds its wordings to the
+  case's Never list (undoing the Keep removes them); a manual mark adds
+  its wording to Always. Matching is whole-word, ignoring case and
+  whitespace; a person's Always entry also yields propagation's forms. The
+  case page shows both lists (remove only); Settings › Detection has
+  user-wide Always and Never lists (add, remove). A document outside a
+  case uses the user-wide lists only; in a case, the case's lists win over
+  the user-wide ones. A wording is on one list at a time: the later
+  addition moves it. A Keep lists an identity's wordings once none of its
+  mentions is still proposed or replaced. Both live in the
+  keychain-protected store, since they can hold client names.
+- **Preprocessing is pipeline code**: windowing, table cells read as
+  sentences, OCR hyphen joins, HTML entities decoded before detection and
+  readiness (`Ann&#97; Petrova`). The threshold and the model stay as
+  pinned.
+
+## Consequences
+
+- ADR 0002's "ordinary dates stay" holds for every date outside a personal
+  context; the detector's never-Date rule ends.
+- ADR 0068's short forms join their name when the candidate is unique, so
+  the AI sees one person; relatives sharing a surname are as safe as
+  before. ADR 0068's "a first name alone is never proposed" and ADR 0080's
+  "not signals: initials" are replaced as above.
+- Rules can add false hits; the negative fixtures of ADR 0093 hold
+  precision.
+- A miss no layer can fix stays a known model limit, listed for the
+  maintainer.
+
+References: [grill](../design/recognition-grill-2026-11-01.md),
+[roadmap grill](../design/roadmap-grill-2026-11-01.md), #301.
+diff --git a/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md
+new file mode 100644
+index 00000000..a5749cae
+--- /dev/null
++++ b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md
+@@ -0,0 +1,16 @@
++---
++status: pass
++flaw: public-body-org place-as-org
++issue: 378 478
++kind: judgment
++source: probe-r1
++---
++# Opinion and order on the motion to dismiss
++
++The Ashmoor County Probation Department, HMRC, the Federal Election Commission and the 9th Cir. applied the Gaming Act 2031 to ⟦ORG|Quillon Freight LLC⟧.
++
++The State of Ashmoria, the United States and the Town of Brindle (Illinois) sued; Federal, State, and local taxes apply to ⟦ORG|Quillon Freight LLC⟧ of Boston.
++
++The claimants also rely on the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), and on the First Amendment. The Department of Justice filed a statement of interest. BIPA does not reach ⟦ORG|Georgia-Quillon Paper LLC⟧, a citizen of Massachusetts, which the Town of Plymouth also named.
++
++The motion is granted in part.
+diff --git a/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json
+new file mode 100644
+index 00000000..3a2153c7
+--- /dev/null
++++ b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json
+@@ -0,0 +1,28 @@
++{
++  "model": "gliner2-pii-fp16-e5948986",
++  "threshold": 0.5,
++  "entities": [
++    {"start":50,"end":85,"label":"organization","score":0.91,"text":"Ashmoor County Probation Department"},
++    {"start":87,"end":91,"label":"person","score":0.62,"text":"HMRC"},
++    {"start":97,"end":124,"label":"organization","score":0.94,"text":"Federal Election Commission"},
++    {"start":133,"end":140,"label":"organization","score":0.71,"text":"9th Cir"},
++    {"start":154,"end":169,"label":"person","score":0.55,"text":"Gaming Act 2031"},
++    {"start":173,"end":192,"label":"organization","score":0.97,"text":"Quillon Freight LLC"},
++    {"start":199,"end":216,"label":"organization","score":0.83,"text":"State of Ashmoria"},
++    {"start":222,"end":235,"label":"organization","score":0.78,"text":"United States"},
++    {"start":252,"end":259,"label":"organization","score":0.66,"text":"Brindle"},
++    {"start":261,"end":269,"label":"organization","score":0.74,"text":"Illinois"},
++    {"start":277,"end":284,"label":"organization","score":0.58,"text":"Federal"},
++    {"start":286,"end":291,"label":"organization","score":0.56,"text":"State"},
++    {"start":318,"end":337,"label":"organization","score":0.96,"text":"Quillon Freight LLC"},
++    {"start":341,"end":347,"label":"organization","score":0.69,"text":"Boston"},
++    {"start":381,"end":414,"label":"organization","score":0.81,"text":"Biometric Information Privacy Act"},
++    {"start":434,"end":438,"label":"organization","score":0.77,"text":"BIPA"},
++    {"start":455,"end":470,"label":"organization","score":0.63,"text":"First Amendment"},
++    {"start":476,"end":497,"label":"organization","score":0.93,"text":"Department of Justice"},
++    {"start":529,"end":533,"label":"organization","score":0.72,"text":"BIPA"},
++    {"start":549,"end":574,"label":"organization","score":0.96,"text":"Georgia-Quillon Paper LLC"},
++    {"start":589,"end":602,"label":"organization","score":0.71,"text":"Massachusetts"},
++    {"start":622,"end":630,"label":"person","score":0.57,"text":"Plymouth"}
++  ]
++}
+
+ succeeded in 620ms:
+552:pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
+561:                .identifying_at(source, entity.start..entity.end, text, category)
+570:    rules::pack().fix_spans(source, &view, &mut detections);
+1058:    fn correction_reads_character_references_decoded() {
+1084:    fn correction_keeps_companies_and_drops_public_bodies_and_places() {
+1125:    fn correction_drops_english_public_bodies_and_places_and_keeps_companies() {
+            .peekable();
+        words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// Whether an organization `span` fix grows the span at `range` of
+    /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
+    /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
+    /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
+    /// one line, so only the span's lines are searched.
+    fn grows_to_company(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        category: Category,
+    ) -> bool {
+        if category != Category::Organization {
+            return false;
+        }
+        let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        let end = source[range.end..]
+            .find('\n')
+            .map_or(source.len(), |at| range.end + at);
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == category => Some(fix),
+                _ => None,
+            })
+            .flat_map(|fix| &fix.extend)
+            .flat_map(|pattern| pattern.find_iter(&source[start..end]))
+            .any(|found| {
+                let found_range = start + found.start()..start + found.end();
+                found_range.start <= range.start
+                    && range.end <= found_range.end
+                    && found_range.len() > range.len()
+            })
+    }
+
+    /// Whole spans the `span` patterns find in `source`: an address from
+    /// its first element to its postcode or city (ADR 0092).
+    pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Fix(_) => None,
+            })
+            .flat_map(|(category, pattern)| {
+                span_ranges(pattern, source)
+                    .into_iter()
+                    // A match before a colon ends in a field's label ("12
+                    // Oak Road, Email: …"), not the address's last part.
+                    .filter(|range| {
+                        !source[range.end..]
+                            .trim_start_matches([' ', '\t'])
+                            .starts_with(':')
+                    })
+                    .map(move |range| Detection {
+                        range,
+                        category,
+                        score: CONTEXT_SCORE,
+                        recognizer: Recognizer::Span,
+                    })
+            })
+            .collect()
+    }
+
+    /// The first category, in pack order, whose guesses take a manual
+    /// selection.
+    pub(crate) fn guess(&self, text: &str) -> Option<Category> {
+        self.shapes
+            .iter()
+            .find(|shape| {
+                shape.guess.iter().any(|pattern| pattern.is_match(text))
+                    || (!shape.guess_words.is_empty()
+                        && text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+                            shape
+                                .guess_words
+                                .iter()
+                                .any(|listed| listed.eq_ignore_ascii_case(word))
+                        }))
+            })
+            .map(|shape| shape.category)
+    }
+}
+
+/// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
+/// "ГКУ «Дирекция района»" is "ГКУ ". An unclosed quote stays as it is.
+fn unquoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(['«', '"', '“']) {
+        let quote = rest[open..].chars().next().expect("found");
+        let after = &rest[open + quote.len_utf8()..];
+        let close = match quote {
+            '«' => {
+                let mut depth = 1;
+                after.char_indices().find_map(|(at, c)| {
+                    match c {
+                        '«' => depth += 1,
+                        '»' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(at)
+                })
+            }
+            '"' => after.find('"'),
+            _ => after.find('”'),
+        };
+        out.push_str(&rest[..open]);
+        match close {
+            Some(at) => {
+                out.push(' ');
+                let closing = after[at..].chars().next().expect("found");
+                rest = &after[at + closing.len_utf8()..];
+            }
+            None => {
+                out.push(quote);
+                rest = after;
+            }
+
+# Context rules are per language.
+context = []
+
+# Span patterns and fixes are per language.
+span = []
+
+# Nicknames, as [[variants]] with `name` and its `forms`. None yet.
+variants = []
+
+# No language-free never words.
+never = []
+
+# Dates: 12.03.2026 (optionally "г."), 2026-03-12, and blank forms to fill
+# in by hand (`«__» ____ 2026 г.`, underscores possibly escaped as `\_`).
+# Surrounding spaces are ignored. A year or a month alone is not a date.
+[[shape]]
+category = "DATE"
+guess = [
+    '(?i)\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\s*г\.?)?\s*',
+    '\s*\d{4}-\d{2}-\d{2}\s*',
+    '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:\\?_)+\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+]
+
+# Phones: a model span needs a digit; a manual selection of at least seven
+# digits with only spaces, `+`, brackets and dashes between is a phone. No
+# phone number has 16 digits in a row (E.164 allows 15), and a bare nine-digit
+# number starting 04 is a Russian bank code (БИК), not a phone.
+[[shape]]
+category = "PHONE"
+require = ['\p{N}']
+forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
+guess = ['[ +()\-\x{a0}]*(?:[0-9][ +()\-\x{a0}]*){7,}']
+
+# Organizations: a capital or digit, and a word that is not a never word
+# ("the Employer" is not one). Continental legal forms mark one. A bare site
+# domain is no organization ("NALOG.GOV.RU", "example.invalid", "сайт.рф";
+# issue #488): two letters or more before a common zone, so "E.ON" and
+# "Alfa.Bank" stay.
+[[shape]]
+category = "ORG"
+require = ['[\p{Uppercase}\p{N}]']
+forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
+word = '.'
+guess_words = ["GmbH", "AG", "SA", "BV"]
+
+# People: a capitalized word that is not a never word ("Ms Bennett", not
+# "Ms" or "husband"). A manual selection of 1–4 capitalized words is a
+# person; hyphenated surnames, apostrophes and initials ("М.С.", "J.R.")
+# count.
+[[shape]]
+category = "PERSON"
+word = '^\p{Uppercase}'
+guess = [
+    '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
+]
+
+# A name wrapped exactly in «» after a common noun for a work or a product
+# is a title ("повести «Кедровый свет»"), not a person. A name quoted
+# elsewhere stays a person ("назван «Иван Петров»", "по прозвищу «…»",
+# "Роман «Сокол»"), and so does one after a company's legal form, which the
+# ORG span holds ("ООО «Вера Снегирь»"): never dropped, at worst the wrong
+# category.
+[[shape]]
+category = "PERSON"
+forbid_quotes = ["«»"]
+quotes_after = [
+    "повест", "роман", "рассказ", "новелл", "книг", "рукопис", "сборник",
+    "стих", "поэм", "пьес", "сценари", "журнал", "газет", "издани", "стать",
+    "фильм", "сериал", "мультфильм", "песн", "альбом", "спектакл",
+    "постановк", "картин", "произведени", "проект", "программ", "сайт",
+    "приложени", "бренд", "марк", "знак", "игра", "игры", "игре", "игру",
+    "шоу", "передач", "выставк", "фестивал", "конкурс",
+]
+
+# Emails need an `@` and a dotted domain; the model also tags the word
+# "email", bare domains and "not-a-mail@localhost".
+[[shape]]
+category = "EMAIL"
+require = ['@[^@\s]+\.\p{Alphabetic}{2,}']
+
+# Addresses need a capital or a digit, and a word that is not a never word:
+# "addresses" or "Address" alone is not one. They also need a house or
+# postcode number, a street word, abbreviated or not ("пер. Кленовый",
+# "Cedar Court"), or a comma or line break between parts ("The Old
+# Rectory, Nether Compton"): a city alone ("Cardiff", "Москва") is not an address (issue
+# #386).
+[[shape]]
+category = "ADDRESS"
+require = [
+    '[\p{Uppercase}\p{N}]',
+    '\p{N}|,|\n|(?i:\b(?:ул|улица|пр-т|пр|проспект|пер|переулок|наб|набережная|б-р|бульвар|пл|площадь|ш|шоссе|проезд|тупик|аллея|линия|тракт|просека|мкр|микрорайон|квартал|road|street|lane|ln|avenue|boulevard|blvd|mews|close|court|drive|dr|way|place|square|crescent|gardens|terrace|yard|row|hill|grove|walk|parade|rd|st|ave)\b)',
+]
+word = '.'
+
+# Identity documents need a digit; "passport" alone is not one.
+[[shape]]
+category = "IDENTITY"
+require = ['\p{N}']
+
+
+web search: site.cj.com Commission Junction company ...
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 docs/adr/0092-recognition-correction-pipeline.md | Select-Object -First 150; Get-Content -Encoding utf8 crates/mdoc-detect/rules/en.toml | Select-Object -Skip 280 -First 55' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 tests/fixtures/recognition/GUIDE.md | Select-Object -First 145' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 crates/mdoc-detect/src/lib.rs | Select-Object -Skip 505 -First 100; Get-Content -Encoding utf8 crates/mdoc-detect/src/rules.rs | Select-Object -Skip 1065 -First 115' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "git diff origin/main...HEAD -- tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json; rg -n 'category = \"PERSON\"|category = \"ORG\"|guess_words|require =|word =|forbid =' crates/mdoc-detect/rules/shared.toml" in E:\t3\worktrees\mdoc\windows-lane-4
+ succeeded in 221ms:
+diff --git a/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md
+new file mode 100644
+index 00000000..a5749cae
+--- /dev/null
++++ b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.md
+@@ -0,0 +1,16 @@
++---
++status: pass
++flaw: public-body-org place-as-org
++issue: 378 478
++kind: judgment
++source: probe-r1
++---
++# Opinion and order on the motion to dismiss
++
++The Ashmoor County Probation Department, HMRC, the Federal Election Commission and the 9th Cir. applied the Gaming Act 2031 to ⟦ORG|Quillon Freight LLC⟧.
++
++The State of Ashmoria, the United States and the Town of Brindle (Illinois) sued; Federal, State, and local taxes apply to ⟦ORG|Quillon Freight LLC⟧ of Boston.
++
++The claimants also rely on the Biometric Information Privacy Act, 740 ILCS 14/1 (“BIPA”), and on the First Amendment. The Department of Justice filed a statement of interest. BIPA does not reach ⟦ORG|Georgia-Quillon Paper LLC⟧, a citizen of Massachusetts, which the Town of Plymouth also named.
++
++The motion is granted in part.
+diff --git a/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json
+new file mode 100644
+index 00000000..3a2153c7
+--- /dev/null
++++ b/tests/fixtures/recognition/en/judgment/probe-en-r1-public-bodies.model.json
+@@ -0,0 +1,28 @@
++{
++  "model": "gliner2-pii-fp16-e5948986",
++  "threshold": 0.5,
++  "entities": [
++    {"start":50,"end":85,"label":"organization","score":0.91,"text":"Ashmoor County Probation Department"},
++    {"start":87,"end":91,"label":"person","score":0.62,"text":"HMRC"},
++    {"start":97,"end":124,"label":"organization","score":0.94,"text":"Federal Election Commission"},
++    {"start":133,"end":140,"label":"organization","score":0.71,"text":"9th Cir"},
++    {"start":154,"end":169,"label":"person","score":0.55,"text":"Gaming Act 2031"},
++    {"start":173,"end":192,"label":"organization","score":0.97,"text":"Quillon Freight LLC"},
++    {"start":199,"end":216,"label":"organization","score":0.83,"text":"State of Ashmoria"},
++    {"start":222,"end":235,"label":"organization","score":0.78,"text":"United States"},
++    {"start":252,"end":259,"label":"organization","score":0.66,"text":"Brindle"},
++    {"start":261,"end":269,"label":"organization","score":0.74,"text":"Illinois"},
++    {"start":277,"end":284,"label":"organization","score":0.58,"text":"Federal"},
++    {"start":286,"end":291,"label":"organization","score":0.56,"text":"State"},
++    {"start":318,"end":337,"label":"organization","score":0.96,"text":"Quillon Freight LLC"},
++    {"start":341,"end":347,"label":"organization","score":0.69,"text":"Boston"},
++    {"start":381,"end":414,"label":"organization","score":0.81,"text":"Biometric Information Privacy Act"},
++    {"start":434,"end":438,"label":"organization","score":0.77,"text":"BIPA"},
++    {"start":455,"end":470,"label":"organization","score":0.63,"text":"First Amendment"},
++    {"start":476,"end":497,"label":"organization","score":0.93,"text":"Department of Justice"},
++    {"start":529,"end":533,"label":"organization","score":0.72,"text":"BIPA"},
++    {"start":549,"end":574,"label":"organization","score":0.96,"text":"Georgia-Quillon Paper LLC"},
++    {"start":589,"end":602,"label":"organization","score":0.71,"text":"Massachusetts"},
++    {"start":622,"end":630,"label":"person","score":0.57,"text":"Plymouth"}
++  ]
++}
+64:#   require = [regex…]  a model span must match each one somewhere
+71:#   guess_words = […]   a manual selection with one of these words (ASCII
+121:require = ['\p{N}']
+122:forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
+132:require = ['[\p{Uppercase}\p{N}]']
+133:forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
+134:word = '.'
+135:guess_words = ["GmbH", "AG", "SA", "BV"]
+143:word = '^\p{Uppercase}'
+170:require = ['@[^@\s]+\.\p{Alphabetic}{2,}']
+180:require = [
+184:word = '.'
+189:require = ['\p{N}']
+196:require = ['\p{N}']
+197:forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
+206:require = ['\p{N}']
+207:forbid = ['/', '^\s*\d{10,11}\s*$']
+
+ succeeded in 638ms:
+# Annotation guide
+
+What a recognition fixture marks, and where each span starts and ends
+([ADR 0092](../../../docs/adr/0092-recognition-correction-pipeline.md),
+[ADR 0093](../../../docs/adr/0093-flaw-hunt-loop.md)). Gold is
+`⟦CATEGORY|text⟧`; anything unmarked must not be proposed. The rules are
+the maintainer's: agents add examples, never change a rule (a change is a
+`decision` issue).
+
+## Rules
+
+1. **Person** (`PERSON`): a name, or any part or form of one, of a real or
+   fictional individual. Each mention is its own span: "Павловой",
+   "Ms Bennett's" (span "Bennett"), "М. С.", "Мариша". A title, role or
+   determiner is never inside the span ("Ms ⟦PERSON|Bennett⟧", "the
+   Employer", "Заказчик") and never a span on its own.
+2. **Organization** (`ORG`): a named company, firm or private body, with
+   its legal form ("⟦ORG|Northbridge Legal Ltd⟧", "⟦ORG|ООО «Север»⟧").
+   Courts, tribunals, ministries and other public bodies are not spans
+   (a user adds one to Always). Defined terms ("the Company", "Общество")
+   are not spans.
+3. **Address** (`ADDRESS`): a street address, from its first element (flat,
+   house, street or index) to its postcode or city, whichever ends it:
+   "⟦ADDRESS|Flat 3, 41 Larch Road, Bristol BS6 9ZY⟧",
+   "⟦ADDRESS|197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3⟧".
+   A city or country alone is not an address.
+4. **Date** (`DATE`): only a date in a personal context: next to born, DOB,
+   date of birth, дата рождения, д.р., род. The label is outside the span
+   ("born ⟦DATE|14 March 1988⟧"). Every other date stays unmarked:
+   signing, deadlines, hearings, statutes.
+5. **Case number** (`CASE`): a claim or case number after a label (Claim No, Case
+   No, Дело №, номер дела); the label is outside the span ("Claim No
+   ⟦CASE|6001842/2026⟧"). Statute, article, section and contract-clause
+   numbers stay unmarked.
+6. **Identifiers** (`EMAIL`, `PHONE`, `IDENTITY`, `TAX`, `BANK`): the value
+   only, without its label; an invalid or OCR-damaged value is still
+   marked.
+7. **Hidden source** (link targets, image alt text, HTML) is marked like
+   visible text.
+8. **Never marked:** amounts, percentages, legal references, defined terms,
+   roles, titles, job titles, generic category words ("email", "телефон"),
+   laws, courts and public bodies.
+
+## Fixtures
+
+Imported corpora are re-marked by these rules: the settlement demo's date
+of birth and claim number become gold, so they start as `known-flaw`.
+
+- Synthetic only: invented people, organisations and identifiers; email
+  and URL domains under `.invalid`; no copied real document text. CC0-1.0.
+- Front matter: `status` (`pass`, `known-flaw`, `model-limit`), `flaw`
+  (class), `issue`, `kind` (contract, claim, judgment, power-of-attorney,
+  letter, ocr, docx, tables), `source` (`hunt-rN`, `probe-rN` for a probe
+  round's synthetic reproduction, `import`, `demo`), and for `model-limit`
+  a `reason`.
+- A negative fixture marks nothing; its job is precision.
+
+## Examples
+
+Agents add examples here, one line each, when a curator rejects or settles
+a boundary case.
+
+- An address with no postcode or city ends at its last element: "Адрес получателя: ⟦ADDRESS|ул. Тихих фонарей, д. 83, кв. 16⟧" (hunt-ru-r1-01).
+- A Russian address that opens with its region keeps the region inside: "⟦ADDRESS|Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9⟧" (hunt-ru-r5-02).
+- "оглы" belongs to the patronymic, inside the span: "⟦PERSON|Нияз Рауф оглы Иль-Булат⟧" (hunt-ru-r1-05).
+- A name split by a line-end hyphen is one span across the break, hyphen and newline included: "⟦PERSON|Верес-\nтова Дарья Ильинична⟧" (hunt-ru-r1-04).
+- A staff or employee ID assigned to one person is `IDENTITY`, letters only too: "Staff ID: ⟦IDENTITY|VELK-QUEN⟧" (hunt-en-r3-04).
+- A surname-first name is one span, comma included: "⟦PERSON|VALECROFT, Jorin P.⟧" (hunt-en-r3-04), "⟦PERSON|Маркович, Савелий Игоревич⟧" (hunt-ru-r3-04).
+- A generational suffix belongs to the name, inside the span: "⟦PERSON|Kaelen Renn III⟧" (hunt-en-r3-08).
+- Post-nominal letters (KC, QC, LLB) are outside the span, like a title: "⟦PERSON|Gavira Vennick⟧ KC" (hunt-en-r8-01).
+- A surname's lower-case particle is inside the span: "⟦PERSON|Генриетта Яновна де Лаваль⟧", "на фамилию ⟦PERSON|де Лаваль⟧" (hunt-ru-r2-01).
+- A lower-case legal form opens the ORG span like «ООО»: "⟦ORG|адвокатское бюро «Валерия Конц»⟧" (hunt-ru-r6-05).
+- Name parts in separate table columns are each their own span: "| ⟦PERSON|Кий⟧ | ⟦PERSON|Ева⟧ | ⟦PERSON|Оскаровна⟧ |" (hunt-ru-r2-09).
+- Name parts in a passport's machine-readable zone are each a PERSON span, without the filler «<»: "P<RUS⟦PERSON|KRENC⟧<<⟦PERSON|LIDIIA⟧<⟦PERSON|ARSENEVNA⟧<<<" (hunt-ru-r7-05).
+- An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
+- A phone extension belongs to the number, inside the span: "⟦PHONE|+1 (202) 555-0164 x207⟧" (hunt-en-r5-07).
+- The title of a work is not a span, even when it reads like a name: «Кедровый свет» (hunt-ru-r3-07).
+- An invisible character inside a name or value (soft hyphen, zero-width space, combining mark) stays inside the span (hunt-ru-r3-05, hunt-ru-r3-08, hunt-ru-r3-11).
+- A writ's series and number is a court document reference and stays unmarked: «Серия и номер исполнительного листа: ФС 086731924» (hunt-ru-r4-12).
+- A notary is a person, not a public body: «Нотариус: ⟦PERSON|Лидия Игоревна Брюн⟧» (hunt-ru-r4-01).
+
+ succeeded in 655ms:
+# Recognition correction pipeline
+
+Status: Accepted, 2026-11-01; amended 2026-11-02 (#383). Amends
+[ADR 0002](0002-reviewable-local-pseudonymization.md) (ordinary dates stay),
+[ADR 0068](0068-short-and-inflected-name-variants.md) (proposed, never
+linked; first names) and [ADR 0080](0080-merge-hint.md) (initials).
+How flaws are found and fixed: [ADR 0093](0093-flaw-hunt-loop.md).
+
+## Problem
+
+The pinned GLiNER2 model misses what no threshold recovers: neither demo's
+home address at any score, no date-of-birth label, a claim number only as a
+garbled 0.14 address span, "Марина" alone at 0.29 (#301). The corrections
+mdoc has are hardcoded lists in `mdoc-detect` (`TITLES_AND_ROLES`,
+`DETERMINERS`, `RU_ROLE_STEMS`, `LEGAL_FORMS`), and a short form of a name
+gets an alias of its own: the Russian demo gives one person six (U27).
+Fine-tuning needs training data, a new pinned export and requalification.
+
+## Decision
+
+- **A correction pipeline after the model, in layers.** At scan time in
+  `mdoc-detect`: model → `never` and `shape` filters → `context` rules →
+  structured identifiers (email, INN, SNILS, OGRN) → `span` fixes → the
+  user's lists. After a decision, in `mdoc-pii`: propagation. Each
+  detection keeps its recognizer (`Model`, a rule, `Propagation`,
+  `UserList`). The pipeline targets devices that run the model; the
+  no-model path (`scan_rules`) is not a target.
+- **The rule pack is data compiled in.** TOML in
+  `crates/mdoc-detect/rules/{shared,en,ru}.toml`, read with `include_str!`
+  and validated by a unit test, each entry commented. Sections:
+  - `never`: titles, roles, determiners, category words, defined terms;
+    never a name on their own.
+  - `context`: a label proposes a category for the value beside it.
+  - `shape`: what a span of each category must look like (today's
+    `identifying`).
+  - `span`: boundary fixes (trim a title, extend an address to its
+    postcode).
+  - `variants`: nicknames for given names (Марина → Мариша; Elizabeth →
+    Liz), used only for names already in the document.
+
+  `guess_category`'s legal forms and date and name shapes move in, so
+  manual marks and the model share one source.
+- **Dates only in a personal context.** A date next to born, DOB, date of
+  birth, дата рождения, д.р., род. is proposed as Date; other dates stay.
+  No date shifting.
+- **Case number: a new category** (`Category::CaseNumber`, token `CASE`,
+  aliases `CASE_1`; named so it never reads as a saved case). Claim and
+  case numbers in a labelled context only (Claim No, Case No, Дело №,
+  номер дела), so statute and article numbers stay. It restores like any alias.
+- **Addresses: anchor and extend.** Anchors: a postcode shape (UK, US ZIP,
+  RU six-digit index) or a street-type word with a house number (Road,
+  Street, Flat; ул., проспект, переулок, д., кв., офис). The span extends
+  to the clause or line boundary.
+- **Settings and the popup.** Settings › Detection › Categories to detect
+  gains "Dates of birth" and "Case numbers", both on by default; the
+  popup's category menu has Date and Case number; Case number takes the
+  next category colour.
+- **Propagation proposes, linked when the candidate is unique.** When a
+  full name is proposed, applied or marked, its forms elsewhere in the document
+  (surname alone, first name alone, first name + patronymic, surname with
+  initials, ADR 0068's inflections, the same for first names, `variants`
+  nicknames) become proposals with recognizer `Propagation`. A form with
+  exactly one candidate full name joins that identity as a proposal, before
+  any Apply; nothing is replaced until the user applies it, and a linked form
+  restores to the identity's primary wording. A form with two or more
+  candidates keeps ADR 0068's own identity and ADR 0080's hint. The popup
+  can unlink one mention. A form that is also a common word ("Rose",
+  "Мира") is proposed only capitalised mid-sentence.
+- **Link signals (U27)**, unique candidate only: first name + patronymic;
+  surname with every initial matching. An initial that matches a different
+  given name breaks the link.
+- **The user's lists.** Keep on an identity adds its wordings to the
+  case's Never list (undoing the Keep removes them); a manual mark adds
+  its wording to Always. Matching is whole-word, ignoring case and
+  whitespace; a person's Always entry also yields propagation's forms. The
+  case page shows both lists (remove only); Settings › Detection has
+  user-wide Always and Never lists (add, remove). A document outside a
+  case uses the user-wide lists only; in a case, the case's lists win over
+  the user-wide ones. A wording is on one list at a time: the later
+  addition moves it. A Keep lists an identity's wordings once none of its
+  mentions is still proposed or replaced. Both live in the
+  keychain-protected store, since they can hold client names.
+- **Preprocessing is pipeline code**: windowing, table cells read as
+  sentences, OCR hyphen joins, HTML entities decoded before detection and
+  readiness (`Ann&#97; Petrova`). The threshold and the model stay as
+  pinned.
+
+## Consequences
+
+- ADR 0002's "ordinary dates stay" holds for every date outside a personal
+  context; the detector's never-Date rule ends.
+- ADR 0068's short forms join their name when the candidate is unique, so
+  the AI sees one person; relatives sharing a surname are as safe as
+  before. ADR 0068's "a first name alone is never proposed" and ADR 0080's
+  "not signals: initials" are replaced as above.
+- Rules can add false hits; the negative fixtures of ADR 0093 hold
+  precision.
+- A miss no layer can fix stays a known model limit, listed for the
+  maintainer.
+
+References: [grill](../design/recognition-grill-2026-11-01.md),
+[roadmap grill](../design/roadmap-grill-2026-11-01.md), #301.
+        | geneva
+    ) (?:[\s\p{P}]+|$) )+ $''',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?:state|states|commonwealth|city|town|village|borough|county|township|parish|republic|kingdom|province|territory|municipality|district)[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[^\s\p{P}]+(?:[\p{Zs}\t]+[^\s\p{P}]+){0,2}[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
+]
+
+# A place's name after "City of", "Town of" and the like belongs to it, so
+# the place goes whole: the model's "Brindle" in "Town of Brindle", as an
+# organization (issue #478).
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+]
+
+# The same for a person: "Town of Plymouth" names no one (issue #478).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+]
+
+# A place after "State of", "Town of" and the like is no person
+# (issue #478).
+[[shape]]
+category = "PERSON"
+body = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
+]
+
+# English legal forms mark a manual selection as an organization
+# ("Acme Ltd.").
+[[shape]]
+category = "ORG"
+guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+
+# An English name of an organization is in title case or carries a legal
+# form; words in sentence case are a document kind, a heading or a team
+# ("Distribution register", "Lasting power of attorney", "Accounts team").
+[[shape]]
+category = "ORG"
+forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
+
+# Dates with an English month name: "12 March 2026" (a Russian "г." after
+# the year still counts) and "March 12, 2026".
+[[shape]]
+category = "DATE"
+guess = [
+    '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
+    '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
+]
+
+# Claim and case numbers after their label (ADR 0092): "Claim No.
+# 6001842/2026", "**Case number:** 2026/314", "Case No. 1:26-cv-01234-JAB",
+# "Claim No CL-2026-000123". The value is the whole identifier. Statute,
+
+ succeeded in 543ms:
+    checkpoint(cancel, started)?;
+    let lap = Instant::now();
+    let detections = correct(source, &raw);
+    timings.structured = lap.elapsed();
+    checkpoint(cancel, started)?;
+    timings.total = started.elapsed();
+    Ok((detections, timings))
+}
+
+/// One span the model proposed, in document byte offsets, before any
+/// correction (ADR 0092): its label from the schema, its score at the
+/// configured threshold and its text. The model reads the source's
+/// [`View`](mdoc_pii::view::View) (character references decoded); its
+/// spans are mapped back to the source's offsets and text. Recognition
+/// snapshots are these (ADR 0093).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RawEntity {
+    pub start: usize,
+    pub end: usize,
+    pub label: String,
+    pub score: f32,
+    pub text: String,
+}
+
+/// `raw`, found in `view`, in `source`'s offsets and text.
+fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>) -> Vec<RawEntity> {
+    if !view.is_source() {
+        for entity in &mut raw {
+            let range = view.source_range(entity.start..entity.end);
+            entity.text = source[range.clone()].to_owned();
+            (entity.start, entity.end) = (range.start, range.end);
+        }
+        // A span only over a table header the view inserted names no
+        // source text.
+        raw.retain(|entity| entity.start < entity.end);
+    }
+    raw
+}
+
+/// The correction stage (ADR 0092): the model's raw entities through the
+/// shape filter (`identifying`) and the rule pack's `span` fixes, then its
+/// `context` rules and
+/// the structured rules over the whole source, all reading it as the model
+/// does. Rules win the review's conflicts with the model. Pure: the same
+/// source and entities give the same detections, in the order a scan
+/// returns them.
+pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
+    let view = mdoc_pii::view::View::new(source);
+    let mut detections: Vec<Detection> = raw
+        .iter()
+        .filter_map(|entity| {
+            let category = category_of(&entity.label)?;
+            // Read as the model read it: "%41lice" in a link target is "Alice".
+            let text = &view.text[view.view_range(entity.start..entity.end)];
+            rules::pack()
+                .identifying_at(source, entity.start..entity.end, text, category)
+                .then_some(Detection {
+                    range: entity.start..entity.end,
+                    category,
+                    score: entity.score,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                })
+        })
+        .collect();
+    rules::pack().fix_spans(source, &view, &mut detections);
+    // After the span fixes, so each spelling copies the fixed wording.
+    let respelt = respelt(source, &view, &detections);
+    detections.extend(respelt);
+    let rules = rules::pack()
+        .context(&view.text)
+        .into_iter()
+        .chain(rules::pack().spans(&view.text))
+        .chain(structured::scan(&view.text));
+    let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
+        .filter_map(|mut detection| {
+            detection.range = view.source_range(detection.range);
+            // One only over an inserted table header names nothing.
+            (!detection.range.is_empty()).then_some(detection)
+        })
+        .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+    detections.extend(rules);
+    // Span matches stand only where they are the widest evidence.
+    let spans: Vec<Detection> = spans
+        .into_iter()
+        .filter(|span| stands(&detections, span))
+        .collect();
+    detections.extend(spans);
+    detections
+}
+
+/// The model's wordings where the source spells them otherwise and the view
+/// reads them the same: "Liora%20Nesket" in a link target, "Alice_Morgan"
+/// in a file name, for a detected "Liora Nesket" (ADR 0092). Each is a
+/// wording of its own, so Copy for AI replaces it as written.
+fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Vec<Detection> {
+    if view.is_source() {
+        return Vec::new();
+    }
+    // Each wording once per category: a wording the model gave two
+    // categories gets both, and the review's conflict rules choose, as they
+            .peekable();
+        words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// Whether an organization `span` fix grows the span at `range` of
+    /// `source` to a company's whole name ("АЗС" in "ООО «АЗС»", "ЭДО" in
+    /// "АНО «ЭДО»"; every ORG `extend` is a name with its legal form), so
+    /// its shape is checked on the grown span (`fix_spans`). Fixes stay on
+    /// one line, so only the span's lines are searched.
+    fn grows_to_company(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        category: Category,
+    ) -> bool {
+        if category != Category::Organization {
+            return false;
+        }
+        let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        let end = source[range.end..]
+            .find('\n')
+            .map_or(source.len(), |at| range.end + at);
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == category => Some(fix),
+                _ => None,
+            })
+            .flat_map(|fix| &fix.extend)
+            .flat_map(|pattern| pattern.find_iter(&source[start..end]))
+            .any(|found| {
+                let found_range = start + found.start()..start + found.end();
+                found_range.start <= range.start
+                    && range.end <= found_range.end
+                    && found_range.len() > range.len()
+            })
+    }
+
+    /// Whole spans the `span` patterns find in `source`: an address from
+    /// its first element to its postcode or city (ADR 0092).
+    pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Fix(_) => None,
+            })
+            .flat_map(|(category, pattern)| {
+                span_ranges(pattern, source)
+                    .into_iter()
+                    // A match before a colon ends in a field's label ("12
+                    // Oak Road, Email: …"), not the address's last part.
+                    .filter(|range| {
+                        !source[range.end..]
+                            .trim_start_matches([' ', '\t'])
+                            .starts_with(':')
+                    })
+                    .map(move |range| Detection {
+                        range,
+                        category,
+                        score: CONTEXT_SCORE,
+                        recognizer: Recognizer::Span,
+                    })
+            })
+            .collect()
+    }
+
+    /// The first category, in pack order, whose guesses take a manual
+    /// selection.
+    pub(crate) fn guess(&self, text: &str) -> Option<Category> {
+        self.shapes
+            .iter()
+            .find(|shape| {
+                shape.guess.iter().any(|pattern| pattern.is_match(text))
+                    || (!shape.guess_words.is_empty()
+                        && text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+                            shape
+                                .guess_words
+                                .iter()
+                                .any(|listed| listed.eq_ignore_ascii_case(word))
+                        }))
+            })
+            .map(|shape| shape.category)
+    }
+}
+
+/// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
+/// "ГКУ «Дирекция района»" is "ГКУ ". An unclosed quote stays as it is.
+fn unquoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(['«', '"', '“']) {
+        let quote = rest[open..].chars().next().expect("found");
+        let after = &rest[open + quote.len_utf8()..];
+        let close = match quote {
+            '«' => {
+                let mut depth = 1;
+                after.char_indices().find_map(|(at, c)| {
+                    match c {
+                        '«' => depth += 1,
+                        '»' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(at)
+                })
+            }
+            '"' => after.find('"'),
+            _ => after.find('”'),
+        };
+        out.push_str(&rest[..open]);
+        match close {
+            Some(at) => {
+                out.push(' ');
+                let closing = after[at..].chars().next().expect("found");
+                rest = &after[at + closing.len_utf8()..];
+
+web search: 
+web search: site.cmacgm-group.com "shipping" "Group" ...
+web search: 
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command '$n=0; Get-Content -Encoding utf8 crates/mdoc-detect/src/rules.rs | ForEach-Object { $n++; if($n -ge 677 -and $n -le 733 -or $n -ge 820 -and $n -le 842) { '"'{0,4}: {1}' -f "'$n,$_ }}; Get-Content -Encoding utf8 crates/mdoc-detect/rules/shared.toml | Select-Object -Skip 126 -First 30' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "rg -n 'board|circuit|division|code|attorney|bipa|plymouth|phoenix|macedonia|veritas|bureau|commission|agencies' crates/mdoc-detect/rules/*.toml; rg -n 'newline|line.break|\\n|replace' crates/mdoc-pii/src/view.rs | Select-Object -First 50" in E:\t3\worktrees\mdoc\windows-lane-4
+ exited 1 in 490ms:
+rg: crates/mdoc-detect/rules/*.toml: IO error for operation on crates/mdoc-detect/rules/*.toml: The filename, directory name, or volume label syntax is incorrect. (os error 123)
+rg: the literal "\n" is not allowed in a regex
+
+Consider enabling multiline mode with the --multiline flag (or -U for short).
+When multiline mode is enabled, new line characters can be matched.
+
+web search: https://www.cj.com/about-us
+ succeeded in 669ms:
+ 677:             })
+ 678:             || self
+ 679:                 .shapes
+ 680:                 .iter()
+ 681:                 .filter(|shape| shape.category == category)
+ 682:                 .flat_map(|shape| &shape.body)
+ 683:                 .any(|pattern| pattern.is_match(&outside))
+ 684:     }
+ 685: 
+ 686:     /// Abbreviations `text` defines beside a court, public body or law
+ 687:     /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
+ 688:     /// capitals whose letters are the title's initials in order. Each is the
+ 689:     /// body or law wherever it stands (#378); a company's ("Quillon Freight
+ 690:     /// LLC (“QF”)") is not.
+ 691:     fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+ 692:         static DEFINED: OnceLock<Regex> = OnceLock::new();
+ 693:         let defined = DEFINED.get_or_init(|| {
+ 694:             Regex::new(&rust_classes(concat!(
+ 695:                 // The title: capitalized words, and the small words and
+ 696:                 // years between them.
+ 697:                 r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:[\p{Zs}\t]+(?:\p{Uppercase}",
+ 698:                 r"[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in|to|with|&|\d{4}))*)",
+ 699:                 // A citation may stand between: ", 740 ILCS 14/1".
+ 700:                 r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?[\p{Zs}\t]*\(",
+ 701:                 r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
+ 702:                 r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+ 703:             )))
+ 704:             .expect("abbreviation pattern")
+ 705:         });
+ 706:         defined
+ 707:             .captures_iter(text)
+ 708:             .filter_map(|found| {
+ 709:                 let title = found.get(1)?.as_str();
+ 710:                 let short = found.get(2)?.as_str();
+ 711:                 let letters: Vec<char> = short
+ 712:                     .chars()
+ 713:                     .filter(|c| c.is_alphabetic())
+ 714:                     .flat_map(char::to_lowercase)
+ 715:                     .collect();
+ 716:                 let mut initials = title
+ 717:                     .split(|c: char| c.is_whitespace() || c == '-')
+ 718:                     .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+ 719:                     .flat_map(char::to_lowercase);
+ 720:                 let spelt = letters.len() >= 2
+ 721:                     && letters
+ 722:                         .iter()
+ 723:                         .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+ 724:                 (spelt && self.public_body(title, Category::Organization))
+ 725:                     .then(|| short.trim_end_matches('.').to_owned())
+ 726:             })
+ 727:             .collect()
+ 728:     }
+ 729: 
+ 730:     /// Whether a model span has its category's `shape` and is not a role
+ 731:     /// phrase by the `never` section; public bodies are not checked.
+ 732:     fn shaped(&self, text: &str, category: Category) -> bool {
+ 733:         let words = || {
+ 820:                     if trimmed != grown && self.only_legal_form(&source[trimmed.clone()]) {
+ 821:                         grown
+ 822:                     } else {
+ 823:                         trimmed
+ 824:                     };
+ 825:             }
+ 826:         }
+ 827:         let abbreviations = self.public_abbreviations(&view.text);
+ 828:         detections.retain(|d| {
+ 829:             let text = &view.text[view.view_range(d.range.clone())];
+ 830:             !d.range.is_empty()
+ 831:                 && self.identifying(text, d.category)
+ 832:                 && !(matches!(d.category, Category::Organization | Category::Person)
+ 833:                     && abbreviations.contains(
+ 834:                         text.trim_matches(|c: char| !c.is_alphanumeric())
+ 835:                             .trim_end_matches("’s")
+ 836:                             .trim_end_matches("'s"),
+ 837:                     ))
+ 838:         });
+ 839:     }
+ 840: 
+ 841:     /// Whether a model span at `range` of `source` has its category's
+ 842:     /// `shape`, its surroundings included: wrapped exactly in a forbidden
+# domain is no organization ("NALOG.GOV.RU", "example.invalid", "сайт.рф";
+# issue #488): two letters or more before a common zone, so "E.ON" and
+# "Alfa.Bank" stay.
+[[shape]]
+category = "ORG"
+require = ['[\p{Uppercase}\p{N}]']
+forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
+word = '.'
+guess_words = ["GmbH", "AG", "SA", "BV"]
+
+# People: a capitalized word that is not a never word ("Ms Bennett", not
+# "Ms" or "husband"). A manual selection of 1–4 capitalized words is a
+# person; hyphenated surnames, apostrophes and initials ("М.С.", "J.R.")
+# count.
+[[shape]]
+category = "PERSON"
+word = '^\p{Uppercase}'
+guess = [
+    '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
+]
+
+# A name wrapped exactly in «» after a common noun for a work or a product
+# is a title ("повести «Кедровый свет»"), not a person. A name quoted
+# elsewhere stays a person ("назван «Иван Петров»", "по прозвищу «…»",
+# "Роман «Сокол»"), and so does one after a company's legal form, which the
+# ORG span holds ("ООО «Вера Снегирь»"): never dropped, at worst the wrong
+# category.
+[[shape]]
+category = "PERSON"
+forbid_quotes = ["«»"]
+
+codex
+I found concrete company-name regressions: the new keyword filters reject `CMA CGM`, `SEC Newgate`, and `Commission Junction`; the geographic rule also rejects `The Republic of Tea`. The main requirement gaps are ORG-only patterns for some public bodies and codes, missing board names, and incomplete place-name coverage. I’m checking the abbreviation handling and final file references.
+web search: 
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command 'Get-Content -Encoding utf8 crates/mdoc-pii/src/view.rs | Select-Object -First 170; git diff --check origin/main...HEAD; git status --short' in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command "rg -n 'board|circuit|division|code|attorney|bipa|plymouth|phoenix|macedonia|bureau|commission|agencies' crates/mdoc-detect/rules -g '*.toml'" in E:\t3\worktrees\mdoc\windows-lane-4
+exec
+"C:\\Users\\tebri\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -Command '$n=0; Get-Content -Encoding utf8 crates/mdoc-detect/rules/en.toml | ForEach-Object { $n++; if($n -ge 280 -and $n -le 317) { '"'{0,4}: {1}' -f "'$n,$_ }}' in E:\t3\worktrees\mdoc\windows-lane-4
+web search: https://www.dpamicrophones.com/
+ succeeded in 284ms:
+crates/mdoc-detect/rules\ru.toml:380:# A card or membership code after its label: "Код карточки: CARD-918264".
+crates/mdoc-detect/rules\shared.toml:11:#             to its postcode or city), and boundary fixes for model spans
+crates/mdoc-detect/rules\shared.toml:86:# Rust's `char` predicates mean, whose Unicode tables may be newer than the
+crates/mdoc-detect/rules\shared.toml:118:# number starting 04 is a Russian bank code (БИК), not a phone.
+crates/mdoc-detect/rules\shared.toml:174:# postcode number, a street word, abbreviated or not ("пер. Кленовый",
+crates/mdoc-detect/rules\shared.toml:202:# (Russian accounts have 20 digits, UK ones 8 with a sort code): only a label
+crates/mdoc-detect/rules\en.toml:55:    "attorney", "client", "employer", "employee", "claimant", "respondent",
+crates/mdoc-detect/rules\en.toml:123:    "commission", "congress", "legislature", "senate", "judiciary",
+crates/mdoc-detect/rules\en.toml:135:words = ["ministries", "registries", "agencies"]
+crates/mdoc-detect/rules\en.toml:158:words = ["department", "agency", "bureau", "office", "county", "district", "council"]
+crates/mdoc-detect/rules\en.toml:166:    # Departments, offices, agencies and bureaus of a state or the Crown:
+crates/mdoc-detect/rules\en.toml:173:    '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
+crates/mdoc-detect/rules\en.toml:176:    '(?i)\bbureaus?[\p{Zs}\t]+of\b',
+crates/mdoc-detect/rules\en.toml:177:    '(?i)\b(?:federal|national|census|government|state|county|city|consumer[\p{Zs}\t]+financial[\p{Zs}\t]+protection)[\p{Zs}\t]+bureau\b',
+crates/mdoc-detect/rules\en.toml:188:    '(?i)\battorneys?[\p{Zs}\t-]+generals?\b',
+crates/mdoc-detect/rules\en.toml:189:    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?\b',
+crates/mdoc-detect/rules\en.toml:191:    # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
+crates/mdoc-detect/rules\en.toml:195:    '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
+crates/mdoc-detect/rules\en.toml:196:    '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
+crates/mdoc-detect/rules\en.toml:201:    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
+crates/mdoc-detect/rules\en.toml:202:    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
+crates/mdoc-detect/rules\en.toml:319:# ("Distribution register", "Lasting power of attorney", "Accounts team").
+crates/mdoc-detect/rules\en.toml:364:# account:** 47-29-16/00318572" (sort code and account number, a slash or a
+crates/mdoc-detect/rules\en.toml:369:labels = ["bank account", "account number", "account no", "sort code", "iban"]
+crates/mdoc-detect/rules\en.toml:387:# with a flat or unit before or after it, then the town and postcode:
+crates/mdoc-detect/rules\en.toml:392:# a whole postcode before a town ("M1 1AA" is no town "M1"); two places
+crates/mdoc-detect/rules\en.toml:393:# (a village and its county) come only before a postcode. A
+crates/mdoc-detect/rules\en.toml:400:pattern = '{flat}{sep}{street}(?:(?:{sep}|\s+){postcode}|(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?))?|{street}{sep}{flat}(?:(?:{sep}|\s+){postcode}|(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?))?|{street}(?:{sep}|\s+){postcode}|{street}(?:{sep}{town}{sep}{town}(?:{sep}|\s+){postcode}|{sep}{town}(?:(?:{sep}|\s+){postcode})?)'
+crates/mdoc-detect/rules\en.toml:405:parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|[A-Z]{2}[\p{Zs}\t]\d{5}(?:-\d{4})?)\b'
+
+ succeeded in 577ms:
+ 280:         | berlin | moscow | tokyo | beijing | toronto | sydney | dublin | brussels
+ 281:         | geneva
+ 282:     ) (?:[\s\p{P}]+|$) )+ $''',
+ 283:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?:state|states|commonwealth|city|town|village|borough|county|township|parish|republic|kingdom|province|territory|municipality|district)[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[^\s\p{P}]+(?:[\p{Zs}\t]+[^\s\p{P}]+){0,2}[\s\p{P}]*$',
+ 284:     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
+ 285: ]
+ 286: 
+ 287: # A place's name after "City of", "Town of" and the like belongs to it, so
+ 288: # the place goes whole: the model's "Brindle" in "Town of Brindle", as an
+ 289: # organization (issue #478).
+ 290: [[span]]
+ 291: category = "ORG"
+ 292: extend = [
+ 293:     '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+ 294: ]
+ 295: 
+ 296: # The same for a person: "Town of Plymouth" names no one (issue #478).
+ 297: [[span]]
+ 298: category = "PERSON"
+ 299: extend = [
+ 300:     '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+ 301: ]
+ 302: 
+ 303: # A place after "State of", "Town of" and the like is no person
+ 304: # (issue #478).
+ 305: [[shape]]
+ 306: category = "PERSON"
+ 307: body = [
+ 308:     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
+ 309: ]
+ 310: 
+ 311: # English legal forms mark a manual selection as an organization
+ 312: # ("Acme Ltd.").
+ 313: [[shape]]
+ 314: category = "ORG"
+ 315: guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+ 316: 
+ 317: # An English name of an organization is in title case or carries a legal
+
+ succeeded in 823ms:
+//! The text detection and readiness read (ADR 0092, preprocessing): the
+//! source with what only hides a value's characters undone, and a map from
+//! its offsets back to the source's. HTML character references are decoded
+//! ("Ann&#97; Petrova" reads "Anna Petrova"), soft hyphens and zero-width
+//! characters drop out ("Ма\u{ad}рина" reads "Марина") and letters written
+//! with combining marks compose, as NFC writes them ("е\u{308}" reads "ё").
+//! A table cell under an identifier column's header reads with it
+//! ("Паспорт: 46 82 731609"); the header is inserted, so a span only over it
+//! maps to an empty source range. Letter-spaced words read whole ("И Н Н"
+//! reads "ИНН") and footnote references drop out (`**ИНН**[^1]:` reads
+//! `**ИНН**:`). The source itself never changes: spans found in the view map back to
+//! whole source characters.
+use std::ops::Range;
+use unicode_normalization::UnicodeNormalization;
+
+/// The source as detection reads it, with its offsets mapped back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct View {
+    /// The text the model and the rules read.
+    pub text: String,
+    /// Each rewritten source range and the view range it became, in order.
+    edits: Vec<Edit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Edit {
+    source: Range<usize>,
+    view: Range<usize>,
+}
+
+impl View {
+    pub fn new(source: &str) -> Self {
+        let mut text = String::with_capacity(source.len());
+        let mut edits = Vec::new();
+        let mut copied = 0;
+        let mut rewrites = rewrites(source);
+        let spaced: Vec<_> = letter_spacing(source)
+            .into_iter()
+            .filter(|(range, _)| {
+                let index = rewrites.partition_point(|(other, _)| other.end <= range.start);
+                rewrites
+                    .get(index)
+                    .is_none_or(|(other, _)| range.end <= other.start)
+            })
+            .collect();
+        rewrites.extend(spaced);
+        rewrites.sort_by_key(|(range, _)| (range.start, range.end));
+        let headers = table_headers(source);
+        // A header goes in only between rewritten parts, never inside one.
+        let inside = |at: usize| {
+            let index = rewrites.partition_point(|(range, _)| range.end <= at);
+            rewrites
+                .get(index)
+                .is_some_and(|(range, _)| range.start < at)
+        };
+        let headers: Vec<_> = headers
+            .into_iter()
+            .filter(|(range, _)| !inside(range.start))
+            .collect();
+        rewrites.extend(headers);
+        // An insertion sorts before a rewrite starting where it does.
+        rewrites.sort_by_key(|(range, _)| (range.start, range.end));
+        for (range, replacement) in rewrites {
+            text.push_str(&source[copied..range.start]);
+            let start = text.len();
+            text.push_str(&replacement);
+            edits.push(Edit {
+                source: range.clone(),
+                view: start..text.len(),
+            });
+            copied = range.end;
+        }
+        text.push_str(&source[copied..]);
+        Self { text, edits }
+    }
+
+    /// Whether the view reads the source unchanged.
+    pub fn is_source(&self) -> bool {
+        self.edits.is_empty()
+    }
+
+    /// The source range `range` of the view stands for. A boundary inside a
+    /// rewritten part widens to all of it, so a span covers whole source
+    /// characters ("&#97;", never "&#9").
+    pub fn source_range(&self, range: Range<usize>) -> Range<usize> {
+        self.source_offset(range.start, false)..self.source_offset(range.end, true)
+    }
+
+    /// The view range source `range` reads as: the inverse of
+    /// [`View::source_range`], widened the same way, so a span found in the
+    /// source can be read as detection read it ("%41lice" in a link target
+    /// reads "Alice").
+    pub fn view_range(&self, range: Range<usize>) -> Range<usize> {
+        self.view_offset(range.start, false)..self.view_offset(range.end, true)
+    }
+
+    fn view_offset(&self, at: usize, end: bool) -> usize {
+        let index = self
+            .edits
+            .partition_point(|edit| edit.source.start < at || (!end && edit.source.start == at));
+        let Some(edit) = index.checked_sub(1).map(|i| &self.edits[i]) else {
+            return at;
+        };
+        if at < edit.source.end || (end && at == edit.source.end) {
+            if end { edit.view.end } else { edit.view.start }
+        } else {
+            edit.view.end + (at - edit.source.end)
+        }
+    }
+
+    fn source_offset(&self, at: usize, end: bool) -> usize {
+        // The last edit starting before `at` (an end) or at it (a start).
+        let index = self
+            .edits
+            .partition_point(|edit| edit.view.start < at || (!end && edit.view.start == at));
+        let Some(edit) = index.checked_sub(1).map(|i| &self.edits[i]) else {
+            return at;
+        };
+        if at < edit.view.end || (end && at == edit.view.end) {
+            if end {
+                edit.source.end
+            } else {
+                edit.source.start
+            }
+        } else {
+            edit.source.end + (at - edit.view.end)
+        }
+    }
+}
+
+/// `text` as detection reads it.
+pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
+    let view = View::new(text);
+    if view.is_source() {
+        std::borrow::Cow::Borrowed(text)
+    } else {
+        std::borrow::Cow::Owned(view.text)
+    }
+}
+
+/// Source ranges and what the view reads for each, in order, never
+/// overlapping.
+fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
+    let mut out = Vec::new();
+    let destinations = link_destinations(source);
+    let mut destination = destinations.iter().peekable();
+    let mut chars = source.char_indices().peekable();
+    let mut previous = None;
+    while let Some((at, c)) = chars.next() {
+        let next = chars.peek().map(|&(_, next)| next);
+        let before = previous;
+        previous = Some(c);
+        while destination.next_if(|range| range.end <= at).is_some() {}
+        let hidden = destination.peek().filter(|range| range.start <= at);
+        if hidden.is_some()
+            && c == '%'
+            && let Some((len, value)) = percent_encoded(&source[at..])
+        {
+            previous = value.chars().next_back();
+            out.push((at..at + len, value));
+            while chars.next_if(|&(i, _)| i < at + len).is_some() {}
+        } else if let Some(link) = hidden
+            && c == '_'
+            && before.is_some_and(char::is_alphabetic)
+            && (next.is_some_and(char::is_alphabetic)
+                || percent_encoded(&source[at + 1..])
+                    .is_some_and(|(_, value)| value.starts_with(char::is_alphabetic)))
+            && !in_email(source, link, at)
+        {
+            // "clients/Alice_Morgan" names Alice Morgan.
+warning: unable to access 'C:\Users\tebri/.config/git/ignore': Permission denied
+warning: unable to access 'C:\Users\tebri/.config/git/ignore': Permission denied
+?? .review-r1/
+
+codex
+Found **seven issues** at `9410e064`. The first three introduce company-name false negatives; the others leave English requirements incomplete.
+
+1. **P1 — Public-body keywords erase real companies.** [en.toml:123](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:123), [en.toml:150](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:150)  
+   ORG spans containing `cma`, `sec`, or `commission` are rejected anywhere unless they include a recognized legal suffix. This drops **[CMA CGM](https://www.cma-cgm.com/About/TheGroup)**, **[SEC Newgate](https://secnewgate.com/)**, and **[Commission Junction](https://www.cj.com/about-us)**. These names previously survived. Restrict ambiguous abbreviations and generic words using public-body context; add company counterexamples through `correct()`.
+
+2. **P2 — The geographic-prefix rule accepts arbitrary company names as places.** [en.toml:283](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:283)  
+   `Republic of` followed by any one to three words qualifies for rejection. Consequently, **[The Republic of Tea](https://www.republicoftea.com/blogs/about-us/about-us)** is dropped as ORG. There is no geographic-name validation. Narrow this rule to recognized places or supporting context, with private-company counterexamples.
+
+3. **P2 — A law abbreviation globally suppresses an unrelated company abbreviation.** [rules.rs:827](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/src/rules.rs:827)  
+   In `Data Protection Act (DPA). DPA Microphones (“DPA”) supplied the equipment. DPA invoiced us.`, the document-wide set removes every standalone `DPA`, including references to **[the microphone company](https://www.dpamicrophones.com/)**. Company definitions cannot override the blacklist. Track conflicting definitions and preserve ambiguous company mentions; test both meanings in one document.
+
+4. **P2 — Several public-body and law filters still apply only to ORG.** [en.toml:164](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:164)  
+   PERSON detections such as `Ninth Circuit`, `Chancery Division`, `Attorney General`, and `Bankruptcy Code` survive: their rejection patterns belong exclusively to the ORG shape, and the widened word lists do not cover them. This leaves the [English PERSON requirement in #378](https://github.com/lawkitt/mdoc/issues/378#issuecomment-6571061364) incomplete. Share suitable patterns across both categories and test each label.
+
+5. **P2 — Public boards remain completely uncovered.** [en.toml:165](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:165)  
+   `National Labor Relations Board` and `Board of Education` still survive as ORG. Neither the new words nor the body patterns recognize boards, although #378 explicitly requests them. Add qualified public-board patterns while preserving private advisory boards.
+
+6. **P2 — The place list leaves ordinary countries and cities proposed as ORG.** [en.toml:239](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:239), [en.toml:268](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:268)  
+   Examples include `North Macedonia`, `Phoenix`, and standalone `Plymouth`. None matches the list or the administrative-prefix rules. These remain gaps against [#478’s country and city requirements](https://github.com/lawkitt/mdoc/issues/478#issuecomment-6571064909). Add coverage beyond the selected examples without suppressing company names containing those places.
+
+7. **P2 — A line break defeats defined-law abbreviation recognition.** [rules.rs:697](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/src/rules.rs:697)  
+   `Biometric Information\nPrivacy Act (“BIPA”)` does not register `BIPA`: title separators exclude newlines, and the remaining suffix `Privacy Act` cannot spell its initials. Subsequent BIPA detections survive, despite #378 requiring defined abbreviations to disappear. Support wrapped titles and test LF and CRLF.
+
+Static review only; no edits, builds, or tests. `git diff --check` passed.
+tokens used
+95,041
+Found **seven issues** at `9410e064`. The first three introduce company-name false negatives; the others leave English requirements incomplete.
+
+1. **P1 — Public-body keywords erase real companies.** [en.toml:123](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:123), [en.toml:150](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:150)  
+   ORG spans containing `cma`, `sec`, or `commission` are rejected anywhere unless they include a recognized legal suffix. This drops **[CMA CGM](https://www.cma-cgm.com/About/TheGroup)**, **[SEC Newgate](https://secnewgate.com/)**, and **[Commission Junction](https://www.cj.com/about-us)**. These names previously survived. Restrict ambiguous abbreviations and generic words using public-body context; add company counterexamples through `correct()`.
+
+2. **P2 — The geographic-prefix rule accepts arbitrary company names as places.** [en.toml:283](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:283)  
+   `Republic of` followed by any one to three words qualifies for rejection. Consequently, **[The Republic of Tea](https://www.republicoftea.com/blogs/about-us/about-us)** is dropped as ORG. There is no geographic-name validation. Narrow this rule to recognized places or supporting context, with private-company counterexamples.
+
+3. **P2 — A law abbreviation globally suppresses an unrelated company abbreviation.** [rules.rs:827](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/src/rules.rs:827)  
+   In `Data Protection Act (DPA). DPA Microphones (“DPA”) supplied the equipment. DPA invoiced us.`, the document-wide set removes every standalone `DPA`, including references to **[the microphone company](https://www.dpamicrophones.com/)**. Company definitions cannot override the blacklist. Track conflicting definitions and preserve ambiguous company mentions; test both meanings in one document.
+
+4. **P2 — Several public-body and law filters still apply only to ORG.** [en.toml:164](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:164)  
+   PERSON detections such as `Ninth Circuit`, `Chancery Division`, `Attorney General`, and `Bankruptcy Code` survive: their rejection patterns belong exclusively to the ORG shape, and the widened word lists do not cover them. This leaves the [English PERSON requirement in #378](https://github.com/lawkitt/mdoc/issues/378#issuecomment-6571061364) incomplete. Share suitable patterns across both categories and test each label.
+
+5. **P2 — Public boards remain completely uncovered.** [en.toml:165](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:165)  
+   `National Labor Relations Board` and `Board of Education` still survive as ORG. Neither the new words nor the body patterns recognize boards, although #378 explicitly requests them. Add qualified public-board patterns while preserving private advisory boards.
+
+6. **P2 — The place list leaves ordinary countries and cities proposed as ORG.** [en.toml:239](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:239), [en.toml:268](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/rules/en.toml:268)  
+   Examples include `North Macedonia`, `Phoenix`, and standalone `Plymouth`. None matches the list or the administrative-prefix rules. These remain gaps against [#478’s country and city requirements](https://github.com/lawkitt/mdoc/issues/478#issuecomment-6571064909). Add coverage beyond the selected examples without suppressing company names containing those places.
+
+7. **P2 — A line break defeats defined-law abbreviation recognition.** [rules.rs:697](E:/t3/worktrees/mdoc/windows-lane-4/crates/mdoc-detect/src/rules.rs:697)  
+   `Biometric Information\nPrivacy Act (“BIPA”)` does not register `BIPA`: title separators exclude newlines, and the remaining suffix `Privacy Act` cannot spell its initials. Subsequent BIPA detections survive, despite #378 requiring defined abbreviations to disappear. Support wrapped titles and test LF and CRLF.
+
+Static review only; no edits, builds, or tests. `git diff --check` passed.

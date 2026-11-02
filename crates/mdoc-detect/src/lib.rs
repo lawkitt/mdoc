@@ -1126,7 +1126,8 @@ mod tests {
         let source = "The Ashmoor County Probation Department, HMRC and the 9th Cir. applied \
                       the Gaming Act 2031 (“GA”) to Quillon Freight LLC of Boston. The State \
                       of Ashmoria and the Town of Brindle (Illinois) sued Georgia-Quillon \
-                      Paper LLC and State Street Quillon Corp; GA binds them.";
+                      Paper LLC, CMA CGM, Commission Junction and State Street Quillon \
+                      Corp; GA binds them.";
         let raw: Vec<RawEntity> = [
             ("Ashmoor County Probation Department", "organization"),
             ("HMRC", "person"),
@@ -1138,6 +1139,8 @@ mod tests {
             ("Brindle", "organization"),
             ("Illinois", "organization"),
             ("Georgia-Quillon Paper LLC", "organization"),
+            ("CMA CGM", "organization"),
+            ("Commission Junction", "organization"),
             ("State Street Quillon Corp", "organization"),
             // The abbreviation where it is used, not where it is defined.
             ("GA", "organization"),
@@ -1163,6 +1166,8 @@ mod tests {
             [
                 ("Quillon Freight LLC", Category::Organization),
                 ("Georgia-Quillon Paper LLC", Category::Organization),
+                ("CMA CGM", Category::Organization),
+                ("Commission Junction", Category::Organization),
                 ("State Street Quillon Corp", Category::Organization),
             ]
         );

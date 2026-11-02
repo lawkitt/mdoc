@@ -45,7 +45,12 @@ struct NeverEntry {
     form: Form,
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
+    #[serde(default)]
     words: Vec<String>,
+    /// For `pattern`: regexes; a span matching one outside quotes is a
+    /// court, public body, law or place ("Department of Labor").
+    #[serde(default)]
+    patterns: Vec<String>,
     /// Categories whose model span ending in one of these words is a role,
     /// not a name ("Technical Reviewer", "Costs Officer").
     #[serde(default)]
@@ -69,6 +74,8 @@ enum Form {
     Plural,
     /// The stem and up to `ending` letters.
     Stem,
+    /// No words: `patterns` that match a phrase in the span.
+    Pattern,
 }
 
 #[derive(Deserialize)]
@@ -121,12 +128,6 @@ struct ShapeEntry {
     /// after one of these words too ("ПО «…»", "АСУ «…»").
     #[serde(default)]
     quotes_after_words: Vec<String>,
-    /// A model span matching one of these outside quotes is a court, public
-    /// body, law or place: dropped after the span fixes, like a `never`
-    /// entry's `anywhere_in` words, unless it has a legal form
-    /// ("Department of Labor", "State of Ashmoria", "Massachusetts").
-    #[serde(default)]
-    body: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -260,6 +261,7 @@ struct Never {
     form: Form,
     ending: usize,
     words: Vec<String>,
+    patterns: Vec<Regex>,
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
@@ -276,6 +278,7 @@ impl Never {
                     && ending.chars().all(char::is_alphabetic)
                     && !self.not_endings.iter().any(|not| not == ending)
             }),
+            Form::Pattern => false,
         })
     }
 }
@@ -290,7 +293,6 @@ struct Shape {
     quotes: Vec<(char, char)>,
     quotes_after: Vec<String>,
     quotes_after_words: Vec<String>,
-    body: Vec<Regex>,
 }
 
 impl Pack {
@@ -317,9 +319,24 @@ impl Pack {
                 if entry.form != Form::Stem && !entry.not_endings.is_empty() {
                     return Err(at("only a stem takes not_endings".into()));
                 }
-                if entry.words.is_empty() {
+                if entry.form == Form::Pattern {
+                    if entry.patterns.is_empty() || !entry.words.is_empty() {
+                        return Err(at("a pattern entry needs patterns and no words".into()));
+                    }
+                    if entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty() {
+                        return Err(at("a pattern entry needs anywhere_in alone".into()));
+                    }
+                } else if !entry.patterns.is_empty() {
+                    return Err(at("only a pattern entry takes patterns".into()));
+                } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                let patterns = entry
+                    .patterns
+                    .iter()
+                    .map(|pattern| Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 for word in &entry.words {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
@@ -342,6 +359,7 @@ impl Pack {
                     form: entry.form,
                     ending,
                     words: entry.words,
+                    patterns,
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
@@ -373,7 +391,6 @@ impl Pack {
                     && entry.forbid_quotes.is_empty()
                     && entry.quotes_after.is_empty()
                     && entry.quotes_after_words.is_empty()
-                    && entry.body.is_empty()
                 {
                     return Err(at("no rules".into()));
                 }
@@ -419,7 +436,6 @@ impl Pack {
                 }
                 let require = compile_all(&entry.require, false)?;
                 let forbid = compile_all(&entry.forbid, false)?;
-                let body = compile_all(&entry.body, false)?;
                 let word = entry
                     .word
                     .as_deref()
@@ -439,7 +455,6 @@ impl Pack {
                             quotes: Vec::new(),
                             quotes_after: Vec::new(),
                             quotes_after_words: Vec::new(),
-                            body: Vec::new(),
                         });
                         pack.shapes.last_mut().expect("just pushed")
                     }
@@ -455,7 +470,6 @@ impl Pack {
                 shape.quotes.extend(quotes);
                 shape.quotes_after.extend(entry.quotes_after);
                 shape.quotes_after_words.extend(entry.quotes_after_words);
-                shape.body.extend(body);
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -676,10 +690,10 @@ impl Pack {
                     .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
             })
             || self
-                .shapes
+                .never
                 .iter()
-                .filter(|shape| shape.category == category)
-                .flat_map(|shape| &shape.body)
+                .filter(|entry| entry.anywhere_in.contains(&category))
+                .flat_map(|entry| &entry.patterns)
                 .any(|pattern| pattern.is_match(&outside))
     }
 
@@ -687,44 +701,53 @@ impl Pack {
     /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
     /// capitals whose letters are the title's initials in order. Each is the
     /// body or law wherever it stands (#378); a company's ("Quillon Freight
-    /// LLC (“QF”)") is not.
+    /// LLC (“QF”)") is not, and one the text also defines beside anything
+    /// else is ambiguous and stays.
     fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
         static DEFINED: OnceLock<Regex> = OnceLock::new();
         let defined = DEFINED.get_or_init(|| {
             Regex::new(&rust_classes(concat!(
                 // The title: capitalized words, and the small words and
-                // years between them.
-                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:[\p{Zs}\t]+(?:\p{Uppercase}",
-                r"[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in|to|with|&|\d{4}))*)",
+                // years between them, across a line break too.
+                r"(\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n",
+                r"[\p{Zs}\t]*)(?:\p{Uppercase}[\p{Alphabetic}\p{N}'’.&-]*|of|and|the|for|on|in",
+                r"|to|with|&|\d{4}))*)",
                 // A citation may stand between: ", 740 ILCS 14/1".
-                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?[\p{Zs}\t]*\(",
+                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?\s*\(",
                 r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
                 r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
             )))
             .expect("abbreviation pattern")
         });
-        defined
-            .captures_iter(text)
-            .filter_map(|found| {
-                let title = found.get(1)?.as_str();
-                let short = found.get(2)?.as_str();
-                let letters: Vec<char> = short
-                    .chars()
-                    .filter(|c| c.is_alphabetic())
-                    .flat_map(char::to_lowercase)
-                    .collect();
-                let mut initials = title
-                    .split(|c: char| c.is_whitespace() || c == '-')
-                    .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
-                    .flat_map(char::to_lowercase);
-                let spelt = letters.len() >= 2
-                    && letters
-                        .iter()
-                        .all(|letter| initials.by_ref().any(|initial| initial == *letter));
-                (spelt && self.public_body(title, Category::Organization))
-                    .then(|| short.trim_end_matches('.').to_owned())
-            })
-            .collect()
+        let mut public = std::collections::HashSet::new();
+        let mut other = std::collections::HashSet::new();
+        for found in defined.captures_iter(text) {
+            let (Some(title), Some(short)) = (found.get(1), found.get(2)) else {
+                continue;
+            };
+            let (title, short) = (title.as_str(), short.as_str());
+            let letters: Vec<char> = short
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .flat_map(char::to_lowercase)
+                .collect();
+            let mut initials = title
+                .split(|c: char| c.is_whitespace() || c == '-')
+                .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
+                .flat_map(char::to_lowercase);
+            let spelt = letters.len() >= 2
+                && letters
+                    .iter()
+                    .all(|letter| initials.by_ref().any(|initial| initial == *letter));
+            let short = short.trim_end_matches('.').to_owned();
+            if spelt && self.public_body(title, Category::Organization) {
+                public.insert(short);
+            } else {
+                other.insert(short);
+            }
+        }
+        public.retain(|short| !other.contains(short));
+        public
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -2108,6 +2131,11 @@ mod tests {
             "Census Bureau",
             // Commissions, legislatures, services and councils.
             "Federal Election Commission",
+            "Securities and Exchange Commission",
+            "Commission on Civil Rights",
+            "National Labor Relations Board",
+            "Board of Education",
+            "Ashmoor County Board of Supervisors",
             "Congress",
             "the Legislature",
             "Senate Judiciary Committee",
@@ -2120,6 +2148,9 @@ mod tests {
             "His Majesty's Revenue and Customs",
             // Short names.
             "IRS",
+            "the IRS",
+            "U.S. FDA",
+            "CMA",
             "EEOC",
             "OHRP",
             "SEC",
@@ -2151,6 +2182,8 @@ mod tests {
             "Federal Rules of Evidence",
             // Places alone, together, and after "State of" and the like.
             "Pakistan",
+            "North Macedonia",
+            "Republic of Korea",
             "Illinois",
             "Massachusetts",
             "United States",
@@ -2201,6 +2234,13 @@ mod tests {
             "United Airlines",
             "Washington Post",
             "Delaware North",
+            // Short names and words of public bodies that companies share
+            // (review of #515).
+            "CMA CGM",
+            "SEC Newgate",
+            "Commission Junction",
+            "The Republic of Tea",
+            "Ashmoor Advisory Board",
         ] {
             assert!(org(text), "{text}");
         }
@@ -2214,6 +2254,12 @@ mod tests {
             "High Court of Justice",
             "State of Ashmoria",
             "Town of Plymouth",
+            "Ninth Circuit",
+            "Chancery Division",
+            "Attorney General",
+            "Bankruptcy Code",
+            "National Labor Relations Board",
+            "IRS",
         ] {
             assert!(!person(text), "{text}");
         }
@@ -2223,6 +2269,7 @@ mod tests {
             "Washington Vale",
             "Sec. Brindle",
             "Justice Brindle",
+            "Attorney General Brindle",
             "Pakistan",
         ] {
             assert!(person(text), "{text}");
@@ -2258,6 +2305,35 @@ mod tests {
             ),
             ["QF"]
         );
+        // A title wrapped across a line, LF or CRLF.
+        for source in [
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+            "the Biometric Information
+Privacy Act (“BIPA”). BIPA applies.",
+        ] {
+            let at = source.rfind("BIPA").unwrap();
+            let mut detections = vec![Detection {
+                range: at..at + 4,
+                category: Category::Organization,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }];
+            pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+            assert!(detections.is_empty(), "{source:?}");
+        }
+        // An abbreviation the text also defines for something else is
+        // ambiguous and stays.
+        let source = "the Data Protection Act (“DPA”); DPA Microphones (“DPA”) supplied                       it. DPA invoiced us.";
+        let at = source.rfind("DPA").unwrap();
+        let mut detections = vec![Detection {
+            range: at..at + 3,
+            category: Category::Organization,
+            score: 0.9,
+            recognizer: Recognizer::Model,
+        }];
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        assert_eq!(detections.len(), 1);
     }
 
     /// Date masks (#487), common abbreviations (#481), the Internet,

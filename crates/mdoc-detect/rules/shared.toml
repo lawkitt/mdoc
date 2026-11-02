@@ -29,7 +29,10 @@
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
-# `s`) or as a `stem` with up to `ending` letters. Optionally:
+# `s`) or as a `stem` with up to `ending` letters. An entry matched as
+# `pattern` lists `patterns` instead, regexes: a model span of its
+# `anywhere_in` categories (required) that matches one outside quotes goes
+# like a court ("Department of Labor", "Massachusetts" alone). Optionally:
 #   last_word_of = [category…]  a model span of these categories ending in
 #                               one of the words is dropped (a role phrase)
 #   not_endings  = [ending…]    for a stem: endings that never count (a
@@ -78,10 +81,6 @@
 #   quotes_after_words = […]  or after one of these words as written ("ПО
 #                       «…»", not "по «…»"); a span holding its own quotes
 #                       counts as wrapped
-#   body    = [regex…]  a model span matching one outside quotes is a court,
-#                       public body, law or place, dropped after the span
-#                       fixes unless it has a legal form, like `anywhere_in`
-#                       words ("Department of Labor", "Massachusetts")
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
