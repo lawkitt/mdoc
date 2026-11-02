@@ -550,3 +550,58 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # initial: "J. Additional Questions" (guide rule 1, issue #499).
 [[reference]]
 pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_|]*(?:(?:Part|Section|Item)[\p{Zs}\t]+)?)\p{Uppercase}\.(?P<tail>[\p{Zs}\t]+\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+|of|and|or|the|to|for|in))*[\p{Zs}\t]+\p{Uppercase}\p{Ll}+[\p{Zs}\t*_:|]*(?m:$))'
+
+# A patent or trademark schedule's row is no identifier, address or name
+# (guide rule 8, issue #486): an office's code opening the row, then its
+# application, patent or registration numbers and their dates, in columns
+# ("AU  2009241803  30-Apr-09  2009241803  26-Sep-13", "DE  60 2009 024
+# 610.0  30-Apr-09  2 286 018", "| US | 12/432,845 | 30-Apr-09 |"). The
+# code is no organization ("AU", "US"). A row needs a column's gap after
+# the code, a date, and a number only a patent office gives (a US
+# application's "12/432,845", a European one's "9739191.6", a German
+# "60 2009 024 610.0", a year-led "2009241803", a US trademark's serial
+# "86920111") or a trademark's status in its own column ("Registered",
+# "Published"). So a sentence opening "US" stays, an IBAN ("DE89 3704 …")
+# stays, and so does a table of companies by country with their amounts,
+# company numbers and dates ("| UK | Acme Ltd | 01234567 | 01/02/2020 |").
+[[reference]]
+pattern = '(?m:^)[\p{Zs}\t|]*{office}{gap}[^\n]*?(?:{number}[^\n]*?{date}|{date}[^\n]*?{number})[^\n]*'
+parts.office = '(?:US|EP|WO|PCT|DE|GB|UK|FR|JP|CN|KR|AU|CA|BE|NL|LU|IT|ES|PT|CH|AT|SE|DK|FI|NO|IE|PL|CZ|HU|TR|IN|BR|MX|AR|RU|TW|HK|SG|NZ|ZA|IL|EM|EU|WIPO|EUIPO)\b'
+parts.gap = '[\p{Zs}\t]*\||[\p{Zs}\t]{2,}|\t'
+parts.number = '\b(?:\d{1,2}/\d{3},\d{3}|\d{4}/\d{6}|\d{2}[\p{Zs}]\d{4}[\p{Zs}]\d{3}[\p{Zs}]\d{3}\.\d|\d{7,9}\.\d|(?:19|20)\d{8,10}|[7-9]\d{7})\b|\b(?:Registered|Published|Pending|Granted|Allowed|Abandoned|Opposed|Expired|Lapsed|REGISTERED|PUBLISHED|PENDING|GRANTED)(?:[\p{Zs}\t]*\||[\p{Zs}\t]{2,}|\t)'
+parts.date = '\b(?:\d{1,2}[-\p{Zs}](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?[-\p{Zs},]+\d{2,4}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|(?:19|20)\d{2}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?[\p{Zs}]\d{1,2},[\p{Zs}]\d{4})\b'
+
+# A patent's, a design's or a trademark's number after its word is no
+# identifier (guide rule 8, issue #486): "U.S. Patent No. 8,420,710",
+# "Patent US 99/123,456 (AU 2099000111)", "trademark Reg. No. 9876543",
+# "Trademark Serial No. 86920111", "European Patent EP 2 286 018", a list
+# of them too. "Registration No." alone may be a company's or a car's and
+# stays.
+[[reference]]
+pattern = '\b(?:(?:U\.[\p{Zs}\t]?S\.|US|European|EP|PCT|International)[\p{Zs}\t]+)?(?:[Pp]atents?|PATENTS?|[Tt]rade[\p{Zs}\t-]?[Mm]arks?|TRADE[\p{Zs}\t-]?MARKS?|[Dd]esigns?)(?:[\p{Zs}\t]+(?:[Aa]pplication|[Rr]egistration|[Rr]eg\.|[Ss]erial|[Pp]ublication|[Ff]iling))?(?:[\p{Zs}\t]+(?:[Nn]os?\.?|[Nn]umbers?|#))?[\p{Zs}\t]*:?[\p{Zs}\t]*{entry}(?:[\p{Zs}\t]*(?:,|;|and|&|\(|or)[\p{Zs}\t]*{entry}\)?)*'
+parts.entry = '(?:(?:US|EP|WO|PCT|DE|GB|UK|FR|JP|CN|KR|AU|CA|EM|EU)[\p{Zs}\t]?)?(?:\d{1,2}/\d{3},\d{3}|\d{1,3}(?:,\d{3}){1,2}|\d{4}/\d{6}|\d{2}[\p{Zs}]\d{4}[\p{Zs}]\d{3}[\p{Zs}]\d{3}\.\d|\d[\p{Zs}]\d{3}[\p{Zs}]\d{3}|\d{5,}(?:\.\d)?)(?:[\p{Zs}\t]?[ABCES]\d?\b)?'
+
+# A form's number is no identifier (guide rule 8, issue #486): "form
+# STD009X.UK", "Form 10-K", "OPM Form 1203-FX", "Standard Form 1449", "Form
+# W-9", "SF 1449". An industry's code too: "NAICS 541511", "NAICS:" with
+# its code on the next line, "SIC code 7372".
+[[reference]]
+pattern = '\b(?:(?:[A-Z]{2,5}|Standard|STANDARD)[\p{Zs}\t]+)?(?:[Ff]orm|FORM)[\p{Zs}\t]+(?:(?:[Nn]o\.?|#)[\p{Zs}\t]*)?[A-Z]{0,4}-?\d[\dA-Z]*(?:[.\-/][\dA-Z]+)*|\bSF[\p{Zs}\t-]?\d{2,4}[A-Z]?\b|\b(?:NAICS|SIC|PSC|NACE)(?:[\p{Zs}\t]+[Cc]odes?)?[\p{Zs}\t]*(?:[:#]|[Nn]o\.)?[\p{Zs}\t]*\d{2,6}(?:\.\d{1,2})?(?:[\p{Zs}\t]*(?:,|and|or)[\p{Zs}\t]*\d{2,6}(?:\.\d{1,2})?)*'
+
+# A toll-free prefix alone is no phone: 'a toll-free "800" access number',
+# 'toll-free “1-800”, “1-888” and “1-877”' (guide rule 6, issue #486). A
+# whole toll-free number is an organization's phone and stays a phone
+# ("toll-free 1-800-555-0199", "8-800-555-35-35").
+[[reference]]
+pattern = '\b(?:[Tt]oll[\p{Zs}\t-]*[Ff]ree|[Ff]reephone)[\p{Zs}\t]*{prefix}(?:[\p{Zs}\t]*(?:,|or|and)[\p{Zs}\t]*{prefix})*(?:[\p{Zs}\t]+(?:access[\p{Zs}\t]+)?(?:numbers?|lines?|service))?'
+parts.prefix = '[“"‘\x27]?(?:1-[\p{Zs}\t]?)?\d{3}\b[”"’\x27]?'
+
+# A link's query value that mixes lower case, upper case and digits is a
+# session or tracking token, no identifier
+# ("https://example.invalid/p?srsltid=AbCd_123xYz"; guide rules 6 and 7,
+# issue #486). A value of digits alone ("?inn=7701234567"), of one case
+# ("?passport=AB1234567") or without digits ("?name=JaneMorgan") stays,
+# as visible text would.
+[[reference]]
+pattern = '(?P<lead>\b(?:https?://|www\.)[^\s?#<>()\[\]]*\?(?:[^\s#&<>()\[\]]*&)*[A-Za-z_][A-Za-z0-9_.-]*=){token}'
+parts.token = '[A-Za-z0-9_~-]*(?:[a-z][A-Za-z0-9_~-]*[A-Z][A-Za-z0-9_~-]*\d|[a-z][A-Za-z0-9_~-]*\d[A-Za-z0-9_~-]*[A-Z]|[A-Z][A-Za-z0-9_~-]*[a-z][A-Za-z0-9_~-]*\d|[A-Z][A-Za-z0-9_~-]*\d[A-Za-z0-9_~-]*[a-z]|\d[A-Za-z0-9_~-]*[a-z][A-Za-z0-9_~-]*[A-Z]|\d[A-Za-z0-9_~-]*[A-Z][A-Za-z0-9_~-]*[a-z])[A-Za-z0-9_~-]*'

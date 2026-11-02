@@ -441,3 +441,36 @@ pattern = '\b\d{1,4}-(?:ФЗ|ФКЗ|КЗ|ОЗ|РЗ)\b|(?:\b(?:ст\.|стать(
 # А40-…").
 [[reference]]
 pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ)\p{Alphabetic}{0,4}(?:[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}.-]*|от|г\.|\d{1,2}\.\d{1,2}\.\d{2,4}|суда|судебной|коллегии|по|экономическим|гражданским|административным|уголовным|делам|спорам|арбитражного|округа|пленума|президиума)){0,16}[\p{Zs}\t]*№[\p{Zs}\t]*)\p{Alphabetic}{0,4}\d[\p{Alphabetic}\d/-]*'
+
+# A form's number and a classifier's code are no identifiers (guide rules 6
+# and 8, issue #486): "Форма № Р11001", "Форма по КНД 1111501", "Форма по
+# ОКУД 0401060", "код по ОКУД 0401060", "ОКВЭД 47.11, 47.19", "ОКТМО
+# 45382000", "КБК 18210102010011000110", "код ТН ВЭД 8471300000", a table
+# cell between the code and its value too. These codes classify a form, an
+# activity, a place or a payment; an organization's own numbers (ОКПО,
+# ОГРН, ИНН, КПП) are no classifier's codes and stay.
+[[reference]]
+pattern = '\b[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]*(?:№|N|No\.?)[\p{Zs}\t]*\p{Alphabetic}{0,3}-?\d[\p{Alphabetic}\d.\-/]*|\b(?:[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:[Кк]од\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:формы[\p{Zs}\t]+)?(?:по[\p{Zs}\t]+)?(?:ОКУД|КНД|ОКВЭД2?|ОКПД2?|ОКОПФ|ОКФС|ОКОГУ|ОКАТО|ОКТМО|ОКВ|ОКЕИ|ОКСМ|ОКИН|ОКОФ|ОКПДТР|ОКЗ|ОКСО|КБК|ТН[\p{Zs}\t]+ВЭД(?:[\p{Zs}\t]+ЕАЭС)?)\b[\p{Zs}\t:|*_№]*\d[\d.\-]*(?:[\p{Zs}\t]*[,;][\p{Zs}\t]*\d{2}(?:\.\d{1,2}){1,3})*'
+
+# A standard's or a building code's number is a reference, no identifier
+# (guide rule 8, issue #486): "ГОСТ Р 7.0.97-2016", "ГОСТ Р ИСО 9001-2015",
+# "ГОСТ 9238", "СП 2.13130.2020", "СНиП 2.01.07-85*", "СанПиН 2.1.3684-21",
+# "ТУ 1234-001-12345678-2020". Besides ГОСТ the number needs a dot or a
+# dash, so "СП «Восход»", a joint venture, stays.
+[[reference]]
+pattern = '\bГОСТ(?:[\p{Zs}\t]+(?:Р|ISO|ИСО|IEC|МЭК|EN|ЕН))*[\p{Zs}\t]+\d+(?:[.\-–/:]\d+)*\*?|\b(?:СП|СНиП|СанПиН|ТУ|ОСТ)(?:[\p{Zs}\t]+(?:ISO|ИСО))?[\p{Zs}\t]+\d+(?:[.\-–/]\d+)+\*?'
+
+# The page code under a tax or registration form's barcode, two groups of
+# four digits alone on their line or before the form's ИНН, КПП or page
+# boxes ("7000  2010", "2990  2026  КПП  Стр."), is no tax or bank value
+# (guide rule 8, issue #486). A passport's "4510 123456" has six digits
+# after its series and stays.
+[[reference]]
+pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]+\d{4}(?P<tail>[\p{Zs}\t]*(?m:$)|[\p{Zs}\t]+(?:ИНН|КПП|Стр\.))'
+
+# A waybill's or an invoice's number is a document's, no bank or other
+# identifier (guide rule 8, issue #486): "ТН № 47", "ТТН № 112",
+# "товарной накладной № 15", "счёта-фактуры № 123/4". A bank account
+# after "счёт №" is no invoice's and stays.
+[[reference]]
+pattern = '\b(?:ТН|ТТН|ТрН|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*)[\p{Zs}\t]*№[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'

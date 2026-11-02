@@ -79,4 +79,5 @@ a boundary case.
 - A writ's series and number is a court document reference and stays unmarked: «Серия и номер исполнительного листа: ФС 086731924» (hunt-ru-r4-12).
 - A notary is a person, not a public body: «Нотариус: ⟦PERSON|Лидия Игоревна Брюн⟧» (hunt-ru-r4-01).
 - A case name's "& Anor" or "& Ors" stays outside the party, and a declaration names its declarant: "the claim by ⟦ORG|Pellow Holdings Ltd⟧ & Anor", "(⟦PERSON|Ostrand⟧ Decl. ¶ 3)" (probe-en-r1-legal-citations).
+- A form's, a standard's, a classifier's, a waybill's and a patent's numbers are no identifiers, and neither is a toll-free prefix alone: «Форма № Р11001», «СП 1.23456.2030», «ОКВЭД 47.11», «ТН № 47», "Patent US 99/123,456", "NAICS 999999", 'the toll-free "800" number' stay unmarked; a whole toll-free number is a phone: "⟦PHONE|8-800-555-35-35⟧" (probe-ru-r1-form-numbers, probe-en-r1-patent-schedule).
 - A citation's numbers are a legal reference, never an identifier: "26 U.S.C. § 6212", "2031 WL 1234567", "Tr. 112-14", "tax year 2029/30", "№ 999-ФЗ", "статьи 431 ГК РФ" stay unmarked (probe-en-r1-citation-tax, probe-ru-r1-law-numbers).
