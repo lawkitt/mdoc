@@ -45,10 +45,16 @@ sys.exit(not any(r["identifier"] == sys.argv[1] and r.get("isAvailable")
 }
 
 if ! runtime_ready; then
-  # Several GB from Apple; one retry, as for any download (ADR 0095).
+  # The build of the runtime that this Xcode pairs with its SDK when the
+  # versions agree: Xcode 26.1.1 takes no other iOS 26.1 build (23B80 leaves
+  # it without an iOS Simulator destination). Arm64 only, like the core.
+  # About 8 GB from Apple; one retry, as for any download (ADR 0095).
+  version=()
+  [ "$(xcrun --sdk iphonesimulator --show-sdk-version)" = "$IOS_SIM_RUNTIME" ] ||
+    version=(-buildVersion "$IOS_SIM_RUNTIME")
   echo "ios-toolchain: downloading the iOS $IOS_SIM_RUNTIME Simulator runtime" >&2
   start=$SECONDS
-  download() { xcodebuild -downloadPlatform iOS -buildVersion "$IOS_SIM_RUNTIME" -architectureVariant arm64 >&2; }
+  download() { xcodebuild -downloadPlatform iOS ${version[@]+"${version[@]}"} -architectureVariant arm64 >&2; }
   download || {
     echo "ios-toolchain: the download failed; retrying once" >&2
     download

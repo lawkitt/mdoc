@@ -40,6 +40,13 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # TEMPORARY, draft only: saves this branch's Rust cache to time a warm run.
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          prefix-key: v0-ios-warm-probe
+          save-if: true
+          cache-on-failure: true
+
       # The pinned Xcode for every later step, and the pinned Simulator
       # runtime and device, downloaded when the image lacks them.
       - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
@@ -57,3 +64,7 @@ jobs:
           path: target/ios/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+      # TEMPORARY, draft only: keeps DerivedData out of the probe's cache.
+      - if: always()
+        run: rm -rf target/ios/DerivedData
