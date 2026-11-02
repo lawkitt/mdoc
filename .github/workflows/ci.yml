@@ -33,6 +33,9 @@ on:
   # a local runner is stuck and posts its result as that runner's status
   # (ADR 0082).
   workflow_dispatch:
+  # A merge-queue commit needs `lint (ubuntu)`, a required check; the full
+  # suite there is queue.yml's (ADR 0095).
+  merge_group:
   # release.yml runs this same job set before building release artifacts.
   workflow_call:
     inputs:
@@ -66,7 +69,7 @@ jobs:
     # The release commit that `just release` pushes with its tag is tested by
     # the tag's Release run; don't test the same commit twice. (In a call
     # from release.yml the event is the tag push, so ref_type is "tag".)
-    if: &lint >-
+    if: >-
       ${{ github.event.action != 'closed' &&
       !(github.event_name == 'push' && github.ref_type == 'branch' &&
       startsWith(github.event.head_commit.message, 'release: v')) }}
@@ -105,7 +108,11 @@ jobs:
   # targets, the NDK's darwin toolchain), so it runs in ci/macos.
   fast-linux:
     name: fast (ubuntu)
-    if: *lint
+    # lint (ubuntu)'s condition, and never on a queue commit.
+    if: >-
+      ${{ github.event_name != 'merge_group' && github.event.action != 'closed' &&
+      !(github.event_name == 'push' && github.ref_type == 'branch' &&
+      startsWith(github.event.head_commit.message, 'release: v')) }}
     runs-on: ubuntu-latest
     # Job limits (ADR 0095).
     timeout-minutes: 15
@@ -135,7 +142,7 @@ jobs:
   areas:
     name: areas
     if: >-
-      ${{ github.event.action != 'closed' &&
+      ${{ github.event.action != 'closed' && github.event_name != 'merge_group' &&
       !(github.event_name == 'push' && github.ref_type == 'branch' &&
       startsWith(github.event.head_commit.message, 'release: v')) &&
       (github.event_name != 'pull_request' ||
