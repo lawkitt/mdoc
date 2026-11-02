@@ -10,7 +10,7 @@
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 tmp=$(mktemp -d)
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-merge-gate.sh)
 pids=()
 # shellcheck disable=SC2317,SC2329 # runs from the trap
 cleanup() {
