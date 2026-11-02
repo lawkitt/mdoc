@@ -36,6 +36,8 @@ struct File {
     span: Vec<SpanEntry>,
     #[serde(default)]
     variants: Vec<VariantsEntry>,
+    #[serde(default)]
+    reference: Vec<ReferenceEntry>,
 }
 
 #[derive(Deserialize)]
@@ -140,6 +142,20 @@ struct SpanEntry {
     extend: Vec<String>,
     #[serde(default)]
     strip_end: String,
+    #[serde(default)]
+    person_before: Vec<String>,
+}
+
+/// A legal reference or other marker no model span inside is (guide rule 8):
+/// "424 U.S. at 38", "26 U.S.C. § 6212", "127-ФЗ".
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReferenceEntry {
+    /// What the reference looks like; `{name}` stands for a part, and a
+    /// group named `lead` or `tail` is context it leaves out.
+    pattern: String,
+    #[serde(default)]
+    parts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -156,6 +172,8 @@ pub(crate) struct Pack {
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
     spans: Vec<Span>,
+    /// Legal references: a model span inside a match is never proposed.
+    references: Vec<Regex>,
 }
 
 /// A `span` entry: a whole span by its pattern, or a boundary fix.
@@ -178,6 +196,10 @@ struct SpanFix {
     extend: Vec<Regex>,
     /// Characters that come off the end (a sentence's period).
     strip_end: String,
+    /// Lowercase words that, ending an organization span, make it a
+    /// person's document: "Ostrand Decl." is the declaration of a person
+    /// named Ostrand.
+    person_before: Vec<String>,
 }
 
 impl SpanFix {
@@ -295,6 +317,7 @@ impl Pack {
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
+            references: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -537,33 +560,15 @@ impl Pack {
                 let category = category(&entry.category).map_err(at)?;
                 let fixes = !entry.trim.is_empty()
                     || !entry.extend.is_empty()
-                    || !entry.strip_end.is_empty();
+                    || !entry.strip_end.is_empty()
+                    || !entry.person_before.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
-                        return Err(at("a pattern takes no trim, extend or strip_end".into()));
+                        return Err(at(
+                            "a pattern takes no trim, extend, strip_end or person_before".into(),
+                        ));
                     }
-                    let mut pattern = pattern.clone();
-                    for (part, regex) in &entry.parts {
-                        let name = format!("{{{part}}}");
-                        if !pattern.contains(&name) {
-                            return Err(at(format!("part {part:?} is never used")));
-                        }
-                        pattern = pattern.replace(&name, &format!("(?:{regex})"));
-                    }
-                    let pattern =
-                        Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
-                    // An empty span is no detection: the review would
-                    // discard the whole scan.
-                    if pattern.is_match("") {
-                        return Err(at("the pattern matches an empty span".into()));
-                    }
-                    if let Some(group) = pattern
-                        .capture_names()
-                        .flatten()
-                        .find(|group| !["lead", "tail"].contains(group))
-                    {
-                        return Err(at(format!("group {group:?} is not `lead` or `tail`")));
-                    }
+                    let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
                     pack.spans.push(Span::Pattern { category, pattern });
                     continue;
                 }
@@ -572,10 +577,14 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, extend patterns or strip_end".into(),
+                        "needs a pattern, trim words, extend patterns, strip_end or person_before"
+                            .into(),
                     ));
                 }
-                for word in &entry.trim {
+                if !entry.person_before.is_empty() && category != Category::Organization {
+                    return Err(at("only an ORG fix takes person_before".into()));
+                }
+                for word in entry.trim.iter().chain(&entry.person_before) {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
                     }
@@ -598,7 +607,13 @@ impl Pack {
                     trim: entry.trim.clone(),
                     extend,
                     strip_end: entry.strip_end.clone(),
+                    person_before: entry.person_before.clone(),
                 }));
+            }
+            for (index, entry) in file.reference.iter().enumerate() {
+                let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
+                pack.references
+                    .push(with_parts(&entry.pattern, &entry.parts).map_err(at)?);
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -763,6 +778,7 @@ impl Pack {
                     };
             }
         }
+        self.person_documents(source, detections);
         detections.retain(|d| {
             !d.range.is_empty()
                 && self.identifying(&view.text[view.view_range(d.range.clone())], d.category)
@@ -787,9 +803,12 @@ impl Pack {
             return false;
         }
         // Checked once grown: "АЗС" in "ООО «АЗС»" is a company's name, not
-        // the abbreviation (#481).
+        // the abbreviation (#481), and so is "C.F.R." in "ООО «C.F.R.»".
         if self.grows_to_company(source, range.clone(), category) {
             return true;
+        }
+        if self.in_reference(source, range.clone()) {
+            return false;
         }
         let quoted = self
             .shapes
@@ -859,6 +878,105 @@ impl Pack {
         // "ООО «Судак»" grows to its legal form before a court's stem in it
         // could drop it.
         self.shaped(text, category) && !quoted
+    }
+
+    /// Whether `range` of `source` lies inside a `reference` match, a legal
+    /// reference ("424 U.S. at 38", "статьи 431 ГК РФ"): no identifier,
+    /// address or name (guide rule 8). The span's lines are searched as
+    /// detection reads them ("&sect;" is "§"), and again with the line on
+    /// each side joined where a citation may wrap onto it ("904 F.2d\n275,
+    /// 277"): a soft break between two lines of running text.
+    fn in_reference(&self, source: &str, range: std::ops::Range<usize>) -> bool {
+        if self.references.is_empty() {
+            return false;
+        }
+        let line_start = |at: usize| source[..at].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |i| at + i);
+        let start = line_start(range.start);
+        let end = line_end(range.end);
+        let inside = |from: usize, text: &str| {
+            let view = mdoc_pii::view::View::new(text);
+            let span = view.view_range(range.start - from..range.end - from);
+            self.references.iter().any(|pattern| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            })
+        };
+        if inside(start, &source[start..end]) {
+            return true;
+        }
+        let mut wide = start..end;
+        if start > 0 {
+            let before = line_start(start - 1);
+            if soft_break(&source[before..start - 1], &source[start..end]) {
+                wide.start = before;
+            }
+        }
+        if end < source.len() {
+            let after = line_end(end + 1);
+            if soft_break(&source[line_start(end)..end], &source[end + 1..after]) {
+                wide.end = after;
+            }
+        }
+        // One space for each line break: offsets stay the source's.
+        let lines = &source[wide.clone()];
+        lines.contains('\n') && inside(wide.start, &lines.replace(['\r', '\n'], " "))
+    }
+
+    /// An organization span ending in a `person_before` word ("Ostrand
+    /// Decl.") becomes the person before it ("Ostrand") when a person's span
+    /// holds each of that name's words: a declaration is a person's, never
+    /// a company.
+    fn person_documents(&self, source: &str, detections: &mut [Detection]) {
+        let words: Vec<&String> = self
+            .spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) => Some(&fix.person_before),
+                Span::Pattern { .. } => None,
+            })
+            .flatten()
+            .collect();
+        if words.is_empty() {
+            return;
+        }
+        let name_words = |text: &str| -> Vec<String> {
+            text.split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned)
+                .collect()
+        };
+        let people: Vec<Vec<String>> = detections
+            .iter()
+            .filter(|d| d.category == Category::Person)
+            .map(|d| name_words(&source[d.range.clone()]))
+            .collect();
+        for detection in detections
+            .iter_mut()
+            .filter(|d| d.category == Category::Organization)
+        {
+            let text = source[detection.range.clone()].trim_end();
+            let Some((name, last)) = text.rsplit_once(char::is_whitespace) else {
+                continue;
+            };
+            let last = last.trim_end_matches('.').to_lowercase();
+            let name = name.trim_end();
+            let wanted = name_words(name);
+            if !words.iter().any(|word| **word == last)
+                || wanted.is_empty()
+                || !people
+                    .iter()
+                    .any(|person| wanted.iter().all(|word| person.contains(word)))
+            {
+                continue;
+            }
+            let at = detection.range.start + (text.len() - text.trim_start().len());
+            let name = name.trim_start();
+            detection.range = at..at + name.len();
+            detection.category = Category::Person;
+        }
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -1080,6 +1198,35 @@ impl Pack {
     }
 }
 
+/// `pattern` with each `{name}` replaced by `parts.name`, compiled: every
+/// part used, no empty match (an empty span is no detection: the review
+/// would discard the whole scan) and no group but `lead` and `tail`.
+fn with_parts(
+    pattern: &str,
+    parts: &std::collections::BTreeMap<String, String>,
+) -> Result<Regex, String> {
+    let mut pattern = pattern.to_owned();
+    for (part, regex) in parts {
+        let name = format!("{{{part}}}");
+        if !pattern.contains(&name) {
+            return Err(format!("part {part:?} is never used"));
+        }
+        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+    }
+    let pattern = Regex::new(&rust_classes(&pattern)).map_err(|e| e.to_string())?;
+    if pattern.is_match("") {
+        return Err("the pattern matches an empty span".into());
+    }
+    if let Some(group) = pattern
+        .capture_names()
+        .flatten()
+        .find(|group| !["lead", "tail"].contains(group))
+    {
+        return Err(format!("group {group:?} is not `lead` or `tail`"));
+    }
+    Ok(pattern)
+}
+
 /// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
 /// "ГКУ «Дирекция района»" is "ГКУ ". An unclosed quote stays as it is.
 fn unquoted(text: &str) -> String {
@@ -1150,6 +1297,22 @@ fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
         };
     }
     ranges
+}
+
+/// Whether the break between lines `first` and `second` may wrap running
+/// text: neither is blank, a heading or a table row, and the second opens
+/// no quote, list item or numbered item.
+fn soft_break(first: &str, second: &str) -> bool {
+    let (first, second) = (first.trim(), second.trim());
+    let numbered = second
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with(['.', ')'])
+        && second.starts_with(|c: char| c.is_ascii_digit());
+    !first.is_empty()
+        && !second.is_empty()
+        && !first.starts_with(['|', '#'])
+        && !second.starts_with(['|', '#', '>', '-', '*', '+'])
+        && !numbered
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -1267,7 +1430,7 @@ mod tests {
             let lines: Vec<&str> = file.1.lines().collect();
             for (index, line) in lines.iter().enumerate() {
                 let opens = line.starts_with("[[")
-                    || ["never", "context", "shape", "span", "variants"]
+                    || ["never", "context", "shape", "span", "variants", "reference"]
                         .iter()
                         .any(|section| line.starts_with(&format!("{section} =")));
                 if opens {
@@ -2721,6 +2884,236 @@ mod tests {
         assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
     }
 
+    /// What the user is shown for the model's `raw` spans (text and label,
+    /// each found at its first place): the correction stage and the review.
+    fn shown(source: &str, raw: &[(&str, &str)]) -> Vec<(String, String)> {
+        let raw: Vec<crate::RawEntity> = raw
+            .iter()
+            .map(|(text, label)| {
+                let start = source
+                    .find(text)
+                    .unwrap_or_else(|| panic!("{text:?} not in the source"));
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.8,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect()
+    }
+
+    fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+        expected
+            .iter()
+            .map(|(text, category)| ((*text).to_owned(), (*category).to_owned()))
+            .collect()
+    }
+
+    /// US and UK citations are no identifiers, addresses or names: reporter,
+    /// Westlaw and law-report citations, codes and their abbreviations,
+    /// sections, the record and a form's outline letter (guide rule 8,
+    /// issues #499 and #480).
+    #[test]
+    fn english_legal_references_are_never_proposed() {
+        let source = "As held at 912 F.3d 455, 460 and 77 N.E.2d 310, and 424 U.S. at 38 \
+            (527 U.S. 706; 33 A.D.3d 352; 904 F.2d 275, 277), under 26 U.S.C. § 6212, \
+            31 U.S.C. 3903, I.R.C. § 61, 48 CFR 52.212-1, FAR 52.212-1, 34 CFR §300.8, \
+            E.O. 13526, Release No. 34-98765, 2031 WL 1234567, [2031] STC 412 and ICR 801 \
+            (Tr. 112-14; Tr. 435-36; ECF Doc. #12-3; 123sa; see n. 14; Id. at 41; \
+            ROA.977), for tax year 2029/30, the U.S. District Court ruled.\n\nJ. Additional Questions\n";
+        let raw = [
+            ("912 F.3d 455, 460 and 77 N.E.2d 310", "address"),
+            ("424 U.S. at 38", "address"),
+            ("U.S.", "organization"),
+            ("A.D.", "person"),
+            ("904 F.2d 275, 277", "phone_number"),
+            ("6212", "tax_id"),
+            ("31 U.S.C. 3903", "bank_account"),
+            ("S.C.", "person"),
+            ("R.C.", "person"),
+            ("48 CFR 52.212-1", "tax_id"),
+            ("FAR 52.212-1", "tax_id"),
+            ("300.8", "tax_id"),
+            ("13526", "tax_id"),
+            ("34-98765", "tax_id"),
+            ("2031 WL 1234567", "tax_id"),
+            ("STC 412", "tax_id"),
+            ("ICR 801", "bank_account"),
+            ("Tr. 112-14", "tax_id"),
+            ("435-36", "tax_id"),
+            ("#12-3", "tax_id"),
+            ("123sa", "tax_id"),
+            ("n. 14", "passport_number"),
+            ("Id. at 41", "passport_number"),
+            ("ROA.977", "national_id_number"),
+            ("2029/30", "tax_id"),
+            ("J.", "person"),
+        ];
+        assert_eq!(shown(source, &raw), []);
+        assert_eq!(
+            shown("Before the U.S. District Court.", &[("U.S.", "person")]),
+            []
+        );
+        // The same abbreviation as a span alone, whatever its neighbours.
+        for text in ["U.S.", "U.K.", " U.S.A. "] {
+            assert!(!pack().identifying(text, Category::Organization), "{text}");
+            assert!(!pack().identifying(text, Category::Person), "{text}");
+        }
+    }
+
+    /// A real identifier beside a citation stays: a tax number, a case
+    /// number after its label, a phone, a company, a person, a university.
+    #[test]
+    fn identifiers_beside_a_citation_stay() {
+        let source = "Under 26 U.S.C. § 6212 (EIN 98-7654321), Case No. 1:26-cv-01234 \
+            (citing 424 U.S. at 38), call +1 (202) 555-0164 (904 F.2d 275, 277). \
+            U.S. Bank paid; USC agreed; GB 123 4567 89 is the VAT number.\n\n\
+            J. Ostrand\n";
+        let raw = [
+            ("EIN 98-7654321", "tax_id"),
+            ("+1 (202) 555-0164", "phone_number"),
+            ("U.S. Bank", "organization"),
+            ("USC", "organization"),
+            ("GB 123 4567 89", "tax_id"),
+            ("J. Ostrand", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("98-7654321", "TAX"),
+                ("1:26-cv-01234", "CASE"),
+                ("+1 (202) 555-0164", "PHONE"),
+                ("U.S. Bank", "ORG"),
+                ("USC", "ORG"),
+                ("GB 123 4567 89", "TAX"),
+                ("J. Ostrand", "PERSON"),
+            ])
+        );
+        // A tax year is no tax number; a number in another shape stays.
+        assert!(!pack().identifying("2014/15", Category::Tax));
+        assert!(!pack().identifying("2014-2015", Category::Tax));
+        assert!(pack().identifying("98-7654321", Category::Tax));
+        assert!(pack().identifying("123-45-6789", Category::Tax));
+    }
+
+    /// Russian law, article and court-act numbers are no tax numbers; the
+    /// INN beside them stays (guide rule 8, issue #480).
+    #[test]
+    fn russian_legal_references_are_never_proposed() {
+        let source = "на основании Федерального закона от 26.10.2002 № 127-ФЗ, Федерального \
+            закона № 999-ФЗ и статьи 431 ГК РФ, ст. 428 ГК РФ, п. 2 ст. 450 ГК РФ, \
+            Определения Верховного Суда РФ от 12.03.2031 № 305-ЭС31-1234 и УПД № 412, \
+            ИНН 7701234567, тел. +7 (495) 123-45-67";
+        let raw = [
+            ("127-ФЗ", "tax_id"),
+            ("999-ФЗ", "tax_id"),
+            ("431 ГК РФ", "tax_id"),
+            ("428 ГК РФ", "tax_id"),
+            ("450", "tax_id"),
+            ("305-ЭС31-1234", "tax_id"),
+            ("412", "tax_id"),
+            ("7701234567", "tax_id"),
+            ("+7 (495) 123-45-67", "phone_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("7701234567", "TAX"), ("+7 (495) 123-45-67", "PHONE")])
+        );
+        // A court's own words may sit between the act and its number.
+        let source = "Определение судебной коллегии по экономическим спорам Верховного Суда РФ \
+            от 12.03.2031 № 305-ЭС31-1234, Приказ Минфина России от 01.02.2031 № 12н";
+        assert_eq!(
+            shown(source, &[("305-ЭС31-1234", "tax_id"), ("12н", "tax_id")]),
+            []
+        );
+        // A value between an act and a "№" stays, and so does a number
+        // after "№" that is no act's.
+        let source = "Постановление в отношении ООО «Вега», ИНН 7701234567, № 17";
+        assert_eq!(
+            shown(source, &[("7701234567", "tax_id")]),
+            pairs(&[("7701234567", "TAX")])
+        );
+        let source = "Постановление направлено владельцу паспорта № 4512345678.";
+        assert_eq!(
+            shown(source, &[("4512345678", "passport_number")]),
+            pairs(&[("4512345678", "IDENTITY")])
+        );
+    }
+
+    /// A citation is found as detection reads it: through character
+    /// references and across a soft line break. A company named like a
+    /// code keeps its name; a blank line, a table row or a list item ends
+    /// the citation (#480, #499).
+    #[test]
+    fn citations_wrapped_or_encoded_are_found_and_neighbours_stay() {
+        for source in [
+            "under 26 U.S.C. &sect; 6212 the notice",
+            "under 26 U.S.C.\n6212 the notice",
+            "under 26 U.S.C.\r\n6212 the notice",
+        ] {
+            assert_eq!(shown(source, &[("6212", "tax_id")]), [], "{source:?}");
+        }
+        assert_eq!(
+            shown(
+                "see 904 F.2d\n275, 277, and",
+                &[("904 F.2d\n275, 277", "phone_number")]
+            ),
+            []
+        );
+        assert_eq!(
+            shown("ООО «C.F.R.» paid.", &[("C.F.R.", "organization")]),
+            pairs(&[("ООО «C.F.R.»", "ORG")])
+        );
+        for source in [
+            "Under 26 U.S.C.\n\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\r\n\r\n123-45-6789 is the number.",
+            "## Under 26 U.S.C.\n123-45-6789 is the number.",
+            "Under 26 U.S.C.\n1. 123-45-6789 is the number.",
+        ] {
+            assert_eq!(
+                shown(source, &[("123-45-6789", "tax_id")]),
+                pairs(&[("123-45-6789", "TAX")]),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// "& Anor" and "& Ors" come off a party and name no one; a declaration
+    /// is its declarant's, a person's (issue #499).
+    #[test]
+    fn citation_words_and_declarations_are_no_companies() {
+        let source = "The claim by Pellow Holdings Ltd & Anor and Vey Ltd & Ors fails. Mr Ivo \
+            Ostrand confirms it (Ostrand Decl. ¶ 3; Ruel Decl. ¶ 4).";
+        let raw = [
+            ("Pellow Holdings Ltd & Anor", "organization"),
+            ("Vey Ltd", "organization"),
+            ("Ors", "organization"),
+            ("Ivo Ostrand", "person"),
+            ("Ostrand Decl", "organization"),
+            ("Ruel Decl", "organization"),
+        ];
+        // "Ruel" is no known person: the span stays as the model gave it.
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Pellow Holdings Ltd", "ORG"),
+                ("Vey Ltd", "ORG"),
+                ("Ivo Ostrand", "PERSON"),
+                ("Ostrand", "PERSON"),
+                ("Ruel Decl", "ORG"),
+            ])
+        );
+        assert!(!pack().identifying("Anor", Category::Person));
+        assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -2805,6 +3198,26 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nparts = { street = 'x' }",
                 "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nperson_before = [\"decl\"]",
+                "only an ORG fix",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nperson_before = [\"Decl\"]",
+                "not lowercase",
+            ),
+            (
+                "[[reference]]\npattern = 'x*'",
+                "reference #1: the pattern matches an empty span",
+            ),
+            (
+                "[[reference]]\npattern = '\\d+'\nparts = { code = 'x' }",
+                "never used",
+            ),
+            (
+                "[[reference]]\npattern = '(?P<code>x)'",
+                "is not `lead` or `tail`",
             ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (

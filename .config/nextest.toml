@@ -1,8 +1,28 @@
-# cargo-nextest settings for `just test` (ADR 0082). No retries, no JUnit.
+# cargo-nextest settings for `just test` (ADR 0082, ADR 0095). No retries,
+# no JUnit. `just test` runs every tier; `scripts/test.sh --tier <name>` runs
+# one, which CI runs as its own job (ADR 0095):
+#
+#   unit         the crates (everything outside the app package) except the
+#                recognition fixtures
+#   app          the app package's tests (the GPUI workspace tests among
+#                them) except the render test, at most 4 at a time
+#   renders      the render test (tests/headless_renders.rs)
+#   recognition  the recognition fixtures on their snapshots
+#
+# Quarantined tests (.config/quarantine.txt) are left out by scripts/test.sh.
 [profile.default]
 retries = 0
-# Warn at 60 s, kill at 2 min.
-slow-timeout = { period = "60s", terminate-after = 2 }
+# Warn at 30 s, kill at 2 min (ADR 0095). A slow test is a bug, not a limit
+# to raise.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[test-groups]
+# GPUI window tests starve each other on small hosted runners (3 vCPUs).
+app = { max-threads = 4 }
+
+[[profile.default.overrides]]
+filter = "package(mdoc) - binary_id(mdoc::headless_renders)"
+test-group = "app"
 
 # The render test has its own hang watchdog (10 min on macOS, 20 on Windows,
 # tests/headless_renders.rs). Nextest kills it one period later, so the
