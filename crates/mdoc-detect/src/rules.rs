@@ -134,6 +134,11 @@ struct SpanEntry {
     /// Named pieces of the pattern, each a regex.
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
+    /// By category, what a model span the pattern's match holds looks like
+    /// with what follows it, its own text the `span` group: such a span is
+    /// part of the match, not a span of its own. The parts work here too.
+    #[serde(default)]
+    absorbs: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
     #[serde(default)]
@@ -165,6 +170,11 @@ enum Span {
     Pattern {
         category: Category,
         pattern: Regex,
+        /// A model span of the category, read from its start by the regex
+        /// (anchored there) as its `span` group, is the match's own part
+        /// where the match holds it: a building's name in an address is no
+        /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
+        absorbs: Vec<(Category, Regex)>,
     },
     Fix(SpanFix),
 }
@@ -542,14 +552,34 @@ impl Pack {
                     if fixes {
                         return Err(at("a pattern takes no trim, extend or strip_end".into()));
                     }
-                    let mut pattern = pattern.clone();
+                    let with_parts = |pattern: &str| {
+                        entry
+                            .parts
+                            .iter()
+                            .fold(pattern.to_owned(), |pattern, (part, regex)| {
+                                pattern.replace(&format!("{{{part}}}"), &format!("(?:{regex})"))
+                            })
+                    };
+                    let mut used = pattern.clone();
                     for (part, regex) in &entry.parts {
                         let name = format!("{{{part}}}");
-                        if !pattern.contains(&name) {
+                        if !used.contains(&name) {
                             return Err(at(format!("part {part:?} is never used")));
                         }
-                        pattern = pattern.replace(&name, &format!("(?:{regex})"));
+                        used = used.replace(&name, &format!("(?:{regex})"));
                     }
+                    let mut absorbs = Vec::new();
+                    for (name, regex) in &entry.absorbs {
+                        let absorbed = self::category(name).map_err(at)?;
+                        let regex =
+                            Regex::new(&rust_classes(&format!(r"\A(?:{})", with_parts(regex))))
+                                .map_err(|e| at(e.to_string()))?;
+                        if !regex.capture_names().flatten().any(|group| group == "span") {
+                            return Err(at(format!("absorbs.{name} has no `span` group")));
+                        }
+                        absorbs.push((absorbed, regex));
+                    }
+                    let pattern = with_parts(pattern);
                     let pattern =
                         Regex::new(&rust_classes(&pattern)).map_err(|e| at(e.to_string()))?;
                     // An empty span is no detection: the review would
@@ -564,11 +594,15 @@ impl Pack {
                     {
                         return Err(at(format!("group {group:?} is not `lead` or `tail`")));
                     }
-                    pack.spans.push(Span::Pattern { category, pattern });
+                    pack.spans.push(Span::Pattern {
+                        category,
+                        pattern,
+                        absorbs,
+                    });
                     continue;
                 }
-                if !entry.parts.is_empty() {
-                    return Err(at("parts need a pattern".into()));
+                if !entry.parts.is_empty() || !entry.absorbs.is_empty() {
+                    return Err(at("parts and absorbs need a pattern".into()));
                 }
                 if !fixes {
                     return Err(at(
@@ -1032,13 +1066,42 @@ impl Pack {
             })
     }
 
+    /// Whether a model span of `category` at `at` of `text`, inside a
+    /// `span` pattern's match of `matched`, is that match's own part (its
+    /// `absorbs`): "Harrow House" before ", 12 Pellin Street" is the
+    /// address's building, not a company.
+    pub(crate) fn absorbs(
+        &self,
+        text: &str,
+        matched: Category,
+        category: Category,
+        at: std::ops::Range<usize>,
+    ) -> bool {
+        self.spans.iter().any(|span| match span {
+            Span::Pattern {
+                category: of,
+                absorbs,
+                ..
+            } if *of == matched => absorbs.iter().any(|(absorbed, regex)| {
+                *absorbed == category
+                    && regex
+                        .captures(&text[at.start..])
+                        .and_then(|found| found.name("span"))
+                        .is_some_and(|span| span.range() == (0..at.len()))
+            }),
+            _ => false,
+        })
+    }
+
     /// Whole spans the `span` patterns find in `source`: an address from
     /// its first element to its postcode or city (ADR 0092).
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
         self.spans
             .iter()
             .filter_map(|span| match span {
-                Span::Pattern { category, pattern } => Some((*category, pattern)),
+                Span::Pattern {
+                    category, pattern, ..
+                } => Some((*category, pattern)),
                 Span::Fix(_) => None,
             })
             .flat_map(|(category, pattern)| {
@@ -2782,6 +2845,114 @@ mod tests {
         assert!(shown(source).is_empty());
     }
 
+    /// #498 on the real model: it reads the building's name before a house
+    /// number as a company. That company is the address's own part, and the
+    /// address stands whole; a company named like a building with no street
+    /// after it, or not ending in a building word, stays a company.
+    #[test]
+    fn a_building_name_before_its_street_is_the_address_not_a_company() {
+        let shown = |source: &str, model: &[(&str, &str)]| -> Vec<(String, String)> {
+            let raw: Vec<_> = model
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    crate::RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.98,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect()
+        };
+        let pair = |text: &str, category: &str| (text.to_owned(), category.to_owned());
+        // The fixture's snapshot: the building a company, the rest an
+        // address with its country.
+        assert_eq!(
+            shown(
+                "Notices to Larkfield Supply LLC and to Harrow House, 12 Pellin Street\n\
+                 Slocombe SL9 9ZZ\nUK.\n",
+                &[
+                    ("Larkfield Supply LLC", "organization"),
+                    ("Harrow House", "organization"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ\nUK", "address"),
+                ]
+            ),
+            [
+                pair("Larkfield Supply LLC", "ORG"),
+                pair(
+                    "Harrow House, 12 Pellin Street\nSlocombe SL9 9ZZ",
+                    "ADDRESS"
+                ),
+            ]
+        );
+        // On its own line, or with a suite before the street; the model
+        // finding no address at all.
+        for (source, building, address) in [
+            (
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                "Harrow House",
+                "Harrow House\n12 Pellin Street\nSlocombe SL9 9ZZ",
+            ),
+            (
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996\n",
+                "Ardley Building",
+                "Ardley Building, Suite 400\n1750 Quillon Avenue, NW\nWexford, DC 20996",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(building, "organization")]),
+                [pair(address, "ADDRESS")],
+                "{source}"
+            );
+        }
+        // A company named like a building: with its legal form, with no
+        // street after it, not ending in a building word, or before a
+        // number that is no street.
+        for (source, model, proposed) in [
+            (
+                "Harrow House Ltd agreed to pay.\n",
+                &[("Harrow House Ltd", "organization")][..],
+                &[("Harrow House Ltd", "ORG")][..],
+            ),
+            (
+                "Harrow House agreed to pay.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+            (
+                "Notices to Harrow House Ltd, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Harrow House Ltd", "organization")],
+                &[
+                    ("Harrow House Ltd", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Notices to Tower Records, 12 Pellin Street\nSlocombe SL9 9ZZ\n",
+                &[("Tower Records", "organization")],
+                &[
+                    ("Tower Records", "ORG"),
+                    ("12 Pellin Street\nSlocombe SL9 9ZZ", "ADDRESS"),
+                ],
+            ),
+            (
+                "Harrow House, 12 March 2026, Slocombe.\n",
+                &[("Harrow House", "organization")],
+                &[("Harrow House", "ORG")],
+            ),
+        ] {
+            let proposed: Vec<_> = proposed.iter().map(|(t, c)| pair(t, c)).collect();
+            assert_eq!(shown(source, model), proposed, "{source}");
+        }
+    }
+
     /// Rules win the review's conflicts, but a span pattern's match gives
     /// way wherever it is not the widest evidence, so it never cuts what the
     /// model or another rule found; a model address inside it grows to it.
@@ -3103,6 +3274,18 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nparts = { street = 'x' }",
                 "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nstrip_end = \".\"\nabsorbs = { ORG = '(?P<span>x)' }",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { ORG = 'x' }",
+                "no `span` group",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nabsorbs = { NOPE = '(?P<span>x)' }",
+                "span #1",
             ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
