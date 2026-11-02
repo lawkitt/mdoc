@@ -1117,6 +1117,57 @@ mod tests {
         );
     }
 
+    /// #378, #478 in English: through the whole correction stage, public
+    /// bodies, laws, their defined abbreviations and places go, as
+    /// organizations or people, while companies with a public or place word
+    /// in their name stay whole.
+    #[test]
+    fn correction_drops_english_public_bodies_and_places_and_keeps_companies() {
+        let source = "The Ashmoor County Probation Department, HMRC and the 9th Cir. applied \
+                      the Gaming Act 2031 (“GA”) to Quillon Freight LLC of Boston. The State \
+                      of Ashmoria and the Town of Brindle (Illinois) sued Georgia-Quillon \
+                      Paper LLC and State Street Quillon Corp; GA binds them.";
+        let raw: Vec<RawEntity> = [
+            ("Ashmoor County Probation Department", "organization"),
+            ("HMRC", "person"),
+            ("9th Cir", "organization"),
+            ("Gaming Act 2031", "person"),
+            ("Quillon Freight LLC", "organization"),
+            ("Boston", "organization"),
+            ("State of Ashmoria", "organization"),
+            ("Brindle", "organization"),
+            ("Illinois", "organization"),
+            ("Georgia-Quillon Paper LLC", "organization"),
+            ("State Street Quillon Corp", "organization"),
+            // The abbreviation where it is used, not where it is defined.
+            ("GA", "organization"),
+        ]
+        .into_iter()
+        .map(|(text, label)| {
+            let start = source.rfind(text).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        })
+        .collect();
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| (&source[d.range], d.category))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("Quillon Freight LLC", Category::Organization),
+                ("Georgia-Quillon Paper LLC", Category::Organization),
+                ("State Street Quillon Corp", Category::Organization),
+            ]
+        );
+    }
+
     /// #397: the model reads an identifier column's cells with their
     /// header; a span over the header and the value maps to the cell, one
     /// only over the header goes, and a label rule finds the value.

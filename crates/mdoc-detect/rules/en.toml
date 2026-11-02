@@ -111,22 +111,202 @@ words = [
 ]
 
 # Courts and public bodies are never marked (the fixture guide's rule 8):
-# an organization span with one of these words anywhere is dropped ("County
-# Court", "Ministry of Justice", "Employment Tribunal", "Ofcom"; issue #378)
-# unless it has a legal form ("Garden Court Ltd" is a company).
+# an organization or person span with one of these words anywhere is
+# dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
+# "Ofcom", "HMRC" as a person, "EEOC"; issue #378) unless it has a legal
+# form ("Garden Court Ltd" is a company).
 [[never]]
 match = "plural"
 words = [
     "court", "tribunal", "ministry", "registry", "ombudsman", "government",
     "parliament", "police", "ofcom", "ofgem", "ofwat", "hmrc", "acas",
+    "commission", "congress", "legislature", "senate", "judiciary",
+    "probation", "administration", "hmcts", "uksc", "ewca", "ewhc", "ukut",
+    "ukftt", "ukeat", "scotus", "ohrp", "eeoc", "nlrb", "osha", "doj", "irs",
+    "fbi", "dhs", "hhs", "uspto", "ptab", "cfpb", "ftc", "fcc", "fda", "epa",
+    "dwp", "fca", "cma", "sfo", "uscis", "dea", "atf", "nhtsa", "faa", "ntsb",
+    "usda", "nih", "cdc",
 ]
-anywhere_in = ["ORG"]
+anywhere_in = ["ORG", "PERSON"]
 
 # The same bodies' -ies plurals ("Ministries of Justice").
 [[never]]
 match = "whole"
-words = ["ministries", "registries"]
+words = ["ministries", "registries", "agencies"]
+anywhere_in = ["ORG", "PERSON"]
+
+# Laws are never marked either: an Act, an amendment, a regulation, a
+# statute or a constitution by its title, as an organization or a person
+# ("Gaming Act 1968", "the First Amendment"; guide rule 8, issue #378).
+[[never]]
+match = "plural"
+words = ["act", "amendment", "regulation", "statute", "constitution"]
+anywhere_in = ["ORG", "PERSON"]
+
+# Short names that are other words too name a public body only in an
+# organization span ("SEC", "ICO", "CPS"; a person's "Sec." is a title).
+[[never]]
+match = "plural"
+words = ["sec", "ico", "cps"]
 anywhere_in = ["ORG"]
+
+# Words that make a public body or a place of a person span, though a
+# company may have them ("Northbridge Department Store", "Acme Talent
+# Agency"): "Ashmoor County Probation Department" is no one (#378).
+[[never]]
+match = "plural"
+words = ["department", "agency", "bureau", "office", "county", "district", "council"]
+anywhere_in = ["PERSON"]
+
+# Public bodies, laws and courts by their phrases, for an organization
+# (issue #378). A legal form keeps a company; words in quotes are a name.
+[[shape]]
+category = "ORG"
+body = [
+    # Departments, offices, agencies and bureaus of a state or the Crown:
+    # "Department of Justice", "Dep't of Labor", "Probation Department",
+    # "Office of the Attorney General", "Home Office", "Clerk's Office",
+    # "Agency for …", "National Security Agency", "Bureau of Prisons".
+    '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
+    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
+    '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
+    '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
+    '(?i)\b(?:federal|national|state|environment(?:al)?|intelligence|defen[cs]e|regulatory|government(?:al)?|enforcement|revenue|central|border|nuclear|space)(?:[\p{Zs}\t]+\p{Alphabetic}+){0,2}[\p{Zs}\t]+agenc(?:y|ies)\b',
+    '(?i)\bbureaus?[\p{Zs}\t]+of\b',
+    '(?i)\b(?:federal|national|census|government|state|county|city|consumer[\p{Zs}\t]+financial[\p{Zs}\t]+protection)[\p{Zs}\t]+bureau\b',
+    # Services, councils and the Treasury of a state: "Internal Revenue
+    # Service", "Crown Prosecution Service", "City Council", "HM Treasury",
+    # "HM Land Registry", "His Majesty's Revenue and Customs".
+    '(?i)\b(?:internal[\p{Zs}\t]+revenue|postal|secret|marshals?|forest|national[\p{Zs}\t]+park|prison|probation|immigration|customs|border|crown[\p{Zs}\t]+prosecution|civil|foreign|national[\p{Zs}\t]+health|public[\p{Zs}\t]+health|child[\p{Zs}\t]+protective|social|health[\p{Zs}\t]+and[\p{Zs}\t]+human|citizenship[\p{Zs}\t]+and[\p{Zs}\t]+immigration|fish[\p{Zs}\t]+and[\p{Zs}\t]+wildlife|courts[\p{Zs}\t]+and[\p{Zs}\t]+tribunals)[\p{Zs}\t]+services?\b',
+    '(?i)\binternal[\p{Zs}\t]+revenue\b|\brevenue[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+customs\b',
+    '(?i)\b(?:city|county|borough|district|parish|town|metropolitan|municipal|privy|security)[\p{Zs}\t]+council\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+|hm[\p{Zs}\t]+|h\.[\p{Zs}\t]?m\.[\p{Zs}\t]+|u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+)?treasury(?:[\p{Zs}\t]+department)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:hm|h\.[\p{Zs}\t]?m\.|(?:her|his)[\p{Zs}\t]+majesty[\x27’]s)[\p{Zs}\t]',
+    # Prosecutors and ministers: "Attorney General", "U.S. Attorney",
+    # "District Attorney", "Secretary of State".
+    '(?i)\battorneys?[\p{Zs}\t-]+generals?\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?\b',
+    '(?i)\bsecretary[\p{Zs}\t]+of[\p{Zs}\t]+state\b',
+    # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
+    # Circuit", "Northern District of …", "Chancery Division", and the
+    # employment tribunals' short names alone ("ET", "EAT").
+    '(?i)(?:^|[\s\p{P}])(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|d\.[\p{Zs}\t]?c\.|federal)[\p{Zs}\t]+cir(?:cuit\b|\.|[\s\p{P}]|$)',
+    '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
+    '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:EAT|ET)[\s\p{P}]*$',
+    # Codes and rules of law: "Bankruptcy Code", "Code of Federal
+    # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
+    # Evidence".
+    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
+    '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
+    '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
+]
+
+# A country, state or city is a place, not an organization: alone, several
+# together, or as both sides of a caption ("Pakistan", "Illinois", "United
+# States", the "U.S." of "18 U.S.C.", "Boston", "Georgia v. Alabama"), and
+# so are "State", "States" and "Federal" alone (guide rules 2 and 3, issue
+# #478). Any other word keeps the name ("Bank of America", "State Street",
+# "New York Life", "Georgia-Pacific"). So does a place after "State of",
+# "Town of" and the like ("State of Ashmoria", "People of the State of …",
+# "District of Columbia") and a county by its name ("Ashmoor County").
+[[shape]]
+category = "ORG"
+body = [
+    '''(?ix) ^[\s\p{P}]* (?: (?:
+        the | of | and | v | vs | people | state | states | federal
+        | commonwealth | nation | republic | kingdom | united[\p{Zs}\t]+states
+        | united[\p{Zs}\t]+kingdom | united[\p{Zs}\t]+nations | america | usa
+        | u\.[\p{Zs}\t]?s\.?(?:[\p{Zs}\t]?a\.?)? | us | uk | u\.[\p{Zs}\t]?k\.? | eu
+        | european[\p{Zs}\t]+union | europe | great[\p{Zs}\t]+britain | britain
+        | england | wales | scotland | northern[\p{Zs}\t]+ireland | ireland
+        | d\.[\p{Zs}\t]?c\.?
+        | alabama | alaska | arizona | arkansas | california | colorado
+        | connecticut | delaware | florida | georgia | hawaii | idaho | illinois
+        | indiana | iowa | kansas | kentucky | louisiana | maine | maryland
+        | massachusetts | michigan | minnesota | mississippi | missouri | montana
+        | nebraska | nevada | new[\p{Zs}\t]+hampshire | new[\p{Zs}\t]+jersey
+        | new[\p{Zs}\t]+mexico | new[\p{Zs}\t]+york | north[\p{Zs}\t]+carolina
+        | north[\p{Zs}\t]+dakota | ohio | oklahoma | oregon | pennsylvania
+        | rhode[\p{Zs}\t]+island | south[\p{Zs}\t]+carolina | south[\p{Zs}\t]+dakota
+        | tennessee | texas | utah | vermont | virginia | washington
+        | west[\p{Zs}\t]+virginia | wisconsin | wyoming
+        | district[\p{Zs}\t]+of[\p{Zs}\t]+columbia | puerto[\p{Zs}\t]+rico | guam
+        | american[\p{Zs}\t]+samoa | virgin[\p{Zs}\t]+islands
+        | northern[\p{Zs}\t]+mariana[\p{Zs}\t]+islands
+        | afghanistan | albania | algeria | andorra | angola | argentina | armenia
+        | australia | austria | azerbaijan | bahamas | bahrain | bangladesh
+        | barbados | belarus | belgium | belize | benin | bhutan | bolivia
+        | bosnia | botswana | brazil | brunei | bulgaria | burkina[\p{Zs}\t]+faso
+        | burundi | cambodia | cameroon | canada | chile | china | colombia | congo
+        | costa[\p{Zs}\t]+rica | croatia | cuba | cyprus | czechia
+        | czech[\p{Zs}\t]+republic | denmark | djibouti
+        | dominican[\p{Zs}\t]+republic | ecuador | egypt | el[\p{Zs}\t]+salvador
+        | eritrea | estonia | eswatini | ethiopia | fiji | finland | france | gabon
+        | gambia | germany | ghana | greece | grenada | guatemala | guinea | guyana
+        | haiti | honduras | hong[\p{Zs}\t]+kong | hungary | iceland | india
+        | indonesia | iran | iraq | israel | italy | jamaica | japan | jordan
+        | kazakhstan | kenya | korea | south[\p{Zs}\t]+korea | north[\p{Zs}\t]+korea
+        | kosovo | kuwait | kyrgyzstan | laos | latvia | lebanon | lesotho
+        | liberia | libya | liechtenstein | lithuania | luxembourg | madagascar
+        | malawi | malaysia | maldives | mali | malta | mauritania | mauritius
+        | mexico | moldova | monaco | mongolia | montenegro | morocco | mozambique
+        | myanmar | namibia | nepal | netherlands | new[\p{Zs}\t]+zealand
+        | nicaragua | niger | nigeria | norway | oman | pakistan | palestine
+        | panama | papua[\p{Zs}\t]+new[\p{Zs}\t]+guinea | paraguay | peru
+        | philippines | poland | portugal | qatar | romania | russia
+        | russian[\p{Zs}\t]+federation | rwanda | saudi[\p{Zs}\t]+arabia | senegal
+        | serbia | sierra[\p{Zs}\t]+leone | singapore | slovakia | slovenia
+        | somalia | south[\p{Zs}\t]+africa | south[\p{Zs}\t]+sudan | spain
+        | sri[\p{Zs}\t]+lanka | sudan | suriname | sweden | switzerland | syria
+        | taiwan | tajikistan | tanzania | thailand | togo | trinidad | tobago
+        | tunisia | turkey | türkiye | turkmenistan | uganda | ukraine
+        | united[\p{Zs}\t]+arab[\p{Zs}\t]+emirates | uae | uruguay | uzbekistan
+        | venezuela | vietnam | yemen | zambia | zimbabwe
+        | new[\p{Zs}\t]+york[\p{Zs}\t]+city | los[\p{Zs}\t]+angeles | chicago
+        | houston | philadelphia | san[\p{Zs}\t]+antonio | san[\p{Zs}\t]+diego
+        | dallas | san[\p{Zs}\t]+jose | austin | jacksonville
+        | san[\p{Zs}\t]+francisco | indianapolis | seattle | denver | boston
+        | detroit | nashville | memphis | baltimore | milwaukee | albuquerque
+        | tucson | fresno | sacramento | atlanta | miami | oakland | minneapolis
+        | cleveland | new[\p{Zs}\t]+orleans | pittsburgh | st\.?[\p{Zs}\t]+louis
+        | cincinnati | tampa | honolulu | las[\p{Zs}\t]+vegas
+        | salt[\p{Zs}\t]+lake[\p{Zs}\t]+city | kansas[\p{Zs}\t]+city | newark
+        | omaha | raleigh | charlotte | london | manchester | birmingham | leeds
+        | liverpool | bristol | sheffield | newcastle | nottingham | leicester
+        | cardiff | edinburgh | glasgow | belfast | southampton | coventry | paris
+        | berlin | moscow | tokyo | beijing | toronto | sydney | dublin | brussels
+        | geneva
+    ) (?:[\s\p{P}]+|$) )+ $''',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:people[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?)?(?:state|states|commonwealth|city|town|village|borough|county|township|parish|republic|kingdom|province|territory|municipality|district)[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[^\s\p{P}]+(?:[\p{Zs}\t]+[^\s\p{P}]+){0,2}[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:county|parish|township|borough)[\s\p{P}]*$',
+]
+
+# A place's name after "City of", "Town of" and the like belongs to it, so
+# the place goes whole: the model's "Brindle" in "Town of Brindle", as an
+# organization (issue #478).
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+]
+
+# The same for a person: "Town of Plymouth" names no one (issue #478).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:City|Town|Village|Borough|County|Township|Parish|State|Commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*)?',
+]
+
+# A place after "State of", "Town of" and the like is no person
+# (issue #478).
+[[shape]]
+category = "PERSON"
+body = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
+]
 
 # English legal forms mark a manual selection as an organization
 # ("Acme Ltd.").

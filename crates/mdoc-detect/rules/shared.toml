@@ -78,6 +78,10 @@
 #   quotes_after_words = […]  or after one of these words as written ("ПО
 #                       «…»", not "по «…»"); a span holding its own quotes
 #                       counts as wrapped
+#   body    = [regex…]  a model span matching one outside quotes is a court,
+#                       public body, law or place, dropped after the span
+#                       fixes unless it has a legal form, like `anywhere_in`
+#                       words ("Department of Labor", "Massachusetts")
 # In these regexes `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` mean what
 # Rust's `char` predicates mean, whose Unicode tables may be newer than the
 # regex crate's.
