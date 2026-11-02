@@ -329,6 +329,7 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
         let (_, delimiter) = lines[row + 1];
         let columns = cells(header);
         if !header.contains('|')
+            || block_start(header)
             || !delimiter_row(delimiter)
             || cells(delimiter).len() != columns.len()
         {
@@ -348,7 +349,7 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
         row += 2;
         while let Some(&(start, line)) = lines
             .get(row)
-            .filter(|(_, line)| line.contains('|') && !line.trim().is_empty())
+            .filter(|(_, line)| line.contains('|') && !block_start(line))
         {
             for (cell, name) in cells(line).into_iter().zip(&names) {
                 let Some(name) = name else { continue };
@@ -370,25 +371,49 @@ fn delimiter_row(line: &str) -> bool {
     !cells.is_empty()
         && cells.iter().all(|cell| {
             let cell = line[cell.clone()].trim();
-            let dashes = cell.trim_start_matches(':').trim_end_matches(':');
+            // One colon at most on either side.
+            let cell = cell.strip_prefix(':').unwrap_or(cell);
+            let dashes = cell.strip_suffix(':').unwrap_or(cell);
             !dashes.is_empty() && dashes.bytes().all(|b| b == b'-')
         })
 }
 
-/// The cells of a table row, between its unescaped pipes.
+/// Whether `line` opens a block that ends a table or cannot be its header
+/// row: blank, a heading, a quote, a fence, a list item or HTML.
+fn block_start(line: &str) -> bool {
+    let line = line.trim_start();
+    line.is_empty()
+        || line.starts_with(['#', '>', '<'])
+        || line.starts_with("```")
+        || line.starts_with("~~~")
+        || line.starts_with(['-', '*', '+']) && line[1..].starts_with([' ', '\t'])
+        || line.split_once(['.', ')']).is_some_and(|(number, rest)| {
+            !number.is_empty()
+                && number.len() <= 9
+                && number.bytes().all(|b| b.is_ascii_digit())
+                && rest.starts_with([' ', '\t'])
+        })
+}
+
+/// The cells of a table row, between its unescaped pipes (a pipe after an
+/// odd run of backslashes is escaped).
 fn cells(line: &str) -> Vec<Range<usize>> {
     let mut pipes: Vec<usize> = line
         .match_indices('|')
         .map(|(i, _)| i)
-        .filter(|&i| !line[..i].ends_with('\\'))
+        .filter(|&i| line[..i].bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 0)
         .collect();
     let body = line.trim();
     let offset = line.len() - line.trim_start().len();
-    if !body.starts_with('|') {
+    let end = offset + body.len();
+    let leading = pipes.first() == Some(&offset);
+    let trailing =
+        pipes.last().is_some_and(|&last| last + 1 == end) && (pipes.len() > 1 || !leading);
+    if !leading {
         pipes.insert(0, offset.wrapping_sub(1));
     }
-    if !body.ends_with('|') || body.len() == 1 {
-        pipes.push(offset + body.len());
+    if !trailing {
+        pipes.push(end);
     }
     pipes
         .windows(2)
@@ -751,6 +776,15 @@ mod tests {
         assert_eq!(&view.text[view.view_range(value.clone())], "83-4918276");
         assert_eq!(view.source_range(view.view_range(value.clone())), value);
         assert!(View::new("| Фамилия | Имя |\n| --- | --- |\n| Кий | Ева |").is_source());
+        // An even run of backslashes leaves the pipe a column break; a
+        // heading or a list item ends the table; a delimiter takes one
+        // colon at most on either side.
+        assert_eq!(
+            View::new("| Notes | ИНН | Name |\n| --- | --- | --- |\n| x\\\\| 508614729031 | Bob 1234567890 |\n# Итог | 1234567890\n- a | 1234567890").text,
+            "| Notes | ИНН | Name |\n| --- | --- | --- |\n| x\\\\| ИНН: 508614729031 | Bob 1234567890 |\n# Итог | 1234567890\n- a | 1234567890"
+        );
+        assert!(View::new("| ИНН |\n| ::---:: |\n| 1234567890 |").is_source());
+        assert!(View::new("# ИНН | x\n| --- | --- |\n| 1234567890 | 1 |").is_source());
         assert_eq!(header_name(" **Account No.:** "), "account");
         assert_eq!(header_name("Расчётный  счёт"), "расчетный счет");
     }
