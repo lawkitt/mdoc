@@ -260,7 +260,7 @@ heads_pass() {
     return 1
   }
   while read -r n draft head; do
-    [ -n "$head" ] && [ "$draft" = false ] || continue
+    if [ -z "$head" ] || [ "$draft" != false ]; then continue; fi
     files=$(fetch_pr_files "$n") || {
       rc=1
       continue
