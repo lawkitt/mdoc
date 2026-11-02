@@ -1,7 +1,7 @@
 ---
 status: known-flaw
-flaw: literal-delimiter-pii
-issue: 423
+flaw: mrz-name
+issue: 495
 kind: ocr
 source: hunt-r7
 expect: miss: PERSON "KRENC"
