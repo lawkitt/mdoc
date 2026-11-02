@@ -34,8 +34,9 @@ just recognize <file.md|folder> --gold    # misses, false hits, boundary errors;
 just recognize <file.md|folder> --gold --snapshot   # the same from snapshots, any OS
 just recognize --scoreboard [<folder>]    # recall and precision per language × category × kind
 just recognize --refresh-snapshots [<file.md|folder>]   # the Mac only
-just recognize --check [<folder>]         # the detection gate
+just recognize --check [<folder>]         # the detection gate (--shard k/n, --out <dir> in CI)
 just recognize --record-flaws [<file.md|folder>]   # known-flaw fixtures' expect: lines
+just snapshots-fetch <pr|run>             # a failing CI gate's regenerated snapshots into the tree
 just import <file> > <id>.import.md       # mdoc's own import of a probe's original
 ```
 
@@ -57,7 +58,11 @@ does not, and the reverse.
 detection-gate` when a PR touches recognition or what it depends on: it
 reruns the model over every fixture, failing on a stale snapshot, an
 unexpected result or a model run over 5 minutes (about 14 s for 48
-fixtures on the M4).
+fixtures on the M4). Hosted CI runs the same check as `ci/detection`
+(`.github/workflows/ci-detection.yml`, ADR 0095) on `macos-26`, split into
+shards (about 2 minutes of model per 30 fixtures on its 3-core M1); a
+failing shard uploads its stale snapshots regenerated, and `just
+snapshots-fetch <pr|run>` writes them here to review and commit.
 
 ## Adding a fixture
 
