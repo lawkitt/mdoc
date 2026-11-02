@@ -230,6 +230,12 @@ an Opus fixer fixes a flaw class (ADR 0093).
 **Holdout**: recognition documents kept in the private
 `lawkitt/mdoc-holdout`, run only by the hub, to catch overfitting.
 
+**Probe**: a real public document kept in the private `lawkitt/mdoc-probes`
+and run through mdoc to find flaw classes; never a fixture (ADR 0093).
+
+**Judge**: the Opus agent that reads a probe beside mdoc's proposals and lists
+its flaws; a second judge confirms each (ADR 0093).
+
 **Merge hint**: a dismissible line under an identity in the Replacements
 panel, "Looks like Maya Bennett · Merge", for two identities that very likely
 name the same subject when no form links them. Never applied automatically;
