@@ -165,11 +165,15 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         } else if c == '&'
             && let Some((len, value)) = character_reference(&source[at..])
         {
+            // A full-width form written as a reference reads as ASCII too.
+            let value = narrowed(value);
             previous = value.chars().next_back();
             out.push((at..at + len, value));
             while chars.next_if(|&(i, _)| i < at + len).is_some() {}
         } else if invisible(c) {
             out.push((at..at + c.len_utf8(), String::new()));
+        } else if let Some(narrow) = halfwidth(c) {
+            out.push((at..at + c.len_utf8(), narrow.to_string()));
         } else if next.is_some_and(unicode_normalization::char::is_combining_mark) {
             // A letter and its combining marks, as NFC writes them
             // ("Арте\u{308}м" reads "Артём").
@@ -181,6 +185,7 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
             }
             let composed: String = source[at..end].nfc().collect();
             if composed != source[at..end] {
+                previous = composed.chars().next_back();
                 out.push((at..end, composed));
             }
         }
@@ -248,13 +253,13 @@ fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
     let mut i = at;
     while i < destination.end {
         let rest = &source[i..destination.end];
-        if rest.starts_with('@') || rest.starts_with("%40") {
+        if rest.starts_with(['@', '＠']) || rest.starts_with("%40") {
             return true;
         }
         let c = rest.chars().next().unwrap_or_default();
         if c == '&' {
             match character_reference(rest) {
-                Some((_, value)) if value == "@" => return true,
+                Some((_, value)) if value == "@" || value == "＠" => return true,
                 Some((len, _)) => i += len,
                 // A query's "&" ends the part.
                 None => return false,
@@ -338,6 +343,25 @@ pub fn wrapped_value(source: &str, range: &Range<usize>) -> bool {
         || rest
             .chars()
             .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
+}
+
+/// `text` with its full-width forms as ASCII ([`halfwidth`]).
+fn narrowed(text: String) -> String {
+    if text.chars().any(|c| halfwidth(c).is_some()) {
+        text.chars().map(|c| halfwidth(c).unwrap_or(c)).collect()
+    } else {
+        text
+    }
+}
+
+/// The ASCII character a full-width form stands for, as NFKC reads it
+/// ("４６８２" is "4682"), and the ideographic space as a space.
+fn halfwidth(c: char) -> Option<char> {
+    match c {
+        '\u{ff01}'..='\u{ff5e}' => char::from_u32(c as u32 - 0xfee0),
+        '\u{3000}' => Some(' '),
+        _ => None,
+    }
 }
 
 /// Characters that only break a word for the eye or a renderer: the soft
@@ -452,6 +476,10 @@ mod tests {
         };
         assert_eq!(span("Анна Ёлкина"), "%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина");
         assert_eq!(span("Liora Nesket"), "Liora%20Nesket");
+        // Full-width forms read as ASCII.
+        let view = View::new("Паспорт ４６８２\u{3000}７３１６０４.");
+        assert_eq!(view.text, "Паспорт 4682 731604.");
+        assert_eq!(view.source_range(15..26), 15..48);
         let view = View::new("Melora Brin-\nsett");
         let source = "Melora Brin-\nsett";
         let start = view.text.find("Melora").unwrap();
