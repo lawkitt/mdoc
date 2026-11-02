@@ -584,10 +584,32 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
     detections.extend(rules);
+    // A model span a match holds as its own part ("Harrow House" of an
+    // address) is no evidence against it. It stays for the review, which
+    // takes the match over it, or it where the review turns the match down.
+    let absorbed = |detection: &Detection, span: &Detection| {
+        detection.recognizer == mdoc_pii::Recognizer::Model
+            && span.range.start <= detection.range.start
+            && detection.range.end <= span.range.end
+            && rules::pack().absorbs(
+                &view.text,
+                span.category,
+                view.view_range(span.range.clone()),
+                detection.category,
+                view.view_range(detection.range.clone()),
+            )
+    };
     // Span matches stand only where they are the widest evidence.
     let spans: Vec<Detection> = spans
         .into_iter()
-        .filter(|span| stands(&detections, span))
+        .filter(|span| {
+            stands(
+                detections
+                    .iter()
+                    .filter(|detection| !absorbed(detection, span)),
+                span,
+            )
+        })
         .collect();
     detections.extend(spans);
     detections
@@ -643,9 +665,9 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
 /// rule's span anywhere in it (a valid email). A model span inside the
 /// match ("Ленина" in "ул. Ленина, д. 5", "Larch Road" of a whole address)
 /// loses to it.
-fn stands(others: &[Detection], rule: &Detection) -> bool {
+fn stands<'a>(mut others: impl Iterator<Item = &'a Detection>, rule: &Detection) -> bool {
     let range = &rule.range;
-    !others.iter().any(|span| {
+    !others.any(|span| {
         let overlaps = span.range.start < range.end && range.start < span.range.end;
         let inside = range.start <= span.range.start && span.range.end <= range.end;
         let strictly_inside = range.start < span.range.start && span.range.end < range.end;
