@@ -4,6 +4,7 @@ pub mod lists;
 pub mod recognition;
 mod rules;
 mod structured;
+mod urls;
 mod windows;
 use gliner2_rs::{
     ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
@@ -83,6 +84,9 @@ pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
         .find(|d| d.range == local)
     {
         return detection.category;
+    }
+    if urls::whole(&source[range.clone()]) {
+        return Category::Url;
     }
     rules::pack()
         .guess(&source[range])
@@ -473,7 +477,9 @@ pub fn scan_rules(source: &str) -> Result<Vec<Detection>, DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
     }
-    Ok(structured::scan(source))
+    let mut detections = structured::scan(source);
+    detections.extend(urls::scan(source));
+    Ok(detections)
 }
 
 /// [`scan_reserved`] on explicit model and runtime paths, with its timings.
@@ -546,7 +552,7 @@ fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>)
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
 /// the structured rules over the whole source, all reading it as the model
-/// does. Rules win the review's conflicts with the model. Pure: the same
+/// does, and web addresses as the source writes them (ADR 0094). Rules win the review's conflicts with the model. Pure: the same
 /// source and entities give the same detections, in the order a scan
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
@@ -583,7 +589,21 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             (!detection.range.is_empty()).then_some(detection)
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+    // A web address inside a labelled case number is part of it (guide rule
+    // 8), and a domain inside an email is the email's
+    // ("ismay&#64;crane-pith.invalid"); any other address wins over what is
+    // inside it, a labelled value included.
+    let addresses: Vec<Detection> = urls::scan(source)
+        .into_iter()
+        .filter(|url| {
+            !rules.iter().any(|rule| {
+                let inside = rule.range.start <= url.range.start && url.range.end <= rule.range.end;
+                inside && matches!(rule.category, Category::CaseNumber | Category::Email)
+            })
+        })
+        .collect();
     detections.extend(rules);
+    detections.extend(addresses);
     // A model span a match holds as its own part ("Harrow House" of an
     // address) is no evidence against it. It stays for the review, which
     // takes the match over it, or it where the review turns the match down.
@@ -1236,6 +1256,105 @@ mod tests {
         assert_eq!(found, [("508614729031", Category::Tax)]);
     }
 
+    /// ADR 0094: a web address reaches the review whole, after a field's
+    /// colon or an attribute's "=", with its own "_", brackets and port, and
+    /// wins over a labelled value inside it.
+    #[test]
+    fn a_web_address_reaches_the_review_whole() {
+        for (source, address) in [
+            (
+                "[profile](https://private.invalid/staff%20ID:AB1234)",
+                "https://private.invalid/staff%20ID:AB1234",
+            ),
+            (
+                "Website:https://private.invalid/Alice",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "<a href=https://private.invalid/Alice>profile</a>",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "[file](https://share.invalid/token_)",
+                "https://share.invalid/token_",
+            ),
+            (
+                "See https://private.invalid/?ids[]=123 now.",
+                "https://private.invalid/?ids[]=123",
+            ),
+            (
+                "Visit site.invalid:8080/client/Alice today.",
+                "site.invalid:8080/client/Alice",
+            ),
+            (
+                "Profile https://site.invalid/u/alice_r today.",
+                "https://site.invalid/u/alice_r",
+            ),
+            (
+                "See https://site.invalid/~alice/page#top_section.",
+                "https://site.invalid/~alice/page#top_section",
+            ),
+            (
+                "Or www.site.invalid/u/alice_r.",
+                "www.site.invalid/u/alice_r",
+            ),
+            (
+                "Form: site.invalid/?email=alice@mail.invalid",
+                "site.invalid/?email=alice@mail.invalid",
+            ),
+            (
+                "_https://private.invalid/Alice_ wrote.",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "__https://private.invalid/Alice__ wrote.",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "Profile: <https://private.invalid/alice_r>.",
+                "https://private.invalid/alice_r",
+            ),
+            (
+                "- <https://private.invalid/u/alice_r>",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "Profile:\n<https://private.invalid/u/alice_r>",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "<https://private.invalid/u/alice_r>\n\nNext.",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "Old: ~~https://private.invalid/x~~ gone.",
+                "https://private.invalid/x",
+            ),
+            (
+                "See https://private.invalid/it's here.",
+                "https://private.invalid/it's",
+            ),
+            (
+                "[file](<https://private.invalid/My File.pdf>)",
+                "https://private.invalid/My File.pdf",
+            ),
+            (
+                "[file](https://share.invalid/receipt\\).pdf)",
+                "https://share.invalid/receipt\\).pdf",
+            ),
+        ] {
+            let mut review = mdoc_pii::Review::default();
+            review.ingest(source, correct(source, &[])).unwrap();
+            let proposed: Vec<_> = review
+                .variants()
+                .iter()
+                .map(|v| (v.original.to_string(), v.category))
+                .collect();
+            assert_eq!(proposed, [(address.to_owned(), Category::Url)], "{source}");
+            assert_eq!(review.candidates().len(), 1, "{source}");
+        }
+    }
+
     /// #401, #376: a detected name spelt otherwise in a link target is
     /// proposed there too, as written.
     #[test]
@@ -1248,8 +1367,11 @@ mod tests {
             score: 0.9,
             text: "Liora Nesket".into(),
         }];
+        // The web address around a spelling is proposed too, and wins in the
+        // review (ADR 0094); the spellings stand for files and paths.
         let found: Vec<_> = correct(source, &raw)
             .into_iter()
+            .filter(|d| d.category != Category::Url)
             .map(|d| &source[d.range])
             .collect();
         assert_eq!(found, ["Liora Nesket", "Liora%20Nesket", "Liora_Nesket"]);
@@ -1273,6 +1395,7 @@ mod tests {
         let found = |source: &str, raw: &[RawEntity]| -> Vec<String> {
             correct(source, raw)
                 .into_iter()
+                .filter(|d| d.category != Category::Url)
                 .map(|d| source[d.range].to_owned())
                 .collect()
         };

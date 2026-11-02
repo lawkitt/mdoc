@@ -560,6 +560,19 @@ between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
 only_guessed = ["DATE"]
 
+# English-speaking courts, public bodies, laws and legal databases are never
+# web addresses to replace (ADR 0094, guide rule 8): "www.gov.uk/…",
+# "https://www.legislation.gov.uk/ukpga/2018/12" (every "*.gov.uk"; US
+# courts are "*.gov"). Justia and FindLaw also host lawyers' profiles, so
+# only their case-law hosts are listed.
+[[url]]
+public = [
+    "gov.uk", "judiciary.uk", "bailii.org", "supremecourt.uk",
+    "parliament.uk", "nhs.uk", "police.uk", "gov.au", "gc.ca", "govt.nz",
+    "gov.ie", "courts.ie", "law.justia.com", "caselaw.findlaw.com",
+    "westlaw.com", "lexisnexis.com", "casetext.com",
+]
+
 # Legal references are never marked (guide rule 8, issues #480 and #499).
 # Reporter citations: "424 U.S. at 38", "904 F.2d 275, 277", "33 A.D.3d
 # 352", "912 F.3d 455, 460 and 77 N.E.2d 310", with a footnote ("n. 4").

@@ -15,10 +15,10 @@ The delivery portal displayed an incomplete preview because its thumbnail genera
 
 The following source references accompanied the filing:
 
-- [Acknowledgement by ⟦PERSON|Merrit Zorlan⟧](https://filings.invalid/receipts/current)
+- [Acknowledgement by ⟦PERSON|Merrit Zorlan⟧](⟦URL|https://filings.invalid/receipts/current⟧)
 - [Delivery correspondence](mailto:⟦EMAIL|service+record@quiet-anvil.invalid⟧)
-- ![Signature of ⟦PERSON|Orla Vennick⟧](https://filings.invalid/images/signature.png)
-- [Witness folder](https://filings.invalid/witnesses/⟦PERSON|Merrit_Zorlan⟧/receipt)
+- ![Signature of ⟦PERSON|Orla Vennick⟧](⟦URL|https://filings.invalid/images/signature.png⟧)
+- [Witness folder](⟦URL|https://filings.invalid/witnesses/Merrit_Zorlan/receipt⟧)
 
 The named witness operated the receiving desk. The applicant asks that the complete acknowledgement be read alongside the delivery log, rather than substituting the portal preview for the underlying document. The respondent has been offered an opportunity to inspect both files before the application is decided.
 

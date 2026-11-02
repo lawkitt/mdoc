@@ -25,6 +25,10 @@ pub struct DiscoveryInput {
     /// Case numbers: a repeat counts only standing alone, never inside a
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
+    /// Web addresses (ADR 0094): a mention is a whole address
+    /// ([`crate::web::whole`]), and one shields the names, emails and IDs inside it
+    /// even when kept.
+    pub(super) url: Vec<bool>,
     /// Dates of birth: a mention counts only after one of its cue words
     /// ([`cue_before`]); `None` counts every mention.
     pub(super) cues: Vec<Option<Vec<String>>>,
@@ -76,10 +80,46 @@ impl DiscoveryInput {
             }
             hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
         }
+        // The user's own selection (a manual mark) counts every exact
+        // match; only a scan's repeats must be whole addresses and stay out
+        // of a kept address.
+        let manual = |index: usize| self.priority[index] > 0;
+        let url_hit = |index: usize, range: &Range<usize>| {
+            self.url[index]
+                && exact_boundary(source, range, &self.originals[index])
+                && (manual(index) || crate::web::whole(source, range))
+        };
+        // A web address, proposed, kept or replaced, holds what is inside it.
+        let mut shields: Vec<Range<usize>> = hits
+            .iter()
+            .filter(|(index, range)| url_hit(*index, range))
+            .map(|(_, range)| range.clone())
+            .collect();
+        // Sorted by start, longest first, with the furthest end so far: a
+        // range is inside another shield when one starting before it
+        // reaches its end, or a longer one starts with it. O(log n) each.
+        shields.sort_by_key(|shield| (shield.start, std::cmp::Reverse(shield.end)));
+        shields.dedup();
+        let reach: Vec<usize> = shields
+            .iter()
+            .scan(0, |furthest, shield| {
+                *furthest = shield.end.max(*furthest);
+                Some(*furthest)
+            })
+            .collect();
+        let shielded = |range: &Range<usize>| {
+            let before = shields.partition_point(|shield| shield.start < range.start);
+            before.checked_sub(1).is_some_and(|i| reach[i] >= range.end)
+                || shields
+                    .get(before)
+                    .is_some_and(|shield| shield.start == range.start && shield.end > range.end)
+        };
         hits.retain(|(index, range)| {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
+                && (!self.url[*index] || manual(*index) || crate::web::whole(source, range))
+                && (manual(*index) || !shielded(range))
                 && !crosses_syntax(&protected, source, range)
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))

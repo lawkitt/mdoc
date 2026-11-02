@@ -268,6 +268,7 @@ mod tests {
                     Recognizer::Context => panic!("structured adapter emitted a context rule"),
                     Recognizer::UserList => panic!("structured adapter emitted a list entry"),
                     Recognizer::Span => panic!("structured adapter emitted a span rule"),
+                    Recognizer::Url => panic!("structured adapter emitted a web address"),
                 }
             );
         }

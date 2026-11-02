@@ -14,8 +14,8 @@ use std::{
 };
 
 /// Gold categories, as the annotation guide names them.
-pub const CATEGORIES: [&str; 10] = [
-    "PERSON", "ORG", "ADDRESS", "DATE", "CASE", "EMAIL", "PHONE", "IDENTITY", "TAX", "BANK",
+pub const CATEGORIES: [&str; 11] = [
+    "PERSON", "ORG", "ADDRESS", "DATE", "CASE", "EMAIL", "URL", "PHONE", "IDENTITY", "TAX", "BANK",
 ];
 /// Document kinds of the guide's coverage matrix.
 pub const KINDS: [&str; 8] = [

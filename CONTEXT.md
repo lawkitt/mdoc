@@ -291,6 +291,10 @@ on the next launch; never sent automatically ([ADR 0047](docs/adr/0047-crash-rep
 **Primary wording**: the variant an identity restores to; defaults to the
 longest full form and can be changed.
 
+**Web address**: the category of an identifying URL (token `URL`, aliases
+`URL_1`…): a profile, a private site or a share link; public and legal
+addresses stay unmarked (ADR 0094).
+
 **Placeholder / alias**: stable replacement token such as `PERSON_1`.
 Generated aliases come from mdoc; custom aliases retain deliberate user names
 through category corrections.

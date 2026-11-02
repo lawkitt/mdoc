@@ -38,6 +38,19 @@ struct File {
     variants: Vec<VariantsEntry>,
     #[serde(default)]
     reference: Vec<ReferenceEntry>,
+    #[serde(default)]
+    url: Vec<UrlEntry>,
+}
+
+/// Web addresses' data (ADR 0094): which bare domains are addresses and
+/// which domains are public or legal, never proposed.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UrlEntry {
+    #[serde(default)]
+    zones: Vec<String>,
+    #[serde(default)]
+    public: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -184,6 +197,11 @@ pub(crate) struct Pack {
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
     spans: Vec<Span>,
+    /// Top-level domains a bare domain may end with, lowercase.
+    zones: std::collections::HashSet<String>,
+    /// Domains never proposed as web addresses, lowercase, with their
+    /// subdomains.
+    public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
     references: Vec<Regex>,
 }
@@ -336,6 +354,8 @@ impl Pack {
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
+            zones: std::collections::HashSet::new(),
+            public: std::collections::HashSet::new(),
             references: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
@@ -666,6 +686,32 @@ impl Pack {
                     person_before: entry.person_before.clone(),
                 }));
             }
+            for (index, entry) in file.url.iter().enumerate() {
+                let at = |problem: String| format!("{name}: url #{}: {problem}", index + 1);
+                if entry.zones.is_empty() && entry.public.is_empty() {
+                    return Err(at("needs zones or public domains".into()));
+                }
+                for (list, domains, dotted) in [
+                    (&mut pack.zones, &entry.zones, false),
+                    (&mut pack.public, &entry.public, true),
+                ] {
+                    for domain in domains {
+                        let labels_ok = domain.split('.').all(|label| {
+                            !label.is_empty()
+                                && label.chars().all(|c| c.is_alphanumeric() || c == '-')
+                        });
+                        if !labels_ok || (!dotted && domain.contains('.')) {
+                            return Err(at(format!("{domain:?} is not a domain")));
+                        }
+                        if *domain != domain.to_lowercase() {
+                            return Err(at(format!("{domain:?} is not lowercase")));
+                        }
+                        if !list.insert(domain.clone()) {
+                            return Err(at(format!("{domain:?} is listed twice")));
+                        }
+                    }
+                }
+            }
             for (index, entry) in file.reference.iter().enumerate() {
                 let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
                 pack.references
@@ -686,7 +732,41 @@ impl Pack {
                 }
             }
         }
+        // A public domain's subdomains are public already ("gov" holds
+        // "pravo.gov.ru"); listing one twice hides which entry decides.
+        for domain in &pack.public {
+            let mut parent = domain.as_str();
+            while let Some((_, rest)) = parent.split_once('.') {
+                if pack.public.contains(rest) {
+                    return Err(format!(
+                        "url: {domain:?} is inside {rest:?}, listed already"
+                    ));
+                }
+                parent = rest;
+            }
+        }
         Ok(pack)
+    }
+
+    /// Whether a bare domain may end with top-level domain `zone`.
+    pub(crate) fn web_zone(&self, zone: &str) -> bool {
+        self.zones.contains(&zone.to_lowercase())
+    }
+
+    /// Whether `host` is a public or legal site's, or a subdomain of one
+    /// (ADR 0094): "kad.arbitr.ru", "www.legislation.gov.uk".
+    pub(crate) fn public_host(&self, host: &str) -> bool {
+        let host = host.trim_end_matches('.').to_lowercase();
+        let mut rest = host.as_str();
+        loop {
+            if self.public.contains(rest) {
+                return true;
+            }
+            match rest.split_once('.') {
+                Some((_, parent)) => rest = parent,
+                None => return false,
+            }
+        }
     }
 
     /// Whether `word` is a title, role, determiner or other word that never
@@ -4040,6 +4120,10 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "[[never]]\nmatch = \"whole\"\nwords = [\"a\"]\ntypo = 1",
                 "typo",
             ),
+            ("[[url]]", "needs zones or public domains"),
+            ("[[url]]\nzones = [\"co.uk\"]", "is not a domain"),
+            ("[[url]]\npublic = [\"Gov.ru\"]", "is not lowercase"),
+            ("[[url]]\npublic = [\"gov\", \"gov\"]", "listed twice"),
         ] {
             let Err(error) = Pack::load(&[("test.toml", source)]) else {
                 panic!("accepted {source:?}");
@@ -4047,5 +4131,21 @@ Privacy Act (“BIPA”). BIPA applies.",
             assert!(error.contains(problem), "{error}");
             assert!(error.starts_with("test.toml"), "{error}");
         }
+    }
+
+    /// ADR 0094: a public domain's subdomain is never listed beside it, in
+    /// one file or across files.
+    #[test]
+    fn a_public_domain_inside_another_is_rejected() {
+        let Err(error) = Pack::load(&[
+            ("a.toml", "[[url]]\npublic = [\"gov.ru\"]"),
+            ("b.toml", "[[url]]\npublic = [\"pravo.gov.ru\"]"),
+        ]) else {
+            panic!("accepted a listed parent's subdomain");
+        };
+        assert!(
+            error.contains("\"pravo.gov.ru\" is inside \"gov.ru\""),
+            "{error}"
+        );
     }
 }

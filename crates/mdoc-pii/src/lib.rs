@@ -14,6 +14,7 @@ pub mod restore;
 mod syntax;
 pub mod tracking;
 pub mod view;
+pub mod web;
 use candidates::Candidates;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
 use std::{
@@ -32,6 +33,9 @@ pub enum Category {
     Person,
     Organization,
     Email,
+    /// An identifying web address (ADR 0094): a profile, a private site, a
+    /// share link. Public and legal addresses are never proposed.
+    Url,
     Phone,
     Address,
     Identity,
@@ -52,6 +56,7 @@ impl Category {
             Self::Person => "Person",
             Self::Organization => "Organization",
             Self::Email => "Email",
+            Self::Url => "Web address",
             Self::Phone => "Phone",
             Self::Address => "Address",
             Self::Identity => "Identity",
@@ -72,10 +77,11 @@ impl Category {
     }
     /// What scans can return, in picker order: Categories to detect lists
     /// these (ADR 0041, ADR 0076).
-    pub const DETECTED: [Self; 10] = [
+    pub const DETECTED: [Self; 11] = [
         Self::Person,
         Self::Organization,
         Self::Email,
+        Self::Url,
         Self::Phone,
         Self::Address,
         Self::Date,
@@ -85,10 +91,11 @@ impl Category {
         Self::Bank,
     ];
     /// Picker order; Other is the catch-all and comes last.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Person,
         Self::Organization,
         Self::Email,
+        Self::Url,
         Self::Phone,
         Self::Address,
         Self::Date,
@@ -103,6 +110,7 @@ impl Category {
             Self::Person => "PERSON",
             Self::Organization => "ORG",
             Self::Email => "EMAIL",
+            Self::Url => "URL",
             Self::Phone => "PHONE",
             Self::Address => "ADDRESS",
             Self::Identity => "IDENTITY",
@@ -242,16 +250,23 @@ fn safe_span(value: &str) -> bool {
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
 /// or between the lines of an address the rule pack found whole.
+///
+/// A web address keeps its own characters (ADR 0094): a final `_` and
+/// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
+/// a link's own bracket.
 fn detected_span(source: &str, detection: &Detection) -> bool {
     let range = &detection.range;
     let address =
         detection.recognizer == Recognizer::Span && detection.category == Category::Address;
     let value = &source[range.clone()];
+    let url = detection.category == Category::Url;
+    let forbidden = if url { "`|" } else { "[]`|" };
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
         && !value.starts_with('_')
-        && !value.ends_with('_')
-        && !value.chars().any(|ch| "[]`|".contains(ch))
+        && (url || !value.ends_with('_'))
+        && !value.chars().any(|ch| forbidden.contains(ch))
+        && !(url && (value.contains("](") || value.contains("][")))
         && !outside_line_breaks(source, range).contains(['<', '>'])
         && view::wrapped_value(source, range, address)
         && plain_text_span(source, range.clone())
@@ -321,6 +336,9 @@ pub enum Recognizer {
     /// A whole span by a pattern of the rule pack's `span` section: an
     /// address (ADR 0092).
     Span,
+    /// A web address by its shape, outside the rule pack's public and legal
+    /// domains (ADR 0094). It wins over a name, an email or an ID inside it.
+    Url,
     /// A form of a known full name, found by the review after a scan or a
     /// mark (ADR 0092); never a detector's.
     Propagation,
@@ -526,6 +544,11 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::CaseNumber)
                 .collect(),
+            url: self
+                .variants()
+                .iter()
+                .map(|g| g.category == Category::Url)
+                .collect(),
             cues: self
                 .variants()
                 .iter()
@@ -681,6 +704,11 @@ impl Review {
             selected.iter().any(|detection| {
                 detection.category == Category::CaseNumber
                     && source[detection.range.clone()] == **text
+            })
+        }));
+        input.url.extend(fresh.iter().map(|text| {
+            selected.iter().any(|detection| {
+                detection.category == Category::Url && source[detection.range.clone()] == **text
             })
         }));
         input.cues.extend(fresh.iter().map(|_| None));
@@ -1049,3 +1077,5 @@ impl Review {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod url_tests;

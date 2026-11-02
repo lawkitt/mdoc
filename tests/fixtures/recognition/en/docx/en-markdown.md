@@ -9,7 +9,7 @@ source: import
 | --- | --- |
 | ⟦PERSON|Alice Morgan⟧ | ⟦EMAIL|alice@example.invalid⟧ |
 
-[Write](mailto:⟦EMAIL|alice@example.invalid⟧) [Contact](https://example.invalid/clients/⟦PERSON|Alice_Morgan⟧)
+[Write](mailto:⟦EMAIL|alice@example.invalid⟧) [Contact](⟦URL|https://example.invalid/clients/Alice_Morgan⟧)
 ![Signature](images/⟦PERSON|Alice_Morgan⟧.png)
 `client = "⟦PERSON|Alice Morgan⟧"`
 ```json
