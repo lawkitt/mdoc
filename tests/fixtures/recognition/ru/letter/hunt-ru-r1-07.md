@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: url-encoded-name
 issue: 401
 kind: letter
 source: hunt-r1
-expect: miss: PERSON "Ли-Вельт"
 ---
 # Ответ на претензию о неверном тиснении
 

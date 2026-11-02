@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":832,"end":843,"label":"organization","score":0.86060363,"text":"fssp.gov.ru"},
+    {"start":902,"end":915,"label":"organization","score":0.84117436,"text":"consultant.ru"}
+  ]
+}

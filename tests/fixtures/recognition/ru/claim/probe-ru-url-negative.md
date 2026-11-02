@@ -7,7 +7,7 @@ source: probe-r2
 
 Истец ссылается на статью 15 ГК РФ в редакции, опубликованной на https://pravo.gov.ru, а также на разъяснения, размещённые на сайте www.vsrf.ru/documents/own/.
 
-Сведения о ходе дела размещаются на https://kad.arbitr.ru и на сайте суда https://msk.arbitr.ru. Решение по аналогичному спору опубликовано на https://mos-gorsud.ru/rs/tverskoj/services/cases/civil/ и в системе ГАРАНТ: https://base.garant.ru/12128809/.
+Сведения о ходе дела размещаются на https://kad.arbitr.ru и на сайте суда https://msk.arbitr.ru. Решение по аналогичному спору опубликовано на https://mos-gorsud.ru/rs/tverskoj/services/cases/civil/ и в правовой базе: https://base.garant.ru/12128809/.
 
 Выписка получена через сервис https://egrul.nalog.ru, исполнительное производство проверено на fssp.gov.ru. Текст закона доступен также на consultant.ru.
 
