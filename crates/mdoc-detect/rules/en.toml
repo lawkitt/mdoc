@@ -16,6 +16,15 @@ trim = [
     "kc", "qc", "esq", "phd",
 ]
 
+# Two initials before a surname belong to the name: the model's "Quill" in
+# "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after
+# it: "Smith J" is a judge's title. Only spaces between, never a line.
+[[span]]
+category = "PERSON"
+extend = [
+    '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
+]
+
 # An organization ends with its legal form, not the sentence's period or
 # comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
 # Ltd" (#374).

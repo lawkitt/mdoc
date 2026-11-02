@@ -1,11 +1,10 @@
 ---
 status: known-flaw
-flaw: person-prefix-boundary date-of-birth
-issue: 391 363
+flaw: date-of-birth
+issue: 363
 kind: power-of-attorney
 source: hunt-r4
 expect: miss: DATE "16 июля 1986 года"
-expect: boundary: gold PERSON "Лидией Игоревной Брюн"; proposed PERSON "Лидией Игоревной", PERSON "Брюн"
 ---
 # Генеральная доверенность с правом передоверия
 

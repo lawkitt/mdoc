@@ -40,7 +40,9 @@
 # match before a colon (a field's label) goes. Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
-#                         (the longest, when several hold it)
+#                         (the longest, when several hold it), never
+#                         into part of another span of its category;
+#                         earlier spans grow first
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period with it, and a comma
 #                         before a trailing one

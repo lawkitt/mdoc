@@ -22,6 +22,17 @@ extend = [
 category = "PERSON"
 trim = ["г-н", "г-жа", "господин", "госпожа"]
 
+# Two initials beside a surname belong to the name: the model's "Ветлин" in
+# "Ветлин Н. О." grows to the whole of it, as "Брюн" does in "Л.И. Брюн"
+# (guide rule 1, #391). Only spaces between: never across a sentence's
+# period ("Ветлин. Н. Иванов"), a comma or a line.
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.',
+    '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
+]
+
 # Titles and the words for spouses: "г-жа", "муж" name no one on their own.
 [[never]]
 match = "plural"
