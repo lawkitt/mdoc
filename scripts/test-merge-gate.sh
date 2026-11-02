@@ -29,7 +29,9 @@ eq() { [ "$1" = "$2" ] || fail "expected '$2', got '$1'"; }
 
 eq "$(printf 'docs/adr/0095-ci-on-a-merge-queue.md\nREADME.md\n' | areas_of)" ""
 eq "$(printf 'apps/ios/mdoc/App.swift\n' | areas_of)" "ios"
-eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | areas_of)" "core desktop recognition ios android"
+eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | areas_of)" "core desktop recognition ios android"
+# Recognition code is no core change: the app jobs skip it (#526).
+eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | areas_of)" "desktop recognition"
 eq "$(printf 'tests/fixtures/recognition/en/letter/x.md\n' | areas_of)" "recognition"
 echo "ok: areas from a file list"
 
