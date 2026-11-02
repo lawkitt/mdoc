@@ -437,7 +437,28 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
 /// Node kinds and child counts in document order, ignoring text values.
 /// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
 /// ADR 0092): `<br>` nodes wholly inside `value` are skipped and the text
-/// around them is one.
+/// around them is one. So is a GFM autolink literal wholly inside it
+/// ("https://site.invalid/u/alice_r", ADR 0094): the web address is the
+/// value, and its alias is plain text.
+static AS_TEXT: markdown::mdast::Node = markdown::mdast::Node::Text(markdown::mdast::Text {
+    value: String::new(),
+    position: None,
+});
+/// Whether `node` is a link written as its own text ("https://…",
+/// "www.…") wholly inside `value`.
+fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>) -> bool {
+    use markdown::mdast::Node;
+    let Node::Link(link) = node else {
+        return false;
+    };
+    let Some(at) = link.position.as_ref() else {
+        return false;
+    };
+    value.start <= at.start.offset
+        && at.end.offset <= value.end
+        && matches!(link.children.as_slice(), [Node::Text(text)]
+            if text.value.len() == at.end.offset - at.start.offset)
+}
 fn shape(
     node: &markdown::mdast::Node,
     value: &std::ops::Range<usize>,
@@ -448,6 +469,11 @@ fn shape(
     while let Some(node) = stack.pop() {
         let mut children: Vec<&Node> = Vec::new();
         for child in node.children().map_or(&[][..], Vec::as_slice) {
+            let child = if autolink_literal(child, value) {
+                &AS_TEXT
+            } else {
+                child
+            };
             let line_break = matches!(child, Node::Html(html)
             if crate::view::line_break_tag(&html.value) == Some(html.value.len())
                 && html.position.as_ref().is_some_and(|at| {

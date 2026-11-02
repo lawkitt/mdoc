@@ -1208,6 +1208,22 @@ mod tests {
                 "Visit site.invalid:8080/client/Alice today.",
                 "site.invalid:8080/client/Alice",
             ),
+            (
+                "Profile https://site.invalid/u/alice_r today.",
+                "https://site.invalid/u/alice_r",
+            ),
+            (
+                "See https://site.invalid/~alice/page#top_section.",
+                "https://site.invalid/~alice/page#top_section",
+            ),
+            (
+                "Or www.site.invalid/u/alice_r.",
+                "www.site.invalid/u/alice_r",
+            ),
+            (
+                "Form: site.invalid/?email=alice@mail.invalid",
+                "site.invalid/?email=alice@mail.invalid",
+            ),
         ] {
             let mut review = mdoc_pii::Review::default();
             review.ingest(source, correct(source, &[])).unwrap();

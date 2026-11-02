@@ -169,7 +169,6 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
         && zone.chars().all(char::is_alphabetic)
         && (name.chars().count() >= 2 || path)
         && name.chars().any(char::is_alphabetic)
-        && !source[start..end].contains('@')
 }
 
 /// The length of the address that starts `text`: up to an unbalanced
