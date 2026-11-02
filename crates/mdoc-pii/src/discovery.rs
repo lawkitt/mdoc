@@ -80,10 +80,14 @@ impl DiscoveryInput {
             }
             hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
         }
+        // The user's own selection (a manual mark) counts every exact
+        // match; only a scan's repeats must be whole addresses and stay out
+        // of a kept address.
+        let manual = |index: usize| self.priority[index] > 0;
         let url_hit = |index: usize, range: &Range<usize>| {
             self.url[index]
                 && exact_boundary(source, range, &self.originals[index])
-                && crate::web::whole(source, range)
+                && (manual(index) || crate::web::whole(source, range))
         };
         // A web address, proposed, kept or replaced, holds what is inside it.
         let shields: Vec<Range<usize>> = hits
@@ -100,8 +104,8 @@ impl DiscoveryInput {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
-                && (!self.url[*index] || crate::web::whole(source, range))
-                && !shielded(range)
+                && (!self.url[*index] || manual(*index) || crate::web::whole(source, range))
+                && (manual(*index) || !shielded(range))
                 && !crosses_syntax(&protected, source, range)
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))

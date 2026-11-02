@@ -238,12 +238,13 @@ only_guessed = ["DATE"]
 
 # English-speaking courts, public bodies, laws and legal databases are never
 # web addresses to replace (ADR 0094, guide rule 8): "www.gov.uk/…",
-# "https://www.legislation.gov.uk/ukpga/2018/12".
+# "https://www.legislation.gov.uk/ukpga/2018/12" (every "*.gov.uk"; US
+# courts are "*.gov"). Justia and FindLaw also host lawyers' profiles, so
+# only their case-law hosts are listed.
 [[url]]
 public = [
-    "gov.uk", "legislation.gov.uk", "judiciary.uk", "bailii.org",
-    "nationalarchives.gov.uk", "supremecourt.uk", "parliament.uk",
-    "service.gov.uk", "nhs.uk", "police.uk", "gov.au", "gc.ca", "govt.nz",
-    "gov.ie", "courts.ie", "uscourts.gov", "justia.com", "findlaw.com",
-    "westlaw.com", "lexisnexis.com", "casetext.com", "law.justia.com",
+    "gov.uk", "judiciary.uk", "bailii.org", "supremecourt.uk",
+    "parliament.uk", "nhs.uk", "police.uk", "gov.au", "gc.ca", "govt.nz",
+    "gov.ie", "courts.ie", "law.justia.com", "caselaw.findlaw.com",
+    "westlaw.com", "lexisnexis.com", "casetext.com",
 ]

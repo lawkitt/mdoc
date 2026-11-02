@@ -426,16 +426,13 @@ only_guessed = ["DATE"]
 # Russian courts, public bodies, laws and legal databases are never web
 # addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
 # "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",
-# every "*.gov.ru" and every court's "*.sudrf.ru".
+# every "*.gov.ru" and every court's "*.sudrf.ru". Fedresurs is not listed:
+# its "/persons/…" pages are people's.
 [[url]]
 public = [
-    "gov.ru", "pravo.gov.ru", "sudrf.ru", "arbitr.ru", "kad.arbitr.ru",
-    "ksrf.ru", "vsrf.ru", "consultant.ru", "garant.ru", "base.garant.ru",
-    "sudact.ru", "kodeks.ru", "docs.cntd.ru", "cntd.ru", "pravo.ru",
-    "fssp.gov.ru", "nalog.ru", "nalog.gov.ru", "gosuslugi.ru", "mos.ru",
-    "mos-sud.ru", "mos-gorsud.ru", "fedresurs.ru", "rosreestr.ru",
-    "rosreestr.gov.ru", "duma.gov.ru", "kremlin.ru", "government.ru",
-    "genproc.gov.ru", "sledcom.ru", "fas.gov.ru", "cbr.ru", "pfr.gov.ru",
-    "sfr.gov.ru", "zakupki.gov.ru", "egrul.nalog.ru", "notariat.ru",
-    "reestr-zalogov.ru",
+    "gov.ru", "sudrf.ru", "arbitr.ru", "ksrf.ru", "vsrf.ru",
+    "consultant.ru", "garant.ru", "sudact.ru", "kodeks.ru", "cntd.ru",
+    "pravo.ru", "nalog.ru", "gosuslugi.ru", "mos.ru", "mos-sud.ru",
+    "mos-gorsud.ru", "rosreestr.ru", "kremlin.ru", "government.ru",
+    "sledcom.ru", "cbr.ru", "notariat.ru", "reestr-zalogov.ru",
 ]

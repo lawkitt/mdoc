@@ -111,12 +111,24 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
     let (Some(zone), Some(name)) = (labels.last(), labels.iter().rev().nth(1)) else {
         return false;
     };
-    // A one-letter name only with a path ("t.me/alva_r"), never "a.co".
+    // A zone is written in lower case, or the whole host in capitals
+    // ("FORMY.SVOD.INVALID"): "here.It was" and "Contract.No 5" are words
+    // with a missing space, as OCR leaves them.
+    let cased = *zone == zone.to_lowercase() || host == host.to_uppercase();
+    // Before a two-letter zone the name has three letters or more ("ГК.РФ"
+    // is a law's abbreviation), unless a path follows ("t.invalid/…").
     let path = end > start + host.len();
+    let letters = name.chars().filter(|c| c.is_alphabetic()).count();
+    let long_enough = if zone.chars().count() <= 2 {
+        letters >= 3 || path
+    } else {
+        name.chars().count() >= 2 || path
+    };
     rules::pack().web_zone(zone)
         && zone.chars().all(char::is_alphabetic)
-        && (name.chars().count() >= 2 || path)
-        && name.chars().any(char::is_alphabetic)
+        && cased
+        && long_enough
+        && letters > 0
 }
 
 #[cfg(test)]
@@ -139,6 +151,19 @@ mod tests {
                 vec!["www.ivanov-law.ru"],
             ),
             ("сайт ivanov-law.ru.", vec!["ivanov-law.ru"]),
+            ("на сайте FORMY.SVOD.INVALID.", vec!["FORMY.SVOD.INVALID"]),
+            (
+                "канал t.chat.invalid/kovrigin_r",
+                vec!["t.chat.invalid/kovrigin_r"],
+            ),
+            ("Telegram: t.invalid/alva_r", vec!["t.invalid/alva_r"]),
+            (
+                "https://lawyers.justia.com/lawyer/jane-roe-123 and https://fedresurs.ru/persons/abc",
+                vec![
+                    "https://lawyers.justia.com/lawyer/jane-roe-123",
+                    "https://fedresurs.ru/persons/abc",
+                ],
+            ),
             ("сайт адвоката: юрист-петров.рф", vec!["юрист-петров.рф"]),
             (
                 "(see https://drive.example.invalid/s/Qx7_k9?usp=sharing)",
@@ -149,8 +174,8 @@ mod tests {
                 vec!["https://share.invalid/d/AbC123"],
             ),
             (
-                "[https://t.me/alva_r](https://t.me/alva_r)",
-                vec!["https://t.me/alva_r", "https://t.me/alva_r"],
+                "[https://t.invalid/alva_r](https://t.invalid/alva_r)",
+                vec!["https://t.invalid/alva_r", "https://t.invalid/alva_r"],
             ),
             (
                 "https://wiki.invalid/Page_(disambiguation) and <ftp://files.invalid/a>",
@@ -160,8 +185,8 @@ mod tests {
                 ],
             ),
             (
-                "**https://vk.com/id48213077**",
-                vec!["https://vk.com/id48213077"],
+                "**https://vk.social.invalid/id48213077**",
+                vec!["https://vk.social.invalid/id48213077"],
             ),
             (
                 "https://site.invalid/u/alice@mail.invalid/",
@@ -182,6 +207,9 @@ mod tests {
         for source in [
             "Email alice.morgan@example.invalid or mailto:alice@example.invalid",
             "tel:+79001234567",
+            "The claim ends here.It was filed late. Contract.No 5 of ГК.РФ applies.",
+            "OCR: the parties agree.Be it noted; see clause.Us and the term.De facto.",
+            "ab.ru, т.е.рф",
             "readme.md, run.sh, contract.docx, report.pdf",
             "п. 3.2.1, ст. 12.15, v1.2.3, т.е., e.g., U.S.",
             "See https://kad.arbitr.ru/Card/0c1f and www.consultant.ru/document/cons_doc_LAW_5142/",
@@ -189,6 +217,9 @@ mod tests {
             "https://www.legislation.gov.uk/ukpga/2018/12 and https://www.gov.uk/x",
             "mos-gorsud.ru, garant.ru, NALOG.GOV.RU, https://www.courtlistener.com/opinion/1/",
             "https://msk.sudrf.ru/modules.php?name=sud_delo",
+            "https://law.justia.com/cases/federal/1/ and https://caselaw.findlaw.com/x",
+            "https://egrul.nalog.ru, http://pravo.gov.ru, https://curia.europa.eu/juris",
+            "https://www.uscourts.gov/forms and https://hudoc.echr.coe.int",
             "files/site.ru and C:\\docs\\site.ru",
             "<pavel@\u{200b}vector.invalid>, ksen.rav@\nsvod.invalid, a&#64;b-c.invalid",
             "the email uses the reserved example.com domain",

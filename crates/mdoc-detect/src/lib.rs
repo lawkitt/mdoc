@@ -1236,6 +1236,30 @@ mod tests {
                 "Profile: <https://private.invalid/alice_r>.",
                 "https://private.invalid/alice_r",
             ),
+            (
+                "- <https://private.invalid/u/alice_r>",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "Profile:\n<https://private.invalid/u/alice_r>",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "<https://private.invalid/u/alice_r>\n\nNext.",
+                "https://private.invalid/u/alice_r",
+            ),
+            (
+                "Old: ~~https://private.invalid/x~~ gone.",
+                "https://private.invalid/x",
+            ),
+            (
+                "See https://private.invalid/it's here.",
+                "https://private.invalid/it's",
+            ),
+            (
+                "[file](<https://private.invalid/My File.pdf>)",
+                "https://private.invalid/My File.pdf",
+            ),
         ] {
             let mut review = mdoc_pii::Review::default();
             review.ingest(source, correct(source, &[])).unwrap();

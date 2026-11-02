@@ -148,8 +148,21 @@ fn a_kept_address_still_holds_the_name_inside_it() {
     let source = "Ms Morgan's page is https://example.invalid/staff/Morgan today.";
     let address = "https://example.invalid/staff/Morgan";
     let mut review = Review::default();
-    review.ingest(source, vec![url(source, address)]).unwrap();
-    let morgan = review.add_manual(source, 3..9, Category::Person).unwrap();
+    let name = Detection {
+        range: 3..9,
+        category: Category::Person,
+        score: 0.9,
+        recognizer: Recognizer::Model,
+    };
+    review
+        .ingest(source, vec![name, url(source, address)])
+        .unwrap();
+    let morgan = review
+        .variants()
+        .iter()
+        .find(|v| v.category == Category::Person)
+        .unwrap()
+        .id;
     let start = source.find(address).unwrap();
     assert_eq!(review.variant(morgan).unwrap().mentions, vec![3..9]);
     let page = review
@@ -241,18 +254,51 @@ fn a_kept_email_keeps_its_domain_when_the_address_is_applied() {
 fn a_known_address_never_replaces_the_start_of_a_longer_one() {
     let source = "https://private.invalid/doc, https://private.invalid/doc(SecretToken), \
                   https://private.invalid/doc;token=Secret and https://private.invalid/doc/2.";
+    // A scan's (or a saved mapping's) address; a hand mark counts every
+    // exact match instead.
     let mut review = Review::default();
-    review.refresh(source);
     review
-        .add_manual(
-            source,
-            0.."https://private.invalid/doc".len(),
-            Category::Url,
-        )
+        .ingest(source, vec![url(source, "https://private.invalid/doc")])
         .unwrap();
     assert_eq!(
         replaced(&review, source),
         "URL_1, https://private.invalid/doc(SecretToken), \
          https://private.invalid/doc;token=Secret and https://private.invalid/doc/2."
     );
+}
+
+/// A hand mark is the user's own selection (ADR 0094 reviews only scans'
+/// repeats): every exact match counts, inside a longer address or a kept
+/// one too.
+#[test]
+fn a_hand_marked_address_counts_every_exact_match() {
+    let source = "https://a.invalid and https://a.invalid/ and https://a.invalid/My File.pdf";
+    let mut review = Review::default();
+    review.refresh(source);
+    review
+        .add_manual(source, 0.."https://a.invalid".len(), Category::Url)
+        .unwrap();
+    assert_eq!(
+        replaced(&review, source),
+        "URL_1 and URL_1/ and URL_1/My File.pdf"
+    );
+    let source = "See https://b.invalid/clients/Alice/notes.";
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![url(source, "https://b.invalid/clients/Alice/notes")],
+        )
+        .unwrap();
+    let page = review.variants()[0].id;
+    review.keep(page, None);
+    let start = source.find("b.invalid/clients/Alice").unwrap();
+    review
+        .add_manual(
+            source,
+            start..start + "b.invalid/clients/Alice".len(),
+            Category::Url,
+        )
+        .unwrap();
+    assert_eq!(replaced(&review, source), "See https://URL_2/notes.");
 }

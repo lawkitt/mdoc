@@ -72,17 +72,51 @@ pub fn email_domain(source: &str, start: usize) -> bool {
     false
 }
 
-/// The Markdown emphasis right before `start`: a run of up to three `_` or
-/// up to three `*` ("_https://…_", "**www.…**"), or "".
+/// The Markdown emphasis right before `start`: a run of up to three `_`,
+/// `*` or `~` ("_https://…_", "**www.…**", "~~https://…~~"), or "".
 fn emphasis_before(source: &str, start: usize) -> &str {
     let before = &source[..start];
-    for mark in ['_', '*'] {
+    for mark in ['_', '*', '~'] {
         let run = before.len() - before.trim_end_matches(mark).len();
         if run > 0 {
             return &before[before.len() - run.min(3)..];
         }
     }
     ""
+}
+
+/// The length of a Markdown link destination in angle brackets that starts
+/// `text`, up to its ">" ("[x](<https://…/My File.pdf>)"): it may hold
+/// spaces. `None` when the address is not in one.
+fn angle_destination(source: &str, start: usize) -> Option<usize> {
+    let before = source[..start].strip_suffix('<')?;
+    let link = before.ends_with("](") || before.trim_end_matches([' ', '\t']).ends_with("]:");
+    if !link {
+        return None;
+    }
+    let text = &source[start..];
+    let close = text.find(['>', '<', '\n', '\r'])?;
+    text[close..].starts_with('>').then_some(close)
+}
+
+/// The length up to the first character an address never holds, from
+/// `text`'s start. An apostrophe between letters in the path is the
+/// address's own ("…/it's"); `path` is where the path starts.
+fn extent(text: &str, path: usize) -> usize {
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        let inner_apostrophe = c == '\''
+            && i > path
+            && text[..i]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            && chars.peek().is_some_and(|(_, next)| next.is_alphanumeric());
+        if stop(c) && !inner_apostrophe {
+            return i;
+        }
+    }
+    text.len()
 }
 
 /// Whether an address at `start` is glued to what is before it: a word, an
@@ -108,9 +142,16 @@ pub fn glued_before(source: &str, start: usize) -> bool {
 /// unbalanced closing bracket (a Markdown link's or a sentence's), trailing
 /// punctuation, and closing emphasis that matches the emphasis before it.
 pub fn end(source: &str, start: usize) -> usize {
+    if let Some(len) = angle_destination(source, start) {
+        return start + len;
+    }
     let text = &source[start..];
     let raw = if explicit(text) {
-        text.find(stop).unwrap_or(text.len())
+        let scheme = scheme_len(text);
+        let host = text[scheme..]
+            .find(['/', '?', '#'])
+            .map_or(text.len(), |at| scheme + at);
+        extent(text, host)
     } else {
         bare_extent(text)
     };
@@ -154,21 +195,18 @@ fn bare_extent(text: &str) -> usize {
         }
     }
     if text[end..].starts_with(['/', '?', '#']) {
-        end += text[end..].find(stop).unwrap_or(text.len() - end);
+        end += extent(&text[end..], 0);
     }
     end
 }
 
-/// The length of the address that starts `text`: up to an unbalanced
-/// closing bracket, without trailing punctuation or a bracket it opened
-/// and did not close.
+/// The length of the address `text` holds (up to its extent): up to an
+/// unbalanced closing bracket, without trailing punctuation or a bracket it
+/// opened and did not close.
 fn trimmed_len(text: &str) -> usize {
     let mut depth = [0usize; 2];
     let mut end = 0;
     for (i, c) in text.char_indices() {
-        if stop(c) {
-            break;
-        }
         let pair = usize::from(matches!(c, '[' | ']'));
         if matches!(c, '(' | '[') {
             depth[pair] += 1;
@@ -213,6 +251,19 @@ mod tests {
             ("site.invalid:8080/x, then", "site.invalid:8080/x"),
             ("сайт ivanov-law.ru—это", "ivanov-law.ru"),
             ("https://a.invalid/token_ x", "https://a.invalid/token_"),
+            ("~~https://a.invalid/x~~ gone", "https://a.invalid/x"),
+            ("See https://a.invalid/it's here", "https://a.invalid/it's"),
+            ("'https://a.invalid/x' quoted", "https://a.invalid/x"),
+            ("Visit https://a.invalid's page", "https://a.invalid"),
+            (
+                "[x](<https://a.invalid/My File.pdf>)",
+                "https://a.invalid/My File.pdf",
+            ),
+            (
+                "[ref]: <https://a.invalid/My File.pdf> \"T\"",
+                "https://a.invalid/My File.pdf",
+            ),
+            ("<https://a.invalid/x y>", "https://a.invalid/x"),
         ] {
             let range = at(source, address);
             assert_eq!(&source[range.start..end(source, range.start)], address);

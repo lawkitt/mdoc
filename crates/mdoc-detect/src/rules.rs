@@ -661,6 +661,19 @@ impl Pack {
                 }
             }
         }
+        // A public domain's subdomains are public already ("gov" holds
+        // "pravo.gov.ru"); listing one twice hides which entry decides.
+        for domain in &pack.public {
+            let mut parent = domain.as_str();
+            while let Some((_, rest)) = parent.split_once('.') {
+                if pack.public.contains(rest) {
+                    return Err(format!(
+                        "url: {domain:?} is inside {rest:?}, listed already"
+                    ));
+                }
+                parent = rest;
+            }
+        }
         Ok(pack)
     }
 
@@ -2878,6 +2891,10 @@ mod tests {
                 "[[never]]\nmatch = \"whole\"\nwords = [\"a\"]\ntypo = 1",
                 "typo",
             ),
+            ("[[url]]", "needs zones or public domains"),
+            ("[[url]]\nzones = [\"co.uk\"]", "is not a domain"),
+            ("[[url]]\npublic = [\"Gov.ru\"]", "is not lowercase"),
+            ("[[url]]\npublic = [\"gov\", \"gov\"]", "listed twice"),
         ] {
             let Err(error) = Pack::load(&[("test.toml", source)]) else {
                 panic!("accepted {source:?}");
@@ -2885,5 +2902,21 @@ mod tests {
             assert!(error.contains(problem), "{error}");
             assert!(error.starts_with("test.toml"), "{error}");
         }
+    }
+
+    /// ADR 0094: a public domain's subdomain is never listed beside it, in
+    /// one file or across files.
+    #[test]
+    fn a_public_domain_inside_another_is_rejected() {
+        let Err(error) = Pack::load(&[
+            ("a.toml", "[[url]]\npublic = [\"gov.ru\"]"),
+            ("b.toml", "[[url]]\npublic = [\"pravo.gov.ru\"]"),
+        ]) else {
+            panic!("accepted a listed parent's subdomain");
+        };
+        assert!(
+            error.contains("\"pravo.gov.ru\" is inside \"gov.ru\""),
+            "{error}"
+        );
     }
 }
