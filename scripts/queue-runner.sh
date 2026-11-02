@@ -1,0 +1,657 @@
+#!/usr/bin/env bash
+# Usage: QUEUE_CI_JOB=windows|android scripts/queue-runner.sh [run|once|status]
+#
+# The PC's runner for merge-queue commits (ADR 0095). One job per instance:
+# QUEUE_CI_JOB=windows posts ci/windows (scripts/setup.sh, just lint, just
+# test), QUEUE_CI_JOB=android posts ci/android (scripts/setup.sh, just
+# android). The PC runs both side by side, each in its own home
+# ($LOCAL_CI_HOME/queue-<job>, E:\ci\queue-<job>) with its own CI checkout,
+# target/ and state. It tests only queue commits, the branches under
+# gh-readonly-queue/main/ and ci-shadow/main/ (the shadow trial), never PR
+# heads or main: polled every 30 s with this machine's gh login, oldest
+# first, one at a time.
+#
+# scripts/merge-gate.sh reads its statuses (its header and pc_job):
+#   - a commit outside the job's area: success "Not affected: no core or
+#     <area> change", or "Docs only", from the diff, without a build;
+#   - a group holding a fork or bot PR: nothing; merge-gate runs it hosted;
+#   - a build: pending "Running <step> (<elapsed>)" at the start, at each
+#     step and at least every 4 minutes (the heartbeat: 10 minutes without
+#     one sends the job to hosted CI), then success "Passed in <time>",
+#     failure "Failed in <step>" or "Timed out in <step>", or error for a
+#     runner error or a commit the queue dropped while it ran. Each links its
+#     log folder.
+# Whole-job limits: 30 minutes (windows), 40 (android). Upkeep: a job starts
+# only with 40 GB free (a pending status says so once, so the heartbeat goes
+# stale and merge-gate falls back), deletes target/ first when it is over
+# 60 GB or rust-toolchain.toml changed, and output older than 7 days or past
+# 20 GB goes, oldest first. Results are under $LOCAL_CI_HOME/out/queue-<job>/,
+# which the local CI web task serves at $LOCAL_CI_URL/queue-<job>/;
+# status.txt there has the runner's heartbeat, job and queue.
+#
+#   run     the runner loop (what the scheduled task runs)
+#   once    the loop until nothing is queued or running, then exit
+#   status  the runner's status file and recent log
+#
+# Installed by scripts/queue-runner-setup.ps1 as a copy in
+# $QUEUE_CI_HOME/runner/scripts/, which replaces itself with main's
+# queue-runner.sh and lib.sh when idle and they differ. Settings are the
+# QUEUE_CI_* variables in config(), also read from $QUEUE_CI_HOME/runner.env.
+# Bash 3.2 compatible; scripts/test-queue-runner.sh checks it against fakes.
+# The folder this copy runs from, before lib.sh moves to the repository root.
+runner_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+every_area='core desktop recognition ios android'
+
+config() {
+  job=${QUEUE_CI_JOB:-}
+  case "$job" in
+    windows | android) ;;
+    *) die "set QUEUE_CI_JOB to windows or android" ;;
+  esac
+  if [ -z "${LOCAL_CI_HOME:-}" ]; then
+    if [ "$(platform)" = windows-x64 ]; then LOCAL_CI_HOME=/e/ci; else LOCAL_CI_HOME=$HOME/ci; fi
+  fi
+  home=${QUEUE_CI_HOME:-$LOCAL_CI_HOME/queue-$job}
+  if [ -f "$home/runner.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$home/runner.env"
+    set +a
+  fi
+  context=ci/$job
+  repo=${QUEUE_CI_REPO:-lawkitt/mdoc}
+  prefixes=${QUEUE_CI_PREFIXES:-gh-readonly-queue/main/ ci-shadow/main/}
+  checkout=$home/mdoc
+  state=$home/state
+  out=${QUEUE_CI_OUT:-$LOCAL_CI_HOME/out/queue-$job}
+  url=${QUEUE_CI_URL:-}
+  [ -n "$url" ] || [ -z "${LOCAL_CI_URL:-}" ] || url=$LOCAL_CI_URL/queue-$job
+  poll_s=${QUEUE_CI_POLL:-30}
+  tick_s=${QUEUE_CI_TICK:-5}
+  # merge-gate takes a pending status 10 minutes old for a PC that is off.
+  heartbeat_s=${QUEUE_CI_HEARTBEAT:-240}
+  # The job's area (scripts/ci-areas.txt), steps and whole-job limit (ADR 0095).
+  case "$job" in
+    windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
+    android) area=android steps='setup android' limit_s=${QUEUE_CI_TIMEOUT:-2400} ;;
+  esac
+  min_free_gb=${QUEUE_CI_MIN_FREE_GB:-40}
+  target_max_gb=${QUEUE_CI_TARGET_MAX_GB:-60}
+  out_max_kb=$((${QUEUE_CI_OUT_MAX_GB:-20} * 1048576))
+  keep_days=${QUEUE_CI_KEEP_DAYS:-7}
+}
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+short() { printf '%s' "${1:0:7}"; }
+
+duration() { printf '%dm%02ds' $(($1 / 60)) $(($1 % 60)); }
+
+# How a step reads in logs and statuses.
+label() {
+  case "$1" in
+    checkout) echo checkout ;;
+    setup) echo scripts/setup.sh ;;
+    *) echo "just $1" ;;
+  esac
+}
+
+g() { git -C "$checkout" "$@"; }
+
+# --- GitHub -----------------------------------------------------------------
+
+# The queue commits: `<branch> <sha>` lines. False when GitHub cannot be read.
+list_queue() {
+  local p
+  for p in $prefixes; do
+    gh api --paginate "repos/$repo/git/matching-refs/heads/$p" \
+      --jq '.[] | "\(.ref | sub("^refs/heads/"; "")) \(.object.sha)"' || return 1
+  done
+}
+
+# `<author type> <cross-repository>` of PR $1; false when GitHub has no such PR.
+pr_kind() { gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
+
+# Sets post_ok to whether GitHub took it.
+post() { # sha state description [target url]
+  local args=(api -X POST "repos/$repo/statuses/$1" -f "state=$2" -f "context=$context"
+    -f "description=${3:0:140}")
+  [ -z "${4:-}" ] || args+=(-f "target_url=$4")
+  local try
+  post_ok=true
+  for try in 1 2 3; do
+    if gh "${args[@]}" >/dev/null; then
+      log "$2 $context on $(short "$1"): $3"
+      return 0
+    fi
+    [ "$try" -eq 3 ] || sleep "$tick_s"
+  done
+  post_ok=false
+  log "warning: could not post $2 $context on $(short "$1"): $3"
+}
+
+# --- settling new commits -----------------------------------------------------
+
+is_done() { grep -qxF "$1" "$state/done" 2>/dev/null; }
+
+# A commit with a final status (or none to post) is never looked at again.
+mark_done() {
+  echo "$1" >>"$state/done"
+  if [ "$(wc -l <"$state/done")" -gt 1000 ]; then
+    tail -n 500 "$state/done" >"$state/done.new" && mv -f "$state/done.new" "$state/done"
+  fi
+}
+
+# The areas a queue commit brings onto main: merge-base(main, sha)..sha, by
+# the commit's own area table (every area when it has none).
+commit_areas() { # sha merge-base
+  local table
+  if ! table=$(g show "$1:scripts/ci-areas.txt" 2>/dev/null); then
+    echo "$every_area"
+    return 0
+  fi
+  g diff --no-renames --name-only -z "$2" "$1" | changed_areas "$table"
+}
+
+# PR numbers from the commit subjects between $1 and $2: squash merges end
+# "(#N)", merge commits say "Merge pull request #N" (as merge-gate reads them).
+group_prs() { # merge-base sha
+  g log --format=%s "$1..$2" | sed -nE 's/.*\(#([0-9]+)\)$/\1/p; s/^Merge pull request #([0-9]+).*/\1/p' | sort -u
+}
+
+# True when the group holds third-party code: a PR from a fork or by a bot,
+# one GitHub does not know, or no PR number at all. Sets third_why.
+third_party() { # merge-base sha
+  local prs pr line kind cross
+  prs=$(group_prs "$1" "$2") || prs=''
+  if [ -z "$prs" ]; then
+    third_why="no PR number in its commit subjects"
+    return 0
+  fi
+  for pr in $prs; do
+    line=$(pr_kind "$pr" 2>/dev/null | tr -d '\r') || line='unknown true'
+    read -r kind cross <<<"$line"
+    if [ "$kind" != User ] || [ "$cross" != false ]; then
+      third_why="#$pr (author ${kind:-unknown}, from a fork: ${cross:-unknown})"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Decides a new queue commit: a status from its diff, nothing for third-party
+# code, or a place in the build queue.
+settle() { # branch sha
+  local branch=$1 sha=$2 mb areas text=''
+  if ! mb=$(g merge-base refs/queue-ci/main "$sha"); then
+    log "warning: $(short "$sha") shares no history with main; building it"
+    mb=$sha
+  fi
+  if ! areas=$(commit_areas "$sha" "$mb"); then
+    log "warning: $(short "$sha"): could not read its areas; building it"
+    areas=$every_area
+  fi
+  if [ -z "$areas" ]; then
+    text="Docs only"
+  elif ! affects "$area" "$areas"; then
+    text="Not affected: no core or $area change"
+  fi
+  if [ -n "$text" ]; then
+    post "$sha" success "$text"
+    ! $post_ok || mark_done "$sha"
+    return 0
+  fi
+  if third_party "$mb" "$sha"; then
+    log "$(short "$sha") $branch: third-party code ($third_why); left to hosted CI"
+    mark_done "$sha"
+    return 0
+  fi
+  log "$(short "$sha") $branch: queued ($areas)"
+  queued+="$(g log -1 --format=%ct "$sha") $(g rev-list --count "$sha") $sha $branch"$'\n'
+}
+
+# Sets listed to the queue's `<branch> <sha>` lines, settles new commits,
+# and stops a job whose commit left the queue. False when GitHub or origin
+# cannot be read.
+poll() {
+  local listing branch sha ref kept='' ct n
+  if ! listing=$(list_queue | tr -d '\r'); then
+    log "warning: could not list the queue; retrying at the next poll"
+    return 1
+  fi
+  if ! g fetch --quiet --no-tags --force origin "+refs/heads/main:refs/queue-ci/main"; then
+    log "warning: could not fetch main; retrying at the next poll"
+    return 1
+  fi
+  listed=$listing
+  polled=true
+  [ -z "$run_pid" ] || is_listed "$run_sha" || stop_dropped
+  # Commits that left the queue leave the build queue.
+  while read -r ct n sha branch; do
+    [ -z "$sha" ] || ! is_listed "$sha" || kept+="$ct $n $sha $branch"$'\n'
+  done <<<"$queued"
+  queued=$kept
+  while read -r branch sha; do
+    [ -n "$sha" ] && [ "$sha" != "$run_sha" ] || continue
+    ! is_done "$sha" || continue
+    [[ $queued != *" $sha "* ]] || continue
+    if ! g fetch --quiet --no-tags --force origin "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
+      [ "$(g rev-parse "refs/queue-ci/c/$sha")" != "$sha" ]; then
+      log "warning: could not fetch $branch at $(short "$sha")"
+      continue
+    fi
+    settle "$branch" "$sha"
+  done <<<"$listing"
+  # The refs of commits done or gone from the queue.
+  for ref in $(g for-each-ref --format='%(refname)' refs/queue-ci/c/); do
+    sha=${ref##*/}
+    [ "$sha" = "$run_sha" ] || [[ $queued == *" $sha "* ]] || g update-ref -d "$ref" || true
+  done
+}
+
+is_listed() { [[ $'\n'$listed$'\n' == *" $1"$'\n'* ]]; }
+
+# --- the job ----------------------------------------------------------------
+
+dir_kb() { du -sk "$1" 2>/dev/null | awk '{ print $1 }'; }
+
+disk_free_gb() { df -Pk "$home" | awk 'NR == 2 { print int($4 / 1048576) }'; }
+
+# Output folders older than keep_days, then the oldest while the output is
+# over out_max_kb. Never while a job runs.
+prune_out() {
+  [ -d "$out" ] || return 0
+  local d
+  while IFS= read -r d; do
+    d=${d##*/}
+    log "deleting $out/$d: older than $keep_days days"
+    rm -rf "${out:?}/${d:?}"
+  done < <(find "$out" -mindepth 1 -maxdepth 1 -type d -mtime +$((keep_days - 1)))
+  while [ "$(dir_kb "$out")" -gt "$out_max_kb" ]; do
+    # shellcheck disable=SC2012 # the folders are short commit hashes
+    d=$(cd "$out" && ls -1dtr -- */ 2>/dev/null | head -n 1)
+    d=${d%/}
+    [ -n "$d" ] || break
+    log "deleting $out/$d: the output is over $((out_max_kb / 1048576)) GB"
+    rm -rf "${out:?}/${d:?}"
+  done
+}
+
+# Why a job deletes target/ first: the commit's rust-toolchain.toml differs
+# from the last job's. Remembers this one's.
+toolchain_reason() { # sha
+  local now was
+  now=$(g rev-parse --verify --quiet "$1:rust-toolchain.toml") || now=none
+  was=$(cat "$state/toolchain" 2>/dev/null || true)
+  echo "$now" >"$state/toolchain"
+  [ -z "$was" ] || [ "$was" = "$now" ] || echo "rust-toolchain.toml changed"
+}
+
+# The failing tests nextest named in a log, one per line.
+failed_tests() { # log
+  sed "s/$(printf '\033')\[[0-9;]*m//g" "$1" |
+    sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\([0-9]+\/[0-9]+\) +)?//p' | sort -u
+}
+
+# Runs in the background in its own process group; output goes to log.txt.
+# Exit 0 passed, 1 a step failed (named in .step), 3 the checkout failed.
+job() { # sha dir clean-reason
+  set +m
+  local sha=$1 dir=$2 why=$3 step start rc kb
+  cd "$checkout" || exit 3
+  unset CARGO_TARGET_DIR RUSTFLAGS MDOC_HEADLESS_ARTIFACTS
+  printf 'checkout %s\n' "$(date +%s)" >"$dir/.step"
+  if [ -z "$why" ] && [ -d target ]; then
+    kb=$(dir_kb target)
+    [ "${kb:-0}" -le $((target_max_gb * 1048576)) ] || why="target/ is $((kb / 1048576)) GB, over $target_max_gb GB"
+  fi
+  if [ -n "$why" ]; then
+    echo "queue-runner: deleting target/: $why"
+    echo "upkeep: deleted target/ ($why)" >>"$dir/summary.txt"
+    rm -rf "${checkout:?}/target" || exit 3
+  fi
+  echo "queue-runner: checkout $sha"
+  git checkout --quiet --force --detach "$sha" || exit 3
+  # Keep the build cache. Git Bash rewrites a native program's argument that
+  # starts with / as a Windows path, so /target/ would match nothing.
+  MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/ || exit 3
+  for step in $steps; do
+    start=$(date +%s)
+    printf '%s %s\n' "$step" "$start" >"$dir/.step"
+    echo "queue-runner: $(label "$step")"
+    rc=0
+    case "$step" in
+      # Not through just: setup may replace the just binary.
+      setup) bash scripts/setup.sh </dev/null || rc=$? ;;
+      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just test || rc=$? ;;
+      android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
+      *) just "$step" || rc=$? ;;
+    esac
+    # The Android job's Gradle reports, passed or failed.
+    if [ "$step" = android ] && [ -d apps/android/app/build/reports ]; then
+      cp -R apps/android/app/build/reports "$dir/android-reports" || true
+    fi
+    if [ "$rc" -eq 0 ]; then
+      echo "$(label "$step"): passed in $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+    else
+      echo "$(label "$step"): failed (exit $rc) after $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+      exit 1
+    fi
+  done
+  exit 0
+}
+
+start_job() { # branch sha
+  local branch=$1 sha=$2 name why
+  name=$(short "$sha")
+  why=$(toolchain_reason "$sha")
+  rm -rf "${out:?}/${name:?}"
+  mkdir -p "$out/$name"
+  run_sha=$sha run_branch=$branch run_dir=$out/$name run_start=$(date +%s) run_step=checkout run_beat=0
+  run_url=''
+  [ -z "$url" ] || run_url=$url/$name/
+  cat >"$run_dir/summary.txt" <<EOF
+$context: https://github.com/$repo/commit/$sha
+branch: $branch
+started: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+steps: $steps
+EOF
+  post "$sha" pending "Running $(label checkout) (0m00s)" "$run_url"
+  ! $post_ok || run_beat=$run_start
+  set -m
+  job "$sha" "$run_dir" "$why" </dev/null >"$run_dir/log.txt" 2>&1 &
+  run_pid=$!
+  set +m
+  echo "$run_pid" >"$state/job.pid"
+  log "started $(short "$sha") $branch (pid $run_pid)"
+}
+
+# Stops the job's whole process group (cargo, rustc, test binaries).
+kill_job() {
+  local pid=$1 w
+  if [ "$(platform)" = windows-x64 ] && command -v taskkill >/dev/null; then
+    # Git Bash: native children (cargo.exe, rustc.exe) are not in the MSYS
+    # process group, so end each group member's Windows process tree.
+    for w in $(ps | awk -v g="$pid" 'NR > 1 { if ($1 !~ /^[0-9]+$/) $1 = ""; $0 = $0; if ($3 == g) print $4 }'); do
+      taskkill //F //T //PID "$w" >/dev/null 2>&1 || true
+    done
+  fi
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 -- "-$pid" 2>/dev/null || break
+    sleep 1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+finish() { # state description
+  post "$run_sha" "$1" "$2" "$run_url"
+  echo "result: $1, $2" >>"$run_dir/summary.txt"
+  rm -f "$state/job.pid" "$run_dir/.step"
+  # Never run again, even when GitHub did not take the result: the heartbeat
+  # stops, so merge-gate runs it hosted.
+  mark_done "$run_sha"
+  run_pid='' run_sha='' run_branch='' run_step=''
+  prune_out
+  next_poll=0
+}
+
+check_job() {
+  local step now rc=0 elapsed tests first more
+  now=$(date +%s)
+  elapsed=$((now - run_start))
+  if kill -0 "$run_pid" 2>/dev/null; then
+    read -r step _ 2>/dev/null <"$run_dir/.step" || step=$run_step
+    if [ "$elapsed" -gt "$limit_s" ]; then
+      log "$(short "$run_sha"): the job passed its $((limit_s / 60)) min limit in $(label "$step")"
+      echo "queue-runner: timed out after $(duration "$limit_s") in $(label "$step")" >>"$run_dir/log.txt"
+      kill_job "$run_pid"
+      finish failure "Timed out in $(label "$step") after $(duration "$limit_s")"
+      return 0
+    fi
+    if [ "$step" != "$run_step" ] || [ $((now - run_beat)) -ge "$heartbeat_s" ]; then
+      run_step=$step
+      post "$run_sha" pending "Running $(label "$step") ($(duration "$elapsed"))" "$run_url"
+      ! $post_ok || run_beat=$now
+    fi
+    return 0
+  fi
+  wait "$run_pid" || rc=$?
+  case "$rc" in
+    0) finish success "Passed in $(duration "$elapsed")" ;;
+    1)
+      read -r step _ 2>/dev/null <"$run_dir/.step" || step='?'
+      tests=$(failed_tests "$run_dir/log.txt")
+      if [ -n "$tests" ]; then
+        printf '%s\n' "$tests" >"$run_dir/failed-tests.txt"
+        printf 'failed: %s\n' "$tests" >>"$run_dir/summary.txt"
+        first=$(head -n 1 <<<"$tests")
+        more=$(($(wc -l <<<"$tests") - 1))
+        [ "$more" -eq 0 ] || first+=" and $more more"
+        finish failure "Failed in $(label "$step"): $first"
+      else
+        finish failure "Failed in $(label "$step")"
+      fi
+      ;;
+    3) finish error "Runner error: could not check out the commit; see the log" ;;
+    *) finish error "Runner error (exit $rc); see the log" ;;
+  esac
+}
+
+# The queue dropped the running commit's group, or merged it on hosted CI's
+# result first: either way this job's result no longer counts.
+stop_dropped() {
+  local why="the queue dropped this commit"
+  ! g merge-base --is-ancestor "$run_sha" refs/queue-ci/main 2>/dev/null || why="merged before this job finished"
+  log "$(short "$run_sha") $run_branch: left the queue ($why); stopping its job"
+  echo "queue-runner: stopped: $why" >>"$run_dir/log.txt"
+  kill_job "$run_pid"
+  finish error "Stopped: $why"
+}
+
+# The build queue, oldest commit first: by commit time, then by history
+# length, since a queue entry's commit builds on the one before it.
+queue_sorted() { awk 'NF' <<<"$queued" | sort -n -k1,1 -k2,2; }
+
+# Starts the oldest queued commit. Below the disk floor it says so once per
+# commit: a pending status that is not refreshed, so after 10 minutes
+# merge-gate counts the PC as off and runs the job hosted.
+start_next() {
+  [ -n "$queued" ] || return 1
+  local ct n sha branch free
+  read -r ct n sha branch <<<"$(queue_sorted | head -n 1)"
+  free=$(disk_free_gb)
+  if [ "${free:-0}" -lt "$min_free_gb" ]; then
+    waiting="${free:-?} GB free; a job starts at $min_free_gb GB"
+    if [ "$disk_noted" != "$sha" ]; then
+      log "waiting: $waiting"
+      post "$sha" pending "Waiting for disk space: $waiting" "${url:+$url/status.txt}"
+      disk_noted=$sha
+    fi
+    return 1
+  fi
+  waiting=''
+  queued=$(grep -vF " $sha " <<<"$queued" || true)
+  [ -z "$queued" ] || queued+=$'\n'
+  start_job "$branch" "$sha"
+}
+
+# --- self-update ----------------------------------------------------------------
+
+# The files of this copy that differ from main's, line endings aside.
+outdated_files() {
+  local f list=''
+  for f in queue-runner.sh lib.sh; do
+    g cat-file -e "refs/queue-ci/main:scripts/$f" 2>/dev/null || continue
+    cmp -s <(g show "refs/queue-ci/main:scripts/$f" | tr -d '\r') \
+      <(tr -d '\r' <"$runner_dir/$f" 2>/dev/null) || list+="${list:+ }$f"
+  done
+  echo "$list"
+}
+
+# The installed copy, idle, takes main's scripts and restarts as the new
+# copy. A copy run from elsewhere (a checkout) never rewrites itself.
+self_update() { # mode
+  local installed files f main
+  installed=$(cd "$home/runner/scripts" 2>/dev/null && pwd -P) || return 0
+  [ "$runner_dir" = "$installed" ] || return 0
+  files=$(outdated_files)
+  [ -n "$files" ] || return 0
+  main=$(g rev-parse refs/queue-ci/main)
+  [ "$main" != "${update_failed:-}" ] || return 0
+  for f in queue-runner.sh lib.sh; do
+    g cat-file -e "refs/queue-ci/main:scripts/$f" 2>/dev/null || continue
+    g show "refs/queue-ci/main:scripts/$f" >"$runner_dir/$f.new" && mv -f "$runner_dir/$f.new" "$runner_dir/$f" || true
+  done
+  if [ -n "$(outdated_files)" ]; then
+    log "warning: could not update this runner's $files from main@$(short "$main")"
+    update_failed=$main
+    return 0
+  fi
+  log "updated this runner's $files from main@$(short "$main"); restarting"
+  rm -rf "$state/lock"
+  trap - EXIT
+  exec bash "$runner_dir/queue-runner.sh" "$1"
+}
+
+# --- the loop -------------------------------------------------------------------
+
+write_status() {
+  local next=$out/.status.txt q
+  q=$(queue_sorted | awk '{ printf "%s%s %s", (NR > 1 ? ", " : ""), substr($3, 1, 7), $4 }')
+  {
+    echo "$context queue runner on $(hostname)"
+    echo "heartbeat: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ -n "$run_pid" ]; then
+      echo "running: $(short "$run_sha") $run_branch, $(label "$run_step") for $(duration $(($(date +%s) - run_start))) ${run_url:-$run_dir}"
+    else
+      echo "running: nothing"
+    fi
+    echo "queue: ${q:-empty}"
+    [ -z "$waiting" ] || echo "waiting: $waiting"
+    [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@$(short "$update_failed")"
+  } >"$next" && mv -f "$next" "$out/status.txt"
+}
+
+# True when $1 is a live runner or job, not a pid reused after a restart.
+is_runner() {
+  [ -n "$1" ] && kill -0 "$1" 2>/dev/null || return 1
+  if [ "$(platform)" = windows-x64 ]; then
+    ps -p "$1" 2>/dev/null | grep -q '/bash'
+  else
+    ps -p "$1" -o args= 2>/dev/null | grep -q 'queue-runner\.sh'
+  fi
+}
+
+lock() {
+  local pid
+  if ! mkdir "$state/lock" 2>/dev/null; then
+    pid=$(cat "$state/lock/pid" 2>/dev/null || true)
+    ! is_runner "$pid" || die "a $context runner is already running (pid $pid)"
+    rm -rf "$state/lock"
+    mkdir "$state/lock"
+  fi
+  echo $$ >"$state/lock/pid"
+}
+
+# A job left by a runner that died would build beside the new one.
+kill_stale_job() {
+  local pid
+  pid=$(cat "$state/job.pid" 2>/dev/null || true)
+  if is_runner "$pid"; then
+    log "stopping job $pid left by the previous runner"
+    kill_job "$pid"
+  fi
+  rm -f "$state/job.pid"
+}
+
+# shellcheck disable=SC2317,SC2329 # the EXIT trap
+on_exit() {
+  if [ -n "${run_pid:-}" ]; then
+    log "stopping; $(short "$run_sha") runs again when the runner starts"
+    kill_job "$run_pid"
+    rm -f "$state/job.pid"
+  fi
+  rm -rf "$state/lock"
+}
+
+cmd_run() { # run|once
+  local mode=$1 now
+  [ -d "$checkout/.git" ] || die "no CI checkout at $checkout; install with scripts/queue-runner-setup.ps1"
+  mkdir -p "$out" "$state"
+  lock
+  if [ "$mode" = run ] && [ -z "${QUEUE_CI_FOREGROUND:-}" ]; then
+    echo "$context queue runner: logging to $state/runner.log"
+    exec >>"$state/runner.log" 2>&1
+  fi
+  trap on_exit EXIT
+  trap 'exit 0' TERM INT HUP
+  log "runner started: $context for $repo ($prefixes), checkout $checkout, copy in $runner_dir"
+  kill_stale_job
+  queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
+  waiting='' disk_noted='' next_poll=0 post_ok=true update_failed=''
+  prune_out
+  while :; do
+    [ -z "$run_pid" ] || check_job
+    now=$(date +%s)
+    if [ "$now" -ge "$next_poll" ]; then
+      next_poll=$((now + poll_s))
+      if poll && [ -z "$run_pid" ]; then
+        self_update "$mode"
+        start_next || true
+      fi
+    fi
+    write_status
+    if [ "$mode" = once ] && $polled && [ -z "$run_pid" ] && [ "$next_poll" != 0 ] && [ -z "$queued" ]; then
+      log "queue empty"
+      return 0
+    fi
+    sleep "$tick_s"
+  done
+}
+
+file_epoch() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+
+cmd_status() {
+  local age
+  if [ "$(platform)" = windows-x64 ] && command -v schtasks >/dev/null; then
+    echo "mdoc queue CI $job: $(schtasks //query //tn "mdoc queue CI $job" //fo list 2>/dev/null |
+      sed -n 's/^Status: *//p' | grep . || echo "not registered")"
+  fi
+  if [ ! -f "$out/status.txt" ]; then
+    echo "no status file at $out/status.txt: the runner has not run"
+    return 1
+  fi
+  cat "$out/status.txt"
+  [ -z "$url" ] || echo "results: $url/"
+  age=$(($(date +%s) - $(file_epoch "$out/status.txt")))
+  if [ "$age" -gt $((poll_s * 3)) ]; then
+    echo "stale: last heartbeat ${age}s ago; the runner is not running"
+    return 1
+  fi
+  if [ -f "$state/runner.log" ]; then
+    echo "--- $state/runner.log"
+    tail -n 10 "$state/runner.log"
+  fi
+}
+
+main() {
+  config
+  case "${1:-run}" in
+    run | once) cmd_run "${1:-run}" ;;
+    status) cmd_status ;;
+    *) die "unknown command '$1' (run, once, status)" ;;
+  esac
+}
+
+# The loop never returns to read more of this file, so replacing it while
+# it runs is safe; exit before bash reads past this line anyway.
+# scripts/test-queue-runner.sh sources the functions with QUEUE_RUNNER_SOURCED=1.
+if [ -z "${QUEUE_RUNNER_SOURCED:-}" ]; then
+  main "$@"
+  exit
+fi
