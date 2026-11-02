@@ -3,7 +3,7 @@
 //! ```text
 //! just recognize <file.md|folder> [--gold] [--snapshot]
 //! just recognize --scoreboard [<folder>] [--snapshot]
-//! just recognize --refresh-snapshots [<file.md|folder>]
+//! just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]
 //! just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]
 //! just recognize --record-flaws [<file.md|folder>]
 //! just recognize --setup
@@ -21,9 +21,9 @@
 //! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots (on the Mac, the
 //! reference platform). `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
-//! and on a model run over its 5-minute budget. `--shard k/n` checks every
-//! n-th fixture from the k-th (1-based) in sorted order, one CI shard, and
-//! `--out` writes each stale or missing snapshot afresh under that folder at
+//! and on a model run over its 5-minute budget. `--shard k/n` checks (or
+//! refreshes) every n-th fixture from the k-th (1-based) in sorted order,
+//! one CI shard, and `--out` writes each stale or missing snapshot afresh under that folder at
 //! its path in the repository (CI's `detection-snapshots-<k>` artifact, which
 //! `just snapshots-fetch` applies; ADR 0095). `--setup` installs the pinned
 //! FP16 and the ONNX Runtime into the app data through mdoc's own verified
@@ -72,7 +72,7 @@ fn main() -> ExitCode {
 fn usage() -> String {
     "usage: just recognize <file.md|folder> [--gold] [--snapshot]\n       \
      just recognize --scoreboard [<folder>] [--snapshot]\n       \
-     just recognize --refresh-snapshots [<file.md|folder>]\n       \
+     just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]\n       \
      just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]\n       \
      just recognize --record-flaws [<file.md|folder>]\n       \
      just recognize --setup"
@@ -112,8 +112,14 @@ fn run() -> Result<bool, String> {
     if mode == Mode::Annotate && gold {
         mode = Mode::Gold;
     }
-    if (shard.is_some() || out.is_some()) && mode != Mode::Check {
-        return Err(format!("--shard and --out go with --check\n{}", usage()));
+    if shard.is_some() && !matches!(mode, Mode::Check | Mode::Refresh) {
+        return Err(format!(
+            "--shard goes with --check or --refresh-snapshots\n{}",
+            usage()
+        ));
+    }
+    if out.is_some() && mode != Mode::Check {
+        return Err(format!("--out goes with --check\n{}", usage()));
     }
     if mode == Mode::Setup {
         return setup().map(|()| true);

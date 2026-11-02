@@ -72,6 +72,11 @@ import *args:
 detection-gate:
     scripts/detection-gate.sh
 
+# The detection gate's regenerated snapshots from a CI run (a PR's newest, or a run) into the tree, to review and commit (ADR 0095)
+[positional-arguments]
+snapshots-fetch pr-or-run:
+    scripts/snapshots-fetch.sh "$1"
+
 # Offscreen macOS/Windows screen/Tab evidence in a new output directory (dev only)
 [positional-arguments]
 headless-renders out:

@@ -4,7 +4,7 @@ name: Detection gate
 # downloaded from its pinned Hugging Face revision and cached, reruns over
 # the recognition fixtures (`just recognize --check`). The fixtures split
 # over `shards` parallel jobs, `ci/detection (<k>)`; raise it once a shard's
-# model run passes 3 minutes. A failing shard uploads its regenerated
+# model run passes 3 minutes. `ci/detection` sums them up. A failing shard uploads its regenerated
 # snapshots as `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>`
 # writes them into the tree for review. No workflow writes to PR branches.
 on:
@@ -42,12 +42,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
+      count: ${{ steps.list.outputs.count }}
       list: ${{ steps.list.outputs.list }}
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 1 }}
-        run: echo "list=[$(seq -s, 1 "$SHARDS")]" >> "$GITHUB_OUTPUT"
+          # TEMPORARY while draft: 6 shards for the pull_request experiment.
+          SHARDS: ${{ inputs.shards || 6 }}
+        run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
     name: ci/detection (${{ matrix.shard }})
@@ -60,7 +62,7 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.shards.outputs.list) }}
     env:
-      SHARD: ${{ matrix.shard }}/${{ inputs.shards || 1 }}
+      SHARD: ${{ matrix.shard }}/${{ needs.shards.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,8 +107,8 @@ jobs:
       - name: "Experiment: refresh every snapshot"
         if: github.event_name == 'pull_request'
         run: |
-          just recognize --refresh-snapshots | tail -n 1
-          git diff --stat -- tests/fixtures/recognition | tail -n 5
+          just recognize --refresh-snapshots --shard "$SHARD"
+          git diff --stat -- tests/fixtures/recognition
           mkdir -p target/experiment && git diff -- tests/fixtures/recognition > target/experiment/snapshots.diff
           git checkout -- tests/fixtures/recognition
       - name: "Experiment: diff"
@@ -127,3 +129,16 @@ jobs:
           name: detection-snapshots-${{ matrix.shard }}
           path: target/detection-snapshots
           retention-days: 7
+
+  # The one context merge-gate reads: green only when every shard ran and
+  # passed, so a missing or cancelled shard never looks green (ADR 0095).
+  summary:
+    name: ci/detection
+    needs: [shards, detection]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          RESULT: ${{ needs.detection.result }}
+        run: '[ "$RESULT" = success ] || { echo "::error::detection shards: $RESULT"; exit 1; }'
