@@ -1,6 +1,6 @@
 # URL category
 
-Status: Draft (grill in progress), 2026-11-02. Amends
+Status: Accepted, 2026-11-02 (maintainer grill). Amends
 [ADR 0092](0092-recognition-correction-pipeline.md) (categories) and the
 recognition guide's rule 7.
 
@@ -28,11 +28,30 @@ token reached the AI unchanged.
 - **Markdown links.** A link target is replaced in place (`[the claim](URL_1)`),
   so the syntax stays valid; the visible text is judged on its own, and a
   target equal to its visible text shares its alias.
+- **Bare domains** are marked when the text plainly writes a web address (a
+  known top-level domain, no space, not part of an email): «сайт
+  ivanov-law.ru».
+- **Variants.** Scheme (`http`/`https`), a leading `www.` and a trailing
+  slash don't make a new identity: those writings join one identity as its
+  variants. Any other difference is another identity.
+- **Overlaps.** `mailto:` stays EMAIL and `tel:` stays PHONE; a URL inside a
+  case number or a legal reference stays unmarked (rule 8); a URL span wins
+  over a name, email or ID detected inside it.
 - **Detection.** Scans propose URLs from rule-pack shapes (a scheme, `www.`,
-  known hosts) minus an exclusion list of public and legal domains. On by
-  default in Categories to detect, English and Russian alike.
+  a bare domain with a known top-level domain) minus an exclusion list of
+  public and legal domains. On by default in Categories to detect, English
+  and Russian alike.
+- **Order and saves.** "Web address" comes right after Email in Categories
+  to detect and the category menu. Saved mappings and cases from before
+  load unchanged; the token is only added.
+- **All platforms at once.** The desktop app and the iOS and Android apps
+  gain the category in one change (shared core, each app's category list
+  and strings).
 
 ## Consequences
 
 Categories to detect, the Replacements panel, Copy for AI, saved mappings and
-the mobile apps gain one category. Rule 7 changes for URLs.
+the mobile apps gain one category. The guide gains rule 9 and amends rules
+7 and 8; fixtures with names or emails inside identifying URLs are
+re-marked, and their snapshots don't change (the model's input is the
+same).

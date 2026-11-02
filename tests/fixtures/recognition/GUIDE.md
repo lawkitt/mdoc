@@ -36,10 +36,20 @@ the maintainer's: agents add examples, never change a rule (a change is a
    only, without its label; an invalid or OCR-damaged value is still
    marked.
 7. **Hidden source** (link targets, image alt text, HTML) is marked like
-   visible text.
+   visible text. A URL is marked by rule 9; a name or email inside a
+   marked URL is not marked again.
 8. **Never marked:** amounts, percentages, legal references, defined terms,
    roles, titles, job titles, generic category words ("email", "телефон"),
-   laws, courts and public bodies.
+   laws, courts and public bodies, and web addresses of courts, public
+   bodies, laws and legal databases (consultant.ru, garant.ru,
+   pravo.gov.ru).
+9. **Web address** (`URL`): a URL that points to a person's or a private
+   organization's page or file (a profile, a personal or company site, a
+   share link with a token, any URL that holds a name, email or ID), from
+   its scheme (or `www.`, or its domain when written bare, "сайт
+   ⟦URL|ivanov-law.ru⟧") to its end, without trailing punctuation. A
+   Markdown link's target is its own span (`[the claim](⟦URL|https://…⟧)`).
+   `mailto:` and `tel:` links stay EMAIL and PHONE (ADR 0094).
 
 ## Fixtures
 
