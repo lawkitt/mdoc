@@ -1,0 +1,10 @@
+# Quarantined tests (ADR 0095): tests CI leaves out for a while after they
+# flaked twice. One line each, fields separated by two or more spaces:
+#
+#   <nextest filter>  #<issue>  <expires YYYY-MM-DD>
+#
+# scripts/test.sh leaves them out of every tier, and `scripts/test.sh --tier
+# quarantined` runs them alone without failing. A line past its date fails
+# the scripts tier (scripts/quarantine.sh check): fix the test and remove the
+# line, or renew the date in a PR that says why. Add a line by PR, with its
+# issue; the hub may add one.
