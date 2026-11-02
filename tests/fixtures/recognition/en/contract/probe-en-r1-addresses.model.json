@@ -2,8 +2,8 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":123,"end":143,"label":"organization","score":0.9712,"text":"Larkfield Supply LLC"},
-    {"start":145,"end":178,"label":"address","score":0.8841,"text":"4410 W. Quarry Parkway, Suite 210"},
-    {"start":224,"end":240,"label":"address","score":0.8127,"text":"12 Pellin Street"}
+    {"start":123,"end":143,"label":"organization","score":0.99073195,"text":"Larkfield Supply LLC"},
+    {"start":210,"end":222,"label":"organization","score":0.98215127,"text":"Harrow House"},
+    {"start":224,"end":260,"label":"address","score":0.96043545,"text":"12 Pellin Street\nSlocombe SL9 9ZZ\nUK"}
   ]
 }
