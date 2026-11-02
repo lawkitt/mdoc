@@ -1260,6 +1260,10 @@ mod tests {
                 "[file](<https://private.invalid/My File.pdf>)",
                 "https://private.invalid/My File.pdf",
             ),
+            (
+                "[file](https://share.invalid/receipt\\).pdf)",
+                "https://share.invalid/receipt\\).pdf",
+            ),
         ] {
             let mut review = mdoc_pii::Review::default();
             review.ingest(source, correct(source, &[])).unwrap();

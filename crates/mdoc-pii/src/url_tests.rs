@@ -302,3 +302,54 @@ fn a_hand_marked_address_counts_every_exact_match() {
         .unwrap();
     assert_eq!(replaced(&review, source), "See https://URL_2/notes.");
 }
+
+#[test]
+fn an_escaped_bracket_in_a_link_target_is_the_addresss_own() {
+    let source = "[file](https://share.invalid/receipt\\).pdf)";
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![url(source, "https://share.invalid/receipt\\).pdf")],
+        )
+        .unwrap();
+    assert_eq!(replaced(&review, source), "[file](URL_1)");
+}
+
+#[test]
+#[ignore = "discovery over 50,000 repeats of a known address with a name inside; prints its time"]
+fn many_repeats_of_an_address_stay_fast() {
+    let line = "See https://a.invalid/clients/Morgan and Morgan. ";
+    let source = line.repeat(50_000);
+    let address = "https://a.invalid/clients/Morgan";
+    let started = std::time::Instant::now();
+    let mut review = Review::default();
+    review
+        .ingest(
+            &source,
+            vec![
+                url(&source, address),
+                Detection {
+                    range: line.find("and Morgan").unwrap() + 4..line.len() - 2,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+            ],
+        )
+        .unwrap();
+    let elapsed = started.elapsed();
+    let page = review
+        .variants()
+        .iter()
+        .find(|v| v.category == Category::Url)
+        .unwrap();
+    assert_eq!(page.mentions.len(), 50_000);
+    let name = review
+        .variants()
+        .iter()
+        .find(|v| v.category == Category::Person)
+        .unwrap();
+    assert_eq!(name.mentions.len(), 50_000);
+    eprintln!("URL REPEATS bytes={} in {elapsed:?}", source.len());
+}

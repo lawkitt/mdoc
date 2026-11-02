@@ -206,11 +206,16 @@ fn bare_extent(text: &str) -> usize {
 fn trimmed_len(text: &str) -> usize {
     let mut depth = [0usize; 2];
     let mut end = 0;
+    let mut escaped = false;
     for (i, c) in text.char_indices() {
         let pair = usize::from(matches!(c, '[' | ']'));
-        if matches!(c, '(' | '[') {
+        // A Markdown escape makes a bracket the address's own
+        // ("…/receipt\\).pdf" in a link target).
+        let literal = escaped;
+        escaped = c == '\\' && !literal;
+        if !literal && matches!(c, '(' | '[') {
             depth[pair] += 1;
-        } else if matches!(c, ')' | ']') {
+        } else if !literal && matches!(c, ')' | ']') {
             if depth[pair] == 0 {
                 break;
             }
