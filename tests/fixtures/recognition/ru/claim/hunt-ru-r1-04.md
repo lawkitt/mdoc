@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-hyphen-name
 issue: 388
 kind: claim
 source: hunt-r1
-expect: boundary: gold PERSON "Верес-\nтова Дарья Ильинична"; proposed PERSON "Дарья Ильинична"
 ---
 # Дополнение к иску о передаче оплаченного изделия
 

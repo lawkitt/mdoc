@@ -141,10 +141,10 @@ impl IdentityStore {
     }
 }
 
-/// The key two wordings of one subject share: case, whitespace and quotes
-/// aside, and a Russian full name with a patronymic in any case, in its own
-/// word order ("Эльзы-Руты Мартыновны Таль-Шнейдер" is "Эльза-Рута
-/// Мартыновна Таль-Шнейдер").
+/// The key two wordings of one subject share: case, whitespace, quotes and
+/// line-end hyphens inside words aside, and a Russian full name with a
+/// patronymic in any case, in its own word order ("Эльзы-Руты Мартыновны
+/// Таль-Шнейдер" is "Эльза-Рута Мартыновна Таль-Шнейдер").
 pub(crate) fn normalization_key(value: &str, category: Category) -> String {
     let words = name_words(value);
     if category == Category::Person
@@ -157,7 +157,7 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
     canonical(value)
 }
 fn canonical(value: &str) -> String {
-    value
+    crate::view::unwrapped(value)
         .replace(['«', '»', '“', '”'], "\"")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -183,9 +183,10 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
         .collect()
 }
 /// [`name_words`] as written, so a lowercase particle ("де") can be told
-/// from a given name ("Van Morrison").
+/// from a given name ("Van Morrison"). A word split by a line-end hyphen is
+/// one word ("Верес-\nтова" is "Верестова").
 pub(crate) fn name_words_cased(value: &str) -> Vec<String> {
-    value
+    crate::view::unwrapped(value)
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))

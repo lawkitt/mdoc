@@ -490,6 +490,7 @@ pub(crate) enum Form {
 /// `wording` as a [`Form::Whole`]: two or three name words, no initials and
 /// no title before them.
 fn parse_whole(wording: &str) -> Option<Form> {
+    let wording = &crate::view::unwrapped(wording);
     let cased = name_words_cased(wording);
     let titled = wording.split_whitespace().count() != cased.len();
     let words = merge_particles(&cased);
@@ -510,6 +511,8 @@ fn initials_of(word: &str) -> Option<Vec<char>> {
 }
 
 pub(crate) fn parse_form(wording: &str) -> Option<Form> {
+    // A word split by a line-end hyphen reads whole ("Верес-\nтова").
+    let wording = &crate::view::unwrapped(wording);
     let titled = wording.split_whitespace().next().is_some_and(|first| {
         TITLES.contains(
             &first
@@ -870,8 +873,9 @@ fn usable_span(
     covered: &[Range<usize>],
 ) -> bool {
     let text = &source[range.clone()];
+    // A line break only where a line-end hyphen splits a word in it.
     !glued(source, range)
-        && safe_span(text)
+        && safe_span(&crate::view::unwrapped(text))
         && !intersects(protected, range)
         && !intersects(covered, range)
         && exact_boundary(source, range, text)
@@ -948,7 +952,20 @@ fn find_forms(
     fixed: &[Range<usize>],
 ) -> Vec<(Range<usize>, bool, bool)> {
     let protected = protected_syntax(source);
-    let tokens: Vec<Range<usize>> = TOKEN.find_iter(source).map(|m| m.range()).collect();
+    // A word split by a line-end hyphen is one token, as the view reads it:
+    // "Верес-\nтова Дарья Ильинична" is a whole name (#388).
+    let mut tokens: Vec<Range<usize>> = Vec::new();
+    for found in TOKEN.find_iter(source) {
+        match tokens.last_mut() {
+            Some(last)
+                if crate::view::line_end_hyphen(&source[last.end..])
+                    .is_some_and(|len| last.end + len == found.start()) =>
+            {
+                last.end = found.end();
+            }
+            _ => tokens.push(found.range()),
+        }
+    }
     let capital = |k: usize| {
         tokens.get(k).is_some_and(|r| {
             source[r.clone()]
@@ -1631,6 +1648,38 @@ mod tests {
             end: source.find(" Н.").unwrap(),
         }];
         assert!(find_forms(source, &people(&names), &covered, &covered).is_empty());
+    }
+
+    /// #388: a word split by a line-end hyphen is one name word, so the
+    /// whole name around it is found; a capital after the hyphen is a
+    /// compound's next part, never the same word.
+    #[test]
+    fn a_word_split_by_a_line_end_hyphen_is_one_name_word() {
+        let names = ["Дарья Ильинична Верестова"];
+        assert_eq!(
+            form("Верес-\nтова"),
+            Form::Word {
+                word: "верестова".into(),
+                titled: false
+            }
+        );
+        assert_eq!(target(&names, "Верес-\nтова"), Some(1));
+        let source = "Приняла: Верес-\n  това Дарья Ильинична. Санкт-\nПетербург, Дарья -\nИльинична, Верестова\nДарья.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "Верес-\n  това Дарья Ильинична",
+                "Дарья",
+                "Верестова",
+                "Дарья"
+            ]
+        );
+        let whole = parse_whole("Верес-\nтова Дарья Ильинична").unwrap();
+        assert_eq!(people(&names).candidates(&whole).target, Some(1));
     }
 
     #[test]

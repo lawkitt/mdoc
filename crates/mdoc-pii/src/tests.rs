@@ -544,6 +544,53 @@ fn a_value_wrapped_over_lines_is_one_span() {
         "Signed by PERSON_1 on 3 May.\nPhone: PHONE_1\n- Заявитель: PERSON_2.\nDepositor: Delva Rosk\nExhibition company: Cinder Ltd\n\nAnn\n\nLee, Bob  \nRay."
     );
 }
+/// #388: a form of a known name with a word split by a line-end hyphen is
+/// one span in the name's identity ("Верес-\nтова Дарья Ильинична"); a
+/// plain line break, a capital after the hyphen or a dash keeps the parts
+/// apart.
+#[test]
+fn a_name_form_split_by_a_line_end_hyphen_is_one_span() {
+    let name = "Дарья Ильинична Верестова";
+    let spans = |source: &str| -> Vec<String> {
+        let start = source.find(name).unwrap();
+        let mut review = Review::default();
+        let detected = detection(start..start + name.len(), Category::Person);
+        review.ingest(source, vec![detected]).unwrap();
+        let identity = review.variant_identity(review.candidates()[0].variant);
+        review
+            .candidates()
+            .iter()
+            .skip(1)
+            .inspect(|c| assert_eq!(review.variant_identity(c.variant), identity))
+            .map(|c| source[c.range.clone()].to_owned())
+            .collect()
+    };
+    let source = format!(
+        "Мастер {name}.\n\n> Приняла заказ: Верес-\nтова Дарья Ильинична.\n> Упаковка исправна."
+    );
+    assert_eq!(spans(&source), ["Верес-\nтова Дарья Ильинична"]);
+    assert_eq!(
+        applied(&source, {
+            let start = source.find(name).unwrap();
+            vec![detection(start..start + name.len(), Category::Person)]
+        }),
+        "Мастер PERSON_1.\n\n> Приняла заказ: PERSON_1.\n> Упаковка исправна."
+    );
+    for (wrapped, expected) in [
+        (
+            "Верестова\nДарья Ильинична",
+            &["Верестова", "Дарья Ильинична"][..],
+        ),
+        ("Верес-\nТова Дарья Ильинична", &["Дарья Ильинична"]),
+        (
+            "Верестова -\nДарья Ильинична",
+            &["Верестова", "Дарья Ильинична"],
+        ),
+    ] {
+        let source = format!("Мастер {name}. Приняла: {wrapped}.");
+        assert_eq!(spans(&source), expected, "{wrapped}");
+    }
+}
 /// #402: a value over the lines of a table cell (`<br>`) is one span; a
 /// tag that is not a line break, or one at the span's edge, is syntax.
 #[test]
