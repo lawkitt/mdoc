@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":6,"end":23,"label":"bank_account","score":0.57,"text":"26 U.S.C. § 6212"},
+    {"start":133,"end":143,"label":"tax_id","score":0.96,"text":"98-7654321"},
+    {"start":42,"end":57,"label":"tax_id","score":0.81,"text":"2031 WL 1234567"},
+    {"start":25,"end":40,"label":"tax_id","score":0.74,"text":"48 CFR 52.212-1"},
+    {"start":69,"end":76,"label":"tax_id","score":0.66,"text":"STC 412"},
+    {"start":120,"end":127,"label":"tax_id","score":0.61,"text":"2029/30"},
+    {"start":78,"end":88,"label":"tax_id","score":0.59,"text":"Tr. 112-14"},
+    {"start":99,"end":104,"label":"tax_id","score":0.52,"text":"#12-3"}
+  ]
+}

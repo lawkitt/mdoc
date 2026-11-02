@@ -327,3 +327,18 @@ labels = ["дата рождения", "даты рождения", "д.р", "р
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
+
+# Legal references are never marked (guide rule 8, issue #480): a law's
+# number ("№ 127-ФЗ", "1-ФКЗ", "45-ОЗ"), an article of a code ("ст. 428 ГК
+# РФ", "статьи 431 ГК РФ", "п. 2 ст. 450", "428 ГК РФ").
+[[reference]]
+pattern = '\b\d{1,4}-(?:ФЗ|ФКЗ|КЗ|ОЗ|РЗ)\b|(?:\b(?:ст\.|стать(?:я|и|е|ю|ёй|ей|ям|ями|ях)|ч\.|част(?:ь|и|ью)|пп?\.|пункт(?:а|у|ом|е|ы|ов|ам)?)[\p{Zs}\t]*)?\b\d{1,4}(?:\.\d{1,3})*(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*\d{1,4}(?:\.\d{1,3})*)*[\p{Zs}\t]+(?:ГК|ГПК|АПК|УК|УПК|КоАП|НК|ТК|ЖК|СК|БК|ЗК|ВК|КАС|ЛК|ГрК)(?:[\p{Zs}\t]+РФ)?\b|\b(?:ст\.|стать(?:я|и|е|ю|ёй|ей|ям|ями|ях))[\p{Zs}\t]*\d{1,4}(?:\.\d{1,3})*(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*\d{1,4}(?:\.\d{1,3})*)*'
+
+# The number of a court act, an order or a transfer document is a
+# reference, no tax or other identifier: "Определение Верховного Суда РФ
+# от 12.03.2031 № 305-ЭС31-1234", "Постановление № 17", "УПД № 412" (guide
+# rule 8, issue #480). Only the number after "№" is the reference: a value
+# between, such as "ИНН 7701234567", stays. A case number keeps its label's
+# rule ("по делу № А40-…").
+[[reference]]
+pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ)\p{Alphabetic}{0,4}[^№\n]{0,160}?№[\p{Zs}\t]*)\p{Alphabetic}{0,4}\d[\p{Alphabetic}\d/-]*'

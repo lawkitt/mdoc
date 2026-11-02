@@ -25,12 +25,26 @@ extend = [
     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
 ]
 
-# An organization ends with its legal form, not the sentence's period or
-# comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
-# Ltd" (#374).
+# "& Anor" and "& Ors" (and another, and others) in a case name come off
+# a party's edge: "Pellow Holdings Ltd & Anor" is "Pellow Holdings Ltd"
+# (guide rule 2, issue #499). The "&" goes with the end's punctuation below.
 [[span]]
 category = "ORG"
-strip_end = ".,;:"
+trim = ["anor", "ors"]
+
+# An organization ends with its legal form, not the sentence's period or
+# comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
+# Ltd" (#374), nor with an "&" a trim left behind.
+[[span]]
+category = "ORG"
+strip_end = ".,;:&"
+
+# A declaration or an affidavit is a person's: the model's organization
+# "Ostrand Decl." is the person "Ostrand" when a person's span names them
+# ("Mr Ivo Ostrand"; guide rule 1, issue #499).
+[[span]]
+category = "ORG"
+person_before = ["decl", "declaration", "aff", "affidavit"]
 
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
@@ -59,6 +73,12 @@ words = [
     "witness", "judge", "owner", "repairer", "assignee", "assignor", "principal",
     "provider",
 ]
+
+# "Anor" and "Ors" (another, others) in a case name ("X Ltd & Anor") name
+# no one (issue #499).
+[[never]]
+match = "whole"
+words = ["anor", "ors"]
 
 # The words for people themselves ("People").
 [[never]]
@@ -133,6 +153,24 @@ anywhere_in = ["ORG"]
 [[shape]]
 category = "ORG"
 guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+
+# "U.S." and "U.K." alone are a country, never a company or a person: "527
+# U.S. 706", "U.S. District Court" (guide rules 1, 2 and 8, issue #499).
+# "U.S. Bank" keeps its name.
+[[shape]]
+category = "ORG"
+forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
+
+# The same as a person.
+[[shape]]
+category = "PERSON"
+forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
+
+# A tax year is a period, no tax number: "2014/15", "2029-30" (guide rule
+# 4, issue #480).
+[[shape]]
+category = "TAX"
+forbid = ['^\s*(?:19|20)\d{2}\s*[/–-]\s*(?:\d{2}|(?:19|20)\d{2})\s*$']
 
 # An English name of an organization is in title case or carries a legal
 # form; words in sentence case are a document kind, a heading or a team
@@ -235,3 +273,62 @@ labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
 only_guessed = ["DATE"]
+
+# Legal references are never marked (guide rule 8, issues #480 and #499).
+# Reporter citations: "424 U.S. at 38", "904 F.2d 275, 277", "33 A.D.3d
+# 352", "912 F.3d 455, 460 and 77 N.E.2d 310", with a footnote ("n. 4").
+# One-letter reporters (A., P., So.) and F. need their series ("A.2d"), so
+# a flat's "12 A." is none.
+[[reference]]
+pattern = '\b\d{1,4}[\p{Zs}\t]+{reporter}{pages}(?:[\p{Zs}\t]*(?:,|;|and|&)[\p{Zs}\t]*\d{1,4}[\p{Zs}\t]+{reporter}{pages})*'
+parts.reporter = '(?:U\.[\p{Zs}\t]?S\.|S\.[\p{Zs}\t]?Ct\.|L\.[\p{Zs}\t]?Ed\.(?:[\p{Zs}\t]?2d)?|F\.[\p{Zs}\t]?(?:2d|3d|4th)|F\.[\p{Zs}\t]?Supp\.(?:[\p{Zs}\t]?(?:2d|3d))?|F\.[\p{Zs}\t]?App[\x27’]x|B\.[\p{Zs}\t]?R\.|(?:N\.[\p{Zs}\t]?[EW]|S\.[\p{Zs}\t]?[EW])\.(?:[\p{Zs}\t]?(?:2d|3d))?|(?:A|P|So)\.[\p{Zs}\t]?(?:2d|3d|4th)|A\.[\p{Zs}\t]?D\.(?:[\p{Zs}\t]?(?:2d|3d))?|N\.[\p{Zs}\t]?Y\.(?:[\p{Zs}\t]?S\.)?[\p{Zs}\t]?(?:2d|3d)|Cal\.[\p{Zs}\t]?Rptr\.(?:[\p{Zs}\t]?(?:2d|3d))?|Cong\.[\p{Zs}\t]?Rec\.|Fed\.[\p{Zs}\t]?Reg\.|Fed\.[\p{Zs}\t]?Cl\.|Stat\.|T\.[\p{Zs}\t]?C\.)'
+parts.pages = '[\p{Zs}\t]*(?:at[\p{Zs}\t]+)?[HS]?\d{1,6}(?:[-–]\d{1,6})?(?:,[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?)*(?:[\p{Zs}\t]*nn?\.[\p{Zs}\t]*\d{1,4})?'
+
+# Westlaw and Lexis citations: "2015 WL 4554844", "2019 U.S. Dist. LEXIS
+# 12345", with a star page.
+[[reference]]
+pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|U\.S\.[\p{Zs}\t]+(?:Dist\.|App\.)[\p{Zs}\t]+LEXIS|LEXIS)[\p{Zs}\t]+\d{1,9}(?:,[\p{Zs}\t]*at[\p{Zs}\t]*\*\d{1,5})?'
+
+# English and Welsh reports and neutral citations: "[2020] STC 960",
+# "[2019] EWCA Civ 1234", "(2004) 1 WLR 12", and the distinctive reports
+# without their year ("ICR 801").
+[[reference]]
+pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+
+# US codes and regulations: "26 U.S.C. § 6212", "31 U.S.C. 3903", "48 CFR
+# 52.212-1", "735 ILCS 5/2-619", "I.R.C. § 61", and the dotted
+# abbreviations alone ("U.S.C.", whose "S.C." is no one's initials). The
+# undotted ones need their numbers: "USC" alone may be a university.
+[[reference]]
+pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section})?|\b\d{1,3}[\p{Zs}\t]+(?:CFR|ILCS|USC)[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section}'
+parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
+
+# Sections, paragraphs and clauses: "§ 6212", "§§ 1-3", "¶ 4", "section
+# 12", "Article 6", "clause 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)",
+# "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
+# stay unmarked).
+[[reference]]
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|Fed\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
+
+# Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
+# 13526", "Executive Order No. 14028", "Pub. L. No. 115-97", "Release No.
+# 34-98765".
+[[reference]]
+pattern = '\b(?:(?:FAR|DFARS)[\p{Zs}\t]+(?:§[\p{Zs}\t]*)?\d+(?:\.\d+)+(?:-\d+)*|(?:E\.[\p{Zs}\t]?O\.|Exec\.[\p{Zs}\t]+Order|Executive[\p{Zs}\t]+Order)[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{3,6}|Pub\.[\p{Zs}\t]?L\.[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{2,3}-\d{1,4}|(?:Release|Rel\.)[\p{Zs}\t]+No\.[\p{Zs}\t]*(?:[A-Z]{1,3}-)?\d+(?:-\d+)*)'
+
+# The record: transcript pages ("Tr. 435-36", "Tr. at 12:4-9"), docket
+# entries ("ECF Doc. #12-3", "ECF No. 45", "Dkt. 7"), footnotes ("n. 14",
+# "nn. 3-4") and supplemental appendix pages ("123sa", "45sa-47sa").
+[[reference]]
+pattern = '\bTr\.[\p{Zs}\t]*(?:at[\p{Zs}\t]+)?\d+(?:[:–-]\d+)*(?:,[\p{Zs}\t]*\d+(?:[:–-]\d+)*)*|\b(?:ECF|Dkt\.?)[\p{Zs}\t]+(?:(?:Doc|No|Nos)\.[\p{Zs}\t]*)?#?[\p{Zs}\t]*\d+(?:-\d+)?|\bDoc\.[\p{Zs}\t]*#[\p{Zs}\t]*\d+(?:-\d+)?|\bnn?\.[\p{Zs}\t]*\d{1,4}(?:[-–]\d{1,4})?\b|\b\d{1,5}sa(?:[-–]\d{1,5}sa)?\b'
+
+# Short-form citations and the record's pages: "Id. at 38", "supra, at
+# 12", "J.A. 123", "ROA.456", "App. 12".
+[[reference]]
+pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6})?(?:,[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?)*(?:[\p{Zs}\t]*nn?\.[\p{Zs}\t]*\d{1,4})?|\b(?:J\.[\p{Zs}\t]?A\.|ROA\.|App\.)[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?'
+
+# A form's outline letter before its part's title in title case is no
+# initial: "J. Additional Questions" (guide rule 1, issue #499).
+[[reference]]
+pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_|]*(?:(?:Part|Section|Item)[\p{Zs}\t]+)?)\p{Uppercase}\.(?P<tail>[\p{Zs}\t]+\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+|of|and|or|the|to|for|in))*[\p{Zs}\t]+\p{Uppercase}\p{Ll}+[\p{Zs}\t*_:|]*(?m:$))'

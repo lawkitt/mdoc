@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":95,"end":104,"label":"organization","score":0.6,"text":"ГК РФ"},
+    {"start":113,"end":123,"label":"tax_id","score":0.98,"text":"7701234567"},
+    {"start":66,"end":74,"label":"tax_id","score":0.83,"text":"999-ФЗ"},
+    {"start":91,"end":104,"label":"tax_id","score":0.71,"text":"431 ГК РФ"}
+  ]
+}
