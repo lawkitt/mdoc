@@ -273,8 +273,7 @@ pub(crate) fn whole_url(source: &str, range: &Range<usize>) -> bool {
     let before = source[..range.start].chars().next_back();
     let mut after = source[range.end..].chars();
     let (a1, a2) = (after.next(), after.next());
-    let glued_before =
-        before.is_some_and(|c| c.is_alphanumeric() || "./-_@:%~+=&#".contains(c));
+    let glued_before = before.is_some_and(|c| c.is_alphanumeric() || "./-_@:%~+=&#".contains(c));
     let glued_after = a1.is_some_and(|c| c.is_alphanumeric() || "/-_@%~+=&#?".contains(c))
         || (a1.is_some_and(|c| ".:".contains(c)) && a2.is_some_and(char::is_alphanumeric));
     !glued_before && !glued_after

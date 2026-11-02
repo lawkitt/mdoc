@@ -61,7 +61,12 @@ fn a_web_address_wins_over_a_name_email_or_id_inside_it() {
             vec![
                 found(source, "Alice Morgan", Category::Person, Recognizer::Model),
                 found(source, "Alice_Morgan", Category::Person, Recognizer::Model),
-                found(source, "alice@mail.invalid", Category::Email, Recognizer::Email),
+                found(
+                    source,
+                    "alice@mail.invalid",
+                    Category::Email,
+                    Recognizer::Email,
+                ),
                 found(source, "4687731604", Category::Tax, Recognizer::Inn),
                 url(source, first),
                 url(source, second),
@@ -143,12 +148,10 @@ fn a_kept_address_still_holds_the_name_inside_it() {
     let source = "Ms Morgan's page is https://example.invalid/staff/Morgan today.";
     let address = "https://example.invalid/staff/Morgan";
     let mut review = Review::default();
-    review
-        .ingest(source, vec![url(source, address)])
-        .unwrap();
+    review.ingest(source, vec![url(source, address)]).unwrap();
     let morgan = review.add_manual(source, 3..9, Category::Person).unwrap();
     let start = source.find(address).unwrap();
-    assert_eq!(review.variant(morgan).unwrap().mentions, [3..9]);
+    assert_eq!(review.variant(morgan).unwrap().mentions, vec![3..9]);
     let page = review
         .variants()
         .iter()
@@ -156,7 +159,7 @@ fn a_kept_address_still_holds_the_name_inside_it() {
         .unwrap()
         .id;
     review.keep(page, None);
-    assert_eq!(review.variant(morgan).unwrap().mentions, [3..9]);
+    assert_eq!(review.variant(morgan).unwrap().mentions, vec![3..9]);
     assert!(
         review
             .candidates()
@@ -195,8 +198,8 @@ fn web_address_comes_right_after_email_and_older_tokens_are_unchanged() {
     assert_eq!(
         tokens,
         [
-            "PERSON", "ORG", "EMAIL", "URL", "PHONE", "ADDRESS", "DATE", "CASE", "IDENTITY",
-            "TAX", "BANK", "REDACTED"
+            "PERSON", "ORG", "EMAIL", "URL", "PHONE", "ADDRESS", "DATE", "CASE", "IDENTITY", "TAX",
+            "BANK", "REDACTED"
         ]
     );
     assert_eq!(Category::DETECTED[3], Category::Url);

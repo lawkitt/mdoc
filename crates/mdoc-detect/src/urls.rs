@@ -85,7 +85,9 @@ fn find(source: &str) -> Vec<(Range<usize>, String)> {
         let authority = &rest[..authority_end];
         // A user's name and password before the host belong to the address.
         let host_port = if explicit {
-            authority.rsplit_once('@').map_or(authority, |(_, host)| host)
+            authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host)
         } else {
             authority
         };
@@ -117,8 +119,8 @@ fn invisible(c: char) -> bool {
 /// ("ksen.rav@" then "svod.invalid" on the next line) or split by spaces.
 fn email_domain(source: &str, start: usize) -> bool {
     // An "@" written as a reference or percent-encoded.
-    let lower = source[source.floor_char_boundary(start.saturating_sub(8))..start]
-        .to_ascii_lowercase();
+    let lower =
+        source[source.floor_char_boundary(start.saturating_sub(8))..start].to_ascii_lowercase();
     if ["&#64;", "&#x40;", "&commat;", "%40"]
         .iter()
         .any(|at| lower.ends_with(at))
@@ -192,9 +194,7 @@ fn trimmed_len(text: &str) -> usize {
     loop {
         let shorter = address.trim_end_matches(['.', ',', ';', ':', '!', '?', '*', '…']);
         // A bracket the address opened and did not close goes too.
-        let shorter = shorter
-            .strip_suffix(['(', '['])
-            .unwrap_or(shorter);
+        let shorter = shorter.strip_suffix(['(', '[']).unwrap_or(shorter);
         if shorter.len() == address.len() {
             break;
         }
@@ -208,10 +208,7 @@ mod tests {
     use super::{scan, whole};
 
     fn urls(source: &str) -> Vec<&str> {
-        scan(source)
-            .into_iter()
-            .map(|d| &source[d.range])
-            .collect()
+        scan(source).into_iter().map(|d| &source[d.range]).collect()
     }
 
     #[test]
@@ -221,7 +218,10 @@ mod tests {
                 "Profile: https://example.invalid/clients/Alice_Morgan.",
                 vec!["https://example.invalid/clients/Alice_Morgan"],
             ),
-            ("See www.ivanov-law.ru, then call.", vec!["www.ivanov-law.ru"]),
+            (
+                "See www.ivanov-law.ru, then call.",
+                vec!["www.ivanov-law.ru"],
+            ),
             ("сайт ivanov-law.ru.", vec!["ivanov-law.ru"]),
             ("сайт адвоката: юрист-петров.рф", vec!["юрист-петров.рф"]),
             (
@@ -252,7 +252,10 @@ mod tests {
                 vec!["https://site.invalid/u/alice@mail.invalid/"],
             ),
             ("http://localhost:8080/x", vec!["http://localhost:8080/x"]),
-            ("HTTPS://Example.INVALID/A", vec!["HTTPS://Example.INVALID/A"]),
+            (
+                "HTTPS://Example.INVALID/A",
+                vec!["HTTPS://Example.INVALID/A"],
+            ),
         ] {
             assert_eq!(urls(source), expected, "{source}");
         }
