@@ -258,6 +258,10 @@ check "untested_job names them" [ "$(untested_job local/ios), $(untested_job loc
     [ "$(stuck_reason PENDING Queued $((10000 - 5 * 60)) 0 10000 2)" = "overflow: queued behind 2 for 5 min" ]
   check "overflow: 4 min is not" eval '! stuck_reason PENDING Queued $((10000 - 4 * 60)) 0 10000 2'
   check "overflow: behind 1 is not" eval '! stuck_reason PENDING Queued $((10000 - 30 * 60)) 0 10000 1'
+  check "overflow: behind 1 is stuck at a threshold of 1" \
+    [ "$(stuck_reason PENDING Queued $((10000 - 5 * 60)) 0 10000 1 1)" = "overflow: queued behind 1 for 5 min" ]
+  check "overflow: the Mac overflows behind 1, the PC behind 2" \
+    [ "$(overflow_for local/macos) $(overflow_for local/windows)" = "1 2" ]
   check "overflow: a running step is never overflow" eval '! stuck_reason PENDING "Running just test" $((10000 - 30 * 60)) 0 10000 5'
   # Ahead: the context's other running heads and earlier queued ones; mobile rows never count.
   sep=$'\x1f'
