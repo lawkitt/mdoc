@@ -535,6 +535,9 @@ fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>)
             entity.text = source[range.clone()].to_owned();
             (entity.start, entity.end) = (range.start, range.end);
         }
+        // A span only over a table header the view inserted names no
+        // source text.
+        raw.retain(|entity| entity.start < entity.end);
     }
     raw
 }
@@ -574,9 +577,10 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .chain(rules::pack().spans(&view.text))
         .chain(structured::scan(&view.text));
     let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
-        .map(|mut detection| {
+        .filter_map(|mut detection| {
             detection.range = view.source_range(detection.range);
-            detection
+            // One only over an inserted table header names nothing.
+            (!detection.range.is_empty()).then_some(detection)
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
     detections.extend(rules);
@@ -616,7 +620,10 @@ fn respelt(source: &str, view: &mdoc_pii::view::View, model: &[Detection]) -> Ve
                 continue;
             }
             let range = view.source_range(at..end);
-            if source[range.clone()] != text && !proposed.contains(&(range.start, range.end)) {
+            if !range.is_empty()
+                && source[range.clone()] != text
+                && !proposed.contains(&(range.start, range.end))
+            {
                 found.push(Detection {
                     range,
                     ..*detection
@@ -1070,6 +1077,47 @@ mod tests {
             ]
         );
     }
+    /// #397: the model reads an identifier column's cells with their
+    /// header; a span over the header and the value maps to the cell, one
+    /// only over the header goes, and a label rule finds the value.
+    #[test]
+    fn identifier_columns_map_back_to_their_cells() {
+        let source = "| Фамилия | Паспорт | ИНН |\n| --- | --- | --- |\n| Кий | 46 82 731609 | 508614729031 |\n";
+        let view = mdoc_pii::view::View::new(source);
+        // The first `text` in the view from `from` on.
+        let entity = |from: &str, text: &str, label: &str| {
+            let start = view.text.find(from).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        };
+        let raw = vec![
+            entity("Кий", "Кий", "person"),
+            entity("Паспорт: 4", "Паспорт: 46 82 731609", "passport"),
+            entity("ИНН: 5", "ИНН", "tax"),
+        ];
+        let found: Vec<_> = to_source(source, &view, raw)
+            .into_iter()
+            .map(|entity| (entity.text, entity.label))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("Кий".into(), "person".into()),
+                ("46 82 731609".into(), "passport".into())
+            ]
+        );
+        let found: Vec<_> = correct(source, &[])
+            .into_iter()
+            .map(|d| (&source[d.range], d.category))
+            .collect();
+        assert_eq!(found, [("508614729031", Category::Tax)]);
+    }
+
     /// #401, #376: a detected name spelt otherwise in a link target is
     /// proposed there too, as written.
     #[test]
