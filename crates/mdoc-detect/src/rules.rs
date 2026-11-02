@@ -614,9 +614,23 @@ impl Pack {
                             && !(m.start <= other.start && other.end <= m.end)
                     })
                 };
+                // A person never grows over a role or title ("Ответчик" in
+                // "Ответчик Н. О." for the model's "Н. О.").
+                let over_never = |m: &std::ops::Range<usize>| {
+                    fix.category == Category::Person
+                        && [&source[m.start..range.start], &source[range.end..m.end]]
+                            .iter()
+                            .flat_map(|side| side.split(|c: char| !c.is_alphanumeric() && c != '-'))
+                            .any(|word| !word.is_empty() && self.never(word))
+                };
                 let grown = matches
                     .iter()
-                    .filter(|m| m.start <= range.start && range.end <= m.end && !crosses(m))
+                    .filter(|m| {
+                        m.start <= range.start
+                            && range.end <= m.end
+                            && !crosses(m)
+                            && !over_never(m)
+                    })
                     .max_by_key(|m| m.len())
                     .cloned()
                     .unwrap_or(range);
@@ -1351,6 +1365,19 @@ mod tests {
                 &[("Ветлин", Category::Person), ("Брюн", Category::Person)]
             ),
             ["Ветлин Н. О.", "Брюн Л. И."]
+        );
+        // Initials the model gave apart join the surname after them, not a
+        // role word before them.
+        assert_eq!(
+            fixed(
+                "Ответчик Н. О. Ветлин",
+                &[("Н. О.", Category::Person), ("Ветлин", Category::Person)]
+            ),
+            ["Н. О. Ветлин", "Н. О. Ветлин"]
+        );
+        assert_eq!(
+            fixed("Истец Н. О.", &[("Н. О.", Category::Person)]),
+            ["Н. О."]
         );
         // An organization is not a person.
         assert_eq!(

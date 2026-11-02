@@ -41,7 +41,8 @@
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
-#                         into part of another span of its category;
+#                         into part of another span of its category, and
+#                         a person's never over a `never` word (a role);
 #                         earlier spans grow first
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period with it, and a comma

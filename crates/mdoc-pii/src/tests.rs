@@ -1804,3 +1804,41 @@ fn a_whole_name_in_another_wording_joins_its_person() {
     );
     assert_eq!(review.active_identities().len(), 1);
 }
+
+/// Review of #391: a model's lone surname inside a whole name is taken in;
+/// a span of another category there is left as it is.
+#[test]
+fn a_whole_name_takes_in_a_model_part_of_it() {
+    let source = "Нотариус: Лидия Игоревна Брюн. Удостоверено мною, Лидией Игоревной Брюн.";
+    let full = source.find("Лидия Игоревна Брюн").unwrap();
+    let full = full..full + "Лидия Игоревна Брюн".len();
+    let part = source.rfind("Брюн").unwrap();
+    let part = part..part + "Брюн".len();
+    let ranges = |category: Category| {
+        let mut review = Review::default();
+        review
+            .ingest(
+                source,
+                vec![
+                    detection(full.clone(), Category::Person),
+                    detection(part.clone(), category),
+                ],
+            )
+            .unwrap();
+        let mut ranges: Vec<&str> = review
+            .candidates()
+            .iter()
+            .map(|c| &source[c.range.clone()])
+            .collect();
+        ranges.sort_unstable();
+        (ranges, review)
+    };
+    let (found, review) = ranges(Category::Person);
+    assert_eq!(found, ["Лидией Игоревной Брюн", "Лидия Игоревна Брюн"]);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Лидией Игоревной Брюн").id),
+        review.variant_identity(proposed(&review, "Лидия Игоревна Брюн").id)
+    );
+    let (found, _) = ranges(Category::Organization);
+    assert_eq!(found, ["Брюн", "Лидией Игоревной", "Лидия Игоревна Брюн"]);
+}
