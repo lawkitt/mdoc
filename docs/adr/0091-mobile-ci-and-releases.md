@@ -6,6 +6,10 @@ Status: Accepted, 2026-11-01. Amends [ADR 0037](0037-ci-and-release-pipeline.md)
 (fragments), [ADR 0082](0082-local-ci.md) (statuses, fallback, `main`),
 [ADR 0085](0085-mobile-apps.md) (repository and CI, versions) and
 [ADR 0089](0089-android-app.md) (local CI, signing key, distribution).
+Amended by [ADR 0095](0095-ci-on-a-merge-queue.md) (2026-11-02): the iOS
+job runs hosted, Android falls back to hosted, no Mac takeover, no "NOT
+tested" status, a recognition-code area; releases, signing and changelogs
+unchanged.
 
 ## Problem
 

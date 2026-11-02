@@ -1,6 +1,8 @@
 # Flaw hunt loop
 
-Status: Accepted, 2026-11-01; amended 2026-11-02 (probe corpus). Applies
+Status: Accepted, 2026-11-01; amended 2026-11-02 (probe corpus). The
+detection gate's place, reference platform and snapshot recording amended
+by [ADR 0095](0095-ci-on-a-merge-queue.md). Applies
 [ADR 0092](0092-recognition-correction-pipeline.md); runs under the fleet's
 hub (fleet ADR 0019).
 
