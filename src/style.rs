@@ -234,6 +234,9 @@ impl Theme {
             Bank => (0.33, 0.40),
             // The widest gap left: between Person's orange and Bank's green.
             CaseNumber => (0.18, 0.32),
+            // The next widest gap: between Bank's green and Organization's
+            // teal (ADR 0094).
+            Url => (0.40, 0.40),
             Other => (0.0, 0.0),
         };
         match self {
@@ -522,6 +525,7 @@ mod contrast_tests {
                 Category::Person,
                 Category::Organization,
                 Category::Email,
+                Category::Url,
                 Category::Phone,
                 Category::Address,
                 Category::Date,

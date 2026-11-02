@@ -4,6 +4,7 @@ pub mod lists;
 pub mod recognition;
 mod rules;
 mod structured;
+mod urls;
 mod windows;
 use gliner2_rs::{
     ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
@@ -83,6 +84,9 @@ pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
         .find(|d| d.range == local)
     {
         return detection.category;
+    }
+    if urls::whole(&source[range.clone()]) {
+        return Category::Url;
     }
     rules::pack()
         .guess(&source[range])
@@ -473,7 +477,9 @@ pub fn scan_rules(source: &str) -> Result<Vec<Detection>, DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
     }
-    Ok(structured::scan(source))
+    let mut detections = structured::scan(source);
+    detections.extend(urls::scan(source));
+    Ok(detections)
 }
 
 /// [`scan_reserved`] on explicit model and runtime paths, with its timings.
@@ -546,7 +552,7 @@ fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>)
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
 /// the structured rules over the whole source, all reading it as the model
-/// does. Rules win the review's conflicts with the model. Pure: the same
+/// does, and web addresses as the source writes them (ADR 0094). Rules win the review's conflicts with the model. Pure: the same
 /// source and entities give the same detections, in the order a scan
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
@@ -583,7 +589,20 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             (!detection.range.is_empty()).then_some(detection)
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+    // A web address inside a labelled case number or legal reference is
+    // part of it (guide rule 8); any other wins over what is inside it.
+    let addresses: Vec<Detection> = urls::scan(source)
+        .into_iter()
+        .filter(|url| {
+            !rules.iter().any(|rule| {
+                rule.recognizer == mdoc_pii::Recognizer::Context
+                    && rule.range.start < url.range.end
+                    && url.range.start < rule.range.end
+            })
+        })
+        .collect();
     detections.extend(rules);
+    detections.extend(addresses);
     // Span matches stand only where they are the widest evidence.
     let spans: Vec<Detection> = spans
         .into_iter()

@@ -25,6 +25,10 @@ pub struct DiscoveryInput {
     /// Case numbers: a repeat counts only standing alone, never inside a
     /// longer identifier or number, nor as an amount ([`whole_value`]).
     pub(super) whole: Vec<bool>,
+    /// Web addresses (ADR 0094): a mention is a whole address
+    /// ([`whole_url`]), and one shields the names, emails and IDs inside it
+    /// even when kept.
+    pub(super) url: Vec<bool>,
     /// Dates of birth: a mention counts only after one of its cue words
     /// ([`cue_before`]); `None` counts every mention.
     pub(super) cues: Vec<Option<Vec<String>>>,
@@ -76,10 +80,28 @@ impl DiscoveryInput {
             }
             hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
         }
+        let url_hit = |index: usize, range: &Range<usize>| {
+            self.url[index]
+                && exact_boundary(source, range, &self.originals[index])
+                && whole_url(source, range)
+        };
+        // A web address, proposed, kept or replaced, holds what is inside it.
+        let shields: Vec<Range<usize>> = hits
+            .iter()
+            .filter(|(index, range)| url_hit(*index, range))
+            .map(|(_, range)| range.clone())
+            .collect();
+        let shielded = |range: &Range<usize>| {
+            shields.iter().any(|shield| {
+                shield.start <= range.start && range.end <= shield.end && *shield != *range
+            })
+        };
         hits.retain(|(index, range)| {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
+                && (!self.url[*index] || whole_url(source, range))
+                && !shielded(range)
                 && !crosses_syntax(&protected, source, range)
                 && plain_text_span(source, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
@@ -241,6 +263,21 @@ fn column_header(source: &str, start: usize) -> Option<String> {
             return (!label.is_empty()).then_some(label);
         }
     }
+}
+
+/// Whether `range` is a whole web address where it stands: not part of a
+/// longer one ("ivanov-law.ru" of "https://ivanov-law.ru/about" or of
+/// "mail.ivanov-law.ru"), nor an email's domain. A sentence's period may
+/// follow it.
+pub(crate) fn whole_url(source: &str, range: &Range<usize>) -> bool {
+    let before = source[..range.start].chars().next_back();
+    let mut after = source[range.end..].chars();
+    let (a1, a2) = (after.next(), after.next());
+    let glued_before =
+        before.is_some_and(|c| c.is_alphanumeric() || "./-_@:%~+=&#".contains(c));
+    let glued_after = a1.is_some_and(|c| c.is_alphanumeric() || "/-_@%~+=&#?".contains(c))
+        || (a1.is_some_and(|c| ".:".contains(c)) && a2.is_some_and(char::is_alphanumeric));
+    !glued_before && !glued_after
 }
 
 /// Whether `range` stands alone as a value: not joined to a longer

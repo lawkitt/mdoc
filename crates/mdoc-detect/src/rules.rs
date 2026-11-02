@@ -36,6 +36,19 @@ struct File {
     span: Vec<SpanEntry>,
     #[serde(default)]
     variants: Vec<VariantsEntry>,
+    #[serde(default)]
+    url: Vec<UrlEntry>,
+}
+
+/// Web addresses' data (ADR 0094): which bare domains are addresses and
+/// which domains are public or legal, never proposed.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UrlEntry {
+    #[serde(default)]
+    zones: Vec<String>,
+    #[serde(default)]
+    public: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -156,6 +169,11 @@ pub(crate) struct Pack {
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
     spans: Vec<Span>,
+    /// Top-level domains a bare domain may end with, lowercase.
+    zones: std::collections::HashSet<String>,
+    /// Domains never proposed as web addresses, lowercase, with their
+    /// subdomains.
+    public: std::collections::HashSet<String>,
 }
 
 /// A `span` entry: a whole span by its pattern, or a boundary fix.
@@ -295,6 +313,8 @@ impl Pack {
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
+            zones: std::collections::HashSet::new(),
+            public: std::collections::HashSet::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -600,6 +620,32 @@ impl Pack {
                     strip_end: entry.strip_end.clone(),
                 }));
             }
+            for (index, entry) in file.url.iter().enumerate() {
+                let at = |problem: String| format!("{name}: url #{}: {problem}", index + 1);
+                if entry.zones.is_empty() && entry.public.is_empty() {
+                    return Err(at("needs zones or public domains".into()));
+                }
+                for (list, domains, dotted) in [
+                    (&mut pack.zones, &entry.zones, false),
+                    (&mut pack.public, &entry.public, true),
+                ] {
+                    for domain in domains {
+                        let labels_ok = domain.split('.').all(|label| {
+                            !label.is_empty()
+                                && label.chars().all(|c| c.is_alphanumeric() || c == '-')
+                        });
+                        if !labels_ok || (!dotted && domain.contains('.')) {
+                            return Err(at(format!("{domain:?} is not a domain")));
+                        }
+                        if *domain != domain.to_lowercase() {
+                            return Err(at(format!("{domain:?} is not lowercase")));
+                        }
+                        if !list.insert(domain.clone()) {
+                            return Err(at(format!("{domain:?} is listed twice")));
+                        }
+                    }
+                }
+            }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
                 if entry.name.trim().is_empty() {
@@ -616,6 +662,27 @@ impl Pack {
             }
         }
         Ok(pack)
+    }
+
+    /// Whether a bare domain may end with top-level domain `zone`.
+    pub(crate) fn web_zone(&self, zone: &str) -> bool {
+        self.zones.contains(&zone.to_lowercase())
+    }
+
+    /// Whether `host` is a public or legal site's, or a subdomain of one
+    /// (ADR 0094): "kad.arbitr.ru", "www.legislation.gov.uk".
+    pub(crate) fn public_host(&self, host: &str) -> bool {
+        let host = host.trim_end_matches('.').to_lowercase();
+        let mut rest = host.as_str();
+        loop {
+            if self.public.contains(rest) {
+                return true;
+            }
+            match rest.split_once('.') {
+                Some((_, parent)) => rest = parent,
+                None => return false,
+            }
+        }
     }
 
     /// Whether `word` is a title, role, determiner or other word that never

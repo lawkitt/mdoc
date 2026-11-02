@@ -235,3 +235,15 @@ labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
 only_guessed = ["DATE"]
+
+# English-speaking courts, public bodies, laws and legal databases are never
+# web addresses to replace (ADR 0094, guide rule 8): "www.gov.uk/…",
+# "https://www.legislation.gov.uk/ukpga/2018/12".
+[[url]]
+public = [
+    "gov.uk", "legislation.gov.uk", "judiciary.uk", "bailii.org",
+    "nationalarchives.gov.uk", "supremecourt.uk", "parliament.uk",
+    "service.gov.uk", "nhs.uk", "police.uk", "gov.au", "gc.ca", "govt.nz",
+    "gov.ie", "courts.ie", "uscourts.gov", "justia.com", "findlaw.com",
+    "westlaw.com", "lexisnexis.com", "casetext.com", "law.justia.com",
+]

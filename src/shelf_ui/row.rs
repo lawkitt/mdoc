@@ -93,6 +93,8 @@ fn category_noun(category: Category, count: usize) -> &'static str {
         Category::Organization => "organizations",
         Category::Email if one => "email",
         Category::Email => "emails",
+        Category::Url if one => "web address",
+        Category::Url => "web addresses",
         Category::Phone if one => "phone number",
         Category::Phone => "phone numbers",
         Category::Address if one => "address",

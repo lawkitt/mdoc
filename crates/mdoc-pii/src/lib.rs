@@ -32,6 +32,9 @@ pub enum Category {
     Person,
     Organization,
     Email,
+    /// An identifying web address (ADR 0094): a profile, a private site, a
+    /// share link. Public and legal addresses are never proposed.
+    Url,
     Phone,
     Address,
     Identity,
@@ -52,6 +55,7 @@ impl Category {
             Self::Person => "Person",
             Self::Organization => "Organization",
             Self::Email => "Email",
+            Self::Url => "Web address",
             Self::Phone => "Phone",
             Self::Address => "Address",
             Self::Identity => "Identity",
@@ -72,10 +76,11 @@ impl Category {
     }
     /// What scans can return, in picker order: Categories to detect lists
     /// these (ADR 0041, ADR 0076).
-    pub const DETECTED: [Self; 10] = [
+    pub const DETECTED: [Self; 11] = [
         Self::Person,
         Self::Organization,
         Self::Email,
+        Self::Url,
         Self::Phone,
         Self::Address,
         Self::Date,
@@ -85,10 +90,11 @@ impl Category {
         Self::Bank,
     ];
     /// Picker order; Other is the catch-all and comes last.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Person,
         Self::Organization,
         Self::Email,
+        Self::Url,
         Self::Phone,
         Self::Address,
         Self::Date,
@@ -103,6 +109,7 @@ impl Category {
             Self::Person => "PERSON",
             Self::Organization => "ORG",
             Self::Email => "EMAIL",
+            Self::Url => "URL",
             Self::Phone => "PHONE",
             Self::Address => "ADDRESS",
             Self::Identity => "IDENTITY",
@@ -317,6 +324,9 @@ pub enum Recognizer {
     /// A whole span by a pattern of the rule pack's `span` section: an
     /// address (ADR 0092).
     Span,
+    /// A web address by its shape, outside the rule pack's public and legal
+    /// domains (ADR 0094). It wins over a name, an email or an ID inside it.
+    Url,
     /// A form of a known full name, found by the review after a scan or a
     /// mark (ADR 0092); never a detector's.
     Propagation,
@@ -522,6 +532,11 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::CaseNumber)
                 .collect(),
+            url: self
+                .variants()
+                .iter()
+                .map(|g| g.category == Category::Url)
+                .collect(),
             cues: self
                 .variants()
                 .iter()
@@ -677,6 +692,11 @@ impl Review {
             selected.iter().any(|detection| {
                 detection.category == Category::CaseNumber
                     && source[detection.range.clone()] == **text
+            })
+        }));
+        input.url.extend(fresh.iter().map(|text| {
+            selected.iter().any(|detection| {
+                detection.category == Category::Url && source[detection.range.clone()] == **text
             })
         }));
         input.cues.extend(fresh.iter().map(|_| None));

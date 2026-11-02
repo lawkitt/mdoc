@@ -422,3 +422,20 @@ labels = ["дата рождения", "даты рождения", "д.р", "р
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
+
+# Russian courts, public bodies, laws and legal databases are never web
+# addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
+# "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",
+# every "*.gov.ru" and every court's "*.sudrf.ru".
+[[url]]
+public = [
+    "gov.ru", "pravo.gov.ru", "sudrf.ru", "arbitr.ru", "kad.arbitr.ru",
+    "ksrf.ru", "vsrf.ru", "consultant.ru", "garant.ru", "base.garant.ru",
+    "sudact.ru", "kodeks.ru", "docs.cntd.ru", "cntd.ru", "pravo.ru",
+    "fssp.gov.ru", "nalog.ru", "nalog.gov.ru", "gosuslugi.ru", "mos.ru",
+    "mos-sud.ru", "mos-gorsud.ru", "fedresurs.ru", "rosreestr.ru",
+    "rosreestr.gov.ru", "duma.gov.ru", "kremlin.ru", "government.ru",
+    "genproc.gov.ru", "sledcom.ru", "fas.gov.ru", "cbr.ru", "pfr.gov.ru",
+    "sfr.gov.ru", "zakupki.gov.ru", "egrul.nalog.ru", "notariat.ru",
+    "reestr-zalogov.ru",
+]
