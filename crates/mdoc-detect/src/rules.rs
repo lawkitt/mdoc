@@ -605,7 +605,14 @@ impl Pack {
         if self.legal_form(text) {
             return false;
         }
-        unquoted(text)
+        // Quotes around the whole span hide nothing: "«Арбитражный суд»".
+        let outside = unquoted(text);
+        let outside = if outside.chars().any(char::is_alphanumeric) {
+            outside
+        } else {
+            text.to_owned()
+        };
+        outside
             .split_whitespace()
             .map(|word| {
                 word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
@@ -1782,8 +1789,15 @@ mod tests {
         ] {
             assert!(pack.identifying(text, Category::Organization), "{text}");
         }
-        for text in ["ФКЗ РФ", "ФЗ", "ГКУ «Дирекция парков»", "Суд «Северный»"]
-        {
+        for text in [
+            "ФКЗ РФ",
+            "ФЗ",
+            "ФЗ № 127-ФЗ",
+            "Федерального закона от 12.03.2026 № 418-ФЗ",
+            "ГКУ «Дирекция парков»",
+            "Суд «Северный»",
+            "«Арбитражный суд Северной области»",
+        ] {
             assert!(!pack.identifying(text, Category::Organization), "{text}");
         }
         assert_eq!(
@@ -1808,6 +1822,8 @@ mod tests {
             "третье лицо — ГБУ Северной области «Центр снабжения».",
             "третье лицо — ГБУЗ Республики Сосновия «Центр снабжения».",
             "третье лицо — ГКУ г. Ольховска «Центр снабжения».",
+            "третье лицо — ГБУ города Нижнего Ольховска «Центр снабжения».",
+            "третье лицо — ГКУ Северо-Ольховского автономного округа «Центр снабжения».",
         ] {
             assert!(
                 fixed(source, &[("Центр снабжения", Category::Organization)]).is_empty(),

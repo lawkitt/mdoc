@@ -20,12 +20,13 @@ extend = [
 # so the public-body `never` words below reach it: the model's "Дирекция
 # парков" in "ГКУ города Ольховска «Дирекция парков»" grows to the
 # whole of it and goes (guide rule 8, issue #378). The institution's city or
-# region may stand between ("ГБУ Северной области «…»").
+# region, of up to two words, may stand between ("ГБУ Северной области «…»",
+# "ГКУ города Нижнего Ольховска «…»").
 [[span]]
 category = "ORG"
 extend = [
-    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
-    '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
 ]
 
 # Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
@@ -206,6 +207,12 @@ words = [
     "городом", "городе", "г", "пгт", "поселок", "посёлок",
 ]
 anywhere_in = ["ORG"]
+
+# A law's number is a legal reference, never an organization: "ФЗ № 127-ФЗ",
+# "Федерального закона … № 418-ФЗ" (guide rule 8, issue #378).
+[[shape]]
+category = "ORG"
+forbid = ['\d[\p{Zs}\t]*-[\p{Zs}\t]*ФК?З\b']
 
 # Russian legal forms mark a manual selection as an organization
 # ("ООО «Ромашка»"). Matched as written: ASCII case folding leaves Cyrillic
