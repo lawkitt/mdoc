@@ -977,6 +977,8 @@ fn find_forms(
     let blank = |from: usize, to: usize| {
         from <= to && source[from..to].chars().all(|c| c == ' ' || c == '\t')
     };
+    // A surname's particle, as read: "v-\nan der Berg" has "van".
+    let particle = |t: &Range<usize>| is_particle(&crate::view::unwrapped(&source[t.clone()]));
     // An initial: one capital letter and its period.
     let initial = |k: usize| {
         capital(k)
@@ -1002,9 +1004,7 @@ fn find_forms(
             // The surname may carry particles: "Г. Я. де Лаваль".
             let mut surname = last + 1;
             while surname < last + 3
-                && tokens
-                    .get(surname)
-                    .is_some_and(|t| is_particle(&source[t.clone()]))
+                && tokens.get(surname).is_some_and(particle)
                 && tokens.get(surname + 1).is_some_and(|next| {
                     tokens[surname].end < next.start && blank(tokens[surname].end, next.start)
                 })
@@ -1038,7 +1038,7 @@ fn find_forms(
             // A surname with its particles: "де Лаваль", "van der Berg".
             let mut last = i;
             while last < i + 2
-                && is_particle(&source[tokens[last].clone()])
+                && particle(&tokens[last])
                 && tokens.get(last + 1).is_some_and(|next| {
                     tokens[last].end < next.start && blank(tokens[last].end, next.start)
                 })
@@ -1073,12 +1073,7 @@ fn find_forms(
             };
             let surname_from = |k: usize| {
                 let mut last = k;
-                while last < k + 2
-                    && tokens
-                        .get(last)
-                        .is_some_and(|t| is_particle(&source[t.clone()]))
-                    && spaced(last)
-                {
+                while last < k + 2 && tokens.get(last).is_some_and(particle) && spaced(last) {
                     last += 1;
                 }
                 word(last).then_some(last)
@@ -1688,6 +1683,13 @@ mod tests {
             .map(|(r, ..)| &source[r])
             .collect();
         assert_eq!(found, ["Paul"]);
+        // So does a particle: the whole name is one form.
+        let source = "Signed by Ludwig v-\nan der Berg.";
+        let found: Vec<_> = find_forms(source, &people(&["Ludwig van der Berg"]), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Ludwig v-\nan der Berg"]);
     }
 
     #[test]
