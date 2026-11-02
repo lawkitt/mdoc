@@ -149,14 +149,15 @@ unless_named = true
 
 # The same for capitalised common words of headings and running headers:
 # "Approved Judgment", "Program Announcement", "General Terms", "Federal
-# government", "Law School" as an organization. "Mr. General", "Jane
-# Federal" and "Paul Program" stay; so does an organization with any other
-# word ("General Motors", "Harvard Law School").
+# government", "Law School" as an organization, and "End Products" after a
+# nationality (#492). "Mr. General", "Jane Federal" and "Paul Program" stay;
+# so does an organization with any other word ("General Motors", "Harvard
+# Law School").
 [[never]]
 match = "plural"
 words = [
-    "judgment", "judgement", "program", "programme", "announcement", "general",
-    "federal", "law", "school",
+    "approved", "judgment", "judgement", "program", "programme", "announcement",
+    "general", "term", "federal", "law", "school", "end", "product",
 ]
 unless_named = true
 
@@ -438,13 +439,15 @@ extend = [
     '\b(?:New[\p{Zs}\t]+(?:York(?:[\p{Zs}\t]+City)?|Jersey|Hampshire|Mexico|Orleans|Zealand)|San[\p{Zs}\t]+(?:Francisco|Diego|Jose|José|Antonio|Marino)|Los[\p{Zs}\t]+Angeles|Las[\p{Zs}\t]+Vegas|St\.?[\p{Zs}\t]+Louis|Saint[\p{Zs}\t]+Louis|Hong[\p{Zs}\t]+Kong|Rhode[\p{Zs}\t]+Island|(?:North|South)[\p{Zs}\t]+(?:Carolina|Dakota)|West[\p{Zs}\t]+Virginia|Salt[\p{Zs}\t]+Lake[\p{Zs}\t]+City|Kansas[\p{Zs}\t]+City|Sri[\p{Zs}\t]+Lanka|Costa[\p{Zs}\t]+Rica|Puerto[\p{Zs}\t]+Rico|El[\p{Zs}\t]+Salvador|Saudi[\p{Zs}\t]+Arabia|Sierra[\p{Zs}\t]+Leone)\b',
 ]
 
-# The same places whole are no person either.
+# The same places whole are no person either, unless a title makes the
+# place a surname ("Ms St. Louis").
 [[never]]
 match = "pattern"
 patterns = [
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:New[\p{Zs}\t]+(?:York(?:[\p{Zs}\t]+City)?|Jersey|Hampshire|Mexico|Orleans|Zealand)|San[\p{Zs}\t]+(?:Francisco|Diego|Jose|José|Antonio|Marino)|Los[\p{Zs}\t]+Angeles|Las[\p{Zs}\t]+Vegas|St\.?[\p{Zs}\t]+Louis|Saint[\p{Zs}\t]+Louis|Hong[\p{Zs}\t]+Kong|Rhode[\p{Zs}\t]+Island|(?:North|South)[\p{Zs}\t]+(?:Carolina|Dakota)|West[\p{Zs}\t]+Virginia|Salt[\p{Zs}\t]+Lake[\p{Zs}\t]+City|Kansas[\p{Zs}\t]+City|Sri[\p{Zs}\t]+Lanka|Costa[\p{Zs}\t]+Rica|Puerto[\p{Zs}\t]+Rico|El[\p{Zs}\t]+Salvador|Saudi[\p{Zs}\t]+Arabia|Sierra[\p{Zs}\t]+Leone)[\s\p{P}]*$',
 ]
 anywhere_in = ["PERSON"]
+unless_titled = true
 
 # A caption's opening words stay outside a party's span: "In re Quill", "In
 # the Matter of Quill" and "Ex parte Quill" are "Quill" (guide rule 1, issue

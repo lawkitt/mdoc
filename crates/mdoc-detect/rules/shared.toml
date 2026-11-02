@@ -47,8 +47,11 @@
 #                               name after a title ("Mr He") or where
 #                               another person span has the word beside a
 #                               name ("Dawn French"); decided after the span
-#                               fixes. An initial before one names no one
+#                               fixes. One initial before one names no one
 #                               ("B. General Terms")
+#   unless_titled = true        for a pattern with anywhere_in PERSON alone:
+#                               a person's title before the span keeps it
+#                               ("Ms St. Louis")
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands

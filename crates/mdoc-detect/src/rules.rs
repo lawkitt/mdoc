@@ -70,6 +70,10 @@ struct NeverEntry {
     /// where another person span has them beside a name ("Dawn French").
     #[serde(default)]
     unless_named: bool,
+    /// For `pattern`: a person's title before the span keeps it, a
+    /// surname that reads like the phrase ("Ms St. Louis").
+    #[serde(default)]
+    unless_titled: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
@@ -328,6 +332,7 @@ struct Never {
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
     unless_named: bool,
+    unless_titled: bool,
 }
 
 impl Never {
@@ -402,6 +407,9 @@ impl Pack {
                         "unless_named takes no anywhere_in or last_word_of".into()
                     ));
                 }
+                if entry.unless_titled && entry.anywhere_in != ["PERSON"] {
+                    return Err(at("unless_titled needs anywhere_in PERSON alone".into()));
+                }
                 let patterns = entry
                     .patterns
                     .iter()
@@ -435,6 +443,7 @@ impl Pack {
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
                     unless_named: entry.unless_named,
+                    unless_titled: entry.unless_titled,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {
@@ -747,18 +756,20 @@ impl Pack {
     /// one here: no context says otherwise.
     #[cfg(test)]
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
-        self.identifying_named(text, category, &|_| false)
+        self.identifying_named(text, category, &|_| false, false)
     }
 
     /// `identifying`, where `named` says which common words (lowercase)
-    /// context makes a person's name.
+    /// context makes a person's name, and `titled` whether a person's
+    /// title stands before the span.
     fn identifying_named(
         &self,
         text: &str,
         category: Category,
         named: &dyn Fn(&str) -> bool,
+        titled: bool,
     ) -> bool {
-        self.shaped_named(text, category, named) && !self.public_body(text, category)
+        self.shaped_named(text, category, named) && !self.public_body(text, category, titled)
     }
 
     /// Whether a span is a court or other public body by the `never`
@@ -767,7 +778,7 @@ impl Pack {
     /// a name ("Банк «Город»"). The correction stage asks this only after
     /// the span fixes, so a company's inner name ("Северная область Строй")
     /// first grows to its legal form.
-    fn public_body(&self, text: &str, category: Category) -> bool {
+    fn public_body(&self, text: &str, category: Category, titled: bool) -> bool {
         if self.legal_form(text) {
             return false;
         }
@@ -792,7 +803,9 @@ impl Pack {
             || self
                 .never
                 .iter()
-                .filter(|entry| entry.anywhere_in.contains(&category))
+                .filter(|entry| {
+                    entry.anywhere_in.contains(&category) && !(titled && entry.unless_titled)
+                })
                 .flat_map(|entry| &entry.patterns)
                 .any(|pattern| pattern.is_match(&outside))
     }
@@ -840,7 +853,7 @@ impl Pack {
                     .iter()
                     .all(|letter| initials.by_ref().any(|initial| initial == *letter));
             let short = short.trim_end_matches('.').to_owned();
-            if spelt && self.public_body(title, Category::Organization) {
+            if spelt && self.public_body(title, Category::Organization, false) {
                 public.insert(short);
             } else {
                 other.insert(short);
@@ -880,8 +893,8 @@ impl Pack {
 
     /// Whether `words`, those a shape's `word` takes, name someone: one is
     /// no never word, or a common word context names. Initials alone name
-    /// someone ("Ms B."), but not before a common word: "B. General Terms"
-    /// is an outline letter.
+    /// someone ("Ms B.", "J. R. French"), but one letter before a common
+    /// word is an outline letter: "B. General Terms".
     fn names<'a>(
         &self,
         words: impl Iterator<Item = &'a str>,
@@ -891,23 +904,25 @@ impl Pack {
             word.split('.')
                 .all(|part| part.chars().count() == 1 && part.chars().all(char::is_uppercase))
         };
-        let (mut name, mut initials, mut common) = (false, false, false);
-        for word in words {
+        let (mut name, mut letters, mut common) = (false, 0, false);
+        for (index, word) in words.enumerate() {
             if self.common(word) {
                 if named(&word.to_lowercase()) {
                     name = true;
+                } else if index == 1 && letters == 1 {
+                    return false;
                 } else {
                     common = true;
                 }
             } else if !self.never(word) {
                 if initial(word) {
-                    initials = true;
+                    letters += word.split('.').count();
                 } else {
                     name = true;
                 }
             }
         }
-        name || initials && !common
+        name || letters > 1 || letters == 1 && !common
     }
 
     /// The `span` fixes on `detections` in `source`: each grows to an
@@ -989,9 +1004,12 @@ impl Pack {
             let text = &view.text[view.view_range(d.range.clone())];
             let titled = d.category == Category::Person && self.titled(source, d.range.start);
             !d.range.is_empty()
-                && self.identifying_named(text, d.category, &|word| {
-                    d.category == Category::Person && (titled || named.contains(word))
-                })
+                && self.identifying_named(
+                    text,
+                    d.category,
+                    &|word| d.category == Category::Person && (titled || named.contains(word)),
+                    titled,
+                )
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())
@@ -1014,7 +1032,7 @@ impl Pack {
             .iter()
             .filter(|d| d.category == Category::Person && !d.range.is_empty())
             .map(|d| &view.text[view.view_range(d.range.clone())])
-            .filter(|text| self.identifying_named(text, Category::Person, &|_| false))
+            .filter(|text| self.identifying_named(text, Category::Person, &|_| false, false))
             .flat_map(|text| {
                 text.split_whitespace()
                     .map(|word| {
@@ -2698,8 +2716,12 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("San Francisco", Category::Person),
             ("St. Louis", Category::Person),
             ("North Carolina", Category::Person),
-            // An outline letter before a heading's common word.
+            // An outline letter before a heading's common word, and whole
+            // headings (review of #528).
             ("B. General", Category::Person),
+            ("B. General Terms", Category::Person),
+            ("Approved Judgment", Category::Person),
+            ("American End Products", Category::Person),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
@@ -2716,6 +2738,8 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("Virginia", Category::Person),
             ("Carolina", Category::Person),
             ("J. R. Clerk", Category::Person),
+            ("J. R. French", Category::Person),
+            ("J.R. French", Category::Person),
             ("B.", Category::Person),
             ("General Motors", Category::Organization),
             ("Harvard Law School", Category::Organization),
@@ -2738,7 +2762,8 @@ Privacy Act (“BIPA”). BIPA applies.",
                       wrote; French and In agree, Christian too. Mr Lane lives in New \
                       York, John York in San Jose. In re Ossian Draycott; In the \
                       Matter of Quill; Ex parte Vell; In re Quillon Freight LLC. The \
-                      Federal Election Commission met; Federal agreed.";
+                      Federal Election Commission met; Federal agreed. Ms St. Louis \
+                      signed in St. Louis.";
         let at = |anchor: &str, text: &str| {
             let start = source.find(anchor).unwrap() + anchor.find(text).unwrap();
             start..start + text.len()
@@ -2774,6 +2799,9 @@ Privacy Act (“BIPA”). BIPA applies.",
                 Category::Person,
             ),
             (at("Federal agreed", "Federal"), Category::Person),
+            // A title makes a place a surname; the place itself goes.
+            (at("Ms St. Louis", "St. Louis"), Category::Person),
+            (at("in St. Louis", "St. Louis"), Category::Person),
         ]
         .into_iter()
         .map(|(range, category)| Detection {
@@ -2803,6 +2831,7 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "Quill",
                 "Vell",
                 "Quillon Freight LLC",
+                "St. Louis",
             ]
         );
     }
