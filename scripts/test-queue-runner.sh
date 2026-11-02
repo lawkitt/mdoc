@@ -162,7 +162,7 @@ case "$behavior $1" in
     echo "        FAIL [   0.020s] mdoc workspace::tests::flaky"
     exit 100
     ;;
-  "beat test") sleep 4 ;;
+  "beat test") sleep 10 ;;
   "slow test")
     touch "$FAKE/stall"
     sleep 60
@@ -256,9 +256,10 @@ flake=$(qc 14 setupflake src/lib.rs)
 # --- the Windows job --------------------------------------------------------------
 
 export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=example/mdoc
-# A 15 s job limit: room for the 4 s heartbeat job while just test runs this
-# beside nextest (scripts/test.sh); the slow one sleeps 60 s.
-export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=15 QUEUE_CI_MIN_FREE_GB=0
+# A 30 s job limit: room for the 10 s heartbeat job while just test runs this
+# beside nextest (scripts/test.sh), where one poll of the runner takes up to
+# 4 s on Windows (Git Bash); the slow one sleeps 60 s.
+export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=30 QUEUE_CI_MIN_FREE_GB=0
 # A stalled gh call ends after 3 s (the fake stalls for 30).
 export QUEUE_CI_NET_TIMEOUT=3
 export CARGO_TARGET_DIR="$tmp/shared-target"
@@ -325,7 +326,7 @@ check "which are listed in the run folder" [ "$(wc -l <"$wout/${fail:0:7}/failed
 check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 0m15s	*"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 0m30s	*"
 check "a stalled gh call during it is ended, and the next poll goes on" \
   grep -q "warning: could not list the queue" "$tmp/windows.log"
 check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test " ] &&
@@ -409,7 +410,9 @@ git_ rev-parse HEAD >"$FAKE/next-main"
 git_ push --quiet "$FAKE_ORIGIN" HEAD:refs/heads/hold/next-main
 bump=$(prefix=upd/main/ qc 13 bump src/lib.rs)
 echo "13 User false" >>"$FAKE/prs.tsv"
-QUEUE_CI_HOME=$uhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-update QUEUE_CI_PREFIXES=upd/main/ \
+# Its own 2-minute limit: on hosted Windows, Git Bash took 16 s for the
+# checkout and lint alone (#525's first main run timed out there).
+QUEUE_CI_HOME=$uhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-update QUEUE_CI_PREFIXES=upd/main/ QUEUE_CI_TIMEOUT=120 \
   run_once windows "$tmp/update.log" "$uhome/runner/scripts/queue-runner.sh"
 line_of() { grep -n "$1" "$tmp/update.log" | head -1 | cut -d: -f1; }
 check "the job that brought it finishes" has "$bump" "$W" "success	Passed in *"
