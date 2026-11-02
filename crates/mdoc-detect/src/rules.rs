@@ -644,16 +644,45 @@ impl Pack {
                 .iter()
                 .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
                 .collect();
-            for detection in detections.iter_mut().filter(|d| d.category == fix.category) {
-                let range = &mut detection.range;
-                if let Some(grown) = matches
+            // In reading order: a span never grows into part of another
+            // span of its category, so in "Ветлин Н. О. Брюн Л. И." the
+            // initials after "Ветлин" stay his.
+            let mut order: Vec<usize> = (0..detections.len())
+                .filter(|&i| detections[i].category == fix.category)
+                .collect();
+            order.sort_by_key(|&i| detections[i].range.start);
+            for &i in &order {
+                let range = detections[i].range.clone();
+                let crosses = |m: &std::ops::Range<usize>| {
+                    order.iter().any(|&j| {
+                        let other = &detections[j].range;
+                        j != i
+                            && other.start < m.end
+                            && m.start < other.end
+                            && !(m.start <= other.start && other.end <= m.end)
+                    })
+                };
+                // A person never grows back over a role or title before
+                // it ("Ответчик" in "Ответчик Н. О." for the model's "Н.
+                // О."); after it such a word is a surname ("J. R. Clerk").
+                let over_never = |m: &std::ops::Range<usize>| {
+                    fix.category == Category::Person
+                        && source[m.start..range.start]
+                            .split(|c: char| !c.is_alphanumeric() && c != '-')
+                            .any(|word| !word.is_empty() && self.never(word))
+                };
+                let grown = matches
                     .iter()
-                    .filter(|m| m.start <= range.start && range.end <= m.end)
+                    .filter(|m| {
+                        m.start <= range.start
+                            && range.end <= m.end
+                            && !crosses(m)
+                            && !over_never(m)
+                    })
                     .max_by_key(|m| m.len())
-                {
-                    *range = grown.clone();
-                }
-                *range = fix.trimmed(source, range.clone());
+                    .cloned()
+                    .unwrap_or(range);
+                detections[i].range = fix.trimmed(source, grown);
             }
         }
         detections.retain(|d| {
@@ -1464,6 +1493,78 @@ mod tests {
                 ]
             ),
             ["Smith J.", "Northbridge Legal Ltd"]
+        );
+    }
+
+    /// A surname takes in two initials beside it (#391); a sentence's
+    /// period, a comma, a line or one initial alone keeps them apart.
+    #[test]
+    fn initials_beside_a_surname_join_it() {
+        for (source, model, expected) in [
+            ("Ответчик Ветлин Н. О. возражал", "Ветлин", "Ветлин Н. О."),
+            (
+                "Заявитель: Ветлин Н. О.. Объяснения",
+                "Ветлин",
+                "Ветлин Н. О.",
+            ),
+            ("Подписал Ветлин Н.О., истец", "Ветлин", "Ветлин Н.О."),
+            ("Нотариус Л. И. Брюн удостоверила", "Брюн", "Л. И. Брюн"),
+            ("Подпись: О’Шеннон А. П.", "О’Шеннон", "О’Шеннон А. П."),
+            ("Истец Ли-Вельт Л. А. пришла", "Ли-Вельт", "Ли-Вельт Л. А."),
+            ("Signed by J. R. Quill on Monday", "Quill", "J. R. Quill"),
+            (
+                "Signed by J.R. O’Brien-Hale",
+                "O’Brien-Hale",
+                "J.R. O’Brien-Hale",
+            ),
+            // A sentence's period, a comma and a line end the name.
+            ("Ветлин. Н. О. Иванов", "Ветлин", "Ветлин"),
+            ("Ветлин, Н. О. Иванов", "Ветлин", "Ветлин"),
+            ("Ветлин\nН. О. Иванов", "Ветлин", "Ветлин"),
+            // One initial is not enough to join.
+            ("Ветлин Н. пришёл", "Ветлин", "Ветлин"),
+            ("under Part A. Smith said", "Smith", "Smith"),
+            // A judge's "J" after an English surname is a title.
+            ("Smith J. R. held", "Smith", "Smith"),
+            // A role word before the initials does not take them.
+            ("Ответчик Н. О. Ветлин", "Ветлин", "Н. О. Ветлин"),
+        ] {
+            assert_eq!(
+                fixed(source, &[(model, Category::Person)]),
+                [expected],
+                "{source}"
+            );
+        }
+        // Two people side by side keep their own spans.
+        assert_eq!(
+            fixed(
+                "Ветлин Н. О. Брюн Л. И.",
+                &[("Ветлин", Category::Person), ("Брюн", Category::Person)]
+            ),
+            ["Ветлин Н. О.", "Брюн Л. И."]
+        );
+        // Initials the model gave apart join the surname after them, not a
+        // role word before them.
+        assert_eq!(
+            fixed(
+                "Ответчик Н. О. Ветлин",
+                &[("Н. О.", Category::Person), ("Ветлин", Category::Person)]
+            ),
+            ["Н. О. Ветлин", "Н. О. Ветлин"]
+        );
+        assert_eq!(
+            fixed("Истец Н. О.", &[("Н. О.", Category::Person)]),
+            ["Н. О."]
+        );
+        // After the initials a role word is a surname.
+        assert_eq!(
+            fixed("Signed by J. R. Clerk.", &[("J. R.", Category::Person)]),
+            ["J. R. Clerk"]
+        );
+        // An organization is not a person.
+        assert_eq!(
+            fixed("ИП Ветлин Н. О.", &[("ИП Ветлин", Category::Organization)]),
+            ["ИП Ветлин"]
         );
     }
 

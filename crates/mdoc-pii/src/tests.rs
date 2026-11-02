@@ -1800,3 +1800,127 @@ fn the_ordinary_word_rule_leaves_saved_wordings_and_marks_alone() {
     review.refresh(source);
     assert!(first(&review), "undo");
 }
+
+/// #391: a known person's whole name in another wording is one proposal in
+/// their identity, not a first name and a surname apart; a second person's
+/// surname beside her first name stays the second person's.
+#[test]
+fn a_whole_name_in_another_wording_joins_its_person() {
+    let source = "Нотариус: Лидия Игоревна Брюн. Представитель: Елена Борисовна Ренц. \
+        Удостоверено мною, Лидией Игоревной Брюн. Лидией Игоревной Ренц не подписано.";
+    let review = ingest_names(source, &["Лидия Игоревна Брюн", "Елена Борисовна Ренц"]);
+    let notary = review.variant_identity(proposed(&review, "Лидия Игоревна Брюн").id);
+    let whole = proposed(&review, "Лидией Игоревной Брюн");
+    assert_eq!(whole.recognizer(), Some(Recognizer::Propagation));
+    assert_eq!(review.variant_identity(whole.id), notary);
+    assert_eq!(whole.mentions.len(), 1);
+    let representative = review.variant_identity(proposed(&review, "Елена Борисовна Ренц").id);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Ренц").id),
+        representative
+    );
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Лидией Игоревной").id),
+        notary
+    );
+    assert_eq!(review.active_identities().len(), 2);
+
+    let source = "Получатель: Лея Ли-Вельт. Уважаемая госпожа Лея Аркадьевна Ли-Вельт!";
+    let review = ingest_names(source, &["Лея Ли-Вельт"]);
+    let full = review.variant_identity(proposed(&review, "Лея Ли-Вельт").id);
+    let greeting = proposed(&review, "Лея Аркадьевна Ли-Вельт");
+    assert_eq!(review.variant_identity(greeting.id), full);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Лея")
+    );
+    assert_eq!(review.active_identities().len(), 1);
+}
+
+/// Review of #391: a model's lone surname inside a whole name is taken in;
+/// a span of another category there is left as it is.
+#[test]
+fn a_whole_name_takes_in_a_model_part_of_it() {
+    let source = "Нотариус: Лидия Игоревна Брюн. Удостоверено мною, Лидией Игоревной Брюн.";
+    let full = source.find("Лидия Игоревна Брюн").unwrap();
+    let full = full..full + "Лидия Игоревна Брюн".len();
+    let part = source.rfind("Брюн").unwrap();
+    let part = part..part + "Брюн".len();
+    let ranges = |category: Category| {
+        let mut review = Review::default();
+        review
+            .ingest(
+                source,
+                vec![
+                    detection(full.clone(), Category::Person),
+                    detection(part.clone(), category),
+                ],
+            )
+            .unwrap();
+        let mut ranges: Vec<&str> = review
+            .candidates()
+            .iter()
+            .map(|c| &source[c.range.clone()])
+            .collect();
+        ranges.sort_unstable();
+        (ranges, review)
+    };
+    let (found, review) = ranges(Category::Person);
+    assert_eq!(found, ["Лидией Игоревной Брюн", "Лидия Игоревна Брюн"]);
+    assert_eq!(
+        review.variant_identity(proposed(&review, "Лидией Игоревной Брюн").id),
+        review.variant_identity(proposed(&review, "Лидия Игоревна Брюн").id)
+    );
+    let (found, _) = ranges(Category::Organization);
+    assert_eq!(found, ["Брюн", "Лидией Игоревной", "Лидия Игоревна Брюн"]);
+}
+
+/// Review of #391: a whole name never takes in a surname the user moved to
+/// another person or kept at one place, there or anywhere it repeats.
+#[test]
+fn a_whole_name_leaves_the_users_decisions_on_its_parts() {
+    let source = "Нотариус: Лидия Игоревна Брюн. Удостоверено Лидией Игоревной Брюн. \
+        Подписано Лидией Игоревной Брюн.";
+    let full = source.find("Лидия Игоревна Брюн").unwrap();
+    let full = full..full + "Лидия Игоревна Брюн".len();
+    let second = source.find("Лидией Игоревной Брюн").unwrap() + "Лидией Игоревной ".len();
+    let second = second..second + "Брюн".len();
+    let scan = |decide: &dyn Fn(&mut Review, u64)| {
+        let mut review = Review::default();
+        review
+            .ingest(source, vec![detection(second.clone(), Category::Person)])
+            .unwrap();
+        let surname = proposed(&review, "Брюн").id;
+        decide(&mut review, surname);
+        review
+            .ingest(
+                source,
+                vec![
+                    detection(full.clone(), Category::Person),
+                    detection(second.clone(), Category::Person),
+                ],
+            )
+            .unwrap();
+        review
+    };
+    // Moved to another person: the surname stays theirs.
+    let review = scan(&|review, surname| {
+        let other = review.new_identity(Category::Person);
+        review.assign_variant(surname, other).unwrap();
+    });
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Лидией Игоревной Брюн")
+    );
+    let surname = proposed(&review, "Брюн");
+    assert!(surname.mentions.contains(&second));
+    // Kept at one place: nothing proposed crosses it.
+    let review = scan(&|review, surname| review.keep(surname, Some(second.clone())));
+    assert!(review.candidates().iter().all(|c| {
+        c.range == second || c.range.end <= second.start || second.end <= c.range.start
+    }));
+}

@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: person-prefix-boundary
-issue: 391
+status: pass
+flaw:
+issue:
 kind: claim
 source: hunt-r1
-expect: boundary: gold PERSON "Ветлин Н. О."; proposed PERSON "Ветлин"
 ---
 # Particulars of claim: interpreter fees
 
