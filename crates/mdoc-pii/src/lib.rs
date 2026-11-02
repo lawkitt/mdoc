@@ -519,7 +519,15 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::CaseNumber)
                 .collect(),
-            cues: self.variants().iter().map(|g| g.cues.clone()).collect(),
+            cues: self
+                .variants()
+                .iter()
+                .map(|g| {
+                    g.cues
+                        .clone()
+                        .filter(|_| !self.identities.every_mention(g.id))
+                })
+                .collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -722,6 +730,14 @@ impl Review {
         }
         let people = propagation::People::new(people);
         let mut forms = Vec::new();
+        // A date of birth's labels limit its mentions (#466); a wording
+        // another recognizer found too, such as the Always list, counts
+        // every mention (ADR 0092).
+        let unlimited: HashSet<&str> = selected
+            .iter()
+            .filter(|detection| detection.recognizer != Recognizer::Context)
+            .map(|detection| &source[detection.range.clone()])
+            .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
             let joins = detection.category == Category::Person
@@ -732,12 +748,13 @@ impl Review {
             } else {
                 let id = self.add_seed(text, detection.category);
                 self.recognized(id, first, detection.recognizer);
-                if detection.category == Category::Date {
-                    self.cued(
-                        id,
-                        first,
-                        discovery::cue_before(source, detection.range.start),
-                    );
+                if unlimited.contains(text) {
+                    if let Some(variant) = self.candidates.variant_mut(id) {
+                        variant.cues = None;
+                    }
+                } else if detection.category == Category::Date {
+                    let cue = discovery::cue_before(source, detection.range.start);
+                    self.cued(id, first, cue);
                 }
             }
         }
@@ -869,7 +886,9 @@ impl Review {
             // Marked by hand, every mention counts, even an ordinary word's
             // at the start of a sentence, or a date of birth's elsewhere.
             group.mid_sentence = false;
-            group.cues = None;
+        }
+        if self.variant(id).is_some_and(|v| v.cues.is_some()) {
+            self.identities.count_every_mention(id);
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);

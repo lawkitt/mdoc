@@ -138,10 +138,18 @@ impl DiscoveryInput {
     }
 }
 
-/// The word that ends within 12 characters before `start`, lowercase:
-/// a date of birth's label ("DOB: ", "| Дата рождения | ", "род. ").
-/// Empty when there is none.
+/// What labels a date of birth at `start`, lowercase (#466): the header of
+/// its table column ("| Name | DOB |"), else the label just before it. A
+/// neighbouring value takes no part, so replacing a name beside the date
+/// keeps it. Empty when there is none.
 pub(crate) fn cue_before(source: &str, start: usize) -> String {
+    column_header(source, start).unwrap_or_else(|| label_before(source, start))
+}
+
+/// The label ending within 12 characters before `start` ("DOB: ", "род. "):
+/// its last word, and the word before when that is lowercase or the last
+/// is short, so "born on" is not "Signed on" and "Bennett born" is "born".
+fn label_before(source: &str, start: usize) -> String {
     let before = &source[..start];
     let Some(end) = before
         .char_indices()
@@ -152,8 +160,50 @@ pub(crate) fn cue_before(source: &str, start: usize) -> String {
     else {
         return String::new();
     };
-    let word = before[..end].trim_end_matches(char::is_alphanumeric);
-    before[word.len()..end].to_lowercase()
+    let rest = before[..end].trim_end_matches(char::is_alphanumeric);
+    let word = &before[rest.len()..end];
+    let Some(rest) = rest.strip_suffix([' ', '\t']) else {
+        return word.to_lowercase();
+    };
+    let previous = &rest[rest.trim_end_matches(char::is_alphanumeric).len()..];
+    if previous.starts_with(char::is_lowercase)
+        || (!previous.is_empty() && word.chars().count() <= 2)
+    {
+        format!("{previous} {word}").to_lowercase()
+    } else {
+        word.to_lowercase()
+    }
+}
+
+/// The header cell of the table column `start` is in: up the table's rows
+/// to the one a delimiter row ("| --- |") follows.
+fn column_header(source: &str, start: usize) -> Option<String> {
+    let line_start = source[..start].rfind('\n').map_or(0, |i| i + 1);
+    if !source[line_start..].trim_start().starts_with('|') {
+        return None;
+    }
+    let column = source[line_start..start].matches('|').count();
+    let mut rows = source[..line_start].lines().rev();
+    loop {
+        let row = rows.next()?.trim();
+        if !row.starts_with('|') {
+            return None;
+        }
+        if row.contains('-')
+            && row
+                .chars()
+                .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
+        {
+            let cell = rows.next()?.trim_start().split('|').nth(column)?;
+            let label = cell
+                .trim_matches(|c: char| c == '*' || c == '_' || c == ':' || c.is_whitespace())
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            return (!label.is_empty()).then_some(label);
+        }
+    }
 }
 
 /// Whether `range` stands alone as a value: not joined to a longer
@@ -225,18 +275,28 @@ mod tests {
     use super::{cue_before, whole_value};
 
     #[test]
-    fn a_cue_is_the_word_just_before() {
-        for (source, cue) in [
-            ("DOB: 14/03/1988", "dob"),
-            ("| Дата рождения | 14.03.1988", "рождения"),
-            ("Иванов И. И., род. 14.03.1988", "род"),
-            ("DOB:\n14/03/1988", "dob"),
-            ("Signed 14/03/1988", "signed"),
-            ("14/03/1988", ""),
-            ("x            14/03/1988", ""),
+    fn a_cue_is_a_dates_column_header_or_label() {
+        let table = "| Name | DOB |\n| --- | --- |\n| Maya Bennett | 14/03/1988 |";
+        let longer = "| Name | **Дата рождения** |\n|-|-|\n| x | y |\n| PERSON_1 | 14.03.1988 |";
+        for (source, date, cue) in [
+            ("DOB: 14/03/1988", "14/03/1988", "dob"),
+            ("| Дата рождения | 14.03.1988", "14.03.1988", "рождения"),
+            ("Иванов И. И., род. 14.03.1988", "14.03.1988", "род"),
+            ("DOB:\n14/03/1988", "14/03/1988", "dob"),
+            ("Signed 14/03/1988", "14/03/1988", "signed"),
+            ("born on 2 May 1990", "2 May", "born on"),
+            ("Born on 2 May 1990", "2 May", "born on"),
+            ("Signed on 2 May 1990", "2 May", "signed on"),
+            ("Maya Bennett born 14 March 1988", "14 March", "born"),
+            ("Date of birth: 14/03/1988", "14/03/1988", "of birth"),
+            (table, "14/03/1988", "dob"),
+            (longer, "14.03.1988", "дата рождения"),
+            ("| DOB | 14/03/1988 |", "14/03/1988", "dob"),
+            ("14/03/1988", "14/03/1988", ""),
+            ("x            14/03/1988", "14/03/1988", ""),
         ] {
             assert_eq!(
-                cue_before(source, source.find('1').unwrap()),
+                cue_before(source, source.rfind(date).unwrap()),
                 cue,
                 "{source}"
             );

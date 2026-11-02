@@ -1925,29 +1925,86 @@ fn a_whole_name_leaves_the_users_decisions_on_its_parts() {
     }));
 }
 
-/// #466 option 1: a scan's date of birth counts only after its label word,
-/// so the same date elsewhere stays (GUIDE rule 4), across edits and a
-/// second labelled mention; marked by hand, every mention counts.
+/// A date of birth a context rule proposed (#466), at each of `values`.
+fn ingest_birth_dates(source: &str, values: &[&str]) -> Review {
+    let mut review = Review::default();
+    let detections = values
+        .iter()
+        .map(|value| {
+            let start = source.find(value).unwrap();
+            let mut found = detection(start..start + value.len(), Category::Date);
+            found.recognizer = Recognizer::Context;
+            found
+        })
+        .collect();
+    review.ingest(source, detections).unwrap();
+    review
+}
+fn mention_count(review: &Review, original: &str) -> usize {
+    proposed(review, original).mentions.len()
+}
+
+/// #466 option 1: a scan's date of birth counts only after its label, so
+/// the same date elsewhere stays (GUIDE rule 4), across an edit and with a
+/// second labelled mention; marked by hand, every mention counts until the
+/// mark is undone.
 #[test]
 fn a_birth_date_counts_only_after_its_label_until_marked_by_hand() {
     let source = "DOB: 14/03/1988. Signed 14/03/1988. Again, DOB 14/03/1988.";
-    let mut review = Review::default();
+    let mut review = ingest_birth_dates(source, &["14/03/1988"]);
     let start = source.find("14/03/1988").unwrap();
-    review
-        .ingest(source, vec![detection(start..start + 10, Category::Date)])
-        .unwrap();
-    let mentions = |review: &Review| proposed(review, "14/03/1988").mentions.clone();
     let labelled = source.rfind("14/03/1988").unwrap();
     assert_eq!(
-        mentions(&review),
+        proposed(&review, "14/03/1988").mentions,
         [start..start + 10, labelled..labelled + 10]
     );
     let edited = format!("Note. {source}");
     review.refresh(&edited);
-    assert_eq!(mentions(&review).len(), 2);
+    assert_eq!(mention_count(&review, "14/03/1988"), 2);
+    let before = review.identity_snapshot();
     let signed = edited.find("Signed ").unwrap() + "Signed ".len();
     review
         .add_manual(&edited, signed..signed + 10, Category::Date)
         .unwrap();
-    assert_eq!(mentions(&review).len(), 3);
+    assert_eq!(mention_count(&review, "14/03/1988"), 3);
+    let marked = review.identity_snapshot();
+    review.restore_identity_snapshot(before);
+    review.refresh(&edited);
+    assert_eq!(mention_count(&review, "14/03/1988"), 2);
+    review.restore_identity_snapshot(marked);
+    review.refresh(&edited);
+    assert_eq!(mention_count(&review, "14/03/1988"), 3);
+}
+
+/// Review of #439: a date under a "DOB" column keeps its header as its
+/// label, so replacing the name beside it keeps the date; "born on" is no
+/// "Signed on".
+#[test]
+fn a_birth_dates_label_is_its_column_or_its_label_words() {
+    let source =
+        "| Name | DOB |\n| --- | --- |\n| Maya Bennett | 14/03/1988 |\n\nSigned 14/03/1988.";
+    let mut review = ingest_birth_dates(source, &["14/03/1988"]);
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
+    review.refresh(&source.replace("Maya Bennett", "PERSON_1"));
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
+    let source = "born on 2 May 1990. Signed on 2 May 1990.";
+    let review = ingest_birth_dates(source, &["2 May 1990"]);
+    assert_eq!(mention_count(&review, "2 May 1990"), 1);
+}
+
+/// Review of #439: a date on the Always list counts every mention, even
+/// one a context rule found as a date of birth too (ADR 0092).
+#[test]
+fn an_always_listed_date_counts_every_mention() {
+    let source = "DOB: 14/03/1988. Recorded 14/03/1988.";
+    let mut review = ingest_birth_dates(source, &["14/03/1988"]);
+    assert_eq!(mention_count(&review, "14/03/1988"), 1);
+    let start = source.rfind("14/03/1988").unwrap();
+    let mut always = detection(start..start + 10, Category::Date);
+    always.recognizer = Recognizer::UserList;
+    review.ingest(source, vec![always]).unwrap();
+    assert_eq!(mention_count(&review, "14/03/1988"), 2);
+    let edited = source.replace("Recorded", "Filed");
+    review.refresh(&edited);
+    assert_eq!(mention_count(&review, "14/03/1988"), 2);
 }
