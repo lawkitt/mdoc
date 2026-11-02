@@ -54,18 +54,25 @@ nextest() {
 
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh)
+
+# Runs one tier's commands and exits with their status; nothing else runs.
+only() {
+  local rc=0
+  "$@" || rc=$?
+  exit "$rc"
+}
+
+# shellcheck disable=SC2329 # run through only
+unit() {
+  nextest "$unit_filter" && doctests
+}
 
 case "$tier" in
-  unit)
-    rc=0
-    nextest "$unit_filter" || rc=$?
-    [ "$rc" -ne 0 ] || doctests || rc=$?
-    exit "$rc"
-    ;;
-  app) nextest "$app_filter" ;;
-  renders) nextest "$renders_filter" ;;
-  recognition) nextest "$recognition_filter" ;;
+  unit) only unit ;;
+  app) only nextest "$app_filter" ;;
+  renders) only nextest "$renders_filter" ;;
+  recognition) only nextest "$recognition_filter" ;;
   quarantined)
     if [ -z "$quarantined" ]; then
       echo "quarantine: no tests listed"

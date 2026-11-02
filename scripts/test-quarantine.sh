@@ -31,6 +31,16 @@ q check "$tmp/list" || fail "dates on or after today failed check"
   fail "filter: $(q filter "$tmp/list")"
 [ "$(q list "$tmp/list" | wc -l | tr -d ' ')" = 2 ] || fail "list: $(q list "$tmp/list")"
 
+# Filters holding `|` (regex alternation, a union) stay whole.
+cat >"$tmp/pipes" <<'LIST'
+test(/foo|bar/)  #510  2026-11-12
+test(=a) | test(=b)  #511  2026-11-12
+LIST
+q check "$tmp/pipes" || fail "filters with | failed check"
+[ "$(q filter "$tmp/pipes")" = "(test(/foo|bar/)) | (test(=a) | test(=b))" ] ||
+  fail "filter with |: $(q filter "$tmp/pipes")"
+[ "$(q list "$tmp/pipes" | cut -f1 | head -n1)" = "test(/foo|bar/)" ] || fail "list with |: $(q list "$tmp/pipes")"
+
 # A line past its date fails check and names the test.
 printf 'test(=old)  #400  2026-11-09\n' >>"$tmp/list"
 if q check "$tmp/list" 2>"$tmp/err"; then fail "an expired line passed check"; fi

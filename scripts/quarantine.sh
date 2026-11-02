@@ -8,16 +8,19 @@
 #   check   fail on a malformed line or one past its date (QUARANTINE_TODAY,
 #           YYYY-MM-DD, overrides today, for the suite)
 #   filter  print one nextest filterset matching every listed test, or nothing
-#   list    print the listed lines, one per line, as `filter|issue|expires`
+#   list    print the listed lines as `filter<TAB>issue<TAB>expires` (a filter
+#           may hold `|`, so fields are tab-separated)
+#
+# QUARANTINE_FILE overrides the default file (for the suites).
 #
 # Bash 3.2 compatible (macOS /bin/bash).
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 cmd=${1:-}
-file=${2:-.config/quarantine.txt}
+file=${2:-${QUARANTINE_FILE:-.config/quarantine.txt}}
 
-# Prints `filter|issue|expires` per entry; fails on a malformed line.
+# Prints `filter<TAB>issue<TAB>expires` per entry; fails on a malformed line.
 entries() {
   [ -f "$file" ] || return 0
   awk -v file="$file" '
@@ -31,7 +34,7 @@ entries() {
         bad = 1
         next
       }
-      print f[1] "|" f[2] "|" f[3]
+      print f[1] "\t" f[2] "\t" f[3]
     }
     END { exit bad }' "$file"
 }
@@ -41,7 +44,7 @@ case "$cmd" in
     today=${QUARANTINE_TODAY:-$(date -u +%Y-%m-%d)}
     list=$(entries) || exit 1
     rc=0
-    while IFS='|' read -r filter issue expires; do
+    while IFS=$'\t' read -r filter issue expires; do
       [ -n "$filter" ] || continue
       if [[ $expires < $today ]]; then
         echo "error: quarantine of $filter ($issue) expired on $expires: fix the test and remove the line, or renew it in a PR that says why" >&2
@@ -53,7 +56,7 @@ case "$cmd" in
   filter)
     list=$(entries) || exit 1
     out=''
-    while IFS='|' read -r filter _ _; do
+    while IFS=$'\t' read -r filter _ _; do
       [ -n "$filter" ] || continue
       out="${out:+$out | }($filter)"
     done <<<"$list"
