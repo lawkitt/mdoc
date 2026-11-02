@@ -456,8 +456,24 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
     );
     assert_eq!(syntax::list_markers("- a\n\n  b\n2. c").len(), 2);
     assert!(syntax::list_markers("- - -\n#5 is text\n2. b").is_empty());
-    // A heading's `#` runs are syntax; a literal `#` is text.
+    // A tab after a bullet makes an item; a new block quote is a new
+    // container, not the paragraph's next line; a list item's content
+    // column, not any indent, keeps a line in it; "~" alone opens no fence.
+    assert_eq!(syntax::list_markers("-\tAnn Lee"), vec![0..2]);
+    assert_eq!(syntax::list_markers("Телефон:\n> + 7 (900) 000").len(), 1);
+    assert!(syntax::list_markers("> Телефон:\n> + 7 (900) 000").is_empty());
+    assert_eq!(
+        syntax::list_markers("10. a\n\n  Телефон:\n+ 7 (900) 000").len(),
+        1
+    );
+    assert!(syntax::list_markers("~Телефон:\n+ 7 (900) 000").is_empty());
+    assert!(syntax::list_markers("Title\n===\u{a0}\n+ 7 (900) 000").is_empty());
+    // A heading's `#` runs are syntax, in a list item too; a literal `#`,
+    // one before a no-break space or one inside a code fence is text.
     assert_eq!(protected_syntax("## Title ##\n#5 Lee#1"), [0..2, 9..11]);
+    assert_eq!(protected_syntax("- # Ann #"), [0..3, 8..9]);
+    assert_eq!(protected_syntax("# Ann #\u{a0}"), vec![0..1]);
+    assert!(protected_syntax("```\n~~~\n# Ann #\n```").is_empty());
     // A span crossing real syntax is refused: emphasis, a heading's marker,
     // a list marker inside it, an HTML tag.
     let source = "# Ann Lee\n\n*Bob* Ray and Cy\n- Fox\n\nDee <b>Sun</b> Eve\n\nTo **Gil Ho**.";

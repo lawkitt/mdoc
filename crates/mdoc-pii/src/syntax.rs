@@ -79,27 +79,33 @@ pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
     // which an ordered marker other than 1 continues.
     let mut paragraph = false;
     // Whether the line before is in a list item: the item's line, its lazy
-    // lines and its indented lines after a blank one.
+    // lines and its lines indented to its content after a blank one.
     let mut listed = false;
-    // Whether a list is open: an item since the last unindented text.
-    let mut list = false;
+    // The content column of the outermost open list item, if any.
+    let mut list: Option<usize> = None;
+    let mut quotes = 0;
     for line in source.split_inclusive('\n') {
-        let (indent, start) = block_start(line);
+        let (indent, depth, start) = block_start(line);
         let body = &line[start..];
-        let blank = body.trim().is_empty();
+        let blank = body.trim_matches(MARKDOWN_SPACE).is_empty();
+        // A new block quote starts a new container: nothing it holds
+        // continues the paragraph before it.
+        if depth > quotes {
+            paragraph = false;
+        }
+        quotes = depth;
         let rule = rule_line(body, paragraph);
-        let mut item = false;
+        let mut item = None;
+        let bullet = matches!(body.as_bytes().first(), Some(b'-' | b'+' | b'*'))
+            && matches!(body.as_bytes().get(1), Some(b' ' | b'\t'));
         let sign = paragraph
-            && body.starts_with("+ ")
-            && body[2..]
-                .trim_start_matches([' ', '\t'])
+            && body.starts_with('+')
+            && body[1..]
+                .trim_start_matches(MARKDOWN_SPACE)
                 .starts_with(|c: char| c.is_ascii_digit());
-        if (body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* "))
-            && !sign
-            && !rule
-        {
+        if bullet && !sign && !rule {
             markers.push(base + start..base + start + 2);
-            item = true;
+            item = Some(1);
         }
         let digits = body.bytes().take_while(u8::is_ascii_digit).count();
         if (1..=9).contains(&digits)
@@ -111,25 +117,40 @@ pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
             && !(paragraph && body[..digits].trim_start_matches('0') != "1")
         {
             markers.push(base + start..base + start + digits + 1);
-            item = true;
+            item = Some(digits + 1);
         }
-        let nested = list && !blank && indent >= 2;
-        list = !rule && (item || nested || (list && (blank || listed)));
-        listed = !blank && !rule && (item || nested || listed);
+        let nested = list.is_some_and(|content| !blank && indent >= content);
+        list = if rule {
+            None
+        } else if let Some(width) = item {
+            // The item's content starts after its marker and 1–4 spaces.
+            let rest = &body[width..];
+            let gap = rest.len() - rest.trim_start_matches(MARKDOWN_SPACE).len();
+            let content = indent + width + if (1..=4).contains(&gap) { gap } else { 1 };
+            Some(list.map_or(content, |open| open.min(content)))
+        } else if nested || blank || listed {
+            list
+        } else {
+            None
+        };
+        listed = !blank && !rule && (item.is_some() || nested || listed);
         // Up to three spaces of indent start a paragraph; more continue one.
         paragraph = !blank
             && !listed
             && !rule
             && (indent < 4 || paragraph)
             && atx_heading(body).is_none()
-            && !body.starts_with(['|', '`', '~', '<']);
+            && fence(body).is_none()
+            && !body.starts_with(['|', '<']);
         base += line.len();
     }
     markers
 }
-/// A line's indent in columns (a tab to the next multiple of 4) and the
-/// byte where its block starts, after any block quote prefixes.
-fn block_start(line: &str) -> (usize, usize) {
+/// The whitespace Markdown's block structure reads; a no-break space is text.
+const MARKDOWN_SPACE: &[char] = &[' ', '\t', '\n', '\r'];
+/// A line's indent in columns (a tab to the next multiple of 4), its block
+/// quote depth and the byte where its block starts, after the quote prefixes.
+fn block_start(line: &str) -> (usize, usize, usize) {
     let mut indent = 0;
     for byte in line.bytes() {
         match byte {
@@ -138,18 +159,20 @@ fn block_start(line: &str) -> (usize, usize) {
             _ => break,
         }
     }
+    let mut depth = 0;
     let mut start = line.len() - line.trim_start_matches([' ', '\t']).len();
     while line[start..].starts_with('>') {
+        depth += 1;
         start += 1;
         start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
     }
-    (indent, start)
+    (indent, depth, start)
 }
 /// Whether `body` is a thematic break ("***", "- - -") or, after a
 /// paragraph line, a setext heading's underline ("===", "---"): neither is
 /// a list item, and both end the paragraph.
 fn rule_line(body: &str, paragraph: bool) -> bool {
-    let line = body.trim();
+    let line = body.trim_matches(MARKDOWN_SPACE);
     let Some(mark) = line.chars().next() else {
         return false;
     };
@@ -160,6 +183,16 @@ fn rule_line(body: &str, paragraph: bool) -> bool {
     };
     (matches!(mark, '-' | '*' | '_') && count >= 3 && only(true))
         || (paragraph && matches!(mark, '=' | '-') && only(false))
+}
+/// The code fence that `body` opens or closes ("```", "~~~~"): its
+/// character and length.
+fn fence(body: &str) -> Option<(u8, usize)> {
+    let mark = *body
+        .as_bytes()
+        .first()
+        .filter(|b| matches!(b, b'`' | b'~'))?;
+    let len = body.bytes().take_while(|b| *b == mark).count();
+    (len >= 3).then_some((mark, len))
 }
 /// The opening and closing `#` runs of an ATX heading line's `body`, as
 /// offsets into it: "## Title ##" has both, "#5 is the ID" is no heading.
@@ -173,7 +206,7 @@ fn atx_heading(body: &str) -> Option<(Range<usize>, Option<Range<usize>>)> {
     {
         return None;
     }
-    let text = body.trim_end();
+    let text = body.trim_end_matches(MARKDOWN_SPACE);
     let trailing = text.len() - text.trim_end_matches('#').len();
     let closing = (text.len() > level
         && trailing > 0
@@ -181,24 +214,53 @@ fn atx_heading(body: &str) -> Option<(Range<usize>, Option<Range<usize>>)> {
     .then(|| text.len() - trailing..text.len());
     Some((0..level, closing))
 }
-/// The `#` runs of ATX headings ("## Title ##"): a literal `#` inside a
-/// value ("LC#713624", "Item #5") is text.
+/// The `#` runs of ATX headings ("## Title ##", "- # Title #" in a list
+/// item): a literal `#` inside a value ("LC#713624", "Item #5") is text.
 fn heading_markers(source: &str) -> Vec<Range<usize>> {
     let mut markers = Vec::new();
     let mut base = 0;
-    let mut code = false;
+    let mut code: Option<(u8, usize)> = None;
     for line in source.split_inclusive('\n') {
-        let (indent, start) = block_start(line);
+        let (indent, _, mut start) = block_start(line);
+        // A heading may open a list item: read past its marker.
+        loop {
+            let body = &line[start..];
+            let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+            let width = if matches!(body.as_bytes().first(), Some(b'-' | b'+' | b'*')) {
+                1
+            } else if (1..=9).contains(&digits)
+                && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
+            {
+                digits + 1
+            } else {
+                break;
+            };
+            if !matches!(body.as_bytes().get(width), Some(b' ' | b'\t')) {
+                break;
+            }
+            start +=
+                width + body[width..].len() - body[width..].trim_start_matches([' ', '\t']).len();
+        }
         let body = &line[start..];
-        if body.starts_with("```") || body.starts_with("~~~") {
-            code = !code;
-        } else if !code
-            && indent < 4
-            && let Some((open, close)) = atx_heading(body)
-        {
-            let at = base + start;
-            markers.push(at + open.start..at + open.end);
-            markers.extend(close.map(|c| at + c.start..at + c.end));
+        match (code, fence(body)) {
+            (None, Some(open)) => code = Some(open),
+            (Some((mark, len)), Some((close, closing)))
+                if close == mark
+                    && closing >= len
+                    && body[closing..].trim_matches(MARKDOWN_SPACE).is_empty() =>
+            {
+                code = None;
+            }
+            (Some(_), _) => {}
+            (None, None) => {
+                if indent < 4
+                    && let Some((open, close)) = atx_heading(body)
+                {
+                    let at = base + start;
+                    markers.push(at + open.start..at + open.end);
+                    markers.extend(close.map(|c| at + c.start..at + c.end));
+                }
+            }
         }
         base += line.len();
     }
