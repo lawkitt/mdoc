@@ -256,23 +256,28 @@ fn footnote_reference(source: &str, at: usize) -> Option<usize> {
     }
     let end = at + 2 + len + 1;
     let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
-    let definition = source[line_start..at]
-        .trim_start_matches([' ', '\t'])
-        .is_empty()
+    // A definition may sit in a quote or a list item ("> [^1]: …").
+    let prefix = source[line_start..at].trim_matches([' ', '\t', '>']);
+    let item = prefix.strip_suffix(['.', ')']).unwrap_or(prefix);
+    let definition = (prefix.is_empty()
+        || matches!(prefix, "-" | "*" | "+")
+        || !item.is_empty()
+            && item.len() < prefix.len()
+            && item.bytes().all(|b| b.is_ascii_digit()))
         && source[end..].starts_with(':');
     (!definition).then_some(end - at)
 }
 
 /// Letter-spaced words, as OCR and spaced-out captions write them
 /// (#400, #448): "D E L V A   R O S K" reads "DELVA ROSK", "И Н Н:" reads
-/// "ИНН:". A word is single letters each one space apart, two at least and
-/// one word of three at least, starting with a capital and the rest of one
-/// case, all of one script (Latin or Cyrillic); two spaces or more part the
-/// words, and read as one. The run stands apart: a word one space away on
-/// either side makes initials or an enumeration of it ("J R Tolkien",
-/// "пункты А Б В утратили"), and lowercase one-letter words ("и в с",
-/// "a b c") never start a word. The spaces only are rewritten, so a span
-/// over the word maps to its letters and the spaces between them.
+/// "ИНН:". A word is capital letters each one space apart, two at least and
+/// one word of three at least, all of one script (Latin or Cyrillic); two
+/// spaces or more part the words, and read as one. The run stands apart
+/// ([`stands_apart`]): a word close by on either side makes initials or an
+/// enumeration of it ("J R Tolkien", "пункты А Б В утратили"), and
+/// lowercase one-letter words ("и в с", "Я и я", "a b c") are no letter
+/// spacing. The spaces only are rewritten, so a span over the word maps to
+/// its letters and the spaces between them.
 fn letter_spacing(source: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
     let mut at = 0;
@@ -345,11 +350,11 @@ fn spaced_group(line: &str, start: usize) -> Option<Vec<Vec<Range<usize>>>> {
     };
     let first_script = script(letter(&words[0][0]))?;
     let shaped = words.iter().all(|word| {
-        let rest: Vec<char> = word[1..].iter().map(letter).collect();
         word.len() >= 2
-            && letter(&word[0]).is_uppercase()
-            && (rest.iter().all(|c| c.is_uppercase()) || rest.iter().all(|c| c.is_lowercase()))
-            && word.iter().all(|l| script(letter(l)) == Some(first_script))
+            && word.iter().all(|l| {
+                let c = letter(l);
+                c.is_uppercase() && script(c) == Some(first_script)
+            })
     });
     let end = words.last()?.last()?.end;
     (shaped
@@ -390,15 +395,15 @@ fn spaced_word(line: &str, start: usize) -> Vec<Range<usize>> {
 }
 
 /// Whether a letter-spaced run stands apart from the text on one side,
-/// `side` read outward from the run: nothing, two spaces or more, or
-/// punctuation within one space. A word one space away makes the run
-/// initials or an enumeration.
+/// `side` read outward from the run: nothing, punctuation or a tab within
+/// two spaces, or a word three spaces away or more, as a column's is. A
+/// word closer makes the run initials or an enumeration ("J R R  Tolkien").
 fn stands_apart(side: &str) -> bool {
     let text = side.trim_start_matches(' ');
     let gap = side.len() - text.len();
     text.chars()
         .next()
-        .is_none_or(|c| gap >= 2 || !c.is_alphanumeric())
+        .is_none_or(|c| gap >= 3 || !c.is_alphanumeric())
 }
 
 /// The length of an HTML line break tag at the start of `text`: `<br>`,
@@ -974,12 +979,18 @@ mod tests {
         assert_eq!(span("508641732966"), "508641732966");
         let name = source.find("R O S K").unwrap();
         assert_eq!(&view.text[view.view_range(name..name + 7)], "ROSK");
-        // A capital and lowercase letters, and combining marks, are one word.
-        assert_eq!(View::new("D e l v a  R o s k").text, "Delva Rosk");
+        // Words two spaces apart, a column three spaces away, combining marks.
+        assert_eq!(
+            View::new("D E L V A  R O S K   Date").text,
+            "DELVA ROSK   Date"
+        );
         assert_eq!(View::new("Подпись: И\u{306} О Ж").text, "Подпись: ЙОЖ");
         for source in [
             // Initials and one-letter words next to a word.
             "J. R. R. Tolkien and J R R Tolkien",
+            "J R R  Tolkien",
+            "Я и я.",
+            "D e l v a  R o s k",
             "Signed by A B C Holdings",
             "Пункты А Б В утратили силу.",
             "и в с к о у я",
@@ -1010,11 +1021,11 @@ mod tests {
     /// value (`**ИНН**[^1]:`); a footnote's definition stays.
     #[test]
     fn footnote_references_drop_out() {
-        let source = "**ИНН**[^1]: 508614372930\n**ИНН[^tax]:** 1\nKira Gelts[^n2] signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n[^ x] [^] [^a";
+        let source = "**ИНН**[^1]: 508614372930\n**ИНН[^tax]:** 1\nKira Gelts[^n2] signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a";
         let view = View::new(source);
         assert_eq!(
             view.text,
-            "**ИНН**: 508614372930\n**ИНН:** 1\nKira Gelts signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n[^ x] [^] [^a"
+            "**ИНН**: 508614372930\n**ИНН:** 1\nKira Gelts signed.\n\n[^1]: Значение.\n  [^tax]: Note.\n> [^q]: Quote.\n- [^l]: Item.\n12) [^n]: Item.\n[^ x] [^] [^a"
         );
         let at = |text: &str| view.text.find(text).unwrap();
         let span = |text: &str| &source[view.source_range(at(text)..at(text) + text.len())];
