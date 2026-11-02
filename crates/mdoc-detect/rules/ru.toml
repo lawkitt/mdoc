@@ -461,12 +461,13 @@ pattern = '\b[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]*(?:№|N|No\.?)[\p{Zs}\t]
 pattern = '\bГОСТ(?:[\p{Zs}\t]+(?:Р|ISO|ИСО|IEC|МЭК|EN|ЕН))*[\p{Zs}\t]+\d+(?:[.\-–/:]\d+)*\*?|\b(?:СП|СНиП|СанПиН|ТУ|ОСТ)(?:[\p{Zs}\t]+(?:ISO|ИСО))?[\p{Zs}\t]+\d+(?:[.\-–/]\d+)+\*?'
 
 # The page code under a tax or registration form's barcode, two groups of
-# four digits alone on their line or before the form's ИНН, КПП or page
-# boxes ("7000  2010", "2990  2026  КПП  Стр."), is no tax or bank value
-# (guide rule 8, issue #486). A passport's "4510 123456" has six digits
-# after its series and stays.
+# four digits a column's gap apart alone on their line, or before the
+# form's ИНН, КПП or page boxes ("7000  2010", "2990  2026  КПП  Стр."), is
+# no tax or bank value (guide rule 8, issue #486). An account typed with
+# one space ("Account number:" then "1234 5678") stays, and so does a
+# passport's "4510 123456", with six digits after its series.
 [[reference]]
-pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]+\d{4}(?P<tail>[\p{Zs}\t]*(?m:$)|[\p{Zs}\t]+(?:ИНН|КПП|Стр\.))'
+pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]{2,}\d{4}(?:[\p{Zs}\t]*(?m:$)|(?P<tail>[\p{Zs}\t]+(?:ИНН|КПП|Стр\.)))'
 
 # A waybill's or an invoice's number is a document's, no bank or other
 # identifier (guide rule 8, issue #486): "ТН № 47", "ТТН № 112",

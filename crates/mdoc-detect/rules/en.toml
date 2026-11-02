@@ -560,15 +560,18 @@ pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_|]*(?:(?:Part|Section|Item)[\p{Zs}\t]+)?)
 # the code, a date, and a number only a patent office gives (a US
 # application's "12/432,845", a European one's "9739191.6", a German
 # "60 2009 024 610.0", a year-led "2009241803", a US trademark's serial
-# "86920111") or a trademark's status in its own column ("Registered",
-# "Published"). So a sentence opening "US" stays, an IBAN ("DE89 3704 …")
-# stays, and so does a table of companies by country with their amounts,
-# company numbers and dates ("| UK | Acme Ltd | 01234567 | 01/02/2020 |").
+# "86920111") or a status only a trademark has, in its own column
+# ("Published", "Opposed"). So a sentence opening "US" stays, an IBAN
+# ("DE89 3704 …") stays, and so does a table of companies by country with
+# their amounts, statuses, company numbers and dates ("| UK | Acme Ltd |
+# Registered | 01234567 | 01/02/2020 |"). The row ends with its last
+# column of dates and numbers, never on the line after it, which a
+# citation's wrapping joins ("Contact: Jane Morgan").
 [[reference]]
-pattern = '(?m:^)[\p{Zs}\t|]*{office}{gap}[^\n]*?(?:{number}[^\n]*?{date}|{date}[^\n]*?{number})[^\n]*'
+pattern = '(?m:^)[\p{Zs}\t|]*{office}{gap}[^\n]*?(?:{number}[^\n]*?{date}|{date}[^\n]*?{number})(?:{gap}(?:{date}|\d[\p{Zs}]\d{3}[\p{Zs}]\d{3}\b|\d+(?:[,./]\d+)*))*'
 parts.office = '(?:US|EP|WO|PCT|DE|GB|UK|FR|JP|CN|KR|AU|CA|BE|NL|LU|IT|ES|PT|CH|AT|SE|DK|FI|NO|IE|PL|CZ|HU|TR|IN|BR|MX|AR|RU|TW|HK|SG|NZ|ZA|IL|EM|EU|WIPO|EUIPO)\b'
 parts.gap = '[\p{Zs}\t]*\||[\p{Zs}\t]{2,}|\t'
-parts.number = '\b(?:\d{1,2}/\d{3},\d{3}|\d{4}/\d{6}|\d{2}[\p{Zs}]\d{4}[\p{Zs}]\d{3}[\p{Zs}]\d{3}\.\d|\d{7,9}\.\d|(?:19|20)\d{8,10}|[7-9]\d{7})\b|\b(?:Registered|Published|Pending|Granted|Allowed|Abandoned|Opposed|Expired|Lapsed|REGISTERED|PUBLISHED|PENDING|GRANTED)(?:[\p{Zs}\t]*\||[\p{Zs}\t]{2,}|\t)'
+parts.number = '\b(?:\d{1,2}/\d{3},\d{3}|\d{4}/\d{6}|\d{2}[\p{Zs}]\d{4}[\p{Zs}]\d{3}[\p{Zs}]\d{3}\.\d|\d{7,9}\.\d|(?:19|20)\d{8,10}|[7-9]\d{7})\b|\b(?:Published|Allowed|Abandoned|Opposed|PUBLISHED|ALLOWED|ABANDONED|OPPOSED)(?:[\p{Zs}\t]*\||[\p{Zs}\t]{2,}|\t)'
 parts.date = '\b(?:\d{1,2}[-\p{Zs}](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?[-\p{Zs},]+\d{2,4}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|(?:19|20)\d{2}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?[\p{Zs}]\d{1,2},[\p{Zs}]\d{4})\b'
 
 # A patent's, a design's or a trademark's number after its word is no

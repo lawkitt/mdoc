@@ -3508,6 +3508,18 @@ Privacy Act (“BIPA”). BIPA applies.",
             ),
             pairs(&[("СП «Восход»", "ORG"), ("4951 2345 678", "PHONE")])
         );
+        // An account typed with one space on its own line is no barcode,
+        // in either language.
+        for source in [
+            "Account number:\n1234 5678\n",
+            "Номер счёта:\n1234 5678\nИНН\n",
+        ] {
+            assert_eq!(
+                shown(source, &[("1234 5678", "bank_account")]),
+                pairs(&[("1234 5678", "BANK")]),
+                "{source:?}"
+            );
+        }
     }
 
     /// English patent and trademark schedules, labelled patent and form
@@ -3568,31 +3580,46 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("+1 (202) 555-0164", "PHONE"),
             ])
         );
-        // Out of a schedule's row, a company's table and a sentence opening
-        // "US" keep their values, and so do a link's values of digits alone,
-        // of one case or without digits.
-        let source = "| UK | Acme Holdings Ltd | 01234567 | 01/02/2030 |\n\n\
+        // Out of a schedule's row, a company's table (a status column too)
+        // and a sentence opening "US" keep their values, and so do a link's
+        // values of digits alone, of one case or without digits. A row ends
+        // on its own line: the line after it keeps its name and passport.
+        let source = "| UK | Acme Holdings Ltd | 01234567 | 01/02/2030 |\n\
+            | UK | Bryn Holdings Ltd | Registered | 07654321 | 01/03/2030 |\n\n\
             US law applies to Vela Quist from 30-Apr-29, SSN 123-45-6789.\n\n\
-            See https://example.invalid/p?inn=7799000011&doc=AB1234567&who=JaneMorgan.\n";
+            See https://example.invalid/p?inn=7799000011&doc=AB1234567&who=JaneMorgan.\n\n\
+            AU  2099241803  30-Apr-29   \n\
+            Contact: Jane Morgan, passport RM6841932, acct 2099000111223.\n";
         let raw = [
             ("Acme Holdings Ltd", "organization"),
             ("01234567", "national_id_number"),
+            ("Bryn Holdings Ltd", "organization"),
+            ("07654321", "national_id_number"),
             ("Vela Quist", "person"),
             ("123-45-6789", "tax_id"),
             ("7799000011", "tax_id"),
             ("AB1234567", "passport_number"),
             ("JaneMorgan", "person"),
+            ("2099241803", "tax_id"),
+            ("Jane Morgan", "person"),
+            ("RM6841932", "passport_number"),
+            ("2099000111223", "bank_account"),
         ];
         assert_eq!(
             shown(source, &raw),
             pairs(&[
                 ("Acme Holdings Ltd", "ORG"),
                 ("01234567", "IDENTITY"),
+                ("Bryn Holdings Ltd", "ORG"),
+                ("07654321", "IDENTITY"),
                 ("Vela Quist", "PERSON"),
                 ("123-45-6789", "TAX"),
                 ("7799000011", "TAX"),
                 ("AB1234567", "IDENTITY"),
                 ("JaneMorgan", "PERSON"),
+                ("Jane Morgan", "PERSON"),
+                ("RM6841932", "IDENTITY"),
+                ("2099000111223", "BANK"),
             ])
         );
     }
