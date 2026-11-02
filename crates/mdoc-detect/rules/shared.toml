@@ -10,6 +10,7 @@
 #   span      whole spans by pattern (an address from its first element
 #             to its postcode or city), and boundary fixes for model spans
 #   variants  nicknames of given names, for names already in the document
+#   reference legal references and markers no model span is inside
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
@@ -57,8 +58,21 @@
 #                         before a trailing one
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period
+#   person_before = […]   for ORG: lowercase words that, ending a span, make
+#                         it a person's document ("Ostrand Decl."): the
+#                         words before become a person's span when a person
+#                         span holds each of them
 # A fixed span left without its category's shape goes. An entry takes one
 # kind's keys only.
+#
+# A `reference` entry is a legal reference or a marker that is no
+# identifier, address or name (the fixture guide's rule 8): "424 U.S. at
+# 38", "26 U.S.C. § 6212", "127-ФЗ", "статьи 431 ГК РФ". A model span of any
+# category inside a match is never proposed; one reaching past it stays (a
+# real number beside a citation), and labelled values (`context`) and the
+# structured rules are never checked against it. `pattern` and `parts` work
+# as in a `span` pattern, `lead` and `tail` groups included; a match stays
+# on one line.
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere
@@ -93,6 +107,9 @@ span = []
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
 variants = []
+
+# References are per language.
+reference = []
 
 # No language-free never words.
 never = []

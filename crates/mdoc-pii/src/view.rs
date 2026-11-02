@@ -143,6 +143,11 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
 fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
     let destinations = link_destinations(source);
+    let opaque: Vec<Range<usize>> = destinations
+        .iter()
+        .flat_map(|destination| opaque_parts(source, destination))
+        .collect();
+    let mut opaque = opaque.into_iter().peekable();
     let mut destination = destinations.iter().peekable();
     let mut chars = source.char_indices().peekable();
     let mut previous = None;
@@ -152,7 +157,13 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         previous = Some(c);
         while destination.next_if(|range| range.end <= at).is_some() {}
         let hidden = destination.peek().filter(|range| range.start <= at);
-        if hidden.is_some()
+        while opaque.next_if(|part| part.end <= at).is_some() {}
+        if let Some(part) = opaque.next_if(|part| part.start <= at) {
+            // "consultantplus://offline/ref=0A1B…": not the document's text.
+            previous = None;
+            while chars.next_if(|&(i, _)| i < part.end).is_some() {}
+            out.push((at..part.end, String::new()));
+        } else if hidden.is_some()
             && c == '%'
             && let Some((len, value)) = percent_encoded(&source[at..])
         {
@@ -700,6 +711,159 @@ fn link_destinations(source: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// The link target schemes whose targets are read as text: web addresses,
+/// email and phone links. A relative target has none.
+const READ_SCHEMES: [&str; 6] = ["http", "https", "mailto", "tel", "sms", "callto"];
+
+/// The parts of `destination` detection never reads. In a target of another
+/// scheme ("consultantplus://offline/ref=7C2E9A41…;dst=100015",
+/// "garant://10064072/12") they are its references: a hash (a run of hex
+/// digits and letters, eight or more, with a digit) and a number shorter
+/// than ten digits. Such a target points into another program and is not
+/// the document's text, but a name ("Nesket2026" reads "Nesket"), an email
+/// ("xmpp:alice1985+legal@…") or a long number (a phone, a tax number,
+/// "112-233-445 95") in it still reads.
+fn opaque_parts(source: &str, destination: &Range<usize>) -> Vec<Range<usize>> {
+    let target = &source[destination.clone()];
+    // "<consultantplus://…>": a destination in angle brackets.
+    let open = usize::from(target.starts_with('<'));
+    let Some(colon) = target[open..].find(':').map(|at| open + at) else {
+        return Vec::new();
+    };
+    let scheme = &target[open..colon];
+    // "C:" is a drive, not a scheme.
+    if scheme.len() < 2
+        || !scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+        || READ_SCHEMES
+            .iter()
+            .any(|read| scheme.eq_ignore_ascii_case(read))
+    {
+        return Vec::new();
+    }
+    // The target after its scheme, each character with its source range:
+    // a percent escape ("%D0%90") or a character reference ("&#64;") is the
+    // character it stands for.
+    let mut units = Vec::new();
+    let mut i = destination.start + colon + 1;
+    while i < destination.end {
+        let rest = &source[i..destination.end];
+        let c = rest.chars().next().unwrap_or_default();
+        let (len, value) = if c == '%'
+            && let Some(escape) = percent_char(rest)
+        {
+            escape
+        } else if c == '&'
+            && let Some((len, value)) = character_reference(rest)
+        {
+            let mut chars = value.chars();
+            (
+                len,
+                chars
+                    .next()
+                    .filter(|_| chars.next().is_none())
+                    .unwrap_or(' '),
+            )
+        } else {
+            (c.len_utf8(), c)
+        };
+        units.push((i..i + len, value));
+        i += len;
+    }
+    // An email reads whole: its local part and domain around each "@".
+    let mut email = vec![false; units.len()];
+    for at in 0..units.len() {
+        if !matches!(units[at].1, '@' | '＠') {
+            continue;
+        }
+        email[at] = true;
+        for i in (0..at).rev() {
+            let c = units[i].1;
+            if !(c.is_alphanumeric() || ".!$'*+-=^_{|}~".contains(c)) {
+                break;
+            }
+            email[i] = true;
+        }
+        for i in at + 1..units.len() {
+            let c = units[i].1;
+            if !(c.is_alphanumeric() || matches!(c, '.' | '-')) {
+                break;
+            }
+            email[i] = true;
+        }
+    }
+    // Runs of letters and digits outside emails, as ranges of units.
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    let mut i = 0;
+    while i < units.len() {
+        let word = |i: usize| units[i].1.is_alphanumeric() && !email[i];
+        if word(i) {
+            let start = i;
+            while i < units.len() && word(i) {
+                i += 1;
+            }
+            runs.push(start..i);
+        } else {
+            i += 1;
+        }
+    }
+    let numeric = |i: usize| units[i].1.is_numeric();
+    let mut hidden: Vec<Range<usize>> = Vec::new();
+    let mut r = 0;
+    while r < runs.len() {
+        let run = runs[r].clone();
+        if run.clone().all(numeric) {
+            // A number's groups joined by a space, "-" or brackets are one
+            // number ("112-233-445 95", "7 (900) 000-82-14").
+            let mut end = r + 1;
+            let mut digits = run.len();
+            while let Some(next) = runs.get(end)
+                && next.clone().all(numeric)
+                && next.start - runs[end - 1].end <= 2
+                && units[runs[end - 1].end..next.start]
+                    .iter()
+                    .all(|(_, c)| matches!(c, ' ' | '-' | '(' | ')'))
+            {
+                digits += next.len();
+                end += 1;
+            }
+            if digits < 10 {
+                hidden.extend(runs[r..end].iter().cloned());
+            }
+            r = end;
+            continue;
+        }
+        if run.len() >= 8
+            && run.clone().any(numeric)
+            && units[run.clone()]
+                .iter()
+                .all(|(_, c)| c.is_ascii_hexdigit())
+        {
+            hidden.push(run);
+        } else {
+            // "Nesket2026": the word reads, the number is a reference.
+            let mut i = run.start;
+            while i < run.end {
+                let start = i;
+                let digit = numeric(i);
+                while i < run.end && numeric(i) == digit {
+                    i += 1;
+                }
+                if digit && i - start < 10 {
+                    hidden.push(start..i);
+                }
+            }
+        }
+        r += 1;
+    }
+    hidden
+        .into_iter()
+        .map(|run| units[run.start].0.start..units[run.end - 1].0.end)
+        .collect()
+}
+
 /// Whether the underscore at `at` in `destination` is in an email address's
 /// local part ("mailto:alice_morgan@example.invalid", "&#64;" or "%40" for
 /// its "@"), whose underscores are its own.
@@ -729,8 +893,8 @@ fn in_email(source: &str, destination: &Range<usize>, at: usize) -> bool {
 }
 
 /// The percent-encoded character at the start of `text` ("%20", or the
-/// UTF-8 bytes of one letter, "%D0%90") and its length.
-fn percent_encoded(text: &str) -> Option<(usize, String)> {
+/// UTF-8 bytes of one character, "%D0%90") and its length.
+fn percent_char(text: &str) -> Option<(usize, char)> {
     let byte = |at: usize| {
         let hex = text
             .get(at + 1..at + 3)
@@ -746,12 +910,15 @@ fn percent_encoded(text: &str) -> Option<(usize, String)> {
         _ => return None,
     };
     let bytes: Vec<u8> = (0..len).map(|i| byte(3 * i)).collect::<Option<_>>()?;
-    let value = String::from_utf8(bytes).ok()?;
-    // Only what a name is spelt with: a space or a letter.
-    value
-        .chars()
-        .all(|c| c == ' ' || c.is_alphabetic())
-        .then_some((3 * len, value))
+    let value = String::from_utf8(bytes).ok()?.chars().next()?;
+    Some((3 * len, value))
+}
+
+/// The percent-encoded space or letter at the start of `text` ("%20",
+/// "%D0%90"): what a name is spelt with. Its length and value.
+fn percent_encoded(text: &str) -> Option<(usize, String)> {
+    let (len, value) = percent_char(text)?;
+    (value == ' ' || value.is_alphabetic()).then(|| (len, value.to_string()))
 }
 
 /// The length of a line-end hyphen that splits a word at the start of
@@ -1126,5 +1293,73 @@ mod tests {
         assert!(View::new("# ИНН | x\n| --- | --- |\n| 1234567890 | 1 |").is_source());
         assert_eq!(header_name(" **Account No.:** "), "account");
         assert_eq!(header_name("Расчётный  счёт"), "расчетный счет");
+    }
+
+    /// #494: a target of another scheme is a reference into another
+    /// program; its hashes and short numbers are hidden, its names, emails
+    /// and long numbers read. Web, email and phone targets read as before.
+    #[test]
+    fn link_targets_of_other_schemes_hide_their_references() {
+        let source = "[п. 2](consultantplus://offline/ref=0A1B2C3D4E5F60718293A4B5C6D7E8F9;dst=100012) \
+            [ст. 5](garant://12345678/5) [скан](file:///C:/Users/Liora%20Nesket-2026/scan_7c2e9a41.pdf) \
+            [ф](file:///C:/scans/7707083893.pdf) [чат](xmpp:ivan1985+legal@x.invalid?chat) \
+            [д](C:/docs/12.pdf)";
+        let view = View::new(source);
+        assert_eq!(
+            view.text,
+            "[п. 2](consultantplus://offline/ref=;dst=) [ст. 5](garant:///) \
+            [скан](file:///C:/Users/Liora Nesket-/scan_.pdf) \
+            [ф](file:///C:/scans/7707083893.pdf) [чат](xmpp:ivan1985+legal@x.invalid?chat) \
+            [д](C:/docs/12.pdf)"
+        );
+        // A span next to a hidden part maps back over all of it.
+        let start = view.text.find("ref=;").unwrap();
+        assert_eq!(
+            &source[view.source_range(start..start + 5)],
+            "ref=0A1B2C3D4E5F60718293A4B5C6D7E8F9;"
+        );
+        let start = view.text.find("Liora Nesket").unwrap();
+        assert_eq!(
+            &source[view.source_range(start..start + "Liora Nesket".len())],
+            "Liora%20Nesket"
+        );
+        for read in [
+            "[a](HTTP://x.invalid/7707083893)",
+            "[m](mailto:alice_morgan1985@example.invalid)",
+            "[t](tel:+79000008214)",
+            "[s](sms:+7-900-000-82-14)",
+            "[c](callto:+79000008214)",
+        ] {
+            assert_eq!(View::new(read).text, read);
+        }
+        assert_eq!(
+            View::new("[a](https://x.invalid/case/7707083893/Liora%20Nesket)").text,
+            "[a](https://x.invalid/case/7707083893/Liora Nesket)"
+        );
+        // An email written with a reference or an escape reads whole, and
+        // an escaped letter counts as a letter ("Док12" is a reference).
+        assert_eq!(
+            View::new("[ч](xmpp:ivan1985&#64;x.invalid) [п](xmpp:ivan1985%40x.invalid)").text,
+            "[ч](xmpp:ivan1985@x.invalid) [п](xmpp:ivan1985%40x.invalid)"
+        );
+        assert_eq!(
+            View::new("[д](garant://%D0%94%D0%BE%D0%BA12/5)").text,
+            "[д](garant://Док/)"
+        );
+        // A name glued to a number reads, a short hex run is no hash, an
+        // email's local part holds "=", a number's groups join, and a
+        // destination in angle brackets is the same target.
+        assert_eq!(
+            View::new(
+                "[x](file:///clients/Liora_Nesket2026.pdf) [h](garant://ab12/fade1234) \
+                [e](xmpp:alice1985=legal@x.invalid) [s](file:///snils:112-233-445%2095) \
+                [p](file:///7%20(900)%20000-82-14/2026-11-02) \
+                [a](<consultantplus://offline/ref=0A1B2C3D;dst=100012>)"
+            )
+            .text,
+            "[x](file:///clients/Liora Nesket.pdf) [h](garant://ab/) \
+            [e](xmpp:alice1985=legal@x.invalid) [s](file:///snils:112-233-445 95) \
+            [p](file:///7 (900) 000-82-14/--) [a](<consultantplus://offline/ref=;dst=>)"
+        );
     }
 }
