@@ -17,7 +17,7 @@ runtime_id="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIM_RUNTIME//./-}"
 device_type="com.apple.CoreSimulator.SimDeviceType.${device// /-}"
 
 # Xcode: the pinned version exactly, as mobile-check.sh requires.
-xcode_version() { DEVELOPER_DIR=$1 xcodebuild -version 2>/dev/null | sed -n 's/^Xcode //p'; }
+xcode_version() { { DEVELOPER_DIR=$1 xcodebuild -version 2>/dev/null || true; } | sed -n 's/^Xcode //p'; }
 developer=
 found=()
 for app in "$(xcode-select -p 2>/dev/null)" /Applications/Xcode_"$XCODE_VERSION".app/Contents/Developer \
