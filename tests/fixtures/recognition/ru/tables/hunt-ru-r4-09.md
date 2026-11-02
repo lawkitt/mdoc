@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ru-address html-break-address
 issue: 362 402
 kind: tables
 source: hunt-r4
-expect: boundary: gold ADDRESS "ул. Картонных птиц, д. 62<br>кв. 14"; proposed ADDRESS "ул. Картонных птиц, д. 62"
 ---
 # Ведомость наследников для согласования передачи коллекции
 
