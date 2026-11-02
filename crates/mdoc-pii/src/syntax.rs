@@ -1,13 +1,14 @@
 //! Source grammar protection shared by discovery and manual selection.
 use std::ops::Range;
-/// Protect letter/number-bearing grammar: list prefixes, HTML tag and attribute
-/// names, and attribute quotes. Identifying-information detection stays in GLiNER2.
+/// Protect letter/number-bearing grammar: list prefixes, ATX heading marks,
+/// HTML tag and attribute names, and attribute quotes. Identifying-information detection stays in GLiNER2.
 /// Only real Markdown and HTML syntax is protected, as CommonMark reads it:
 /// an autolink (`<name@domain.invalid>`) or other text in angle brackets
 /// that is not a whole tag is text, and so is a number that cannot start a
 /// list where it stands.
 pub(super) fn protected_syntax(source: &str) -> Vec<Range<usize>> {
     let mut protected = list_markers(source);
+    protected.extend(heading_markers(source));
     let bytes = source.as_bytes();
     let mut at = 0;
     while let Some(offset) = source[at..].find('<') {
@@ -74,25 +75,29 @@ pub(super) fn protected_syntax(source: &str) -> Vec<Range<usize>> {
 pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
     let mut markers = Vec::new();
     let mut base = 0;
-    // Whether the line before is paragraph text, outside any list item since
-    // the last blank line, which an ordered marker other than 1 continues.
+    // Whether the line before is paragraph text, outside any list item,
+    // which an ordered marker other than 1 continues.
     let mut paragraph = false;
+    // Whether the line before is in a list item: the item's line, its lazy
+    // lines and its indented lines after a blank one.
     let mut listed = false;
+    // Whether a list is open: an item since the last unindented text.
+    let mut list = false;
     for line in source.split_inclusive('\n') {
-        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
-        let mut start = indent;
-        while line[start..].starts_with('>') {
-            start += 1;
-            start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
-        }
+        let (indent, start) = block_start(line);
         let body = &line[start..];
+        let blank = body.trim().is_empty();
+        let rule = rule_line(body, paragraph);
         let mut item = false;
         let sign = paragraph
             && body.starts_with("+ ")
             && body[2..]
                 .trim_start_matches([' ', '\t'])
                 .starts_with(|c: char| c.is_ascii_digit());
-        if (body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ")) && !sign {
+        if (body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* "))
+            && !sign
+            && !rule
+        {
             markers.push(base + start..base + start + 2);
             item = true;
         }
@@ -108,9 +113,93 @@ pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
             markers.push(base + start..base + start + digits + 1);
             item = true;
         }
-        let blank = body.trim().is_empty();
-        listed = !blank && (listed || item);
-        paragraph = !blank && !listed && indent < 2 && !body.starts_with(['#', '|', '`', '~', '<']);
+        let nested = list && !blank && indent >= 2;
+        list = !rule && (item || nested || (list && (blank || listed)));
+        listed = !blank && !rule && (item || nested || listed);
+        // Up to three spaces of indent start a paragraph; more continue one.
+        paragraph = !blank
+            && !listed
+            && !rule
+            && (indent < 4 || paragraph)
+            && atx_heading(body).is_none()
+            && !body.starts_with(['|', '`', '~', '<']);
+        base += line.len();
+    }
+    markers
+}
+/// A line's indent in columns (a tab to the next multiple of 4) and the
+/// byte where its block starts, after any block quote prefixes.
+fn block_start(line: &str) -> (usize, usize) {
+    let mut indent = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => indent += 1,
+            b'\t' => indent += 4 - indent % 4,
+            _ => break,
+        }
+    }
+    let mut start = line.len() - line.trim_start_matches([' ', '\t']).len();
+    while line[start..].starts_with('>') {
+        start += 1;
+        start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
+    }
+    (indent, start)
+}
+/// Whether `body` is a thematic break ("***", "- - -") or, after a
+/// paragraph line, a setext heading's underline ("===", "---"): neither is
+/// a list item, and both end the paragraph.
+fn rule_line(body: &str, paragraph: bool) -> bool {
+    let line = body.trim();
+    let Some(mark) = line.chars().next() else {
+        return false;
+    };
+    let count = line.chars().filter(|c| *c == mark).count();
+    let only = |spaced: bool| {
+        line.chars()
+            .all(|c| c == mark || (spaced && matches!(c, ' ' | '\t')))
+    };
+    (matches!(mark, '-' | '*' | '_') && count >= 3 && only(true))
+        || (paragraph && matches!(mark, '=' | '-') && only(false))
+}
+/// The opening and closing `#` runs of an ATX heading line's `body`, as
+/// offsets into it: "## Title ##" has both, "#5 is the ID" is no heading.
+fn atx_heading(body: &str) -> Option<(Range<usize>, Option<Range<usize>>)> {
+    let level = body.bytes().take_while(|b| *b == b'#').count();
+    if !(1..=6).contains(&level)
+        || !matches!(
+            body.as_bytes().get(level),
+            None | Some(b' ' | b'\t' | b'\n' | b'\r')
+        )
+    {
+        return None;
+    }
+    let text = body.trim_end();
+    let trailing = text.len() - text.trim_end_matches('#').len();
+    let closing = (text.len() > level
+        && trailing > 0
+        && text[..text.len() - trailing].ends_with([' ', '\t']))
+    .then(|| text.len() - trailing..text.len());
+    Some((0..level, closing))
+}
+/// The `#` runs of ATX headings ("## Title ##"): a literal `#` inside a
+/// value ("LC#713624", "Item #5") is text.
+fn heading_markers(source: &str) -> Vec<Range<usize>> {
+    let mut markers = Vec::new();
+    let mut base = 0;
+    let mut code = false;
+    for line in source.split_inclusive('\n') {
+        let (indent, start) = block_start(line);
+        let body = &line[start..];
+        if body.starts_with("```") || body.starts_with("~~~") {
+            code = !code;
+        } else if !code
+            && indent < 4
+            && let Some((open, close)) = atx_heading(body)
+        {
+            let at = base + start;
+            markers.push(at + open.start..at + open.end);
+            markers.extend(close.map(|c| at + c.start..at + c.end));
+        }
         base += line.len();
     }
     markers

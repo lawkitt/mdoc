@@ -446,6 +446,18 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
     assert_eq!(syntax::list_markers("+ 7 (900) 000-84-31").len(), 1);
     assert_eq!(syntax::list_markers("Phone:\n\n+ 7 (900) 000").len(), 1);
     assert_eq!(syntax::list_markers("- Phone:\n+ 7 (900) 000").len(), 2);
+    // A setext underline or a thematic break ends the paragraph; an
+    // indented label still starts one, and an indented line after a blank
+    // one stays in its list item.
+    assert_eq!(syntax::list_markers("Title\n===\n+ 7 (900) 000").len(), 1);
+    assert_eq!(syntax::list_markers("Title\n***\n2. b").len(), 1);
+    assert!(
+        syntax::list_markers("  Паспорт:\n46. 18 7319О4\n  Телефон:\n+ 7 (900) 000").is_empty()
+    );
+    assert_eq!(syntax::list_markers("- a\n\n  b\n2. c").len(), 2);
+    assert!(syntax::list_markers("- - -\n#5 is text\n2. b").is_empty());
+    // A heading's `#` runs are syntax; a literal `#` is text.
+    assert_eq!(protected_syntax("## Title ##\n#5 Lee#1"), [0..2, 9..11]);
     // A span crossing real syntax is refused: emphasis, a heading's marker,
     // a list marker inside it, an HTML tag.
     let source = "# Ann Lee\n\n*Bob* Ray and Cy\n- Fox\n\nDee <b>Sun</b> Eve\n\nTo **Gil Ho**.";
@@ -466,12 +478,13 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
     );
     // A manual mark takes a literal `#` or `*` too, but not a heading's own
     // marker or an emphasis delimiter.
-    let source = "# Title\n\nID LC#713624 of Fennel*Orbit Ltd and *Ann* Lee.";
+    let source = "# Title #\n\nID LC#713624 of Fennel*Orbit Ltd and *Ann* Lee.";
     let at = |text: &str| source.find(text).unwrap();
     let manual = |text: &str| Review::validate_manual(source, at(text)..at(text) + text.len());
     assert_eq!(manual("LC#713624"), Ok("LC#713624"));
     assert_eq!(manual("Fennel*Orbit Ltd"), Ok("Fennel*Orbit Ltd"));
     assert!(manual("# Title").is_err());
+    assert!(manual("Title #").is_err());
     assert!(manual("Ann* Lee").is_err());
     // Siblings and lazy lines stay in their list; a paragraph after a blank
     // line ends it.
