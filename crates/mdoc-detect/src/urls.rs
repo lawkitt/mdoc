@@ -20,7 +20,7 @@ fn candidates() -> &'static Regex {
     static CANDIDATES: OnceLock<Regex> = OnceLock::new();
     CANDIDATES.get_or_init(|| {
         Regex::new(
-            r#"(?i)\b(?:(?:https?|ftp)://|www\.)[^\s<>"'«»“”‘’|`]+|[\p{L}\p{N}][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}][\p{L}\p{N}_-]*)+(?:[/?#][^\s<>"'«»“”‘’|`]*)?"#,
+            r#"(?i)\b(?:(?:https?|ftp)://|www\.)[^\s<>"'«»“”‘’|`]+|[\p{L}\p{N}][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}][\p{L}\p{N}_-]*)+(?::\d{1,5})?(?:[/?#][^\s<>"'«»“”‘’|`]*)?"#,
         )
         .expect("web address pattern")
     })
@@ -149,7 +149,14 @@ fn email_domain(source: &str, start: usize) -> bool {
 /// in its name, its whole host and no email around it ("alice.morgan" of
 /// "alice.morgan@…" is not one).
 fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &str) -> bool {
-    if host.len() != authority.len() || source[end..].starts_with('@') {
+    // Only a port may follow the host ("site.invalid:8080").
+    let port_ok = authority.strip_prefix(host).is_some_and(|port| {
+        port.is_empty()
+            || port.strip_prefix(':').is_some_and(|digits| {
+                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+            })
+    });
+    if !port_ok || source[end..].starts_with('@') {
         return false;
     }
     let labels: Vec<&str> = host.split('.').collect();

@@ -589,17 +589,16 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             (!detection.range.is_empty()).then_some(detection)
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
-    // A web address inside a labelled case number or legal reference is
-    // part of it (guide rule 8); any other wins over what is inside it.
-    // A domain inside an email is the email's ("ismay&#64;crane-pith.invalid").
+    // A web address inside a labelled case number is part of it (guide rule
+    // 8), and a domain inside an email is the email's
+    // ("ismay&#64;crane-pith.invalid"); any other address wins over what is
+    // inside it, a labelled value included.
     let addresses: Vec<Detection> = urls::scan(source)
         .into_iter()
         .filter(|url| {
             !rules.iter().any(|rule| {
-                let overlaps = rule.range.start < url.range.end && url.range.start < rule.range.end;
                 let inside = rule.range.start <= url.range.start && url.range.end <= rule.range.end;
-                (rule.recognizer == mdoc_pii::Recognizer::Context && overlaps)
-                    || (rule.category == Category::Email && inside)
+                inside && matches!(rule.category, Category::CaseNumber | Category::Email)
             })
         })
         .collect();
@@ -1177,6 +1176,49 @@ mod tests {
             .map(|d| (&source[d.range], d.category))
             .collect();
         assert_eq!(found, [("508614729031", Category::Tax)]);
+    }
+
+    /// ADR 0094: a web address reaches the review whole, after a field's
+    /// colon or an attribute's "=", with its own "_", brackets and port, and
+    /// wins over a labelled value inside it.
+    #[test]
+    fn a_web_address_reaches_the_review_whole() {
+        for (source, address) in [
+            (
+                "[profile](https://private.invalid/staff%20ID:AB1234)",
+                "https://private.invalid/staff%20ID:AB1234",
+            ),
+            (
+                "Website:https://private.invalid/Alice",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "<a href=https://private.invalid/Alice>profile</a>",
+                "https://private.invalid/Alice",
+            ),
+            (
+                "[file](https://share.invalid/token_)",
+                "https://share.invalid/token_",
+            ),
+            (
+                "See https://private.invalid/?ids[]=123 now.",
+                "https://private.invalid/?ids[]=123",
+            ),
+            (
+                "Visit site.invalid:8080/client/Alice today.",
+                "site.invalid:8080/client/Alice",
+            ),
+        ] {
+            let mut review = mdoc_pii::Review::default();
+            review.ingest(source, correct(source, &[])).unwrap();
+            let proposed: Vec<_> = review
+                .variants()
+                .iter()
+                .map(|v| (v.original.to_string(), v.category))
+                .collect();
+            assert_eq!(proposed, [(address.to_owned(), Category::Url)], "{source}");
+            assert_eq!(review.candidates().len(), 1, "{source}");
+        }
     }
 
     /// #401, #376: a detected name spelt otherwise in a link target is

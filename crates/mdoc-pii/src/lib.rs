@@ -248,13 +248,20 @@ fn safe_span(value: &str) -> bool {
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich").
-fn detected_span(source: &str, range: &Range<usize>) -> bool {
+///
+/// A web address keeps its own characters (ADR 0094): a final `_` and
+/// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
+/// a link's own bracket.
+fn detected_span(source: &str, range: &Range<usize>, category: Category) -> bool {
     let value = &source[range.clone()];
+    let url = category == Category::Url;
+    let forbidden = if url { "`|" } else { "[]`|" };
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
         && !value.starts_with('_')
-        && !value.ends_with('_')
-        && !value.chars().any(|ch| "[]`|".contains(ch))
+        && (url || !value.ends_with('_'))
+        && !value.chars().any(|ch| forbidden.contains(ch))
+        && !(url && (value.contains("](") || value.contains("][")))
         && !outside_line_breaks(source, range).contains(['<', '>'])
         && view::wrapped_value(source, range)
         && plain_text_span(source, range.clone())
@@ -660,7 +667,7 @@ impl Review {
             {
                 continue;
             }
-            if !detected_span(source, &detection.range)
+            if !detected_span(source, &detection.range, detection.category)
                 || syntax::crosses_syntax(&protected, source, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {
