@@ -327,8 +327,20 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
     while row + 1 < lines.len() {
         let (_, header) = lines[row];
         let (_, delimiter) = lines[row + 1];
+        // A code block's text is no table: skip a fence to its close.
+        if let Some(fence) = fence(header) {
+            row += 1;
+            while row < lines.len() && !lines[row].1.trim_start().starts_with(fence) {
+                row += 1;
+            }
+            row += 1;
+            continue;
+        }
         let columns = cells(header);
+        let indent = header.len() - header.trim_start_matches(' ').len();
         if !header.contains('|')
+            || indent > 3
+            || header.starts_with('\t')
             || block_start(header)
             || !delimiter_row(delimiter)
             || cells(delimiter).len() != columns.len()
@@ -359,7 +371,7 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
                 let Some(name) = name else { continue };
                 let value = &line[cell.clone()];
                 let content = start + cell.start + value.len() - value.trim_start().len();
-                if value.contains(|c: char| c.is_numeric() || matches!(c, '@' | '＠')) {
+                if identifier_like(value) {
                     out.push((content..content, format!("{name}: ")));
                 }
             }
@@ -367,6 +379,23 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
+}
+
+/// Whether a cell's value, its character references decoded, has a digit
+/// or an "@": "&#8212;" is a dash, no identifier.
+fn identifier_like(value: &str) -> bool {
+    let mut rest = value;
+    while let Some(c) = rest.chars().next() {
+        let (len, text) = match character_reference(rest) {
+            Some((len, decoded)) if c == '&' => (len, decoded),
+            _ => (c.len_utf8(), c.to_string()),
+        };
+        if text.contains(|c: char| c.is_numeric() || matches!(c, '@' | '＠')) {
+            return true;
+        }
+        rest = &rest[len..];
+    }
+    false
 }
 
 /// A GFM table's delimiter row: "| --- | :-: |".
@@ -380,6 +409,15 @@ fn delimiter_row(line: &str) -> bool {
             let dashes = cell.strip_suffix(':').unwrap_or(cell);
             !dashes.is_empty() && dashes.bytes().all(|b| b == b'-')
         })
+}
+
+/// The fence a code block opens with on `line` ("```" or "~~~", at most
+/// three spaces in), which its closing line starts with too.
+fn fence(line: &str) -> Option<&'static str> {
+    let text = line.trim_start_matches(' ');
+    (line.len() - text.len() <= 3)
+        .then(|| ["```", "~~~"].into_iter().find(|f| text.starts_with(f)))
+        .flatten()
 }
 
 /// Whether `line` opens a block that ends a table or cannot be its header
@@ -788,6 +826,17 @@ mod tests {
             "| Notes | ИНН | Name |\n| --- | --- | --- |\n| x\\\\| ИНН: 508614729031 | Bob 1234567890 |\n# Итог | 1234567890\n- a | 1234567890"
         );
         assert!(View::new("| ИНН |\n| ::---:: |\n| 1234567890 |").is_source());
+        // A code block's table and an indented one are code.
+        assert!(View::new("~~~text\n| Phone |\n| --- |\n| 1234567890 |\n~~~").is_source());
+        assert!(View::new("    | Phone |\n    | --- |\n    | 1234567890 |").is_source());
+        assert_eq!(
+            View::new("```\n| a |\n```\n| Phone |\n| --- |\n| 1234567890 |").text,
+            "```\n| a |\n```\n| Phone |\n| --- |\n| Phone: 1234567890 |"
+        );
+        assert_eq!(
+            View::new("| Phone |\n| --- |\n| &#8212; |\n| &#43;44 &#55;700 |").text,
+            "| Phone |\n| --- |\n| — |\n| Phone: +44 7700 |"
+        );
         assert_eq!(
             View::new("| ИНН |\n| --- |\n| 7701234567 |\n| Цена |\n| --- |\n| 1234567890 |").text,
             "| ИНН |\n| --- |\n| ИНН: 7701234567 |\n| Цена |\n| --- |\n| 1234567890 |"
