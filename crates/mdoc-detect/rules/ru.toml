@@ -209,15 +209,24 @@ min_digits = 4
 # optional index, region and city, then a building and a flat or office:
 # "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12", "197101, г.
 # Москва, ул. Кедровая, д. 42-А, кв. 7", "Тверская область, г. Ржев, ул.
-# Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9".
+# Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9". A city without "г."
+# leads only where a field or line starts, or after a lowercase word
+# ("адресу Псков, ул. Тихих залов, д. 29"), never mid-name ("Иван
+# Иванович, ул. …"). The parts also come in reverse, the flat first and the
+# city last, where a city without "г." ends its field: "кв. 9, д. 32,
+# переулок Бумажных лодок, Тверь", then an index. A city of several
+# words needs its "г." ("г. Нижний Новгород"): without one it reads as a
+# name (#362).
 [[span]]
 category = "ADDRESS"
-pattern = '(?:{index},\s*(?:(?:{region},\s*)?(?:{city}|{bare_city}),\s*)?|(?:{region},\s*)?{city},\s*)?{street},\s*{house}(?:,\s*{building})*(?:,\s*{flat})?'
+pattern = '(?:{index},\s*(?:(?:{region},\s*)?(?:{city}|{bare_city}),\s*)?|(?:{region},\s*)?{city},\s*|(?P<lead>{lead})(?:{region},\s*)?{bare_city},\s*)?{street},\s*{house}(?:,\s*{building})*(?:,\s*{flat})?|(?:{flat},\s*)?(?:{building},\s*)*{house},\s*(?:{building},\s*)*{street}(?:,\s*{city}(?:,\s*{index}\b)?|,\s*{bare_city}(?:,\s*{index}\b|(?P<tail>{tail})))?'
+parts.lead = '(?m:^)[\p{Zs}\t]*|[:|>(«"—–;,][\p{Zs}\t]*|\b\p{Ll}[\p{Ll}-]*[\p{Zs}\t]+'
+parts.tail = '[\p{Zs}\t]*(?:(?m:$)|[\r|<.;,()—–])'
 parts.region = '\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:область|край)|\bРеспублика[\p{Zs}\t]\p{Uppercase}[\p{Alphabetic}-]*'
 parts.index = '\b\d{6}'
-parts.bare_city = '\p{Uppercase}[\p{Alphabetic}\d]*(?:-\p{Uppercase}[\p{Alphabetic}\d]*)*'
-parts.city = '\bг\.[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*'
-parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\.|\bб-р|\bпл\.|\bш\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?|\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:проспект|переулок|улица|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)'
+parts.bare_city = '\b\p{Uppercase}[\p{Alphabetic}\d]*(?:-[\p{Alphabetic}\d]+)*'
+parts.city = '\bг\.[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t]\p{Uppercase}[\p{Alphabetic}\d-]*){0,2}'
+parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\.|\bб-р|\bпл\.|\bш\.|\b(?:проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)\b)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?|\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:проспект|переулок|улица|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)'
 parts.house = '(?:\bд\.|\bдом)[\p{Zs}\t]*\d+(?:-\d+)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?'
 parts.building = '(?:\bкорп\.|\bкорпус|\bстр\.|\bстроение)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bлит(?:\.|ера)[\p{Zs}\t]*\p{Uppercase}\b'
 parts.flat = '(?:\bкв\.|\bквартира|\bофис|\bоф\.|\bпомещение|\bпом\.)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?'

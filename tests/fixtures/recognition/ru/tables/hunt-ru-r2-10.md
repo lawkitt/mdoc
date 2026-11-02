@@ -1,11 +1,9 @@
 ---
-status: known-flaw
-flaw: ru-identifier-category ru-address
-issue: 380 362
+status: pass
+flaw: ru-address
+issue: 362
 kind: tables
 source: hunt-r2
-expect: miss: ADDRESS "кв. 9, д. 32, переулок Бумажных лодок, Тверь"
-expect: miss: ADDRESS "офис 6, д. 17, улица Лунных папок, Псков"
 ---
 # Сводка адресатов для возврата выставочных материалов
 

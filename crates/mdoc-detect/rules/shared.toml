@@ -39,10 +39,11 @@
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
-# for `parts.name`, a regex. A match wins over a model span inside it and
-# gives way to a model span of its category that reaches past it, a span
-# of another category across its edge and any other rule's span in it; a
-# match before a colon (a field's label) goes. Without a pattern an entry
+# for `parts.name`, a regex; a group named `lead` or `tail` is context the
+# span leaves out ("адресу " before a city). A match wins over a model
+# span inside it and gives way to a model span of its category that
+# reaches past it, a span of another category across its edge and any
+# other rule's span in it; a match before a colon (a field's label) goes. Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
