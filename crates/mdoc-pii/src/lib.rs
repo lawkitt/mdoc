@@ -240,8 +240,12 @@ fn safe_span(value: &str) -> bool {
 /// A detected span the review can take: like `safe_span`, but a literal
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
-/// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich").
-fn detected_span(source: &str, range: &Range<usize>) -> bool {
+/// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
+/// or between the lines of an address the rule pack found whole.
+fn detected_span(source: &str, detection: &Detection) -> bool {
+    let range = &detection.range;
+    let address =
+        detection.recognizer == Recognizer::Span && detection.category == Category::Address;
     let value = &source[range.clone()];
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
@@ -249,7 +253,7 @@ fn detected_span(source: &str, range: &Range<usize>) -> bool {
         && !value.ends_with('_')
         && !value.chars().any(|ch| "[]`|".contains(ch))
         && !outside_line_breaks(source, range).contains(['<', '>'])
-        && view::wrapped_value(source, range)
+        && view::wrapped_value(source, range, address)
         && plain_text_span(source, range.clone())
 }
 /// `range` of `source` without the `<br>` tags inside it.
@@ -645,7 +649,7 @@ impl Review {
             {
                 continue;
             }
-            if !detected_span(source, &detection.range)
+            if !detected_span(source, &detection)
                 || syntax::crosses_syntax(&protected, source, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {
