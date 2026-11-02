@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: spaced-label
 issue: 448
 kind: ocr
 source: hunt-r6
-expect: boundary: gold TAX "508641732966"; proposed BANK "508641732966"
 ---
 ЗАЯВЛЕНИЕ О СВЕРКЕ РЕКВИЗИТОВ         скан / лист 1
 

@@ -1,5 +1,7 @@
 ---
 status: pass
+flaw: footnoted-label
+issue: 448
 kind: docx
 source: hunt-r6
 ---
