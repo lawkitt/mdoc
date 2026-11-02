@@ -523,6 +523,13 @@ impl Pack {
                     if pattern.is_match("") {
                         return Err(at("the pattern matches an empty span".into()));
                     }
+                    if let Some(group) = pattern
+                        .capture_names()
+                        .flatten()
+                        .find(|group| !["lead", "tail"].contains(group))
+                    {
+                        return Err(at(format!("group {group:?} is not `lead` or `tail`")));
+                    }
                     pack.spans.push(Span::Pattern { category, pattern });
                     continue;
                 }
@@ -853,17 +860,25 @@ impl Pack {
             })
             .flat_map(|(category, pattern)| {
                 pattern
-                    .find_iter(source)
+                    .captures_iter(source)
+                    // The `lead` and `tail` groups are context around the
+                    // span ("адресу " before a city), not part of it.
+                    .map(|found| {
+                        let whole = found.get(0).expect("group 0 is the match");
+                        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+                        let end = found.name("tail").map_or(whole.end(), |tail| tail.start());
+                        start..end.max(start)
+                    })
                     // A match before a colon ends in a field's label ("12
                     // Oak Road, Email: …"), not the address's last part.
-                    .filter(|found| {
-                        !found.is_empty()
-                            && !source[found.end()..]
+                    .filter(|range| {
+                        !range.is_empty()
+                            && !source[range.end..]
                                 .trim_start_matches([' ', '\t'])
                                 .starts_with(':')
                     })
-                    .map(move |found| Detection {
-                        range: found.range(),
+                    .map(move |range| Detection {
+                        range,
                         category,
                         score: CONTEXT_SCORE,
                         recognizer: Recognizer::Span,
@@ -1709,6 +1724,53 @@ mod tests {
                 "Адрес: ул. Кедровая, д. 42/1Б, кв. 7.",
                 "ул. Кедровая, д. 42/1Б, кв. 7",
             ),
+            // A city without "г." leads where its field starts (#362).
+            (
+                "Адрес для оригиналов: Псков, ул. Тихих залов, д. 29, пом. 8. Почта",
+                "Псков, ул. Тихих залов, д. 29, пом. 8",
+            ),
+            (
+                "| Псков, ул. Тихих залов, д. 29 |",
+                "Псков, ул. Тихих залов, д. 29",
+            ),
+            (
+                "Псковская область, Псков, ул. Тихих залов, д. 29",
+                "Псковская область, Псков, ул. Тихих залов, д. 29",
+            ),
+            (
+                "по адресу Ростов-на-Дону, пр. Тихий, д. 3, кв. 1, а",
+                "Ростов-на-Дону, пр. Тихий, д. 3, кв. 1",
+            ),
+            (
+                "Адрес: переулок Бумажных лодок, д. 32, кв. 9.",
+                "переулок Бумажных лодок, д. 32, кв. 9",
+            ),
+            // Mid-name, a word is no city.
+            ("Иван Иванович, ул. Ленина, д. 5", "ул. Ленина, д. 5"),
+            // Of a list of cities, only the one before the street joins.
+            ("Москва, Тверь, ул. Ленина, д. 5", "Тверь, ул. Ленина, д. 5"),
+            // In reverse: the flat first and the city last, a city without
+            // "г." where its field ends (#362).
+            (
+                "| кв. 9, д. 32, переулок Бумажных лодок, Тверь |",
+                "кв. 9, д. 32, переулок Бумажных лодок, Тверь",
+            ),
+            (
+                "| офис 6, д. 17, улица Лунных папок, Псков |",
+                "офис 6, д. 17, улица Лунных папок, Псков",
+            ),
+            (
+                "вернуть на д. 17, улица Лунных папок, г. Псков, до",
+                "д. 17, улица Лунных папок, г. Псков",
+            ),
+            (
+                "пом. 2, корп. 1, д. 4, ул. Кедровая. Ключи",
+                "пом. 2, корп. 1, д. 4, ул. Кедровая",
+            ),
+            (
+                "кв. 9, д. 32, ул. Кедровая, Иван Петров примет",
+                "кв. 9, д. 32, ул. Кедровая",
+            ),
         ] {
             assert_eq!(found(source), [address], "{source}");
         }
@@ -1726,6 +1788,15 @@ mod tests {
             "under section 4.2 of the Road Traffic Act 1988",
             "Иванов, ул. Ленина",
             "the hearing in Cardiff on 3 May",
+            // Cities alone, a list of them, "д." of a case or a debt, an
+            // area in square metres: no street, no address.
+            "Москва, Тверь, Псков",
+            "Доставка: Москва, Тверь, Псков.",
+            "Псков, д. 29, пом. 8",
+            "кв. 9, д. 32, Тверь",
+            "по материалам д. 12, ст. 5 закона",
+            "остаток д. 120, Петров",
+            "площадь 52 кв. м, д. 3",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
@@ -1986,6 +2057,10 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = 'x*'",
                 "empty span",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '(?P<city>\\w+), \\d+'",
+                "is not `lead` or `tail`",
             ),
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\ntrim = [\"ms\"]",
