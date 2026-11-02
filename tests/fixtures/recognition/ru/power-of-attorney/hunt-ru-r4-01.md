@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: date-of-birth
-issue: 363
+status: pass
+flaw:
+issue:
 kind: power-of-attorney
 source: hunt-r4
-expect: miss: DATE "16 июля 1986 года"
 ---
 # Генеральная доверенность с правом передоверия
 

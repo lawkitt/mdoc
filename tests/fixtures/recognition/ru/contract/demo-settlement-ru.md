@@ -1,10 +1,9 @@
 ---
-status: known-flaw
-flaw: date-of-birth
-issue: 363
+status: pass
+flaw:
+issue:
 kind: contract
 source: demo
-expect: miss: DATE "14 марта 1988 г."
 ---
 # Соглашение об урегулировании
 

@@ -317,14 +317,18 @@ impl Panel {
                         let id = format!("settings-detect-{}", category.token());
                         self.scrolled_control(
                             gpui::SharedString::from(id.clone()),
-                            format!("{} {}", if on { "✓" } else { "○" }, category.label()),
+                            format!(
+                                "{} {}",
+                                if on { "✓" } else { "○" },
+                                category.detection_label()
+                            ),
                             theme,
                             true,
                             cx,
                         )
                         .when(cfg!(test), move |v| v.debug_selector(move || id.clone()))
                         .role(gpui::Role::CheckBox)
-                        .aria_label(category.label())
+                        .aria_label(category.detection_label())
                         .aria_toggled(if on {
                             gpui::Toggled::True
                         } else {

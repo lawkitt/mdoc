@@ -29,6 +29,9 @@ pub struct IdentityPolicy {
     /// Variants whose entry in `variants` propagation made, not the user;
     /// it may move them again (ADR 0092).
     automatic: HashSet<u64>,
+    /// Dates of birth marked by hand: every mention counts, not only those
+    /// after its labels (#466); undone with the mark.
+    every_mention: HashSet<u64>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
 #[derive(Default)]
@@ -45,6 +48,15 @@ impl IdentityStore {
     /// Whether the user linked variant `group` to another identity.
     pub(super) fn reassigned(&self, group: u64) -> bool {
         self.policy.variants.contains_key(&group) && !self.policy.automatic.contains(&group)
+    }
+    /// Whether a mark lets every mention of variant `group` count.
+    pub(super) fn every_mention(&self, group: u64) -> bool {
+        self.policy.every_mention.contains(&group)
+    }
+    /// Every mention of variant `group` counts, as part of the current
+    /// undo step.
+    pub(super) fn count_every_mention(&mut self, group: u64) {
+        Arc::make_mut(&mut self.policy).every_mention.insert(group);
     }
     /// Whether propagation linked variant `group` in the policy.
     pub(super) fn linked_automatically(&self, group: u64) -> bool {

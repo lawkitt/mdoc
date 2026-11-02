@@ -16,11 +16,16 @@
 #
 # A `context` entry proposes its `category` for the value after a label:
 #   labels  = […]    phrases, case ignored (only here), matched as whole
-#                    words; a space
-#                    matches any run of whitespace
+#                    words; a space matches any run of whitespace
 #   between = regex  what may sit between the label and the value
-#   value   = regex  the value, which ends at a word boundary; only it is
-#                    proposed, never the label
+#   value   = regex  the value, never followed by a letter or digit; only it
+#                    is proposed, never the label
+# and optionally:
+#   min_digits     = n           a value with fewer digits is not proposed
+#   unless_after   = [word…]     no label just after one of these words
+#                                ("in case")
+#   unless_guessed = [category…] no value these categories' guesses take
+#   only_guessed   = [category…] only a value one of them takes
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
@@ -36,10 +41,11 @@
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
-# for `parts.name`, a regex. A match wins over a model span inside it and
-# gives way to a model span of its category that reaches past it, a span
-# of another category across its edge and any other rule's span in it; a
-# match before a colon (a field's label) goes. Without a pattern an entry
+# for `parts.name`, a regex; a group named `lead` or `tail` is context the
+# span leaves out ("адресу " before a city). A match wins over a model
+# span inside it and gives way to a model span of its category that
+# reaches past it, a span of another category across its edge and any
+# other rule's span in it; a match before a colon (a field's label) goes. Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never

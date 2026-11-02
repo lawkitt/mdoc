@@ -40,8 +40,10 @@ pub enum Category {
     /// A claim or case number after its label (ADR 0092). Its token is
     /// `CASE`, so an alias never reads as a saved case.
     CaseNumber,
-    /// Manual additions only; the detector never emits Date or Other.
+    /// Scans propose only a date of birth (ADR 0092); any other date is a
+    /// manual addition.
     Date,
+    /// Manual additions only.
     Other,
 }
 impl Category {
@@ -60,14 +62,23 @@ impl Category {
             Self::Other => "Other",
         }
     }
+    /// What Categories to detect calls the category: what scans propose of
+    /// it. Scans propose only dates of birth.
+    pub fn detection_label(self) -> &'static str {
+        match self {
+            Self::Date => "Dates of birth",
+            _ => self.label(),
+        }
+    }
     /// What scans can return, in picker order: Categories to detect lists
     /// these (ADR 0041, ADR 0076).
-    pub const DETECTED: [Self; 9] = [
+    pub const DETECTED: [Self; 10] = [
         Self::Person,
         Self::Organization,
         Self::Email,
         Self::Phone,
         Self::Address,
+        Self::Date,
         Self::CaseNumber,
         Self::Identity,
         Self::Tax,
@@ -131,6 +142,10 @@ pub struct Variant {
     /// An ordinary word too ("Rose", "Мира"): only its capitalised
     /// mentions mid-sentence count.
     mid_sentence: bool,
+    /// A scan's date of birth: only its mentions after one of these words
+    /// count ([`discovery::cue_before`], "DOB", "рождения"), so the same
+    /// date elsewhere stays (#466, GUIDE rule 4). `None`: every mention.
+    cues: Option<Vec<String>>,
     /// Propagation decides its identity: its one candidate full name's, or
     /// `own` while there is none; checked again as names come and go.
     managed: bool,
@@ -504,6 +519,15 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::CaseNumber)
                 .collect(),
+            cues: self
+                .variants()
+                .iter()
+                .map(|g| {
+                    g.cues
+                        .clone()
+                        .filter(|_| !self.identities.every_mention(g.id))
+                })
+                .collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -652,6 +676,7 @@ impl Review {
                     && source[detection.range.clone()] == **text
             })
         }));
+        input.cues.extend(fresh.iter().map(|_| None));
         input.originals.extend(fresh.iter().cloned());
         input.matcher = None;
         let unseen: HashSet<Arc<str>> = input
@@ -705,6 +730,19 @@ impl Review {
         }
         let people = propagation::People::new(people);
         let mut forms = Vec::new();
+        // A date of birth's labels limit its mentions (#466); a wording
+        // another recognizer found too, such as the Always list, counts
+        // every mention (ADR 0092), and so does a date whose label is not
+        // found, rather than every other unlabelled date.
+        let unlimited: HashSet<&str> = selected
+            .iter()
+            .filter(|detection| {
+                detection.recognizer != Recognizer::Context
+                    || (detection.category == Category::Date
+                        && discovery::cue_before(source, detection.range.start).is_empty())
+            })
+            .map(|detection| &source[detection.range.clone()])
+            .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
             let joins = detection.category == Category::Person
@@ -715,6 +753,14 @@ impl Review {
             } else {
                 let id = self.add_seed(text, detection.category);
                 self.recognized(id, first, detection.recognizer);
+                if unlimited.contains(text) {
+                    if let Some(variant) = self.candidates.variant_mut(id) {
+                        variant.cues = None;
+                    }
+                } else if detection.category == Category::Date {
+                    let cue = discovery::cue_before(source, detection.range.start);
+                    self.cued(id, first, cue);
+                }
             }
         }
         if !forms.is_empty() {
@@ -745,6 +791,20 @@ impl Review {
     fn recognized(&mut self, id: u64, first: u64, recognizer: Recognizer) {
         if let Some(variant) = self.candidates.variant_mut(id).filter(|v| v.id > first) {
             variant.recognizer.get_or_insert(recognizer);
+        }
+    }
+    /// Date variant `id` counts mentions after `cue` too. One this scan
+    /// created counts only those; a marked, case or restored date keeps
+    /// every mention.
+    fn cued(&mut self, id: u64, first: u64, cue: String) {
+        let Some(variant) = self.candidates.variant_mut(id) else {
+            return;
+        };
+        if variant.id > first {
+            variant.cues.get_or_insert_default();
+        }
+        if let Some(cues) = variant.cues.as_mut().filter(|cues| !cues.contains(&cue)) {
+            cues.push(cue);
         }
     }
     fn add_seed(&mut self, original: &str, category: Category) -> u64 {
@@ -792,6 +852,7 @@ impl Review {
             detected: false,
             recognizer: None,
             mid_sentence: false,
+            cues: None,
             managed: false,
             own: None,
             surname: false,
@@ -828,8 +889,11 @@ impl Review {
             group.keep_default |= !existed;
             group.priority = priority;
             // Marked by hand, every mention counts, even an ordinary word's
-            // at the start of a sentence.
+            // at the start of a sentence, or a date of birth's elsewhere.
             group.mid_sentence = false;
+        }
+        if self.variant(id).is_some_and(|v| v.cues.is_some()) {
+            self.identities.count_every_mention(id);
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);

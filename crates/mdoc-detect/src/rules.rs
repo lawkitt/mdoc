@@ -89,6 +89,10 @@ struct ContextEntry {
     /// Categories whose guesses, taking the value, rule it out (a date).
     #[serde(default)]
     unless_guessed: Vec<String>,
+    /// Categories one of whose guesses must take the value (a date of birth
+    /// must look like a date).
+    #[serde(default)]
+    only_guessed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -239,6 +243,7 @@ struct Context {
     min_digits: usize,
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
+    only_guessed: Vec<Category>,
 }
 
 struct Never {
@@ -453,8 +458,9 @@ impl Pack {
                     })
                     .collect();
                 let pattern = format!(
-                    // Case is ignored in the label only.
-                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))\b",
+                    // Case is ignored in the label only. Where the value
+                    // ends is checked after matching ("1988 г." ends in a dot).
+                    r"(?i)\b(?:{})\b(?-i:(?:{})((?:{})))",
                     labels.join("|"),
                     rust_classes(&entry.between),
                     rust_classes(&entry.value),
@@ -478,6 +484,12 @@ impl Pack {
                     .map(|token| self::category(token))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(at)?;
+                let only_guessed = entry
+                    .only_guessed
+                    .iter()
+                    .map(|token| self::category(token))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(at)?;
                 pack.contexts.push(Context {
                     category,
                     pattern,
@@ -496,6 +508,7 @@ impl Pack {
                     min_digits: entry.min_digits,
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
+                    only_guessed,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -522,6 +535,13 @@ impl Pack {
                     // discard the whole scan.
                     if pattern.is_match("") {
                         return Err(at("the pattern matches an empty span".into()));
+                    }
+                    if let Some(group) = pattern
+                        .capture_names()
+                        .flatten()
+                        .find(|group| !["lead", "tail"].contains(group))
+                    {
+                        return Err(at(format!("group {group:?} is not `lead` or `tail`")));
                     }
                     pack.spans.push(Span::Pattern { category, pattern });
                     continue;
@@ -792,13 +812,19 @@ impl Pack {
             .flat_map(|context| {
                 context.pattern.captures_iter(source).filter_map(|found| {
                     let value = found.get(1)?;
+                    // The value ends where a word does ("1234_5678" is one word).
+                    let ends = !source[value.end()..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
                     let before = source[..found.get(0)?.start()]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
-                    if context.unless_after.contains(&before)
+                    if !ends
+                        || context.unless_after.contains(&before)
                         || !self.takes(context, value.as_str())
                     {
                         return None;
@@ -816,13 +842,15 @@ impl Pack {
         found
     }
 
-    /// Whether `context` proposes `value`: enough digits, and no guess that
-    /// rules it out (a date).
+    /// Whether `context` proposes `value`: enough digits, no guess that rules
+    /// it out (a date), and the guess it needs if it names one (a date of
+    /// birth must look like a date).
     fn takes(&self, context: &Context, value: &str) -> bool {
+        let guessed = self.guess(value);
         value.chars().filter(char::is_ascii_digit).count() >= context.min_digits
-            && !self
-                .guess(value)
-                .is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+            && !guessed.is_some_and(|guessed| context.unless_guessed.contains(&guessed))
+            && (context.only_guessed.is_empty()
+                || guessed.is_some_and(|guessed| context.only_guessed.contains(&guessed)))
     }
 
     /// Values in Markdown table columns whose header cell is a label ("| ИНН
@@ -913,18 +941,17 @@ impl Pack {
                 Span::Fix(_) => None,
             })
             .flat_map(|(category, pattern)| {
-                pattern
-                    .find_iter(source)
+                span_ranges(pattern, source)
+                    .into_iter()
                     // A match before a colon ends in a field's label ("12
                     // Oak Road, Email: …"), not the address's last part.
-                    .filter(|found| {
-                        !found.is_empty()
-                            && !source[found.end()..]
-                                .trim_start_matches([' ', '\t'])
-                                .starts_with(':')
+                    .filter(|range| {
+                        !source[range.end..]
+                            .trim_start_matches([' ', '\t'])
+                            .starts_with(':')
                     })
-                    .map(move |found| Detection {
-                        range: found.range(),
+                    .map(move |range| Detection {
+                        range,
                         category,
                         score: CONTEXT_SCORE,
                         recognizer: Recognizer::Span,
@@ -990,6 +1017,38 @@ fn unquoted(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A span pattern's matches without their `lead` and `tail` groups, the
+/// context around a span ("адресу " before a city). Each search starts
+/// where the last span ended, so one address's tail ("; ") can be the next
+/// one's lead.
+fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut at = 0;
+    while at <= source.len()
+        && let Some(found) = pattern.captures_at(source, at)
+    {
+        let whole = found.get(0).expect("group 0 is the match");
+        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+        let end = found
+            .name("tail")
+            .map_or(whole.end(), |tail| tail.start())
+            .max(start);
+        if start < end {
+            ranges.push(start..end);
+        }
+        at = if end > at {
+            end
+        } else {
+            whole.start()
+                + source[whole.start()..]
+                    .chars()
+                    .next()
+                    .map_or(1, char::len_utf8)
+        };
+    }
+    ranges
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -1210,6 +1269,7 @@ mod tests {
             "Дело № 12",
             "необходимо архивное дело 58239 из фонда",
             "личное дело № 4521 работника",
+            "Case No. 1234_5678. See section 1234.",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
@@ -2032,8 +2092,78 @@ mod tests {
                 "Адрес: ул. Кедровая, д. 42/1Б, кв. 7.",
                 "ул. Кедровая, д. 42/1Б, кв. 7",
             ),
+            // A city without "г." leads where its field starts (#362).
+            (
+                "Адрес для оригиналов: Псков, ул. Тихих залов, д. 29, пом. 8. Почта",
+                "Псков, ул. Тихих залов, д. 29, пом. 8",
+            ),
+            (
+                "| Псков, ул. Тихих залов, д. 29 |",
+                "Псков, ул. Тихих залов, д. 29",
+            ),
+            (
+                "Псковская область, Псков, ул. Тихих залов, д. 29",
+                "Псковская область, Псков, ул. Тихих залов, д. 29",
+            ),
+            (
+                "по адресу Ростов-на-Дону, пр. Тихий, д. 3, кв. 1, а",
+                "Ростов-на-Дону, пр. Тихий, д. 3, кв. 1",
+            ),
+            (
+                "Адрес: переулок Бумажных лодок, д. 32, кв. 9.",
+                "переулок Бумажных лодок, д. 32, кв. 9",
+            ),
+            // Mid-name, a word is no city.
+            ("Иван Иванович, ул. Ленина, д. 5", "ул. Ленина, д. 5"),
+            // Of a list of cities, only the one before the street joins.
+            ("Москва, Тверь, ул. Ленина, д. 5", "Тверь, ул. Ленина, д. 5"),
+            // In reverse: the flat first and the city last, a city without
+            // "г." where its field ends (#362).
+            (
+                "| кв. 9, д. 32, переулок Бумажных лодок, Тверь |",
+                "кв. 9, д. 32, переулок Бумажных лодок, Тверь",
+            ),
+            (
+                "| офис 6, д. 17, улица Лунных папок, Псков |",
+                "офис 6, д. 17, улица Лунных папок, Псков",
+            ),
+            (
+                "вернуть на д. 17, улица Лунных папок, г. Псков, до",
+                "д. 17, улица Лунных папок, г. Псков",
+            ),
+            (
+                "пом. 2, корп. 1, д. 4, ул. Кедровая. Ключи",
+                "пом. 2, корп. 1, д. 4, ул. Кедровая",
+            ),
+            (
+                "кв. 9, д. 32, ул. Кедровая, Иван Петров примет",
+                "кв. 9, д. 32, ул. Кедровая",
+            ),
         ] {
             assert_eq!(found(source), [address], "{source}");
+        }
+        // A reverse address ends at its index; one address's end can lead
+        // the next; a city of several words takes its "г.".
+        for (source, addresses) in [
+            (
+                "| кв. 9, д. 32, ул. Ленина, Тверь, 170000 |",
+                &["кв. 9, д. 32, ул. Ленина, Тверь, 170000"][..],
+            ),
+            (
+                "кв. 9, д. 5, ул. Ленина, г. Нижний Новгород, 603000.",
+                &["кв. 9, д. 5, ул. Ленина, г. Нижний Новгород, 603000"],
+            ),
+            (
+                "д. 1, ул. Ленина, Псков; Тверь, ул. Мира, д. 2",
+                &["д. 1, ул. Ленина, Псков", "Тверь, ул. Мира, д. 2"],
+            ),
+            (
+                "Адрес: г. Нижний Новгород, ул. Ленина, д. 5.",
+                &["г. Нижний Новгород, ул. Ленина, д. 5"],
+            ),
+            ("Нижний Новгород, ул. Ленина, д. 5", &["ул. Ленина, д. 5"]),
+        ] {
+            assert_eq!(found(source), addresses, "{source}");
         }
         // A town ends with its line: the name below is no part of it.
         assert_eq!(
@@ -2049,6 +2179,15 @@ mod tests {
             "under section 4.2 of the Road Traffic Act 1988",
             "Иванов, ул. Ленина",
             "the hearing in Cardiff on 3 May",
+            // Cities alone, a list of them, "д." of a case or a debt, an
+            // area in square metres: no street, no address.
+            "Москва, Тверь, Псков",
+            "Доставка: Москва, Тверь, Псков.",
+            "Псков, д. 29, пом. 8",
+            "кв. 9, д. 32, Тверь",
+            "по материалам д. 12, ст. 5 закона",
+            "остаток д. 120, Петров",
+            "площадь 52 кв. м, д. 3",
         ] {
             assert!(found(source).is_empty(), "{source}");
         }
@@ -2237,6 +2376,80 @@ mod tests {
         );
     }
 
+    /// A date in a personal context is proposed as Date, the label left out
+    /// (#363); every other date stays (ADR 0092).
+    #[test]
+    fn dates_of_birth_are_proposed_and_other_dates_stay() {
+        let dates = |source: &str| -> Vec<String> {
+            pack()
+                .context(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Date)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, date) in [
+            (
+                "Ms Maya Bennett, born 14 March 1988, National",
+                "14 March 1988",
+            ),
+            ("born on 2 May 1990.", "2 May 1990"),
+            ("**DOB:** 23 September 1991. That", "23 September 1991"),
+            ("Date of birth: March 4, 1979;", "March 4, 1979"),
+            ("дата рождения 14 марта 1988 г., СНИЛС", "14 марта 1988 г."),
+            (
+                "Дата рождения: 19 февраля 1987 года. В",
+                "19 февраля 1987 года",
+            ),
+            ("Иванов И. И., род. 14.03.1988, паспорт", "14.03.1988"),
+            ("д.р. 01.02.1990", "01.02.1990"),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            ("DOB:\n14/03/1988", "14/03/1988"),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
+            ("| DOB | 14/03/1988 |", "14/03/1988"),
+            ("| Дата рождения | 14.03.1988 г. |", "14.03.1988 г."),
+            (
+                "DOB:
+14/03/1988",
+                "14/03/1988",
+            ),
+            (
+                "Дата рождения: «14» марта 1988 г., паспорт",
+                "«14» марта 1988 г.",
+            ),
+        ] {
+            assert_eq!(dates(source), [date], "{source}");
+        }
+        for source in [
+            "Signed on 14 March 2026 in Bristol.",
+            "The hearing is listed for 12.03.2026.",
+            "She was born in Leeds in 1988.",
+            "born 14 Marchmont 1988",
+            "Род деятельности: 2026 год",
+            "Adobe 14 March 1988",
+        ] {
+            assert!(dates(source).is_empty(), "{source}");
+        }
+    }
+
+    /// A birth date's repeat elsewhere is another date and stays, like any
+    /// other date (#466 option 1, GUIDE rule 4); a labelled repeat counts.
+    #[test]
+    fn a_birth_dates_repeat_elsewhere_stays_unmarked() {
+        let source = "DOB: 14/03/1988. Signed 14/03/1988, due 01/04/2026. DOB 14/03/1988.";
+        let dates: Vec<_> = crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "DATE")
+            .map(|span| source[span.range].to_owned())
+            .collect();
+        assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -2309,6 +2522,10 @@ mod tests {
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = 'x*'",
                 "empty span",
+            ),
+            (
+                "[[span]]\ncategory = \"ADDRESS\"\npattern = '(?P<city>\\w+), \\d+'",
+                "is not `lead` or `tail`",
             ),
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\ntrim = [\"ms\"]",
