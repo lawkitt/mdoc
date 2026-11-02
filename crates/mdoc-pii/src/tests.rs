@@ -467,11 +467,23 @@ fn only_real_markdown_and_html_syntax_hides_a_value() {
         1
     );
     assert!(syntax::list_markers("~Телефон:\n+ 7 (900) 000").is_empty());
+    assert_eq!(
+        syntax::list_markers("-\tДокументы\n\n  Телефон:\n+ 7 (900) 000").len(),
+        1
+    );
+    assert_eq!(
+        syntax::list_markers("1. Документы\n# Реквизиты\nПаспорт:\n46. 18 7319О4").len(),
+        1
+    );
     assert!(syntax::list_markers("Title\n===\u{a0}\n+ 7 (900) 000").is_empty());
     // A heading's `#` runs are syntax, in a list item too; a literal `#`,
     // one before a no-break space or one inside a code fence is text.
     assert_eq!(protected_syntax("## Title ##\n#5 Lee#1"), [0..2, 9..11]);
     assert_eq!(protected_syntax("- # Ann #"), [0..3, 8..9]);
+    assert_eq!(
+        protected_syntax("- A\n\n    # Ann #"),
+        [0..2, 9..10, 15..16]
+    );
     assert_eq!(protected_syntax("# Ann #\u{a0}"), vec![0..1]);
     assert!(protected_syntax("```\n~~~\n# Ann #\n```").is_empty());
     // A span crossing real syntax is refused: emphasis, a heading's marker,

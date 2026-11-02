@@ -120,20 +120,34 @@ pub(super) fn list_markers(source: &str) -> Vec<Range<usize>> {
             item = Some(digits + 1);
         }
         let nested = list.is_some_and(|content| !blank && indent >= content);
-        list = if rule {
-            None
-        } else if let Some(width) = item {
-            // The item's content starts after its marker and 1–4 spaces.
-            let rest = &body[width..];
-            let gap = rest.len() - rest.trim_start_matches(MARKDOWN_SPACE).len();
-            let content = indent + width + if (1..=4).contains(&gap) { gap } else { 1 };
+        // A heading or a fence outside the item's content ends the list:
+        // only paragraph text continues an item lazily.
+        let ends = rule || (!nested && (atx_heading(body).is_some() || fence(body).is_some()));
+        list = if let Some(width) = item {
+            // The item's content starts after its marker and 1–4 columns.
+            let marker = indent + width;
+            let mut column = marker;
+            for byte in body[width..].bytes() {
+                match byte {
+                    b' ' => column += 1,
+                    b'\t' => column += 4 - column % 4,
+                    _ => break,
+                }
+            }
+            let content = if (1..=4).contains(&(column - marker)) {
+                column
+            } else {
+                marker + 1
+            };
             Some(list.map_or(content, |open| open.min(content)))
+        } else if ends {
+            None
         } else if nested || blank || listed {
             list
         } else {
             None
         };
-        listed = !blank && !rule && (item.is_some() || nested || listed);
+        listed = !blank && !ends && (item.is_some() || nested || listed);
         // Up to three spaces of indent start a paragraph; more continue one.
         paragraph = !blank
             && !listed
@@ -221,7 +235,7 @@ fn heading_markers(source: &str) -> Vec<Range<usize>> {
     let mut base = 0;
     let mut code: Option<(u8, usize)> = None;
     for line in source.split_inclusive('\n') {
-        let (indent, _, mut start) = block_start(line);
+        let (_, _, mut start) = block_start(line);
         // A heading may open a list item: read past its marker.
         loop {
             let body = &line[start..];
@@ -252,10 +266,10 @@ fn heading_markers(source: &str) -> Vec<Range<usize>> {
                 code = None;
             }
             (Some(_), _) => {}
+            // An indented heading may be in a list item's content; an
+            // indented code line that reads like one is protected too.
             (None, None) => {
-                if indent < 4
-                    && let Some((open, close)) = atx_heading(body)
-                {
+                if let Some((open, close)) = atx_heading(body) {
                     let at = base + start;
                     markers.push(at + open.start..at + open.end);
                     markers.extend(close.map(|c| at + c.start..at + c.end));
