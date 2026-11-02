@@ -235,7 +235,7 @@ poll() {
   done <<<"$queued"
   queued=$kept
   while read -r branch sha; do
-    [ -n "$sha" ] && [ "$sha" != "$run_sha" ] || continue
+    if [ -z "$sha" ] || [ "$sha" = "$run_sha" ]; then continue; fi
     ! is_done "$sha" || continue
     [[ $queued != *" $sha "* ]] || continue
     if ! g fetch --quiet --no-tags --force origin "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
@@ -505,7 +505,10 @@ self_update() { # mode
   [ "$main" != "${update_failed:-}" ] || return 0
   for f in queue-runner.sh lib.sh; do
     g cat-file -e "refs/queue-ci/main:scripts/$f" 2>/dev/null || continue
-    g show "refs/queue-ci/main:scripts/$f" >"$runner_dir/$f.new" && mv -f "$runner_dir/$f.new" "$runner_dir/$f" || true
+    # A failed write leaves the copy outdated, which the check below logs.
+    if g show "refs/queue-ci/main:scripts/$f" >"$runner_dir/$f.new"; then
+      mv -f "$runner_dir/$f.new" "$runner_dir/$f" || true
+    fi
   done
   if [ -n "$(outdated_files)" ]; then
     log "warning: could not update this runner's $files from main@$(short "$main")"
@@ -539,7 +542,7 @@ write_status() {
 
 # True when $1 is a live runner or job, not a pid reused after a restart.
 is_runner() {
-  [ -n "$1" ] && kill -0 "$1" 2>/dev/null || return 1
+  if [ -z "$1" ] || ! kill -0 "$1" 2>/dev/null; then return 1; fi
   if [ "$(platform)" = windows-x64 ]; then
     ps -p "$1" 2>/dev/null | grep -q '/bash'
   else
