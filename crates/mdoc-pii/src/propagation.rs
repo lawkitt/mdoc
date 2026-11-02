@@ -1123,9 +1123,19 @@ fn find_forms(
                         .iter()
                         .filter(|c| c.start < range.end && range.start < c.end)
                         .all(|c| range.start <= c.start && c.end <= range.end)
+                    && people.candidates(&form).proposed
+                    // The wording is proposed wherever it appears: never
+                    // across what stays as it is, such as a kept "Брюн".
+                    && source.match_indices(text).all(|(at, _)| {
+                        let found = at..at + text.len();
+                        fixed.iter().all(|f| {
+                            *f == found || f.end <= found.start || found.end <= f.start
+                        })
+                    })
             } else {
                 usable_span(source, &range, &protected, covered)
-            } && people.candidates(&form).proposed;
+                    && people.candidates(&form).proposed
+            };
             let common = matches!(&form, Form::Word { word, .. } if common_word(word));
             (usable && !(common && !after_title && sentence_start(source, range.start)))
                 .then_some((range, common, next, after_title))
@@ -1242,9 +1252,14 @@ impl Review {
         }
         // A person proposal the user has not kept may become part of a
         // whole name around it; anything else stays as it is.
+        // Not one the user kept, marked or moved to an identity.
         let part = |c: &&super::Candidate| {
-            self.variant(c.variant)
-                .is_some_and(|v| v.category == Category::Person && !v.kept)
+            self.variant(c.variant).is_some_and(|v| {
+                v.category == Category::Person
+                    && !v.kept
+                    && v.priority == 0
+                    && !self.identities.reassigned(v.id)
+            })
         };
         let mut fixed: Vec<Range<usize>> = (self.candidates().iter())
             .filter(|c| !part(c))

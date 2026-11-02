@@ -1842,3 +1842,51 @@ fn a_whole_name_takes_in_a_model_part_of_it() {
     let (found, _) = ranges(Category::Organization);
     assert_eq!(found, ["Брюн", "Лидией Игоревной", "Лидия Игоревна Брюн"]);
 }
+
+/// Review of #391: a whole name never takes in a surname the user moved to
+/// another person or kept at one place, there or anywhere it repeats.
+#[test]
+fn a_whole_name_leaves_the_users_decisions_on_its_parts() {
+    let source = "Нотариус: Лидия Игоревна Брюн. Удостоверено Лидией Игоревной Брюн. \
+        Подписано Лидией Игоревной Брюн.";
+    let full = source.find("Лидия Игоревна Брюн").unwrap();
+    let full = full..full + "Лидия Игоревна Брюн".len();
+    let second = source.find("Лидией Игоревной Брюн").unwrap() + "Лидией Игоревной ".len();
+    let second = second..second + "Брюн".len();
+    let scan = |decide: &dyn Fn(&mut Review, u64)| {
+        let mut review = Review::default();
+        review
+            .ingest(source, vec![detection(second.clone(), Category::Person)])
+            .unwrap();
+        let surname = proposed(&review, "Брюн").id;
+        decide(&mut review, surname);
+        review
+            .ingest(
+                source,
+                vec![
+                    detection(full.clone(), Category::Person),
+                    detection(second.clone(), Category::Person),
+                ],
+            )
+            .unwrap();
+        review
+    };
+    // Moved to another person: the surname stays theirs.
+    let review = scan(&|review, surname| {
+        let other = review.new_identity(Category::Person);
+        review.assign_variant(surname, other).unwrap();
+    });
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Лидией Игоревной Брюн")
+    );
+    let surname = proposed(&review, "Брюн");
+    assert!(surname.mentions.contains(&second));
+    // Kept at one place: nothing proposed crosses it.
+    let review = scan(&|review, surname| review.keep(surname, Some(second.clone())));
+    assert!(review.candidates().iter().all(|c| {
+        c.range == second || c.range.end <= second.start || second.end <= c.range.start
+    }));
+}

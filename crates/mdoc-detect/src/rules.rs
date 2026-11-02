@@ -614,13 +614,13 @@ impl Pack {
                             && !(m.start <= other.start && other.end <= m.end)
                     })
                 };
-                // A person never grows over a role or title ("Ответчик" in
-                // "Ответчик Н. О." for the model's "Н. О.").
+                // A person never grows back over a role or title before
+                // it ("Ответчик" in "Ответчик Н. О." for the model's "Н.
+                // О."); after it such a word is a surname ("J. R. Clerk").
                 let over_never = |m: &std::ops::Range<usize>| {
                     fix.category == Category::Person
-                        && [&source[m.start..range.start], &source[range.end..m.end]]
-                            .iter()
-                            .flat_map(|side| side.split(|c: char| !c.is_alphanumeric() && c != '-'))
+                        && source[m.start..range.start]
+                            .split(|c: char| !c.is_alphanumeric() && c != '-')
                             .any(|word| !word.is_empty() && self.never(word))
                 };
                 let grown = matches
@@ -1378,6 +1378,11 @@ mod tests {
         assert_eq!(
             fixed("Истец Н. О.", &[("Н. О.", Category::Person)]),
             ["Н. О."]
+        );
+        // After the initials a role word is a surname.
+        assert_eq!(
+            fixed("Signed by J. R. Clerk.", &[("J. R.", Category::Person)]),
+            ["J. R. Clerk"]
         );
         // An organization is not a person.
         assert_eq!(
