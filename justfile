@@ -43,6 +43,10 @@ lint-scripts:
 test:
     bash scripts/test.sh
 
+# One test tier (ADR 0095): unit, app, renders, recognition, scripts or quarantined
+test-tier tier:
+    bash scripts/test.sh --tier {{tier}}
+
 # Isolated release-script regressions; no network, builds or real releases
 test-release:
     bash scripts/test-release.sh

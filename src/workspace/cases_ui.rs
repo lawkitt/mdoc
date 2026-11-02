@@ -329,7 +329,10 @@ impl Workspace {
         let store = match self.case_coordinator.store().cloned() {
             Some(store) => store,
             None => {
-                let exists = Store::default_dir().is_some_and(|d| d.exists());
+                // Tests never look at the real profile. Naming its cases
+                // folder asks macOS who signed this build, which reads the
+                // whole folder the test binary sits in (#510).
+                let exists = !cfg!(test) && Store::default_dir().is_some_and(|d| d.exists());
                 // A cases folder: the key exists, but launch only reads it
                 // when that needs no dialog.
                 if (exists || cfg!(test)) && self.key_may_ask() {
