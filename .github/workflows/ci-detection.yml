@@ -30,9 +30,6 @@ on:
         description: Parallel jobs the fixtures split over.
         type: number
         default: 6
-  # TEMPORARY while the PR is a draft: run on pushes to this file.
-  pull_request:
-    paths: [.github/workflows/ci-detection.yml]
 
 permissions:
   contents: read
