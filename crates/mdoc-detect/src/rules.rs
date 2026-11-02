@@ -592,21 +592,43 @@ impl Pack {
     /// Whether a model span has its category's `shape` and is not a role
     /// phrase or public body by the `never` section.
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
+        self.shaped(text, category) && !self.public_body(text, category)
+    }
+
+    /// Whether a span is a court or other public body by the `never`
+    /// section's `anywhere_in` words. A legal form makes it a company,
+    /// whatever else it says ("Garden Court Ltd"), and a word in quotes is
+    /// a name ("Банк «Город»"). The correction stage asks this only after
+    /// the span fixes, so a company's inner name ("Северная область Строй")
+    /// first grows to its legal form.
+    fn public_body(&self, text: &str, category: Category) -> bool {
+        if self.legal_form(text) {
+            return false;
+        }
+        unquoted(text)
+            .split_whitespace()
+            .map(|word| {
+                word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                    .to_lowercase()
+            })
+            .any(|word| {
+                self.never
+                    .iter()
+                    .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
+            })
+    }
+
+    /// Whether a model span has its category's `shape` and is not a role
+    /// phrase by the `never` section; public bodies are not checked.
+    fn shaped(&self, text: &str, category: Category) -> bool {
         let words = || {
             text.split_whitespace()
                 .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
                 .filter(|word| !word.is_empty())
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
-        // A legal form makes it a company, whatever else it says ("Garden
-        // Court Ltd").
-        let company = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
-            (!company
-                && entry.anywhere_in.contains(&category)
-                && lowercase.iter().any(|w| entry.has(w)))
-                || (entry.last_word_of.contains(&category)
-                    && lowercase.last().is_some_and(|w| entry.has(w)))
+            entry.last_word_of.contains(&category) && lowercase.last().is_some_and(|w| entry.has(w))
         });
         if vetoed {
             return false;
@@ -748,7 +770,10 @@ impl Pack {
                                     .is_some_and(|ending| NOUN_ENDINGS.contains(&ending))
                             }))
             });
-        self.identifying(text, category) && !quoted
+        // Public bodies wait for the span fixes (`fix_spans`): "Судак" in
+        // "ООО «Судак»" grows to its legal form before a court's stem in it
+        // could drop it.
+        self.shaped(text, category) && !quoted
     }
 
     /// Values beside their labels in `source`, as `context` rules propose
@@ -918,6 +943,46 @@ impl Pack {
             })
             .map(|shape| shape.category)
     }
+}
+
+/// `text` without what it quotes in closed pairs («…», "…", “…”), «» nested:
+/// "ГКУ «Дирекция района»" is "ГКУ ". An unclosed quote stays as it is.
+fn unquoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(['«', '"', '“']) {
+        let quote = rest[open..].chars().next().expect("found");
+        let after = &rest[open + quote.len_utf8()..];
+        let close = match quote {
+            '«' => {
+                let mut depth = 1;
+                after.char_indices().find_map(|(at, c)| {
+                    match c {
+                        '«' => depth += 1,
+                        '»' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(at)
+                })
+            }
+            '"' => after.find('"'),
+            _ => after.find('”'),
+        };
+        out.push_str(&rest[..open]);
+        match close {
+            Some(at) => {
+                out.push(' ');
+                let closing = after[at..].chars().next().expect("found");
+                rest = &after[at + closing.len_utf8()..];
+            }
+            None => {
+                out.push(quote);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn is_table_row(line: &str) -> bool {
@@ -1645,19 +1710,19 @@ mod tests {
             "Верховного Суда Российской Федерации",
             "АС Северной области",
             "ФАС Восточного округа",
-            "17 ААС",
+            "14 ААС",
             "Пленума ВС РФ",
             "ВС РФ",
             "Судебная коллегия",
             "Коллегия",
             // Ministries, services, agencies and their territorial units.
             "ФНС России",
-            "МИФНС России № 46",
+            "МИФНС России № 9",
             "Федеральной налоговой службы",
             "ГУ МВД России по Северной области",
             "Отдел МВД России по Ольховскому району",
             "ГИАЗ ОМВД России",
-            "Черкасского ГОСП УФССП",
+            "Ольховского ГОСП УФССП",
             "отдела судебных приставов по Центральному округу",
             "Минтруда России",
             "Управлением Росреестра по Северной области",
@@ -1665,7 +1730,7 @@ mod tests {
             "Мэрию муниципального образования",
             "ГБ МСЭ",
             // State institutions.
-            "ГКУ города Москвы",
+            "ГКУ города Ольховска",
             "Федерального казенного учреждения",
             "государственного бюджетного учреждения",
             // Codes and laws.
@@ -1686,10 +1751,10 @@ mod tests {
             "субъектов Российской Федерации",
             "Именем Российской Федерации",
             "Северной области",
-            "Карачаево-Черкесской Республики",
+            "Кедровской Республики",
             "Ольховскому району",
             "Ольховскому краю",
-            "городу Москве",
+            "городу Ольховску",
             "г. Ольховска",
             "ПГТ Ольховка",
             "Ольховского муниципального района Северной области",
@@ -1704,34 +1769,59 @@ mod tests {
             "ПАО Сбербанк",
             "АО «Северный банк»",
             "Российский союз автостраховщиков",
-            "ООО «Брянская область Строй»",
+            "ООО «Северная область Строй»",
             "ИП Ветлин, г. Ольховск",
             "Федерация футбола России",
             "коллегия адвокатов «Елагин и партнёры»",
             "ООО «Отделстрой»",
             "ООО «Судак»",
             "Ромашка-Плюс",
+            // A name in quotes is a name, whatever words it has.
+            "Банк «Город»",
+            "Банк «Северный край»",
         ] {
             assert!(pack.identifying(text, Category::Organization), "{text}");
         }
+        for text in ["ФКЗ РФ", "ФЗ", "ГКУ «Дирекция парков»", "Суд «Северный»"]
+        {
+            assert!(!pack.identifying(text, Category::Organization), "{text}");
+        }
+        assert_eq!(
+            unquoted("ГКУ «Центр «Северный» снабжения» и суд"),
+            "ГКУ   и суд"
+        );
+        assert_eq!(unquoted("Банк \"Город\", суд «Север"), "Банк  , суд «Север");
         // Gone whole, wherever the model's span starts: an institution's
         // quoted name with it, a court's tail.
         assert!(
             fixed(
-                "Ответчик: ГКУ города Москвы «Организатор перевозок».",
+                "Ответчик: ГКУ города Ольховска «Дирекция парков».",
                 &[
-                    ("ГКУ города Москвы", Category::Organization),
-                    ("Организатор перевозок", Category::Organization),
+                    ("ГКУ города Ольховска", Category::Organization),
+                    ("Дирекция парков", Category::Organization),
                 ]
             )
             .is_empty()
         );
-        assert!(
+        for source in [
+            "третье лицо — Федеральное казенное учреждение «Центр снабжения».",
+            "третье лицо — ГБУ Северной области «Центр снабжения».",
+            "третье лицо — ГБУЗ Республики Сосновия «Центр снабжения».",
+            "третье лицо — ГКУ г. Ольховска «Центр снабжения».",
+        ] {
+            assert!(
+                fixed(source, &[("Центр снабжения", Category::Organization)]).is_empty(),
+                "{source}"
+            );
+        }
+        // Never across another name: a company's legal form ends the
+        // institution's reach.
+        assert_eq!(
             fixed(
-                "третье лицо — Федеральное казенное учреждение «Центр снабжения».",
-                &[("Центр снабжения", Category::Organization)]
-            )
-            .is_empty()
+                "ГКУ и ООО «Ромашка-Плюс»",
+                &[("Ромашка-Плюс", Category::Organization)]
+            ),
+            ["ООО «Ромашка-Плюс»"]
         );
         assert_eq!(
             fixed(

@@ -5,6 +5,6 @@
   России по …", "ГКУ города … «…»", "Гражданского кодекса Российской
   Федерации", "АПК РФ"), and so is a country, region or city alone or as
   a body's tail ("Именем Российской Федерации", "… области"); companies
-  and banks with their legal form stay
+  and banks, by their legal form or quoted name, stay
   ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md), fixes
   #378, #478).
