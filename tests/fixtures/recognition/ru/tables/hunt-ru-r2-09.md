@@ -5,14 +5,11 @@ issue: 397 385
 kind: tables
 source: hunt-r2
 expect: miss: PERSON "Кий"
-expect: miss: PERSON "Ева"
 expect: miss: PERSON "Оскаровна"
 expect: miss: PERSON "Лю"
 expect: miss: PERSON "Леон"
 expect: miss: PERSON "Янович"
 expect: false hit: PERSON "Получатель"
-expect: boundary: gold IDENTITY "46 82 731609"; proposed PHONE "46 82 731609"
-expect: boundary: gold IDENTITY "46 83 862710"; proposed PHONE "46 83 862710"
 ---
 # Ведомость получателей контрольных экземпляров
 
