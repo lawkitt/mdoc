@@ -238,15 +238,25 @@ unless_named = true
 # name no one ("VAT", "EFT", "F.O.B.", "OEM", "SICAV", "OBO", "NOBO", "LEA",
 # "IEP", "FAPE", "RNG", "MMS" as a person, "FOBTs"; guide rule 8, issues
 # #481 and #501). Any other word keeps a company ("Acme Fund SICAV"); a
-# person named so keeps the name beside it ("Lea Brindle", then "Lea").
+# title or a full name keeps a person.
 [[never]]
 match = "plural"
 words = [
     "vat", "eft", "ach", "f.o.b", "fob", "c.i.f", "cif", "oem", "sicav", "oeic",
-    "obo", "nobo", "lea", "sea", "iep", "fape", "rti", "k-12", "sop", "amld",
-    "fobt", "fir", "hel", "rng", "mms", "nimas", "kyc", "aml",
+    "obo", "nobo", "iep", "fape", "rti", "k-12", "sop", "amld", "fobt", "rng",
+    "mms", "nimas", "kyc", "aml",
 ]
 unless_named = true
+
+# The abbreviations that are also names or words ("Lea", "Sea", "Fir",
+# "Hel") count only in capitals, as an organization: "the LEA's IEP", "the
+# SEA" (issue #481). "Lea signed" stays a person.
+[[never]]
+match = "pattern"
+patterns = [
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:LEA|SEA|FIR|HEL)s?(?:[\x27’]s)?[\s\p{P}]*$',
+]
+anywhere_in = ["ORG"]
 
 # Public job, grant, court and probation systems and app platforms by their
 # names: "USAJOBS", "CM/ECF", "PACER", "myHMCTS", "OASys", "AppStore",
@@ -265,29 +275,31 @@ unless_named = true
 [[never]]
 match = "pattern"
 patterns = [
-    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:apple|amazon)[\p{Zs}\t]+)?app[\p{Zs}\t]?store|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:google[\p{Zs}\t]?play(?:[\p{Zs}\t]?store)?|play[\p{Zs}\t]?store|microsoft[\p{Zs}\t]+store|galaxy[\p{Zs}\t]+store|app[\p{Zs}\t]?gallery)[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:(?:apple|amazon)[\p{Zs}\t]+)?app[\p{Zs}\t]?store|google[\p{Zs}\t]?play(?:[\p{Zs}\t]?store)?|play[\p{Zs}\t]?store|microsoft[\p{Zs}\t]+store|galaxy[\p{Zs}\t]+store|app[\p{Zs}\t]?gallery)[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG"]
 
 # A legal form with no name before it is no company: "a New Jersey limited
 # liability company", "a Delaware corporation", "an English private limited
-# company" (guide rule 2, issue #501). The form is in lower case; "Acme
-# Corporation" and "Quillon Freight LLC, a Wyoming limited liability
+# company" (guide rule 2, issue #501): the form in lower case, after a US
+# state or a jurisdiction. "Acme Corporation", "Northvale Ledger limited
+# liability company" and "Quillon Freight LLC, a Wyoming limited liability
 # company" keep their names.
 [[never]]
 match = "pattern"
 patterns = [
-    '^[\s\p{P}]*(?:(?:[Aa]n?|[Tt]he)[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}.\x27’-]*[\p{Zs}\t]+){0,3}(?:(?:domestic|foreign|nonprofit|non-profit|not-for-profit|professional|public[\p{Zs}\t]+benefit|private|public|close|business|statutory|general|limited)[\p{Zs}\t]+)*(?:limited[\p{Zs}\t]+liability[\p{Zs}\t]+(?:company|partnership|limited[\p{Zs}\t]+partnership)|limited[\p{Zs}\t]+(?:company|partnership)|corporation|partnership|trust|company[\p{Zs}\t]+limited[\p{Zs}\t]+by[\p{Zs}\t]+(?:shares|guarantee))[\s\p{P}]*$',
+    '''^[\s\p{P}]*(?:(?:[Aa]n?|[Tt]he)[\p{Zs}\t]+)?(?i:(?:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming|district[\p{Zs}\t]+of[\p{Zs}\t]+columbia|puerto[\p{Zs}\t]+rico|u\.[\p{Zs}\t]?s\.|us|u\.[\p{Zs}\t]?k\.|uk|english|welsh|scottish|irish|british|canadian|ontario|jersey|guernsey|cayman[\p{Zs}\t]+islands|british[\p{Zs}\t]+virgin[\p{Zs}\t]+islands|bvi|luxembourg|dutch|german|french|swiss|cypriot|maltese)[\p{Zs}\t]+)(?:(?:domestic|foreign|nonprofit|non-profit|not-for-profit|professional|public[\p{Zs}\t]+benefit|private|public|close|business|statutory|general|limited)[\p{Zs}\t]+)*(?:limited[\p{Zs}\t]+liability[\p{Zs}\t]+(?:company|partnership|limited[\p{Zs}\t]+partnership)|limited[\p{Zs}\t]+(?:company|partnership)|corporation|partnership|trust|company[\p{Zs}\t]+limited[\p{Zs}\t]+by[\p{Zs}\t]+(?:shares|guarantee))[\s\p{P}]*$''',
 ]
 anywhere_in = ["ORG"]
 
-# A treatise by its author and subject is the title of a work, no company:
-# "5 Collier on Bankruptcy", "4 Brindle on Insolvency", "Chitty on
-# Contracts" (guide rule 8 and its Examples, issue #501).
+# A treatise by its author and a legal subject is the title of a work, no
+# company: "5 Collier on Bankruptcy", "4 Brindle on Insolvency", "Vell and
+# Ostrand on Contracts" (guide rule 8 and its Examples, issue #501). Other
+# subjects keep a name ("Meals on Wheels").
 [[never]]
 match = "pattern"
 patterns = [
-    '^[\s\p{P}]*(?:\d{1,3}[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]+(?:,?[\p{Zs}\t]+(?:(?:and|&)[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]+){0,3}[\p{Zs}\t]+on[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?\p{Uppercase}\p{Alphabetic}+(?:[\p{Zs}\t]+(?:(?:of|and|&)[\p{Zs}\t]+)?\p{Uppercase}\p{Alphabetic}+){0,3}[\s\p{P}]*$',
+    '''^[\s\p{P}]*(?:\d{1,3}[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]+(?:,?[\p{Zs}\t]+(?:(?:and|&)[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]+){0,3}[\p{Zs}\t]+on[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?:Law[\p{Zs}\t]+of[\p{Zs}\t]+)?(?:Bankruptcy|Insolvency|Contracts?|Torts?|Trusts?|Evidence|Damages|Wills|Insurance|Agency|Partnership|Restitution|Equity|Mortgages?|Easements|Defamation|Libel(?:[\p{Zs}\t]+and[\p{Zs}\t]+Slander)?|Negligence|Arbitration|Costs|Copyright|Patents?|Trade[\p{Zs}\t]+Marks|Trademarks|Company[\p{Zs}\t]+Law|Corporations|Securities(?:[\p{Zs}\t]+Regulation)?|Banking|Taxation|Sale[\p{Zs}\t]+of[\p{Zs}\t]+Goods|Landlord[\p{Zs}\t]+and[\p{Zs}\t]+Tenant|Real[\p{Zs}\t]+Property|Property|Conflict[\p{Zs}\t]+of[\p{Zs}\t]+Laws|Pleading|Practice|Injunctions|Judgments|Statutes|Interpretation|Jurisdiction|Criminal[\p{Zs}\t]+Law|Sentencing)[\s\p{P}]*$''',
 ]
 anywhere_in = ["ORG"]
 

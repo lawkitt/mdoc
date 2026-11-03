@@ -939,16 +939,13 @@ impl Pack {
     /// Act (“BPA”)", "Department of Justice (DOJ)"; #378), or a programme,
     /// standard, condition or common noun phrase ("National Reading Access
     /// Standard (NRAS)", "Electronic funds transfer (EFT)", "Acute Lung
-    /// Injury (ALI)"; #481, #501). A long form with a legal form ("Quillon
-    /// Freight LLC (“QF”)"), or that `named` says a kept organization or
-    /// person span holds (its range in `text`), is a name and its
-    /// abbreviation stays; so does one the text also defines beside
-    /// anything else, which is ambiguous.
-    fn unnamed_abbreviations(
-        &self,
-        text: &str,
-        named: &dyn Fn(std::ops::Range<usize>) -> bool,
-    ) -> std::collections::HashSet<String> {
+    /// Injury (ALI)"; #481, #501): a long form the ORG shape and never
+    /// words refuse. A long form with a legal form ("Quillon Freight LLC
+    /// (“QF”)") or a word of its own ("International Business Machines
+    /// (IBM)", "Ossian Draycott (“OD”)") is a name and its abbreviation
+    /// stays; so does one the text also defines beside anything else,
+    /// which is ambiguous.
+    fn unnamed_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
         static DEFINED: OnceLock<Regex> = OnceLock::new();
         let defined = DEFINED.get_or_init(|| {
             Regex::new(&rust_classes(concat!(
@@ -1005,11 +1002,10 @@ impl Pack {
                 other.insert(short);
                 continue;
             };
-            let range = words[from].0..title.end();
-            let long = &text[range.clone()];
+            let long = &text[words[from].0..title.end()];
             let name = !self.public_body(long, Category::Organization, false)
                 && (self.legal_form(long)
-                    || self.shaped_named(long, Category::Organization, &|_| false) && named(range));
+                    || self.shaped_named(long, Category::Organization, &|_| false));
             if name {
                 other.insert(short);
             } else {
@@ -1031,8 +1027,13 @@ impl Pack {
                 .filter(|word| !word.is_empty())
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
+        // A company's legal form keeps a common head word its name ends in
+        // ("ООО «Bright Paths Program»"); a role stays a role.
+        let formed = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
-            entry.last_word_of.contains(&category) && lowercase.last().is_some_and(|w| entry.has(w))
+            entry.last_word_of.contains(&category)
+                && !(entry.unless_named && formed)
+                && lowercase.last().is_some_and(|w| entry.has(w))
         });
         if vetoed {
             return false;
@@ -1155,40 +1156,19 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        let abbreviations = self.unnamed_abbreviations(&view.text);
         let named = self.named_words(view, detections);
-        let kept: Vec<bool> = detections
-            .iter()
-            .map(|d| {
-                let text = &view.text[view.view_range(d.range.clone())];
-                let titled = d.category == Category::Person && self.titled(source, d.range.start);
-                !d.range.is_empty()
-                    && self.identifying_named(
-                        text,
-                        d.category,
-                        &|word| d.category == Category::Person && (titled || named.contains(word)),
-                        titled,
-                    )
-                    && !field_code(source, d)
-            })
-            .collect();
-        // The names kept, where an abbreviation's long form may stand.
-        let names: Vec<std::ops::Range<usize>> = detections
-            .iter()
-            .zip(&kept)
-            .filter(|(d, kept)| {
-                **kept && matches!(d.category, Category::Organization | Category::Person)
-            })
-            .map(|(d, _)| view.view_range(d.range.clone()))
-            .collect();
-        let abbreviations = self.unnamed_abbreviations(&view.text, &|range| {
-            names
-                .iter()
-                .any(|name| name.start < range.end && range.start < name.end)
-        });
-        let mut kept = kept.into_iter();
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
-            kept.next().unwrap_or(false)
+            let titled = d.category == Category::Person && self.titled(source, d.range.start);
+            !d.range.is_empty()
+                && self.identifying_named(
+                    text,
+                    d.category,
+                    &|word| d.category == Category::Person && (titled || named.contains(word)),
+                    titled,
+                )
+                && !field_code(source, d)
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())
@@ -1805,24 +1785,26 @@ fn is_table_row(line: &str) -> bool {
 
 /// Whether an organization or person span is a field code heading a
 /// Markdown table's column ("| FLDA | FLDB |" over a delimiter row): a
-/// whole header cell of capitals, digits and underscores, up to ten, which
-/// names a column, not a company (guide rule 8, issue #501). Any other
-/// header cell stays ("| Quillon Freight LLC |").
+/// whole header cell of capitals, digits and underscores, up to ten, in a
+/// header of two cells or more that are all such codes, a list of fields,
+/// not of companies (guide rule 8, issue #501). A header with any other
+/// cell keeps its spans ("| HSBC | Quillon Freight LLC |", "| IBM | Price
+/// |").
 fn field_code(source: &str, detection: &Detection) -> bool {
+    let code = |text: &str| {
+        (2..=10).contains(&text.len())
+            && text.starts_with(|c: char| c.is_ascii_uppercase())
+            && text
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    };
+    let range = detection.range.clone();
+    let text = source[range.clone()].trim();
     if !matches!(
         detection.category,
         Category::Organization | Category::Person
-    ) {
-        return false;
-    }
-    let range = detection.range.clone();
-    let text = source[range.clone()].trim();
-    let code = (2..=10).contains(&text.len())
-        && text.starts_with(|c: char| c.is_ascii_uppercase())
-        && text
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
-    if !code {
+    ) || !code(text)
+    {
         return false;
     }
     let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
@@ -1833,12 +1815,20 @@ fn field_code(source: &str, detection: &Detection) -> bool {
     let next = source[end..]
         .strip_prefix('\n')
         .map(|rest| rest.split('\n').next().unwrap_or_default());
+    let header: Vec<(std::ops::Range<usize>, &str)> = cells(line, start)
+        .into_iter()
+        .map(|cell| {
+            let text = source[cell.clone()].trim_matches(['*', '`', ' ', '\r']);
+            (cell, text)
+        })
+        .filter(|(_, text)| !text.is_empty())
+        .collect();
     is_table_row(line)
         && next.is_some_and(is_delimiter_row)
-        && cells(line, start).iter().any(|cell| {
-            cell.start <= range.start
-                && range.end <= cell.end
-                && source[cell.clone()].trim_matches(['*', '_', '`', ' ']) == text
+        && header.len() >= 2
+        && header.iter().all(|(_, cell)| code(cell))
+        && header.iter().any(|(cell, cell_text)| {
+            cell.start <= range.start && range.end <= cell.end && *cell_text == text
         })
 }
 
@@ -4515,6 +4505,13 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("CM/ECF", Category::Organization),
             ("myHMCTS", Category::Organization),
             ("OASys", Category::Organization),
+            ("WHO.INT", Category::Organization),
+            // Capitals only for the abbreviations that are names too.
+            ("the SEA", Category::Organization),
+            ("FIRs", Category::Organization),
+            // A head word ends a name with no legal form after it: the
+            // issue's choice (#488, review of #543).
+            ("America Online", Category::Organization),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
@@ -4550,6 +4547,20 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("Lea Brindle", Category::Person),
             ("Paul Program", Category::Person),
             ("Collier", Category::Person),
+            // Review of #543: a legal form keeps a head word, a subject that
+            // is no field of law keeps a name, a name before a legal form in
+            // words stays, and so does a word that only starts like an app
+            // platform; "Lea" is a name.
+            ("ООО «Bright Paths Program»", Category::Organization),
+            ("Meals on Wheels America", Category::Organization),
+            ("Meals on Wheels", Category::Organization),
+            (
+                "Northvale Ledger limited liability company",
+                Category::Organization,
+            ),
+            ("App Storehouse", Category::Organization),
+            ("Lea", Category::Person),
+            ("Lea", Category::Organization),
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }
@@ -4607,19 +4618,34 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("OD", "PERSON"),
             ])
         );
-        // A field code heading a column is no company; a company heading
-        // one stays, and so does a code in a body row.
-        let source = "| FLDA | Quillon Freight LLC |\n|---|---|\n| FLDB | 12 |\n";
+        // Field codes heading the columns are no companies, and a code in a
+        // body row stays; a header with any other cell keeps its spans
+        // (review of #543).
+        let source = "| FLDA | FLDB |\n|---|---|\n| FLDC | 12 |\n\n\
+            | HSBC | Quillon Freight LLC |\n| :-- | --: |\n| 1 | 2 |\n";
         assert_eq!(
             shown(
                 source,
                 &[
                     ("FLDA", "organization"),
-                    ("Quillon Freight LLC", "organization"),
                     ("FLDB", "organization"),
+                    ("FLDC", "organization"),
+                    ("HSBC", "organization"),
+                    ("Quillon Freight LLC", "organization"),
                 ]
             ),
-            pairs(&[("Quillon Freight LLC", "ORG"), ("FLDB", "ORG")])
+            pairs(&[
+                ("FLDC", "ORG"),
+                ("HSBC", "ORG"),
+                ("Quillon Freight LLC", "ORG"),
+            ])
+        );
+        // A company's initials stay where the model missed its long form,
+        // which has a word of its own (review of #543).
+        let source = "International Business Machines (IBM) supplied it; IBM invoiced.";
+        assert_eq!(
+            shown(source, &[("IBM", "organization")]),
+            pairs(&[("IBM", "ORG"), ("IBM", "ORG")])
         );
     }
 
