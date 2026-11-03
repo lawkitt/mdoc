@@ -1,9 +1,11 @@
 ---
-status: pass
-flaw: defined-term-as-org
+status: known-flaw
+flaw: defined-term-as-org short-name-missed role-abbreviation-as-org
 issue: 390
 kind: contract
 source: probe-r2
+expect: miss: ORG "Quillon" ×3
+expect: false hit: ORG "Def"
 ---
 # Distribution agreement
 
