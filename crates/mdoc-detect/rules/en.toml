@@ -734,6 +734,84 @@ pattern = '\bTr\.[\p{Zs}\t]*(?:at[\p{Zs}\t]+)?\d+(?:[:–-]\d+)*(?:,[\p{Zs}\t]*\
 [[reference]]
 pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6})?(?:,[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?)*(?:[\p{Zs}\t]*nn?\.[\p{Zs}\t]*\d{1,4})?|\b(?:J\.[\p{Zs}\t]?A\.|ROA\.|App\.)[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?'
 
+# A cited case is a legal reference, its parties' names included, both
+# sides (guide rule 8, #506 item 2, issue #561): "Pellam v. Ostrand, 912
+# F.3d 455 (9th Cir. 2031)", "Galvan v. Calhoun Cty., 2031 WL 1234567",
+# "News Group Newspapers Ltd v Brindle [2031] EWHC 12 (Ch)", "In re Estate
+# of Bramblett, 77 B.R. 310", "Ex parte Quill, 12 So. 3d 4", and a docket
+# number with its court and year or its reporter after it ("Grant v.
+# Finecy, No. 02-23-00310-CV (Tex. App. 2031)", #506 item 3). The citation
+# must follow the name: a caption ("Ivo Harrow v. Quillon Ltd", its own
+# "Case No." after it or not) is the case at hand's and stays.
+#
+# The `party` groups are the parties. A name in a match stays only where it
+# names a party of the case at hand: one the model found outside every cited
+# case, or one after a role listed here ("Plaintiff Ivo Harrow"), holds its
+# words or is held by them ("Harrow" of "Ivo Harrow"). A cited party's name
+# alone in prose ("in Pellam the court held") goes too, as the precedent's
+# short form (`cited_cases` in rules.rs). So the caption and the running
+# text, which name the case at hand's parties outside citations, decide.
+# A party is capitalised words (with periods, initials, numbers and "&"),
+# "of", "the", "ex rel." and the like between them, a legal form after a
+# comma ("Murrin Bros. 1885, Ltd") and "et al."; a sentence's first word
+# ("See Pellam") becomes part of it, which drops nothing more. "and" joins
+# no party: in "Ivo Harrow and Pellam v. Ostrand" Ivo Harrow is no party.
+[[reference]]
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket})'
+parts.party = '\p{Uppercase}[\p{Alphabetic}\x27’.\-]*(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von|ex[\p{Zs}\t]+rel\.|d/b/a|f/k/a|a/k/a|o/b/o))*[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.\-]*|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?'
+parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
+parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
+parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*(?:slip[\p{Zs}\t]+op\.|(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+)|[^()\n]{0,40}?\([^()\n]{0,60}?(?:19|20)\d{2}\))'
+roles = [
+    "plaintiff", "defendant", "claimant", "respondent", "appellant", "appellee",
+    "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",
+    "relator", "complainant",
+]
+
+# A cited case's or a cited work's short citation (#561): "Pellam, 912 F.3d
+# at 460", "Pellam, 2031 WL 1234567, at *3", "Pellam, supra", "Rooke &
+# Larkfield, supra". Its name goes like the full citation's, unless it
+# names a party of the case at hand.
+[[reference]]
+pattern = '(?P<party>{party}),{s}(?:\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}(?:[\p{Zs}\t]*\d{1,9},?)?[\p{Zs}\t]+at[\p{Zs}\t]+\*?\d|supra\b)'
+parts.party = '\p{Uppercase}[\p{Alphabetic}\x27’.\-]*(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von))*[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.\-]*|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?'
+parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+
+# "Id." and "Ibid." alone cite the authority before, and name no one: the
+# model's "Id" as a person (#561).
+[[reference]]
+pattern = '\b(?:Id|id|Ibid|ibid)\.'
+
+# A doctrine, a warning or an equation named after a person is no one's
+# name (#506 item 5, #561): "the Miranda warnings", "the Brindle doctrine",
+# "the Navier-Stokes equations", "the Gell-Mann and Low equation". One word
+# of a name only, no possessive: "Ivo Harrow" in "the Ivo Harrow doctrine"
+# and "Harrow's principle" stay, and so do people named in prose
+# ("equations of Gell-Mann and Low", #506 item 4).
+[[reference]]
+pattern = '\b{name}(?:[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+{name})?[\p{Zs}\t]+(?:doctrines?|warnings?|principles?|equations?|theorems?|deference|abstention|presumption|inequality|paradox)\b'
+parts.name = '\p{Uppercase}\p{Alphabetic}*(?:[-–]\p{Uppercase}\p{Alphabetic}*)*'
+
+# A cited work's authors or editors before its edition are part of its
+# citation (#506 item 4, #561): "Thanki & Oppenheimer 4th Edition", "(Rooke
+# & Larkfield, 4th ed.)", "Quill et al., 2nd edn". A full name before an
+# edition stays ("Ivo Harrow, 2nd edition" keeps "Ivo Harrow").
+[[reference]]
+pattern = '\b{author}(?:(?:,[\p{Zs}\t]*|[\p{Zs}\t]+(?:&|and)[\p{Zs}\t]+){author}){0,4}(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?,?[\p{Zs}\t]+\(?\d{1,2}(?:st|nd|rd|th)[\p{Zs}\t]+(?:ed\.|edn\b\.?|[Ee]dition\b)'
+parts.author = '\p{Uppercase}[\p{Alphabetic}\x27’-]+'
+
+# A reference list's entry names its authors by surname and initials
+# before the year: "Morvilius, M. and R. Fridell (2031)", "Quill, A. B.,
+# Harrow, I. & Rooke, T. 2031" (#489, #506 item 4). It opens its line, a
+# list marker before it or not; a name with a given name ("VALECROFT, Jorin
+# P.") is no entry.
+[[reference]]
+pattern = '(?m:^)(?P<lead>[\p{Zs}\t]*(?:[-*+]|\d{1,3}\.|\[\d{1,3}\])?[\p{Zs}\t]*){surname},[\p{Zs}\t]+{initials}(?:(?:,|,?[\p{Zs}\t]+(?:and|&))[\p{Zs}\t]+(?:{initials}[\p{Zs}\t]+{surname}|{surname},[\p{Zs}\t]+{initials}))*[,.]?[\p{Zs}\t]+\(?(?:19|20)\d{2}[a-z]?\)?'
+parts.surname = '\p{Uppercase}[\p{Alphabetic}\x27’-]+'
+parts.initials = '\p{Uppercase}\.(?:[\p{Zs}\t-]?\p{Uppercase}\.)*'
+
 # A form's outline letter before its part's title in title case is no
 # initial: "J. Additional Questions" (guide rule 1, issue #499).
 [[reference]]

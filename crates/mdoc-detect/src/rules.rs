@@ -181,7 +181,10 @@ struct SpanEntry {
 }
 
 /// A legal reference or other marker no model span inside is (guide rule 8):
-/// "424 U.S. at 38", "26 U.S.C. § 6212", "127-ФЗ".
+/// "424 U.S. at 38", "26 U.S.C. § 6212", "127-ФЗ". One whose pattern names
+/// parties (groups `party`, `party2`, …) is a cited case ("Pellam v.
+/// Ostrand, 912 F.3d 455"): a name inside it stays where it names a party
+/// of the case at hand.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReferenceEntry {
@@ -190,6 +193,11 @@ struct ReferenceEntry {
     pattern: String,
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
+    /// For a cited case: lowercase words that, beside a name, make it a
+    /// party of the case at hand ("Plaintiff Ivo Harrow", "Quillon Ltd,
+    /// Defendant"), for every cited case in the pack.
+    #[serde(default)]
+    roles: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -213,6 +221,19 @@ pub(crate) struct Pack {
     public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
     references: Vec<Regex>,
+    /// Cited cases, references naming their parties: a model span inside
+    /// a match goes unless it names a party of the case at hand.
+    cases: Vec<Regex>,
+    /// Lowercase words that make the name beside them a party of the case at
+    /// hand ("plaintiff").
+    party_roles: std::collections::HashSet<String>,
+}
+
+/// A cited case in the view's text: its range without `lead` and `tail`,
+/// and its parties' ranges.
+struct Cited {
+    range: std::ops::Range<usize>,
+    parties: Vec<std::ops::Range<usize>>,
 }
 
 /// A `span` entry: a whole span by its pattern, or a boundary fix.
@@ -404,6 +425,8 @@ impl Pack {
             zones: std::collections::HashSet::new(),
             public: std::collections::HashSet::new(),
             references: Vec::new(),
+            cases: Vec::new(),
+            party_roles: std::collections::HashSet::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -784,8 +807,23 @@ impl Pack {
             }
             for (index, entry) in file.reference.iter().enumerate() {
                 let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
-                pack.references
-                    .push(with_parts(&entry.pattern, &entry.parts).map_err(at)?);
+                let pattern = with_groups(&entry.pattern, &entry.parts, &["lead", "tail"], true)
+                    .map_err(at)?;
+                let cited = pattern.capture_names().flatten().any(is_party);
+                if !cited && !entry.roles.is_empty() {
+                    return Err(at("only a cited case (a `party` group) takes roles".into()));
+                }
+                for role in &entry.roles {
+                    if role.is_empty() || *role != role.to_lowercase() {
+                        return Err(at(format!("role {role:?} is not a lowercase word")));
+                    }
+                    pack.party_roles.insert(role.clone());
+                }
+                if cited {
+                    pack.cases.push(pattern);
+                } else {
+                    pack.references.push(pattern);
+                }
             }
             for (index, entry) in file.variants.iter().enumerate() {
                 let at = |problem: String| format!("{name}: variants #{}: {problem}", index + 1);
@@ -1040,13 +1078,15 @@ impl Pack {
     /// The `span` fixes on `detections` in `source`: each grows to an
     /// `extend` match it lies inside, loses `trim` words at either edge and
     /// `strip_end` characters at its end. A span left without its shape
-    /// goes, read as `view` reads it.
+    /// goes, read as `view` reads it, and so does one a cited case holds
+    /// (`cited_cases`). Returns the precedents' ranges in `source`: cited
+    /// cases naming no party of the case at hand.
     pub(crate) fn fix_spans(
         &self,
         source: &str,
         view: &mdoc_pii::view::View,
         detections: &mut Vec<Detection>,
-    ) {
+    ) -> Vec<std::ops::Range<usize>> {
         let fixes = self.spans.iter().filter_map(|span| match span {
             Span::Fix(fix) => Some(fix),
             Span::Pattern { .. } => None,
@@ -1110,6 +1150,7 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        let precedents = self.cited_cases(source, view, detections);
         let abbreviations = self.public_abbreviations(&view.text);
         let named = self.named_words(view, detections);
         detections.retain(|d| {
@@ -1129,6 +1170,194 @@ impl Pack {
                             .trim_end_matches("'s"),
                     ))
         });
+        precedents
+    }
+
+    /// Cited cases (guide rule 8, #506 item 2, issue #561): a precedent's
+    /// name is a legal reference, both sides ("Pellam v. Ostrand, 912 F.3d
+    /// 455", "In re Draycott, 77 B.R. 310"), and so is its short form in
+    /// prose ("in Pellam"). A party of the case at hand stays marked
+    /// wherever it is, its earlier decisions' citations included.
+    ///
+    /// Which names are the case at hand's: every name the model found
+    /// outside the cited cases, except a short form, which is a name that
+    /// is a cited party's name or a run of its words ("Pellam"). A name
+    /// beside a party's role ("Plaintiff Harrow", "QUILLON LTD, Defendant")
+    /// or on the caption's line (that of the document's first "v.", when it
+    /// is no citation's) is no short form. A name in a cited case, or a
+    /// short form, stays when it and one of the case at hand's names hold
+    /// the other's words in a row ("Harrow" of "Ivo Harrow"); the rest go.
+    /// Captions and running text name the case at hand's parties outside
+    /// citations, so they decide; a precedent's party the document also
+    /// names otherwise ("Ivo Pellam", or "Easter v. Powell" without its
+    /// citation as the first "v.") stays marked, the cheaper mistake. Any
+    /// other span inside a precedent goes (its docket number, #506 item 3).
+    fn cited_cases(
+        &self,
+        source: &str,
+        view: &mdoc_pii::view::View,
+        detections: &mut Vec<Detection>,
+    ) -> Vec<std::ops::Range<usize>> {
+        let cited = self.cited(&view.text);
+        if cited.is_empty() {
+            return Vec::new();
+        }
+        let words = |range: std::ops::Range<usize>| -> Vec<String> {
+            view.text[range]
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(str::to_lowercase)
+                .collect()
+        };
+        // Whether `outer` holds `inner`'s words in a row.
+        let holds = |outer: &[String], inner: &[String]| {
+            !inner.is_empty() && outer.windows(inner.len()).any(|run| run == inner)
+        };
+        let parties: Vec<Vec<String>> = cited
+            .iter()
+            .flat_map(|case| case.parties.iter().map(|party| words(party.clone())))
+            .collect();
+        let named = |d: &Detection| matches!(d.category, Category::Person | Category::Organization);
+        let ranges: Vec<std::ops::Range<usize>> = detections
+            .iter()
+            .map(|d| view.view_range(d.range.clone()))
+            .collect();
+        let holder = |range: &std::ops::Range<usize>| {
+            cited
+                .iter()
+                .position(|case| case.range.start <= range.start && range.end <= case.range.end)
+        };
+        // The document's caption: the line of its first "v." when no
+        // citation follows it ("IVO HARROW v. QUILLON LTD"), and the lines
+        // on each side when the "v." stands alone on its line.
+        static VERSUS: OnceLock<Regex> = OnceLock::new();
+        let caption = VERSUS
+            .get_or_init(|| Regex::new(r"(?:^|[\s|])(?:v|vs)\.?(?:[\s|]|$)").expect("a pattern"))
+            .find(&view.text)
+            .filter(|found| holder(&found.range()).is_none())
+            .map(|found| {
+                let start = view.text[..found.start()].rfind('\n').map_or(0, |i| i + 1);
+                let end = view.text[found.end()..]
+                    .find('\n')
+                    .map_or(view.text.len(), |i| found.end() + i);
+                start..end
+            });
+        let mut own: Vec<Vec<String>> = Vec::new();
+        let mut doubtful = vec![false; detections.len()];
+        for (i, d) in detections.iter().enumerate() {
+            if holder(&ranges[i]).is_some() {
+                doubtful[i] = true;
+            } else if named(d) {
+                let name = words(ranges[i].clone());
+                let caption = caption
+                    .as_ref()
+                    .is_some_and(|line| line.start <= ranges[i].start && ranges[i].end <= line.end);
+                if !caption
+                    && !self.beside_role(source, d.range.clone())
+                    && parties.iter().any(|party| holds(party, &name))
+                {
+                    doubtful[i] = true;
+                } else {
+                    own.push(name);
+                }
+            }
+        }
+        let ours = |name: &[String]| {
+            own.iter()
+                .any(|other| holds(other, name) || holds(name, other))
+        };
+        // A cited case naming a party of the case at hand is its own earlier
+        // decision, whose docket number is the case at hand's too.
+        let earlier: Vec<bool> = cited
+            .iter()
+            .map(|case| case.parties.iter().any(|party| ours(&words(party.clone()))))
+            .collect();
+        let mut i = 0;
+        detections.retain(|d| {
+            let range = &ranges[i];
+            let keep = !doubtful[i]
+                || if named(d) {
+                    ours(&words(range.clone()))
+                } else {
+                    holder(range).is_some_and(|case| earlier[case])
+                };
+            i += 1;
+            keep
+        });
+        cited
+            .iter()
+            .zip(&earlier)
+            .filter(|(_, earlier)| !**earlier)
+            .map(|(case, _)| view.source_range(case.range.clone()))
+            .collect()
+    }
+
+    /// The cited cases in `text`, each `cases` pattern's matches.
+    fn cited(&self, text: &str) -> Vec<Cited> {
+        let mut cited = Vec::new();
+        for pattern in &self.cases {
+            for found in pattern.captures_iter(text) {
+                let whole = found.get(0).expect("group 0 is the match");
+                let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+                let end = found.name("tail").map_or(whole.end(), |tail| tail.start());
+                let parties = pattern
+                    .capture_names()
+                    .flatten()
+                    .filter(|group| is_party(group))
+                    .filter_map(|group| found.name(group))
+                    .map(|party| party.range())
+                    .collect();
+                if start < end {
+                    cited.push(Cited {
+                        range: start..end,
+                        parties,
+                    });
+                }
+            }
+        }
+        cited
+    }
+
+    /// Whether a party's role ("Plaintiff", "Defendants") stands beside
+    /// `range` of `source`: before it, a person's title between them or not
+    /// ("Plaintiff Ivo Harrow", "the Defendant, Mr Quill"), or after it ("IVO
+    /// HARROW, Plaintiff", "Quillon Ltd (Defendant)").
+    fn beside_role(&self, source: &str, range: std::ops::Range<usize>) -> bool {
+        let role = |word: &str| {
+            let word = word.to_lowercase();
+            self.party_roles.contains(&word)
+                || word
+                    .strip_suffix('s')
+                    .is_some_and(|single| self.party_roles.contains(single))
+        };
+        let after = source[range.end..]
+            .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | '(' | '-' | '–'));
+        let next = after
+            .split(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or_default();
+        if role(next) {
+            return true;
+        }
+        let mut at = range.start;
+        for _ in 0..2 {
+            let before = source[..at]
+                .trim_end()
+                .trim_end_matches([',', ':', '.'])
+                .trim_end();
+            let start = before.rfind(|c: char| !c.is_alphanumeric()).map_or(0, |i| {
+                i + before[i..].chars().next().map_or(1, char::len_utf8)
+            });
+            let word = &before[start..];
+            if role(word) {
+                return true;
+            }
+            if word.is_empty() || !self.titled(source, at) {
+                return false;
+            }
+            at = start;
+        }
+        false
     }
 
     /// Lowercase words of the person spans in `detections` that name
@@ -1625,6 +1854,24 @@ fn with_parts(
     pattern: &str,
     parts: &std::collections::BTreeMap<String, String>,
 ) -> Result<Regex, String> {
+    with_groups(pattern, parts, &["lead", "tail"], false)
+}
+
+/// Whether a reference's group names a cited case's party: `party`,
+/// `party2`, ….
+fn is_party(group: &str) -> bool {
+    group
+        .strip_prefix("party")
+        .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// [`with_parts`] allowing `groups`, and party groups where `parties`.
+fn with_groups(
+    pattern: &str,
+    parts: &std::collections::BTreeMap<String, String>,
+    groups: &[&str],
+    parties: bool,
+) -> Result<Regex, String> {
     let mut pattern = pattern.to_owned();
     for (part, regex) in parts {
         let name = format!("{{{part}}}");
@@ -1640,9 +1887,13 @@ fn with_parts(
     if let Some(group) = pattern
         .capture_names()
         .flatten()
-        .find(|group| !["lead", "tail"].contains(group))
+        .find(|group| !groups.contains(group) && !(parties && is_party(group)))
     {
-        return Err(format!("group {group:?} is not `lead` or `tail`"));
+        return Err(if parties {
+            format!("group {group:?} is not `lead`, `tail` or a `party`")
+        } else {
+            format!("group {group:?} is not `lead` or `tail`")
+        });
     }
     Ok(pattern)
 }
@@ -4336,6 +4587,152 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(!pack().identifying("Ors", Category::Organization));
     }
 
+    /// [`shown`] for spans each at the `n`th place of its text (from 0).
+    fn shown_at(source: &str, raw: &[(&str, usize, &str)]) -> Vec<(String, String)> {
+        let raw: Vec<crate::RawEntity> = raw
+            .iter()
+            .map(|(text, n, label)| {
+                let (start, _) = source
+                    .match_indices(text)
+                    .nth(*n)
+                    .unwrap_or_else(|| panic!("{text:?} #{n} not in the source"));
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.8,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect()
+    }
+
+    /// A cited case's parties are a legal reference, both sides, "In re"
+    /// too, and so is its short form; a party of the case at hand stays
+    /// marked in a citation (guide rule 8, #506 item 2, issue #561).
+    #[test]
+    fn cited_cases_parties_are_references_and_the_case_at_hands_stay() {
+        // The issue's reproduction.
+        let source = "Pellam v. Ostrand, 912 F.3d 455 (9th Cir. 2031), and In re Draycott, \
+            77 B.R. 310, apply; in Pellam the court relied on the Brindle doctrine (Rooke & \
+            Larkfield, 4th ed.). Plaintiff Ivo Harrow cites Harrow v. Quillon Ltd, 2031 WL \
+            1234567.";
+        let raw = [
+            ("Pellam", 0, "organization"),
+            ("Ostrand", 0, "person"),
+            ("Draycott", 0, "person"),
+            ("Pellam", 1, "organization"),
+            ("Brindle", 0, "organization"),
+            ("Rooke & Larkfield", 0, "organization"),
+            ("Ivo Harrow", 0, "person"),
+            ("Harrow", 1, "person"),
+            ("Quillon Ltd", 0, "organization"),
+        ];
+        assert_eq!(
+            shown_at(source, &raw),
+            pairs(&[("Ivo Harrow", "PERSON"), ("Harrow", "PERSON")])
+        );
+        // Both sides in one span, "Ex parte", a legal form after a comma,
+        // English reports and a precedent's docket number with its court.
+        let source = "See Easter v. Powell, 467 F.3d 459 (5th Cir. 2031); Ex parte Murrin \
+            Bros. 1885, Ltd, 12 So. 3d 4; News Group Newspapers Ltd v Brindle [2031] EWHC 12 \
+            (Ch); Grant v. Finecy, Case No. 4:20-cv-01234 (N.D. Tex. 2031).";
+        let raw = [
+            ("Easter v. Powell", 0, "person"),
+            ("Murrin Bros. 1885, Ltd", 0, "organization"),
+            ("News Group Newspapers Ltd", 0, "organization"),
+            ("Brindle", 0, "person"),
+            ("Grant", 0, "person"),
+            ("Finecy", 0, "organization"),
+        ];
+        assert_eq!(shown_at(source, &raw), []);
+        // The caption names the case at hand's parties: its earlier
+        // decision's citation keeps them and its case number, a precedent
+        // loses its parties, and the caption's own case number stays.
+        let source = "IVO HARROW v. QUILLON LTD, Case No. 1:31-cv-00412\n\nThe claimant \
+            relies on Harrow v. Quillon Ltd, Case No. 1:30-cv-00977 (N.D. Cal. 2030), and on \
+            Pellam v. Ostrand Holdings Ltd, 2031 WL 1234567; in Pellam the court agreed.";
+        let raw = [
+            ("IVO HARROW", 0, "person"),
+            ("QUILLON LTD", 0, "organization"),
+            ("Harrow", 0, "person"),
+            ("Quillon Ltd", 0, "organization"),
+            ("Pellam", 0, "person"),
+            ("Ostrand Holdings Ltd", 0, "organization"),
+            ("Pellam", 1, "person"),
+        ];
+        assert_eq!(
+            shown_at(source, &raw),
+            pairs(&[
+                ("IVO HARROW", "PERSON"),
+                ("QUILLON LTD", "ORG"),
+                ("1:31-cv-00412", "CASE"),
+                ("Harrow", "PERSON"),
+                ("Quillon Ltd", "ORG"),
+                ("1:30-cv-00977", "CASE"),
+            ])
+        );
+        // A party named only after its role is the case at hand's too; a
+        // short citation's name goes like the full one's.
+        let source = "The Defendant, Mr Quill, relies on Quill v. Ostrand, 912 F.3d 455, and \
+            Pellam, 912 F.3d at 460; Pellam, supra, agrees.";
+        let raw = [
+            ("Quill", 0, "person"),
+            ("Quill", 1, "person"),
+            ("Ostrand", 0, "person"),
+            ("Pellam", 0, "person"),
+            ("Pellam", 1, "person"),
+        ];
+        assert_eq!(
+            shown_at(source, &raw),
+            pairs(&[("Quill", "PERSON"), ("Quill", "PERSON")])
+        );
+        // A name with no citation after it is no cited case's.
+        let source = "Ivo Harrow v. Quillon Ltd was heard on 3 May.";
+        assert_eq!(
+            shown(
+                source,
+                &[("Ivo Harrow", "person"), ("Quillon Ltd", "organization")]
+            ),
+            pairs(&[("Ivo Harrow", "PERSON"), ("Quillon Ltd", "ORG")])
+        );
+    }
+
+    /// A doctrine named after a person, a cited work's authors and "Id."
+    /// are no names; people named in prose stay (#506 items 4 and 5, issue
+    /// #561).
+    #[test]
+    fn doctrines_cited_authors_and_id_are_no_names() {
+        let source = "The Miranda warnings and the Navier-Stokes and Brindle equations apply \
+            (Thanki & Oppenheimer 4th Edition). Id. The equations of Gell-Mann and Low differ; \
+            so does Harrow's principle.\n\n1. Morvilius, M. and R. Fridell (2031). On tests.\n";
+        let raw = [
+            ("Miranda", 0, "organization"),
+            ("Navier-Stokes", 0, "person"),
+            ("Brindle", 0, "person"),
+            ("Thanki & Oppenheimer", 0, "organization"),
+            ("Id", 0, "person"),
+            ("Gell-Mann", 0, "person"),
+            ("Low", 0, "person"),
+            ("Harrow", 0, "person"),
+            ("Morvilius, M.", 0, "person"),
+            ("R. Fridell", 0, "person"),
+        ];
+        assert_eq!(
+            shown_at(source, &raw),
+            pairs(&[
+                ("Gell-Mann", "PERSON"),
+                ("Low", "PERSON"),
+                ("Harrow", "PERSON"),
+            ])
+        );
+    }
+
     /// Russian form numbers, classifier codes, standards, a form's barcode
     /// line and waybill numbers are no identifiers; bank details, tax,
     /// registration and passport numbers and phones beside them stay
@@ -4735,7 +5132,15 @@ Privacy Act (“BIPA”). BIPA applies.",
             ),
             (
                 "[[reference]]\npattern = '(?P<code>x)'",
-                "is not `lead` or `tail`",
+                "is not `lead`, `tail` or a `party`",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\nroles = [\"plaintiff\"]",
+                "only a cited case",
+            ),
+            (
+                "[[reference]]\npattern = '(?P<party>x)'\nroles = [\"Plaintiff\"]",
+                "not a lowercase word",
             ),
             ("[[variants]]\nname = \"Liz\"\nforms = [\"Liz\"]", "forms"),
             (
