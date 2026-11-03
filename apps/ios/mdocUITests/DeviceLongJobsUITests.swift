@@ -26,8 +26,9 @@ final class DeviceLongJobsUITests: XCTestCase {
     }
 
     /// The scan waits for text recognition; Download & continue downloads
-    /// it (and the detector, unless cloned or kept) and recognizes the pages, with
-    /// mdoc in the background part of the time. Then Find names.
+    /// it and recognizes the pages, with mdoc in the background part of the
+    /// time. Then Find names, which downloads the detector first when neither
+    /// library has it.
     @MainActor
     private func scanDownloadRecognizeAndFindNames() throws {
         let app = launch(seed: MdocUITest.deviceScan)
@@ -58,8 +59,17 @@ final class DeviceLongJobsUITests: XCTestCase {
         let primary = app.buttons["primary-action"]
         expect(NSPredicate(format: "label == 'Find names'"), on: primary, timeout: 30)
         primary.tap()
+        // A phone with no detector in either library: Find names offers its
+        // download (ADR 0090) and goes on once it is in.
+        let detector = app.buttons["setup-download"].firstMatch
+        if detector.waitForExistence(timeout: 5) {
+            detector.tap()
+            MdocUITest.answerCellularQuestion(app)
+        }
         let name = app.links.matching(NSPredicate(format: "label CONTAINS 'Whitlow'")).firstMatch
-        XCTAssertTrue(name.waitForExistence(timeout: 120), "the detector found no name in the scan")
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, for: NSPredicate(format: "exists == true"), on: name, timeout: 1800),
+            "the detector found no name in the scan")
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
 
