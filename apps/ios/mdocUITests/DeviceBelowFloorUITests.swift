@@ -35,10 +35,14 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let settings = app.buttons["settings-button"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists, "a setup card on Home below the floor")
-        settings.tap()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 10),
-            "Settings does not say the phone cannot find names")
+        // iOS's banner for the background job the seed starts can cover the
+        // button for a few seconds after launch; tap until Settings opens.
+        let note = app.descendants(matching: .any)["below-floor-note"].firstMatch
+        for _ in 0..<4 where !note.exists {
+            settings.tap()
+            _ = note.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(note.exists, "Settings does not say the phone cannot find names")
         app.buttons["Done"].firstMatch.tap()
 
         let row = Self.row(app, title: MdocUITest.deviceScanTitle)
@@ -50,11 +54,10 @@ final class DeviceBelowFloorUITests: XCTestCase {
         download.tap()
         MdocUITest.answerCellularQuestion(app)
 
-        // Leave while the pages are being recognized.
-        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        let recognizing = NSPredicate(format: "label CONTAINS 'Recognizing page'")
+        // Leave while the pages are being recognized (or just after, on a
+        // fast phone).
         XCTAssertTrue(
-            MdocUITest.waitThroughDownload(app, for: recognizing, on: progress, timeout: 1800),
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { MdocUITest.recognizingOrRecognized(app) },
             "the pages were never recognized")
         try leaveAndReturn(app)
 

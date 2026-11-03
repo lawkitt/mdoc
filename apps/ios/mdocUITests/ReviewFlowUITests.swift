@@ -133,26 +133,32 @@ enum MdocUITest {
         }
     }
 
-    /// Waits up to `timeout` for `predicate` on `element` while a download
-    /// runs, answering Use cellular whenever mdoc holds it for Wi-Fi: a phone
-    /// can move between Wi-Fi and its own data during the run.
+    /// Waits up to `timeout` for `done` while a download runs, answering Use
+    /// cellular whenever mdoc holds it for Wi-Fi: a phone can move between
+    /// Wi-Fi and its own data during the run. Checks once a second.
     @MainActor
-    static func waitThroughDownload(
-        _ app: XCUIApplication, for predicate: NSPredicate, on element: XCUIElement, timeout: TimeInterval
-    ) -> Bool {
+    static func waitThroughDownload(_ app: XCUIApplication, timeout: TimeInterval, until done: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         let held = app.buttons["setup-use-cellular"].firstMatch
         while deadline.timeIntervalSinceNow > 0 {
-            let found = XCTNSPredicateExpectation(predicate: predicate, object: element)
-            if XCTWaiter().wait(for: [found], timeout: min(10, deadline.timeIntervalSinceNow)) == .completed {
-                return true
-            }
+            if done() { return true }
             if held.exists {
                 held.tap()
                 answerCellularQuestion(app)
             }
+            Thread.sleep(forTimeInterval: 1)
         }
-        return false
+        return done()
+    }
+
+    /// The scan's pages are being recognized, or already are: a fast phone
+    /// recognizes six pages in a second or two, between two checks.
+    @MainActor
+    static func recognizingOrRecognized(_ app: XCUIApplication) -> Bool {
+        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
+        if progress.exists, progress.label.contains("Recognizing") { return true }
+        let text = app.textViews["document-text"].firstMatch
+        return text.exists && ((text.value as? String)?.contains("Harbour Street") ?? false)
     }
 
     /// Taps `element` in the document text once it is clear of the bottom

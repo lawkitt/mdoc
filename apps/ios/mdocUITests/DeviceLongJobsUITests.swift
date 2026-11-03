@@ -41,12 +41,10 @@ final class DeviceLongJobsUITests: XCTestCase {
         download.tap()
         MdocUITest.answerCellularQuestion(app)
 
-        // Leave while the pages are being recognized. The first run's
-        // download includes the detector, so allow for it.
-        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        let recognizing = NSPredicate(format: "label CONTAINS 'Recognizing page'")
+        // Leave while the pages are being recognized (or just after, on a
+        // fast phone).
         XCTAssertTrue(
-            MdocUITest.waitThroughDownload(app, for: recognizing, on: progress, timeout: 1800),
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { MdocUITest.recognizingOrRecognized(app) },
             "the pages were never recognized")
         try leaveAndReturn(app)
 
@@ -68,7 +66,7 @@ final class DeviceLongJobsUITests: XCTestCase {
         }
         let name = app.links.matching(NSPredicate(format: "label CONTAINS 'Whitlow'")).firstMatch
         XCTAssertTrue(
-            MdocUITest.waitThroughDownload(app, for: NSPredicate(format: "exists == true"), on: name, timeout: 1800),
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { name.exists },
             "the detector found no name in the scan")
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
