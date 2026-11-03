@@ -1,0 +1,18 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":23,"end":35,"label":"person","score":0.9,"text":"Mara Quillon"},
+    {"start":41,"end":55,"label":"person","score":0.9,"text":"JOHN DOES 1-25"},
+    {"start":57,"end":76,"label":"organization","score":0.9,"text":"DOE SUPERVISORS I-X"},
+    {"start":78,"end":95,"label":"organization","score":0.9,"text":"DOE MEDICAL STAFF"},
+    {"start":104,"end":116,"label":"organization","score":0.9,"text":"ROE ENTITIES"},
+    {"start":117,"end":120,"label":"person","score":0.9,"text":"I-X"},
+    {"start":122,"end":130,"label":"person","score":0.9,"text":"Jane Doe"},
+    {"start":196,"end":206,"label":"person","score":0.9,"text":"John Doe 1"},
+    {"start":219,"end":230,"label":"person","score":0.9,"text":"Ivo Ostrand"},
+    {"start":275,"end":285,"label":"person","score":0.9,"text":"ROWAN PELL"},
+    {"start":301,"end":315,"label":"organization","score":0.9,"text":"Ohio State Bar"},
+    {"start":339,"end":349,"label":"person","score":0.9,"text":"Tamsin Vey"}
+  ]
+}

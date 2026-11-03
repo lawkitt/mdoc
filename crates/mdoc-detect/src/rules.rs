@@ -4335,6 +4335,237 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(!pack().identifying("Ors", Category::Organization));
     }
 
+    /// Placeholders for a party are never marked, whatever the model
+    /// guessed; a real name beside one, and real names and companies called
+    /// alike, stay (guide rule 8, #484 item 1).
+    #[test]
+    fn placeholders_are_no_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("ФИО1", Category::Organization),
+            ("ФИО1", Category::Person),
+            ("ФИО1", Category::Identity),
+            ("ФИО 2", Category::Person),
+            ("«ФИО12»", Category::Organization),
+            ("ИП ФИО1", Category::Organization),
+            ("ИП ФИО1", Category::Person),
+            ("ФИО1 и ФИО2", Category::Person),
+            ("ФИО1, ФИО2", Category::Organization),
+            ("John Doe", Category::Person),
+            ("Jane Does 1-25", Category::Person),
+            ("John Does l-25", Category::Person),
+            ("Richard Roe", Category::Person),
+            ("DOE SUPERVISORS I-X", Category::Organization),
+            ("DOE SUPERVISORS", Category::Organization),
+            ("DOE MEDICAL STAFF I-X", Category::Organization),
+            ("ROE ENTITIES", Category::Organization),
+            ("ROE CORPORATIONS I through X", Category::Organization),
+            ("DOES 1 through 10", Category::Person),
+            ("Does 1-10", Category::Person),
+            ("Doe 3", Category::Person),
+            ("DOE", Category::Person),
+            ("DOE", Category::Organization),
+            ("ROE", Category::Organization),
+            ("Does", Category::Person),
+            ("I-X", Category::Person),
+            ("I-X", Category::Organization),
+            ("1-25", Category::Organization),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("ИП ФИО3 А-Х.О.", Category::Organization),
+            ("ФИО3 А-Х.О.", Category::Person),
+            ("ИП Мохов Л. Р.", Category::Organization),
+            ("Мирон Павлович Грендель", Category::Person),
+            ("Samuel Doe", Category::Person),
+            ("Jane Doerr", Category::Person),
+            ("John Roebuck", Category::Person),
+            ("Doe Run Company", Category::Organization),
+            ("Roe Holdings Ltd", Category::Organization),
+            ("Ivo X", Category::Person),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
+        // In context: "ФИО:" is a label, the name after it a person; "Doe"
+        // alone is a person's after a title or beside a real first name.
+        let source = "ФИО: Мирон Грендель. Истец ФИО1 и ИП ФИО2 подали иск к ИП ФИО3 А-Х.О.";
+        let raw = [
+            ("Мирон Грендель", "person"),
+            ("ФИО1", "organization"),
+            ("ИП ФИО2", "organization"),
+            ("ФИО3 А-Х.О.", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("Мирон Грендель", "PERSON"), ("ФИО3 А-Х.О.", "PERSON")])
+        );
+        let source = "Plaintiffs sue John Does 1-25, DOE SUPERVISORS I-X and ROE ENTITIES; \
+            DOE agreed.";
+        let raw = [
+            ("John Does 1-25", "person"),
+            ("DOE SUPERVISORS", "organization"),
+            ("I-X", "person"),
+            ("ROE ENTITIES", "organization"),
+            ("DOE", "person"),
+        ];
+        assert_eq!(shown(source, &raw), pairs(&[]));
+        let source = "Mr Doe testified.";
+        assert_eq!(
+            shown(source, &[("Doe", "person")]),
+            pairs(&[("Doe", "PERSON")])
+        );
+        let source = "Doe left early. Samuel Doe agreed.";
+        assert_eq!(
+            shown(source, &[("Doe", "person"), ("Samuel Doe", "person")]),
+            pairs(&[("Doe", "PERSON"), ("Samuel Doe", "PERSON")])
+        );
+    }
+
+    /// Cadastral and registration numbers and numbers assigned to one person
+    /// are IDENTITY, the value only; a cadastral quarter, a notarial act's
+    /// entry and other numbers stay (#484 items 2 and 3, #483).
+    #[test]
+    fn cadastral_and_personal_register_numbers_are_identity() {
+        let found = |source: &str| -> Vec<(String, Category)> {
+            let mut found: Vec<(String, Category)> = pack()
+                .context(source)
+                .into_iter()
+                .chain(pack().spans(source))
+                .filter(|d| d.category == Category::Identity)
+                .map(|d| (source[d.range].to_owned(), d.category))
+                .collect();
+            found.dedup();
+            found
+        };
+        let id = |text: &str| vec![(text.to_owned(), Category::Identity)];
+        for (source, value) in [
+            ("кадастровый номер 99:07:0012345:678", "99:07:0012345:678"),
+            (
+                "с кадастровым номером 99:07:0012345:678.",
+                "99:07:0012345:678",
+            ),
+            (
+                "Кадастровый номер земельного участка: 99:07:0012345:678",
+                "99:07:0012345:678",
+            ),
+            ("КН 99:07:0012345:6789", "99:07:0012345:6789"),
+            ("участок 99:07:001234:5 продан", "99:07:001234:5"),
+            (
+                "номер регистрации права 99:07:0012345:678-99/011/2031-4",
+                "99:07:0012345:678-99/011/2031-4",
+            ),
+            (
+                "номер государственной регистрации от 12.03.2031 № 99-99/011-99/011/001/2031-123/2",
+                "99-99/011-99/011/001/2031-123/2",
+            ),
+            (
+                "регистрационный номер в сводном реестре 99887, e-mail",
+                "99887",
+            ),
+            (
+                "регистрационный номер в сводном государственном реестре арбитражных управляющих 12345",
+                "12345",
+            ),
+            (
+                "регистрационный номер в реестре адвокатов Ольховской области 99/1234",
+                "99/1234",
+            ),
+            ("рег. номер в реестре нотариусов: 99/123-н", "99/123-н"),
+            ("удостоверение адвоката № 9917", "9917"),
+            ("удостоверением № 99012", "99012"),
+            ("Ohio State Bar No. 0099911", "0099911"),
+            ("(Pa. Bar # 99911)", "99911"),
+            ("Bar No.: 12345", "12345"),
+            ("Texas Bar No. 24099911", "24099911"),
+            ("SBN 299911", "299911"),
+            ("ROWAN PELL, ESQ. (RP9911)", "RP9911"),
+            ("Officer Ivo Ostrand, Shield No. 9912.", "9912"),
+        ] {
+            assert_eq!(found(source), id(value), "{source}");
+        }
+        for source in [
+            "кадастровый квартал 99:07:0012345",
+            "кадастровая стоимость 1234567 рублей",
+            "зарегистрировано в реестре № 99/123-н/99-2031-1-456",
+            "в реестре нотариусов не значится",
+            "время 12:30:45",
+            "Bar association met in 2031",
+            "the bar is 2 miles away",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        // The model's tax, phone or bank guesses on a cadastral number go,
+        // and the number is IDENTITY.
+        for label in ["tax_id", "phone_number", "bank_account"] {
+            let source = "Участок с кадастровым номером 99:07:0012345:678 передан.";
+            assert_eq!(
+                shown(source, &[("99:07:0012345:678", label)]),
+                pairs(&[("99:07:0012345:678", "IDENTITY")]),
+                "{label}"
+            );
+            let source = "Участок 99:07:0012345:678 передан.";
+            assert_eq!(
+                shown(source, &[("99:07:0012345:678", label)]),
+                pairs(&[("99:07:0012345:678", "IDENTITY")]),
+                "{label}"
+            );
+        }
+        // A bar number swallowed into an organization is the number alone.
+        let source = "Counsel: Rowan Pell, Texas State Bar No. 24099911, for Quillon Freight LLC.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Rowan Pell", "person"),
+                    ("Texas State Bar No. 24099911", "organization"),
+                    ("Quillon Freight LLC", "organization"),
+                ]
+            ),
+            pairs(&[
+                ("Rowan Pell", "PERSON"),
+                ("24099911", "IDENTITY"),
+                ("Quillon Freight LLC", "ORG"),
+            ])
+        );
+        // So is a bar's name before its number.
+        let source = "Ohio State Bar No. 0099911";
+        assert_eq!(
+            shown(source, &[("Ohio State Bar", "organization")]),
+            pairs(&[("0099911", "IDENTITY")])
+        );
+    }
+
+    /// A public-law company is a public body, by its form or its name
+    /// (guide rule 8, #484 item 4); companies stay.
+    #[test]
+    fn a_public_law_company_is_a_public_body() {
+        let source = "Сведения предоставила публично-правовая компания «Роскадастр», договор \
+            заключён с ППК «Фонд развития территорий», филиал Роскадастра ответил, а \
+            ООО «Кадастр-Сервис» и АО «Фонд Сибири» подписали акт.";
+        let raw = [
+            ("Роскадастр", "organization"),
+            ("Фонд развития территорий", "organization"),
+            ("Роскадастра", "organization"),
+            ("Кадастр-Сервис", "organization"),
+            ("Фонд Сибири", "organization"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("ООО «Кадастр-Сервис»", "ORG"), ("АО «Фонд Сибири»", "ORG")])
+        );
+        for (text, category) in [
+            ("ППК «Роскадастр»", Category::Organization),
+            (
+                "публично-правовой компании «Фонд развития территорий»",
+                Category::Organization,
+            ),
+            ("Роскадастру", Category::Person),
+        ] {
+            assert!(!pack().identifying(text, category), "{text}");
+        }
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [

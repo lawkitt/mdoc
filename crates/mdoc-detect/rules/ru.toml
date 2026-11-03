@@ -29,6 +29,17 @@ extend = [
     '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
 ]
 
+# A public-law company's quoted name belongs to the company, so the
+# public-body `never` words below reach it: the model's "Фонд развития
+# территорий" in "ППК «Фонд развития территорий»" or "публично-правовой
+# компании «Роскадастр»" grows to the whole of it and goes (guide rule 8,
+# the maintainer's decision on #484, item 4).
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:ППК|[Пп]ублично-правов\p{Alphabetic}*[\p{Zs}\t]+компани\p{Alphabetic}*)[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+]
+
 # Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
 # rule 1, #382).
 [[span]]
@@ -227,6 +238,24 @@ words = [
 ]
 anywhere_in = ["ORG"]
 
+# A public-law company is a public body (guide rule 8, the maintainer's
+# decision on #484, item 4): "ППК «Роскадастр»", "публично-правовая
+# компания «Фонд развития территорий»", "Роскадастра" alone, as an
+# organization or a person. Words in quotes are its name, so the form
+# outside them decides.
+[[never]]
+match = "whole"
+words = ["ппк"]
+anywhere_in = ["ORG", "PERSON"]
+
+# The same company's form and Роскадастр by their stems
+# ("публично-правовой", "Роскадастру").
+[[never]]
+match = "stem"
+ending = 3
+words = ["публично-правов", "роскадастр"]
+anywhere_in = ["ORG", "PERSON"]
+
 # Codes and laws by their full names: "Гражданского кодекса Российской
 # Федерации", "Федерального закона", "Конституции Российской Федерации"
 # (guide rule 8, issue #378).
@@ -290,6 +319,41 @@ forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.
 [[shape]]
 category = "DATE"
 forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
+
+# A placeholder for a party in a depersonalised act is no one: «ФИО1»,
+# «ФИО 2», «ИП ФИО1», «ФИО1 и ФИО2», whatever the model guessed (guide
+# rule 8, the maintainer's decision on #484, item 1). Only the whole span:
+# a real name or initials beside one keep it ("ИП ФИО3 А-Х.О.").
+[[shape]]
+category = "ORG"
+forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+
+# The same placeholder as a person.
+[[shape]]
+category = "PERSON"
+forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+
+# The same placeholder as an identity document: its digit is no number.
+[[shape]]
+category = "IDENTITY"
+forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+
+# A cadastral number is no tax number, phone or account (the maintainer's
+# decision on #484, item 2): a model span that starts with one, or is its
+# last two parts, goes, and the IDENTITY span below takes the number.
+[[shape]]
+category = "TAX"
+forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
+
+# The same as a phone.
+[[shape]]
+category = "PHONE"
+forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
+
+# The same as bank details.
+[[shape]]
+category = "BANK"
+forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
 
 # A product's name in quotes after the word for it is no organization: "ПО
 # «Контур»", "АСУ «Экспресс»", "программы «Сетка»", "мессенджера «Ватсап»",
@@ -384,6 +448,71 @@ labels = ["код карточки", "номер карточки"]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '\p{Alphabetic}{2,}-?\d{4,}'
 min_digits = 4
+
+# A cadastral number pins down one property, so it identifies its owner
+# like an address (the maintainer's decision on #484, item 2):
+# "кадастровый номер 99:07:0012345:678", "с кадастровым номером …", "КН
+# …", "кадастровый номер земельного участка: …". A cadastral quarter
+# ("99:07:0012345") is an area, not one property, and stays.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "кадастровый", "кадастрового", "кадастровому", "кадастровым", "кадастровом",
+    "кадастровые", "кадастровыми", "кадастровых", "кадастровый номер", "кн", "к.н",
+]
+between = '(?:[\p{Zs}\t]+(?:номер\p{Alphabetic}{0,3}|№))?(?:[\p{Zs}\t]+(?:земельного|участка|объекта|недвижимости|помещения|здания|квартиры|сооружения|жилого|нежилого|дома)){0,3}[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}:\d{2}:\d{6,7}:\d{1,7}'
+min_digits = 10
+
+# A right's registration number in the state register pins down one
+# property too (#484, item 2): "номер регистрации права
+# 99:07:0012345:678-99/011/2031-4", "номер государственной регистрации от
+# 12.03.2031 № 99-99/011-99/011/001/2031-123/2".
+[[context]]
+category = "IDENTITY"
+labels = [
+    "номер регистрации", "номер государственной регистрации", "номером регистрации",
+    "номером государственной регистрации", "регистрационная запись",
+    "регистрационной записи", "запись регистрации", "записи регистрации",
+    "запись о регистрации", "записи о регистрации",
+]
+between = '(?:[\p{Zs}\t]+(?:права|прав|собственности|ипотеки|аренды|сделки|договора|в|ЕГРН|ЕГРП|от|\d{1,2}\.\d{1,2}\.\d{4}|г\.)){0,6}[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}:\d{2}:\d{6,7}:\d{1,7}-\d{2,3}/\d{3}/\d{4}-\d{1,7}|\d{2}-\d{2}(?:-\d{2})?/\d{3}(?:-\d{2}/\d{3}/\d{3})?/\d{4}-\d{1,7}(?:/\d{1,3})?'
+min_digits = 10
+
+# Cadastral and registration numbers by their shape, with no label: "участок
+# 99:07:0012345:678", "запись 99:07:0012345:678-99/011/2031-4" (#484,
+# item 2).
+[[span]]
+category = "IDENTITY"
+pattern = '\b\d{2}:\d{2}:\d{6,7}:\d{1,7}(?:-\d{2,3}/\d{3}/\d{4}-\d{1,7})?\b'
+
+# A number assigned to one person is IDENTITY (guide rule 6, the
+# maintainer's decision on #484, item 3; #483): an attorney's, a notary's
+# or an arbitration manager's register number after the register's name
+# ("регистрационный номер в реестре адвокатов Ольховской области 77/1234",
+# "в сводном реестре 99887", "в сводном государственном реестре
+# арбитражных управляющих за номером 12345"). A notarial act's own entry
+# ("зарегистрировано в реестре № …") is no person's and stays.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "реестре адвокатов", "реестре нотариусов", "реестре арбитражных управляющих",
+    "сводном реестре", "сводном государственном реестре",
+]
+between = '(?:[\p{Zs}\t]+(?:арбитражных[\p{Zs}\t]+управляющих|г\.|города|\p{Uppercase}[\p{Alphabetic}-]*|област\p{Alphabetic}*|кра\p{Alphabetic}*|республик\p{Alphabetic}*|за[\p{Zs}\t]+номером|под[\p{Zs}\t]+номером|номер\p{Alphabetic}{0,2})){0,5}[\p{Zs}\t:*_№#.—–-]{1,8}'
+value = '\d{1,3}/\d{1,6}(?:-н)?|\d{3,8}'
+min_digits = 3
+
+# A personal certificate's number (#484, item 3): "удостоверение адвоката №
+# 9917", "удостоверение № 1234", "удостоверением арбитражного управляющего
+# № АУ-5512".
+[[context]]
+category = "IDENTITY"
+labels = ["удостоверение", "удостоверения", "удостоверению", "удостоверением", "удостоверении"]
+between = '(?:[\p{Zs}\t]+(?:адвоката|нотариуса|арбитражного[\p{Zs}\t]+управляющего|инвалида|ветерана|сотрудника|личности)){0,2}[\p{Zs}\t:*_]*№[\p{Zs}\t:*_.]{0,6}'
+value = '(?:\p{Uppercase}{1,4}[\p{Zs}-]?)?\d{3,10}(?:/\d{1,6})?'
+min_digits = 3
 
 # Addresses (ADR 0092, issue #362): a street and a house ("д. 7"), after an
 # optional index, region and city, then a building and a flat or office:

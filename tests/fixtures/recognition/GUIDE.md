@@ -43,6 +43,13 @@ the maintainer's: agents add examples, never change a rule (a change is a
    laws, courts and public bodies, and web addresses of courts, public
    bodies, laws and legal databases (consultant.ru, garant.ru,
    pravo.gov.ru).
+   Placeholders that stand for a party in a depersonalised text are never
+   marked, whatever their form: «ФИО1», «ФИО 2», «ИП ФИО1», "John Doe",
+   "Jane Does 1-25", "DOE SUPERVISORS I-X", "ROE ENTITIES" and a bare
+   "I-X" after them; a real name or initials beside one are still marked.
+   A public-law company is a public body: «публично-правовая компания
+   «Роскадастр»», «ППК «Фонд развития территорий»» (the maintainer's
+   decisions on #484, items 1 and 4).
 9. **Web address** (`URL`): a URL that points to a person's or a private
    organization's page or file (a profile, a personal or company site, a
    share link with a token, any URL that holds a name, email or ID), from
@@ -90,3 +97,5 @@ a boundary case.
 - A notary is a person, not a public body: «Нотариус: ⟦PERSON|Лидия Игоревна Брюн⟧» (hunt-ru-r4-01).
 - A case name's "& Anor" or "& Ors" stays outside the party, and a declaration names its declarant: "the claim by ⟦ORG|Pellow Holdings Ltd⟧ & Anor", "(⟦PERSON|Ostrand⟧ Decl. ¶ 3)" (probe-en-r1-legal-citations).
 - A citation's numbers are a legal reference, never an identifier: "26 U.S.C. § 6212", "2031 WL 1234567", "Tr. 112-14", "tax year 2029/30", "№ 999-ФЗ", "статьи 431 ГК РФ" stay unmarked (probe-en-r1-citation-tax, probe-ru-r1-law-numbers).
+- A cadastral number or a right's registration number pins down one property, so it is `IDENTITY`, the value only: "кадастровый номер ⟦IDENTITY|99:07:0012345:678⟧", "номер регистрации права ⟦IDENTITY|99:07:0012345:678-99/011/2031-4⟧" (the maintainer's decision on #484, item 2).
+- A certificate or register number assigned to one person is `IDENTITY` (rule 6), the value only: an attorney's, an arbitration manager's or a notary's register or certificate number, an attorney's bar number: "регистрационный номер в сводном реестре ⟦IDENTITY|99887⟧", "удостоверение адвоката № ⟦IDENTITY|9917⟧", "Ohio State Bar No. ⟦IDENTITY|0099911⟧", "SBN ⟦IDENTITY|299911⟧" (the maintainer's decision on #484, item 3; #483).

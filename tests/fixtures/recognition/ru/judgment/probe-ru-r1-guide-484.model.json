@@ -1,0 +1,16 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":26,"end":33,"label":"organization","score":0.9,"text":"ФИО1"},
+    {"start":178,"end":190,"label":"organization","score":0.9,"text":"ИП ФИО2"},
+    {"start":268,"end":288,"label":"organization","score":0.9,"text":"Роскадастр"},
+    {"start":344,"end":390,"label":"organization","score":0.9,"text":"Фонд развития территорий"},
+    {"start":439,"end":479,"label":"person","score":0.9,"text":"Сомов Павел Романович"},
+    {"start":586,"end":593,"label":"person","score":0.9,"text":"ФИО2"},
+    {"start":692,"end":709,"label":"tax_id","score":0.9,"text":"99:07:0012345:678"},
+    {"start":807,"end":814,"label":"organization","score":0.9,"text":"ФИО1"},
+    {"start":855,"end":895,"label":"person","score":0.9,"text":"Лада Игоревна Венцель"},
+    {"start":1143,"end":1177,"label":"organization","score":0.9,"text":"ООО «Кадастр-Плюс»"}
+  ]
+}
