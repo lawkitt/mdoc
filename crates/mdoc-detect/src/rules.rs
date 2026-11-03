@@ -4370,6 +4370,9 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("I-X", Category::Person),
             ("I-X", Category::Organization),
             ("1-25", Category::Organization),
+            ("ФИО1", Category::Tax),
+            ("ФИО1", Category::Phone),
+            ("ФИО1", Category::Bank),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
@@ -4384,6 +4387,9 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("Doe Run Company", Category::Organization),
             ("Roe Holdings Ltd", Category::Organization),
             ("Ivo X", Category::Person),
+            ("J. Doe", Category::Person),
+            ("A. Roe", Category::Person),
+            ("Doe", Category::Person),
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }
@@ -4410,6 +4416,11 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("DOE", "person"),
         ];
         assert_eq!(shown(source, &raw), pairs(&[]));
+        let source = "Witness J. Doe testified.";
+        assert_eq!(
+            shown(source, &[("J. Doe", "person")]),
+            pairs(&[("J. Doe", "PERSON")])
+        );
         let source = "Mr Doe testified.";
         assert_eq!(
             shown(source, &[("Doe", "person")]),
@@ -4481,11 +4492,31 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("SBN 299911", "299911"),
             ("ROWAN PELL, ESQ. (RP9911)", "RP9911"),
             ("Officer Ivo Ostrand, Shield No. 9912.", "9912"),
+            ("реестровый номер адвоката 99/1234", "99/1234"),
+            (
+                "| Bar No |
+|---|
+| 0099911 |
+",
+                "0099911",
+            ),
+            (
+                "| Регистрационный номер в реестре адвокатов |
+|---|
+| 99/1234 |
+",
+                "99/1234",
+            ),
         ] {
             assert_eq!(found(source), id(value), "{source}");
         }
         for source in [
             "кадастровый квартал 99:07:0012345",
+            "реестровый номер 99/123-н/99-2031-1-456",
+            "| Номер |
+|---|
+| 12345 |
+",
             "кадастровая стоимость 1234567 рублей",
             "зарегистрировано в реестре № 99/123-н/99-2031-1-456",
             "в реестре нотариусов не значится",
@@ -4511,6 +4542,12 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{label}"
             );
         }
+        // A partial tax guess on a cadastral number gives way to the whole.
+        let source = "Участок 99:07:0012345:678 продан.";
+        assert_eq!(
+            shown(source, &[("99:07:0012345", "tax_id")]),
+            pairs(&[("99:07:0012345:678", "IDENTITY")])
+        );
         // A bar number swallowed into an organization is the number alone.
         let source = "Counsel: Rowan Pell, Texas State Bar No. 24099911, for Quillon Freight LLC.";
         assert_eq!(
@@ -4564,6 +4601,12 @@ Privacy Act (“BIPA”). BIPA applies.",
         ] {
             assert!(!pack().identifying(text, category), "{text}");
         }
+        // The company's quoted name as a person is no one either.
+        let source = "Договор заключён с ППК «Фонд развития территорий».";
+        assert_eq!(
+            shown(source, &[("Фонд развития территорий", "person")]),
+            pairs(&[])
+        );
     }
 
     #[test]

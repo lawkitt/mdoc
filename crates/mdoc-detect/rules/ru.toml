@@ -248,6 +248,14 @@ match = "whole"
 words = ["ппк"]
 anywhere_in = ["ORG", "PERSON"]
 
+# The model's person in a public-law company's quotes is its name, no
+# one's: "Фонд развития территорий" in "ППК «Фонд развития территорий»"
+# (#484, item 4).
+[[shape]]
+category = "PERSON"
+forbid_quotes = ["«»"]
+quotes_after_words = ["ППК"]
+
 # The same company's form and Роскадастр by their stems
 # ("публично-правовой", "Роскадастру").
 [[never]]
@@ -339,21 +347,31 @@ category = "IDENTITY"
 forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
 
 # A cadastral number is no tax number, phone or account (the maintainer's
-# decision on #484, item 2): a model span that starts with one, or is its
-# last two parts, goes, and the IDENTITY span below takes the number.
+# decision on #484, item 2): a model span that starts with one, is its
+# first three or last two parts, goes, and the IDENTITY span below takes
+# the number. Nor is a placeholder ("ФИО1") one (item 1).
 [[shape]]
 category = "TAX"
-forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
+forbid = [
+    '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
+    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+]
 
 # The same as a phone.
 [[shape]]
 category = "PHONE"
-forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
+forbid = [
+    '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
+    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+]
 
 # The same as bank details.
 [[shape]]
 category = "BANK"
-forbid = ['^\s*\d{2}:\d{2}:\d{6,7}:\d|^\s*\d{6,7}:\d{1,7}\s*$']
+forbid = [
+    '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
+    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+]
 
 # A product's name in quotes after the word for it is no organization: "ПО
 # «Контур»", "АСУ «Экспресс»", "программы «Сетка»", "мессенджера «Ватсап»",
@@ -493,12 +511,22 @@ pattern = '\b\d{2}:\d{2}:\d{6,7}:\d{1,7}(?:-\d{2,3}/\d{3}/\d{4}-\d{1,7})?\b'
 # ("регистрационный номер в реестре адвокатов Ольховской области 77/1234",
 # "в сводном реестре 99887", "в сводном государственном реестре
 # арбитражных управляющих за номером 12345"). A notarial act's own entry
-# ("зарегистрировано в реестре № …") is no person's and stays.
+# ("зарегистрировано в реестре № …", "реестровый номер …" alone) is no
+# person's and stays. The whole labels are listed for a table column
+# headed by one, and name the person's number in text too ("реестровый
+# номер адвоката 77/1234").
 [[context]]
 category = "IDENTITY"
 labels = [
     "реестре адвокатов", "реестре нотариусов", "реестре арбитражных управляющих",
     "сводном реестре", "сводном государственном реестре",
+    "регистрационный номер в реестре адвокатов",
+    "регистрационный номер в реестре нотариусов",
+    "регистрационный номер в сводном реестре",
+    "регистрационный номер в сводном государственном реестре арбитражных управляющих",
+    "регистрационный номер адвоката", "регистрационный номер нотариуса",
+    "регистрационный номер арбитражного управляющего", "реестровый номер адвоката",
+    "реестровый номер нотариуса", "реестровый номер арбитражного управляющего",
 ]
 between = '(?:[\p{Zs}\t]+(?:арбитражных[\p{Zs}\t]+управляющих|г\.|города|\p{Uppercase}[\p{Alphabetic}-]*|област\p{Alphabetic}*|кра\p{Alphabetic}*|республик\p{Alphabetic}*|за[\p{Zs}\t]+номером|под[\p{Zs}\t]+номером|номер\p{Alphabetic}{0,2})){0,5}[\p{Zs}\t:*_№#.—–-]{1,8}'
 value = '\d{1,3}/\d{1,6}(?:-н)?|\d{3,8}'
