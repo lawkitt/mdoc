@@ -33,6 +33,8 @@ struct RenderedCell {
 struct RenderedTable {
     /// UTF-16 location of the table's first line, which holds the gap.
     var anchor: Int
+    /// Every line of the table, in UTF-16; its text is folded away.
+    var range: NSRange
     var rows: [[RenderedCell]]
     var columns: [CGFloat]
     var heights: [CGFloat]
@@ -146,7 +148,10 @@ struct BlockLayout {
                 }
             }
             natural = natural.map { min(max($0, 44 * scale), maximum) }
-            let floors = zip(natural, words).map { min(max(min($0, minimum), $1), maximum) }
+            // The word floor may pass the cap: a long identifier widens its
+            // column and the table scrolls, rather than breaking it.
+            let floors = zip(natural, words).map { max(min($0, minimum), $1) }
+            natural = zip(natural, floors).map { max($0, $1) }
             var columns: [CGFloat]
             if let stored = table.widths, stored.count == count, stored.reduce(0, +) > 0 {
                 let total = stored.reduce(0, +)
@@ -173,7 +178,7 @@ struct BlockLayout {
                 }.max() ?? 0
             }
             return RenderedTable(
-                anchor: tableRange.location, rows: rows, columns: columns, heights: heights,
+                anchor: tableRange.location, range: tableRange, rows: rows, columns: columns, heights: heights,
                 style: table.style, rtl: table.rtl, padding: padding)
         }
     }
@@ -658,8 +663,15 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
 
+    /// A horizontal offset to return to once the grid has its frame.
+    var restoredOffset: CGFloat?
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let x = restoredOffset, bounds.width > 0 {
+            restoredOffset = nil
+            contentOffset.x = min(x, max(contentSize.width - bounds.width, 0))
+        }
         updateFade()
     }
 
@@ -809,7 +821,11 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     func show(_ document: RenderedDocument, width: CGFloat) {
         attributedText = document.text
         shownWidth = width
+        // Restyling (a candidate opened or decided) keeps each table where
+        // the reader scrolled it.
+        var scrolled: [Int: CGFloat] = [:]
         for view in tableViews {
+            scrolled[view.table.anchor] = view.contentOffset.x
             view.removeFromSuperview()
         }
         tableViews = document.tables.map { table in
@@ -817,6 +833,9 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
                 self?.configureCell?(cell)
             }
             addSubview(view)
+            if let x = scrolled[table.anchor] {
+                view.restoredOffset = x
+            }
             return view
         }
         needsPlacement = !tableViews.isEmpty

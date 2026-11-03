@@ -217,9 +217,28 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
     let levels = list_levels(&sources);
     let (numbers, lists) = ordered_scan(&sources);
 
+    // Lines inside fenced code: a table written there is code, not a table.
+    let mut fenced = vec![false; lines.len()];
+    let mut open: Option<(u8, usize)> = None;
+    for (index, line) in sources.iter().enumerate() {
+        if let Some(fence) = open {
+            fenced[index] = true;
+            if closes_fence(line, fence) {
+                open = None;
+            }
+        } else if let Some(fence) = opens_fence(line) {
+            fenced[index] = true;
+            open = Some(fence);
+        }
+    }
+
     let mut table = vec![None; lines.len()];
     let mut tables = Vec::new();
     for region in table_regions(text) {
+        let first = region.marker_line.unwrap_or(region.lines.start);
+        if (first..region.lines.end).any(|index| fenced[index]) {
+            continue;
+        }
         tables.push(table_of(text, &lines, &region));
         for index in region.lines.clone() {
             table[index] = Some(if index == region.lines.start {
@@ -1020,5 +1039,20 @@ mod tests {
             .map(|row| row.cells.iter().map(|cell| slice(text, *cell)).collect())
             .collect();
         assert_eq!(rows, [vec!["A", "B"], vec!["a", "b"], vec!["c"]]);
+    }
+
+    /// A table written inside fenced code is code: no table record, and its
+    /// pipes stay code text.
+    #[test]
+    fn a_fenced_table_is_code() {
+        let text = "```\n| A | B |\n| --- | --- |\n| a | b |\n```";
+        let styling = styling(text);
+        assert!(styling.tables.is_empty());
+        assert!(
+            styling
+                .lines
+                .iter()
+                .all(|line| line.kind == MarkdownLineKind::CodeBlock)
+        );
     }
 }

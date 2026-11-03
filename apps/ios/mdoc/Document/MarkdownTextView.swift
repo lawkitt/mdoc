@@ -131,6 +131,13 @@ struct MarkdownTextView: UIViewRepresentable {
         /// (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             guard range.length > 0 else { return UIMenu(children: []) }
+            // A selection in the main text that runs into a folded table
+            // holds hidden source: no Replace… (ADR 0096). Cells are their
+            // own text views.
+            if let main = textView as? CandidateTextView,
+               main.tableViews.contains(where: { NSIntersectionRange($0.table.range, range).length > 0 }) {
+                return UIMenu(children: [])
+            }
             // A table cell's selection, in document offsets.
             let base = (textView as? CellTextView)?.location ?? 0
             let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))

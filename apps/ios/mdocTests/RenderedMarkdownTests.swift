@@ -135,6 +135,26 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertGreaterThan(table.heights[1], table.heights[0] * 3, "the body row wraps")
     }
 
+    /// An identifier longer than the column cap widens its column rather
+    /// than breaking (the table scrolls).
+    func testALongIdentifierWidensItsColumn() throws {
+        let identifier = String(repeating: "A1B2C3D4E5", count: 6)
+        let text = "| Key | Value |\n| --- | --- |\n| \(identifier) | ok |"
+        let table = try XCTUnwrap(render(text).tables.first)
+        let cell = table.rows[1][0].text
+        let width = cell.size().width + table.padding.left + table.padding.right
+        XCTAssertGreaterThanOrEqual(table.columns[0], width - 1)
+        XCTAssertGreaterThan(table.width, 360)
+    }
+
+    /// A table inside fenced code stays code, pipes and all.
+    func testAFencedTableStaysCode() {
+        let text = "```\n| A | B |\n| --- | --- |\n| a | b |\n```"
+        let document = render(text)
+        XCTAssertTrue(document.tables.isEmpty)
+        XCTAssertFalse(isHidden(document.text, (text as NSString).range(of: "| a").location))
+    }
+
     /// Without a width yet, a table stays as its source rows.
     func testNoWidthLeavesTheSource() {
         let text = "| A | B |\n| --- | --- |\n| a | b |"
