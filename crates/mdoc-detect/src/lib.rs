@@ -631,11 +631,13 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 })
         })
         .collect();
-    // A cell under a name part's header (#397): before the span fixes, so
-    // their filters judge it as they judge the model's names.
+    // A cell under a name part's header, or a value after a name part's
+    // label (#397): before the span fixes, so their filters judge it as
+    // they judge the model's names.
     detections.extend(
         mdoc_pii::columns::name_cells(source)
             .into_iter()
+            .chain(mdoc_pii::columns::labelled_names(source))
             .filter(|range| {
                 let text = &view.text[view.view_range(range.clone())];
                 rules::pack().identifying_at(source, range.clone(), text, Category::Person)
@@ -1722,6 +1724,13 @@ mod tests {
         assert!(people(source).is_empty());
         let source = "| Name | Type |\n| --- | --- |\n| Hearing Bundle | Bundle |\n";
         assert!(people(source).is_empty());
+        let source = "Given name: Alvora        Given name: Nerian\n\
+                      Surname: McVellin        Surname: O’Kell–Venn\n";
+        assert_eq!(
+            people(source),
+            ["Alvora", "Nerian", "McVellin", "O’Kell–Venn"]
+        );
+        assert!(people("Фамилия: Истец\n").is_empty());
     }
 
     /// A wording the model gave two categories is copied to its other
