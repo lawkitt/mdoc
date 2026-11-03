@@ -20,6 +20,20 @@ They need Xcode with the iOS 26.1 platform. Both build the core first
 `target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
 Simulator builds exclude x86_64.
 
+`just ios-core` also writes `target/ios/Build.xcconfig`
+(`scripts/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
+build number is the number of commits up to HEAD and `MdocCoreCommit` in
+Info.plist is HEAD, which Settings › About shows and links. Without it a
+build is number 1 from an unknown commit. A shallow clone has too few
+commits to count: it warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`,
+which every TestFlight build sets. A TestFlight build is a tagged `main`
+commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
+[release run](../../docs/release-run.md#ios-beta-build)). The app, the
+Restore extension and both embedded frameworks carry a
+`PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
+APIs they call); `Info.plist` answers export compliance
+(`ITSAppUsesNonExemptEncryption`: the core's AES-GCM cases).
+
 ## On a phone
 
 The project signs with the maintainer's team (`DEVELOPMENT_TEAM =

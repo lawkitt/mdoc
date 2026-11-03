@@ -54,7 +54,7 @@ nextest() {
 
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh)
 
 # Runs one tier's commands and exits with their status; nothing else runs.
 only() {
