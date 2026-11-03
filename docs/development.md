@@ -490,6 +490,17 @@ redesign item 7 lands), and an expired line fails the scripts tier. A lane runs 
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
+**Tests and OS services.** A test never asks the OS's security or identity
+services: the build's code signature (`SecCodeCopySelf`), the case key
+(Keychain, Windows data protection, Secret Service) or the build identity
+built on them. Tests inject a case store (`Store::with_key`) and take the
+build label as `Dev`. `mdoc-store`'s feature `deny-os-services`, which the
+app's dev-dependencies turn on, makes those calls panic in every test
+build ("a test asked the OS for …"), and `tests/os_services_guard.rs`
+proves it. On macOS the signature query of an unsigned test binary read
+every file in `target/debug/deps` and took seconds per test process
+(#510). A new call into such a service goes behind the same guard.
+
 **Detection gate.** Hosted `macos-26` is its reference: the snapshots
 (`tests/fixtures/recognition/**/*.model.json`) are recorded there, not on a
 developer Mac, whose scores differ in the fourth decimal place. A failing shard uploads the

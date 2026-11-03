@@ -250,6 +250,9 @@ entitlements = "resources/entitlements.plist"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+# Tests never ask the OS for the build's signature or the case key: those
+# calls panic (development.md, Tests and OS services; ADR 0095).
+mdoc-store = { path = "crates/mdoc-store", features = ["deny-os-services"] }
 # tests/docx_worker.rs inspects the worker's DOCX package.
 roxmltree = "0.21"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
