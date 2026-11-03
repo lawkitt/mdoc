@@ -135,9 +135,11 @@ private func core<T>(_ call: () throws -> T) throws -> T {
     }
 }
 
-/// Reports the core's job stages to a `JobObserver`.
+/// Reports the core's job stages, and how far each is, to a `JobObserver`.
 private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
+    private let lock = NSLock()
+    private var current = CoreStage.reading
 
     init(_ observer: any JobObserver) {
         self.observer = observer
@@ -150,7 +152,16 @@ private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
         case .recognizing: .recognizing
         case .scanning: .scanning
         }
+        lock.withLock { current = mapped }
         observer.progress(JobUpdate(stage: mapped))
+    }
+
+    /// The fraction also reaches the background task, whose progress iOS
+    /// watches: a continued processing task that shows none is stopped.
+    func advanced(done: UInt64, total: UInt64) {
+        guard total > 0 else { return }
+        let stage = lock.withLock { current }
+        observer.progress(JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total))))
     }
 }
 

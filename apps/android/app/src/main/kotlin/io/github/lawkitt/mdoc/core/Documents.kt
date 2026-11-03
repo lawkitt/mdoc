@@ -357,6 +357,9 @@ class Documents(
 
     private class Progress(private val observer: JobObserver) : JobProgress {
         override fun stage(stage: JobStage) = observer.stage(stage)
+
+        // Android shows stages only; Find names is Later there (ADR 0088).
+        override fun advanced(done: ULong, total: ULong) = Unit
     }
 
     private companion object {

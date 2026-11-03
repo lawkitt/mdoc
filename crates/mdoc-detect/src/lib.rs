@@ -496,11 +496,25 @@ pub fn scan_at(
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
+    scan_at_with_progress(source, cancel, root, runtime, config, &|_| {})
+}
+
+/// [`scan_at`] that also reports the model windows done, as
+/// [`scan_config_with_progress`] does: a phone passes them on to the
+/// system, which stops a background job that shows no progress.
+pub fn scan_at_with_progress(
+    source: &str,
+    cancel: &AtomicBool,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
+) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     if !mdoc_store::settings::unit_interval(config.threshold) {
         return Err(DetectError::InvalidThreshold);
     }
     let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
-    scan_timed(source, cancel, root, runtime, config, &|_| {})
+    scan_timed(source, cancel, root, runtime, config, progress)
 }
 
 fn scan_timed(
