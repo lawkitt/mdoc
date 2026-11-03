@@ -115,12 +115,16 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
     // ("FORMY.SVOD.INVALID"): "here.It was" and "Contract.No 5" are words
     // with a missing space, as OCR leaves them.
     let cased = *zone == zone.to_lowercase() || host == host.to_uppercase();
-    // A host in capitals with a digit in its name is a document's code
-    // ("STD009X.UK", a form; issue #486), no address.
-    let code = *zone != zone.to_lowercase() && name.chars().any(char::is_numeric);
     // Before a two-letter zone the name has three letters or more ("ГК.РФ"
     // is a law's abbreviation), unless a path follows ("t.invalid/…").
     let path = end > start + host.len();
+    // A host in capitals before a two-letter zone, with a digit in its name
+    // and no path, is a document's code ("STD009X.UK", a form; issue #486);
+    // "STUDIO7.INVALID" and "STUDIO7.UK/share/…" stay addresses.
+    let code = *zone != zone.to_lowercase()
+        && zone.chars().count() <= 2
+        && name.chars().any(char::is_numeric)
+        && !path;
     let letters = name.chars().filter(|c| c.is_alphabetic()).count();
     let long_enough = if zone.chars().count() <= 2 {
         letters >= 3 || path
@@ -156,6 +160,14 @@ mod tests {
             ),
             ("сайт ivanov-law.ru.", vec!["ivanov-law.ru"]),
             ("на сайте FORMY.SVOD.INVALID.", vec!["FORMY.SVOD.INVALID"]),
+            (
+                "Website: STUDIO7.INVALID/share/AbCd123, STUDIO7.INVALID, STUDIO7.UK/share/x.",
+                vec![
+                    "STUDIO7.INVALID/share/AbCd123",
+                    "STUDIO7.INVALID",
+                    "STUDIO7.UK/share/x",
+                ],
+            ),
             (
                 "канал t.chat.invalid/kovrigin_r",
                 vec!["t.chat.invalid/kovrigin_r"],
