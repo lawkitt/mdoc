@@ -368,14 +368,6 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
             out.line(range, MarkdownLineKind::Quote);
         }
         out.scan(range.clone());
-        for (full, _) in inline_image_spans(line) {
-            let body = &line[full.clone()];
-            let alt_end = full.start + body.find("](").unwrap_or(2);
-            out.images.push(MarkdownImage {
-                range: TextRange::of(&(range.start + full.start..range.start + full.end)),
-                alt: TextRange::of(&(range.start + full.start + 2..range.start + alt_end)),
-            });
-        }
     }
     out.finish()
 }
@@ -552,8 +544,26 @@ impl<'a> Styler<'a> {
     fn scan(&mut self, range: Range<usize>) {
         let mut found = Vec::new();
         scan_line(self.text, range.start, range.end, &mut found);
+        // An image counts only where the scan hid its `![` as syntax: one
+        // inside raw HTML or code stays literal text.
+        let mut openers = Vec::new();
         for span in found {
+            if span.style.hide && self.text[span.range.clone()].starts_with("![") {
+                openers.push(span.range.start);
+            }
             self.add(span);
+        }
+        let piece = &self.text[range.clone()];
+        for (full, _) in inline_image_spans(piece) {
+            let start = range.start + full.start;
+            if !openers.contains(&start) {
+                continue;
+            }
+            let alt_end = full.start + piece[full.clone()].find("](").unwrap_or(2);
+            self.images.push(MarkdownImage {
+                range: TextRange::of(&(start..range.start + full.end)),
+                alt: TextRange::of(&(start + 2..range.start + alt_end)),
+            });
         }
     }
 
@@ -1081,6 +1091,17 @@ mod tests {
                 ("![Floor plan](plan.png)", "Floor plan"),
                 ("![](scan.png)", "")
             ]
+        );
+        // Raw HTML keeps its image syntax literal; a table cell's image counts.
+        let text = "<!-- ![](scan.png) -->\n\n| A | B |\n| --- | --- |\n| ![](stamp.png) | ![Seal](seal.png) |";
+        let images: Vec<_> = super::styling(text)
+            .images
+            .iter()
+            .map(|image| (slice(text, image.range), slice(text, image.alt)))
+            .collect();
+        assert_eq!(
+            images,
+            [("![](stamp.png)", ""), ("![Seal](seal.png)", "Seal")]
         );
     }
 

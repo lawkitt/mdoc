@@ -134,6 +134,28 @@ struct BlockLayout {
                         attributedString: content.map { text.attributedSubstring(from: $0) } ?? NSAttributedString())
                     let align = column < table.aligns.count ? table.aligns[column] : .left
                     style(cell: piece, ratio: ratio, header: rowIndex == 0, align: align, rtl: table.rtl)
+                    if let content {
+                        // The cell's images, as chips drawn by the cell's own fragment.
+                        let decoration = LineDecoration()
+                        for image in styling.images {
+                            let range = offsets.nsRange(image.range)
+                            guard NSLocationInRange(range.location, content), range.length > 2 else { continue }
+                            let alt = offsets.nsRange(image.alt)
+                            decoration.chips.append(chip(
+                                in: piece, image: NSRange(location: range.location - content.location, length: range.length),
+                                alt: alt, font: body.withSize(body.pointSize * ratio), paragraph: 0))
+                        }
+                        if !decoration.chips.isEmpty {
+                            let whole = NSRange(location: 0, length: piece.length)
+                            piece.addAttribute(.mdocDecoration, value: decoration, range: whole)
+                            // A cell of nothing but hidden image syntax keeps a line's height.
+                            if let paragraph = (piece.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?
+                                .mutableCopy() as? NSMutableParagraphStyle {
+                                paragraph.minimumLineHeight = body.withSize(body.pointSize * ratio).lineHeight
+                                piece.addAttribute(.paragraphStyle, value: paragraph, range: whole)
+                            }
+                        }
+                    }
                     cells.append(RenderedCell(text: piece, location: content?.location ?? tableRange.location))
                 }
                 rows.append(cells)
@@ -411,17 +433,7 @@ struct BlockLayout {
             for (image, alt) in images where NSLocationInRange(image.location, range) && image.length > 2 {
                 if case .table = line.role { continue }
                 if case .code = line.role { continue }
-                let symbol = UIImage(systemName: "photo", withConfiguration: UIImage.SymbolConfiguration(font: body))?
-                    .withTintColor(resolved(.secondaryLabel), renderingMode: .alwaysOriginal)
-                let label: NSAttributedString? = alt.length == 0
-                    ? NSAttributedString(string: Self.imageLabel, attributes: [
-                        .font: body, .foregroundColor: resolved(.secondaryLabel),
-                    ])
-                    : nil
-                let pad = 4 * scale
-                let width = pad + (symbol?.size.width ?? 0) + (label.map { 4 * scale + ceil($0.size().width) } ?? 0) + pad + 2 * scale
-                text.addAttribute(.kern, value: width, range: NSRange(location: image.location + 1, length: 1))
-                decoration.chips.append((image.location + 1 - range.location, width, symbol, label, resolved(.tertiarySystemFill)))
+                decoration.chips.append(chip(in: text, image: image, alt: alt, font: body, paragraph: range.location))
                 decorated = true
                 fold = false
                 // A line of nothing but hidden image syntax keeps a line's height.
@@ -441,6 +453,25 @@ struct BlockLayout {
                 text.addAttribute(.mdocDecoration, value: decoration, range: range)
             }
         }
+    }
+
+    /// An Image chip for `image` in `text`: a gap kerned after the hidden
+    /// `[`, which the layout fragment fills with a photo symbol and, with no
+    /// alt text, "Image"; VoiceOver hears "Image" after the alt text.
+    /// `paragraph` is where the chip's paragraph starts in `text`.
+    private func chip(
+        in text: NSMutableAttributedString, image: NSRange, alt: NSRange, font: UIFont, paragraph: Int
+    ) -> (location: Int, width: CGFloat, symbol: UIImage?, label: NSAttributedString?, fill: UIColor) {
+        let symbol = UIImage(systemName: "photo", withConfiguration: UIImage.SymbolConfiguration(font: font))?
+            .withTintColor(resolved(.secondaryLabel), renderingMode: .alwaysOriginal)
+        let label: NSAttributedString? = alt.length == 0
+            ? NSAttributedString(string: Self.imageLabel, attributes: [.font: font, .foregroundColor: resolved(.secondaryLabel)])
+            : nil
+        let pad = 4 * scale
+        let width = pad + (symbol?.size.width ?? 0) + (label.map { 4 * scale + ceil($0.size().width) } ?? 0) + pad + 2 * scale
+        text.addAttribute(.kern, value: width, range: NSRange(location: image.location + 1, length: 1))
+        text.addAttribute(.accessibilityTextCustom, value: [Self.imageLabel], range: image)
+        return (image.location + 1 - paragraph, width, symbol, label, resolved(.tertiarySystemFill))
     }
 
     /// A folded line's height: as near nothing as a paragraph style keeps
@@ -592,12 +623,14 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
             guard let line = textLineFragments.first(where: { NSLocationInRange(chip.location, $0.characterRange) }) else { continue }
             let start = line.locationForCharacter(at: chip.location)
             let top = point.y + line.typographicBounds.minY
-            let lineBaseline = top + line.glyphOrigin.y
+            // Centred in its line: a line of nothing but hidden image syntax
+            // has its baseline at the bottom.
             let font = chip.label?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
-            let height = (font?.lineHeight ?? line.typographicBounds.height * 0.8)
+            let lineHeight = line.typographicBounds.height
+            let height = min(font?.lineHeight ?? lineHeight * 0.8, lineHeight) + 2
             let box = CGRect(
                 x: point.x + line.typographicBounds.minX + start.x + 1,
-                y: lineBaseline - (font?.ascender ?? height * 0.8) - 1, width: chip.width - 5, height: height + 2)
+                y: top + (lineHeight - height) / 2, width: chip.width - 5, height: height)
             chip.fill.setFill()
             UIBezierPath(roundedRect: box, cornerRadius: 5).fill()
             var x = box.minX + 4
@@ -605,7 +638,9 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
                 symbol.draw(at: CGPoint(x: x, y: box.midY - symbol.size.height / 2))
                 x += symbol.size.width + 4
             }
-            chip.label?.draw(at: CGPoint(x: x, y: box.minY + 1))
+            if let label = chip.label {
+                label.draw(at: CGPoint(x: x, y: box.midY - (font?.lineHeight ?? label.size().height) / 2))
+            }
         }
         if let title = decoration.title {
             // The title's line holds only the hidden marker, so the title
@@ -675,7 +710,9 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
             var x: CGFloat = 0
             var views: [CellTextView] = []
             for (column, cell) in row.enumerated() {
-                let view = CellTextView(usingTextLayoutManager: false)
+                // TextKit 2, so the cell's layout fragments draw Image chips;
+                // `configure` sets their delegate before the text arrives.
+                let view = CellTextView(usingTextLayoutManager: true)
                 view.isEditable = false
                 view.isSelectable = true
                 view.isScrollEnabled = false
@@ -686,6 +723,8 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
                 view.textDragInteraction?.isEnabled = false
                 view.textContainerInset = table.padding
                 view.textContainer.lineFragmentPadding = 0
+                view.textLayoutManager?.usesHyphenation = false
+                configure(view)
                 view.attributedText = cell.text
                 view.location = cell.location
                 view.row = rowIndex
@@ -694,7 +733,6 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
                 if rowIndex == 0 {
                     view.accessibilityTraits.insert(.header)
                 }
-                configure(view)
                 addSubview(view)
                 views.append(view)
                 x += table.columns[column]
@@ -881,6 +919,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         }
         tableViews = document.tables.map { table in
             let view = MarkdownTableView(table: table) { [weak self] cell in
+                cell.textLayoutManager?.delegate = self
                 self?.configureCell?(cell)
             }
             addSubview(view)

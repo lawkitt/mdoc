@@ -174,6 +174,19 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertNotEqual(style.maximumLineHeight, BlockLayout.folded, "an image's line does not fold")
     }
 
+    /// A table cell's image gets its chip in the cell's text; an image inside
+    /// raw HTML stays literal; VoiceOver hears "Image".
+    func testCellImagesAndLiteralHTML() throws {
+        let text = "<!-- ![](scan.png) -->\n\n| Seal | Note |\n| --- | --- |\n| ![](stamp.png) | ok |"
+        let document = render(text)
+        let cell = try XCTUnwrap(document.tables.first?.rows[1][0].text)
+        let chips = try XCTUnwrap(cell.attribute(.mdocDecoration, at: 0, effectiveRange: nil) as? LineDecoration).chips
+        XCTAssertEqual(chips.count, 1)
+        XCTAssertEqual(chips.first?.label?.string, "Image")
+        XCTAssertEqual(cell.attribute(.accessibilityTextCustom, at: 0, effectiveRange: nil) as? [String], ["Image"])
+        XCTAssertNil(document.text.attribute(.kern, at: 1, effectiveRange: nil), "no chip inside an HTML comment")
+    }
+
     /// Without a width yet, a table stays as its source rows.
     func testNoWidthLeavesTheSource() {
         let text = "| A | B |\n| --- | --- |\n| a | b |"
