@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":125,"end":138,"label":"organization","score":0.9408985,"text":"Tallow & Pine"},
+    {"start":21,"end":33,"label":"organization","score":0.9194981,"text":"Quillfeather"},
+    {"start":38,"end":55,"label":"organization","score":0.89368117,"text":"Larchmont Ratings"},
+    {"start":113,"end":119,"label":"organization","score":0.8200375,"text":"UFGKCW"}
+  ]
+}

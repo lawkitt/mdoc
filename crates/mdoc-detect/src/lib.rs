@@ -58,6 +58,7 @@ use windows::bounded_windows;
 
 use std::{
     fs,
+    ops::Range,
     path::{Path, PathBuf},
     sync::{
         Mutex,
@@ -533,18 +534,72 @@ pub struct RawEntity {
     pub text: String,
 }
 
-/// `raw`, found in `view`, in `source`'s offsets and text.
-fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>) -> Vec<RawEntity> {
-    if !view.is_source() {
-        for entity in &mut raw {
-            let range = view.source_range(entity.start..entity.end);
-            entity.text = source[range.clone()].to_owned();
-            (entity.start, entity.end) = (range.start, range.end);
+/// `L.L.C.` spends six of the pinned export's eight model words per span.
+/// Spaces in place of its periods leave room for the company name, keeping
+/// the same UTF-8 byte offsets. The whole law-firm form `P.L.L.C.` reads the
+/// same way, and so do `L.L.C` without its final dot and lower-case
+/// `l.l.c.`; a form glued to a letter, digit or dot before it
+/// ("N.L.L.C.") is left alone. Other initialisms, including legal references
+/// and person initials, keep their punctuation. This is model input only:
+/// it returns the ranges of the rewritten forms (without a final dot), and
+/// `to_source` restores the original text.
+fn model_text(text: &str) -> (std::borrow::Cow<'_, str>, Vec<Range<usize>>) {
+    static DOTTED_LLC: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)\b(?:P\.)?L\.L\.C(?:\.|\b)").expect("constant legal-form pattern")
+    });
+    let mut normalized = None;
+    let mut forms = Vec::new();
+    for found in DOTTED_LLC.find_iter(text) {
+        let glued = text[..found.start()]
+            .chars()
+            .next_back()
+            .is_some_and(|before| before == '.' || before.is_alphanumeric());
+        if glued {
+            continue;
         }
-        // A span only over a table header the view inserted names no
-        // source text.
-        raw.retain(|entity| entity.start < entity.end);
+        let bytes = normalized.get_or_insert_with(|| text.as_bytes().to_vec());
+        for byte in &mut bytes[found.range()] {
+            if *byte == b'.' {
+                *byte = b' ';
+            }
+        }
+        let end = found.end() - usize::from(found.as_str().ends_with('.'));
+        forms.push(found.start()..end);
     }
+    let input = match normalized {
+        None => std::borrow::Cow::Borrowed(text),
+        Some(bytes) => {
+            std::borrow::Cow::Owned(String::from_utf8(bytes).expect("ASCII spaces preserve UTF-8"))
+        }
+    };
+    (input, forms)
+}
+
+/// `raw`, found in the model input, in `source`'s offsets and original text.
+/// A span that starts or ends inside a rewritten legal form (`forms`, from
+/// [`model_text`]) takes the whole form: "Center L L" is "Center L.L.C",
+/// never a broken "Center L.L"; the final dot stays outside.
+fn to_source(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    forms: &[Range<usize>],
+    mut raw: Vec<RawEntity>,
+) -> Vec<RawEntity> {
+    for entity in &mut raw {
+        for form in forms {
+            if form.start < entity.start && entity.start < form.end {
+                entity.start = form.start;
+            }
+            if form.start < entity.end && entity.end < form.end {
+                entity.end = form.end;
+            }
+        }
+        let range = view.source_range(entity.start..entity.end);
+        entity.text = source[range.clone()].to_owned();
+        (entity.start, entity.end) = (range.start, range.end);
+    }
+    // A span only over a table header the view inserted names no source text.
+    raw.retain(|entity| entity.start < entity.end);
     raw
 }
 
@@ -744,7 +799,8 @@ fn model_stage(
     let transformer = transformer(root, config.model)?;
     timings.tokenizer = split();
     let view = mdoc_pii::view::View::new(source);
-    let windows = distinct_windows(&view.text, &transformer, &tasks, cancel, started)?;
+    let (input, forms) = model_text(&view.text);
+    let windows = distinct_windows(&input, &transformer, &tasks, cancel, started)?;
     timings.windowing = split();
     let count = windows.len();
     progress(ScanProgress {
@@ -770,7 +826,7 @@ fn model_stage(
             windows: count,
         });
     }
-    Ok((to_source(source, &view, raw), timings))
+    Ok((to_source(source, &view, &forms, raw), timings))
 }
 
 fn transformer(
@@ -896,8 +952,8 @@ impl ModelSession {
         let cancel = AtomicBool::new(false);
         let started = Instant::now();
         let view = mdoc_pii::view::View::new(source);
-        let windows =
-            distinct_windows(&view.text, &self.transformer, &self.tasks, &cancel, started)?;
+        let (input, forms) = model_text(&view.text);
+        let windows = distinct_windows(&input, &self.transformer, &self.tasks, &cancel, started)?;
         let mut raw = Vec::new();
         for (text, _, starts) in windows {
             checkpoint(&cancel, started)?;
@@ -910,7 +966,7 @@ impl ModelSession {
                 &mut raw,
             )?;
         }
-        Ok(to_source(source, &view, raw))
+        Ok(to_source(source, &view, &forms, raw))
     }
 }
 
@@ -976,6 +1032,8 @@ pub fn probe_window(
     let started = Instant::now();
     mdoc_import::ocr::load_onnx_runtime(runtime)?;
     let runtime_load = started.elapsed();
+    let (input, _) = model_text(text);
+    let text = input.as_ref();
     let tasks = schema_tasks();
     let transformer = SchemaTransformer::from_tokenizer_file(
         &root.join(config.model.folder()).join("tokenizer.json"),
@@ -1038,6 +1096,147 @@ pub fn probe_window(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+    #[test]
+    fn dotted_legal_forms_fit_the_model_without_changing_other_punctuation() {
+        let source = "Pellam Company of Ohio L.L.C.; A. Rowan v. Penrow, Inc. 3.14";
+        let (input, forms) = model_text(source);
+        assert_eq!(
+            input,
+            "Pellam Company of Ohio L L C ; A. Rowan v. Penrow, Inc. 3.14"
+        );
+        assert_eq!(forms.len(), 1);
+        assert_eq!(&source[forms[0].clone()], "L.L.C");
+        let splitter = gliner2_rs::processor::WhitespaceTokenSplitter::new().unwrap();
+        assert_eq!(
+            splitter
+                .split_with_offsets("Pellam Company of Ohio L.L.C.")
+                .len(),
+            10
+        );
+        assert_eq!(
+            splitter
+                .split_with_offsets("Pellam Company of Ohio L L C")
+                .len(),
+            7
+        );
+        let (input, forms) = model_text("A. Rowan v. Penrow, Inc. 3.14; U.S.C.; N.A.; R.C. Tile");
+        assert!(matches!(input, std::borrow::Cow::Borrowed(_)));
+        assert!(forms.is_empty());
+        assert_eq!(
+            model_text("United Federation of Glass, Kiln & Ceramic Workers").0,
+            "United Federation of Glass, Kiln & Ceramic Workers"
+        );
+    }
+
+    #[test]
+    fn whole_variants_of_the_dotted_legal_form_are_normalized_and_glued_ones_left_alone() {
+        for (source, input, forms) in [
+            // The law-firm form reads whole, never as "P.L L C".
+            (
+                "Smith & Jones, P.L.L.C.",
+                "Smith & Jones, P L L C ",
+                &["P.L.L.C"][..],
+            ),
+            (
+                "Ashmoor Center L.L.C, as landlord",
+                "Ashmoor Center L L C, as landlord",
+                &["L.L.C"],
+            ),
+            ("ashmoor center l.l.c.", "ashmoor center l l c ", &["l.l.c"]),
+            (
+                "Ashmoor Center L.L.C.; Pellam Company of Ohio L.L.C.",
+                "Ashmoor Center L L C ; Pellam Company of Ohio L L C ",
+                &["L.L.C", "L.L.C"],
+            ),
+            // Glued to a dot, letter or digit before it: another initialism.
+            (
+                "Rowan N.L.L.C. and X.P.L.L.C.",
+                "Rowan N.L.L.C. and X.P.L.L.C.",
+                &[],
+            ),
+            (
+                "Rowan 3L.L.C. and AL.L.C.",
+                "Rowan 3L.L.C. and AL.L.C.",
+                &[],
+            ),
+            ("Rowan L.L.Cx", "Rowan L.L.Cx", &[]),
+        ] {
+            let (normalized, ranges) = model_text(source);
+            assert_eq!(normalized, input, "{source}");
+            assert_eq!(normalized.len(), source.len());
+            let found: Vec<&str> = ranges.iter().map(|range| &source[range.clone()]).collect();
+            assert_eq!(found, forms, "{source}");
+        }
+    }
+
+    #[test]
+    fn normalized_model_spans_restore_original_punctuation_and_source_offsets() {
+        // (source, the spans the model proposes in its input, the source
+        // text each becomes)
+        for (source, proposed, expected) in [
+            (
+                "Орг: Pellam Company of Ohio L.L.C.;",
+                &["Pellam Company of Ohio L L C"][..],
+                &["Pellam Company of Ohio L.L.C"][..],
+            ),
+            (
+                "Орг: Pellam&nbsp;Company of Ohio L.L.C.;",
+                &["Pellam\u{a0}Company of Ohio L L C"],
+                &["Pellam&nbsp;Company of Ohio L.L.C"],
+            ),
+            // A span ending inside the form takes all of it.
+            (
+                "Landlord: Taubman Creek Shopping Center L.L.C.;",
+                &["Taubman Creek Shopping Center L L"],
+                &["Taubman Creek Shopping Center L.L.C"],
+            ),
+            (
+                "Counsel: Smith & Jones, P.L.L.C.",
+                &["Smith & Jones, P L L"],
+                &["Smith & Jones, P.L.L.C"],
+            ),
+            // So does a span starting inside it.
+            ("Landlord: Ashmoor L.L.C. sued", &["L C"], &["L.L.C"]),
+            // A period the Markdown view decodes.
+            (
+                "Landlord: Ashmoor Center L&#46;L.C.;",
+                &["Ashmoor Center L L"],
+                &["Ashmoor Center L&#46;L.C"],
+            ),
+            // Two forms in one window.
+            (
+                "Landlords: Ashmoor Center L.L.C.; Pellam Company of Ohio L.L.C.",
+                &["Ashmoor Center L L", "Pellam Company of Ohio L L C"],
+                &["Ashmoor Center L.L.C", "Pellam Company of Ohio L.L.C"],
+            ),
+        ] {
+            let view = mdoc_pii::view::View::new(source);
+            let (input, forms) = model_text(&view.text);
+            assert_eq!(input.len(), view.text.len());
+            let raw = proposed
+                .iter()
+                .map(|text| {
+                    let start = input.find(text).unwrap();
+                    RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: "organization".into(),
+                        score: 0.9,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            let restored = to_source(source, &view, &forms, raw);
+            let texts: Vec<&str> = restored.iter().map(|entity| entity.text.as_str()).collect();
+            assert_eq!(texts, expected, "{source}");
+            for entity in &restored {
+                assert_eq!(&source[entity.start..entity.end], entity.text);
+                // The final dot stays outside the span.
+                assert_eq!(&source[entity.end..entity.end + 1], ".", "{source}");
+            }
+        }
+    }
+
     #[test]
     fn manual_selections_guess_categories_without_a_model() {
         let guess = |source: &str, value: &str| {
@@ -1238,7 +1437,7 @@ mod tests {
             entity("Паспорт: 4", "Паспорт: 46 82 731609", "passport"),
             entity("ИНН: 5", "ИНН", "tax"),
         ];
-        let found: Vec<_> = to_source(source, &view, raw)
+        let found: Vec<_> = to_source(source, &view, &[], raw)
             .into_iter()
             .map(|entity| (entity.text, entity.label))
             .collect();
