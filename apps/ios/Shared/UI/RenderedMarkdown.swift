@@ -62,6 +62,10 @@ final class LineDecoration: NSObject {
     var title: (text: NSAttributedString, symbol: UIImage?, x: CGFloat)?
     /// A thematic break's line.
     var rule: UIColor?
+    /// Image chips: each sits in the space kerned after the hidden `[` at
+    /// `location` (paragraph-relative), with a symbol and, for an image with
+    /// no alt text, a label.
+    var chips: [(location: Int, width: CGFloat, symbol: UIImage?, label: NSAttributedString?, fill: UIColor)] = []
 }
 
 /// Lays out the rendered view's blocks over styled source text.
@@ -251,6 +255,7 @@ struct BlockLayout {
             blocks[offsets.nsRange(block.range).location] = block.kind
         }
         let tableRanges = styling.tables.map { offsets.nsRange($0.range) }
+        let images = styling.images.map { (offsets.nsRange($0.range), offsets.nsRange($0.alt)) }
         let laidOut = Dictionary(tables.map { ($0.anchor, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Each line and its role, in order.
@@ -402,6 +407,26 @@ struct BlockLayout {
                     break
                 }
             }
+            // Image chips, kerned into the space after each hidden `[`.
+            for (image, alt) in images where NSLocationInRange(image.location, range) && image.length > 2 {
+                if case .table = line.role { continue }
+                if case .code = line.role { continue }
+                let symbol = UIImage(systemName: "photo", withConfiguration: UIImage.SymbolConfiguration(font: body))?
+                    .withTintColor(resolved(.secondaryLabel), renderingMode: .alwaysOriginal)
+                let label: NSAttributedString? = alt.length == 0
+                    ? NSAttributedString(string: Self.imageLabel, attributes: [
+                        .font: body, .foregroundColor: resolved(.secondaryLabel),
+                    ])
+                    : nil
+                let pad = 4 * scale
+                let width = pad + (symbol?.size.width ?? 0) + (label.map { 4 * scale + ceil($0.size().width) } ?? 0) + pad + 2 * scale
+                text.addAttribute(.kern, value: width, range: NSRange(location: image.location + 1, length: 1))
+                decoration.chips.append((image.location + 1 - range.location, width, symbol, label, resolved(.tertiarySystemFill)))
+                decorated = true
+                fold = false
+                // A line of nothing but hidden image syntax keeps a line's height.
+                style.minimumLineHeight = max(style.minimumLineHeight, lineHeight)
+            }
             if fold {
                 text.addAttributes(MarkdownStyler.hiddenAttributes, range: range)
                 strip(range)
@@ -450,6 +475,11 @@ struct BlockLayout {
 
     private func labelWidth(_ label: String) -> CGFloat {
         ceil((label as NSString).size(withAttributes: [.font: body]).width)
+    }
+
+    /// What an image with no alt text says in its chip.
+    static var imageLabel: String {
+        String(localized: "Image", comment: "Chip in place of a Markdown image with no description")
     }
 
     static func colour(of alert: MarkdownBlock.Alert) -> UIColor {
@@ -555,6 +585,27 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
                 task.stroke.setStroke()
                 path.stroke()
             }
+        }
+        for chip in decoration.chips {
+            // The kerned space starts at the hidden `[`, which has next to no
+            // width of its own.
+            guard let line = textLineFragments.first(where: { NSLocationInRange(chip.location, $0.characterRange) }) else { continue }
+            let start = line.locationForCharacter(at: chip.location)
+            let top = point.y + line.typographicBounds.minY
+            let lineBaseline = top + line.glyphOrigin.y
+            let font = chip.label?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+            let height = (font?.lineHeight ?? line.typographicBounds.height * 0.8)
+            let box = CGRect(
+                x: point.x + line.typographicBounds.minX + start.x + 1,
+                y: lineBaseline - (font?.ascender ?? height * 0.8) - 1, width: chip.width - 5, height: height + 2)
+            chip.fill.setFill()
+            UIBezierPath(roundedRect: box, cornerRadius: 5).fill()
+            var x = box.minX + 4
+            if let symbol = chip.symbol {
+                symbol.draw(at: CGPoint(x: x, y: box.midY - symbol.size.height / 2))
+                x += symbol.size.width + 4
+            }
+            chip.label?.draw(at: CGPoint(x: x, y: box.minY + 1))
         }
         if let title = decoration.title {
             // The title's line holds only the hidden marker, so the title

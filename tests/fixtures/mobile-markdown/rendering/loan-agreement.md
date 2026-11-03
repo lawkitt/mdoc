@@ -11,6 +11,10 @@
 
 > Signed in two counterparts, one for each party.
 
+Signatures: ![Signature page](signature.png)
+
+![](stamp.png)
+
 ---
 
 - [x] Board approval attached

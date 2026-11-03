@@ -16,7 +16,7 @@ use mdoc_markdown::{
         blockquote_prefix, footnote_def, heading_level, html_block, list_levels, list_prefix,
         ordered_scan, task_prefix, thematic_break,
     },
-    spans::{Background, Color, Span, is_backslash_escaped, scan_line},
+    spans::{Background, Color, Span, inline_image_spans, is_backslash_escaped, scan_line},
     syntax::{AlertKind, TableStyle, alert_prefix, ordered_marker},
     tables::{Align, table_cell_ranges, table_regions},
 };
@@ -185,6 +185,18 @@ pub struct MarkdownStyling {
     pub blocks: Vec<MarkdownBlock>,
     /// Tables, in source order (ADR 0096).
     pub tables: Vec<MarkdownTable>,
+    /// Inline images, in source order, outside code and tables (ADR 0096).
+    pub images: Vec<MarkdownImage>,
+}
+
+/// An inline `![alt](src)` image: the rendered view draws an Image chip in
+/// its place, since the app shows no pictures (ADR 0096).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MarkdownImage {
+    /// The whole `![alt](src)`.
+    pub range: TextRange,
+    /// The alt text; empty where it would be (`![](src)`).
+    pub alt: TextRange,
 }
 
 /// The spans and line roles of a whole Markdown text: one call per text, so
@@ -356,6 +368,14 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
             out.line(range, MarkdownLineKind::Quote);
         }
         out.scan(range.clone());
+        for (full, _) in inline_image_spans(line) {
+            let body = &line[full.clone()];
+            let alt_end = full.start + body.find("](").unwrap_or(2);
+            out.images.push(MarkdownImage {
+                range: TextRange::of(&(range.start + full.start..range.start + full.end)),
+                alt: TextRange::of(&(range.start + full.start + 2..range.start + alt_end)),
+            });
+        }
     }
     out.finish()
 }
@@ -489,6 +509,7 @@ struct Styler<'a> {
     list_items: Vec<MarkdownListItem>,
     blocks: Vec<MarkdownBlock>,
     tables: Vec<MarkdownTable>,
+    images: Vec<MarkdownImage>,
 }
 
 impl<'a> Styler<'a> {
@@ -500,6 +521,7 @@ impl<'a> Styler<'a> {
             list_items: Vec::new(),
             blocks: Vec::new(),
             tables: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -602,6 +624,7 @@ impl<'a> Styler<'a> {
             list_items: self.list_items,
             blocks: self.blocks,
             tables: self.tables,
+            images: self.images,
         }
     }
 }
@@ -1039,6 +1062,26 @@ mod tests {
             .map(|row| row.cells.iter().map(|cell| slice(text, *cell)).collect())
             .collect();
         assert_eq!(rows, [vec!["A", "B"], vec!["a", "b"], vec!["c"]]);
+    }
+
+    /// Images carry their whole range and their alt text, empty or not; code
+    /// keeps its images literal.
+    #[test]
+    fn images_and_their_alt_text() {
+        let text = "See ![Floor plan](plan.png) and ![](scan.png).\n`![no](x.png)`";
+        let styling = styling(text);
+        let images: Vec<_> = styling
+            .images
+            .iter()
+            .map(|image| (slice(text, image.range), slice(text, image.alt)))
+            .collect();
+        assert_eq!(
+            images,
+            [
+                ("![Floor plan](plan.png)", "Floor plan"),
+                ("![](scan.png)", "")
+            ]
+        );
     }
 
     /// A table written inside fenced code is code: no table record, and its
