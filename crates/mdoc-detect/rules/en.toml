@@ -443,7 +443,7 @@ unless_named = true
 # dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
 # "Ofcom", "HMRC" as a person, "EEOC"; issue #378) unless it has a legal
 # form ("Garden Court Ltd" is a company). Only short names no company
-# shares are listed; the others count alone (below).
+# shares are listed; the others count alone (below). Also a constabulary.
 [[never]]
 match = "plural"
 words = [
@@ -452,22 +452,26 @@ words = [
     "congress", "legislature", "senate", "judiciary", "probation",
     "administration", "hmcts", "uksc", "ewca", "ewhc", "ukut", "ukftt",
     "ukeat", "scotus", "ohrp", "eeoc", "nlrb", "osha", "uspto", "ptab", "cfpb",
-    "uscis", "nhtsa",
+    "uscis", "nhtsa", "constabulary",
 ]
 anywhere_in = ["ORG", "PERSON"]
 
 # The same bodies' -ies plurals ("Ministries of Justice").
 [[never]]
 match = "whole"
-words = ["ministries", "registries", "agencies"]
+words = ["ministries", "registries", "agencies", "constabularies"]
 anywhere_in = ["ORG", "PERSON"]
 
 # Laws are never marked either: an Act, an amendment, a regulation, a
-# statute or a constitution by its title, as an organization or a person
-# ("Gaming Act 1968", "the First Amendment"; guide rule 8, issue #378).
+# statute, a constitution or an ordinance by its title, as an organization
+# or a person ("Gaming Act 1968", "the First Amendment", "Fair Practices
+# Ordinance"; guide rule 8, issue #378). Laws' and treaties' short names
+# count alone (below).
 [[never]]
 match = "plural"
-words = ["act", "amendment", "regulation", "statute", "constitution"]
+words = [
+    "act", "amendment", "regulation", "statute", "constitution", "ordinance",
+]
 anywhere_in = ["ORG", "PERSON"]
 
 # Words that make a public body or a place of a person span, though a
@@ -478,7 +482,7 @@ anywhere_in = ["ORG", "PERSON"]
 match = "plural"
 words = [
     "department", "agency", "bureau", "office", "county", "district",
-    "council", "commission", "board",
+    "council", "commission", "board", "division",
 ]
 anywhere_in = ["PERSON"]
 
@@ -496,7 +500,7 @@ patterns = [
     # Exchange Commission", "National Labor Relations Board", "Board of
     # Education".
     '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
-    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
+    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
     '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
     '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
@@ -524,8 +528,8 @@ patterns = [
     '(?i)\b(?:northern|southern|eastern|western|middle|central)[\p{Zs}\t]+district\b|\bdistricts?[\p{Zs}\t]+(?:of|attorney)\b',
     '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
     # Short names that companies share count alone only: "the IRS", "SEC",
-    # "ET", "EAT" (but "CMA CGM", "SEC Newgate").
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # "ET", "EAT", "NASA", "BLM" (but "CMA CGM", "SEC Newgate").
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Codes and rules of law: "Bankruptcy Code", "Code of Federal
     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
     # Evidence".
@@ -535,6 +539,72 @@ patterns = [
     '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# More public bodies, laws and treaties by their phrases, as an
+# organization or a person (probe round 2 of issue #378). A legal form
+# keeps a company ("Customs Brokers Inc", "Treaty Oak Capital LLC").
+[[never]]
+match = "pattern"
+patterns = [
+    # Customs alone, and the agency: "Customs", "U.S. Customs", "Customs
+    # and Border Protection".
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+|hm[\p{Zs}\t]+)?customs(?:[\p{Zs}\t]+(?:service|office|authorit(?:y|ies)))?[\x27’]?s?[\s\p{P}]*$',
+    '(?i)\bcustoms[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+border[\p{Zs}\t]+protection\b',
+    # Jails, and a grand jury that ends the span or is followed by its
+    # jurisdiction: "Elko County Jail", "the Grand Jury", "the Ashmoor
+    # County Grand Jury", "Grand Jury of Ashmoor County" ("Grand Jury
+    # Games" stays). The Electoral College and the College of Policing.
+    '(?i)\b(?:county|city|municipal|parish|state|federal)[\p{Zs}\t]+(?:jail|detention[\p{Zs}\t]+(?:center|centre|facility)|penitentiary)\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}grand[\p{Zs}\t]+jur(?:y|ies)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:of|for|in[\p{Zs}\t]+and[\p{Zs}\t]+for)[\p{Zs}\t]+\S.*)?[\s\p{P}]*$',
+    '(?i)\belectoral[\p{Zs}\t]+colleges?\b|\bcollege[\p{Zs}\t]+of[\p{Zs}\t]+policing\b',
+    # Agencies' and intergovernmental bodies' short names as written, the
+    # whole span or before their organ, adjectives allowed ("NATO", "the
+    # IMF", "ICAO Council", "NATO Parliamentary Assembly", "IMF Executive
+    # Board"; "Nato Venn" and "NATO Logistics" stay), and laws' and
+    # treaties' short names as written, alone ("FLSA", "the FDCPA",
+    # "CAFTA-DR").
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Alphabetic}+[\p{Zs}\t]+){0,2}(?:Council|Assembly|Secretariat|Board|Committee|Commission|Command|Headquarters|Summit|Staff))?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:FLSA|FDCPA|TCPA|DTPA|PHRA|NYDCL|ERISA|HIPAA|FMLA|ECHR|CAFTA-DR|CAFTA|NAFTA|USMCA)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # A court's division in a caption ("TEXARKANA DIVISION") and a state's
+    # divisions ("Utah Division of Wildlife Resources").
+    '\b\p{Uppercase}{2,}[\p{Zs}\t]+DIVISIONS?\b',
+    '(?i)\bdivisions?[\p{Zs}\t]+of[\p{Zs}\t]+(?:wildlife|natural|motor|corporations|water|forestry|parks|fish|child|family|human|consumer|enforcement|insurance|securities|banking|labou?r|workers|unemployment|elections|revenue|taxation|state|public)\b',
+    # A board or the Central Office alone: "the Board", "issued out of the
+    # Central Office"; the Home Department ("Secretary of State for the
+    # Home Department"); the Director of Public Prosecutions.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:boards?|central[\p{Zs}\t]+office)[\x27’]?s?[\s\p{P}]*$',
+    '(?i)\bhome[\p{Zs}\t]+department\b|\bdirector[\p{Zs}\t]+of[\p{Zs}\t]+public[\p{Zs}\t]+prosecutions\b',
+    # Treaties, conventions and agreements by title: "Dunmere Trade
+    # Agreement", "Agreement on Trade", "Lugano Convention", "Convention on
+    # Human Rights", "Treaty of Rome", "Brussels I", the "Environment
+    # Chapter" of a trade agreement ("Treaty Oak Capital" and "Ashmoor
+    # Convention Center" stay).
+    '(?i)\b(?:treat(?:y|ies)|conventions?|agreements?)(?:[\p{Zs}\t]+(?:on|of|for|between|against|establishing|relating)\b|[\s\p{P}]*$)',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:brussels|rome|lugano)[\p{Zs}\t]+(?:i{1,3}a?|iv|bis|recast)(?:[\p{Zs}\t]+(?:bis|recast|regulation|convention)s?)*[\s\p{P}]*$',
+    '(?i)\b(?:environment(?:al)?|labou?r|investment|trade|dispute[\p{Zs}\t]+settlement|intellectual[\p{Zs}\t]+property)[\p{Zs}\t]+chapters?\b',
+    # Rules of procedure and their citations: "Federal Rules of Bankruptcy
+    # Procedure", "Tex. R. App. P.", "Fed. R. Civ. P.".
+    '(?i)\brules[\p{Zs}\t]+of(?:[\p{Zs}\t]+\p{Alphabetic}+){1,3}[\p{Zs}\t]+(?:procedure|evidence|practice)\b',
+    '(?i)(?:^|[\s\p{P}])r\.[\p{Zs}\t]?(?:app|civ|crim|evid|bankr)\.(?:[\p{Zs}\t]?p\.)?',
+    # Laws whose head is "Law": "New York Executive Law", "Criminal
+    # Procedure Law", "Debtor and Creditor Law" ("Quill Tax Law" may be a
+    # firm, and stays).
+    '(?i)\b(?:executive|criminal[\p{Zs}\t]+procedure|civil[\p{Zs}\t]+practice|penal|general[\p{Zs}\t]+obligations|general[\p{Zs}\t]+business|business[\p{Zs}\t]+corporation|debtor[\p{Zs}\t]+and[\p{Zs}\t]+creditor|real[\p{Zs}\t]+property|social[\p{Zs}\t]+services|public[\p{Zs}\t]+health|vehicle[\p{Zs}\t]+and[\p{Zs}\t]+traffic|environmental[\p{Zs}\t]+conservation|correction|judiciary|administrative[\p{Zs}\t]+procedure)[\p{Zs}\t]+law\b',
+    # A bill by its number: "SB 8", "H.B. 1234".
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?[SHA]\.?[\p{Zs}\t]?B\.?[\p{Zs}\t]*\d{1,5}[\s\p{P}]*$',
+]
+anywhere_in = ["ORG", "PERSON"]
+
+# Universities and colleges are never public bodies, whoever owns them:
+# a span that names one itself, after capitalized words only ("Ashmoor
+# State University", "University of Ashmoor", "Ashmoor County Community
+# College"; #484). "Ministry of Colleges and Universities" names none, and
+# the Electoral College and the College of Policing are public bodies.
+[[private]]
+patterns = [
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}.\x27’&-]*[\p{Zs}\t]+){0,5}(?:University|College|UNIVERSITY|COLLEGE)\b',
+]
+unless = ['(?i)\belectoral[\p{Zs}\t]+college|\bcollege[\p{Zs}\t]+of[\p{Zs}\t]+policing\b']
 
 # The same prosecutors and ministers within an organization's name
 # ("Attorney General's Office", "Office of the Secretary of State").

@@ -16,7 +16,7 @@ use mdoc_markdown::{
         blockquote_prefix, footnote_def, heading_level, html_block, list_levels, list_prefix,
         ordered_scan, task_prefix, thematic_break,
     },
-    spans::{Background, Color, Span, is_backslash_escaped, scan_line},
+    spans::{Background, Color, Span, inline_image_spans, is_backslash_escaped, scan_line},
     syntax::{AlertKind, TableStyle, alert_prefix, ordered_marker},
     tables::{Align, table_cell_ranges, table_regions},
 };
@@ -185,6 +185,18 @@ pub struct MarkdownStyling {
     pub blocks: Vec<MarkdownBlock>,
     /// Tables, in source order (ADR 0096).
     pub tables: Vec<MarkdownTable>,
+    /// Inline images, in source order, outside code and tables (ADR 0096).
+    pub images: Vec<MarkdownImage>,
+}
+
+/// An inline `![alt](src)` image: the rendered view draws an Image chip in
+/// its place, since the app shows no pictures (ADR 0096).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MarkdownImage {
+    /// The whole `![alt](src)`.
+    pub range: TextRange,
+    /// The alt text; empty where it would be (`![](src)`).
+    pub alt: TextRange,
 }
 
 /// The spans and line roles of a whole Markdown text: one call per text, so
@@ -489,6 +501,7 @@ struct Styler<'a> {
     list_items: Vec<MarkdownListItem>,
     blocks: Vec<MarkdownBlock>,
     tables: Vec<MarkdownTable>,
+    images: Vec<MarkdownImage>,
 }
 
 impl<'a> Styler<'a> {
@@ -500,6 +513,7 @@ impl<'a> Styler<'a> {
             list_items: Vec::new(),
             blocks: Vec::new(),
             tables: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -530,8 +544,26 @@ impl<'a> Styler<'a> {
     fn scan(&mut self, range: Range<usize>) {
         let mut found = Vec::new();
         scan_line(self.text, range.start, range.end, &mut found);
+        // An image counts only where the scan hid its `![` as syntax: one
+        // inside raw HTML or code stays literal text.
+        let mut openers = Vec::new();
         for span in found {
+            if span.style.hide && self.text[span.range.clone()].starts_with("![") {
+                openers.push(span.range.start);
+            }
             self.add(span);
+        }
+        let piece = &self.text[range.clone()];
+        for (full, _) in inline_image_spans(piece) {
+            let start = range.start + full.start;
+            if !openers.contains(&start) {
+                continue;
+            }
+            let alt_end = full.start + piece[full.clone()].find("](").unwrap_or(2);
+            self.images.push(MarkdownImage {
+                range: TextRange::of(&(start..range.start + full.end)),
+                alt: TextRange::of(&(start + 2..range.start + alt_end)),
+            });
         }
     }
 
@@ -602,6 +634,7 @@ impl<'a> Styler<'a> {
             list_items: self.list_items,
             blocks: self.blocks,
             tables: self.tables,
+            images: self.images,
         }
     }
 }
@@ -1039,6 +1072,37 @@ mod tests {
             .map(|row| row.cells.iter().map(|cell| slice(text, *cell)).collect())
             .collect();
         assert_eq!(rows, [vec!["A", "B"], vec!["a", "b"], vec!["c"]]);
+    }
+
+    /// Images carry their whole range and their alt text, empty or not; code
+    /// keeps its images literal.
+    #[test]
+    fn images_and_their_alt_text() {
+        let text = "See ![Floor plan](plan.png) and ![](scan.png).\n`![no](x.png)`";
+        let styling = styling(text);
+        let images: Vec<_> = styling
+            .images
+            .iter()
+            .map(|image| (slice(text, image.range), slice(text, image.alt)))
+            .collect();
+        assert_eq!(
+            images,
+            [
+                ("![Floor plan](plan.png)", "Floor plan"),
+                ("![](scan.png)", "")
+            ]
+        );
+        // Raw HTML keeps its image syntax literal; a table cell's image counts.
+        let text = "<!-- ![](scan.png) -->\n\n| A | B |\n| --- | --- |\n| ![](stamp.png) | ![Seal](seal.png) |";
+        let images: Vec<_> = super::styling(text)
+            .images
+            .iter()
+            .map(|image| (slice(text, image.range), slice(text, image.alt)))
+            .collect();
+        assert_eq!(
+            images,
+            [("![](stamp.png)", ""), ("![Seal](seal.png)", "Seal")]
+        );
     }
 
     /// A table written inside fenced code is code: no table record, and its
