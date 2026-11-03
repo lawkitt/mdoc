@@ -1,9 +1,10 @@
 ---
-status: pass
-flaw: entrepreneur-as-org
+status: known-flaw
+flaw: entrepreneur-as-org shop-sign-boundary
 issue: 562
 kind: judgment
 source: probe-r2
+expect: boundary: gold ORG "Кедрач"; proposed ORG "магазин «Кедрач»"
 ---
 # Определение
 
