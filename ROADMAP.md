@@ -186,10 +186,6 @@ the full suite runs once per queue group on hosted runners and the PC
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
 Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
 
-1. **[CI] The OS-services seam.** Test builds behind a seam for OS security
-   and identity services, with a guard test, and the rule in
-   development.md. *Done when:* the guard test fails on a test that calls
-   the signature query.
 2. **[CI] The hosted Android job.** `ci-android.yml` on Ubuntu with KVM
    (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
    `merge-gate`'s Android fallback has a job to dispatch. *Done when:* a

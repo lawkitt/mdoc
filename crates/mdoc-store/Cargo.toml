@@ -10,6 +10,10 @@ repository = "https://github.com/lawkitt/mdoc"
 [features]
 # The dev renderer's profile sandbox (app_paths::isolate); see the app's feature.
 headless-renders = []
+# Test builds: asking the OS for the build's signature or the case key
+# panics (ADR 0095). The app's dev-dependencies turn it on, so every
+# `cargo test` of the workspace has it and no shipped build does.
+deny-os-services = []
 
 [dependencies]
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
