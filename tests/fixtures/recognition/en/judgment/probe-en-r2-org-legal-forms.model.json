@@ -1,0 +1,14 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":204,"end":212,"label":"person","score":0.6614857,"text":"Quilllon"},
+    {"start":233,"end":240,"label":"person","score":0.61952883,"text":"Quillon"},
+    {"start":107,"end":143,"label":"organization","score":0.9945094,"text":"Larkfield Staff Federal Credit Union"},
+    {"start":145,"end":163,"label":"organization","score":0.99256825,"text":"Ohio Right to Life"},
+    {"start":174,"end":192,"label":"organization","score":0.98866826,"text":"Ohio Right to Life"},
+    {"start":11,"end":31,"label":"organization","score":0.9776286,"text":"Ashmoor Center L.L.C"},
+    {"start":34,"end":62,"label":"organization","score":0.9707433,"text":"Pellam Company of Ohio L.L.C"},
+    {"start":65,"end":83,"label":"organization","score":0.82275945,"text":"Brindle Associates"}
+  ]
+}

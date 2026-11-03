@@ -533,18 +533,41 @@ pub struct RawEntity {
     pub text: String,
 }
 
-/// `raw`, found in `view`, in `source`'s offsets and text.
-fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>) -> Vec<RawEntity> {
-    if !view.is_source() {
-        for entity in &mut raw {
-            let range = view.source_range(entity.start..entity.end);
-            entity.text = source[range.clone()].to_owned();
-            (entity.start, entity.end) = (range.start, range.end);
+/// `L.L.C.` spends six of the pinned export's eight model words per span.
+/// Spaces in place of its periods leave room for the company name, keeping
+/// the same UTF-8 byte offsets. Other initialisms, including legal references
+/// and person initials, keep their punctuation. This is model input only;
+/// `to_source` restores the original text.
+fn model_text(text: &str) -> std::borrow::Cow<'_, str> {
+    static DOTTED_LLC: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\bL\.L\.C\.").expect("constant legal-form pattern")
+    });
+    let mut normalized = None;
+    for found in DOTTED_LLC.find_iter(text) {
+        let bytes = normalized.get_or_insert_with(|| text.as_bytes().to_vec());
+        for byte in &mut bytes[found.range()] {
+            if *byte == b'.' {
+                *byte = b' ';
+            }
         }
-        // A span only over a table header the view inserted names no
-        // source text.
-        raw.retain(|entity| entity.start < entity.end);
     }
+    match normalized {
+        None => std::borrow::Cow::Borrowed(text),
+        Some(bytes) => {
+            std::borrow::Cow::Owned(String::from_utf8(bytes).expect("ASCII spaces preserve UTF-8"))
+        }
+    }
+}
+
+/// `raw`, found in the model input, in `source`'s offsets and original text.
+fn to_source(source: &str, view: &mdoc_pii::view::View, mut raw: Vec<RawEntity>) -> Vec<RawEntity> {
+    for entity in &mut raw {
+        let range = view.source_range(entity.start..entity.end);
+        entity.text = source[range.clone()].to_owned();
+        (entity.start, entity.end) = (range.start, range.end);
+    }
+    // A span only over a table header the view inserted names no source text.
+    raw.retain(|entity| entity.start < entity.end);
     raw
 }
 
@@ -744,7 +767,8 @@ fn model_stage(
     let transformer = transformer(root, config.model)?;
     timings.tokenizer = split();
     let view = mdoc_pii::view::View::new(source);
-    let windows = distinct_windows(&view.text, &transformer, &tasks, cancel, started)?;
+    let input = model_text(&view.text);
+    let windows = distinct_windows(&input, &transformer, &tasks, cancel, started)?;
     timings.windowing = split();
     let count = windows.len();
     progress(ScanProgress {
@@ -896,8 +920,8 @@ impl ModelSession {
         let cancel = AtomicBool::new(false);
         let started = Instant::now();
         let view = mdoc_pii::view::View::new(source);
-        let windows =
-            distinct_windows(&view.text, &self.transformer, &self.tasks, &cancel, started)?;
+        let input = model_text(&view.text);
+        let windows = distinct_windows(&input, &self.transformer, &self.tasks, &cancel, started)?;
         let mut raw = Vec::new();
         for (text, _, starts) in windows {
             checkpoint(&cancel, started)?;
@@ -976,6 +1000,8 @@ pub fn probe_window(
     let started = Instant::now();
     mdoc_import::ocr::load_onnx_runtime(runtime)?;
     let runtime_load = started.elapsed();
+    let input = model_text(text);
+    let text = input.as_ref();
     let tasks = schema_tasks();
     let transformer = SchemaTransformer::from_tokenizer_file(
         &root.join(config.model.folder()).join("tokenizer.json"),
@@ -1038,6 +1064,72 @@ pub fn probe_window(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+    #[test]
+    fn dotted_legal_forms_fit_the_model_without_changing_other_punctuation() {
+        let source = "Pellam Company of Ohio L.L.C.; A. Rowan v. Penrow, Inc. 3.14";
+        let input = model_text(source);
+        assert_eq!(
+            input,
+            "Pellam Company of Ohio L L C ; A. Rowan v. Penrow, Inc. 3.14"
+        );
+        let splitter = gliner2_rs::processor::WhitespaceTokenSplitter::new().unwrap();
+        assert_eq!(
+            splitter
+                .split_with_offsets("Pellam Company of Ohio L.L.C.")
+                .len(),
+            10
+        );
+        assert_eq!(
+            splitter
+                .split_with_offsets("Pellam Company of Ohio L L C")
+                .len(),
+            7
+        );
+        assert!(matches!(
+            model_text("A. Rowan v. Penrow, Inc. 3.14; U.S.C.; N.A.; R.C. Tile"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            model_text("United Federation of Glass, Kiln & Ceramic Workers"),
+            "United Federation of Glass, Kiln & Ceramic Workers"
+        );
+    }
+
+    #[test]
+    fn normalized_model_spans_restore_original_punctuation_and_source_offsets() {
+        for (source, text, expected) in [
+            (
+                "Орг: Pellam Company of Ohio L.L.C.;",
+                "Pellam Company of Ohio L L C",
+                "Pellam Company of Ohio L.L.C",
+            ),
+            (
+                "Орг: Pellam&nbsp;Company of Ohio L.L.C.;",
+                "Pellam\u{a0}Company of Ohio L L C",
+                "Pellam&nbsp;Company of Ohio L.L.C",
+            ),
+        ] {
+            let view = mdoc_pii::view::View::new(source);
+            let input = model_text(&view.text);
+            assert_eq!(input.len(), view.text.len());
+            let start = input.find(text).unwrap();
+            let raw = vec![RawEntity {
+                start,
+                end: start + text.len(),
+                label: "organization".into(),
+                score: 0.9,
+                text: text.into(),
+            }];
+            let restored = to_source(source, &view, raw);
+            assert_eq!(restored.len(), 1);
+            let entity = &restored[0];
+            assert_eq!(entity.text, expected);
+            assert_eq!(&source[entity.start..entity.end], expected);
+            assert_eq!(entity.start, source.find("Pellam").unwrap());
+            assert_eq!(&source[entity.end..entity.end + 1], ".");
+        }
+    }
+
     #[test]
     fn manual_selections_guess_categories_without_a_model() {
         let guess = |source: &str, value: &str| {
