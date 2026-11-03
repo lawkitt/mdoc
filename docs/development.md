@@ -448,7 +448,7 @@ bypass is for `just release` only. Never merge with `--admin`.
 | Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran |
 
 **Merging.** When a PR's checks are green and it is reviewed, enqueue it:
-`gh pr merge <N> --squash --auto`. The queue builds groups of 1 to 4 PRs
+`gh pr merge <N> --auto` (the queue sets the method: squash). The queue builds groups of 1 to 4 PRs
 after a 5-minute wait, two groups at a time, each on `main` plus the PRs
 ahead of it. A group whose queue commit fails is taken out; GitHub
 re-tests the rest without it. The dropped PR gets a red `merge-gate` on its
@@ -614,7 +614,7 @@ skill) read this section for mdoc's needs.
   `screens` and download `renders-macos-screens`.
 - **Required checks:** `lint (ubuntu)` and `merge-gate` on the PR head
   (the fast tier); the lane waits for them and fixes failures. The hub
-  enqueues with `gh pr merge --squash --auto`, never `--admin`, and the
+  enqueues with `gh pr merge --auto`, never `--admin`, and the
   queue runs the full suite; a dequeued PR goes back to its lane with the
   failing job `merge-gate` names. A lane's gate is the fast subset under
   [Build from source](#build-from-source): `just lint` and the changed
