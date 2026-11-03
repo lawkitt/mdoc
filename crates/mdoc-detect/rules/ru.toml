@@ -5,6 +5,9 @@
 # No Russian nicknames yet.
 variants = []
 
+# These occupational surnames must stay PERSON if role vocabulary grows.
+role_surnames = ["судья", "староста", "голова", "кузнец", "бухгалтер"]
+
 # An organization's legal form and quotes belong to its name: the model's
 # "Северный Вектор" inside "ООО «Северный Вектор»" grows to the whole of it,
 # as does "Елагин и партнёры" in "коллегия адвокатов «Елагин и партнёры»"
@@ -77,6 +80,7 @@ trim = [
 # Role phrases around a named organization lose only the role (#385).
 [[span]]
 category = "ORG"
+role_trim = true
 trim = [
     "конкурсный управляющий", "конкурсного управляющего",
     "конкурсному управляющему", "конкурсным управляющим", "конкурсном управляющем",
@@ -147,6 +151,7 @@ words = [
     "заимодавец", "заимодавц", "займодавец", "займодавц",
 ]
 unless_named = true
+person_role = true
 
 # Parties to a dispute ("Истца", "Ответчику").
 [[never]]
@@ -158,6 +163,7 @@ words = [
     "предпринимател", "правообладател", "заемщик", "заёмщик", "кредитор",
 ]
 unless_named = true
+person_role = true
 
 # Representatives and other roles ("Представителя", "Супруга", "Директору").
 [[never]]
@@ -170,6 +176,7 @@ words = [
     "руководител", "заместител", "бухгалтер", "уполномоченн", "управляющ",
 ]
 unless_named = true
+person_role = true
 
 # A child label and the inflected modifiers of insolvency officers are
 # roles, not names (#385). The same surname stays after a title or in a
@@ -180,6 +187,7 @@ ending = 3
 words = ["несовершеннолетн", "ребен", "ребён", "конкурсн", "финансов", "арбитражн"]
 not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
 unless_named = true
+person_role = true
 
 # Noun forms whose irregular endings are clearer listed whole (#385).
 # "Лица" in a procedural sentence and "Собрание кредиторов" name no one.
@@ -190,6 +198,7 @@ words = [
     "собрание", "собрания", "собранию", "собранием", "собрании", "ип",
 ]
 unless_named = true
+person_role = true
 
 # Complete office and status phrases only: no wildcard after a role may
 # swallow a name (#385). Named officers such as "Уполномоченный Брюн" stay.

@@ -1,9 +1,11 @@
 ---
-status: pass
-flaw: roles-as-names
+status: known-flaw
+flaw: roles-as-names role-surname-propagates
 issue: 385
 kind: judgment
 source: probe-r2
+expect: false hit: PERSON "Trustee"
+expect: false hit: PERSON "Leader"
 ---
 The Debtor and the Chapter 7 Trustee, the First Defendant and the Second Claimant appeared before the Judges. The Team Leader, the Chief Investigator and the Vice President of Infrastructure, Ms ⟦PERSON|Edda Brannock⟧, signed for Plaintiff(s).
 

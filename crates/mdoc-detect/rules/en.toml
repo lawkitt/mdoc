@@ -5,6 +5,17 @@
 # No English nicknames yet.
 variants = []
 
+# Capitalized occupational surnames remain PERSON even without another mention.
+# Most are already outside the role vocabulary; listing them also protects
+# future additions. Plural role forms and initial + role are protected in code.
+role_surnames = [
+    "master", "masters", "steward", "stewards", "judge", "marshal", "sheriff",
+    "bishop", "chancellor", "clerk", "mayor", "dean", "sergeant", "banker",
+    "cook", "porter", "baker", "taylor", "mason", "carter", "fowler",
+    "leader", "chair", "chairman", "president", "recorder", "specialist",
+    "treasurer", "notary", "esquire",
+]
+
 # Complete job titles come off a name's edges (#385). Do not trim their
 # individual heads: "Ivo Leader" and "Edda Chair" may be full names.
 [[span]]
@@ -23,7 +34,9 @@ trim = [
 # The same role phrases around an organization's actual name (#385).
 [[span]]
 category = "ORG"
+role_trim = true
 trim = [
+    "trustee",
     "team leader", "chief investigator", "bureau safety manager",
     "accident investigation advisor", "program manager",
     "vice president of infrastructure", "chief executive officer",
@@ -121,6 +134,7 @@ words = [
     "participant", "user", "discloser",
 ]
 unless_named = true
+person_role = true
 
 # "Anor" and "Ors" (another, others) in a case name ("X Ltd & Anor") name
 # no one (issue #499).
@@ -153,12 +167,14 @@ words = [
     "esquire", "treasurer", "ceo", "cxo", "hod", "magistrate",
 ]
 unless_named = true
+person_role = true
 
 # The same roles' -ies plurals.
 [[never]]
 match = "whole"
 words = ["secretaries", "deputies", "chairmen"]
 unless_named = true
+person_role = true
 
 # Words that make a job title of a role: "Technical Reviewer", "Managing
 # Director" name no one (guide rule 8). Matched whole.
@@ -174,6 +190,7 @@ words = [
     "division", "public", "fire", "costs",
 ]
 unless_named = true
+person_role = true
 
 # Complete role-only phrases whose numbers, prepositions or optional
 # plural suffix escape word lists (#385). Both ends are anchored: a name
@@ -695,7 +712,7 @@ trim = ["in re", "in the matter of", "ex parte"]
 # ("Acme Ltd.").
 [[shape]]
 category = "ORG"
-guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "Co", "PLC"]
 
 # "U.S." and "U.K." alone are a country, never a company or a person: "527
 # U.S. 706", "U.S. District Court" (guide rules 1, 2 and 8, issue #499).

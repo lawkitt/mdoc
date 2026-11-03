@@ -26,6 +26,9 @@ pub(crate) fn pack() -> &'static Pack {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
+    /// Role words that are also surnames, kept when capitalized as PERSON.
+    #[serde(default)]
+    role_surnames: Vec<String>,
     #[serde(default)]
     never: Vec<NeverEntry>,
     #[serde(default)]
@@ -83,6 +86,9 @@ struct NeverEntry {
     /// where another person span has them beside a name ("Dawn French").
     #[serde(default)]
     unless_named: bool,
+    /// Initial plus capitalized role, or a capitalized plural, may be a name.
+    #[serde(default)]
+    person_role: bool,
     /// For `pattern`: a person's title before the span keeps it, a
     /// surname that reads like the phrase ("Ms St. Louis").
     #[serde(default)]
@@ -172,6 +178,9 @@ struct SpanEntry {
     absorbs: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
+    /// ORG role trims need an explicit separator and an identifying remainder.
+    #[serde(default)]
+    role_trim: bool,
     #[serde(default)]
     extend: Vec<String>,
     #[serde(default)]
@@ -201,6 +210,7 @@ struct VariantsEntry {
 
 /// The checked pack, merged across files.
 pub(crate) struct Pack {
+    role_surnames: Vec<String>,
     never: Vec<Never>,
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
@@ -237,6 +247,7 @@ struct SpanFix {
     /// Lowercase words that come off either edge ("ms", "kc"), or phrases
     /// of them ("in re").
     trim: Vec<String>,
+    role_trim: bool,
     /// A span inside a match grows to the whole match.
     extend: Vec<Regex>,
     /// Characters that come off the end (a sentence's period).
@@ -252,7 +263,7 @@ impl SpanFix {
     /// final period or colon with it; a comma before a trailing one goes
     /// with it) and its `strip_end` characters.
     fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
-        let plain = |word: &str| word.strip_suffix(['.', ':']).unwrap_or(word).to_lowercase();
+        let plain = |word: &str| word.trim_end_matches(['.', ':', ',']).to_lowercase();
         let listed = |word: &str| self.trim.contains(&plain(word));
         let phrases: Vec<Vec<&str>> = self
             .trim
@@ -269,43 +280,89 @@ impl SpanFix {
             // A phrase at either edge, with a word left beside it: "In re
             // Quill" is "Quill".
             let words: Vec<(usize, &str)> = text
-                .split_whitespace()
+                .split(|c: char| c.is_whitespace() || [',', ':', '–', '—'].contains(&c))
+                .filter(|word| !word.is_empty())
                 .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word))
                 .collect();
             let is = |slice: &[(usize, &str)], phrase: &[&str]| {
                 slice.len() == phrase.len()
+                    && slice.windows(2).all(|pair| {
+                        text[pair[0].0 + pair[0].1.len()..pair[1].0]
+                            .chars()
+                            .all(char::is_whitespace)
+                    })
                     && slice
                         .iter()
                         .zip(phrase)
                         .all(|((_, word), listed)| plain(word) == *listed)
             };
+            // An ORG role must be external to the name. Whitespace alone
+            // cannot distinguish "Notary Public Underwriters, Inc".
+            let after_role = |end: usize| {
+                let rest = text[end..].trim_start();
+                let separated = rest.trim_start_matches([',', ':', '-', '–', '—']);
+                if separated.len() != rest.len() {
+                    return Some(text.len() - separated.trim_start().len());
+                }
+                if let Some(connector) = ["of", "for"].iter().find(|connector| {
+                    rest.get(..connector.len())
+                        .is_some_and(|s| s.eq_ignore_ascii_case(connector))
+                        && rest[connector.len()..].starts_with(char::is_whitespace)
+                }) {
+                    return Some(text.len() - rest[connector.len()..].trim_start().len());
+                }
+                None
+            };
             if let Some(phrase) = phrases
                 .iter()
                 .find(|phrase| words.len() > phrase.len() && is(&words[..phrase.len()], phrase))
             {
-                range.start += words[phrase.len()].0;
-                continue;
+                let (_, last) = words[phrase.len() - 1];
+                let end = words[phrase.len() - 1].0 + last.trim_end_matches([',', ':']).len();
+                if !self.role_trim {
+                    range.start += words[phrase.len()].0;
+                    continue;
+                } else if let Some(start) = after_role(end) {
+                    range.start += start;
+                    continue;
+                }
             }
             if let Some(phrase) = phrases.iter().find(|phrase| {
                 words.len() > phrase.len() && is(&words[words.len() - phrase.len()..], phrase)
             }) {
                 let rest = &text[..words[words.len() - phrase.len()].0];
+                if self.role_trim && !rest.trim_end().ends_with([',', ':', '-', '–', '—']) {
+                    return range;
+                }
                 range.end = range.start
                     + rest
-                        .trim_end_matches(|c: char| c == ',' || c.is_whitespace())
+                        .trim_end_matches(|c: char| {
+                            [',', ':', '-', '–', '—'].contains(&c) || c.is_whitespace()
+                        })
                         .len();
                 continue;
             }
             if let Some((first, rest)) = text.split_once(char::is_whitespace)
                 && listed(first)
             {
-                range.start = range.end - rest.len();
-                continue;
+                if !self.role_trim {
+                    range.start = range.end - rest.len();
+                    continue;
+                } else if let Some(start) = after_role(first.trim_end_matches([',', ':']).len()) {
+                    range.start += start;
+                    continue;
+                }
             }
             if let Some((rest, last)) = text.rsplit_once(char::is_whitespace)
                 && listed(last)
+                && (!self.role_trim || rest.trim_end().ends_with([',', ':', '-', '–', '—']))
             {
-                range.end = range.start + rest.trim_end_matches([',', ' ']).len();
+                range.end = range.start
+                    + rest
+                        .trim_end_matches(|c: char| {
+                            c.is_whitespace() || [',', ':', '-', '–', '—'].contains(&c)
+                        })
+                        .len();
                 continue;
             }
             if let Some(c) = text.chars().next_back()
@@ -371,6 +428,7 @@ struct Never {
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
     unless_named: bool,
+    person_role: bool,
     unless_titled: bool,
 }
 
@@ -407,6 +465,7 @@ impl Pack {
     /// problem.
     fn load(files: &[(&str, &str)]) -> Result<Self, String> {
         let mut pack = Self {
+            role_surnames: Vec::new(),
             never: Vec::new(),
             shapes: Vec::new(),
             contexts: Vec::new(),
@@ -418,6 +477,14 @@ impl Pack {
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
             let file: File = toml::from_str(source).map_err(|e| format!("{name}: {e}"))?;
+            if file.role_surnames.iter().any(|word| {
+                word.is_empty()
+                    || *word != word.to_lowercase()
+                    || !word.chars().all(char::is_alphabetic)
+            }) {
+                return Err(format!("{name}: role_surnames needs lowercase words"));
+            }
+            pack.role_surnames.extend(file.role_surnames);
             for (index, entry) in file.never.into_iter().enumerate() {
                 let at = |problem: String| format!("{name}: never #{}: {problem}", index + 1);
                 let ending = match (entry.form, entry.ending) {
@@ -455,6 +522,9 @@ impl Pack {
                 if entry.unless_titled && entry.anywhere_in != ["PERSON"] {
                     return Err(at("unless_titled needs anywhere_in PERSON alone".into()));
                 }
+                if entry.person_role && !entry.unless_named {
+                    return Err(at("person_role needs unless_named".into()));
+                }
                 let patterns = entry
                     .patterns
                     .iter()
@@ -488,6 +558,7 @@ impl Pack {
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
                     unless_named: entry.unless_named,
+                    person_role: entry.person_role,
                     unless_titled: entry.unless_titled,
                 });
             }
@@ -687,6 +758,7 @@ impl Pack {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
                 let category = category(&entry.category).map_err(at)?;
                 let fixes = !entry.trim.is_empty()
+                    || entry.role_trim
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty();
@@ -733,6 +805,10 @@ impl Pack {
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
                 }
+                if entry.role_trim && (category != Category::Organization || entry.trim.is_empty())
+                {
+                    return Err(at("role_trim needs ORG and trim words".into()));
+                }
                 // A trim may be a phrase of single-spaced words ("in re").
                 for word in &entry.trim {
                     if word
@@ -765,6 +841,7 @@ impl Pack {
                 pack.spans.push(Span::Fix(SpanFix {
                     category,
                     trim: entry.trim.clone(),
+                    role_trim: entry.role_trim,
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
@@ -895,7 +972,9 @@ impl Pack {
         named: &dyn Fn(&str) -> bool,
         titled: bool,
     ) -> bool {
-        self.shaped_named(text, category, named) && !self.public_body(text, category, titled)
+        self.shaped_named(text, category, named)
+            && (category == Category::Person && self.role_person_name(text)
+                || !self.public_body(text, category, titled))
     }
 
     /// Whether a span is a court or other public body by the `never`
@@ -1044,10 +1123,71 @@ impl Pack {
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
             && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
-            && shape
-                .word
-                .as_ref()
-                .is_none_or(|pattern| self.names(words().filter(|w| pattern.is_match(w)), named))
+            && shape.word.as_ref().is_none_or(|pattern| {
+                category == Category::Person && self.role_person_name(text)
+                    || self.names(words().filter(|w| pattern.is_match(w)), named)
+            })
+    }
+
+    /// A role is weak evidence against a model's name-shaped PERSON.
+    /// Do not apply this to ORG or to whole role phrases/headings.
+    fn role_person_name(&self, text: &str) -> bool {
+        let words: Vec<_> = text.split_whitespace().map(bare).collect();
+        let (word, initialed) = match words.as_slice() {
+            [word] => (*word, false),
+            [initial, word]
+                if initial.chars().count() == 1 && initial.chars().all(char::is_uppercase) =>
+            {
+                (*word, true)
+            }
+            _ => return false,
+        };
+        if !word.chars().next().is_some_and(char::is_uppercase) {
+            return false;
+        }
+        let lower = word.to_lowercase();
+        let plural = self.never.iter().any(|entry| {
+            entry.person_role
+                && entry.has(&lower)
+                && match entry.form {
+                    Form::Plural => !entry.words.contains(&lower),
+                    // Explicit English irregular plurals in the role pack.
+                    Form::Whole => lower.ends_with("ies") || lower.ends_with("men"),
+                    _ => false,
+                }
+        });
+        let role = self
+            .never
+            .iter()
+            .any(|entry| entry.person_role && entry.has(&lower));
+        (initialed && role) || plural || self.role_surnames.contains(&lower)
+    }
+
+    /// A determiner immediately before a single role span resolves the
+    /// plural ambiguity even when the model omitted it: "the Masters".
+    fn determined_role(&self, source: &str, range: std::ops::Range<usize>) -> bool {
+        let text = &source[range.clone()];
+        let lower = bare(text).to_lowercase();
+        if text.split_whitespace().count() != 1
+            || !self
+                .never
+                .iter()
+                .any(|entry| entry.person_role && entry.has(&lower))
+        {
+            return false;
+        }
+        let before = &source[..range.start];
+        let word = before
+            .split_whitespace()
+            .next_back()
+            .unwrap_or_default()
+            .to_lowercase();
+        before.ends_with(char::is_whitespace)
+            && [
+                "the", "a", "an", "her", "his", "their", "its", "our", "my", "your", "this",
+                "that", "said",
+            ]
+            .contains(&word.as_str())
     }
 
     /// Whether `words`, those a shape's `word` takes, name someone: one is
@@ -1154,6 +1294,16 @@ impl Pack {
                 detections[i].range = if trimmed != grown
                     && (self.only_legal_form(&source[trimmed.clone()])
                         || fix.category == Category::Person
+                            && self.role_person_name(&source[grown.clone()])
+                            && !self.role_person_name(&source[trimmed.clone()])
+                        || fix.role_trim
+                            && !self.identifying_named(
+                                &source[trimmed.clone()],
+                                Category::Organization,
+                                &|_| false,
+                                false,
+                            )
+                        || fix.category == Category::Person
                             && self.titled(source, trimmed.end)
                             && !self.titled(source, trimmed.start)
                             && !self.shaped_named(
@@ -1174,6 +1324,8 @@ impl Pack {
             let text = &view.text[view.view_range(d.range.clone())];
             let titled = d.category == Category::Person && self.titled(source, d.range.start);
             !d.range.is_empty()
+                && !(d.category == Category::Person
+                    && self.determined_role(source, d.range.clone()))
                 && self.identifying_named(
                     text,
                     d.category,
@@ -1202,6 +1354,7 @@ impl Pack {
         detections
             .iter()
             .filter(|d| d.category == Category::Person && !d.range.is_empty())
+            .filter(|d| !self.determined_role(&view.text, view.view_range(d.range.clone())))
             .map(|d| &view.text[view.view_range(d.range.clone())])
             .filter(|text| self.identifying_named(text, Category::Person, &|_| false, false))
             .flat_map(|text| {
@@ -5087,6 +5240,9 @@ Privacy Act (“BIPA”). BIPA applies.",
             "Franchisee",
             "Subscriber",
             "Judges",
+            "Chairmen",
+            "Deputies",
+            "Secretaries",
             "Masters",
             "Recorders",
             "Circuit Judges",
@@ -5133,7 +5289,40 @@ Privacy Act (“BIPA”). BIPA applies.",
             "Administrative Adviser",
         ] {
             for label in ["person", "organization"] {
-                assert!(shown(role, &[(role, label)]).is_empty(), "{label}: {role}");
+                // Ambiguous capitalized surnames/plurals are deliberately
+                // retained as PERSON; their lowercase role readings still go.
+                let person_name = [
+                    "Defendants",
+                    "Agents",
+                    "Judges",
+                    "Masters",
+                    "Recorders",
+                    "Sergeant",
+                    "SHERIFF",
+                    "Esquire",
+                    "Chair",
+                    "Supervisors",
+                    "TREASURER",
+                    "Participants",
+                    "Chairman",
+                    "Appellees",
+                    "Appellants",
+                    "Chairmen",
+                    "Deputies",
+                    "Secretaries",
+                ]
+                .contains(&role);
+                let expected = if label == "person" && person_name {
+                    pairs(&[(role, "PERSON")])
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(shown(role, &[(role, label)]), expected, "{label}: {role}");
+                let lower = role.to_lowercase();
+                assert!(
+                    shown(&lower, &[(&lower, label)]).is_empty(),
+                    "{label}: {lower}"
+                );
             }
         }
     }
@@ -5262,16 +5451,147 @@ Privacy Act (“BIPA”). BIPA applies.",
             );
         }
         for (source, expected) in [
-            ("Team Leader Brannock Services Ltd", "Brannock Services Ltd"),
+            (
+                "Team Leader, Brannock Services Ltd",
+                "Brannock Services Ltd",
+            ),
             (
                 "Brannock Services Ltd, Chief Investigator",
                 "Brannock Services Ltd",
             ),
-            ("конкурсного управляющего ООО «Листолёт»", "ООО «Листолёт»"),
+            ("конкурсного управляющего: ООО «Листолёт»", "ООО «Листолёт»"),
         ] {
             assert_eq!(
                 shown(source, &[(source, "organization")]),
                 pairs(&[(expected, "ORG")]),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn role_surnames_and_initials_survive_without_other_mentions() {
+        for name in [
+            "R. Masters",
+            "Masters",
+            "Stewards",
+            "Judges",
+            "Master",
+            "Steward",
+            "Judge",
+            "Marshal",
+            "Sheriff",
+            "Bishop",
+            "Chancellor",
+            "Clerk",
+            "Mayor",
+            "Dean",
+            "Sergeant",
+            "Banker",
+            "Cook",
+            "Porter",
+            "Baker",
+            "Taylor",
+            "Mason",
+            "Carter",
+            "Fowler",
+            "Судья",
+            "Староста",
+            "Голова",
+            "Кузнец",
+            "Бухгалтер",
+        ] {
+            assert_eq!(
+                shown(name, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{name}"
+            );
+        }
+        // Exercise every role word/stem, rather than protecting only Masters.
+        for entry in pack().never.iter().filter(|entry| entry.person_role) {
+            for word in &entry.words {
+                let mut chars = word.chars();
+                let capitalized =
+                    chars.next().unwrap().to_uppercase().collect::<String>() + chars.as_str();
+                for surname in [capitalized.clone(), format!("{capitalized}s")]
+                    .into_iter()
+                    .take(if entry.form == Form::Plural { 2 } else { 1 })
+                {
+                    let name = format!("R. {surname}");
+                    assert_eq!(
+                        shown(&name, &[(&name, "person")]),
+                        pairs(&[(&name, "PERSON")]),
+                        "{name}"
+                    );
+                }
+            }
+        }
+        for role in ["masters", "judges", "the Masters", "the Judges"] {
+            assert!(shown(role, &[(role, "person")]).is_empty(), "{role}");
+        }
+        for (source, detected) in [("the Masters", "Masters"), ("her Judges", "Judges")] {
+            assert!(
+                shown(source, &[(detected, "person")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn organization_roles_need_separators_and_a_name_remainder() {
+        for company in [
+            "Notary Public Underwriters, Inc",
+            "Team Leader Brannock Services Ltd",
+            "конкурсного управляющего ООО «Листолёт»",
+            "Notary Public, LLC",
+        ] {
+            assert_eq!(
+                shown(company, &[(company, "organization")]),
+                pairs(&[(company, "ORG")]),
+                "{company}"
+            );
+        }
+        for form in [
+            "Inc", "LLC", "Ltd", "Corp", "Co.", "PLC", "LLP", "ООО", "АО",
+        ] {
+            let company = format!("Notary Public Underwriters, {form}");
+            let expected = company.trim_end_matches('.');
+            assert_eq!(
+                shown(&company, &[(&company, "organization")]),
+                pairs(&[(expected, "ORG")]),
+                "{company}"
+            );
+        }
+        for (source, name) in [
+            ("Trustee for Quillon Ltd", "Quillon Ltd"),
+            ("Chief Investigator, Quillon Ltd", "Quillon Ltd"),
+            ("Notary Public — Quillon Ltd", "Quillon Ltd"),
+            ("Notary Public - Quillon Ltd", "Quillon Ltd"),
+            ("Notary Public: Quillon Ltd", "Quillon Ltd"),
+            ("Notary Public of Quillon Ltd", "Quillon Ltd"),
+            ("Quillon Ltd, Notary Public", "Quillon Ltd"),
+            ("Quillon Ltd — Notary Public", "Quillon Ltd"),
+        ] {
+            assert_eq!(
+                shown(source, &[(source, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn comma_after_leading_person_role_comes_off_with_the_role() {
+        for source in [
+            "Chief Investigator, John Smith",
+            "Chief Investigator,John Smith",
+            "Team Leader, John Smith",
+            "Заместитель руководителя, Иван Петров",
+        ] {
+            let name = source.split_once(',').unwrap().1.trim_start();
+            assert_eq!(
+                shown(source, &[(source, "person")]),
+                pairs(&[(name, "PERSON")]),
                 "{source}"
             );
         }
