@@ -60,7 +60,10 @@
 #                               a person's span the stem counts only with
 #                               one of these endings ("" for none), the
 #                               word's own forms; any other makes a
-#                               surname ("Судов", "Судник", "Приставко")
+#                               surname ("Судник", "Приставко")
+#   surname_endings = [ending…] with person_endings: those of them that
+#                               make a surname of a capitalized word
+#                               ("Судов", but "судов общей юрисдикции")
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
@@ -100,7 +103,9 @@
 # A `private` entry lists `patterns`, regexes: a span that matches one,
 # quotes and legal form included, is never a court or public body,
 # whatever `never` says ("ФГБОУ ВО «… университет»", "Негосударственный
-# пенсионный фонд «…»").
+# пенсионный фонд «…»"), unless it matches one of its optional `unless`
+# regexes too ("Electoral College"). Anchor the patterns: a public body
+# may have the word inside ("Ministry of Colleges and Universities").
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere

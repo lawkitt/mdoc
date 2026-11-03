@@ -321,16 +321,20 @@ patterns = [
     # and Border Protection".
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+|hm[\p{Zs}\t]+)?customs(?:[\p{Zs}\t]+(?:service|office|authorit(?:y|ies)))?[\x27’]?s?[\s\p{P}]*$',
     '(?i)\bcustoms[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+border[\p{Zs}\t]+protection\b',
-    # Jails, and a grand jury that ends the span: "Elko County Jail", "the
-    # Grand Jury", "the Ashmoor County Grand Jury" ("Grand Jury Games"
-    # stays).
+    # Jails, and a grand jury that ends the span or is followed by its
+    # jurisdiction: "Elko County Jail", "the Grand Jury", "the Ashmoor
+    # County Grand Jury", "Grand Jury of Ashmoor County" ("Grand Jury
+    # Games" stays). The Electoral College and the College of Policing.
     '(?i)\b(?:county|city|municipal|parish|state|federal)[\p{Zs}\t]+(?:jail|detention[\p{Zs}\t]+(?:center|centre|facility)|penitentiary)\b',
-    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}grand[\p{Zs}\t]+jur(?:y|ies)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}grand[\p{Zs}\t]+jur(?:y|ies)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:of|for|in[\p{Zs}\t]+and[\p{Zs}\t]+for)[\p{Zs}\t]+\S.*)?[\s\p{P}]*$',
+    '(?i)\belectoral[\p{Zs}\t]+colleges?\b|\bcollege[\p{Zs}\t]+of[\p{Zs}\t]+policing\b',
     # Agencies' and intergovernmental bodies' short names as written, the
-    # whole span or before their organ ("NATO", "the IMF", "ICAO Council";
-    # "Nato Venn" and "NATO Logistics" stay), and laws' and treaties' short
-    # names as written, alone ("FLSA", "the FDCPA", "CAFTA-DR").
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:Council|Assembly|Secretariat|Board))?[\s\p{P}]*$',
+    # whole span or before their organ, adjectives allowed ("NATO", "the
+    # IMF", "ICAO Council", "NATO Parliamentary Assembly", "IMF Executive
+    # Board"; "Nato Venn" and "NATO Logistics" stay), and laws' and
+    # treaties' short names as written, alone ("FLSA", "the FDCPA",
+    # "CAFTA-DR").
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Alphabetic}+[\p{Zs}\t]+){0,2}(?:Council|Assembly|Secretariat|Board|Committee|Commission|Command|Headquarters|Summit|Staff))?[\s\p{P}]*$',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:FLSA|FDCPA|TCPA|DTPA|PHRA|NYDCL|ERISA|HIPAA|FMLA|ECHR|CAFTA-DR|CAFTA|NAFTA|USMCA)(?:[\x27’]s?)?[\s\p{P}]*$',
     # A court's division in a caption ("TEXARKANA DIVISION") and a state's
     # divisions ("Utah Division of Wildlife Resources").
@@ -362,10 +366,16 @@ patterns = [
 ]
 anywhere_in = ["ORG", "PERSON"]
 
-# Universities and colleges are never public bodies, whoever owns them
-# ("Ashmoor State University", "Ashmoor County Community College"; #484).
+# Universities and colleges are never public bodies, whoever owns them:
+# a span that names one itself, after capitalized words only ("Ashmoor
+# State University", "University of Ashmoor", "Ashmoor County Community
+# College"; #484). "Ministry of Colleges and Universities" names none, and
+# the Electoral College and the College of Policing are public bodies.
 [[private]]
-patterns = ['(?i)\buniversit(?:y|ies)\b', '(?i)\bcolleges?\b']
+patterns = [
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}.\x27’&-]*[\p{Zs}\t]+){0,5}(?:University|College|UNIVERSITY|COLLEGE)\b',
+]
+unless = ['(?i)\belectoral[\p{Zs}\t]+college|\bcollege[\p{Zs}\t]+of[\p{Zs}\t]+policing\b']
 
 # The same prosecutors and ministers within an organization's name
 # ("Attorney General's Office", "Office of the Secretary of State").

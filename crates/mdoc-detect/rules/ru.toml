@@ -221,9 +221,10 @@ words = ["субъект"]
 # words in quotes are a name. A state or municipal institution is a public
 # body ("Федерального казенного учреждения", "государственного бюджетного
 # учреждения"). In a person's span a stem counts only with the body
-# word's own case endings, so a surname with it stays ("Судов", "Судине",
-# "Судник", "Приставко"), and so does one after a title ("г-н Суд") or
-# with initials ("Суд Н. О.").
+# words' own case endings ("Министерство", "Правительству", "судов
+# общей юрисдикции"), so a surname with it stays ("Судине", "Судник",
+# "Приставко", and "Судов" capitalized), and so does one after a title
+# ("г-н Суд") or with initials ("Суд Н. О.", "СУД Н. О.").
 [[never]]
 match = "stem"
 ending = 3
@@ -239,11 +240,12 @@ words = [
 ]
 anywhere_in = ["ORG", "PERSON"]
 person_endings = [
-    "", "а", "я", "у", "ю", "е", "и", "ы", "й", "ом", "ем", "ой", "ей", "ам",
-    "ям", "ах", "ях", "ами", "ями", "ая", "яя", "ое", "ее", "ую", "юю", "ые",
-    "ие", "ый", "ий", "ых", "их", "ым", "им", "ыми", "ими", "ого", "его",
-    "ому", "ему",
+    "", "а", "я", "у", "ю", "о", "е", "и", "ы", "й", "ом", "ем", "ой", "ою",
+    "ей", "ов", "ам", "ям", "ах", "ях", "ами", "ями", "ый", "ий", "ая", "яя",
+    "ое", "ее", "ые", "ие", "ого", "его", "ому", "ему", "ую", "юю", "ым", "им",
+    "ых", "их", "ыми", "ими",
 ]
+surname_endings = ["ов"]
 unless_titled = true
 
 # The same bodies' abbreviations and indeclinable names, matched whole:
@@ -297,17 +299,17 @@ patterns = [
 ]
 anywhere_in = ["ORG", "PERSON"]
 
-# Never public bodies, whoever owns them: a university or college, a
-# state one too ("ФГБОУ ВО «Северный государственный университет»",
-# "ГБПОУ «Ольховский колледж»"; #484), and a non-state or charitable fund
-# ("Негосударственный пенсионный фонд «Кедр»", "АО НПФ «Кедр»").
+# Never public bodies, whoever owns them: a span that names a university
+# or college itself, after its abbreviations and adjectives, a state one
+# too ("ФГБОУ ВО «Северный государственный университет»", "ГБПОУ
+# «Ольховский колледж»"; #484), and one that opens with a non-state or
+# charitable fund ("Негосударственный пенсионный фонд «Кедр»", "НПФ
+# «Кедр»"). "ГБУ «Университетская больница»" and "Министерство науки и
+# университетов" name no university, and go.
 [[private]]
 patterns = [
-    '(?i)\bуниверситет',
-    '(?i)\bколледж',
-    '(?i)\bнегосударственн',
-    '(?i)\bблаготворительн',
-    '\bНПФ\b',
+    '^[\s\p{P}]*(?:\p{Uppercase}{2,7}[\p{Zs}\t]+){0,2}[«"]?(?i:(?:\p{Alphabetic}+(?:ый|ий|ой|ая|яя|ое|ее|ого|его|ому|ему|ым|им|ую|юю|ых|их)[\p{Zs}\t-]+){0,4}(?:университет|колледж)(?:а|у|ом|ем|е|ы|и|ов|ей|ам|ами|ах)?)(?:[^\p{Alphabetic}]|$)',
+    '^[\s\p{P}]*(?:АО[\p{Zs}\t]+)?[«"]?(?:(?i:негосударственн|благотворительн)|НПФ\b)',
 ]
 
 # Codes and laws by their full names: "Гражданского кодекса Российской
@@ -320,9 +322,12 @@ ending = 3
 words = ["кодекс", "закон", "законодательств", "конституци"]
 anywhere_in = ["ORG", "PERSON"]
 person_endings = [
-    "", "а", "у", "е", "и", "ы", "ом", "ой", "ей", "ам", "ям", "ах", "ях",
-    "ами", "ями", "ю", "я",
+    "", "а", "я", "у", "ю", "о", "е", "и", "ы", "й", "ом", "ем", "ой", "ою",
+    "ей", "ов", "ам", "ям", "ах", "ях", "ами", "ями", "ый", "ий", "ая", "яя",
+    "ое", "ее", "ые", "ие", "ого", "его", "ому", "ему", "ую", "юю", "ым", "им",
+    "ых", "их", "ыми", "ими",
 ]
+surname_endings = ["ов"]
 unless_titled = true
 
 # A region, district, city or settlement is a place, not an organization,
