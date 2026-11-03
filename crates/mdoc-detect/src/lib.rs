@@ -647,7 +647,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 recognizer: mdoc_pii::Recognizer::Context,
             }),
     );
-    rules::pack().fix_spans(source, &view, &mut detections);
+    let precedents = rules::pack().fix_spans(source, &view, &mut detections);
     // After the span fixes, so each spelling copies the fixed wording.
     let respelt = respelt(source, &view, &detections);
     detections.extend(respelt);
@@ -663,6 +663,18 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             (!detection.range.is_empty()).then_some(detection)
         })
         .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+    // A precedent's docket number is part of its citation, no case number
+    // of the case at hand (guide rule 8, #506 item 3): "Grant v. Finecy,
+    // Case No. 4:20-cv-1234 (N.D. Tex. 2024)".
+    let rules: Vec<Detection> = rules
+        .into_iter()
+        .filter(|rule| {
+            rule.category != Category::CaseNumber
+                || !precedents
+                    .iter()
+                    .any(|case| case.start <= rule.range.start && rule.range.end <= case.end)
+        })
+        .collect();
     // A web address inside a labelled case number is part of it (guide rule
     // 8), and a domain inside an email is the email's
     // ("ismay&#64;crane-pith.invalid"); any other address wins over what is

@@ -1023,6 +1023,70 @@ pattern = '\bTr\.[\p{Zs}\t]*(?:at[\p{Zs}\t]+)?\d+(?:[:–-]\d+)*(?:,[\p{Zs}\t]*\
 [[reference]]
 pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6})?(?:,[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?)*(?:[\p{Zs}\t]*nn?\.[\p{Zs}\t]*\d{1,4})?|\b(?:J\.[\p{Zs}\t]?A\.|ROA\.|App\.)[\p{Zs}\t]*\d{1,6}(?:[-–]\d{1,6})?'
 
+# A cited case is a legal reference, its parties' names included, both
+# sides (guide rule 8, #506 item 2, issue #561): "Pellam v. Ostrand, 912
+# F.3d 455 (9th Cir. 2031)", "Galvan v. Calhoun Cty., 2031 WL 1234567",
+# "News Group Newspapers Ltd v Brindle [2031] EWHC 12 (Ch)", "In re Estate
+# of Bramblett, 77 B.R. 310", "Ex parte Quill, 12 So. 3d 4", and a docket
+# number with its court and year or its reporter after it ("Grant v.
+# Finecy, No. 02-23-00310-CV (Tex. App. 2031)", #506 item 3). The citation
+# must follow the name: a caption ("Ivo Harrow v. Quillon Ltd", its own
+# "Case No." after it or not) is the case at hand's and stays.
+#
+# The `party` groups are the parties. A name in a match stays only where it
+# names a party of the case at hand: one the model found outside every cited
+# case, or one after a role listed here ("Plaintiff Ivo Harrow"), holds its
+# words or is held by them ("Harrow" of "Ivo Harrow"). Names outside
+# citations stay. The caption and running text decide which parties are
+# the case at hand's.
+# A party is capitalised words (with periods, initials, numbers and "&"),
+# "of", "the", "ex rel." and the like between them, a legal form after a
+# comma ("Murrin Bros. 1885, Ltd") and "et al.", in emphasis or not
+# ("*Pellam v. Ostrand*, 912 F.3d 455"). A word's period is an initial's or
+# a listed abbreviation's ("Bros.", "Cty."), and a legal form's period
+# ("Ltd.") ends the party. Code also clips the leading party after a
+# period before a capitalised word: even "Jr." can end a sentence.
+# A sentence's first word ("See Pellam") becomes part of it. "and"
+# joins no party: in "Ivo Harrow and Pellam v. Ostrand" Ivo Harrow is no
+# party. A docket number's court and year follow it at once, "(Tex. App.
+# 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
+# (admitted 2020)") is none of it.
+[[reference]]
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
+parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|de|der|du|la|le|van|von|ex[\p{Zs}\t]+rel\.))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
+parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
+parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
+parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
+parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+'
+roles = [
+    "plaintiff", "defendant", "claimant", "respondent", "appellant", "appellee",
+    "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",
+    "relator", "complainant",
+]
+# A decision identified as the subject of this appeal/action is the case
+# at hand's: keep its parties when one of these phrases occurs in the 60
+# characters before the citation, ignoring case. Uncertain names stay.
+own_before = [
+    "under appeal", "appealed from", "appeal from", "the decision below",
+    "the judgment below", "the order below", "on appeal from", "the court below",
+    "this appeal", "the present case", "the instant case", "this case", "this action",
+]
+
+# A short citation with a reporter (#561): "Pellam, 912 F.3d at 460"
+# or "Pellam, 2031 WL 1234567, at *3". A bare surname or "supra" alone
+# does not establish that a name belongs only to a precedent.
+[[reference]]
+pattern = '(?P<party>{party}),{s}\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}(?:[\p{Zs}\t]*\d{1,9},?)?[\p{Zs}\t]+at[\p{Zs}\t]+\*?\d'
+parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|de|der|du|la|le|van|von))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
+parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
+
+# "Id." and "Ibid." alone cite the authority before, and name no one: the
+# model's "Id" as a person (#561).
+[[reference]]
+pattern = '\b(?:Id|id|Ibid|ibid)\.'
+
 # A form's outline letter before its part's title in title case is no
 # initial: "J. Additional Questions" (guide rule 1, issue #499).
 [[reference]]
