@@ -11,6 +11,7 @@ struct DocumentScreen: View {
     /// The window is too narrow for a third column (iPad portrait).
     var isNarrow = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
 
     private var isRegular: Bool { sizeClass == .regular }
 
@@ -182,6 +183,7 @@ struct DocumentScreen: View {
         MarkdownTextView(
             snapshot: model.snapshot,
             selected: model.reviewing,
+            rendered: !showsSource,
             onCandidate: { model.open($0) },
             onReplace: { model.beginReplace($0) },
             onReviewNext: { model.reviewNext() })
@@ -232,6 +234,18 @@ struct DocumentScreen: View {
             }
             .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
             .accessibilityIdentifier("identities-button")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                // The source as Copy for AI sends it, markers dimmed (ADR 0096).
+                Toggle(isOn: $showsSource) {
+                    Label("Show Markdown", systemImage: "number")
+                }
+                .accessibilityIdentifier("show-markdown")
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+            .accessibilityIdentifier("document-menu")
         }
     }
 

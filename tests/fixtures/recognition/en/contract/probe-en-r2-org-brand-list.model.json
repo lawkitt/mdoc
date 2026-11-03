@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":28,"end":37,"label":"full_name","score":0.52822924,"text":"LARKFIELD"},
+    {"start":67,"end":86,"label":"organization","score":0.9569572,"text":"Quillon Freight LLC"},
+    {"start":28,"end":37,"label":"organization","score":0.7220373,"text":"LARKFIELD"},
+    {"start":18,"end":25,"label":"organization","score":0.66235983,"text":"QUILLON"},
+    {"start":40,"end":46,"label":"organization","score":0.5759458,"text":"PELLAM"}
+  ]
+}

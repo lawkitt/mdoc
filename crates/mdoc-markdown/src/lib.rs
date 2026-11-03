@@ -6,7 +6,7 @@
 //!   highlight, code, links, styled inline HTML, bare URLs — and which bytes
 //!   are syntax markers, plus the hidden line prefixes.
 //! - [`lines`]: one line's ATX heading, thematic break, blockquote, list or
-//!   task prefix.
+//!   task prefix, footnote definition or raw HTML; list numbering and levels.
 //! - [`tables`]: GFM table regions, cells and alignment.
 //! - [`syntax`]: the grammar the reader shares with the editor: alerts,
 //!   table styles, writing direction, links, highlight and styled tags.
