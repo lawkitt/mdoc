@@ -1,0 +1,19 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":313,"end":317,"label":"person","score":0.7098244,"text":"Leon"},
+    {"start":320,"end":326,"label":"person","score":0.69740283,"text":"Yanick"},
+    {"start":283,"end":291,"label":"person","score":0.68637,"text":"Oskarine"},
+    {"start":343,"end":356,"label":"person","score":0.6772606,"text":"Ostrander-Bey"},
+    {"start":277,"end":280,"label":"person","score":0.61901075,"text":"Ivo"},
+    {"start":271,"end":274,"label":"person","score":0.5547117,"text":"Kee"},
+    {"start":359,"end":362,"label":"person","score":0.51615345,"text":"Tam"},
+    {"start":308,"end":310,"label":"person","score":0.50445163,"text":"Lu"},
+    {"start":413,"end":443,"label":"email","score":0.999722,"text":"copies@quillmark-print.invalid"},
+    {"start":371,"end":380,"label":"passport_number","score":0.9914557,"text":"PX 504118"},
+    {"start":294,"end":303,"label":"passport_number","score":0.9899864,"text":"PX 731609"},
+    {"start":329,"end":338,"label":"passport_number","score":0.9883127,"text":"PX 862710"},
+    {"start":742,"end":748,"label":"person","score":0.573559,"text":"sender"}
+  ]
+}
