@@ -12,7 +12,7 @@ pub(super) struct Candidates {
     occurrences: Vec<Candidate>,
     occurrence_lookup: HashMap<u64, usize>,
     counters: HashMap<u64, u64>,
-    /// Cached discovery matcher over every group original, in group order.
+    /// Cached discovery matcher: raw and read wording per group, in order.
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
 impl Candidates {

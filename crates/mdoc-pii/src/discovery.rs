@@ -29,6 +29,8 @@ pub struct DiscoveryInput {
     /// ([`crate::web::whole`]), and one shields the names, emails and IDs inside it
     /// even when kept.
     pub(super) url: Vec<bool>,
+    /// URLs and emails match exact source bytes only, never decoded text.
+    pub(super) raw_only: Vec<bool>,
     /// Dates of birth: a mention counts only after one of its cue words
     /// ([`cue_before`]); `None` counts every mention.
     pub(super) cues: Vec<Option<Vec<String>>>,
@@ -61,11 +63,30 @@ impl DiscoveryInput {
                 tokens,
             });
         }
+        let originals: Vec<_> = self
+            .originals
+            .iter()
+            .zip(&self.raw_only)
+            .map(|(s, raw_only)| {
+                if *raw_only {
+                    std::borrow::Cow::Borrowed(s.as_ref())
+                } else {
+                    crate::view::wording(s)
+                }
+            })
+            .collect();
+        // Two patterns per variant: its exact source and its read wording.
+        // URL and email patterns stay raw, and only search the raw source.
         let matcher = self.matcher.unwrap_or_else(|| {
             Arc::new(
                 AhoCorasickBuilder::new()
                     .kind(Some(AhoCorasickKind::ContiguousNFA))
-                    .build(self.originals.iter().map(|s| s.as_ref()))
+                    .build(
+                        self.originals
+                            .iter()
+                            .zip(&originals)
+                            .flat_map(|(raw, read)| [raw.as_ref(), read.as_ref()]),
+                    )
                     .expect("bounded nonempty seeds"),
             )
         });
@@ -73,12 +94,41 @@ impl DiscoveryInput {
             return None;
         }
         let protected = protected_syntax(source);
+        let view = crate::view::View::for_discovery(source);
         let mut hits = Vec::new();
-        for (index, hit) in matcher.find_overlapping_iter(source).enumerate() {
+        // Prefer the exact source variant when it is already known, so a
+        // kept or explicitly separated wording keeps its own policy.
+        let exact: std::collections::HashMap<&str, usize> = self
+            .originals
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_ref(), i))
+            .collect();
+        let raw = matcher
+            .find_overlapping_iter(source)
+            .map(|hit| (hit.pattern().as_usize() / 2, hit.start()..hit.end()));
+        let decoded = matcher.find_overlapping_iter(&view.text).filter_map(|hit| {
+            let pattern = hit.pattern().as_usize() / 2;
+            if self.raw_only[pattern] {
+                return None;
+            }
+            Some((pattern, view.source_range(hit.start()..hit.end())))
+        });
+        let mut seen = HashSet::new();
+        for (index, (pattern, range)) in raw.chain(decoded).enumerate() {
             if index % 1024 == 0 && cancel.load(Ordering::Relaxed) {
                 return None;
             }
-            hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
+            if range.is_empty() {
+                continue;
+            }
+            let group = exact
+                .get(&source[range.clone()])
+                .copied()
+                .unwrap_or(pattern);
+            if seen.insert((group, range.start, range.end)) {
+                hits.push((group, range));
+            }
         }
         // The user's own selection (a manual mark) counts every exact
         // match; only a scan's repeats must be whole addresses and stay out
@@ -118,10 +168,11 @@ impl DiscoveryInput {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
+                && (source[range.clone()] == *self.originals[*index] || !glued(source, range))
                 && (!self.url[*index] || manual(*index) || crate::web::whole(source, range))
                 && (manual(*index) || !shielded(range))
-                && !crosses_syntax(&protected, source, range)
-                && plain_text_span(source, range.clone())
+                && !crosses_syntax(&protected, &view.markup, source, range)
+                && plain_text_span(source, &view.markup, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
                 && !(self.whole[*index] && !whole_value(source, range))

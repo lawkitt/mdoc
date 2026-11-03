@@ -2,12 +2,15 @@ import SwiftUI
 import UIKit
 
 /// The document's Markdown source in a read-only, selectable TextKit 2
-/// `UITextView` (ADR 0085). Candidates are links: a tap opens the candidate
-/// sheet, VoiceOver reaches them through the Candidates rotor, and the edit
-/// menu adds Replace… for a selection.
+/// `UITextView` (ADR 0085), rendered as desktop draws it unless Show
+/// Markdown is on (ADR 0096). Candidates are links: a tap opens the
+/// candidate sheet, in a table cell too; VoiceOver reaches them through the
+/// Candidates rotor, and the edit menu adds Replace… for a selection.
 struct MarkdownTextView: UIViewRepresentable {
     let snapshot: DocumentSnapshot
     let selected: CandidateID?
+    /// Markers hidden and blocks drawn; false shows the source.
+    var rendered = true
     let onCandidate: (CandidateID) -> Void
     let onReplace: (SourceRange) -> Void
     let onReviewNext: () -> Void
@@ -17,7 +20,7 @@ struct MarkdownTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> CandidateTextView {
-        let view = CandidateTextView(usingTextLayoutManager: true)
+        let view = CandidateTextView()
         view.isEditable = false
         view.isSelectable = true
         view.dataDetectorTypes = []
@@ -31,6 +34,15 @@ struct MarkdownTextView: UIViewRepresentable {
         view.accessibilityIdentifier = "document-text"
         view.accessibilityHint = String(localized: "Underlined words are names mdoc found. Use the Candidates rotor to move between them.")
         view.installAccessibility()
+        let coordinator = context.coordinator
+        view.configureCell = { [weak coordinator] cell in
+            cell.delegate = coordinator
+            cell.allowsCopy = false
+        }
+        view.onWidth = { [weak coordinator, weak view] width in
+            guard let coordinator, let view else { return }
+            coordinator.render(view, width: width)
+        }
         return view
     }
 
@@ -39,27 +51,21 @@ struct MarkdownTextView: UIViewRepresentable {
         coordinator.parent = self
         view.onReviewNext = onReviewNext
         let key = StyleKey(
-            snapshot: snapshot, selected: selected,
+            snapshot: snapshot, selected: selected, rendered: rendered,
             dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
         guard key != coordinator.styled else { return }
         let textChanged = coordinator.styled?.snapshot.markdown != snapshot.markdown
         coordinator.styled = key
         coordinator.offsets = TextOffsets(snapshot.markdown)
-        let offset = view.contentOffset
-        view.attributedText = MarkdownStyler(traits: view.traitCollection, selected: selected)
-            .attributedText(for: snapshot)
-        view.candidateRanges = snapshot.candidates.map { ($0.id, coordinator.offsets.nsRange($0.range)) }
-        if !textChanged || coordinator.keepsScroll {
-            view.layoutIfNeeded()
-            view.setContentOffset(offset, animated: false)
-        }
+        coordinator.render(view, width: view.textWidth, keepsScroll: !textChanged || coordinator.keepsScroll)
         coordinator.keepsScroll = true
     }
 
     struct StyleKey: Equatable {
         var snapshot: DocumentSnapshot
         var selected: CandidateID?
+        var rendered: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
     }
@@ -73,6 +79,34 @@ struct MarkdownTextView: UIViewRepresentable {
 
         init(parent: MarkdownTextView) {
             self.parent = parent
+        }
+
+        /// Styles the snapshot for a text column `width` wide (tables need
+        /// one) and points the Candidates rotor at the text and the cells.
+        func render(_ view: CandidateTextView, width: CGFloat, keepsScroll: Bool = true) {
+            let snapshot = parent.snapshot
+            let offset = view.contentOffset
+            let styler = MarkdownStyler(
+                traits: view.traitCollection, selected: parent.selected, rendered: parent.rendered,
+                width: width > 0 ? width : nil)
+            view.show(styler.document(for: snapshot), width: width)
+            var items: [CandidateTextView.RotorItem] = []
+            for (order, candidate) in snapshot.candidates.enumerated() {
+                let range = offsets.nsRange(candidate.range)
+                let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
+                    NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+                }
+                if let cell {
+                    items.append(.init(view: cell, range: NSRange(location: range.location - cell.location, length: range.length), order: order))
+                } else {
+                    items.append(.init(view: view, range: range, order: order))
+                }
+            }
+            view.rotorItems = items.sorted { $0.order < $1.order }
+            if keepsScroll {
+                view.layoutIfNeeded()
+                view.setContentOffset(offset, animated: false)
+            }
         }
 
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
@@ -97,7 +131,16 @@ struct MarkdownTextView: UIViewRepresentable {
         /// (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             guard range.length > 0 else { return UIMenu(children: []) }
-            let source = offsets.sourceRange(range)
+            // A selection in the main text that runs into a folded table
+            // holds hidden source: no Replace… (ADR 0096). Cells are their
+            // own text views.
+            if let main = textView as? CandidateTextView,
+               main.tableViews.contains(where: { NSIntersectionRange($0.table.range, range).length > 0 }) {
+                return UIMenu(children: [])
+            }
+            // A table cell's selection, in document offsets.
+            let base = (textView as? CellTextView)?.location ?? 0
+            let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))
             let replace = UIAction(title: String(localized: "Replace…"), image: UIImage(systemName: "eye.slash")) { [weak self, weak textView] _ in
                 textView?.selectedRange = NSRange(location: range.location, length: 0)
                 self?.parent.onReplace(source)
@@ -109,9 +152,17 @@ struct MarkdownTextView: UIViewRepresentable {
 
 /// The text view with the Candidates rotor and a Review next action. The
 /// selection exists only for Replace…: copying, sharing and dragging it out
-/// are off, keyboard shortcuts included.
-final class CandidateTextView: UITextView {
-    var candidateRanges: [(CandidateID, NSRange)] = []
+/// are off, keyboard shortcuts included, in table cells too.
+final class CandidateTextView: RenderedTextView {
+    /// Where the Candidates rotor goes: a candidate's text, in the main
+    /// text or in a table cell, in document order.
+    struct RotorItem {
+        let view: UITextView
+        let range: NSRange
+        let order: Int
+    }
+
+    var rotorItems: [RotorItem] = []
     var onReviewNext: (() -> Void)?
 
     /// Selecting is the only standard action left.
@@ -140,17 +191,23 @@ final class CandidateTextView: UITextView {
     }
 
     private func rotorItem(after predicate: UIAccessibilityCustomRotorSearchPredicate) -> UIAccessibilityCustomRotorItemResult? {
-        let current = predicate.currentItem.targetRange.map { offset(from: beginningOfDocument, to: $0.start) } ?? -1
-        let ranges = candidateRanges.map(\.1).sorted { $0.location < $1.location }
-        let next: NSRange? = switch predicate.searchDirection {
-        case .next: ranges.first { $0.location > current }
-        case .previous: ranges.last { $0.location < current || current < 0 }
+        // The current item, as an index into the document-ordered list.
+        let current: Int? = predicate.currentItem.targetRange.flatMap { target in
+            let element = predicate.currentItem.targetElement as? UITextView
+            let location = element.map { $0.offset(from: $0.beginningOfDocument, to: target.start) } ?? -1
+            return rotorItems.firstIndex { $0.view === element && $0.range.location == location }
+        }
+        let next: Int? = switch predicate.searchDirection {
+        case .next: current.map { $0 + 1 } ?? 0
+        case .previous: current.map { $0 - 1 } ?? rotorItems.count - 1
         @unknown default: nil
         }
-        guard let next,
-              let start = position(from: beginningOfDocument, offset: next.location),
-              let end = position(from: start, offset: next.length),
-              let range = textRange(from: start, to: end) else { return nil }
-        return UIAccessibilityCustomRotorItemResult(targetElement: self, targetRange: range)
+        guard let next, rotorItems.indices.contains(next) else { return nil }
+        let item = rotorItems[next]
+        let view = item.view
+        guard let start = view.position(from: view.beginningOfDocument, offset: item.range.location),
+              let end = view.position(from: start, offset: item.range.length),
+              let range = view.textRange(from: start, to: end) else { return nil }
+        return UIAccessibilityCustomRotorItemResult(targetElement: view, targetRange: range)
     }
 }

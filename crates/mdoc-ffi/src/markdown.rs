@@ -2,18 +2,23 @@
 //! display rule), from `mdoc-markdown`, the recognition the desktop editor
 //! uses.
 //!
-//! The apps show the Markdown source with its markers dimmed, so every range
-//! is a UTF-8 byte range into the text the review returned, the same offsets
-//! candidates use. The bindings say what a piece of text is, never how it
+//! The apps draw the Markdown source rendered, markers hidden, as desktop
+//! does (ADR 0096), or with its markers dimmed (Show Markdown). Either way
+//! the text is the source, so every range is a UTF-8 byte range into the
+//! text the review returned, the same offsets candidates use. The bindings say what a piece of text is, never how it
 //! looks: no fonts and no theme colours, only the colours the document itself
 //! names.
 
 use std::ops::Range;
 
 use mdoc_markdown::{
-    lines::{blockquote_prefix, heading_level, list_prefix, task_prefix, thematic_break},
+    lines::{
+        blockquote_prefix, footnote_def, heading_level, html_block, list_levels, list_prefix,
+        ordered_scan, task_prefix, thematic_break,
+    },
     spans::{Background, Color, Span, is_backslash_escaped, scan_line},
-    tables::{table_cell_ranges, table_regions},
+    syntax::{AlertKind, TableStyle, alert_prefix, ordered_marker},
+    tables::{Align, table_cell_ranges, table_regions},
 };
 
 use crate::library::TextRange;
@@ -68,11 +73,118 @@ pub struct MarkdownLine {
     pub kind: MarkdownLineKind,
 }
 
+/// A list item's line: where its bullet, number or box goes and how deep it
+/// sits (ADR 0096). Its source marker is a hidden marker span.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MarkdownListItem {
+    /// The line without its line break.
+    pub range: TextRange,
+    /// How many lists are open above the item (0 at the top level), whatever
+    /// the source's spaces per level.
+    pub depth: u32,
+    /// What desktop paints in the marker's place: `•`, or the item's
+    /// renumbered position as `1.`, `a.` or `i.` by depth. Empty for a task.
+    pub label: String,
+    /// A task item's box: checked or not. `None` for a plain item.
+    pub task: Option<bool>,
+    /// Siblings of one ordered list share an id, so their bodies can share
+    /// one marker width. `None` for a bullet or task item.
+    pub list: Option<u32>,
+}
+
+/// One of the five GitHub alert kinds (`> [!NOTE]` …).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum MarkdownAlertKind {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
+/// What a line is beyond its [`MarkdownLineKind`]: roles the rendered view
+/// draws (ADR 0096).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum MarkdownBlockKind {
+    /// A code block's opening or closing fence, hidden in the rendered view.
+    CodeFence,
+    /// A line of an alert (`> [!NOTE]` and the quote lines under it); the
+    /// title line holds the hidden marker, where the alert's name is drawn.
+    Alert {
+        kind: MarkdownAlertKind,
+        title: bool,
+    },
+    /// A footnote definition or a raw HTML line, drawn greyed as desktop does.
+    Muted,
+}
+
+/// A line with a rendered-view role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MarkdownBlock {
+    /// The line without its line break.
+    pub range: TextRange,
+    pub kind: MarkdownBlockKind,
+}
+
+/// A table column's alignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum MarkdownAlign {
+    Left,
+    Center,
+    Right,
+}
+
+/// A table's look, from its `<!-- table:STYLE -->` marker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum MarkdownTableStyle {
+    /// An outer box and every gridline (the default).
+    Grid,
+    /// Alternate body rows shaded, a rule under the header.
+    Striped,
+    /// Only the header row shaded.
+    Header,
+    /// Just a rule under the header.
+    Minimal,
+}
+
+/// One table row: its line and each cell's trimmed content.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MarkdownTableRow {
+    /// The line without its line break.
+    pub range: TextRange,
+    /// Each cell's content without its spaces; an empty cell is an empty
+    /// range where its content would be.
+    pub cells: Vec<TextRange>,
+}
+
+/// A GFM table the rendered view draws as a grid (ADR 0096).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MarkdownTable {
+    /// Every line of the table, from its style marker (if any) to its last
+    /// row, without the last line break.
+    pub range: TextRange,
+    /// The header row, then the body rows; the delimiter row is left out.
+    pub rows: Vec<MarkdownTableRow>,
+    pub aligns: Vec<MarkdownAlign>,
+    pub style: MarkdownTableStyle,
+    /// Column widths in desktop points from the marker's `cols=`; the app
+    /// keeps their proportions. `None` when the table sets none.
+    pub widths: Option<Vec<f32>>,
+    /// The table reads right to left.
+    pub rtl: bool,
+}
+
 /// A text's spans and lines, each in source order. Spans never overlap.
-#[derive(Clone, Debug, Default, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, Default, PartialEq, uniffi::Record)]
 pub struct MarkdownStyling {
     pub spans: Vec<MarkdownSpan>,
     pub lines: Vec<MarkdownLine>,
+    /// List items, in source order (ADR 0096).
+    pub list_items: Vec<MarkdownListItem>,
+    /// Code fences, alerts and greyed lines, in source order (ADR 0096).
+    pub blocks: Vec<MarkdownBlock>,
+    /// Tables, in source order (ADR 0096).
+    pub tables: Vec<MarkdownTable>,
 }
 
 /// The spans and line roles of a whole Markdown text: one call per text, so
@@ -101,8 +213,33 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
         offset += line.len() + 1;
     }
 
+    let sources: Vec<&str> = lines.iter().map(|range| &text[range.clone()]).collect();
+    let levels = list_levels(&sources);
+    let (numbers, lists) = ordered_scan(&sources);
+
+    // Lines inside fenced code: a table written there is code, not a table.
+    let mut fenced = vec![false; lines.len()];
+    let mut open: Option<(u8, usize)> = None;
+    for (index, line) in sources.iter().enumerate() {
+        if let Some(fence) = open {
+            fenced[index] = true;
+            if closes_fence(line, fence) {
+                open = None;
+            }
+        } else if let Some(fence) = opens_fence(line) {
+            fenced[index] = true;
+            open = Some(fence);
+        }
+    }
+
     let mut table = vec![None; lines.len()];
+    let mut tables = Vec::new();
     for region in table_regions(text) {
+        let first = region.marker_line.unwrap_or(region.lines.start);
+        if (first..region.lines.end).any(|index| fenced[index]) {
+            continue;
+        }
+        tables.push(table_of(text, &lines, &region));
         for index in region.lines.clone() {
             table[index] = Some(if index == region.lines.start {
                 TablePart::Header
@@ -118,7 +255,10 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
     }
 
     let mut out = Styler::new(text);
+    out.tables = tables;
     let mut fence: Option<(u8, usize)> = None;
+    // The alert the quote lines under it belong to.
+    let mut alert: Option<MarkdownAlertKind> = None;
     for (index, range) in lines.iter().enumerate() {
         let line = &text[range.clone()];
         if let Some(open) = fence {
@@ -126,15 +266,62 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
             out.line(range, MarkdownLineKind::CodeBlock);
             if closes_fence(line, open) {
                 out.marker(trimmed(text, range));
+                out.block(range, MarkdownBlockKind::CodeFence);
                 fence = None;
             }
             continue;
         }
         if let Some(open) = opens_fence(line) {
             fence = Some(open);
+            alert = None;
             out.line(range, MarkdownLineKind::CodeBlock);
             out.marker(trimmed(text, range));
+            out.block(range, MarkdownBlockKind::CodeFence);
             continue;
+        }
+        if table[index].is_none() {
+            // An alert runs from its marker line over the quote lines under it.
+            match blockquote_prefix(line) {
+                Some(prefix) => {
+                    if let Some((kind, ..)) = alert_prefix(&line[prefix..]) {
+                        alert = Some(alert_kind(kind));
+                        out.block(
+                            range,
+                            MarkdownBlockKind::Alert {
+                                kind: alert_kind(kind),
+                                title: true,
+                            },
+                        );
+                    } else if let Some(kind) = alert {
+                        out.block(range, MarkdownBlockKind::Alert { kind, title: false });
+                    }
+                }
+                None => alert = None,
+            }
+            if footnote_def(line).is_some() || html_block(line) {
+                out.block(range, MarkdownBlockKind::Muted);
+            }
+            if let Some(depth) = levels[index] {
+                let task = task_prefix(line).map(|(_, _, checked)| checked);
+                let (number, level) = numbers[index];
+                let ordered = list_prefix(line).is_some_and(|(_, _, ordered, _)| ordered);
+                let label = match (task, ordered) {
+                    (Some(_), _) => String::new(),
+                    (None, true) => ordered_marker(level, number),
+                    (None, false) => "•".to_owned(),
+                };
+                out.list_items.push(MarkdownListItem {
+                    range: TextRange::of(range),
+                    depth: depth as u32,
+                    label,
+                    task,
+                    list: if task.is_none() && ordered {
+                        lists[index]
+                    } else {
+                        None
+                    },
+                });
+            }
         }
         match table[index] {
             Some(TablePart::StyleMarker) => {
@@ -171,6 +358,78 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
         out.scan(range.clone());
     }
     out.finish()
+}
+
+fn alert_kind(kind: AlertKind) -> MarkdownAlertKind {
+    match kind {
+        AlertKind::Note => MarkdownAlertKind::Note,
+        AlertKind::Tip => MarkdownAlertKind::Tip,
+        AlertKind::Important => MarkdownAlertKind::Important,
+        AlertKind::Warning => MarkdownAlertKind::Warning,
+        AlertKind::Caution => MarkdownAlertKind::Caution,
+    }
+}
+
+/// A table region as the bindings carry it: rows without the delimiter row,
+/// each with its cells' trimmed content ranges.
+fn table_of(
+    text: &str,
+    lines: &[Range<usize>],
+    region: &mdoc_markdown::tables::TableRegion,
+) -> MarkdownTable {
+    let first = region.marker_line.unwrap_or(region.lines.start);
+    let rows = region
+        .lines
+        .clone()
+        .filter(|&index| index != region.lines.start + 1)
+        .map(|index| {
+            let range = &lines[index];
+            MarkdownTableRow {
+                range: TextRange::of(range),
+                cells: row_cells(&text[range.clone()])
+                    .into_iter()
+                    .map(|cell| TextRange::of(&(range.start + cell.start..range.start + cell.end)))
+                    .collect(),
+            }
+        })
+        .collect();
+    MarkdownTable {
+        range: TextRange::of(&(lines[first].start..lines[region.lines.end - 1].end)),
+        rows,
+        aligns: region
+            .aligns
+            .iter()
+            .map(|align| match align {
+                Align::Left => MarkdownAlign::Left,
+                Align::Center => MarkdownAlign::Center,
+                Align::Right => MarkdownAlign::Right,
+            })
+            .collect(),
+        style: match region.style {
+            TableStyle::Grid => MarkdownTableStyle::Grid,
+            TableStyle::Striped => MarkdownTableStyle::Striped,
+            TableStyle::Header => MarkdownTableStyle::Header,
+            TableStyle::Minimal => MarkdownTableStyle::Minimal,
+        },
+        widths: region.col_widths_attr.clone(),
+        rtl: region.rtl,
+    }
+}
+
+/// A row's cells, line-local: between the pipes, plus the text after the
+/// last pipe when the closing pipe is left out (`| a | b`), as the desktop's
+/// `table_cells` reads it.
+fn row_cells(line: &str) -> Vec<Range<usize>> {
+    let mut cells = table_cell_ranges(line);
+    if let Some(last) = line.rfind('|') {
+        let after = &line[last + 1..];
+        let content = after.trim();
+        if !content.is_empty() {
+            let start = last + 1 + (after.len() - after.trim_start().len());
+            cells.push(start..start + content.len());
+        }
+    }
+    cells
 }
 
 /// A line's heading level: an ATX heading, or one right after a list or task
@@ -227,6 +486,9 @@ struct Styler<'a> {
     text: &'a str,
     spans: Vec<MarkdownSpan>,
     lines: Vec<MarkdownLine>,
+    list_items: Vec<MarkdownListItem>,
+    blocks: Vec<MarkdownBlock>,
+    tables: Vec<MarkdownTable>,
 }
 
 impl<'a> Styler<'a> {
@@ -235,7 +497,17 @@ impl<'a> Styler<'a> {
             text,
             spans: Vec::new(),
             lines: Vec::new(),
+            list_items: Vec::new(),
+            blocks: Vec::new(),
+            tables: Vec::new(),
         }
+    }
+
+    fn block(&mut self, range: &Range<usize>, kind: MarkdownBlockKind) {
+        self.blocks.push(MarkdownBlock {
+            range: TextRange::of(range),
+            kind,
+        });
     }
 
     fn line(&mut self, range: &Range<usize>, kind: MarkdownLineKind) {
@@ -267,17 +539,7 @@ impl<'a> Styler<'a> {
     /// and the pipes between cells are markers.
     fn table_row(&mut self, range: &Range<usize>) {
         let line = &self.text[range.clone()];
-        let mut cells = table_cell_ranges(line);
-        // The closing pipe is optional (`| a | b`): the text after the last
-        // pipe is a cell too, as the desktop's `table_cells` reads it.
-        if let Some(last) = line.rfind('|') {
-            let after = &line[last + 1..];
-            let content = after.trim();
-            if !content.is_empty() {
-                let start = last + 1 + (after.len() - after.trim_start().len());
-                cells.push(start..start + content.len());
-            }
-        }
+        let cells = row_cells(line);
         let bytes = line.as_bytes();
         let mut pipes = Vec::new();
         for (index, &byte) in bytes.iter().enumerate() {
@@ -337,6 +599,9 @@ impl<'a> Styler<'a> {
         MarkdownStyling {
             spans: self.spans,
             lines: self.lines,
+            list_items: self.list_items,
+            blocks: self.blocks,
+            tables: self.tables,
         }
     }
 }
@@ -699,5 +964,95 @@ mod tests {
                 "no {kind} span on {text}"
             );
         }
+    }
+
+    /// What the rendered view draws (ADR 0096): list items with desktop's
+    /// labels and levels, fences, alerts, greyed lines and table rows.
+    #[test]
+    fn rendered_view_roles() {
+        let text = "1. One\n3. Two\n    - Sub\n    1. Deep\n- [x] Done\n\n> [!WARNING]\n> Body\n\n[^1]: note\n<div>\n\n```\ncode\n```\n\n<!-- table:striped cols=100,200 -->\n| A | B |\n| --- | :-: |\n| a | b |\n| c";
+        let styling = styling(text);
+        let items: Vec<_> = styling
+            .list_items
+            .iter()
+            .map(|item| {
+                (
+                    slice(text, item.range),
+                    item.depth,
+                    item.label.as_str(),
+                    item.task,
+                )
+            })
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("1. One", 0, "1.", None),
+                ("3. Two", 0, "2.", None),
+                ("    - Sub", 1, "•", None),
+                ("    1. Deep", 1, "a.", None),
+                ("- [x] Done", 0, "", Some(true)),
+            ]
+        );
+        assert_eq!(styling.list_items[0].list, styling.list_items[1].list);
+        assert!(styling.list_items[0].list.is_some());
+        assert_eq!(styling.list_items[2].list, None);
+        let blocks: Vec<_> = styling
+            .blocks
+            .iter()
+            .map(|block| (slice(text, block.range), block.kind))
+            .collect();
+        assert_eq!(
+            blocks,
+            [
+                (
+                    "> [!WARNING]",
+                    MarkdownBlockKind::Alert {
+                        kind: MarkdownAlertKind::Warning,
+                        title: true
+                    }
+                ),
+                (
+                    "> Body",
+                    MarkdownBlockKind::Alert {
+                        kind: MarkdownAlertKind::Warning,
+                        title: false
+                    }
+                ),
+                ("[^1]: note", MarkdownBlockKind::Muted),
+                ("<div>", MarkdownBlockKind::Muted),
+                ("```", MarkdownBlockKind::CodeFence),
+                ("```", MarkdownBlockKind::CodeFence),
+            ]
+        );
+        let [table] = styling.tables.as_slice() else {
+            panic!("one table expected");
+        };
+        assert!(slice(text, table.range).starts_with("<!-- table:striped"));
+        assert!(slice(text, table.range).ends_with("| c"));
+        assert_eq!(table.style, MarkdownTableStyle::Striped);
+        assert_eq!(table.widths, Some(vec![100., 200.]));
+        assert_eq!(table.aligns, [MarkdownAlign::Left, MarkdownAlign::Center]);
+        let rows: Vec<Vec<&str>> = table
+            .rows
+            .iter()
+            .map(|row| row.cells.iter().map(|cell| slice(text, *cell)).collect())
+            .collect();
+        assert_eq!(rows, [vec!["A", "B"], vec!["a", "b"], vec!["c"]]);
+    }
+
+    /// A table written inside fenced code is code: no table record, and its
+    /// pipes stay code text.
+    #[test]
+    fn a_fenced_table_is_code() {
+        let text = "```\n| A | B |\n| --- | --- |\n| a | b |\n```";
+        let styling = styling(text);
+        assert!(styling.tables.is_empty());
+        assert!(
+            styling
+                .lines
+                .iter()
+                .all(|line| line.kind == MarkdownLineKind::CodeBlock)
+        );
     }
 }

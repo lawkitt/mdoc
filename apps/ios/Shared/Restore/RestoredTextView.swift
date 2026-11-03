@@ -2,14 +2,19 @@ import SwiftUI
 import UIKit
 
 /// A restored reply, styled as the review screen styles Markdown (the core's
-/// spans), with the values put back marked and alias-shaped tokens no
-/// identity owns highlighted as unrecognised (ADR 0087). Read-only and
-/// selectable.
+/// spans, rendered unless Show Markdown is on, ADR 0096), with the values put
+/// back marked and alias-shaped tokens no identity owns highlighted as
+/// unrecognised (ADR 0087). Read-only and selectable.
 struct RestoredTextView: UIViewRepresentable {
     let result: RestoreResult
+    @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
 
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView(usingTextLayoutManager: true)
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> RenderedTextView {
+        let view = RenderedTextView()
         view.isEditable = false
         view.isSelectable = true
         view.dataDetectorTypes = []
@@ -19,18 +24,48 @@ struct RestoredTextView: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
         view.textLayoutManager?.usesHyphenation = false
         view.accessibilityIdentifier = "restored-text"
+        // A reply is the user's to copy, in a table cell too.
+        view.configureCell = { $0.allowsCopy = true }
+        let coordinator = context.coordinator
+        view.onWidth = { [weak coordinator, weak view] width in
+            guard let coordinator, let view else { return }
+            coordinator.render(view, width: width)
+        }
         return view
     }
 
-    func updateUIView(_ view: UITextView, context: Context) {
+    func updateUIView(_ view: RenderedTextView, context: Context) {
         let traits = UITraitCollection(traitsFrom: [
             UITraitCollection(userInterfaceStyle: context.environment.colorScheme == .dark ? .dark : .light),
             UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize)),
         ])
-        view.attributedText = Self.attributed(result, traits: traits)
+        let coordinator = context.coordinator
+        coordinator.result = result
+        coordinator.traits = traits
+        coordinator.rendered = !showsSource
+        coordinator.render(view, width: view.textWidth)
+    }
+
+    /// Restyles for a new text column width.
+    @MainActor
+    final class Coordinator {
+        var result: RestoreResult?
+        var traits = UITraitCollection.current
+        var rendered = true
+
+        func render(_ view: RenderedTextView, width: CGFloat) {
+            guard let result else { return }
+            view.show(
+                RestoredTextView.document(result, traits: traits, rendered: rendered, width: width > 0 ? width : nil),
+                width: width)
+        }
     }
 
     static func attributed(_ result: RestoreResult, traits: UITraitCollection) -> NSAttributedString {
+        document(result, traits: traits, rendered: false, width: nil).text
+    }
+
+    static func document(_ result: RestoreResult, traits: UITraitCollection, rendered: Bool, width: CGFloat?) -> RenderedDocument {
         var text = ""
         var restored: [NSRange] = []
         var unresolved: [NSRange] = []
@@ -47,23 +82,23 @@ struct RestoredTextView: UIViewRepresentable {
                 unresolved.append(NSRange(location: start, length: token.utf16.count))
             }
         }
-        let styled = NSMutableAttributedString(attributedString: MarkdownStyler(traits: traits, selected: nil)
-            .attributedText(markdown: text, styling: MarkdownStyling(markdown: text), candidates: []))
         let dark = traits.userInterfaceStyle == .dark
-        for range in restored {
-            styled.addAttributes([
-                .backgroundColor: UIColor.tintColor.withAlphaComponent(dark ? 0.3 : 0.15),
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-            ], range: range)
-        }
         let body = MarkdownStyler.font(.body, traits: traits)
-        for range in unresolved {
-            styled.addAttributes([
-                .backgroundColor: UIColor.systemOrange.withAlphaComponent(dark ? 0.4 : 0.3),
-                .font: UIFont.monospacedSystemFont(ofSize: body.pointSize * 0.92, weight: .regular),
-            ], range: range)
+        let styler = MarkdownStyler(traits: traits, selected: nil, rendered: rendered, width: width)
+        return styler.document(markdown: text, styling: MarkdownStyling(markdown: text), candidates: []) { styled in
+            for range in restored {
+                styled.addAttributes([
+                    .backgroundColor: UIColor.tintColor.withAlphaComponent(dark ? 0.3 : 0.15),
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                ], range: range)
+            }
+            for range in unresolved {
+                styled.addAttributes([
+                    .backgroundColor: UIColor.systemOrange.withAlphaComponent(dark ? 0.4 : 0.3),
+                    .font: UIFont.monospacedSystemFont(ofSize: body.pointSize * 0.92, weight: .regular),
+                ], range: range)
+            }
         }
-        return styled
     }
 }
 

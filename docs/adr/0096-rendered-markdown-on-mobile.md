@@ -33,14 +33,15 @@ alerts and code as blocks. The phone should read as well as desktop.
   required too, but a miss there is fixed inside A. A web view is not
   used.
 - **Tables.** Cell text wraps inside columns at least about 140 pt wide,
-  scaled with Dynamic Type; a document's stored column widths
+  scaled with Dynamic Type, and never narrower than the column's longest
+  word, so no word breaks inside; a document's stored column widths
   (`<!-- table:… -->`) set the proportions and its table style is drawn.
   A bold header row with a light fill, thin grid lines, and the table's own
   sideways scroll with an edge fade. Candidates in cells look and act as
   in text. A selection stays inside one cell or outside tables. VoiceOver
   reads a table as a data table (row, column, column header). No full-screen
   table view for now.
-- **Lists** as desktop draws them: `•` `◦` `▪` by depth, ordered items
+- **Lists** as desktop draws them: `•` at every depth, ordered items
   `1.` → `a.` → `i.` by depth and renumbered (`ordered_marker`), a hanging
   indent, task items as ☐ / ☑ that do not toggle.
 - **Other blocks.** Headings at desktop's relative sizes and spacing; quote
@@ -91,4 +92,8 @@ alerts and code as blocks. The phone should read as well as desktop.
   paragraph (#565), letter-spaced text reversed on import (#566), a pipe
   table whose source rows are merged (#567), booking codes not proposed
   (#568).
+- Amended 2026-11-03 while building it: bullets are `•` at every depth,
+  as desktop paints them (the grill had assumed `•` `◦` `▪`); a column is
+  never narrower than its longest word; `***bold italic***` is one
+  construct in `mdoc-markdown`, which fixes a stray `*` on desktop too.
 - Interview and findings: [iOS Markdown rendering grill](../design/ios-markdown-rendering-grill-2026-11-03.md).
