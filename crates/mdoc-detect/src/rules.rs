@@ -1246,8 +1246,8 @@ impl Pack {
     /// A precedent's parties before a full or reporter short citation are
     /// legal references. Names outside citations, beside a role or title,
     /// or in the caption protect the case at hand's parties everywhere.
-    /// The caption is the first "v.", "vs." or "In re" line without a
-    /// reporter citation; its own docket with court and year still counts.
+    /// The caption is the first "v.", "vs." or "In re" line standing
+    /// alone or introducing a judgment, even with a reporter citation.
     /// A needless mark costs one untick, so uncertain names stay (#561).
     fn cited_cases(
         &self,
@@ -1289,7 +1289,10 @@ impl Pack {
             })
             .captures_iter(text)
             .filter_map(|found| found.name("caption"))
-            .find(|found| holder(&found.range()).is_none_or(|case| cited[case].docket))
+            .find(|found| {
+                holder(&found.range())
+                    .is_none_or(|case| cited[case].docket || cited_caption(text, &cited[case]))
+            })
             .map(|found| {
                 let mut start = text[..found.start()].rfind('\n').map_or(0, |i| i + 1);
                 let mut end = text[found.end()..]
@@ -1318,7 +1321,24 @@ impl Pack {
             let beside = named(d)
                 && (self.beside_role(text, range.clone())
                     || self.titled(text, unemphasised(text, range.start)));
-            if holder(&range).is_some() && !beside {
+            // A permissive party pattern must never swallow an attribution
+            // after a model name ("Ivo Harrow for Pellam"). Keep the name
+            // even if a rule pack later admits such prose again.
+            let prefix = named(d)
+                && holder(&range).is_some_and(|case| {
+                    cited[case].parties.iter().any(|party| {
+                        range.start == party.start
+                            && range.end < party.end
+                            && text[range.end..party.end]
+                                .split(|c: char| !c.is_alphabetic())
+                                .any(|word| {
+                                    !word.is_empty()
+                                        && word.chars().all(char::is_lowercase)
+                                        && !party_connector(word)
+                                })
+                    })
+                });
+            if holder(&range).is_some() && !beside && !prefix {
                 doubtful[i] = true;
             } else if named(d) {
                 own.push(words(range));
@@ -1377,7 +1397,7 @@ impl Pack {
                     let mut after_boundary = party.start;
                     for (at, _) in text[party.clone()].match_indices('.') {
                         let rest = &text[party.start + at + 1..party.end];
-                        let next = rest.trim_start_matches([' ', '\t']);
+                        let next = rest.trim_start_matches(char::is_whitespace);
                         if next.len() < rest.len()
                             && next.chars().next().is_some_and(char::is_uppercase)
                         {
@@ -1952,6 +1972,53 @@ fn with_parts(
     parts: &std::collections::BTreeMap<String, String>,
 ) -> Result<Regex, String> {
     with_groups(pattern, parts, &["lead", "tail"], false)
+}
+
+/// Lowercase words admitted between the capitalised words of a party.
+/// `ex rel.` is the only supported multiword connector.
+fn party_connector(word: &str) -> bool {
+    matches!(
+        word,
+        "of" | "the" | "and" | "de" | "du" | "van" | "von" | "der" | "la" | "le" | "ex" | "rel"
+    )
+}
+
+/// A citation may be the document's own caption. Require its own line
+/// (allowing Markdown and the court after a citation), or a judgment
+/// label in the next three nonempty lines. Prose before/after a citation
+/// alone, such as "Motion under Pellam ...", does not establish a caption.
+fn cited_caption(text: &str, case: &Cited) -> bool {
+    let start = text[..case.range.start].rfind('\n').map_or(0, |i| i + 1);
+    let end = text[case.range.end..]
+        .find('\n')
+        .map_or(text.len(), |i| case.range.end + i);
+    let unmarked = |s: &str| {
+        s.trim_matches(|c: char| c.is_whitespace() || "#*_".contains(c))
+            .to_owned()
+    };
+    static COURT: OnceLock<Regex> = OnceLock::new();
+    let standalone = unmarked(&text[start..case.range.start]).is_empty()
+        && COURT
+            .get_or_init(|| Regex::new(r"^(?:\s*\([^()\n]*\))*[.,;:]?$").expect("a pattern"))
+            .is_match(&unmarked(&text[case.range.end..end]));
+    standalone
+        || text[end..]
+            .lines()
+            .map(unmarked)
+            .filter(|line| !line.is_empty())
+            .take(3)
+            .any(|line| {
+                matches!(
+                    line.as_str(),
+                    "Judgment"
+                        | "JUDGMENT"
+                        | "Approved Judgment"
+                        | "Opinion"
+                        | "OPINION"
+                        | "Order"
+                        | "ORDER"
+                ) || line.starts_with("Before:")
+            })
 }
 
 /// Whether a reference's group names a cited case's party: `party`,
@@ -5058,6 +5125,145 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{source}"
             );
         }
+    }
+
+    /// Unicode spaces and line breaks cannot hide a sentence boundary (r5).
+    #[test]
+    fn cited_sentence_boundaries_accept_unicode_whitespace() {
+        for space in [
+            " ", "\u{00a0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}",
+            "\u{2004}", "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200a}",
+            "\u{202f}", "\u{205f}", "\u{3000}", "\t", "\n", "\r\n",
+        ] {
+            for citation in [
+                "Pellam v. Ostrand, 912 F.3d 455, controls.",
+                "Pellam, 912 F.3d at 460, controls.",
+            ] {
+                let source = format!("The witness was Ivo Harrow Jr.{space}{citation}");
+                assert_eq!(
+                    shown(&source, &[("Ivo Harrow", "person"), ("Pellam", "person")]),
+                    pairs(&[("Ivo Harrow", "PERSON")]),
+                    "{source:?}"
+                );
+            }
+        }
+        let source = "The witness was Ivo Harrow Jr.\u{00a0}Pellam v. Ostrand, 912 F.3d 455.";
+        assert_eq!(
+            shown(source, &[("Ivo Harrow", "person")]),
+            pairs(&[("Ivo Harrow", "PERSON")])
+        );
+    }
+
+    /// Attribution words separate the preparer from a cited party (r5).
+    #[test]
+    fn cited_parties_do_not_absorb_attributions() {
+        for connector in ["for", "by", "to", "with", "from"] {
+            for citation in [
+                "Pellam v. Ostrand, 912 F.3d 455.",
+                "Pellam, 912 F.3d at 460.",
+            ] {
+                let source = format!("Brief prepared by Ivo Harrow {connector} {citation}");
+                let cases = pack().cited(&source);
+                assert_eq!(cases.len(), 1, "{source}");
+                assert_eq!(cases[0].range.start, source.find("Pellam").unwrap());
+                assert_eq!(
+                    shown(&source, &[("Ivo Harrow", "person"), ("Pellam", "person")]),
+                    pairs(&[("Ivo Harrow", "PERSON")]),
+                    "{source}"
+                );
+            }
+        }
+    }
+
+    /// Even an overbroad rule pack cannot discard a model's name prefix.
+    #[test]
+    fn uncertain_party_prefixes_stay_even_with_a_permissive_pattern() {
+        let pack = Pack::load(&[(
+            "test.toml",
+            r"[[reference]]
+pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 912 F\.3d 455'",
+        )])
+        .unwrap();
+        for connector in ["for", "by", "to", "with", "from", "of"] {
+            let source = format!(
+                "Brief prepared by Ivo Harrow {connector} Pellam v. Ostrand, 912 F.3d 455."
+            );
+            let start = source.find("Ivo Harrow").unwrap();
+            let mut detections = vec![Detection {
+                range: start..start + "Ivo Harrow".len(),
+                category: Category::Person,
+                score: 0.8,
+                recognizer: Recognizer::Model,
+            }];
+            pack.cited_cases(&mdoc_pii::view::View::new(&source), &mut detections);
+            assert_eq!(detections.len(), usize::from(connector != "of"), "{source}");
+        }
+    }
+
+    /// A document's citation-bearing caption protects its parties everywhere.
+    #[test]
+    fn citation_bearing_captions_keep_the_case_at_hands_parties() {
+        for caption in [
+            "# Ivo Harrow v. Quillon Ltd [2031] EWHC 12 (Ch)",
+            "Ivo Harrow v. Quillon Ltd, 912 F.3d 455 (9th Cir. 2031)",
+            "**Ivo Harrow v. Quillon Ltd [2031] EWHC 12 (Ch)**",
+            "# *Ivo Harrow v. Quillon Ltd*, 912 F.3d 455",
+        ] {
+            let source =
+                format!("{caption}\n\nJudgment\n\nEarlier: Harrow v. Quillon Ltd, 912 F.3d 455.");
+            assert_eq!(
+                shown_at(
+                    &source,
+                    &[
+                        ("Ivo Harrow", 0, "person"),
+                        ("Quillon Ltd", 0, "organization"),
+                        ("Harrow", 1, "person"),
+                        ("Quillon Ltd", 1, "organization"),
+                    ]
+                ),
+                pairs(&[
+                    ("Ivo Harrow", "PERSON"),
+                    ("Quillon Ltd", "ORG"),
+                    ("Harrow", "PERSON"),
+                    ("Quillon Ltd", "ORG"),
+                ]),
+                "{source}"
+            );
+        }
+        // A standalone caption needs no judgment label or detected parties.
+        let source =
+            "**In re Quillon Ltd**, 77 B.R. 310\n\nEarlier: In re Quillon Ltd, 77 B.R. 310.";
+        assert_eq!(
+            shown_at(source, &[("Quillon Ltd", 1, "organization")]),
+            pairs(&[("Quillon Ltd", "ORG"), ("Quillon Ltd", "ORG")])
+        );
+        for label in [
+            "Judgment",
+            "JUDGMENT",
+            "Approved Judgment",
+            "Opinion",
+            "OPINION",
+            "Order",
+            "ORDER",
+            "Before: Judge Quill",
+        ] {
+            // The label is the third nonempty line after a prose-wrapped
+            // caption, which cannot qualify by standing alone.
+            let source = format!(
+                "Case of Ivo Harrow v. Quillon Ltd [2031] EWHC 12 (Ch), heard today\n\nCourt\n\nCivil Division\n\n{label}"
+            );
+            assert_eq!(
+                shown(
+                    &source,
+                    &[("Ivo Harrow", "person"), ("Quillon Ltd", "organization")]
+                ),
+                pairs(&[("Ivo Harrow", "PERSON"), ("Quillon Ltd", "ORG")]),
+                "{source}"
+            );
+        }
+        // A label beyond the third nonempty line does not establish a caption.
+        let source = "Motion under Ivo Harrow v. Quillon Ltd [2031] EWHC 12 (Ch), cited\nOne\nTwo\nThree\nJudgment";
+        assert_eq!(shown(source, &[("Ivo Harrow", "person")]), []);
     }
 
     /// A docket with court/year does not disqualify the caption, even
