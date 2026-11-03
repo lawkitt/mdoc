@@ -554,9 +554,12 @@ minutes). The result that finished first counts. There is no hosted
 Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
 needs `ci/android` waits for it.
 
-**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, which
-also saves the build caches the queue's hosted jobs restore. A red `main`
-stops enqueueing.
+**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, and
+`main-caches.yml` builds the iOS core and the detection gate (model set up,
+no check). Between them they save every cache the queue's hosted jobs
+restore: a branch can restore only its own caches and `main`'s, so only
+`main` saves (the setup action's `save-if`, and the model's save step). A
+red `main` stops enqueueing.
 
 **Shadow branches.** A branch under `ci-shadow/main/` runs exactly as a
 queue commit does (`queue.yml`, the PC, `merge-gate`), without merging

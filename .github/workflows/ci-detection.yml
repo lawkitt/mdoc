@@ -20,6 +20,10 @@ on:
         description: Parallel jobs the fixtures split over.
         type: number
         default: 6
+      build-only:
+        description: Set up the model and build only, which saves both caches on main (main-caches.yml).
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       ref:
@@ -92,9 +96,11 @@ jobs:
       - name: Set up the model
         run: just recognize --setup || { echo "::warning::model setup failed; retrying once"; just recognize --setup; }
 
-      # Saved right away, so a failing gate still keeps the download.
+      # Saved right away, so a failing gate still keeps the download. Only
+      # main's copy is visible to other branches, so only main saves it
+      # (main-caches.yml); a queue commit's copy would only fill the 10 GB.
       - name: Save the model
-        if: steps.model.outputs.cache-hit != 'true'
+        if: steps.model.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -103,6 +109,7 @@ jobs:
           key: ${{ steps.model.outputs.cache-primary-key }}
 
       - name: Detection gate
+        if: ${{ !inputs.build-only }}
         run: just recognize --check --shard "$SHARD" --out target/detection-snapshots
 
       - name: Regenerated snapshots

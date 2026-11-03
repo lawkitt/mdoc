@@ -1,0 +1,41 @@
+name: Main caches
+
+# Builds on each push to main that save the caches the merge queue's hosted
+# jobs restore (ADR 0095, ROADMAP CI redesign item 7): GitHub lets a branch
+# restore only its own caches and main's, so a cache saved on a queue
+# commit helps nothing. ci.yml's main run saves the desktop jobs' (`test`);
+# this saves the iOS core's (`ios`), the detection build's (`detection`) and
+# the detection model. Same job ids as the queue's jobs, so the keys match.
+on:
+  push:
+    branches: [main]
+    # ci.yml's push filter: files no job reads.
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
+      - "build/appicon.svg"
+      - "docs/**"
+      - ".github/workflows/actionlint.yml"
+      - ".github/dependabot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer main replaces an older one's builds.
+concurrency:
+  group: main-caches
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    uses: ./.github/workflows/ci-ios.yml
+    with:
+      build-only: true
+
+  detection:
+    uses: ./.github/workflows/ci-detection.yml
+    with:
+      shards: 1
+      build-only: true
