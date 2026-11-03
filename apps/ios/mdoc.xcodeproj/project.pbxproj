@@ -91,6 +91,7 @@
 		AA0000000000000000000125 /* mdoc_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = mdoc_ffi.swift; path = ../../target/ios/swift/mdoc_ffi.swift; sourceTree = SOURCE_ROOT; };
 		AA0000000000000000000126 /* MdocCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MdocCore.xcframework; path = ../../target/ios/MdocCore.xcframework; sourceTree = SOURCE_ROOT; };
 		AA0000000000000000000127 /* pdfium.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = pdfium.xcframework; path = ../../target/ios/pdfium.xcframework; sourceTree = SOURCE_ROOT; };
+		AA0000000000000000000200 /* Build.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Build.xcconfig; path = Config/Build.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -179,6 +180,7 @@
 				AA0000000000000000000014 /* mdocUITests */,
 				AA0000000000000000000129 /* MdocFFI */,
 				AA0000000000000000000024 /* Config */,
+				AA0000000000000000000200 /* Build.xcconfig */,
 				AA0000000000000000000128 /* Core */,
 				AA0000000000000000000003 /* Products */,
 			);
@@ -312,6 +314,7 @@
 			buildPhases = (
 				AA0000000000000000000144 /* Sources */,
 				AA0000000000000000000145 /* Frameworks */,
+				AA0000000000000000000146 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -401,6 +404,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000146 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA000000000000000000004C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -480,6 +490,7 @@
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000090 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000200 /* Build.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -489,7 +500,6 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -519,6 +529,7 @@
 		};
 		AA0000000000000000000091 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000200 /* Build.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -528,7 +539,6 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
