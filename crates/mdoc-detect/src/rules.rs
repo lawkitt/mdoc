@@ -3058,23 +3058,23 @@ mod tests {
     fn an_initial_keeps_its_period_a_sentence_loses_it() {
         assert_eq!(
             fixed(
-                "Исполнитель: ИП Белявская О. М. Заказчик: ООО «Ромашка».",
+                "Исполнитель: Студия Белявская О. М. Заказчик: ООО «Ромашка».",
                 &[
-                    ("ИП Белявская О. М.", Category::Organization),
+                    ("Студия Белявская О. М.", Category::Organization),
                     ("ООО «Ромашка».", Category::Organization),
                 ]
             ),
-            ["ИП Белявская О. М.", "ООО «Ромашка»"]
+            ["Студия Белявская О. М.", "ООО «Ромашка»"]
         );
         assert_eq!(
             fixed(
-                "Исполнитель: ИП Белявская О.М.. Подрядчик: Альфа-Строй.",
+                "Исполнитель: Студия Белявская О.М.. Подрядчик: Альфа-Строй.",
                 &[
-                    ("ИП Белявская О.М..", Category::Organization),
+                    ("Студия Белявская О.М..", Category::Organization),
                     ("Альфа-Строй.", Category::Organization),
                 ]
             ),
-            ["ИП Белявская О.М.", "Альфа-Строй"]
+            ["Студия Белявская О.М.", "Альфа-Строй"]
         );
         assert_eq!(
             fixed(
@@ -6151,6 +6151,143 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         );
     }
 
+    /// An individual entrepreneur is a person, «ИП» or «индивидуальный
+    /// предприниматель» outside the name, in any case form; a trading name
+    /// in quotes stays an organization, and placeholders stay no one (guide
+    /// rule 1, the maintainer's decision on #484 items 5 and 8, issue #562).
+    #[test]
+    fn individual_entrepreneurs_are_people() {
+        let pack = pack();
+        for text in [
+            "ИП Мохов Л. Р.",
+            "ИП Мохов Л.Р.",
+            "ИП Мохов Л. Р.,",
+            "ИП МОХОВ Л.Р.",
+            "ИП Л. Р. Мохов",
+            "ИП Ветлину Н.О.",
+            "ответчик ИП Мохов Л. Р.",
+            "индивидуальный предприниматель Мохов Лев Романович",
+            "Индивидуальный предприниматель Брюн Лидия Игоревна",
+            "индивидуального предпринимателя Ветлина Н. О.",
+            "индивидуальным предпринимателем Мохов Лев Романович",
+            "ИП Лев Романович Мохов",
+            "ИП Мохова Лидия Игоревна",
+            "ИП Мохов-Брюн Л. Р.",
+        ] {
+            assert!(!pack.identifying(text, Category::Organization), "{text}");
+        }
+        for text in [
+            "ИП Мохов Л. Р. магазин «Кедрач»",
+            "ИП «Кедрач»",
+            "ИП Мохов",
+            "ИП Мохов и партнёры",
+            "ООО «Мохов Л. Р.»",
+            "Мохов Л. Р.",
+        ] {
+            assert!(pack.identifying(text, Category::Organization), "{text}");
+        }
+        let source = "Истец ИП Ветлин Н. О. и индивидуальный предприниматель Брюн Лидия Игоревна заключили договор с ООО «Север».";
+        let expected = pairs(&[
+            ("Ветлин Н. О.", "PERSON"),
+            ("Брюн Лидия Игоревна", "PERSON"),
+            ("ООО «Север»", "ORG"),
+        ]);
+        // The model's organizations, or nothing for the names.
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("ИП Ветлин Н. О.", "organization"),
+                    (
+                        "индивидуальный предприниматель Брюн Лидия Игоревна",
+                        "organization"
+                    ),
+                    ("ООО «Север»", "organization"),
+                ]
+            ),
+            expected
+        );
+        assert_eq!(shown(source, &[("ООО «Север»", "organization")]), expected);
+        // Or as persons with the status inside the span.
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("ИП Ветлин Н. О.", "person"),
+                    (
+                        "индивидуальный предприниматель Брюн Лидия Игоревна",
+                        "person"
+                    ),
+                    ("ООО «Север»", "organization"),
+                ]
+            ),
+            expected
+        );
+        // Or the model had the names right.
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Ветлин Н. О.", "person"),
+                    ("Брюн Лидия Игоревна", "person"),
+                    ("ООО «Север»", "organization"),
+                ]
+            ),
+            expected
+        );
+        // Case forms, and the initials without a space.
+        let source = "Иск к индивидуальному предпринимателю Ветлину Н. О. и ИП Ветлину Н.О. отклонён; от индивидуального предпринимателя Мохова Льва Романовича поступил отзыв.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    (
+                        "индивидуальному предпринимателю Ветлину Н. О.",
+                        "organization"
+                    ),
+                    ("ИП Ветлину Н.О.", "organization"),
+                    (
+                        "индивидуального предпринимателя Мохова Льва Романовича",
+                        "organization"
+                    ),
+                ]
+            ),
+            pairs(&[
+                ("Ветлину Н. О.", "PERSON"),
+                ("Ветлину Н.О.", "PERSON"),
+                ("Мохова Льва Романовича", "PERSON"),
+            ])
+        );
+        // A shop sign in quotes is an organization; only the name changes.
+        let source = "Исполнитель: ИП Мохов Л. Р., магазин «Кедрач».";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("ИП Мохов Л. Р.", "organization"),
+                    ("«Кедрач»", "organization")
+                ]
+            ),
+            pairs(&[("Мохов Л. Р.", "PERSON"), ("«Кедрач»", "ORG")])
+        );
+        // The status alone, a company and a role are no names.
+        let source =
+            "Индивидуальный предприниматель вправе заключить договор. ИП Ромашка не явился.";
+        assert_eq!(shown(source, &[]), pairs(&[]));
+        // Placeholders stay no one, their real initials PERSON alone.
+        let source = "Истец ИП ФИО1 и ИП ФИО3 А-Х.О. подали иск.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("ИП ФИО1", "organization"),
+                    ("ИП ФИО3 А-Х.О.", "organization")
+                ]
+            ),
+            pairs(&[("А-Х.О.", "PERSON")])
+        );
+    }
+
     /// Placeholders for a party are never marked, whatever the model
     /// guessed; a real name beside one, and real names and companies called
     /// alike, stay (guide rule 8, #484 item 1).
@@ -6209,7 +6346,8 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         for (text, category) in [
             ("ФИО3 Иванов", Category::Person),
             ("Потерпевший Ветлин", Category::Person),
-            ("ИП Мохов Л. Р.", Category::Organization),
+            ("ИП Мохов Л. Р. магазин «Кедрач»", Category::Organization),
+            ("ИП «Кедрач»", Category::Organization),
             ("Мирон Павлович Грендель", Category::Person),
             ("Samuel Doe", Category::Person),
             ("Jane Doerr", Category::Person),
