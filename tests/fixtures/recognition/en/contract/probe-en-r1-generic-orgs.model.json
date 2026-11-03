@@ -1,0 +1,16 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":14,"end":43,"label":"organization","score":0.97151,"text":"Northvale Ledger Services LLC"},
+    {"start":353,"end":372,"label":"organization","score":0.9612438,"text":"Quillon Freight LLC"},
+    {"start":467,"end":486,"label":"organization","score":0.9575168,"text":"Quillon Freight LLC"},
+    {"start":389,"end":408,"label":"organization","score":0.92522997,"text":"Timber Trade Online"},
+    {"start":413,"end":429,"label":"organization","score":0.89751583,"text":"FileFlow Manager"},
+    {"start":449,"end":457,"label":"organization","score":0.67800725,"text":"AppStore"},
+    {"start":122,"end":154,"label":"organization","score":0.61236763,"text":"National Reading Access Standard"},
+    {"start":156,"end":160,"label":"organization","score":0.5973143,"text":"NRAS"},
+    {"start":498,"end":502,"label":"organization","score":0.5009246,"text":"FLDB"},
+    {"start":278,"end":281,"label":"tax_id","score":0.5176928,"text":"VAT"}
+  ]
+}
