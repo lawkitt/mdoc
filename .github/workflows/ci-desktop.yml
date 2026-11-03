@@ -47,8 +47,8 @@ jobs:
     name: ${{ fromJSON('{"macos":"ci/macos","windows":"ci/windows (hosted)"}')[inputs.os] }}
     # An unknown os has no runner, so the run fails instead of guessing.
     runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
-    # Job limits (ADR 0095).
-    timeout-minutes: 30
+    # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold.
+    timeout-minutes: ${{ inputs.os == 'windows' && 40 || 30 }}
     env:
       SCREENS: ${{ inputs.screens }}
     steps:

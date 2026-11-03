@@ -42,6 +42,34 @@ eq "$(needed_jobs "recognition")" "detection"
 eq "$(needed_jobs "")" ""
 echo "ok: jobs from areas"
 
+# queue.yml's areas job: what a commit brings onto origin/main's merge base.
+repo_dir="$tmp/areas"
+mkdir -p "$repo_dir/scripts"
+cp scripts/ci-areas.sh scripts/ci-areas.txt scripts/lib.sh "$repo_dir/scripts/"
+(
+  cd "$repo_dir" || exit 1
+  g() { git -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@" >/dev/null; }
+  g init -q
+  g add -A && g commit -qm base
+  g update-ref refs/remotes/origin/main HEAD
+  mkdir -p apps/ios && echo x >apps/ios/App.swift
+  g add -A && g commit -qm "iOS (#1)"
+  eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas=ios jobs=ios macos=false ios=true detection=false "
+  mkdir -p crates/mdoc-pii && echo x >crates/mdoc-pii/lib.rs
+  g add -A && g commit -qm "PII (#2)"
+  eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas=desktop recognition ios jobs=macos windows ios detection macos=true ios=true detection=true "
+  # No main to diff against: every job.
+  g update-ref -d refs/remotes/origin/main
+  eq "$(bash scripts/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
+) || exit 1
+for job in macos ios detection; do
+  grep -q "if: needs.areas.outputs.$job == 'true'" .github/workflows/queue.yml || fail "queue.yml starts no $job job"
+done
+grep -q 'run: scripts/ci-areas.sh --queue' .github/workflows/queue.yml || fail "queue.yml's areas job reads no areas"
+echo "ok: queue.yml's jobs are the ones merge-gate waits for"
+
 eq "$(head_gate "" missing)" "success|Docs only: no job runs"
 eq "$(head_gate "desktop" "success 1")" "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue"
 eq "$(head_gate "desktop" "failure https://x")" "failure|Fast tier failed: fast (ubuntu)"

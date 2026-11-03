@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci-areas.sh [<from> <to>]
 #        scripts/ci-areas.sh --github
+#        scripts/ci-areas.sh --queue
 #
 # The areas a change touches, by scripts/ci-areas.txt (ADR 0091): one line
 # of core, desktop, recognition, ios and android, in that order; empty for
@@ -13,6 +14,12 @@
 # for $GITHUB_OUTPUT on stdout. A PR's merge commit is diffed against its
 # base, a push against the commit before it; a manual run, a release call or
 # a push whose earlier commit is unknown lists every area.
+#
+# --queue is queue.yml's areas job (ADR 0095): what a queue commit brings
+# onto main, from main's merge base (origin/main, fetched), the same diff
+# merge-gate reads. It writes `areas=<list>`, `jobs=<list>` (needed_jobs)
+# and `<job>=true|false` for macos, ios and detection, the hosted jobs
+# queue.yml starts. Windows and Android run on the PC.
 source "$(dirname "$0")/lib.sh"
 
 every='core desktop recognition ios android'
@@ -38,11 +45,28 @@ github() {
   if affects desktop "$areas" || affects recognition "$areas"; then echo desktop=true; else echo desktop=false; fi
 }
 
+queue() {
+  local base areas=$every jobs job
+  # merge-gate counts every area from 300 files (GitHub's compare lists
+  # at most 300), so the queue does too.
+  if base=$(git merge-base origin/main HEAD 2>/dev/null) &&
+    [ "$(git diff --no-renames --name-only "$base" HEAD | wc -l)" -lt 300 ]; then
+    areas=$(diff_areas "$base" HEAD) || areas=$every
+  fi
+  jobs=$(needed_jobs "$areas")
+  echo "areas=$areas"
+  echo "jobs=$jobs"
+  for job in macos ios detection; do
+    if affects "$job" "$jobs"; then echo "$job=true"; else echo "$job=false"; fi
+  done
+}
+
 case "${1:-}" in
   --github) github ;;
+  --queue) queue ;;
   '') diff_areas HEAD^1 HEAD ;;
   *)
-    [ $# -eq 2 ] || die "usage: scripts/ci-areas.sh [<from> <to>] | --github"
+    [ $# -eq 2 ] || die "usage: scripts/ci-areas.sh [<from> <to>] | --github | --queue"
     diff_areas "$1" "$2"
     ;;
 esac
