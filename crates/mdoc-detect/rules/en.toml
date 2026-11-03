@@ -136,6 +136,70 @@ words = [
     "names",
 ]
 
+# Common words that name no one alone, though a person may be called so
+# (issue #500, guide rules 1 and 8): pronouns ("He appeals", "It contends"
+# as an organization), the "In" of "In re" and a sentence's "In", and a
+# running header's "Others". After a title ("Mr He", "Ms In") or where a
+# person span in the document has the word beside a name ("He Jiankui",
+# "Sarah In"), it is that person's name.
+[[never]]
+match = "whole"
+words = ["he", "she", "it", "they", "we", "you", "him", "them", "others", "another", "in", "re"]
+unless_named = true
+
+# The same for capitalised common words of headings and running headers:
+# "Approved Judgment", "Program Announcement", "General Terms", "Federal
+# government", "Law School" as an organization, and "End Products" after a
+# nationality (#492). "Mr. General", "Jane Federal" and "Paul Program" stay;
+# so does an organization with any other word ("General Motors", "Harvard
+# Law School").
+[[never]]
+match = "plural"
+words = [
+    "approved", "judgment", "judgement", "program", "programme", "announcement",
+    "general", "term", "federal", "law", "school", "end", "product",
+]
+unless_named = true
+
+# Religions and believers: "his Christian faith", "from Islam to …"
+# (issue #500). "Christian Bale" and "Nazrul Islam" stay.
+[[never]]
+match = "plural"
+words = [
+    "christian", "christianity", "muslim", "moslem", "islam", "islamic", "jew",
+    "jewish", "judaism", "catholic", "catholicism", "protestant", "hindu",
+    "hinduism", "buddhist", "buddhism", "sikh", "sikhism", "mormon", "baptist",
+    "methodist", "lutheran", "anglican", "evangelical", "atheist", "agnostic",
+]
+unless_named = true
+
+# Nationalities, demonyms and citizenship, alone or before a common noun:
+# "Americans", "Maltese lawyer", "American licensed drivers", "United
+# States Citizens", "Citizenry" (issue #492). "Dawn French" and "Mr
+# English" stay; so does a company with any other word ("British Airways").
+[[never]]
+match = "plural"
+words = [
+    "american", "british", "briton", "brit", "english", "welsh", "scottish",
+    "scot", "irish", "european", "african", "asian", "australian", "canadian",
+    "mexican", "chinese", "japanese", "korean", "vietnamese", "thai",
+    "filipino", "indonesian", "malaysian", "indian", "pakistani",
+    "bangladeshi", "afghan", "iranian", "iraqi", "syrian", "lebanese",
+    "israeli", "palestinian", "jordanian", "saudi", "egyptian", "moroccan",
+    "algerian", "tunisian", "libyan", "nigerian", "ghanaian", "kenyan",
+    "ethiopian", "somali", "sudanese", "turkish", "greek", "cypriot",
+    "maltese", "italian", "spanish", "portuguese", "french", "german", "dutch",
+    "belgian", "swiss", "austrian", "polish", "czech", "slovak", "hungarian",
+    "romanian", "bulgarian", "serbian", "croatian", "bosnian", "albanian",
+    "ukrainian", "russian", "belarusian", "armenian", "azerbaijani", "kazakh",
+    "uzbek", "swedish", "norwegian", "danish", "finnish", "icelandic",
+    "estonian", "latvian", "lithuanian", "brazilian", "argentine",
+    "argentinian", "chilean", "colombian", "peruvian", "venezuelan", "cuban",
+    "haitian", "jamaican", "hispanic", "latino", "latina", "citizen",
+    "citizenry", "national", "resident", "united", "state",
+]
+unless_named = true
+
 # Courts and public bodies are never marked (the fixture guide's rule 8):
 # an organization or person span with one of these words anywhere is
 # dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
@@ -365,6 +429,37 @@ patterns = [
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:city|town|village|borough|county|township|parish|state|commonwealth)[\p{Zs}\t]+of[\p{Zs}\t]',
 ]
 anywhere_in = ["PERSON"]
+
+# The second word of a two-word place is no one: the model's "York" in "New
+# York" grows to the place, which goes ("San Francisco", "St. Louis",
+# "North Carolina"; guide rule 1, issue #500). "John York" stays a person.
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:New[\p{Zs}\t]+(?:York(?:[\p{Zs}\t]+City)?|Jersey|Hampshire|Mexico|Orleans|Zealand)|San[\p{Zs}\t]+(?:Francisco|Diego|Jose|José|Antonio|Marino)|Los[\p{Zs}\t]+Angeles|Las[\p{Zs}\t]+Vegas|St\.?[\p{Zs}\t]+Louis|Saint[\p{Zs}\t]+Louis|Hong[\p{Zs}\t]+Kong|Rhode[\p{Zs}\t]+Island|(?:North|South)[\p{Zs}\t]+(?:Carolina|Dakota)|West[\p{Zs}\t]+Virginia|Salt[\p{Zs}\t]+Lake[\p{Zs}\t]+City|Kansas[\p{Zs}\t]+City|Sri[\p{Zs}\t]+Lanka|Costa[\p{Zs}\t]+Rica|Puerto[\p{Zs}\t]+Rico|El[\p{Zs}\t]+Salvador|Saudi[\p{Zs}\t]+Arabia|Sierra[\p{Zs}\t]+Leone)\b',
+]
+
+# The same places whole are no person either, unless a title makes the
+# place a surname ("Ms St. Louis").
+[[never]]
+match = "pattern"
+patterns = [
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:New[\p{Zs}\t]+(?:York(?:[\p{Zs}\t]+City)?|Jersey|Hampshire|Mexico|Orleans|Zealand)|San[\p{Zs}\t]+(?:Francisco|Diego|Jose|José|Antonio|Marino)|Los[\p{Zs}\t]+Angeles|Las[\p{Zs}\t]+Vegas|St\.?[\p{Zs}\t]+Louis|Saint[\p{Zs}\t]+Louis|Hong[\p{Zs}\t]+Kong|Rhode[\p{Zs}\t]+Island|(?:North|South)[\p{Zs}\t]+(?:Carolina|Dakota)|West[\p{Zs}\t]+Virginia|Salt[\p{Zs}\t]+Lake[\p{Zs}\t]+City|Kansas[\p{Zs}\t]+City|Sri[\p{Zs}\t]+Lanka|Costa[\p{Zs}\t]+Rica|Puerto[\p{Zs}\t]+Rico|El[\p{Zs}\t]+Salvador|Saudi[\p{Zs}\t]+Arabia|Sierra[\p{Zs}\t]+Leone)[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+
+# A caption's opening words stay outside a party's span: "In re Quill", "In
+# the Matter of Quill" and "Ex parte Quill" are "Quill" (guide rule 1, issue
+# #500).
+[[span]]
+category = "PERSON"
+trim = ["in re", "in the matter of", "ex parte"]
+
+# The same for an organization ("In re Quillon Freight LLC").
+[[span]]
+category = "ORG"
+trim = ["in re", "in the matter of", "ex parte"]
 
 # English legal forms mark a manual selection as an organization
 # ("Acme Ltd.").

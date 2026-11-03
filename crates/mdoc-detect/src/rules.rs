@@ -78,6 +78,15 @@ struct NeverEntry {
     /// of the stem ("Подрядчиков", "Директоров").
     #[serde(default)]
     not_endings: Vec<String>,
+    /// Common words that name no one alone ("He", "Program", "Christian")
+    /// but stay a person's name in context: after a title ("Mr He") or
+    /// where another person span has them beside a name ("Dawn French").
+    #[serde(default)]
+    unless_named: bool,
+    /// For `pattern`: a person's title before the span keeps it, a
+    /// surname that reads like the phrase ("Ms St. Louis").
+    #[serde(default)]
+    unless_titled: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
@@ -225,7 +234,8 @@ enum Span {
 /// A boundary fix for one category's spans.
 struct SpanFix {
     category: Category,
-    /// Lowercase words that come off either edge ("ms", "kc").
+    /// Lowercase words that come off either edge ("ms", "kc"), or phrases
+    /// of them ("in re").
     trim: Vec<String>,
     /// A span inside a match grows to the whole match.
     extend: Vec<Regex>,
@@ -238,19 +248,53 @@ struct SpanFix {
 }
 
 impl SpanFix {
-    /// `range` without its `trim` words at either edge (a comma before a
-    /// trailing one goes with it) and its `strip_end` characters.
+    /// `range` without its `trim` words or phrases at either edge (a comma
+    /// before a trailing one goes with it) and its `strip_end` characters.
     fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
-        let listed = |word: &str| {
-            let word = word.strip_suffix('.').unwrap_or(word).to_lowercase();
-            self.trim.contains(&word)
-        };
+        let plain = |word: &str| word.strip_suffix('.').unwrap_or(word).to_lowercase();
+        let listed = |word: &str| self.trim.contains(&plain(word));
+        let phrases: Vec<Vec<&str>> = self
+            .trim
+            .iter()
+            .filter(|entry| entry.contains(' '))
+            .map(|entry| entry.split(' ').collect())
+            .collect();
         loop {
             let text = &source[range.clone()];
             let lead = text.len() - text.trim_start().len();
             let tail = text.len() - text.trim_end().len();
             range = range.start + lead..range.end - tail;
             let text = &source[range.clone()];
+            // A phrase at either edge, with a word left beside it: "In re
+            // Quill" is "Quill".
+            let words: Vec<(usize, &str)> = text
+                .split_whitespace()
+                .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word))
+                .collect();
+            let is = |slice: &[(usize, &str)], phrase: &[&str]| {
+                slice.len() == phrase.len()
+                    && slice
+                        .iter()
+                        .zip(phrase)
+                        .all(|((_, word), listed)| plain(word) == *listed)
+            };
+            if let Some(phrase) = phrases
+                .iter()
+                .find(|phrase| words.len() > phrase.len() && is(&words[..phrase.len()], phrase))
+            {
+                range.start += words[phrase.len()].0;
+                continue;
+            }
+            if let Some(phrase) = phrases.iter().find(|phrase| {
+                words.len() > phrase.len() && is(&words[words.len() - phrase.len()..], phrase)
+            }) {
+                let rest = &text[..words[words.len() - phrase.len()].0];
+                range.end = range.start
+                    + rest
+                        .trim_end_matches(|c: char| c == ',' || c.is_whitespace())
+                        .len();
+                continue;
+            }
             if let Some((first, rest)) = text.split_once(char::is_whitespace)
                 && listed(first)
             {
@@ -315,6 +359,8 @@ struct Never {
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
+    unless_named: bool,
+    unless_titled: bool,
 }
 
 impl Never {
@@ -384,6 +430,16 @@ impl Pack {
                 } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                if entry.unless_named
+                    && (!entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty())
+                {
+                    return Err(at(
+                        "unless_named takes no anywhere_in or last_word_of".into()
+                    ));
+                }
+                if entry.unless_titled && entry.anywhere_in != ["PERSON"] {
+                    return Err(at("unless_titled needs anywhere_in PERSON alone".into()));
+                }
                 let patterns = entry
                     .patterns
                     .iter()
@@ -416,6 +472,8 @@ impl Pack {
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
+                    unless_named: entry.unless_named,
+                    unless_titled: entry.unless_titled,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {
@@ -660,10 +718,21 @@ impl Pack {
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
                 }
-                for word in entry.trim.iter().chain(&entry.person_before) {
+                // A trim may be a phrase of single-spaced words ("in re").
+                for word in &entry.trim {
+                    if word
+                        .split(' ')
+                        .any(|part| part.is_empty() || part.chars().any(char::is_whitespace))
+                    {
+                        return Err(at(format!("{word:?} is not words single-spaced")));
+                    }
+                }
+                for word in &entry.person_before {
                     if word.is_empty() || word.chars().any(char::is_whitespace) {
                         return Err(at(format!("{word:?} is not one word")));
                     }
+                }
+                for word in entry.trim.iter().chain(&entry.person_before) {
                     if *word != word.to_lowercase() {
                         return Err(at(format!("{word:?} is not lowercase")));
                     }
@@ -781,10 +850,37 @@ impl Pack {
             .any(|entry| entry.has(&word))
     }
 
+    /// Whether `word` is a never word only by an `unless_named` entry: a
+    /// common word that may be a person's name in context ("He", "French").
+    fn common(&self, word: &str) -> bool {
+        let word = word.to_lowercase();
+        let mut listing = self
+            .never
+            .iter()
+            .filter(|entry| entry.anywhere_in.is_empty() && entry.has(&word))
+            .peekable();
+        listing.peek().is_some() && listing.all(|entry| entry.unless_named)
+    }
+
     /// Whether a model span has its category's `shape` and is not a role
-    /// phrase or public body by the `never` section.
+    /// phrase or public body by the `never` section. Common words name no
+    /// one here: no context says otherwise.
+    #[cfg(test)]
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
-        self.shaped(text, category) && !self.public_body(text, category)
+        self.identifying_named(text, category, &|_| false, false)
+    }
+
+    /// `identifying`, where `named` says which common words (lowercase)
+    /// context makes a person's name, and `titled` whether a person's
+    /// title stands before the span.
+    fn identifying_named(
+        &self,
+        text: &str,
+        category: Category,
+        named: &dyn Fn(&str) -> bool,
+        titled: bool,
+    ) -> bool {
+        self.shaped_named(text, category, named) && !self.public_body(text, category, titled)
     }
 
     /// Whether a span is a court or other public body by the `never`
@@ -793,7 +889,7 @@ impl Pack {
     /// a name ("Банк «Город»"). The correction stage asks this only after
     /// the span fixes, so a company's inner name ("Северная область Строй")
     /// first grows to its legal form.
-    fn public_body(&self, text: &str, category: Category) -> bool {
+    fn public_body(&self, text: &str, category: Category, titled: bool) -> bool {
         if self.legal_form(text) {
             return false;
         }
@@ -818,7 +914,9 @@ impl Pack {
             || self
                 .never
                 .iter()
-                .filter(|entry| entry.anywhere_in.contains(&category))
+                .filter(|entry| {
+                    entry.anywhere_in.contains(&category) && !(titled && entry.unless_titled)
+                })
                 .flat_map(|entry| &entry.patterns)
                 .any(|pattern| pattern.is_match(&outside))
     }
@@ -866,7 +964,7 @@ impl Pack {
                     .iter()
                     .all(|letter| initials.by_ref().any(|initial| initial == *letter));
             let short = short.trim_end_matches('.').to_owned();
-            if spelt && self.public_body(title, Category::Organization) {
+            if spelt && self.public_body(title, Category::Organization, false) {
                 public.insert(short);
             } else {
                 other.insert(short);
@@ -878,7 +976,9 @@ impl Pack {
 
     /// Whether a model span has its category's `shape` and is not a role
     /// phrase by the `never` section; public bodies are not checked.
-    fn shaped(&self, text: &str, category: Category) -> bool {
+    /// `named` says which common words (lowercase) context makes a person's
+    /// name.
+    fn shaped_named(&self, text: &str, category: Category, named: &dyn Fn(&str) -> bool) -> bool {
         let words = || {
             text.split_whitespace()
                 .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
@@ -896,9 +996,44 @@ impl Pack {
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
             && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
-            && shape.word.as_ref().is_none_or(|pattern| {
-                words().any(|word| pattern.is_match(word) && !self.never(word))
-            })
+            && shape
+                .word
+                .as_ref()
+                .is_none_or(|pattern| self.names(words().filter(|w| pattern.is_match(w)), named))
+    }
+
+    /// Whether `words`, those a shape's `word` takes, name someone: one is
+    /// no never word, or a common word context names. Initials alone name
+    /// someone ("Ms B.", "J. R. French"), but one letter before a common
+    /// word is an outline letter: "B. General Terms".
+    fn names<'a>(
+        &self,
+        words: impl Iterator<Item = &'a str>,
+        named: &dyn Fn(&str) -> bool,
+    ) -> bool {
+        let initial = |word: &str| {
+            word.split('.')
+                .all(|part| part.chars().count() == 1 && part.chars().all(char::is_uppercase))
+        };
+        let (mut name, mut letters, mut common) = (false, 0, false);
+        for (index, word) in words.enumerate() {
+            if self.common(word) {
+                if named(&word.to_lowercase()) {
+                    name = true;
+                } else if index == 1 && letters == 1 {
+                    return false;
+                } else {
+                    common = true;
+                }
+            } else if !self.never(word) {
+                if initial(word) {
+                    letters += word.split('.').count();
+                } else {
+                    name = true;
+                }
+            }
+        }
+        name || letters > 1 || letters == 1 && !common
     }
 
     /// The `span` fixes on `detections` in `source`: each grows to an
@@ -975,10 +1110,17 @@ impl Pack {
         }
         self.person_documents(source, detections);
         let abbreviations = self.public_abbreviations(&view.text);
+        let named = self.named_words(view, detections);
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
+            let titled = d.category == Category::Person && self.titled(source, d.range.start);
             !d.range.is_empty()
-                && self.identifying(text, d.category)
+                && self.identifying_named(
+                    text,
+                    d.category,
+                    &|word| d.category == Category::Person && (titled || named.contains(word)),
+                    titled,
+                )
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())
@@ -986,6 +1128,48 @@ impl Pack {
                             .trim_end_matches("'s"),
                     ))
         });
+    }
+
+    /// Lowercase words of the person spans in `detections` that name
+    /// someone without context ("Dawn French", not "New York" or "Federal
+    /// Election Commission"): a common word among them is that person's
+    /// name wherever it stands alone ("French").
+    fn named_words(
+        &self,
+        view: &mdoc_pii::view::View,
+        detections: &[Detection],
+    ) -> std::collections::HashSet<String> {
+        detections
+            .iter()
+            .filter(|d| d.category == Category::Person && !d.range.is_empty())
+            .map(|d| &view.text[view.view_range(d.range.clone())])
+            .filter(|text| self.identifying_named(text, Category::Person, &|_| false, false))
+            .flat_map(|text| {
+                text.split_whitespace()
+                    .map(|word| {
+                        word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                            .to_lowercase()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Whether a person's title stands just before `at` in `source` ("Mr
+    /// He", "Dr. General"): the person fixes' `trim` words.
+    fn titled(&self, source: &str, at: usize) -> bool {
+        let before = source[..at].trim_end();
+        let before = before.strip_suffix('.').unwrap_or(before);
+        let word = before
+            .rsplit(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        !word.is_empty()
+            && self.spans.iter().any(|span| match span {
+                Span::Fix(fix) => fix.category == Category::Person && fix.trim.contains(&word),
+                Span::Pattern { .. } => false,
+            })
     }
 
     /// Whether a model span at `range` of `source` has its category's
@@ -1079,8 +1263,9 @@ impl Pack {
             });
         // Public bodies wait for the span fixes (`fix_spans`): "Судак" in
         // "ООО «Судак»" grows to its legal form before a court's stem in it
-        // could drop it.
-        self.shaped(text, category) && !quoted
+        // could drop it. So do a person's common words, whose context the
+        // fixes and the other spans settle ("Mr He", "Dawn French").
+        self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
     }
 
     /// Whether `range` of `source` lies inside a `reference` match, a legal
@@ -2639,6 +2824,158 @@ Privacy Act (“BIPA”). BIPA applies.",
         }];
         pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
         assert_eq!(detections.len(), 1);
+    }
+
+    /// Pronouns, common words, religions and nationalities name no one
+    /// alone (#500, #492); with any other word they stay a name.
+    #[test]
+    fn common_words_alone_are_no_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("He", Category::Person),
+            ("She", Category::Person),
+            ("It", Category::Organization),
+            ("We", Category::Organization),
+            ("In", Category::Person),
+            ("Others", Category::Person),
+            ("Program", Category::Person),
+            ("Programme", Category::Person),
+            ("Judgment", Category::Person),
+            ("General", Category::Person),
+            ("Federal", Category::Person),
+            ("Law School", Category::Organization),
+            ("Christian", Category::Person),
+            ("Christians", Category::Person),
+            ("Islam", Category::Organization),
+            ("Muslims", Category::Person),
+            ("Americans", Category::Person),
+            ("Maltese lawyer", Category::Person),
+            ("American licensed drivers", Category::Person),
+            ("United States Citizens", Category::Person),
+            ("Citizenry", Category::Person),
+            ("the French", Category::Person),
+            ("New York", Category::Person),
+            ("San Francisco", Category::Person),
+            ("St. Louis", Category::Person),
+            ("North Carolina", Category::Person),
+            // An outline letter before a heading's common word, and whole
+            // headings (review of #528).
+            ("B. General", Category::Person),
+            ("B. General Terms", Category::Person),
+            ("Approved Judgment", Category::Person),
+            ("American End Products", Category::Person),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("He Jiankui", Category::Person),
+            ("Jane Federal", Category::Person),
+            ("Paul Program", Category::Person),
+            ("John York", Category::Person),
+            ("Sarah In", Category::Person),
+            ("Christian Bale", Category::Person),
+            ("Nazrul Islam", Category::Person),
+            ("Dawn French", Category::Person),
+            ("Georgia Quill", Category::Person),
+            ("Virginia", Category::Person),
+            ("Carolina", Category::Person),
+            ("J. R. Clerk", Category::Person),
+            ("J. R. French", Category::Person),
+            ("J.R. French", Category::Person),
+            ("B.", Category::Person),
+            ("General Motors", Category::Organization),
+            ("Harvard Law School", Category::Organization),
+            ("British Airways", Category::Organization),
+            ("Islamic Relief", Category::Organization),
+            ("State Street", Category::Organization),
+            ("New York Life", Category::Organization),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
+    }
+
+    /// In context: a common word after a title, or one a person span in
+    /// the document has beside a name, is that person's name (#500); the
+    /// second word of a two-word place grows to the place and goes; a
+    /// caption's "In re" comes off the party.
+    #[test]
+    fn common_words_in_context_and_place_tails_and_captions() {
+        let source = "Mr He met Dr. General. He appeals. Dawn French and Sarah In \
+                      wrote; French and In agree, Christian too. Mr Lane lives in New \
+                      York, John York in San Jose. In re Ossian Draycott; In the \
+                      Matter of Quill; Ex parte Vell; In re Quillon Freight LLC. The \
+                      Federal Election Commission met; Federal agreed. Ms St. Louis \
+                      signed in St. Louis.";
+        let at = |anchor: &str, text: &str| {
+            let start = source.find(anchor).unwrap() + anchor.find(text).unwrap();
+            start..start + text.len()
+        };
+        let mut detections: Vec<Detection> = [
+            (at("Mr He", "He"), Category::Person),
+            (at("Dr. General", "Dr. General"), Category::Person),
+            (at("He appeals", "He"), Category::Person),
+            (at("Dawn French", "Dawn French"), Category::Person),
+            (at("Sarah In", "Sarah In"), Category::Person),
+            (at("French and In", "French"), Category::Person),
+            (at("French and In", "In"), Category::Person),
+            (at("Christian too", "Christian"), Category::Person),
+            (at("New York", "York"), Category::Person),
+            (at("John York", "John York"), Category::Person),
+            (at("San Jose", "Jose"), Category::Person),
+            (
+                at("In re Ossian Draycott", "In re Ossian Draycott"),
+                Category::Person,
+            ),
+            (
+                at("In the Matter of Quill", "In the Matter of Quill"),
+                Category::Person,
+            ),
+            (at("Ex parte Vell", "Ex parte Vell"), Category::Person),
+            (
+                at("In re Quillon Freight LLC", "In re Quillon Freight LLC"),
+                Category::Organization,
+            ),
+            // A public body names no one, so its words stay common.
+            (
+                at("Federal Election Commission", "Federal Election Commission"),
+                Category::Person,
+            ),
+            (at("Federal agreed", "Federal"), Category::Person),
+            // A title makes a place a surname; the place itself goes.
+            (at("Ms St. Louis", "St. Louis"), Category::Person),
+            (at("in St. Louis", "St. Louis"), Category::Person),
+        ]
+        .into_iter()
+        .map(|(range, category)| Detection {
+            range,
+            category,
+            score: 0.9,
+            recognizer: Recognizer::Model,
+        })
+        .collect();
+        let pack = pack();
+        pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        let found: Vec<&str> = detections
+            .iter()
+            .map(|d| &source[d.range.clone()])
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "He",
+                "General",
+                "Dawn French",
+                "Sarah In",
+                "French",
+                "In",
+                "John York",
+                "Ossian Draycott",
+                "Quill",
+                "Vell",
+                "Quillon Freight LLC",
+                "St. Louis",
+            ]
+        );
     }
 
     /// Date masks (#487), common abbreviations (#481), the Internet,
