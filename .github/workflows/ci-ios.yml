@@ -23,6 +23,10 @@ on:
         description: The commit to test; empty for the triggering ref.
         type: string
         default: ""
+      build-only:
+        description: Build the iOS core only.
+        type: boolean
+        default: false
 
 permissions:
   contents: read

@@ -34,6 +34,10 @@ on:
         description: Parallel jobs the fixtures split over.
         type: number
         default: 6
+      build-only:
+        description: Set up the model and build only.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
