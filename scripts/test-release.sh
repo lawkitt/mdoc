@@ -193,7 +193,7 @@ contains "$tmp/result" 'gh is unavailable'
 echo 'ok: gh unavailable'
 
 # A malformed ignore list cannot silently accept a partial list.
-awk '/^    paths-ignore: &ignored$/ { print; print "      - unquoted"; next } { print }' \
+awk '!done && /^    paths-ignore:( &ignored)?$/ { print; print "      - unquoted"; done = 1; next } { print }' \
   "$root/.github/workflows/ci.yml" >.github/workflows/ci.yml
 local_checks 'cannot read push paths-ignore'
 cp "$root/.github/workflows/ci.yml" .github/workflows/ci.yml
