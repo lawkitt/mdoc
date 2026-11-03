@@ -49,9 +49,15 @@
 #                               name ("Dawn French"); decided after the span
 #                               fixes. One initial before one names no one
 #                               ("B. General Terms")
-#   unless_titled = true        for a pattern with anywhere_in PERSON alone:
-#                               a person's title before the span keeps it
-#                               ("Ms St. Louis")
+#   unless_titled = true        with PERSON in anywhere_in: a person's
+#                               title before the span keeps it as a person
+#                               ("Ms St. Louis"), and for words an initial
+#                               in the span does too ("Суд Н. О."); a
+#                               pattern entry needs anywhere_in PERSON alone
+#   surname_endings = [ending…] for a stem with PERSON in anywhere_in:
+#                               an ending that ends in one makes a surname
+#                               of the stem in a person's span ("Судов",
+#                               "Суднев", "Приставко")
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
