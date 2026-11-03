@@ -80,9 +80,10 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let replace = app.menuItems["Replace…"].firstMatch
         XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
         replace.tap()
-        let sheet = app.navigationBars["Replace"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
-        sheet.buttons["Replace"].tap()
+        // The sheet is titled with the category ("Person"); its Replace confirms.
+        let confirm = app.navigationBars.buttons["Replace"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no Replace sheet")
+        confirm.tap()
         // The text view rebuilds its elements after a change; ask the app.
         XCTAssertTrue(app.links["PERSON_1"].firstMatch.waitForExistence(timeout: 10), "the selection was not marked")
 
