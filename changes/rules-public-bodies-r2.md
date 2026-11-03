@@ -11,5 +11,6 @@
   names ("NASA", "ICAO", "IMF", "NATO"), treaties and agreements,
   ordinances, rules of procedure, laws whose head is "Law", bills ("SB 9")
   and an abbreviation defined after "hereinafter" go; companies by their
-  legal form ("Treaty Oak Capital LLC", "Customs Brokers Inc") stay
+  legal form ("Treaty Oak Capital LLC", "Customs Brokers Inc"),
+  universities and colleges, a state one too, and non-state funds stay
   ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md), #378).

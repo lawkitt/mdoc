@@ -220,9 +220,10 @@ words = ["субъект"]
 # "Регистрационной палатой"; issue #378), unless it has a legal form;
 # words in quotes are a name. A state or municipal institution is a public
 # body ("Федерального казенного учреждения", "государственного бюджетного
-# учреждения"). A person keeps a surname with these stems by its ending
-# ("Судов", "Приставко"), a title before it ("г-н Суд") or an initial
-# beside it ("Суд Н. О.").
+# учреждения"). In a person's span a stem counts only with the body
+# word's own case endings, so a surname with it stays ("Судов", "Судине",
+# "Судник", "Приставко"), and so does one after a title ("г-н Суд") or
+# with initials ("Суд Н. О.").
 [[never]]
 match = "stem"
 ending = 3
@@ -237,9 +238,11 @@ words = [
     "росстат", "роструд",
 ]
 anywhere_in = ["ORG", "PERSON"]
-surname_endings = [
-    "ов", "ова", "ову", "ове", "ев", "ева", "еву", "ин", "ина", "ину", "ын",
-    "ына", "ко",
+person_endings = [
+    "", "а", "я", "у", "ю", "е", "и", "ы", "й", "ом", "ем", "ой", "ей", "ам",
+    "ям", "ах", "ях", "ами", "ями", "ая", "яя", "ое", "ее", "ую", "юю", "ые",
+    "ие", "ый", "ий", "ых", "их", "ым", "им", "ыми", "ими", "ого", "его",
+    "ому", "ему",
 ]
 unless_titled = true
 
@@ -294,6 +297,19 @@ patterns = [
 ]
 anywhere_in = ["ORG", "PERSON"]
 
+# Never public bodies, whoever owns them: a university or college, a
+# state one too ("ФГБОУ ВО «Северный государственный университет»",
+# "ГБПОУ «Ольховский колледж»"; #484), and a non-state or charitable fund
+# ("Негосударственный пенсионный фонд «Кедр»", "АО НПФ «Кедр»").
+[[private]]
+patterns = [
+    '(?i)\bуниверситет',
+    '(?i)\bколледж',
+    '(?i)\bнегосударственн',
+    '(?i)\bблаготворительн',
+    '\bНПФ\b',
+]
+
 # Codes and laws by their full names: "Гражданского кодекса Российской
 # Федерации", "Федерального закона", "Конституции Российской Федерации",
 # "законодательством Российской Федерации" (guide rule 8, issue #378), as
@@ -303,7 +319,10 @@ match = "stem"
 ending = 3
 words = ["кодекс", "закон", "законодательств", "конституци"]
 anywhere_in = ["ORG", "PERSON"]
-surname_endings = ["ов", "ова", "ову", "ове", "ев", "ева", "еву", "ин", "ина", "ину"]
+person_endings = [
+    "", "а", "у", "е", "и", "ы", "ом", "ой", "ей", "ам", "ям", "ах", "ях",
+    "ами", "ями", "ю", "я",
+]
 unless_titled = true
 
 # A region, district, city or settlement is a place, not an organization,

@@ -214,9 +214,7 @@ unless_named = true
 # dropped ("County Court", "Ministry of Justice", "Employment Tribunal",
 # "Ofcom", "HMRC" as a person, "EEOC"; issue #378) unless it has a legal
 # form ("Garden Court Ltd" is a company). Only short names no company
-# shares are listed; the others count alone (below). Also a constabulary
-# and the federal and intergovernmental agencies' short names ("USFWS",
-# "ICAO", "IMF", "NATO").
+# shares are listed; the others count alone (below). Also a constabulary.
 [[never]]
 match = "plural"
 words = [
@@ -225,8 +223,7 @@ words = [
     "congress", "legislature", "senate", "judiciary", "probation",
     "administration", "hmcts", "uksc", "ewca", "ewhc", "ukut", "ukftt",
     "ukeat", "scotus", "ohrp", "eeoc", "nlrb", "osha", "uspto", "ptab", "cfpb",
-    "uscis", "nhtsa", "constabulary", "usfws", "nmfs", "icao", "imf", "nato",
-    "sieca", "ccad",
+    "uscis", "nhtsa", "constabulary",
 ]
 anywhere_in = ["ORG", "PERSON"]
 
@@ -239,14 +236,12 @@ anywhere_in = ["ORG", "PERSON"]
 # Laws are never marked either: an Act, an amendment, a regulation, a
 # statute, a constitution or an ordinance by its title, as an organization
 # or a person ("Gaming Act 1968", "the First Amendment", "Fair Practices
-# Ordinance"; guide rule 8, issue #378), and the short names of laws and
-# treaties that no company shares ("FLSA", "TCPA", "ECHR", "CAFTA-DR").
+# Ordinance"; guide rule 8, issue #378). Laws' and treaties' short names
+# count alone (below).
 [[never]]
 match = "plural"
 words = [
     "act", "amendment", "regulation", "statute", "constitution", "ordinance",
-    "flsa", "fdcpa", "tcpa", "dtpa", "phra", "nydcl", "erisa", "hipaa", "fmla",
-    "echr", "cafta-dr", "cafta", "nafta", "usmca",
 ]
 anywhere_in = ["ORG", "PERSON"]
 
@@ -326,9 +321,17 @@ patterns = [
     # and Border Protection".
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+|hm[\p{Zs}\t]+)?customs(?:[\p{Zs}\t]+(?:service|office|authorit(?:y|ies)))?[\x27’]?s?[\s\p{P}]*$',
     '(?i)\bcustoms[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+border[\p{Zs}\t]+protection\b',
-    # Jails and a grand jury: "Elko County Jail", "the Grand Jury".
+    # Jails, and a grand jury that ends the span: "Elko County Jail", "the
+    # Grand Jury", "the Ashmoor County Grand Jury" ("Grand Jury Games"
+    # stays).
     '(?i)\b(?:county|city|municipal|parish|state|federal)[\p{Zs}\t]+(?:jail|detention[\p{Zs}\t]+(?:center|centre|facility)|penitentiary)\b',
-    '(?i)\bgrand[\p{Zs}\t]+jur(?:y|ies)\b',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}grand[\p{Zs}\t]+jur(?:y|ies)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # Agencies' and intergovernmental bodies' short names as written, the
+    # whole span or before their organ ("NATO", "the IMF", "ICAO Council";
+    # "Nato Venn" and "NATO Logistics" stay), and laws' and treaties' short
+    # names as written, alone ("FLSA", "the FDCPA", "CAFTA-DR").
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:Council|Assembly|Secretariat|Board))?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:FLSA|FDCPA|TCPA|DTPA|PHRA|NYDCL|ERISA|HIPAA|FMLA|ECHR|CAFTA-DR|CAFTA|NAFTA|USMCA)(?:[\x27’]s?)?[\s\p{P}]*$',
     # A court's division in a caption ("TEXARKANA DIVISION") and a state's
     # divisions ("Utah Division of Wildlife Resources").
     '\b\p{Uppercase}{2,}[\p{Zs}\t]+DIVISIONS?\b',
@@ -358,6 +361,11 @@ patterns = [
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?[SHA]\.?[\p{Zs}\t]?B\.?[\p{Zs}\t]*\d{1,5}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# Universities and colleges are never public bodies, whoever owns them
+# ("Ashmoor State University", "Ashmoor County Community College"; #484).
+[[private]]
+patterns = ['(?i)\buniversit(?:y|ies)\b', '(?i)\bcolleges?\b']
 
 # The same prosecutors and ministers within an organization's name
 # ("Attorney General's Office", "Office of the Secretary of State").
