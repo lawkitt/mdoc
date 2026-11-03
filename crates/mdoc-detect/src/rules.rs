@@ -1582,12 +1582,15 @@ impl Pack {
             .flat_map(|(category, pattern)| {
                 span_ranges(pattern, source)
                     .into_iter()
-                    // A match before a colon ends in a field's label ("12
-                    // Oak Road, Email: …"), not the address's last part.
-                    .filter(|range| {
-                        !source[range.end..]
-                            .trim_start_matches([' ', '\t'])
-                            .starts_with(':')
+                    // An address match before a colon ends in a field's
+                    // label ("12 Oak Road, Email: …"), not the address's
+                    // last part; a name before one is a speaker's ("ФИО1
+                    // А. Б.: …").
+                    .filter(move |range| {
+                        category != Category::Address
+                            || !source[range.end..]
+                                .trim_start_matches([' ', '\t'])
+                                .starts_with(':')
                     })
                     .map(move |range| Detection {
                         range,
@@ -4428,6 +4431,14 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("А-Х.О.", "PERSON"),
                 ("В. С.", "PERSON")
             ])
+        );
+        // After a role-number placeholder too, and before a speaker's
+        // colon.
+        let source = "Потерпевший №2 Л. И. пояснил. ФИО5 Р. Т.: «Возражаю».";
+        let raw = [("Потерпевший №2 Л. И.", "person"), ("ФИО5 Р. Т.", "person")];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("Л. И.", "PERSON"), ("Р. Т.", "PERSON")])
         );
         let source = "Plaintiffs sue John Does 1-25, DOE SUPERVISORS I-X and ROE ENTITIES; \
             DOE agreed.";

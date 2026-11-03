@@ -355,12 +355,13 @@ forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}
 category = "PERSON"
 forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$']
 
-# Real initials after a placeholder surname are a name part, PERSON alone:
-# «А-Х.О.» in «ИП ФИО3 А-Х.О.», «В. С.» in «ФИО2 В. С.» (guide rules 1
-# and 8, the maintainer's decision on #484, item 1).
+# Real initials after a placeholder are a name part, PERSON alone:
+# «А-Х.О.» in «ИП ФИО3 А-Х.О.», «В. С.» in «ФИО2 В. С.» and in
+# «Потерпевший №1 В. С.» (guide rules 1 and 8, the maintainer's decision
+# on #484, item 1).
 [[span]]
 category = "PERSON"
-pattern = '(?P<lead>\bФИО[\p{Zs}\t]?\d{1,3}[\p{Zs}\t]+)\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?(?P<tail>[^\p{Alphabetic}]|$)'
+pattern = '(?P<lead>\b(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})[\p{Zs}\t]+)\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?(?P<tail>[^\p{Alphabetic}]|$)'
 
 # The same placeholder as an identity document: its digit is no number.
 [[shape]]
