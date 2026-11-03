@@ -6,8 +6,8 @@ runners testing `main`). Amends [ADR 0070](0070-ci-speed-and-script-hygiene.md)
 (runners), [ADR 0091](0091-mobile-ci-and-releases.md) (where mobile tests
 run, the fallback, the takeover, areas) and
 [ADR 0093](0093-flaw-hunt-loop.md) (the detection gate's place, reference
-platform and snapshots). Rolled out by ROADMAP's CI redesign section; until
-its cutover (item 6) ADR 0082 and ADR 0091 describe what runs.
+platform and snapshots). Rolled out by ROADMAP's CI redesign section; in
+force since the cutover (item 6), with the amendments at the end.
 
 ## Problem
 
@@ -163,8 +163,8 @@ CI, not on the PRs ([interview](../design/ci-redesign-grill-2026-11-02.md)):
   there, and the failing step and tests named in the status and summary.
   No external log store.
 - **PC runner upkeep:** it reinstalls itself from `main`'s copy when idle
-  and outdated; deletes `target/` past 60 GB or when the toolchain or major
-  dependencies change; deletes output past 7 days or 20 GB, oldest first,
+  and outdated; deletes `target/` past 60 GB or when the toolchain
+  changes; deletes output past 7 days or 20 GB, oldest first,
   with `rm`; refuses jobs below 40 GB free and says so; writes a heartbeat.
 
 ## Invariants
@@ -207,6 +207,29 @@ the PC runner; (5) a shadow trial on 5 PRs beside the current gate,
 failing a deliberately broken PR in each tier; (6) cutover: ruleset, queue,
 fleet checks, Mac runner retired; (7) `main`'s runs, the nightly and
 cargo-deny's split.
+
+## Amendments at the cutover (2026-11-03)
+
+What implementing it settled, by the CI redesign hub:
+
+- **Android has no hosted job yet.** The cutover went ahead with Android on
+  the PC only; the hosted Android job (`ci-android.yml`, after Mobile CI/CD
+  item 3) is a ROADMAP follow-up. Until then a queue group that needs
+  `ci/android` waits for the PC.
+- **Detection snapshots are re-recorded on hosted `macos-26`** at the
+  cutover (#534): scores only, at most 0.00193 from the M4's, every entity
+  the same. The existing 1e-4 check stays. The queue runs 4 shards, and
+  CI sets `MDOC_DETECT_THREADS=4`, the count they are recorded with.
+- **The PC's heartbeat** is a pending status refreshed at least every 4
+  minutes; `target/` goes only past 60 GB or on a toolchain change.
+- **Hosted Windows** gets 40 minutes: a cold build takes 32. Each detection
+  shard gets 20 until `main` saves its build cache (item 7): uncached, its
+  setup compiles for about 6 minutes, and a shard timed out at 10.
+- **PR heads run `lint (ubuntu)` on every change**, docs included: a
+  required check that never runs blocks a PR. `local-ci-fallback.yml` is
+  removed; the local CI scripts go with item 7.
+- **Shadow branches** (`ci-shadow/main/*`) run as queue commits without
+  merging, for trying changes to CI.
 
 Terms: [glossary](../../CONTEXT.md). References:
 [interview](../design/ci-redesign-grill-2026-11-02.md).

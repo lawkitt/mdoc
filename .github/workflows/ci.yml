@@ -5,19 +5,19 @@ name: CI
 # models, the OCR download) stay out of everyday CI; release.yml adds the OCR
 # smoke test to the test jobs through the `smoke-ocr` input.
 #
-# Local CI is the pre-merge test gate (ADR 0082, ADR 0091): a PR from a
-# branch in this repository, opened by a user, runs only `lint (ubuntu)` here,
-# and the maintainer's machines post `local/windows`, `local/macos`,
-# `local/ios` and `local/android`. Fork and bot (Dependabot) PRs, which local
-# CI never runs, get the full matrix, as do `main`, manual runs and
-# release.yml's call; the areas job skips clippy and test for a change outside
-# the desktop and core areas (scripts/ci-areas.txt).
+# On PRs (ADR 0095): `lint (ubuntu)` and the fast tier, `fast (ubuntu)`;
+# `merge-gate` (merge-gate.yml) reads them, and the merge queue runs the
+# full suite (queue.yml and the PC). Fork and bot (Dependabot) PRs also get
+# the full hosted matrix here, as do `main`, manual runs and release.yml's
+# call; the areas job skips clippy and test for a change outside the desktop
+# and core areas (scripts/ci-areas.txt). On a queue commit only `lint
+# (ubuntu)` runs, a required check.
 on:
   push:
     branches: [main]
     # The `none` lines of scripts/ci-areas.txt, word for word: files no job
     # reads (scripts/test-local-ci.sh fails when the two disagree).
-    paths-ignore: &ignored
+    paths-ignore:
       - "**/*.md"
       - "LICENSE"
       - ".gitignore"
@@ -25,13 +25,12 @@ on:
       - "docs/**"
       - ".github/workflows/actionlint.yml"
       - ".github/dependabot.yml"
-  # Any base branch, so a stacked PR gets CI too (fleet ADR 0016).
+  # Any base branch, so a stacked PR gets CI too (fleet ADR 0016). No path
+  # filter: `lint (ubuntu)` is required (ADR 0095), and a required check
+  # that never runs blocks a docs-only PR.
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    paths-ignore: *ignored
-  # The full matrix on any branch. local-ci-fallback.yml dispatches it when
-  # a local runner is stuck and posts its result as that runner's status
-  # (ADR 0082).
+  # The full matrix on any branch, by hand.
   workflow_dispatch:
   # A merge-queue commit needs `lint (ubuntu)`, a required check; the full
   # suite there is queue.yml's (ADR 0095).
@@ -135,9 +134,8 @@ jobs:
   # iOS or Android app or their scripts skips them (lint (ubuntu) still runs).
   # A PR's merge commit is diffed against its base, a push against the commit
   # before it; a manual run or a release call runs every area. On
-  # pull_request only for the PRs local CI skips: from a fork (a deleted
-  # fork's head repo is null, so it counts) or opened by anything but a user.
-  # The complement of scripts/local-ci.sh's poll() filter, drafts aside. The
+  # pull_request only for third-party PRs: from a fork (a deleted fork's head
+  # repo is null, so it counts) or opened by anything but a user. The
   # first two clauses repeat lint (ubuntu)'s release-commit and closed skip.
   areas:
     name: areas

@@ -220,8 +220,9 @@ is the flaws one fix cures, one issue each (label `flaw`,
 gold, a status (`pass`, `known-flaw`, `model-limit`) and a **snapshot**,
 its raw model output made on the Mac (ADR 0093).
 
-**Detection gate**: the `local/macos` model run over every recognition
-fixture; a stale snapshot or an unexpected result fails it (ADR 0093).
+**Detection gate**: the model run over every recognition fixture,
+`ci/detection` on hosted `macos-26` in shards; a stale snapshot or an
+unexpected result fails it (ADR 0093, ADR 0095).
 
 **Hunter, curator, fixer**: the flaw hunt loop's roles: Codex writes
 documents and reports flaws, an Opus curator audits gold and lands fixtures,
@@ -467,19 +468,19 @@ and Windows x64. Other platforms build from source, unsupported.
 **Update check**: detection-only comparison of the running version with the
 newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038](docs/adr/0038-update-check.md)).
 
-**Local CI**: the pre-merge test gate on the maintainer's Windows PC and Mac:
+**Local CI**: retired at the ADR 0095 cutover (2026-11-03). It was the pre-merge test gate on the maintainer's Windows PC and Mac:
 a runner on each that tests PR heads from branches in the repository, and
 new `main` commits when no PR waits, and posts a desktop and a mobile local
 status. Hosted CI keeps the Ubuntu lint on PRs, `main` and releases
 ([ADR 0082](docs/adr/0082-local-ci.md)).
 
-**Local status**: a commit status local CI posts on a PR head or `main`
+**Local status**: retired with local CI (ADR 0095). It was a commit status local CI posted on a PR head or `main`
 commit: `local/windows` and `local/macos` (desktop), `local/android` and
 `local/ios` (mobile), each from its own job; "Not affected" when the change
-is outside its area. With `lint (ubuntu)`, the five checks a code PR needs
+is outside its area. With `lint (ubuntu)`, the five checks a code PR needed
 green ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
 
-**CI checkout**: local CI's own clone of the repository on a machine, separate
+**CI checkout**: a CI runner's own clone of the repository on a machine, separate
 from lanes and worktrees, with its own `target/`.
 
 **Merge queue**: GitHub's queue on `main`; it tests `main` plus a group of
@@ -577,13 +578,13 @@ phones by RAM class, and a friend's phone weekly by hand ([ADR 0089](docs/adr/00
 
 **Android job**: the run that builds the Android core and app and runs the
 JVM parity tests and the emulator tests, when a change touches the core or
-the android area (`just android`); posted as `local/android` from the PC,
-and later the Mac by takeover or hosted Linux
-([ADR 0089](docs/adr/0089-android-app.md), [ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+the android area (`just android`); `ci/android` on a queue commit, from the
+PC ([ADR 0089](docs/adr/0089-android-app.md), [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
-**iOS job**: the Mac's build of the iOS core and app with XCTest and
-XCUITest on the pinned Simulator, when a change touches the core or the ios
-area (`just mobile --ios`); posted as `local/ios` ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+**iOS job**: the build of the iOS core and app with XCTest and XCUITest on
+the pinned Simulator, when a change touches the core or the ios area (`just
+mobile --ios`); `ci/ios` on a queue commit, on hosted `macos-26`
+([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md), [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
 **Area**: one of desktop, core, ios and android, from the one path table
 `scripts/ci-areas.txt`; a change runs the jobs of the areas it touches, a

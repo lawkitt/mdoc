@@ -8,26 +8,25 @@
 #            fails when they disagree), and come first, so a README under
 #            apps/ or crates/ is still docs. Only exceptions precede them:
 #            Markdown under tests/fixtures/ that a test reads (the recognition
-#            fixtures, ADR 0093: recognition, below). Local CI runs them as
-#            their area; hosted CI
-#            still skips them (paths-ignore has no exceptions, and on a PR it
-#            runs only lint, which reads no fixture).
-#   ios      the iOS job (local/ios): apps/ios/ and the iOS scripts.
-#   android  the Android job (local/android): apps/android/ and the Android
+#            fixtures, ADR 0093: recognition, below). The merge queue runs
+#            them as their area; ci.yml's push filter still skips them
+#            (paths-ignore has no exceptions).
+#   ios      the iOS job (ci/ios): apps/ios/ and the iOS scripts.
+#   android  the Android job (ci/android): apps/android/ and the Android
 #            scripts.
-#   recognition  the recognition fixtures (ADR 0093): on the Mac, local/macos
-#            runs only mdoc-detect's tests and the detection gate;
-#            local/windows and the mobile jobs are not affected. The full
-#            desktop job covers them when the change is also desktop.
+#   recognition  the recognition fixtures (ADR 0093): only the detection
+#            gate (ci/detection) runs; the desktop and mobile jobs are not
+#            affected. The full desktop jobs run too when the change is
+#            also desktop.
 #   core     every area: the Rust core and what every job builds with (the
 #            toolchain, the workspace manifest and lock, the justfile, and
 #            the shared scripts lib.sh, tools.env and setup.sh with what it
 #            runs). The table itself is core.
-#   desktop  local/macos and local/windows (lint, test, and on the Mac the
-#            mobile cargo check), and hosted clippy and test: src/, tests/,
+#   desktop  ci/macos and ci/windows (lint, test, and on macOS the mobile
+#            cargo check), the detection gate, and hosted clippy and test: src/, tests/,
 #            vendor/, build/, resources/, .github/ and every script not
 #            listed here (the desktop scripts: release, packaging, smoke
-#            tests, local CI and its suites).
+#            tests, CI and its suites).
 #
 # A script two areas run belongs to both: mobile-check.sh is the Mac's
 # desktop cargo check (`--ffi`) and the iOS job; install-android-ndk.sh

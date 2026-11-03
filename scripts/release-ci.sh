@@ -15,12 +15,12 @@ release_ci_green() {
     return 1
   fi
 
-  # Read the push paths-ignore block, including its anchor, from ci.yml.
+  # Read the push paths-ignore block (an anchor on it is allowed) from ci.yml.
   # Accept only the simple quoted glob list used there. YAML format changes
   # or unsupported patterns fail closed rather than broaden the skip.
   if ! patterns=$(awk '
     /^  push:$/ { push = 1; next }
-    push && /^    paths-ignore: &ignored$/ { grab = 1; next }
+    push && /^    paths-ignore:( &ignored)?$/ { grab = 1; next }
     grab && /^      - "[A-Za-z0-9_.\/*-]+"$/ {
       sub(/^      - "/, ""); sub(/"$/, ""); print; count++; next
     }

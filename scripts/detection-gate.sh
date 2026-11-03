@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/detection-gate.sh (`just detection-gate`)
 #
-# The detection gate (ADR 0093), macOS only; the Mac's local CI runs it in
-# local/macos after the mobile check. It reruns the pinned FP16 model, read
+# The detection gate (ADR 0093), macOS only, on this Mac's scores (CI runs
+# `just recognize --check` in shards on hosted macos-26, ADR 0095). It reruns the pinned FP16 model, read
 # from the app data and never downloaded, over every recognition fixture
 # (`just recognize --check`): a stale snapshot, a fixture not as its status
 # says, or a model run over its 5-minute budget fails. It runs when the
