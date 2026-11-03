@@ -106,6 +106,68 @@ Publishing: a patch or stable publishes once both agent runs are done with no
 must-fix Fail; rows only the maintainer can do may follow, listed in the
 report.
 
+## iOS beta build
+
+A TestFlight build of the iOS app ([ADR 0097](adr/0097-ios-testflight-beta.md)).
+Steps in order; an agent does each unless it names the maintainer.
+
+1. **Gate.** Build 1: #576 merged, ROADMAP iOS item 3's device run passing on
+   the iPhone 17 Pro, P17 by hand there on a development build of the same
+   commit. Later builds: a fix that affects testers (at most weekly) and `just
+   ios-device-test` on both phones, detector tier on the 17 Pro and
+   below-floor on the 12 Pro.
+2. **Tag** `ios-v<x.y.z>-rc.N` on a `main` commit; the build number is that
+   commit's count on `main`. Build 1 only: an agent prepares a clean
+   checkout of the tag, and the maintainer archives it in Xcode on the
+   macbook-air and distributes it with "App Store Connect" (not "TestFlight
+   Internal Only"). Later builds: the tag's workflow builds and uploads.
+3. **Export compliance** (maintainer, first upload): "standard encryption
+   algorithms in addition to Apple's"; not on the App Store in France.
+   Later builds carry `ITSAppUsesNonExemptEncryption`.
+4. **What to Test.** `rc.1`: the text below. From `rc.2`: the version's
+   section of `apps/ios/CHANGELOG.md`, after the never-client-files line.
+5. **Internal install and acceptance.** The maintainer installs from
+   TestFlight; section 13 of [platform acceptance](platform-acceptance.md)
+   goes to `docs/evidence/mobile/<date>/ios.md` (P12 in the iPad Simulator,
+   marked "Simulator only", until an iPad run).
+6. **External** (maintainer): once section 13 and ROADMAP iOS item 4 have
+   passed, add the build to the Lawyers group; the first external build of a
+   version goes through Beta App Review with the notes below.
+
+**Beta description:**
+
+> Test with documents you are allowed to share, never client files; check a
+> screenshot before you send it. mdoc prepares documents for AI apps on your
+> iPhone or iPad: it reads a PDF, Word file, photo or scan, finds the names,
+> replaces them with aliases before you share the text, and puts the names
+> back into the AI's reply. Nothing is uploaded.
+
+**What to Test, `rc.1`:**
+
+> Test with documents you are allowed to share, never client files; check a
+> screenshot before you send it. Try: + → Files, Scan or Paste; Find names;
+> tap an underlined name to keep or replace it; Share to ChatGPT or Claude;
+> share the reply back with "Restore with mdoc". Known gaps: phones with less
+> than 8 GB of memory (before the iPhone 15 Pro) cannot find names and mark
+> them by selecting text; English interface only; not yet checked on a real
+> iPad.
+
+**Beta App Review notes:**
+
+> mdoc needs no account or sign-in. It works offline; the only network use is
+> optional model downloads the user starts (text recognition and a name
+> detector, about 650 MB in all), fetched from pinned URLs and checked by
+> SHA-256. They are model data, not executable code. Phones with less than
+> 8 GB of memory cannot run the name detector by design; there the app says
+> so and names are marked by selecting text and choosing Replace…. To try it:
+> tap +, choose Paste and paste the paragraph below, tap Find names
+> (download the detector when asked, on Wi-Fi), then Share; in the AI app,
+> share a reply back to "Restore with mdoc".
+>
+> "This lease is made between Anna Petrova, of 12 Garden Street, Springfield,
+> and John Miller, acting for Northwind Holdings LLC. Anna Petrova will pay
+> John Miller the rent on the first day of each month."
+
 ## Waiting and reporting
 
 - The hub ends its turn and wakes on a `schedule_task` bound to its thread
