@@ -48,7 +48,9 @@
 #                               another person span has the word beside a
 #                               name ("Dawn French"); decided after the span
 #                               fixes. One initial before one names no one
-#                               ("B. General Terms")
+#                               ("B. General Terms"). Takes no anywhere_in,
+#                               and last_word_of only for categories other
+#                               than PERSON ("Bright Paths Program")
 #   unless_titled = true        for a pattern with anywhere_in PERSON alone:
 #                               a person's title before the span keeps it
 #                               ("Ms St. Louis")
@@ -151,13 +153,13 @@ guess = ['[ +()\-\x{a0}]*(?:[0-9][ +()\-\x{a0}]*){7,}']
 
 # Organizations: a capital or digit, and a word that is not a never word
 # ("the Employer" is not one). Continental legal forms mark one. A bare site
-# domain is no organization ("NALOG.GOV.RU", "example.invalid", "сайт.рф";
-# issue #488): two letters or more before a common zone, so "E.ON" and
-# "Alfa.Bank" stay.
+# domain is no organization ("NALOG.GOV.RU", "example.invalid", "сайт.рф",
+# "Grants.gov"; issue #488): two letters or more before a common zone, so
+# "E.ON" and "Alfa.Bank" stay.
 [[shape]]
 category = "ORG"
 require = ['[\p{Uppercase}\p{N}]']
-forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|invalid|example|test)/?[»"]?\s*$']
+forbid = ['(?i)^\s*[«"]?(?:https?://)?(?:[a-z0-9а-яё-]+\.)*[a-z0-9а-яё-]{2,}\.(?:ru|su|рф|рус|com|org|net|info|biz|io|pro|online|site|app|dev|me|eu|uk|us|de|by|kz|ua|gov|edu|mil|int|invalid|example|test)/?[»"]?\s*$']
 word = '.'
 guess_words = ["GmbH", "AG", "SA", "BV"]
 
