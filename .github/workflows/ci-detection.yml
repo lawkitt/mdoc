@@ -53,14 +53,19 @@ jobs:
     name: ci/detection (${{ matrix.shard }})
     needs: shards
     runs-on: macos-26
-    # Job limits (ADR 0095): each shard 10 minutes.
-    timeout-minutes: 10
+    # Job limits (ADR 0095): each shard 10 minutes once `main` saves the
+    # detection build's cache (CI redesign item 7); until then a cold
+    # `just recognize --setup` compiles for about 6 minutes, so 20.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.shards.outputs.list) }}
     env:
       SHARD: ${{ matrix.shard }}/${{ needs.shards.outputs.count }}
+      # Scores depend on ONNX Runtime's thread count, and the snapshots are
+      # recorded on this runner with 4 (mdoc-detect's default, ADR 0095).
+      MDOC_DETECT_THREADS: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

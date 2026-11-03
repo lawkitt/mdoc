@@ -160,18 +160,6 @@ head_gate() { # areas fast-verdict
   esac
 }
 
-# The jobs a queue commit needs, from its areas: macos, windows, ios,
-# android, detection (ADR 0095). The fixtures alone need only the detection
-# gate; it decides itself whether recognition changed.
-needed_jobs() { # areas
-  local a=$1 out=''
-  if affects desktop "$a"; then out+=' macos windows'; fi
-  if affects ios "$a"; then out+=' ios'; fi
-  if affects android "$a"; then out+=' android'; fi
-  if affects desktop "$a" || affects recognition "$a"; then out+=' detection'; fi
-  echo "${out# }"
-}
-
 # PR numbers from commit subjects on stdin: squash merges end "(#N)",
 # merge commits say "Merge pull request #N".
 group_prs() {

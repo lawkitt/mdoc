@@ -112,7 +112,7 @@ if ($localWeb) {
     $served = $null
     if ($localWeb.Actions[0].Arguments -match "--directory '([^']+)'") { $served = $Matches[1] }
     if ($served -ne $outArg) {
-        throw "'$localWebTaskName' serves $served, not $outArg: install with that task's -Root, or remove it first (local-ci-setup.ps1 -Uninstall)"
+        throw "'$localWebTaskName' serves $served, not ${outArg}: install with that task's -Root, or remove it first (local-ci-setup.ps1 -Uninstall)"
     }
 }
 

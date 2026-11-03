@@ -72,7 +72,7 @@ recognize *args:
 import *args:
     @cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdoc-import --example convert -- "$@"
 
-# The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; local/macos runs it
+# The detection gate (ADR 0093), macOS: the model over every recognition fixture when recognition changed; CI runs it sharded on hosted macos-26 (ADR 0095)
 detection-gate:
     scripts/detection-gate.sh
 
@@ -114,7 +114,7 @@ android-setup:
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
-# The Android job: core, JVM parity tests, app, emulator tests, when the android area changed; Windows local CI runs it as local/android (ADR 0089, 0091)
+# The Android job: core, JVM parity tests, app, emulator tests, when the android area changed; the PC's queue runner runs it as ci/android (ADR 0089, 0095)
 android:
     scripts/android-check.sh
 
@@ -130,7 +130,7 @@ android-device-test *devices:
 android-core:
     scripts/build-android-core.sh
 
-# cargo check of mdoc-ffi for iOS and Android (--ffi), then the iOS job when the ios area changed (--ios); the Mac's local CI runs each (ADR 0085, 0091)
+# cargo check of mdoc-ffi for iOS and Android (--ffi), then the iOS job when the ios area changed (--ios); ci/macos and ci/ios run them (ADR 0085, 0095)
 mobile *args:
     scripts/mobile-check.sh {{args}}
 

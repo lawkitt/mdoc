@@ -1491,6 +1491,63 @@ mod tests {
             [(Category::Person, 0.6), (Category::Organization, 0.9)]
         );
     }
+    /// #500 and #492's English reproductions: pronouns, "In", headings,
+    /// religions, group nouns, nationalities and a place's second word are
+    /// no one; a person named by such a word keeps it beside a title or
+    /// their full name.
+    #[test]
+    fn correction_drops_common_words_and_keeps_people_named_so() {
+        let source = "He appeals. In this case the Tribunal accepted his Christian faith, \
+                      and Others agree. It relied on the Program Announcement. B. General \
+                      Terms. The Maltese lawyer told all American drivers and United States \
+                      Citizens. Mr Ossian Draycott lives in New York. Mr. General and Jane \
+                      Federal met Dawn French; French signed.";
+        let raw: Vec<RawEntity> = [
+            ("He appeals", "He", "person"),
+            ("In this", "In", "person"),
+            ("Christian faith", "Christian", "person"),
+            ("Others agree", "Others", "person"),
+            ("It relied", "It", "organization"),
+            ("Program Announcement", "Program", "person"),
+            ("B. General", "B. General", "person"),
+            ("Maltese lawyer", "Maltese lawyer", "person"),
+            ("American drivers", "American", "person"),
+            ("United States", "United States Citizens", "person"),
+            ("Mr Ossian Draycott", "Ossian Draycott", "person"),
+            ("New York", "York", "person"),
+            ("Mr. General", "Mr. General", "person"),
+            ("Jane", "Jane Federal", "person"),
+            ("Dawn French", "Dawn French", "person"),
+            ("French signed", "French", "person"),
+        ]
+        .into_iter()
+        .map(|(anchor, text, label)| {
+            let start = source.find(anchor).unwrap() + anchor.find(&text[..2]).unwrap();
+            RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.9,
+                text: text.into(),
+            }
+        })
+        .collect();
+        let found: Vec<_> = correct(source, &raw)
+            .into_iter()
+            .map(|d| (&source[d.range], d.category))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("Ossian Draycott", Category::Person),
+                ("General", Category::Person),
+                ("Jane Federal", Category::Person),
+                ("Dawn French", Category::Person),
+                ("French", Category::Person),
+            ]
+        );
+    }
+
     #[test]
     fn titles_role_and_category_words_are_never_proposed() {
         let person = |text| identifying(text, Category::Person);

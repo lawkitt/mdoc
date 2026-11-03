@@ -42,7 +42,9 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   check "durations read as minutes and seconds" [ "$(duration 1805)" = 30m05s ]
   for j in windows android; do
     (
-      export QUEUE_CI_JOB=$j LOCAL_CI_HOME=/e/ci LOCAL_CI_URL=https://pc.example/ci
+      # Not /e/ci: on the PC that is the installed runners' home, whose
+      # runner.env config() reads.
+      export QUEUE_CI_JOB=$j LOCAL_CI_HOME=/nonexistent/ci LOCAL_CI_URL=https://pc.example/ci
       config
       case "$j" in
         windows) want="ci/windows desktop setup lint test 1800" ;;
@@ -50,7 +52,7 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
       esac
       check "the $j job's context, area, steps and limit" [ "$context $area $steps $limit_s" = "$want" ]
       check "its own home, output and link" \
-        [ "$home $out $url" = "/e/ci/queue-$j /e/ci/out/queue-$j https://pc.example/ci/queue-$j" ]
+        [ "$home $out $url" = "/nonexistent/ci/queue-$j /nonexistent/ci/out/queue-$j https://pc.example/ci/queue-$j" ]
       check "a 4-minute heartbeat, 40 GB floor, 60 GB target/, 20 GB of output" \
         [ "$heartbeat_s $min_free_gb $target_max_gb $out_max_kb" = "240 40 60 $((20 * 1048576))" ]
     )
@@ -333,7 +335,7 @@ check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" =
   grep -q "^scripts/setup.sh: failed once; retried" "$wout/${flake:0:7}/summary.txt"'
 check "and the job passes" has "$flake" "$W" "success	Passed in *"
 check "a commit the queue dropped stops its job" has "$vanish" "$W" "error	Stopped: the queue dropped this commit	*"
-check "before its next step" [ "$(ran vanish)" = "setup lint " ]
+check "before its next step (ran: $(ran vanish))" [ "$(ran vanish)" = "setup lint " ]
 check "a commit merged on another result stops too" has "$merged" "$W" "error	Stopped: merged before this job finished	*"
 check "oldest commit first" eval '[ "$(first pass)" -lt "$(first fail)" ] && [ "$(first fail)" -lt "$(first beat)" ] &&
   [ "$(first beat)" -lt "$(first slow)" ] && [ "$(first slow)" -lt "$(first vanish)" ] &&

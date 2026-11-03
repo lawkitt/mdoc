@@ -185,6 +185,19 @@ changed_areas() { # table-text
 # True when the areas list ($2, from changed_areas) runs area $1's job.
 affects() { [[ " $2 " == *" $1 "* ]]; }
 
+# The jobs a queue commit needs, from its areas: macos, windows, ios,
+# android, detection (ADR 0095). merge-gate.sh waits for these and
+# queue.yml (scripts/ci-areas.sh --queue) starts them, so the two agree. The fixtures alone need only the detection
+# gate; it decides itself whether recognition changed.
+needed_jobs() { # areas
+  local a=$1 out=''
+  if affects desktop "$a"; then out+=' macos windows'; fi
+  if affects ios "$a"; then out+=' ios'; fi
+  if affects android "$a"; then out+=' android'; fi
+  if affects desktop "$a" || affects recognition "$a"; then out+=' detection'; fi
+  echo "${out# }"
+}
+
 # The areas between two commits, by this checkout's table.
 diff_areas() { # from to
   local table

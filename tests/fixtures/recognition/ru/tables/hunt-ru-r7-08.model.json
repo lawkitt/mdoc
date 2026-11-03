@@ -3,6 +3,6 @@
   "threshold": 0.5,
   "entities": [
     {"start":334,"end":364,"label":"organization","score":0.9158089,"text":"АО «Тихая грань»"},
-    {"start":220,"end":260,"label":"organization","score":0.8989441,"text":"ООО «Медный разворот»"}
+    {"start":220,"end":260,"label":"organization","score":0.8991214,"text":"ООО «Медный разворот»"}
   ]
 }

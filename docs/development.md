@@ -26,11 +26,9 @@ Before a PR is ready, run `just lint` and the tests of the crates it changes
 (`cargo nextest run -p <crate>`, the app's with `-p mdoc --features
 headless-renders`, a script's suite with `bash scripts/test-<suite>.sh`;
 `just test` for a change to `Cargo.lock`, the toolchain or
-`.config/nextest.toml`). The checks a code PR needs green run the
-full suite on both shipped OSes and the mobile jobs: `local/windows`,
-`local/macos`, `local/ios` and `local/android` from [local CI](#local-ci), and
-hosted `lint (ubuntu)`. A PR from a fork, or opened by a bot, gets the full
-hosted matrix instead.
+`.config/nextest.toml`). A PR head needs `lint (ubuntu)` and `merge-gate`
+green (the fast tier); the full suite on both shipped OSes and the mobile
+jobs runs in the merge queue ([CI](#ci)).
 
 ## Project documentation
 
@@ -224,7 +222,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just recognize <file.md\|folder> [--gold] [--snapshot]` | [Recognition fixtures](../tests/fixtures/recognition/README.md) (ADR 0093): a file's proposals marked like gold, or with `--gold` its misses, false hits and boundary errors against its status; the Mac's installed FP16 model (read only), or committed snapshots with `--snapshot`. `--scoreboard [<folder>]`: recall and precision per language × category × kind and counts per status; `--refresh-snapshots` rewrites snapshots (Mac); `--record-flaws` writes known-flaw fixtures' `expect:` lines; `--check` is the detection gate (`--shard k/n` for one CI shard, `--out <dir>` for its regenerated snapshots); `--setup` installs the pinned FP16 through mdoc's verified setup (CI's runner, ADR 0095). Any folder of fixtures works (the holdout) |
 | `just import <file>` | What mdoc's own import makes of a file, as Markdown on stdout (warning and errors on stderr); a PDF needing OCR uses the installed OCR models (read only; `MDOC_OCR_ROOT` points elsewhere). Judge probes on this text, not on another converter's (ADR 0093) |
 | `just snapshots-fetch <pr\|run>` | A failing `ci/detection` run's regenerated snapshots (the PR's newest run with them, or that run) into the tree, to review and commit (ADR 0095) |
-| `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides); `local/macos` runs it last |
+| `just detection-gate` | macOS: `just recognize --check` when the change touches recognition or what it depends on (`MDOC_DETECTION_GATE=always` or `never` overrides), on this Mac's scores; CI runs `just recognize --check` in shards on hosted `macos-26` instead (`ci/detection`), whose snapshots differ in the fourth decimal place |
 | `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
@@ -233,12 +231,12 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
 | `just android-setup` | Windows: the pinned Android SDK (command-line tools, `adb`, build-tools, platform 36, the emulator and an API 36 x86_64 image with 16 KB pages), Temurin 21 and NDK r29 under `E:\Android` (`MDOC_ANDROID_HOME` overrides), each archive checked against its published size and SHA-1 or SHA-256; accepts the SDK licences. About 4 GB, once ([ADR 0089](adr/0089-android-app.md)) |
 | `just android-emulator [--window] [phone\|tablet]` | Windows: boots a Pixel 8-sized phone (`emulator-5554`) or Pixel Tablet-sized tablet (`emulator-5556`) on the pinned API 36 image with 16 KB pages, headless unless `--window`, writing its virtual device on first use; prints the adb serial. `adb -s <serial> emu kill` stops it |
-| `just android` | Windows: the Android job when the commit touches the core or android area (`scripts/ci-areas.txt`; `MDOC_ANDROID_JOB=always` or `never` overrides): `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. Windows local CI runs it as `local/android`, with a 40-minute limit |
-| `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of local CI |
-| `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of local CI |
+| `just android` | Windows: the Android job when the commit touches the core or android area (`scripts/ci-areas.txt`; `MDOC_ANDROID_JOB=always` or `never` overrides): `just android-core`, the app's JVM parity and unit tests, the app and test builds, then the instrumented tests on CI's own emulator (`emulator-5560`), stopped afterwards if the job booted it. The PC's queue runner runs it as `ci/android`, with a 40-minute limit |
+| `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of CI |
+| `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows or macOS: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which the Mac's local CI runs in `local/macos` after `test`; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted, which the Mac's local CI runs as `local/ios` with a 40-minute limit. Neither: both |
-| `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted, which `ci/ios` runs with a 40-minute limit. Neither: both |
+| `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
 | `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
@@ -432,230 +430,143 @@ update or a changed flag builds a complete new copy beside the old one, so run
 `cargo clean --profile dev` after one (the next build is cold, about two
 minutes for `just test`). Edits alone grow the cache only slowly.
 
-## Local CI
+## CI
 
-Local CI is the pre-merge test gate
-([ADR 0082](adr/0082-local-ci.md),
-[ADR 0091](adr/0091-mobile-ci-and-releases.md)): `scripts/local-ci.sh` runs
-on the Mac and on the Windows PC. The Mac posts `local/macos` (lint, test,
-the mobile cargo check) and `local/ios` (the iOS job) on each PR head; the
-PC posts `local/windows` (lint, test) and `local/android` (the Android job).
-When a runner is stuck, the hosted fallback posts those statuses instead
-(below). `scripts/test-local-ci.sh` and `scripts/test-local-ci-fallback.sh`
-(part of `just test`) check both against fakes.
+`main` merges through GitHub's merge queue
+([ADR 0095](adr/0095-ci-on-a-merge-queue.md)). A PR head runs a fast tier
+on hosted Linux; the full suite runs once per queue group, on hosted
+runners and the Windows PC. The Mac is not a CI runner. ADR 0082's local
+CI and its hosted fallback are retired.
+
+**Required checks.** A ruleset on `main` requires `lint (ubuntu)` and
+`merge-gate`, on the PR head and on the queue commit; the maintainer's
+bypass is for `just release` only. Never merge with `--admin`.
+
+| Commit | What runs | `merge-gate` is green when |
+|---|---|---|
+| PR head | `lint (ubuntu)` and `fast (ubuntu)` (`just test-tier unit`, `just test-tier scripts`) | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), or the PR is docs only |
+| Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran |
+
+**Merging.** When a PR's checks are green and it is reviewed, enqueue it:
+`gh pr merge <N> --auto` (the queue sets the method: squash). The queue builds groups of 1 to 4 PRs
+after a 5-minute wait, two groups at a time, each on `main` plus the PRs
+ahead of it. A group whose queue commit fails is taken out; GitHub
+re-tests the rest without it. The dropped PR gets a red `merge-gate` on its
+queue commit, which names the failing job and links to it. Fix it on the
+branch and enqueue it again.
+
+**Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
+diffs the commit against `main`'s merge base and picks the jobs from its
+areas; `merge-gate` reads the same diff, so a skipped job is one it does not
+wait for.
+
+| Job (status) | Areas | Runs on | Limit |
+|---|---|---|---|
+| `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`): lint, the unit, recognition, app and renders tiers, the script suites under `/bin/bash` 3.2, `just mobile --ffi` | 30 min |
+| `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`): `just mobile --ios` on the pinned Xcode | 40 min |
+| `ci/android` | android | the PC: `just android` | 40 min |
+| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards | 20 min a shard (10 once `main` caches its build, item 7) |
+
+A core change needs every job; docs only needs none.
 
 **Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
-area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, or two of them) and a
-glob; a file takes the first line that matches it, desktop when none does,
-and a core change runs every area. Its comment says which scripts are
-desktop, shared (core) or mobile. `scripts/ci-areas.sh [<from> <to>]`
-prints the areas a change touches (`HEAD^1` to `HEAD` by default: on a
-merge ref, the PR). A new script outside `src/` and `tests/` that a mobile
-job runs needs a line there, or it counts as desktop. `ci.yml`'s
-`paths-ignore` repeats the `none` lines word for word (the suite checks).
-Only exceptions precede the `none` lines: Markdown a test reads under
-`tests/fixtures/` (the recognition fixtures, area `recognition`). A PR that
-changes only those gets a short `local/macos` job: `scripts/setup.sh`,
-`cargo nextest run -p mdoc-detect` and `just detection-gate`; `local/windows`
-gets `success` "Not affected: recognition fixtures only, the Mac tests them",
-and the mobile statuses "Not affected". With a desktop or core change too,
-the full desktop job runs. Hosted CI still skips them on PRs, since
-`paths-ignore` takes no `!` and a PR's hosted run is only lint, which reads
-no fixture; on `main` its `clippy` and `test` run for them.
+area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, or two of
+them) and a glob; a file takes the first line that matches it, desktop when
+none does, and a core change runs every area. Its comment says which
+scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
+`crates/mdoc-pii` are `recognition,desktop`, so they skip the mobile jobs.
+`scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
+script outside `src/` and `tests/` that a mobile job runs needs a line
+there, or it counts as desktop. `ci.yml`'s `paths-ignore` repeats the `none`
+lines word for word (`scripts/test-local-ci.sh` checks).
 
-**Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
-runs only `lint (ubuntu)` on `pull_request`; its `areas`, `clippy` and `test`
-jobs show as skipped. A merge needs `local/windows`, `local/macos`,
-`local/ios`, `local/android` and `lint (ubuntu)` green. Fork and bot
-(Dependabot) PRs, which the runners never test, run the full hosted matrix,
-so third-party code is never compiled on the maintainer's machines before
-review. `main` runs the full matrix after each merge, and `release.yml`
-calls the full `ci.yml`; there the `areas` job skips `clippy` and `test`
-when the change is outside the desktop and core areas (an app-only merge).
+**Test tiers.** `.config/nextest.toml` names them (`unit`, `app`, `renders`,
+`recognition`); `just test-tier <tier>` runs one, `scripts` the script
+suites, and `just test` all of them. A test on `.config/quarantine.txt`
+(`<nextest filter>  #<issue>  <expires YYYY-MM-DD>`) is left out of every
+tier; `just test-tier quarantined` runs those alone (nightly, once CI
+redesign item 7 lands), and an expired line fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
+profile's `gate`) and may dispatch the full hosted desktop job on its
+branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
-**What a runner does.** Every 60 s it lists the open PRs with the machine's
-`gh` login, skipping drafts, forks and bot PRs (Dependabot). Each PR has two
-jobs, one per status. As soon as GitHub has the merge ref, the runner reads
-the PR's areas from the merge ref's own `scripts/ci-areas.txt`: a status
-outside them gets `success` "Not affected: no core or ios change
-(main@1a2b3c4)", a PR whose files are all in no area gets `success` "Docs
-only, not tested" on both, and a conflicting PR gets `failure` ("Conflicts
-with main"), all without a build. Any other status without this machine's
-result gets `pending` "Queued", linked to the runner's `status.txt`; one job
-runs at a time, oldest first, a PR's desktop job before its mobile one, so
-the desktop status never waits for the mobile job. Each step of a running
-job posts `pending` "Running just test on main@1a2b3c4", so GitHub shows the
-step and a status older than the longest step limit means the runner
-stopped. A job fetches `refs/pull/N/merge`, checks it out in the CI checkout
-(keeping its `target/`) and installs the merge ref's pinned tools with
-`scripts/setup.sh` (as hosted CI's setup step does). The desktop job then
-runs `just lint` and `just test` with the hosted job limits (20 and 30
-minutes), and on the Mac `just mobile --ffi` (20 minutes) and the
-[detection gate](../tests/fixtures/recognition/README.md) `just
-detection-gate` (30 minutes; its model run has a 5-minute budget and reads
-the pinned FP16 from the runner's app data, never downloading). The hosted
-fallback cannot run the gate (no model). The mobile job
-runs `just mobile --ios` on the Mac or `just android` on the PC (40
-minutes each, [ADR 0089](adr/0089-android-app.md)). A runner reads its own
-copy of `local-ci.sh` and `lib.sh`, so a change to them takes effect after
-the runner is installed again. The runner's `PATH` puts `~/.cargo/bin`
-first, so the pinned tools win over other installs. The status, `success`
-or `failure`, names the base commit tested ("Passed on main@1a2b3c4 in
-4m10s") and links to the job's folder (`pr-N/<head>/`, the mobile job's
-`pr-N/<head>-ios/` or `-android/`). A newer head ends its PR's queued or
-running jobs (`error`, "Superseded by …"); a pending status left by a
-stopped runner runs again when it starts.
+**Detection gate.** Hosted `macos-26` is its reference: the snapshots
+(`tests/fixtures/recognition/**/*.model.json`) are recorded there, not on a
+developer Mac, whose scores differ in the fourth decimal place. A failing shard uploads the
+fixtures it found stale, regenerated, as `detection-snapshots-<k>`.
+`just snapshots-fetch <PR|run>` writes them into the tree; review the
+diff, commit and push. A PR that adds or changes a fixture does this once
+its first hosted run fails. Scores in CI depend on ONNX Runtime's threads,
+so the shards set `MDOC_DETECT_THREADS=4`.
 
-**Testing `main`.** When no PR job is queued, the runner takes the `main`
-commits after the last one it queued (`state/main-last`), oldest first, and
-tests each one in the areas it touched, against the commit before it,
-posting both statuses on that commit ("Passed on main@<commit>"; "Not
-affected" and "Docs only" as on PRs); results are under `out/main/`. On its
-first run it takes `main`'s tip only, and after a long time off the newest
-10 (`LOCAL_CI_MAIN_MAX`). A PR head that arrives waits for a running `main`
-job, then goes first. Queued `main` jobs live in `state/main-queue` and run
-again after a restart. A red local status on `main` stops merges, as a red
-hosted `main` does. On the Mac a job starts only while memory
-pressure is normal (`kern.memorystatus_vm_pressure_level` 1) and 40 GB is
-free. Not swap in use: macOS keeps swap after memory is free again, and a
-2 GB swap limit held every job from 11:58 to 15:49 UTC on 2026-10-31 with
-nothing on GitHub to say why. While the Mac waits, queued heads say so
-("Queued; waiting for memory pressure to drop (now warning)"), as do
-`status.txt` and the log.
-
-**Machine settings** go in the runner home's `runner.env` (`~/ci/runner.env`,
-`E:\ci\runner.env`), after the three lines install writes; install and the
-setup script keep them. Never in the launchd plist or the task, which they
-rewrite. The settings are the `LOCAL_CI_*` variables in `config()` in
-`scripts/local-ci.sh`, for example `LOCAL_CI_MIN_FREE_GB=30` or
-`LOCAL_CI_MAX_PRESSURE=2` (start at warning pressure too). Restart the runner
-after a change.
-
-| | Mac | Windows PC |
-|---|---|---|
-| Runner home | `~/ci` | `E:\ci` (the Dev Drive) |
-| CI checkout | `~/ci/mdoc` | `E:\ci\mdoc` |
-| Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `E:\ci\runner\scripts\` |
-| Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `E:\ci\out\pr-N\<head>\` |
-| Runner log | `~/ci/state/runner.log` | `E:\ci\state\runner.log` (start-up errors: `task.log`) |
-| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler tasks `mdoc local CI` and `mdoc local CI web`, at logon, normal priority |
-
-Each machine serves its `out` folder to the tailnet only, at
-`https://<machine>.<tailnet>.ts.net/ci/`; the status links open a job's
-folder there: `log.txt` (checkout and both steps), `summary.txt` (PR, head,
-base, step times, result) and `renders/` (the headless render set:
-`summary.json`, `light/`, `dark/`; about 0.5 GB on macOS, so only a PR's
-newest tested head keeps them). `status.txt` at the top is the runner's
-heartbeat, current job and queue. The macOS Tailscale app cannot serve a
-folder, and on Windows serving one needs an admin, so on each machine a
-localhost-only Python `http.server` (the `local-ci-web` agent, the `mdoc
-local CI web` task) serves it and `tailscale serve` proxies `/ci` to it.
-
-**Install or update.** On the Mac, from a checkout of current `main`:
-`just local-ci install`. On the PC, in PowerShell (not as admin) from a
-checkout, with Python on `PATH`:
-`powershell -ExecutionPolicy Bypass -File scripts\local-ci-setup.ps1`. Both
-clone the CI checkout if it is missing (its first build is cold and its
-`target/` reaches about 30 GB), copy the runner, register the agents or the
-task and add `/ci` to `tailscale serve`; existing `tailscale serve` paths are
-kept. Re-run the same command after `scripts/local-ci.sh` or
-`scripts/lib.sh` changes on `main`; nothing updates the runner by itself
-(on 2026-11-01 the Mac still ran a copy from before the swap-gate fix and
-held PRs for it). When its copy differs from `main`'s, `status.txt` says
-so ("outdated: this runner's local-ci.sh differ from main's; re-run
-install") and the log warns.
-The area table is not copied: the runner reads it from each commit it
-tests. Never run either from the CI checkout, which sits at whatever merge
-ref it tested last.
-
-**Check the runners** (the fleet preflight). Open `/ci/status.txt` on each
-machine over the tailnet: an `updated` time within the last 3 minutes means
-that runner is up. On the machine, `just local-ci status` shows the agents
-or the task, the status file and the last log lines, and exits 1 when the
-runner is not running.
-
-**Stop and start.** Mac: `just local-ci stop` and `just local-ci start`.
-PC: `Stop-ScheduledTask 'mdoc local CI'` and `Start-ScheduledTask 'mdoc
-local CI'` (re-run the setup script to also end a job's build processes). A
-job in progress stops and runs again at the next start. `just local-ci
-uninstall` (Mac) or `local-ci-setup.ps1 -Uninstall` removes the agents or
-the tasks and the `/ci` path and keeps the runner home.
-
-**Run a head again.** Post a pending status on it; the runner queues any
-pending head it is not running:
+**Renders.** `ci/macos` uploads the full headless render set as
+`renders-macos` (7 days). A UI lane dispatches the desktop job on its branch
+with the screens it changed and downloads the small artifact:
 
 ```sh
-gh api -X POST repos/lawkitt/mdoc/statuses/<sha> -f state=pending -f context=local/macos -f description=Queued
+gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos -f screens='light/home.png,*settings*'
+gh run download <run-id> --repo lawkitt/mdoc --name renders-macos-screens
 ```
 
-(`context=local/ios` or `local/android` for a mobile job.)
+**The PC's runners.** Two instances of `scripts/queue-runner.sh` run on the
+PC side by side, one per job, each with its own CI checkout and `target/`
+on the Dev Drive. They test queue commits only, oldest first, never PR
+heads or `main`, and never a group holding a fork or bot PR. A running job
+posts `pending` "Running <step> (<elapsed>)" and refreshes it at least
+every 4 minutes: the heartbeat `merge-gate` reads.
 
-**Hosted fallback.** `.github/workflows/local-ci-fallback.yml` runs
-`scripts/local-ci-fallback.sh` every 10 minutes and after each CI run. It
-looks at the heads the runners test (branches in `lawkitt/mdoc`, opened by a
-user, not drafts) and calls a context stuck when it has
-
-| Status on the head | for at least | which means |
+| | Windows job | Android job |
 |---|---|---|
-| none | 15 min after the head's `lint (ubuntu)` started | the runner is off or asleep |
-| "Queued; waiting for …" | 15 min | the runner is up but out of capacity |
-| "Running …" | 50 min (the longest step limit is 40) | the runner stopped mid-job |
-| any other `pending` ("Queued") | 45 min | a long queue, or the runner is gone |
-| "Queued" behind 2 or more heads (`local/macos`, `local/windows`) | 5 min | overflow: a runner tests one head at a time, hosted CI many |
+| Home | `E:\ci\queue-windows` | `E:\ci\queue-android` |
+| Task (at logon, no window) | `mdoc queue CI windows` | `mdoc queue CI android` |
+| Results, 7 days or 20 GB | `E:\ci\out\queue-windows\<sha>\` | `E:\ci\out\queue-android\<sha>\` |
+| On the tailnet | `https://windows.<tailnet>.ts.net/ci/queue-windows/` | `…/ci/queue-android/` |
 
-Overflow counts, for the same context, the heads whose local status says
-"Running …" and those "Queued" earlier. Hosted CI is free on a public
-repository and runs jobs side by side, so a long local queue spills onto
-it instead of waiting 45 minutes (`FALLBACK_OVERFLOW_AHEAD`,
-`FALLBACK_OVERFLOW_MIN`).
+A job's folder holds `log.txt`, `summary.txt`, the failing tests and, for
+Android, the Gradle reports. A runner refuses a job below 40 GB free and
+says so in a `pending` status; it deletes its `target/` past 60 GB or when
+`rust-toolchain.toml` changes. Settings are the `QUEUE_CI_*` variables in
+`config()`, set in the home's `runner.env`.
 
-For a stuck head it dispatches the full `ci.yml` on the PR branch (one
-dispatch serves both contexts) and posts `pending` "Hosted fallback: hosted
-CI on 1a2b3c4 (attempt 1); …", linked to the branch's CI runs. When that
-run's `clippy` and `test` jobs for the same OS finish, it posts their result
-under the context: "Hosted fallback: clippy and test (macos-26) passed; just
-mobile not run" (hosted CI has no `just mobile`), or `failure` naming the
-job. A dispatch with no result in 25 minutes (cancelled or missing), or
-whose jobs are still queued after 60, is retried, three dispatches in all,
-then the context gets `error`; a retry waits while the head's hosted run is
-still going, and a newly stuck context joins that run. A stuck `local/ios`
-or `local/android` dispatches nothing: until the hosted mobile jobs exist
-([ADR 0091](adr/0091-mobile-ci-and-releases.md) item 5) it gets `success`
-"Hosted fallback: NOT tested; no hosted iOS job yet (ADR 0091 item 5)" at
-once, so a machine that is off never blocks merges (temporary). The merge gate does
-not change: a green fallback status counts like a local one. A runner
-leaves alone the heads the fallback is running hosted CI for and those it
-failed; it tests again only an `error` (hosted CI gave up) and a mobile
-"NOT tested". On the Mac a fallback pass of `local/macos` gets a leftover
-job, `just detection-gate` only (hosted CI has none; it skips itself when
-recognition did not change), whose result keeps "clippy and test by hosted
-CI"; the PC does not test a fallback pass again. The fallback writes only over
-the status it read, re-reading it right before each write, so a runner's
-result wins (a runner posting in that same second is the one window left). The workflow runs
-`main`'s script with its own token (`statuses: write`, `actions: write`) and
-never checks out PR code; the dispatched `ci.yml` run tests the branch head,
-not the merge ref, with its read-only permissions.
+- **Check them** (the fleet preflight): `status.txt` in each home's output
+  folder on the tailnet has a `heartbeat:` line from the last 5 minutes.
+- **Install:** on the PC, in PowerShell (not as admin), from a checkout of
+  current `main`:
+  `powershell -ExecutionPolicy Bypass -File scripts\queue-runner-setup.ps1`.
+  It clones the CI checkouts (the first Windows build fills about 30 GB),
+  copies the runner, registers the tasks and serves `E:\ci\out` at `/ci`.
+  `-Uninstall` removes the tasks and keeps the homes.
+- **Update:** an idle runner whose copy of `queue-runner.sh` or `lib.sh`
+  differs from `main`'s copies `main`'s and restarts. Re-run the setup to
+  update at once.
+- **Stop and start:** `Stop-ScheduledTask 'mdoc queue CI windows'`,
+  `Start-ScheduledTask …`; re-run the setup to also end a job's build
+  processes.
+- **After a restart** of the PC, check that `tailscale serve status` still
+  lists `/ci`; if not: `tailscale serve --bg --set-path /ci http://127.0.0.1:8787`.
 
-**Run the fallback now.** `gh workflow run local-ci-fallback.yml --repo
-lawkitt/mdoc` runs one pass; it still waits for the times above.
+**Fallback.** `merge-gate` (`scripts/merge-gate.sh`, every 5 minutes and
+after each run) dispatches a PC job hosted when the PC has posted nothing
+10 minutes after the queue commit appeared, when its heartbeat is 10
+minutes old, when it posts `error`, or at once for a group with a fork or
+bot PR: `ci-desktop.yml` with `os=windows` (job `ci/windows (hosted)`, 40
+minutes). The result that finished first counts. There is no hosted
+Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
+needs `ci/android` waits for it.
 
-**Dispatch by hand.** Run the full hosted matrix on the PR branch and read
-the result from the head commit's check runs: a dispatched run is not in the
-PR's checks (`gh pr checks`, `statusCheckRollup`, checked on #253), and only
-a full run names `test (windows-latest)` and `test (macos-26)`:
+**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, which
+also saves the build caches the queue's hosted jobs restore. A red `main`
+stops enqueueing.
 
-```sh
-gh workflow run ci.yml --repo lawkitt/mdoc --ref <branch>
-head=$(gh pr view <PR> --repo lawkitt/mdoc --json headRefOid -q .headRefOid)
-gh api "repos/lawkitt/mdoc/commits/$head/check-runs?check_name=test%20(windows-latest)" \
-  --jq '.check_runs[] | [.status, .conclusion, .html_url] | @tsv'
-```
+**Shadow branches.** A branch under `ci-shadow/main/` runs exactly as a
+queue commit does (`queue.yml`, the PC, `merge-gate`), without merging
+anything: for trying a change to CI itself. Its commit subjects end
+"(#N)" so the group is not taken for third-party code. Delete it when done.
 
-A new head needs a new dispatch.
-
-Runners execute PR code under the maintainer's account with their `gh`
-login; only branches pushed to `lawkitt/mdoc` by someone with write access
-are tested, and the results are reachable only inside the tailnet.
+**Third-party code.** Fork and bot (Dependabot) PRs run the fast tier and,
+in `ci.yml`, the full hosted matrix on the PR; their queue groups run
+hosted only. Workflows that read PR code have read-only tokens;
+`merge-gate.yml` runs `main`'s script, never PR code.
 
 ## Fleet
 
@@ -677,7 +588,7 @@ skill) read this section for mdoc's needs.
   (a dynamic VHDX at `D:\DevDrive\dev.vhdx`, attached at startup by the
   `SYSTEM` task `Mount Dev Drive`; fleet ADR 0019): the root checkout
   `E:\Developer\lawkitt\mdoc`, the lanes `E:\t3\worktrees\mdoc\windows-lane-N`
-  (worktrees of the root checkout) and the local CI home `E:\ci`.
+  (worktrees of the root checkout) and the queue runners' home `E:\ci`.
   `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`. Claude Desktop SSH sessions
   use these lane folders too (`use_worktree: false`), one session or T3
   thread per lane.
@@ -696,18 +607,18 @@ skill) read this section for mdoc's needs.
   another worktree's `mdoc-pii` and tested stale code (2026-10-29). Check `df`
   for about 30 GiB per worktree first, and retire it when merged. At most two
   worktrees build at once on the Mac.
-- **Local CI** runs on the Mac and the PC ([Local CI](#local-ci)); the Mac
-  runner is a build slot beside the two agent builders. Preflight: each
-  machine's `/ci/status.txt` updated within the last 3 minutes. UI items'
-  renders are in the `local/macos` and `local/windows` status links.
-- **Required checks:** `local/windows`, `local/macos`, `local/ios`,
-  `local/android` and `lint (ubuntu)`; the lane waits for them and fixes
-  failures, and the hub merges on the same five. They run the full suite on
-  both shipped OSes and the mobile jobs, so a lane's gate is
-  the fast subset under [Build from source](#build-from-source): `just lint`
-  and the changed crates' tests (`wsl` keeps its own gate). When a runner
-  is stuck or its machine is off, the hosted fallback posts its status
-  ("Hosted fallback: …", [Local CI](#local-ci)); a green one counts.
+- **CI** is GitHub's merge queue with hosted jobs and the PC's two runners
+  ([CI](#ci)); the Mac runs no CI. Preflight: `status.txt` of
+  `/ci/queue-windows/` and `/ci/queue-android/` on the PC has a heartbeat
+  from the last 5 minutes. UI items dispatch the hosted desktop job with
+  `screens` and download `renders-macos-screens`.
+- **Required checks:** `lint (ubuntu)` and `merge-gate` on the PR head
+  (the fast tier); the lane waits for them and fixes failures. The hub
+  enqueues with `gh pr merge --auto`, never `--admin`, and the
+  queue runs the full suite; a dequeued PR goes back to its lane with the
+  failing job `merge-gate` names. A lane's gate is the fast subset under
+  [Build from source](#build-from-source): `just lint` and the changed
+  crates' tests (`wsl` keeps its own gate).
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
@@ -737,7 +648,8 @@ read_first = [
 # headless-renders`, a script's suite `bash scripts/test-<suite>.sh`, and a
 # change to Cargo.lock, the toolchain or .config/nextest.toml runs `just test`.
 gate = ["just lint", "cargo nextest run -p <each changed crate>"]
-checks = ["local/windows", "local/macos", "local/ios", "local/android", "lint (ubuntu)"]
+merge_queue = true
+checks = ["lint (ubuntu)", "merge-gate"]
 rules = [
   "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
   "Stop and report to the hub before adding a dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or editing outside the item's area.",
@@ -750,8 +662,8 @@ warm_gib = 15
 
 [renders]
 produce = "just headless-renders <new-directory>"
-fetch = "open the `local/macos` and `local/windows` status links (tailnet): `renders/light/` and `renders/dark/`"
-done_when = "headless renders of {what}, light and dark (local CI serves them)"
+fetch = "dispatch `ci-desktop.yml` on the branch with `-f os=macos -f screens=<globs>` and `gh run download <run> --name renders-macos-screens`"
+done_when = "headless renders of {what}, light and dark (the hosted desktop job uploads them)"
 
 [bookkeeping]
 roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only its own lines; do not renumber)"
@@ -764,7 +676,7 @@ setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target
 [machines.windows]
 disk_check = "`Get-PSDrive E` (not `just disk`, which fails while another lane builds)"
 lanes = { windows-lane-1 = 'E:\t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'E:\t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'E:\t3\worktrees\mdoc\windows-lane-3', windows-lane-4 = 'E:\t3\worktrees\mdoc\windows-lane-4' }
-notes = "Every lane, the root checkout and local CI's home are on `E:`, a ReFS Dev Drive (a VHDX on `D:`); `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`."
+notes = "Every lane, the root checkout and the queue runners' homes (`E:\\ci`) are on `E:`, a ReFS Dev Drive (a VHDX on `D:`); `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`."
 
 [machines.wsl]
 disk_check = "`df -h ~`"

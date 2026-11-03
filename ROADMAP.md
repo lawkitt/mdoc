@@ -181,60 +181,28 @@ touch separate files and run as parallel lanes; 5 builds on both.
 
 ## CI redesign
 
-The full suite runs once per merge-queue group on hosted runners and the
-PC, PR heads run a fast tier, and the Mac stops being a CI runner
-([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)). Record:
-[CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md). Until
-item 6, ADR 0082 and ADR 0091 describe what runs. Interim, before item 1
-and independent of it: a dated `deny.toml` ignore for the `zip` advisory
-(`main` is red), #510's fix and then closing #513, and deleting the Mac CI
-checkout's `target/`.
+`main` merges through GitHub's merge queue; PR heads run a fast tier, and
+the full suite runs once per queue group on hosted runners and the PC
+([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
+Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
 
-1. **[CI] Test tiers.** nextest filtersets and test groups for `unit`,
-   `app` (at most 4 threads), `renders`, `recognition` and `scripts`, with
-   ADR 0095's timeouts; `.config/quarantine.txt` with its expiry check;
-   test builds behind a seam for OS security and identity services, with a
-   guard test, and the rule in development.md. *Done when:* each tier runs
-   alone by name, an expired quarantine line fails, and the guard test
-   fails on a test that calls the signature query.
-2. **[CI] Hosted jobs.** Parallel lanes on separate files: (a) the macOS
-   desktop full tier on `macos-26`, and the script suites under `/bin/bash`
-   3.2; (b) the iOS job on `macos-26` with the pinned Xcode; (c) the
-   Android job on Ubuntu with KVM, after Mobile CI/CD item 3; (d) the
-   detection gate: the byte-for-byte snapshot experiment on a hosted runner
-   (re-record there if it fails), the cached FP16 model, sharding past 3
-   minutes, and `just snapshots-fetch <pr>`; (e) the fast tier (`unit`,
-   `scripts`, `just mobile --ffi`) on Ubuntu, with any crate that cannot
-   test on Linux moved to macOS. *Done when:* each job passes on a
-   dispatched run of `main` and fails a deliberately broken branch.
-3. **[CI] The `merge-gate` aggregator.** A hosted workflow that runs
-   `main`'s script, never PR code, and posts `merge-gate` on PR heads (fast
-   tier) and queue commits (every affected full job, each named with where
-   it ran), with the recognition-code area in `scripts/ci-areas.txt`.
-   *Done when:* a PR head and a queue commit each get a status that names
-   what ran, and a missing job keeps it pending.
-4. **[CI] PC runner for the queue.** Tests `gh-readonly-queue/main/*`
-   commits only, in two slots (Windows desktop and Android), posts `ci/*`;
-   heartbeat; hosted fallback after a 10-minute stale heartbeat or start;
-   fork and bot groups never run on the PC; self-update from `main`;
-   `target/` and output retention with `rm`; reports and failing tests on
-   the tailnet page. *Done when:* a drill with the PC's runner stopped
-   merges through hosted Windows and Android.
-5. **[CI] Shadow trial.** The queue setup runs beside the current gate on 5
-   PRs. *Done when:* both agree on those 5 and the new setup fails a
-   deliberately broken PR in each tier.
-6. **[CI] Cutover.** The ruleset on `main` (`lint (ubuntu)` and
-   `merge-gate` required, the maintainer's bypass for `just release`), the
-   merge queue (groups of 1–4, 5-minute wait, concurrency 2), agents
-   enqueueing with `gh pr merge --auto`; the Mac runner uninstalled and its
-   CI checkout removed; development.md's Local CI section rewritten; the
-   fleet profile's checks changed in the fleet repository. *Done when:* a
-   hub merges a group of PRs through the queue with no hand re-test.
-7. **[CI] `main` and supply chain.** `main` pushes run cache-saving builds
-   only; a nightly full run of every hosted job opens an issue when red;
-   cargo-deny advisories move to `Cargo.lock` PRs and a daily run that
-   opens an issue. *Done when:* a nightly drill with a broken fallback job
-   opens an issue.
+1. **[CI] The OS-services seam.** Test builds behind a seam for OS security
+   and identity services, with a guard test, and the rule in
+   development.md. *Done when:* the guard test fails on a test that calls
+   the signature query.
+2. **[CI] The hosted Android job.** `ci-android.yml` on Ubuntu with KVM
+   (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
+   `merge-gate`'s Android fallback has a job to dispatch. *Done when:* a
+   queue drill with the PC off merges an Android change through it.
+7. **[CI] `main`, supply chain and upkeep.** `main` pushes run cache-saving
+   builds only (the hosted jobs' ids, the iOS core and the detection
+   model caches); a nightly full run of every hosted job, the quarantined
+   tier included, opens an issue when red; cargo-deny advisories move to
+   `Cargo.lock` PRs and a daily run that opens an issue; the local CI
+   scripts (`local-ci.sh`, `local-ci-fallback.sh`, `local-ci-setup.ps1`)
+   go, their area checks kept; the PC's web task re-adds `/ci` to
+   `tailscale serve` at start (a restart drops it). *Done when:* a
+   nightly drill with a broken fallback job opens an issue.
 
 ## Later
 

@@ -1,0 +1,10 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":241,"end":256,"label":"person","score":0.9285385,"text":"Ossian Draycott"},
+    {"start":281,"end":299,"label":"organization","score":0.94068086,"text":"Federal government"},
+    {"start":322,"end":332,"label":"organization","score":0.9107044,"text":"Law School"},
+    {"start":266,"end":274,"label":"address","score":0.6838419,"text":"New York"}
+  ]
+}

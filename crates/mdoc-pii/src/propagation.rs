@@ -490,6 +490,7 @@ pub(crate) enum Form {
 /// `wording` as a [`Form::Whole`]: two or three name words, no initials and
 /// no title before them.
 fn parse_whole(wording: &str) -> Option<Form> {
+    let wording = &crate::view::unwrapped(wording);
     let cased = name_words_cased(wording);
     let titled = wording.split_whitespace().count() != cased.len();
     let words = merge_particles(&cased);
@@ -510,6 +511,8 @@ fn initials_of(word: &str) -> Option<Vec<char>> {
 }
 
 pub(crate) fn parse_form(wording: &str) -> Option<Form> {
+    // A word split by a line-end hyphen reads whole ("Верес-\nтова").
+    let wording = &crate::view::unwrapped(wording);
     let titled = wording.split_whitespace().next().is_some_and(|first| {
         TITLES.contains(
             &first
@@ -870,8 +873,9 @@ fn usable_span(
     covered: &[Range<usize>],
 ) -> bool {
     let text = &source[range.clone()];
+    // A line break only where a line-end hyphen splits a word in it.
     !glued(source, range)
-        && safe_span(text)
+        && safe_span(&crate::view::unwrapped(text))
         && !intersects(protected, range)
         && !intersects(covered, range)
         && exact_boundary(source, range, text)
@@ -948,7 +952,20 @@ fn find_forms(
     fixed: &[Range<usize>],
 ) -> Vec<(Range<usize>, bool, bool)> {
     let protected = protected_syntax(source);
-    let tokens: Vec<Range<usize>> = TOKEN.find_iter(source).map(|m| m.range()).collect();
+    // A word split by a line-end hyphen is one token, as the view reads it:
+    // "Верес-\nтова Дарья Ильинична" is a whole name (#388).
+    let mut tokens: Vec<Range<usize>> = Vec::new();
+    for found in TOKEN.find_iter(source) {
+        match tokens.last_mut() {
+            Some(last)
+                if crate::view::line_end_hyphen(&source[last.end..])
+                    .is_some_and(|len| last.end + len == found.start()) =>
+            {
+                last.end = found.end();
+            }
+            _ => tokens.push(found.range()),
+        }
+    }
     let capital = |k: usize| {
         tokens.get(k).is_some_and(|r| {
             source[r.clone()]
@@ -960,6 +977,8 @@ fn find_forms(
     let blank = |from: usize, to: usize| {
         from <= to && source[from..to].chars().all(|c| c == ' ' || c == '\t')
     };
+    // A surname's particle, as read: "v-\nan der Berg" has "van".
+    let particle = |t: &Range<usize>| is_particle(&crate::view::unwrapped(&source[t.clone()]));
     // An initial: one capital letter and its period.
     let initial = |k: usize| {
         capital(k)
@@ -985,9 +1004,7 @@ fn find_forms(
             // The surname may carry particles: "Г. Я. де Лаваль".
             let mut surname = last + 1;
             while surname < last + 3
-                && tokens
-                    .get(surname)
-                    .is_some_and(|t| is_particle(&source[t.clone()]))
+                && tokens.get(surname).is_some_and(particle)
                 && tokens.get(surname + 1).is_some_and(|next| {
                     tokens[surname].end < next.start && blank(tokens[surname].end, next.start)
                 })
@@ -1021,7 +1038,7 @@ fn find_forms(
             // A surname with its particles: "де Лаваль", "van der Berg".
             let mut last = i;
             while last < i + 2
-                && is_particle(&source[tokens[last].clone()])
+                && particle(&tokens[last])
                 && tokens.get(last + 1).is_some_and(|next| {
                     tokens[last].end < next.start && blank(tokens[last].end, next.start)
                 })
@@ -1042,9 +1059,10 @@ fn find_forms(
                 }
                 tries.push((start..tokens[last].end, last + 1, false));
             }
-            let title = &source[tokens[i].clone()];
+            // As read, so a title split over lines stays a title.
+            let title = crate::view::unwrapped(&source[tokens[i].clone()]);
             // Lowercase "miss" is the verb.
-            let titled = is_title(title);
+            let titled = is_title(&title);
             // A whole name, before its parts: "Лидией Игоревной Брюн", not
             // "Лидией Игоревной" and "Брюн" (#391).
             // The surname may carry particles: "Генриетта Яновна де Лаваль".
@@ -1055,12 +1073,7 @@ fn find_forms(
             };
             let surname_from = |k: usize| {
                 let mut last = k;
-                while last < k + 2
-                    && tokens
-                        .get(last)
-                        .is_some_and(|t| is_particle(&source[t.clone()]))
-                    && spaced(last)
-                {
+                while last < k + 2 && tokens.get(last).is_some_and(particle) && spaced(last) {
                     last += 1;
                 }
                 word(last).then_some(last)
@@ -1631,6 +1644,52 @@ mod tests {
             end: source.find(" Н.").unwrap(),
         }];
         assert!(find_forms(source, &people(&names), &covered, &covered).is_empty());
+    }
+
+    /// #388: a word split by a line-end hyphen is one name word, so the
+    /// whole name around it is found; a capital after the hyphen is a
+    /// compound's next part, never the same word.
+    #[test]
+    fn a_word_split_by_a_line_end_hyphen_is_one_name_word() {
+        let names = ["Дарья Ильинична Верестова"];
+        assert_eq!(
+            form("Верес-\nтова"),
+            Form::Word {
+                word: "верестова".into(),
+                titled: false
+            }
+        );
+        assert_eq!(target(&names, "Верес-\nтова"), Some(1));
+        let source = "Приняла: Верес-\n  това Дарья Ильинична. Санкт-\nПетербург, Дарья -\nИльинична, Верестова\nДарья.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "Верес-\n  това Дарья Ильинична",
+                "Дарья",
+                "Верестова",
+                "Дарья"
+            ]
+        );
+        let whole = parse_whole("Верес-\nтова Дарья Ильинична").unwrap();
+        assert_eq!(people(&names).candidates(&whole).target, Some(1));
+        // A title split over lines stays a title, outside the span.
+        let source = "Later M-\nr Paul signed.";
+        let found: Vec<_> = find_forms(source, &people(&["James Paul"]), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Paul"]);
+        // So does a particle: the whole name is one form.
+        let source = "Signed by Ludwig v-\nan der Berg.";
+        let found: Vec<_> = find_forms(source, &people(&["Ludwig van der Berg"]), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Ludwig v-\nan der Berg"]);
     }
 
     #[test]

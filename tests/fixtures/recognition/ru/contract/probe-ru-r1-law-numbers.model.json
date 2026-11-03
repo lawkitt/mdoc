@@ -2,6 +2,6 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":113,"end":123,"label":"national_id_number","score":0.8794577,"text":"7701234567"}
+    {"start":113,"end":123,"label":"national_id_number","score":0.87966466,"text":"7701234567"}
   ]
 }

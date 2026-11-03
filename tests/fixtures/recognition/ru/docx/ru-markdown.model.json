@@ -2,12 +2,12 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":221,"end":242,"label":"person","score":0.9865718,"text":"Анна_Ёлкина"},
+    {"start":221,"end":242,"label":"person","score":0.9866234,"text":"Анна_Ёлкина"},
     {"start":170,"end":191,"label":"person","score":0.97854924,"text":"Анна_Ёлкина"},
-    {"start":311,"end":332,"label":"person","score":0.97085404,"text":"Анна Ёлкина"},
-    {"start":269,"end":290,"label":"person","score":0.96826136,"text":"Анна Ёлкина"},
-    {"start":55,"end":84,"label":"organization","score":0.87893915,"text":"Северный Вектор"},
+    {"start":311,"end":332,"label":"person","score":0.97090924,"text":"Анна Ёлкина"},
+    {"start":269,"end":290,"label":"person","score":0.9683214,"text":"Анна Ёлкина"},
+    {"start":55,"end":84,"label":"organization","score":0.87925047,"text":"Северный Вектор"},
     {"start":125,"end":145,"label":"email","score":0.9987306,"text":"anna@example.invalid"},
-    {"start":89,"end":99,"label":"national_id_number","score":0.51912516,"text":"7701234567"}
+    {"start":89,"end":99,"label":"national_id_number","score":0.5183481,"text":"7701234567"}
   ]
 }
