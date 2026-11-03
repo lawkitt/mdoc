@@ -190,10 +190,10 @@ Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
    (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
    `merge-gate`'s Android fallback has a job to dispatch. *Done when:* a
    queue drill with the PC off merges an Android change through it.
-7. **[CI] `main`, supply chain and upkeep.** `main` pushes run cache-saving
-   builds only (the hosted jobs' ids, the iOS core and the detection
-   model caches); a nightly full run of every hosted job, the quarantined
-   tier included, opens an issue when red; cargo-deny advisories move to
+7. **[CI] `main`, supply chain and upkeep.** The detection shards back to
+   10 minutes once `main-caches.yml`'s caches make a warm shard fit; a
+   nightly full run of every hosted job, the quarantined tier included,
+   opens an issue when red; cargo-deny advisories move to
    `Cargo.lock` PRs and a daily run that opens an issue; the local CI
    scripts (`local-ci.sh`, `local-ci-fallback.sh`, `local-ci-setup.ps1`)
    go, their area checks kept; the PC's web task re-adds `/ci` to

@@ -485,8 +485,11 @@ lines word for word (`scripts/test-local-ci.sh` checks).
 `recognition`); `just test-tier <tier>` runs one, `scripts` the script
 suites, and `just test` all of them. A test on `.config/quarantine.txt`
 (`<nextest filter>  #<issue>  <expires YYYY-MM-DD>`) is left out of every
-tier; `just test-tier quarantined` runs those alone (nightly, once CI
-redesign item 7 lands), and an expired line fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
+tier. An Android or iOS UI test goes there as `android:<class>#<method>` or
+`ios:<target>/<class>/<method>`; the Android job and `just ios-test` skip it,
+and nothing runs it until the line goes (fix the test, then remove the
+line). `just test-tier quarantined` runs the Rust ones alone, nightly too,
+and any line past its date fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
@@ -565,9 +568,12 @@ minutes). The result that finished first counts. There is no hosted
 Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
 needs `ci/android` waits for it.
 
-**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, which
-also saves the build caches the queue's hosted jobs restore. A red `main`
-stops enqueueing.
+**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, and
+`main-caches.yml` builds the iOS core and the detection gate (model set up,
+no check). Between them they save every cache the queue's hosted jobs
+restore: a branch can restore only its own caches and `main`'s, so only
+`main` saves (the setup action's `save-if`, and the model's save step). A
+red `main` stops enqueueing.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, the detection gate, the quarantined tests

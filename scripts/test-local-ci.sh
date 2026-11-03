@@ -58,6 +58,8 @@ not() { ! "$@"; }
   none=$(awk '$1 == "none" { print $2 }' <<<"$table")
   check "ci.yml's paths-ignore list is read" [ -n "$ignored" ]
   check "ci.yml's paths-ignore is the table's none lines, in order" [ "$ignored" = "$none" ]
+  check "main-caches.yml's paths-ignore is the same" \
+    [ "$(tr -d '\r' <.github/workflows/main-caches.yml | paths_ignore)" = "$none" ]
   # The lines above the first none line are exceptions to it: Markdown a test
   # reads. GitHub's paths-ignore takes no `!`, so hosted CI skips them.
   check "the exceptions are under tests/fixtures/, so a README under apps/ is docs" \

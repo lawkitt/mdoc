@@ -13,12 +13,20 @@ on:
         description: The commit to test; empty for the triggering ref.
         type: string
         default: ""
+      build-only:
+        description: Build the iOS core only, which saves its cargo cache on main (main-caches.yml).
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       ref:
         description: The commit to test; empty for the triggering ref.
         type: string
         default: ""
+      build-only:
+        description: Build the iOS core only.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,12 +47,17 @@ jobs:
 
       # The pinned Xcode for every later step, and the pinned Simulator
       # runtime and device, downloaded when the image lacks them.
-      - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
+      - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '' }} >>"$GITHUB_ENV"
 
       # The caller decided the area already.
-      - run: just mobile --ios
+      - if: ${{ !inputs.build-only }}
+        run: just mobile --ios
         env:
           MDOC_IOS_JOB: always
+
+      # The job id stays `ios`, so queue commits restore what this saves.
+      - if: ${{ inputs.build-only }}
+        run: just ios-core
 
       - name: Test results
         if: failure()

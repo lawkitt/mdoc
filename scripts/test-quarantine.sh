@@ -53,6 +53,28 @@ if q filter "$tmp/bad" >/dev/null 2>&1; then fail "a malformed line passed filte
 printf 'test(=bad)  2026-12-01\n' >"$tmp/bad"
 if q check "$tmp/bad" 2>/dev/null; then fail "a line without an issue passed check"; fi
 
+# App UI tests: Android ones go to AndroidJUnitRunner's notClass, iOS ones to
+# -skip-testing, and neither into the nextest filter.
+cat >"$tmp/apps" <<'LIST'
+test(=a)  #510  2026-11-12
+android:io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage  #537  2026-11-12
+android:io.github.lawkitt.mdoc.SetupTest#opens  #538  2026-11-12
+ios:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore  #542  2026-11-12
+LIST
+q check "$tmp/apps" || fail "app UI test lines failed check"
+[ "$(q filter "$tmp/apps")" = "(test(=a))" ] || fail "filter with app tests: $(q filter "$tmp/apps")"
+[ "$(q android "$tmp/apps")" = "io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage,io.github.lawkitt.mdoc.SetupTest#opens" ] ||
+  fail "android: $(q android "$tmp/apps")"
+[ "$(q ios "$tmp/apps")" = "-skip-testing:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore" ] || fail "ios: $(q ios "$tmp/apps")"
+[ -z "$(q android "$tmp/pipes")$(q ios "$tmp/pipes")" ] || fail "a list without app tests printed app arguments"
+for bad in 'android:OriginalTest' 'ios:ReviewFlowUITests/testOpenReviewShareRestore' 'android:a b#c' 'ios:t/c/m()'; do
+  printf '%s  #542  2026-11-12\n' "$bad" >"$tmp/bad"
+  if q check "$tmp/bad" 2>/dev/null; then fail "a malformed app test passed check: $bad"; fi
+done
+# The Android and iOS jobs pass them on.
+grep -q 'quarantine.sh android' scripts/android-check.sh || fail "android-check.sh does not read the quarantine list"
+grep -q 'quarantine.sh ios' justfile || fail "just ios-test does not read the quarantine list"
+
 # The repository's own list parses.
 bash scripts/quarantine.sh list >/dev/null || fail ".config/quarantine.txt does not parse"
 

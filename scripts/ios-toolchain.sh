@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: scripts/ios-toolchain.sh
+# Usage: scripts/ios-toolchain.sh [--no-simulator]
 # Readies the iOS job's pinned toolchain (scripts/tools.env, ADR 0091) and
 # prints `DEVELOPER_DIR=<its Developer folder>` on stdout, which ci-ios.yml
 # appends to $GITHUB_ENV (ADR 0095). Finds the Xcode whose `xcodebuild
@@ -7,9 +7,14 @@
 # as the hosted images name them) and fails when none is; downloads the
 # IOS_SIM_RUNTIME Simulator runtime when that Xcode lacks it; creates the
 # iPhone 17 the job tests on when the runtime has none. On a Mac already set
-# up it changes nothing.
+# up it changes nothing. --no-simulator stops after Xcode: a build of the
+# core (main-caches.yml) needs no Simulator.
 source "$(dirname "$0")/lib.sh"
 [ "$(uname -s)" = Darwin ] || die "the iOS toolchain is macOS only"
+case "${1:-}" in
+  '' | --no-simulator) ;;
+  *) die "usage: scripts/ios-toolchain.sh [--no-simulator]" ;;
+esac
 load_tools
 
 device="iPhone 17"
@@ -34,6 +39,10 @@ done
   die "the iOS job needs Xcode $XCODE_VERSION (scripts/tools.env); found: ${found[*]:-none}. Install it, or pin another in its own PR"
 export DEVELOPER_DIR=$developer
 echo "ios-toolchain: Xcode $XCODE_VERSION at ${developer%/Contents/Developer}" >&2
+if [ "${1:-}" = --no-simulator ]; then
+  echo "DEVELOPER_DIR=$developer"
+  exit 0
+fi
 
 # runtime_ready: the pinned runtime is installed and usable.
 runtime_ready() {
