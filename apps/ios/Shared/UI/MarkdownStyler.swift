@@ -1,13 +1,24 @@
 import UIKit
 
-/// Builds the document's attributed Markdown source from the core's spans:
-/// markers dimmed as the desktop editor draws them, candidates underlined in
-/// their category's colour. Every range comes from the core as source bytes.
+/// Builds the document's attributed Markdown source from the core's spans,
+/// candidates underlined in their category's colour. Every range comes from
+/// the core as source bytes, and the text is always the source.
+///
+/// Rendered (ADR 0096, the default) it reads as desktop draws it: markers
+/// hidden, lines that only hold markers folded away, list labels, quote bars,
+/// alert and code cards and rules drawn by `MarkdownLayoutFragment`, tables
+/// as grids `RenderedTextView` lays over the gap their lines leave. With Show
+/// Markdown it is the source with dimmed markers (ADR 0085).
 struct MarkdownStyler {
     static let candidateScheme = "mdoc-candidate"
 
     var traits: UITraitCollection
     var selected: CandidateID?
+    /// Markers hidden and blocks drawn; false shows the source, markers dimmed.
+    var rendered = true
+    /// The text column's width, which tables are laid out for; nil leaves
+    /// tables as source lines.
+    var width: CGFloat?
 
     static func link(for id: CandidateID) -> URL {
         var components = URLComponents()
@@ -29,15 +40,23 @@ struct MarkdownStyler {
     }
 
     func attributedText(markdown: String, styling: MarkdownStyling, candidates: [Candidate]) -> NSAttributedString {
+        document(markdown: markdown, styling: styling, candidates: candidates).text
+    }
+
+    func document(for snapshot: DocumentSnapshot) -> RenderedDocument {
+        document(markdown: snapshot.markdown, styling: snapshot.styling, candidates: snapshot.candidates)
+    }
+
+    /// The styled text and, rendered with a width, its tables. `extra` adds
+    /// attributes before the tables take their cells, so table cells show
+    /// them too.
+    func document(
+        markdown: String, styling: MarkdownStyling, candidates: [Candidate],
+        extra: ((NSMutableAttributedString) -> Void)? = nil
+    ) -> RenderedDocument {
         let offsets = TextOffsets(markdown)
         let body = Self.font(.body, traits: traits)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 2
-        paragraph.paragraphSpacing = 4
-        // A hyphen inside a name or an email reads as part of it (ADR 0087).
-        paragraph.usesDefaultHyphenation = false
-        paragraph.hyphenationFactor = 0
-        paragraph.lineBreakStrategy = []
+        let paragraph = Self.paragraph()
         let text = NSMutableAttributedString(string: markdown, attributes: [
             .font: body,
             .foregroundColor: UIColor.label,
@@ -79,13 +98,22 @@ struct MarkdownStyler {
             case .codeBlock:
                 text.addAttribute(.font, value: monospaced(size: body.pointSize), range: range)
             case .tableHeader:
-                // Table rows in a smaller monospaced font, so columns line up
-                // and wrap less; the source is unchanged.
-                text.addAttribute(.font, value: tableFont.withTraits(.traitBold), range: range)
+                // As source: table rows in a smaller monospaced font, so
+                // columns line up and wrap less. Rendered: the grid's cells
+                // take the body font and bold the header.
+                text.addAttribute(.font, value: rendered ? body.withTraits(.traitBold) : tableFont.withTraits(.traitBold), range: range)
             case .tableRow:
-                text.addAttribute(.font, value: tableFont, range: range)
+                if !rendered {
+                    text.addAttribute(.font, value: tableFont, range: range)
+                }
             case .rule:
                 break
+            }
+        }
+        if rendered {
+            for block in styling.blocks where block.kind == .muted {
+                guard let range = clamp(block.range) else { continue }
+                text.addAttribute(.foregroundColor, value: UIColor.secondaryLabel, range: range)
             }
         }
 
@@ -129,10 +157,17 @@ struct MarkdownStyler {
                 text.addAttribute(.backgroundColor, value: UIColor(rgba: rgba), range: range)
             }
         }
-        // Markers last, so they stay dimmed whatever they sit in.
+        // Markers last, so they stay dimmed, or hidden, whatever they sit in.
+        var hidden: [NSRange] = []
         for span in styling.spans where span.kinds.contains(.marker) {
             guard let range = clamp(span.range) else { continue }
-            text.addAttribute(.foregroundColor, value: Self.marker, range: range)
+            if rendered {
+                text.addAttributes(Self.hiddenAttributes, range: range)
+                text.removeAttribute(.backgroundColor, range: range)
+                hidden.append(range)
+            } else {
+                text.addAttribute(.foregroundColor, value: Self.marker, range: range)
+            }
         }
 
         for candidate in candidates {
@@ -174,7 +209,14 @@ struct MarkdownStyler {
             }
             text.addAttributes(attributes, range: range)
         }
-        return text
+        extra?(text)
+        guard rendered else { return RenderedDocument(text: text, tables: []) }
+        var layout = BlockLayout(
+            text: text, source: source, offsets: offsets, styling: styling, hidden: hidden,
+            traits: traits, body: body, paragraph: paragraph)
+        let tables = width.map { layout.tables(width: $0) } ?? []
+        layout.apply(tables: tables)
+        return RenderedDocument(text: text, tables: tables)
     }
 
     /// What VoiceOver adds after a candidate's words.
@@ -205,6 +247,18 @@ struct MarkdownStyler {
         UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
     }
 
+    /// The body paragraph: no hyphenation, since a hyphen inside a name or an
+    /// email reads as part of it (ADR 0087).
+    static func paragraph() -> NSMutableParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 2
+        paragraph.paragraphSpacing = 4
+        paragraph.usesDefaultHyphenation = false
+        paragraph.hyphenationFactor = 0
+        paragraph.lineBreakStrategy = []
+        return paragraph
+    }
+
     /// Monospaced, a little smaller than the text it sits in.
     private func monospaced(size: CGFloat) -> UIFont {
         UIFont.monospacedSystemFont(ofSize: size * 0.92, weight: .regular)
@@ -222,6 +276,17 @@ struct MarkdownStyler {
     static let highlight = UIColor { traits in
         UIColor.systemYellow.withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.32 : 0.4)
     }
+
+    /// A hidden marker: no ink and next to no width. The characters stay, so
+    /// every offset does too.
+    static let hiddenFont = UIFont.systemFont(ofSize: 0.01)
+    static var hiddenAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: hiddenFont,
+            .foregroundColor: UIColor.clear,
+            .mdocHidden: true,
+        ]
+    }
 }
 
 extension UIColor {
@@ -233,7 +298,7 @@ extension UIColor {
     }
 }
 
-private extension UIFont {
+extension UIFont {
     func withTraits(_ traits: UIFontDescriptor.SymbolicTraits) -> UIFont {
         guard let descriptor = fontDescriptor.withSymbolicTraits(fontDescriptor.symbolicTraits.union(traits)) else {
             return self

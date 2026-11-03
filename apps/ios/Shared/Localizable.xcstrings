@@ -77,6 +77,9 @@
     "Case number": {},
     "Case: %@": {},
     "Category": {},
+    "Caution": {
+      "comment": "A Markdown alert's title"
+    },
     "Checking and installing": {},
     "Choose a document, or add one with +.": {},
     "Converting": {},
@@ -112,6 +115,9 @@
     "Identities": {},
     "Identity": {},
     "Import not finished": {},
+    "Important": {
+      "comment": "A Markdown alert's title"
+    },
     "Installed": {},
     "Installing": {},
     "Installing %@": {},
@@ -124,6 +130,7 @@
     "Memory": {},
     "Models": {},
     "Models download once, on Wi-Fi unless you allow cellular, and then run on this device.": {},
+    "More": {},
     "Name detector": {},
     "Name detector (GLiNER2)": {},
     "New case": {},
@@ -138,6 +145,9 @@
     "Not downloaded": {},
     "Not now": {},
     "Not restored": {},
+    "Note": {
+      "comment": "A Markdown alert's title"
+    },
     "Nothing found": {},
     "Nothing to restore": {},
     "OK": {},
@@ -222,11 +232,15 @@
     "Share as Markdown file": {},
     "Share reply": {},
     "Share the AI's reply as text to restore it.": {},
+    "Show Markdown": {},
     "Show Sidebar": {},
     "Something went wrong": {},
     "Source code": {},
     "Start again": {},
     "Stopped.": {},
+    "Table": {
+      "comment": "VoiceOver name of a Markdown table"
+    },
     "Tax identifier": {},
     "Text": {},
     "Text not recognized yet": {},
@@ -241,6 +255,9 @@
     "This document is no longer in mdoc.": {},
     "This iPad can't find names: the name detector needs 8 GB of memory (an iPad with M1 or later). Select text to mark a name.": {},
     "This iPhone can't find names: the name detector needs 8 GB of memory (iPhone 15 Pro or later). Select text to mark a name.": {},
+    "Tip": {
+      "comment": "A Markdown alert's title"
+    },
     "Title": {},
     "Underlined words are names mdoc found. Use the Candidates rotor to move between them.": {},
     "Use cellular": {},
@@ -249,6 +266,9 @@
     "Wait for Wi-Fi": {},
     "Waiting for Wi-Fi": {},
     "Waiting for another document to finish.": {},
+    "Warning": {
+      "comment": "A Markdown alert's title"
+    },
     "Web address": {},
     "Your carrier may charge for the data.": {},
     "case %@": {},

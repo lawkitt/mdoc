@@ -47,10 +47,10 @@ final class MarkdownStylerTests: XCTestCase {
         }
     }
 
-    func testMarkersAreDimmed() throws {
+    func testMarkersAreDimmedInTheSource() throws {
         let core = Fixture.core()
         let snapshot = try core.library.session(for: Fixture.letter).snapshot()
-        let text = MarkdownStyler(traits: UITraitCollection(), selected: nil).attributedText(for: snapshot)
+        let text = MarkdownStyler(traits: UITraitCollection(), selected: nil, rendered: false).attributedText(for: snapshot)
         // The letter starts with "# ", a heading marker.
         let colour = text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor
         XCTAssertEqual(colour, UIColor.tertiaryLabel)
@@ -58,7 +58,7 @@ final class MarkdownStylerTests: XCTestCase {
 
     @MainActor
     func testSelectionCannotBeCopiedOrShared() {
-        let view = CandidateTextView(usingTextLayoutManager: true)
+        let view = CandidateTextView()
         view.text = "Maya Ellison"
         view.selectedRange = NSRange(location: 0, length: 4)
         XCTAssertFalse(view.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))

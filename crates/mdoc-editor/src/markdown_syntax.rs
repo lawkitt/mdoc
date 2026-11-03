@@ -25,7 +25,8 @@ use crate::Diagnostic;
 // Recognition shared with the mobile apps (ADR 0085), re-exported under the
 // names the editor's modules already use.
 pub(crate) use mdoc_markdown::lines::{
-    blockquote_prefix, heading_level, list_prefix, task_prefix, thematic_break,
+    blockquote_prefix, footnote_def, heading_level, html_block, list_prefix, ordered_scan,
+    task_prefix, thematic_break,
 };
 pub(crate) use mdoc_markdown::spans::is_backslash_escaped;
 pub(crate) use mdoc_markdown::syntax::{TableStyle, table_style_marker};
@@ -615,24 +616,6 @@ pub(crate) fn heading_fold_regions(
     out
 }
 
-/// Byte length of the `[^label]:` prefix if `line` is a footnote definition, so
-/// the editor can render the whole line muted (the reading view does the same).
-/// `None` otherwise.
-pub(crate) fn footnote_def(line: &str) -> Option<usize> {
-    let rest = line.strip_prefix("[^")?;
-    let close = rest.find(']')?;
-    // Label must be non-empty and the `]` immediately followed by `:`.
-    (close > 0 && rest[close + 1..].starts_with(':')).then_some(2 + close + 2)
-}
-
-/// True if `line` looks like a block-level raw HTML line — `<tag …>`, `</tag>`,
-/// or `<!-- … -->` at the start (after optional indentation). The editor renders
-/// it muted, matching the reading view (raw HTML is shown literally, never run).
-pub(crate) fn html_block(line: &str) -> bool {
-    let t = line.trim_start().as_bytes();
-    matches!(t, [b'<', rest, ..] if rest.is_ascii_alphabetic() || *rest == b'/' || *rest == b'!')
-}
-
 /// Byte length of a blockquote's leading marker — one or more `>` (GFM nesting),
 /// each with an optional trailing space — if `line` is a blockquote. `None`
 /// otherwise. The editor hides this marker (reveal-on-caret) and renders the line
@@ -702,63 +685,6 @@ pub(crate) fn alert_fold_regions(content: &str) -> Vec<(Range<usize>, bool)> {
 /// setting. Non-items are (0, 0).
 pub(crate) fn ordered_numbers(lines: &[&str]) -> Vec<(u32, usize)> {
     ordered_scan(lines).0
-}
-
-/// [`ordered_numbers`] plus, for each ordered item, the list it belongs to:
-/// siblings share an id (a nested list, or a new list after a break, gets its
-/// own), so their bodies can share one marker width. Non-items are `None`.
-pub(crate) fn ordered_scan(lines: &[&str]) -> (Vec<(u32, usize)>, Vec<Option<u32>>) {
-    let mut out = vec![(0u32, 0usize); lines.len()];
-    let mut lists = vec![None; lines.len()];
-    let mut next_list = 0u32;
-    // One entry per open list level: (indent, is_ordered, next number, list id).
-    let mut stack: Vec<(usize, bool, u32, u32)> = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        let Some((_, indent, ordered, _)) = list_prefix(line) else {
-            // Indented text hangs under the innermost item; anything else —
-            // including a blank line — ends the open lists.
-            let ws = line
-                .bytes()
-                .take_while(|b| matches!(b, b' ' | b'\t'))
-                .count();
-            let hanging =
-                !line.trim().is_empty() && stack.last().is_some_and(|&(ind, ..)| ws > ind);
-            if !hanging {
-                stack.clear();
-            }
-            continue;
-        };
-        while stack.last().is_some_and(|&(ind, ..)| ind > indent) {
-            stack.pop();
-        }
-        let depth = stack.len();
-        match stack.last_mut() {
-            Some((ind, ord, next, list)) if *ind == indent => {
-                if *ord != ordered {
-                    // A different marker type at the same indent starts a
-                    // new list.
-                    *ord = ordered;
-                    *next = 1;
-                    *list = next_list;
-                    next_list += 1;
-                }
-                if ordered {
-                    out[i] = (*next, depth - 1);
-                    lists[i] = Some(*list);
-                    *next += 1;
-                }
-            }
-            _ => {
-                stack.push((indent, ordered, 2, next_list));
-                out[i] = (1, depth);
-                if ordered {
-                    lists[i] = Some(next_list);
-                }
-                next_list += 1;
-            }
-        }
-    }
-    (out, lists)
 }
 
 /// A copied slice with its ordered markers rewritten to their DISPLAYED
