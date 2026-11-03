@@ -402,6 +402,16 @@ const NOUN_ENDINGS: &[&str] = &[
     "ями",
 ];
 
+/// A span's `word` as never words are listed: without the punctuation
+/// around it (a hyphen stays) or a possessive "'s" ("the LEA's IEP").
+fn bare(word: &str) -> &str {
+    let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
+    word.strip_suffix("'s")
+        .or_else(|| word.strip_suffix("’s"))
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(word)
+}
+
 /// Whether `text` ends with a single capital letter on its own, an
 /// initial whose period belongs to the name ("Белявская О. М", "Smith J").
 fn ends_with_initial(text: &str) -> bool {
@@ -539,11 +549,15 @@ impl Pack {
                 } else if entry.words.is_empty() {
                     return Err(at("no words".into()));
                 }
+                // A common word may end an organization's role phrase
+                // ("Bright Paths Program"), never a person's: context names
+                // a person by it ("Paul Program").
                 if entry.unless_named
-                    && (!entry.anywhere_in.is_empty() || !entry.last_word_of.is_empty())
+                    && (!entry.anywhere_in.is_empty()
+                        || entry.last_word_of.iter().any(|token| token == "PERSON"))
                 {
                     return Err(at(
-                        "unless_named takes no anywhere_in or last_word_of".into()
+                        "unless_named takes no anywhere_in or last_word_of PERSON".into(),
                     ));
                 }
                 if entry.unless_titled
@@ -1085,12 +1099,7 @@ impl Pack {
             && outside
                 .split_whitespace()
                 .map(|word| {
-                    // A possessive is its word: "Court’s".
-                    let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
-                    let word = word
-                        .strip_suffix("’s")
-                        .or_else(|| word.strip_suffix("'s"))
-                        .unwrap_or(word);
+                    let word = bare(word);
                     (
                         word.to_lowercase(),
                         word.chars().next().is_some_and(char::is_uppercase),
@@ -1184,23 +1193,26 @@ impl Pack {
         })
     }
 
-    /// Abbreviations `text` defines beside a court, public body or law
-    /// ("Biometric Privacy Act (“BPA”)", "Department of Justice (DOJ)"):
-    /// capitals whose letters are the title's initials in order. Each is the
-    /// body or law wherever it stands (#378); a company's ("Quillon Freight
-    /// LLC (“QF”)") is not, and one the text also defines beside anything
-    /// else is ambiguous and stays.
-    fn public_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
+    /// Abbreviations `text` defines in brackets beside a long form that
+    /// names no one: capitals whose letters are the initials, in order, of
+    /// the words just before the bracket. Each is what its long form is,
+    /// wherever it stands: a court, public body or law ("Biometric Privacy
+    /// Act (“BPA”)", "Department of Justice (DOJ)"; #378), or a programme,
+    /// standard, condition or common noun phrase ("National Reading Access
+    /// Standard (NRAS)", "Electronic funds transfer (EFT)", "Acute Lung
+    /// Injury (ALI)"; #481, #501): a long form the ORG shape and never
+    /// words refuse. A long form with a legal form ("Quillon Freight LLC
+    /// (“QF”)") or a word of its own ("International Business Machines
+    /// (IBM)", "Ossian Draycott (“OD”)") is a name and its abbreviation
+    /// stays; so does one the text also defines beside anything else,
+    /// which is ambiguous.
+    fn unnamed_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
         static DEFINED: OnceLock<Regex> = OnceLock::new();
         let defined = DEFINED.get_or_init(|| {
             Regex::new(&rust_classes(concat!(
-                // The title: capitalized words, and the small words and
-                // years between them, across a line break too. A period
-                // stays only in initials ("U.S."): "Act." ends a sentence.
-                r"((?:(?:\p{Uppercase}\.){1,4}|\p{Uppercase}[\p{Alphabetic}\p{N}'’&-]*)",
-                r"(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:(?:\p{Uppercase}\.){1,4}",
-                r"|\p{Uppercase}[\p{Alphabetic}\p{N}'’&-]*|of|and|the|for|on|in|to|with|&",
-                r"|\d{4}))*)",
+                // The words before: any case, across a line break too.
+                r"((?:[\p{Alphabetic}\p{N}&][\p{Alphabetic}\p{N}'’.&-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*",
+                r"\r?\n[\p{Zs}\t]*))*[\p{Alphabetic}\p{N}&][\p{Alphabetic}\p{N}'’.&-]*)",
                 // A citation may stand between, piece by piece: ", 740 ILCS
                 // 14/1", ", 29 U.S.C. §§ 201, et seq.", ", 42 Stat. 123":
                 // numbers, initials, capitals, section signs and a few
@@ -1217,35 +1229,61 @@ impl Pack {
             )))
             .expect("abbreviation pattern")
         });
-        let mut public = std::collections::HashSet::new();
+        let initials = |word: &str| -> Vec<char> {
+            word.split('-')
+                .filter_map(|part| part.chars().find(|c| c.is_alphabetic()))
+                .flat_map(char::to_lowercase)
+                .collect()
+        };
+        let mut unnamed = std::collections::HashSet::new();
         let mut other = std::collections::HashSet::new();
         for found in defined.captures_iter(text) {
             let (Some(title), Some(short)) = (found.get(1), found.get(2)) else {
                 continue;
             };
-            let (title, short) = (title.as_str(), short.as_str());
             let letters: Vec<char> = short
+                .as_str()
                 .chars()
                 .filter(|c| c.is_alphabetic())
                 .flat_map(char::to_lowercase)
                 .collect();
-            let mut initials = title
-                .split(|c: char| c.is_whitespace() || c == '-')
-                .filter_map(|word| word.chars().find(|c| c.is_alphabetic()))
-                .flat_map(char::to_lowercase);
-            let spelt = letters.len() >= 2
-                && letters
-                    .iter()
-                    .all(|letter| initials.by_ref().any(|initial| initial == *letter));
-            let short = short.trim_end_matches('.').to_owned();
-            if spelt && self.public_body(title, Category::Organization, false) {
-                public.insert(short);
-            } else {
+            let words: Vec<(usize, &str)> = title
+                .as_str()
+                .split_whitespace()
+                .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word))
+                .collect();
+            // The long form: the fewest words before the bracket whose
+            // initials spell the abbreviation, the first one its first
+            // letter ("Electronic funds transfer", not "pay by electronic
+            // funds transfer").
+            let from = (letters.len() >= 2)
+                .then(|| {
+                    (0..words.len()).rev().find(|&first| {
+                        let mut spelt = words[first..].iter().flat_map(|(_, w)| initials(w));
+                        spelt.next() == Some(letters[0])
+                            && letters[1..]
+                                .iter()
+                                .all(|letter| spelt.by_ref().any(|initial| initial == *letter))
+                    })
+                })
+                .flatten();
+            let short = short.as_str().trim_end_matches('.').to_owned();
+            let Some(from) = from else {
                 other.insert(short);
+                continue;
+            };
+            let long = &text[words[from].0..title.end()];
+            let name = !self.public_body(long, Category::Organization, false)
+                && (self.legal_form(long)
+                    || self.shaped_named(long, Category::Organization, &|_| false));
+            if name {
+                other.insert(short);
+            } else {
+                unnamed.insert(short);
             }
         }
-        public.retain(|short| !other.contains(short));
-        public
+        unnamed.retain(|short| !other.contains(short));
+        unnamed
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -1255,12 +1293,17 @@ impl Pack {
     fn shaped_named(&self, text: &str, category: Category, named: &dyn Fn(&str) -> bool) -> bool {
         let words = || {
             text.split_whitespace()
-                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                .map(bare)
                 .filter(|word| !word.is_empty())
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
+        // A company's legal form keeps a common head word its name ends in
+        // ("ООО «Bright Paths Program»"); a role stays a role.
+        let formed = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
-            entry.last_word_of.contains(&category) && lowercase.last().is_some_and(|w| entry.has(w))
+            entry.last_word_of.contains(&category)
+                && !(entry.unless_named && formed)
+                && lowercase.last().is_some_and(|w| entry.has(w))
         });
         if vetoed {
             return false;
@@ -1383,7 +1426,7 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
-        let abbreviations = self.public_abbreviations(&view.text);
+        let abbreviations = self.unnamed_abbreviations(&view.text);
         let named = self.named_words(view, detections);
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
@@ -1402,6 +1445,7 @@ impl Pack {
                     &|word| d.category == Category::Person && (titled || named.contains(word)),
                     titled,
                 )
+                && !field_code(source, d)
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())
@@ -1427,10 +1471,7 @@ impl Pack {
             .filter(|text| self.identifying_named(text, Category::Person, &|_| false, false))
             .flat_map(|text| {
                 text.split_whitespace()
-                    .map(|word| {
-                        word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
-                            .to_lowercase()
-                    })
+                    .map(|word| bare(word).to_lowercase())
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -2017,6 +2058,55 @@ fn soft_break(first: &str, second: &str) -> bool {
 
 fn is_table_row(line: &str) -> bool {
     line.trim_start().starts_with('|')
+}
+
+/// Whether an organization or person span is a field code heading a
+/// Markdown table's column ("| FLDA | FLDB |" over a delimiter row): a
+/// whole header cell of capitals, digits and underscores, up to ten, in a
+/// header of two cells or more that are all such codes, a list of fields,
+/// not of companies (guide rule 8, issue #501). A header with any other
+/// cell keeps its spans ("| HSBC | Quillon Freight LLC |", "| IBM | Price
+/// |").
+fn field_code(source: &str, detection: &Detection) -> bool {
+    let code = |text: &str| {
+        (2..=10).contains(&text.len())
+            && text.starts_with(|c: char| c.is_ascii_uppercase())
+            && text
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    };
+    let range = detection.range.clone();
+    let text = source[range.clone()].trim();
+    if !matches!(
+        detection.category,
+        Category::Organization | Category::Person
+    ) || !code(text)
+    {
+        return false;
+    }
+    let start = source[..range.start].rfind('\n').map_or(0, |at| at + 1);
+    let end = source[range.end..]
+        .find('\n')
+        .map_or(source.len(), |at| range.end + at);
+    let line = &source[start..end];
+    let next = source[end..]
+        .strip_prefix('\n')
+        .map(|rest| rest.split('\n').next().unwrap_or_default());
+    let header: Vec<(std::ops::Range<usize>, &str)> = cells(line, start)
+        .into_iter()
+        .map(|cell| {
+            let text = source[cell.clone()].trim_matches(['*', '`', ' ', '\r']);
+            (cell, text)
+        })
+        .filter(|(_, text)| !text.is_empty())
+        .collect();
+    is_table_row(line)
+        && next.is_some_and(is_delimiter_row)
+        && header.len() >= 2
+        && header.iter().all(|(_, cell)| code(cell))
+        && header.iter().any(|(cell, cell_text)| {
+            cell.start <= range.start && range.end <= cell.end && *cell_text == text
+        })
 }
 
 /// "| --- | :-: |": the row under a table's header.
@@ -5044,10 +5134,264 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(!pack().identifying("Ors", Category::Organization));
     }
 
-    /// Russian form numbers, classifier codes, standards, a form's barcode
-    /// line and waybill numbers are no identifiers; bank details, tax,
-    /// registration and passport numbers and phones beside them stay
-    /// (guide rules 6 and 8, issue #486).
+    /// Programmes, standards, conditions, treatises, a legal form with no
+    /// name, generic words, common abbreviations, and software, sites and
+    /// app platforms are no companies (#501, #481, #488); companies with
+    /// their legal form or a name of their own keep it.
+    #[test]
+    fn programmes_abbreviations_and_products_are_no_companies() {
+        let pack = pack();
+        for (text, category) in [
+            // Programmes, services, plans, standards, projects (#501).
+            ("Bright Paths Program", Category::Organization),
+            ("the Bright Paths Programme", Category::Organization),
+            ("VR services", Category::Organization),
+            ("National Reading Access Standard", Category::Organization),
+            (
+                "Brindle Backwater Pumping Plant project",
+                Category::Organization,
+            ),
+            ("Quality Assurance", Category::Organization),
+            ("Phase II Trial", Category::Organization),
+            ("Federal Employment", Category::Organization),
+            ("Acute Kidney Strain", Category::Organization),
+            ("Acute Lung Injury", Category::Organization),
+            ("Respiratory Distress Syndrome", Category::Organization),
+            // A legal form with no name, and a treatise.
+            (
+                "a Wyoming limited liability company",
+                Category::Organization,
+            ),
+            (
+                "New Jersey limited liability company",
+                Category::Organization,
+            ),
+            ("a Delaware corporation", Category::Organization),
+            ("an English private limited company", Category::Organization),
+            ("4 Brindle on Insolvency", Category::Organization),
+            ("Vell and Ostrand on Contracts", Category::Organization),
+            // Generic words alone.
+            ("Crew", Category::Organization),
+            ("The Crew", Category::Organization),
+            ("Crew", Category::Person),
+            ("Operations", Category::Organization),
+            ("Assignment", Category::Organization),
+            ("Facilities", Category::Organization),
+            ("Human Resources", Category::Organization),
+            ("Services", Category::Organization),
+            ("F.O.B. DESTINATION", Category::Organization),
+            // Common abbreviations (#481).
+            ("VAT", Category::Organization),
+            ("EFT", Category::Organization),
+            ("F.O.B.", Category::Organization),
+            ("OEM", Category::Organization),
+            ("SICAV", Category::Organization),
+            ("NOBO", Category::Organization),
+            ("LEA", Category::Organization),
+            ("the LEA's", Category::Organization),
+            ("IEP", Category::Organization),
+            ("RNG", Category::Organization),
+            ("MMS", Category::Person),
+            ("K-12", Category::Organization),
+            ("FOBTs", Category::Organization),
+            // Sites, software, portals and app platforms (#488).
+            ("Timber Trade Online", Category::Organization),
+            ("FileFlow Manager", Category::Organization),
+            ("Application Manager", Category::Organization),
+            ("Case Management System", Category::Organization),
+            ("the grants portal", Category::Organization),
+            ("Brindle Jobs Portal", Category::Organization),
+            ("AppStore", Category::Organization),
+            ("the App Store", Category::Organization),
+            ("Google Play", Category::Organization),
+            ("GooglePlay", Category::Organization),
+            ("USAJOBS", Category::Organization),
+            ("Grants.gov", Category::Organization),
+            ("CM/ECF", Category::Organization),
+            ("myHMCTS", Category::Organization),
+            ("OASys", Category::Organization),
+            ("WHO.INT", Category::Organization),
+            // Capitals only for the abbreviations that are names too.
+            ("the SEA", Category::Organization),
+            ("FIRs", Category::Organization),
+            // A head word ends a name with no legal form after it: the
+            // issue's choice (#488, review of #543).
+            ("America Online", Category::Organization),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            // A legal form keeps a company, whatever its words.
+            ("Northvale Ledger Services LLC", Category::Organization),
+            ("Acme Program Ltd", Category::Organization),
+            ("Harrow Services Ltd", Category::Organization),
+            ("Timber Trade Online LLC", Category::Organization),
+            ("Crew Ltd", Category::Organization),
+            (
+                "Quillon Freight LLC, a Wyoming limited liability company",
+                Category::Organization,
+            ),
+            ("Copper Dusk Facilities Ltd", Category::Organization),
+            // A name of its own keeps one without a legal form.
+            ("Northvale Ledger Services", Category::Organization),
+            ("Harrow Floor Services", Category::Organization),
+            ("Plan International", Category::Organization),
+            ("Standard Chartered", Category::Organization),
+            ("Acme Systems", Category::Organization),
+            ("Acme Corporation", Category::Organization),
+            ("Brindle Trust", Category::Organization),
+            ("Crew Clothing", Category::Organization),
+            ("Acme Fund SICAV", Category::Organization),
+            ("VAT Advisers Quill", Category::Organization),
+            ("Apple", Category::Organization),
+            ("Google", Category::Organization),
+            ("Brindle Online Group", Category::Organization),
+            ("Bramble Purl Surveys Ltd", Category::Organization),
+            // People.
+            ("Ossian Crew", Category::Person),
+            ("Lea Brindle", Category::Person),
+            ("Paul Program", Category::Person),
+            ("Collier", Category::Person),
+            // Review of #543: a legal form keeps a head word, a subject that
+            // is no field of law keeps a name, a name before a legal form in
+            // words stays, and so does a word that only starts like an app
+            // platform; "Lea" is a name.
+            ("ООО «Bright Paths Program»", Category::Organization),
+            ("Meals on Wheels America", Category::Organization),
+            ("Meals on Wheels", Category::Organization),
+            (
+                "Northvale Ledger limited liability company",
+                Category::Organization,
+            ),
+            ("App Storehouse", Category::Organization),
+            ("Lea", Category::Person),
+            ("Lea", Category::Organization),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
+    }
+
+    /// #501, #481 and #488's reproductions as the user is shown them: only
+    /// the company is proposed; abbreviations defined beside a programme,
+    /// a standard or a condition go wherever they stand, a company's and a
+    /// person's stay, and a field code heading a table's column is no
+    /// company.
+    #[test]
+    fn generic_names_and_their_abbreviations_are_not_shown() {
+        let source = "Northvale Ledger Services LLC, a Wyoming limited liability company, \
+            runs the Bright Paths Program under the National Reading Access Standard \
+            (NRAS) for patients with Acute Kidney Strain (AKS); see 4 Brindle on \
+            Insolvency ¶ 12.03. The Crew reports to Assignment. NRAS applies; AKS is \
+            rare. VAT on EFT payments, F.O.B. destination; the LEA's IEP and the RNG \
+            used by Quillon Freight LLC (“QF”). Apply through Timber Trade Online and \
+            FileFlow Manager; the app is on the AppStore. Ossian Draycott (“OD”) \
+            and QF agree; OD signs.";
+        let raw = [
+            ("Northvale Ledger Services LLC", "organization"),
+            ("Wyoming limited liability company", "organization"),
+            ("Bright Paths Program", "organization"),
+            ("National Reading Access Standard", "organization"),
+            ("NRAS", "organization"),
+            ("Acute Kidney Strain", "organization"),
+            ("AKS", "person"),
+            ("Brindle on Insolvency", "organization"),
+            ("Crew", "organization"),
+            ("Assignment", "organization"),
+            ("VAT", "organization"),
+            ("EFT", "organization"),
+            ("F.O.B. destination", "organization"),
+            ("LEA's", "organization"),
+            ("IEP", "organization"),
+            ("RNG", "organization"),
+            ("Quillon Freight LLC", "organization"),
+            ("QF", "organization"),
+            ("Timber Trade Online", "organization"),
+            ("FileFlow Manager", "organization"),
+            ("AppStore", "organization"),
+            ("Ossian Draycott", "person"),
+            ("OD", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Northvale Ledger Services LLC", "ORG"),
+                ("Quillon Freight LLC", "ORG"),
+                ("QF", "ORG"),
+                ("Ossian Draycott", "PERSON"),
+                ("OD", "PERSON"),
+                ("QF", "ORG"),
+                ("OD", "PERSON"),
+            ])
+        );
+        // Field codes heading the columns are no companies, and a code in a
+        // body row stays; a header with any other cell keeps its spans
+        // (review of #543).
+        let source = "| FLDA | FLDB |\n|---|---|\n| FLDC | 12 |\n\n\
+            | HSBC | Quillon Freight LLC |\n| :-- | --: |\n| 1 | 2 |\n";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("FLDA", "organization"),
+                    ("FLDB", "organization"),
+                    ("FLDC", "organization"),
+                    ("HSBC", "organization"),
+                    ("Quillon Freight LLC", "organization"),
+                ]
+            ),
+            pairs(&[
+                ("FLDC", "ORG"),
+                ("HSBC", "ORG"),
+                ("Quillon Freight LLC", "ORG"),
+            ])
+        );
+        // A company's initials stay where the model missed its long form,
+        // which has a word of its own (review of #543).
+        let source = "International Business Machines (IBM) supplied it; IBM invoiced.";
+        assert_eq!(
+            shown(source, &[("IBM", "organization")]),
+            pairs(&[("IBM", "ORG"), ("IBM", "ORG")])
+        );
+    }
+
+    /// Common words keep a person named so beside a title or their full
+    /// name (#501, #481): "Ms Crew", "Lea Brindle" then "Lea".
+    #[test]
+    fn generic_words_stay_a_persons_name_in_context() {
+        let source = "Ms Crew met Lea Brindle; Lea signed.";
+        // Each anchor's first word, at the anchor's place.
+        let entities: Vec<crate::RawEntity> = [
+            ("Ms Crew", "Crew", "person"),
+            ("Lea Brindle", "Lea Brindle", "person"),
+            ("Lea signed", "Lea", "person"),
+        ]
+        .into_iter()
+        .map(|(anchor, text, label)| {
+            let start = source.find(anchor).unwrap() + anchor.find(text).unwrap();
+            crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            }
+        })
+        .collect();
+        let found: Vec<(String, String)> = crate::recognition::proposals(source, &entities)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            found,
+            pairs(&[
+                ("Crew", "PERSON"),
+                ("Lea Brindle", "PERSON"),
+                ("Lea", "PERSON"),
+            ])
+        );
+    }
+
     /// An account's label comes off its span, a colon with it, and a label
     /// the trim takes no part of still gives its value ("acct"); a value's
     /// own final letters stay, and a case number wrapped over lines is no
@@ -5101,6 +5445,10 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert_eq!(shown(source, &raw), pairs(&[("7707083893", "TAX")]));
     }
 
+    /// Russian form numbers, classifier codes, standards, a form's barcode
+    /// line and waybill numbers are no identifiers; bank details, tax,
+    /// registration and passport numbers and phones beside them stay
+    /// (guide rules 6 and 8, issue #486).
     #[test]
     fn russian_form_numbers_and_codes_are_no_identifiers() {
         let source = "   7000  2034\nИНН\n\n2990  2026  КПП  Стр. 0 0 2\n\n\

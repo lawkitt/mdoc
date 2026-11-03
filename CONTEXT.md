@@ -552,6 +552,19 @@ text editing.
 **Restore with mdoc**: the mobile share-sheet action that takes an AI reply
 from another app and opens it restored.
 
+**Rendered view**: how mobile apps show Markdown: markers hidden, tables,
+lists, quotes, alerts and code drawn as desktop draws them, over the
+unchanged source, so candidate offsets stay source offsets
+([ADR 0096](docs/adr/0096-rendered-markdown-on-mobile.md)).
+
+**Show Markdown**: the mobile ⋯ menu checkmark that swaps the rendered view
+for the source with dimmed markers; one setting for the app.
+
+**Table pass test**: what the rendered view's tables must do inside the one
+TextKit 2 text view (wrapped cells scrolling sideways, no height for the
+source lines, tappable names, Replace… in a cell), or the view becomes a
+stack of block views ([ADR 0096](docs/adr/0096-rendered-markdown-on-mobile.md)).
+
 **Device floor**: the least physical RAM on which a phone gets the GLiNER2
 detector, measured on real phones ([ADR 0088](docs/adr/0088-ios-on-real-devices.md));
 below it the app imports, recognizes text and lets you mark names by hand,
