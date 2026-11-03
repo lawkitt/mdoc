@@ -8,8 +8,8 @@ import XCTest
 /// .docx keeps running in the background past the short grace iOS gives
 /// without that task; a text PDF comes in. `just ios-device-test <udid>`
 /// copies the fixtures into the app's container and runs this; it skips on the Simulator. It needs a phone at
-/// the detector tier (8 GB); the first run also downloads the detector,
-/// which later runs keep.
+/// the detector tier (8 GB); the detector comes from the phone's own
+/// library or, the first time, a download that later runs keep.
 final class DeviceLongJobsUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -26,7 +26,7 @@ final class DeviceLongJobsUITests: XCTestCase {
     }
 
     /// The scan waits for text recognition; Download & continue downloads
-    /// it (and the detector, the first time) and recognizes the pages, with
+    /// it (and the detector, unless cloned or kept) and recognizes the pages, with
     /// mdoc in the background part of the time. Then Find names.
     @MainActor
     private func scanDownloadRecognizeAndFindNames() throws {

@@ -63,8 +63,10 @@ Before every TestFlight build after the first, with the phone connected,
 unlocked, online, and with UI Automation on (Settings → Developer). On
 cellular (or a hotspot) the tests answer Use cellular when mdoc asks, and
 whenever a download waits for Wi-Fi, so a phone can switch networks during a
-run. A phone's first run on cellular downloads text recognition (18 MB) and, at the
-detector tier, the name detector (about 630 MB) over its data plan:
+run. Each run downloads text recognition (18 MB). At the detector tier the
+test library clones the name detector from the phone's own mdoc library when
+that has it (no copy, no space); otherwise the first run downloads it (about
+630 MB, over the data plan on cellular) and later runs keep it:
 
 ```sh
 just ios-device-test <hardware UDID>
@@ -85,8 +87,8 @@ leaves the app for ten seconds, and Find names underlines the tenant. Find
 names on the legal opinion takes over a minute; the test leaves for 45 s,
 past the grace iOS gives without a continued processing task, and mdoc must
 still be running (not suspended) and finish the job. The text PDF comes in
-last. The first run also downloads the name detector, which later runs
-keep; it skips on the Simulator.
+last. The name detector comes from the phone's own library or, the first
+time, a download, as above; the test skips on the Simulator.
 
 The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
 every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
