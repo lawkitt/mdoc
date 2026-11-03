@@ -46,12 +46,12 @@ category = "TAX"
 trim = ["ein", "tin", "itin", "utr"]
 
 # A bank account's label stays outside its span too: the model's "IBAN
-# GB47 KELD …" is "GB47 KELD …" (guide rule 6, issue #486).
+# GB47 KELD …" is "GB47 KELD …" (guide rule 6, issue #486). "acct" is no
+# trim word, since it may end a value; the labelled values below take it.
 [[span]]
 category = "BANK"
 trim = [
-    "iban", "acct", "a/c", "account", "account no", "account number",
-    "bank account",
+    "iban", "a/c", "account", "account no", "account number", "bank account",
 ]
 
 # A declaration or an affidavit is a person's: the model's organization
@@ -546,7 +546,10 @@ unless_guessed = ["DATE"]
 # slash is fine here though the BANK shape refuses it in an unlabelled span.
 [[context]]
 category = "BANK"
-labels = ["bank account", "account number", "account no", "sort code", "iban"]
+labels = [
+    "bank account", "account number", "account no", "sort code", "iban", "acct",
+    "a/c",
+]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '\d{2}-\d{2}-\d{2}(?:[/\p{Zs}]\d{6,10})?|[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d{8,20}'
 min_digits = 6

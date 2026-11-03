@@ -248,10 +248,11 @@ struct SpanFix {
 }
 
 impl SpanFix {
-    /// `range` without its `trim` words or phrases at either edge (a comma
-    /// before a trailing one goes with it) and its `strip_end` characters.
+    /// `range` without its `trim` words or phrases at either edge (a word's
+    /// final period or colon with it; a comma before a trailing one goes
+    /// with it) and its `strip_end` characters.
     fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
-        let plain = |word: &str| word.strip_suffix('.').unwrap_or(word).to_lowercase();
+        let plain = |word: &str| word.strip_suffix(['.', ':']).unwrap_or(word).to_lowercase();
         let listed = |word: &str| self.trim.contains(&plain(word));
         let phrases: Vec<Vec<&str>> = self
             .trim
@@ -4339,6 +4340,45 @@ Privacy Act (“BIPA”). BIPA applies.",
     /// line and waybill numbers are no identifiers; bank details, tax,
     /// registration and passport numbers and phones beside them stay
     /// (guide rules 6 and 8, issue #486).
+    /// An account's label comes off its span, a colon with it, and a label
+    /// the trim takes no part of still gives its value ("acct"); a value's
+    /// own final letters stay, and a case number wrapped over lines is no
+    /// account (guide rule 6, issue #486).
+    #[test]
+    fn account_labels_stay_outside_bank_spans() {
+        let source = "Pay to acct 1234567890 or IBAN: GB47 KELD 6012 4483 7196 02;             ref LU12 3456 7890 1234 ACCT. Claim No.
+6001842
+/
+2026 is pending.
+";
+        let raw = [
+            ("acct 1234567890", "bank_account"),
+            ("IBAN: GB47 KELD 6012 4483 7196 02", "iban"),
+            ("LU12 3456 7890 1234 ACCT", "bank_account"),
+            (
+                "6001842
+/
+2026",
+                "bank_account",
+            ),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("1234567890", "BANK"),
+                ("GB47 KELD 6012 4483 7196 02", "BANK"),
+                ("LU12 3456 7890 1234 ACCT", "BANK"),
+            ])
+        );
+        let source = "Плательщик перечисляет на р/с: 40702810900000004711.
+";
+        let raw = [("р/с: 40702810900000004711", "bank_account")];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("40702810900000004711", "BANK")])
+        );
+    }
+
     #[test]
     fn russian_form_numbers_and_codes_are_no_identifiers() {
         let source = "   7000  2034\nИНН\n\n2990  2026  КПП  Стр. 0 0 2\n\n\

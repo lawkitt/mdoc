@@ -67,8 +67,8 @@
 #                         a person's never over a `never` word (a role);
 #                         earlier spans grow first
 #   trim      = […]       lowercase words that come off either edge, a
-#                         word's own final period with it, and a comma
-#                         before a trailing one; or phrases of them,
+#                         word's own final period or colon with it, and
+#                         a comma before a trailing one; or phrases of them,
 #                         single-spaced ("in re"), with a word left beside
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period
@@ -232,7 +232,7 @@ forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 [[shape]]
 category = "BANK"
 require = ['\p{N}']
-forbid = ['\p{N}[\p{Zs}\t]*/|/[\p{Zs}\t]*\p{N}', '^\s*\d{10,11}\s*$']
+forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']
 
 # Numbers that are no tax, bank, identity or phone value, whatever the
 # model guessed (guide rules 6 and 8, issue #486): digits grouped by commas
