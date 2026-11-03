@@ -55,7 +55,7 @@ final class AppModel {
             let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
-                downloader: testing && !Self.realDownloadsInUITests ? FakeModelDownloader(seconds: 0) : models,
+                downloader: testing && !CoreFactory.realDownloadsInUITests ? FakeModelDownloader(seconds: 0) : models,
                 network: NetworkMonitor(), defaults: defaults)
             if testing, let seed = ProcessInfo.processInfo.environment["MDOC_SEED_FILE"] {
                 app.seedForUITesting(uiTestingFixture(seed))
@@ -68,11 +68,6 @@ final class AppModel {
                 background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
                 network: NetworkMonitor(), defaults: defaults, startupError: error.localizedDescription)
         }
-    }
-
-    /// UI tests that need a model (OCR) download it for real.
-    private static var realDownloadsInUITests: Bool {
-        ProcessInfo.processInfo.environment["MDOC_REAL_DOWNLOADS"] == "1"
     }
 
     /// The App Group storage and the real core.
