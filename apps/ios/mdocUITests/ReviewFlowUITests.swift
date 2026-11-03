@@ -23,7 +23,7 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         let email = text.links[MdocUITest.email].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 30))
-        email.tap()
+        MdocUITest.tapAboveBottomBar(email, in: text, app)
         let done = app.buttons["candidate-done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["candidate-alias"].exists)
@@ -117,6 +117,60 @@ enum MdocUITest {
             try data.write(to: folder.appendingPathComponent("page-\(number).jpg"))
         }
         return folder
+    }
+
+    /// Says Use cellular when mdoc asks before a download on cellular (ADR
+    /// 0088), so the device tests run on Wi-Fi or a phone's own data. Without
+    /// the question (on Wi-Fi) it does nothing.
+    @MainActor
+    static func answerCellularQuestion(_ app: XCUIApplication) {
+        // The dialog's button, not the "Waiting for Wi-Fi" card's, which asks it.
+        let use = app.buttons
+            .matching(NSPredicate(format: "label == 'Use cellular' AND identifier != 'setup-use-cellular'"))
+            .firstMatch
+        if use.waitForExistence(timeout: 3) {
+            use.tap()
+        }
+    }
+
+    /// Waits up to `timeout` for `predicate` on `element` while a download
+    /// runs, answering Use cellular whenever mdoc holds it for Wi-Fi: a phone
+    /// can move between Wi-Fi and its own data during the run.
+    @MainActor
+    static func waitThroughDownload(
+        _ app: XCUIApplication, for predicate: NSPredicate, on element: XCUIElement, timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        let held = app.buttons["setup-use-cellular"].firstMatch
+        while deadline.timeIntervalSinceNow > 0 {
+            let found = XCTNSPredicateExpectation(predicate: predicate, object: element)
+            if XCTWaiter().wait(for: [found], timeout: min(10, deadline.timeIntervalSinceNow)) == .completed {
+                return true
+            }
+            if held.exists {
+                held.tap()
+                answerCellularQuestion(app)
+            }
+        }
+        return false
+    }
+
+    /// Taps `element` in the document text once it is clear of the bottom
+    /// bar. XCUITest scrolls an element into the text view's frame, which
+    /// runs under the bar, so a plain tap on a word near the bottom can land
+    /// on Replace instead (seen on an iPhone 17 Pro and 12 Pro). The bar is a
+    /// safe-area inset, so the text always scrolls clear of it.
+    @MainActor
+    static func tapAboveBottomBar(_ element: XCUIElement, in text: XCUIElement, _ app: XCUIApplication) {
+        let bar = app.buttons["primary-action"].firstMatch
+        for _ in 0..<6 {
+            guard bar.exists, element.frame.maxY > bar.frame.minY - 16 else { break }
+            // Drag the text up by the overlap and a margin, at most half the view.
+            let distance = min(element.frame.maxY - bar.frame.minY + 120, text.frame.height / 2)
+            let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -distance)))
+        }
+        element.tap()
     }
 
     @MainActor

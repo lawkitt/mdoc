@@ -60,7 +60,11 @@ phone with `ppq.apple.com` reachable before iOS lets it launch.
 The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
 long job through the real background task ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
 Before every TestFlight build after the first, with the phone connected,
-unlocked, on Wi-Fi, and with UI Automation on (Settings → Developer):
+unlocked, online, and with UI Automation on (Settings → Developer). On
+cellular (or a hotspot) the tests answer Use cellular when mdoc asks, and
+whenever a download waits for Wi-Fi, so a phone can switch networks during a
+run. A phone's first run on cellular downloads text recognition (18 MB) and, at the
+detector tier, the name detector (about 630 MB) over its data plan:
 
 ```sh
 just ios-device-test <hardware UDID>
@@ -76,7 +80,7 @@ pages it renders (`scripts/ios-scan-pages.swift`), in
 `Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
 a fixture there when its Mac path does not exist. The long-jobs test runs
 at the detector tier with real downloads: the scan's Download & continue
-fetches text recognition on Wi-Fi and recognizes the pages while the test
+fetches text recognition and recognizes the pages while the test
 leaves the app for ten seconds, and Find names underlines the tenant. Find
 names on the legal opinion takes over a minute; the test leaves for 45 s,
 past the grace iOS gives without a continued processing task, and mdoc must
@@ -89,7 +93,7 @@ every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
 `DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
 UI tests take the tier from a stand-in memory size. Below the floor, Settings
 says the phone cannot find names and Home has no setup card; the scan's
-Download & continue fetches text recognition on Wi-Fi and recognizes the pages
+Download & continue fetches text recognition and recognizes the pages
 while the test leaves for ten seconds; where Find names would be, the
 document says so; a word selected and replaced as a person becomes
 `PERSON_1`, and the text shares. Then the legal opinion comes in (in about

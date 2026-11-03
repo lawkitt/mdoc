@@ -3,8 +3,8 @@ import XCTest
 /// The long jobs on a phone (ADR 0088), which the Simulator cannot run: it
 /// refuses `BGContinuedProcessingTask`, so every job here goes through the
 /// real background task only on a device. A camera scan downloads text
-/// recognition for real on Wi-Fi and is recognized while mdoc leaves the
-/// screen; the name detector finds names in it; Find names on a 37-page
+/// recognition for real (on cellular, the test answers Use cellular) and is
+/// recognized while mdoc leaves the screen; the name detector finds names in it; Find names on a 37-page
 /// .docx keeps running in the background past the short grace iOS gives
 /// without that task; a text PDF comes in. `just ios-device-test <udid>`
 /// copies the fixtures into the app's container and runs this; it skips on the Simulator. It needs a phone at
@@ -38,15 +38,15 @@ final class DeviceLongJobsUITests: XCTestCase {
         let download = app.buttons["setup-download"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 30))
         download.tap()
-        if app.buttons["Use cellular"].firstMatch.waitForExistence(timeout: 3) {
-            XCTFail("mdoc asks about cellular: connect the phone to Wi-Fi")
-            return
-        }
+        MdocUITest.answerCellularQuestion(app)
 
         // Leave while the pages are being recognized. The first run's
         // download includes the detector, so allow for it.
         let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        expect(NSPredicate(format: "label CONTAINS 'Recognizing page'"), on: progress, timeout: 1800)
+        let recognizing = NSPredicate(format: "label CONTAINS 'Recognizing page'")
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, for: recognizing, on: progress, timeout: 1800),
+            "the pages were never recognized")
         try leaveAndReturn(app)
 
         let text = app.textViews["document-text"]

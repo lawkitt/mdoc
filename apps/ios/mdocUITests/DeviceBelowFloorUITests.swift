@@ -4,8 +4,8 @@ import XCTest
 /// cannot cover: it needs the detector tier. Below the floor mdoc still
 /// reads, recognizes and lets you mark. Settings and the document say the
 /// phone cannot find names, and Home has no setup card; a camera scan
-/// downloads text recognition for real on Wi-Fi and is recognized while
-/// mdoc leaves the screen; selecting a word marks it and the text shares;
+/// downloads text recognition for real (on cellular, the test answers Use
+/// cellular) and is recognized while mdoc leaves the screen; selecting a word marks it and the text shares;
 /// the 37-page .docx comes in and is whole after mdoc is away. Every job
 /// goes through the real background task, which the Simulator refuses, so this skips there.
 /// `just ios-device-test <udid>` runs it on a phone below the floor (or with
@@ -48,14 +48,14 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let download = app.buttons["setup-download"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 30), "no text recognition setup in the scan")
         download.tap()
-        if app.buttons["Use cellular"].firstMatch.waitForExistence(timeout: 3) {
-            XCTFail("mdoc asks about cellular: connect the phone to Wi-Fi")
-            return
-        }
+        MdocUITest.answerCellularQuestion(app)
 
         // Leave while the pages are being recognized.
         let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        expect(NSPredicate(format: "label CONTAINS 'Recognizing page'"), on: progress, timeout: 1800)
+        let recognizing = NSPredicate(format: "label CONTAINS 'Recognizing page'")
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, for: recognizing, on: progress, timeout: 1800),
+            "the pages were never recognized")
         try leaveAndReturn(app)
 
         let text = app.textViews["document-text"]
