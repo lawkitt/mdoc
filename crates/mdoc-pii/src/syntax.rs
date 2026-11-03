@@ -421,7 +421,10 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
     let local = range.start - start..range.end - start;
     let mut replaced = String::with_capacity(block.len());
     replaced.push_str(&block[..local.start]);
-    replaced.push('X');
+    // In a URI autolink's brackets, "<X_>" is text: "<X>" would be an HTML
+    // tag, and at a block's start an HTML block ("- <https://…>").
+    let autolink = uri_autolink(block, &local);
+    replaced.push_str(if autolink { "X_" } else { "X" });
     replaced.push_str(&block[local.end..]);
     let options = markdown::ParseOptions::gfm();
     match (
@@ -437,7 +440,45 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
 /// Node kinds and child counts in document order, ignoring text values.
 /// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
 /// ADR 0092): `<br>` nodes wholly inside `value` are skipped and the text
-/// around them is one.
+/// around them is one. So is a GFM autolink literal wholly inside it
+/// ("https://site.invalid/u/alice_r", ADR 0094): the web address is the
+/// value, and its alias is plain text.
+static AS_TEXT: markdown::mdast::Node = markdown::mdast::Node::Text(markdown::mdast::Text {
+    value: String::new(),
+    position: None,
+});
+/// Whether `value` of `block` is a URI autolink's whole address
+/// ("<https://…>").
+fn uri_autolink(block: &str, value: &std::ops::Range<usize>) -> bool {
+    block[..value.start].ends_with('<')
+        && block[value.end..].starts_with('>')
+        && crate::web::explicit(&block[value.clone()])
+}
+/// Whether `node` reads as plain text for `value`: a link written as its
+/// own text ("https://…", "www.…") wholly inside it, or a URI autolink
+/// around exactly it ("<https://…>").
+fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>) -> bool {
+    use markdown::mdast::Node;
+    let (children, at) = match node {
+        Node::Link(link) => (link.children.as_slice(), link.position.as_ref()),
+        _ => return false,
+    };
+    let Some(at) = at else {
+        return false;
+    };
+    let len = at.end.offset - at.start.offset;
+    match children {
+        [Node::Text(text)] if value.start <= at.start.offset && at.end.offset <= value.end => {
+            text.value.len() == len
+        }
+        [Node::Text(text)] => {
+            at.start.offset + 1 == value.start
+                && at.end.offset == value.end + 1
+                && text.value.len() + 2 == len
+        }
+        _ => false,
+    }
+}
 fn shape(
     node: &markdown::mdast::Node,
     value: &std::ops::Range<usize>,
@@ -448,6 +489,11 @@ fn shape(
     while let Some(node) = stack.pop() {
         let mut children: Vec<&Node> = Vec::new();
         for child in node.children().map_or(&[][..], Vec::as_slice) {
+            let child = if autolink_literal(child, value) {
+                &AS_TEXT
+            } else {
+                child
+            };
             let line_break = matches!(child, Node::Html(html)
             if crate::view::line_break_tag(&html.value) == Some(html.value.len())
                 && html.position.as_ref().is_some_and(|at| {

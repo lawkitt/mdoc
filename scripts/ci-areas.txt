@@ -62,6 +62,13 @@ android               scripts/android-*.py
 desktop,ios           scripts/mobile-check.sh
 desktop,android       scripts/install-android-ndk.sh
 
+# Recognition code and the rule pack (ADR 0095, applied early on
+# 2026-11-02): the desktop jobs with the detection gate and the mobile cargo
+# check, no iOS or Android app job; the desktop parity test (mdoc-ffi) checks
+# the bindings' output.
+recognition,desktop   crates/mdoc-detect/**
+recognition,desktop   crates/mdoc-pii/**
+
 core                  crates/**
 core                  Cargo.lock
 core                  Cargo.toml

@@ -146,6 +146,9 @@ impl IdentityStore {
 /// word order ("Эльзы-Руты Мартыновны Таль-Шнейдер" is "Эльза-Рута
 /// Мартыновна Таль-Шнейдер").
 pub(crate) fn normalization_key(value: &str, category: Category) -> String {
+    if category == Category::Url {
+        return url_key(value);
+    }
     let words = name_words(value);
     if category == Category::Person
         && words.len() == 3
@@ -155,6 +158,22 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
         return nominative.join(" ");
     }
     canonical(value)
+}
+/// A web address's identity (ADR 0094): `http` or `https`, a leading
+/// `www.` and a trailing slash are writings of one address; anything else,
+/// letter case included, is another.
+fn url_key(value: &str) -> String {
+    fn strip<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+        text.get(..prefix.len())
+            .filter(|head| head.eq_ignore_ascii_case(prefix))
+            .map(|_| &text[prefix.len()..])
+    }
+    let value = value.trim();
+    let rest = strip(value, "https://")
+        .or_else(|| strip(value, "http://"))
+        .unwrap_or(value);
+    let rest = strip(rest, "www.").unwrap_or(rest);
+    rest.strip_suffix('/').unwrap_or(rest).to_owned()
 }
 fn canonical(value: &str) -> String {
     value

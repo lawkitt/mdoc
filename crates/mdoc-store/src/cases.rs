@@ -1246,6 +1246,30 @@ mod tests {
         assert_eq!(store.load(&next.id).unwrap(), next);
     }
 
+    /// Web address only adds a token (ADR 0094): every token saved before
+    /// it reads back as the same category, and a URL identity round trips.
+    #[test]
+    fn tokens_saved_before_web_address_load_unchanged() {
+        for token in [
+            "PERSON", "ORG", "EMAIL", "PHONE", "ADDRESS", "IDENTITY", "TAX", "BANK", "CASE",
+            "DATE", "REDACTED",
+        ] {
+            let stored: StoredIdentity = serde_json::from_value(serde_json::json!({
+                "alias": format!("{token}_1"),
+                "category": token,
+                "originals": ["x"],
+            }))
+            .unwrap();
+            let exported = stored.exported().unwrap();
+            assert_eq!(exported.category.token(), token);
+            assert_eq!(StoredIdentity::from_exported(&exported), stored);
+        }
+        let url = identity("URL_1", Category::Url, &["https://ivanov-law.invalid"]);
+        let stored = StoredIdentity::from_exported(&url);
+        assert_eq!(stored.category, "URL");
+        assert_eq!(stored.exported().unwrap(), url);
+    }
+
     #[test]
     fn count_reads_case_file_names_without_the_key() {
         let dir = tempfile::tempdir().unwrap();

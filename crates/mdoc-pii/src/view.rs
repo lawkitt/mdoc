@@ -947,7 +947,15 @@ fn line_break(text: &str) -> Option<usize> {
 /// line-end hyphen inside a word, or the value ends its last line but for
 /// closing punctuation. "Delva Rosk\nExhibition company" before ": …" is two
 /// lines' text, not one wrapped value.
-pub fn wrapped_value(source: &str, range: &Range<usize>) -> bool {
+///
+/// An address the rule pack's `span` pattern found whole (`address`) is laid
+/// out over lines of its own, the pattern having read its parts on each
+/// ("4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999"), so text may
+/// follow it on its last line (", and to …") when it ends in its number (a
+/// postcode, ZIP or flat number, not a town that may be the next field's
+/// first word: "12 Oak Road,\nDate" of "Date of birth"), that text is a word
+/// apart ("Room 2" of "Room 2/3" is not) and it is no field's label (": …").
+pub fn wrapped_value(source: &str, range: &Range<usize>, address: bool) -> bool {
     let value = &source[range.clone()];
     let plain = value.match_indices('\n').any(|(i, _)| {
         let at = range.start + i;
@@ -964,6 +972,19 @@ pub fn wrapped_value(source: &str, range: &Range<usize>) -> bool {
         || rest
             .chars()
             .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
+        || (address && numbered_end(value, rest))
+}
+
+/// Whether a value's last word holds a digit and the text after it on its
+/// line (`rest`) is a word apart, after closing punctuation, and no label.
+fn numbered_end(value: &str, rest: &str) -> bool {
+    let after = rest.trim_start_matches(|c| ".,;)»\"'".contains(c));
+    value
+        .rsplit(char::is_whitespace)
+        .next()
+        .is_some_and(|word| word.contains(|c: char| c.is_ascii_digit()))
+        && (after.is_empty() || after.starts_with(char::is_whitespace))
+        && !rest.trim_start().starts_with(':')
 }
 
 /// `text` with its full-width forms as ASCII ([`halfwidth`]).
@@ -1057,6 +1078,50 @@ fn character_reference(text: &str) -> Option<(usize, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #498: an address found whole over its own lines stays one value with
+    /// text after it on its last line; any other value over two lines, or an
+    /// address before a field's label, is two lines' text (#459).
+    #[test]
+    fn an_address_over_its_own_lines_is_one_value_with_text_after_it() {
+        let wrapped = |source: &str, value: &str, address| {
+            let start = source.find(value).unwrap();
+            wrapped_value(source, &(start..start + value.len()), address)
+        };
+        let source = "Notices to Larkfield Supply LLC, 4410 W. Quarry Parkway, Suite 210\r\nBrindlecombe, OH 45999, and to Harrow House.";
+        let address = "4410 W. Quarry Parkway, Suite 210\r\nBrindlecombe, OH 45999";
+        assert!(wrapped(source, address, true));
+        assert!(!wrapped(source, address, false));
+        // Ending its line, any value is one, as before.
+        assert!(wrapped(
+            "At 12 Oak Road\nLeeds LS1 4AB.\nNext",
+            "12 Oak Road\nLeeds LS1 4AB",
+            false
+        ));
+        // A field's label after it ends the address's last part.
+        let source = "Depositor: 12 Oak Road\nLeeds LS1 4AB Email: ann@x.invalid";
+        assert!(!wrapped(source, "12 Oak Road\nLeeds LS1 4AB Email", true));
+        let source = "Depositor: Delva Rosk\nExhibition company: Cinder Ltd";
+        assert!(!wrapped(source, "Delva Rosk\nExhibition company", false));
+        assert!(!wrapped(source, "Delva Rosk\nExhibition company", true));
+        // It ends in its number, before a word apart (review of #508): not
+        // a town that is the next field's first word, nor part of a number.
+        let source = "12 Oak Road,\nDate of birth: 14/03/1988";
+        assert!(!wrapped(source, "12 Oak Road,\nDate", true));
+        for (source, ok) in [
+            ("12 Oak Road\nRoom 2, and to", true),
+            ("12 Oak Road\nRoom 2 and to", true),
+            ("12 Oak Road\nRoom 2/3, Leeds", false),
+            ("12 Oak Road\nRoom 2.3, Leeds", false),
+            ("12 Oak Road\nRoom 2-3, Leeds", false),
+            ("12 Oak Road\nRoom 2, Email: x", true),
+            ("12 Oak Road\nRoom 2 : x", false),
+        ] {
+            assert_eq!(wrapped(source, "12 Oak Road\nRoom 2", true), ok, "{source}");
+        }
+        // On one line, text after a value never matters.
+        assert!(wrapped("12 Oak Road, Leeds: x", "12 Oak Road", false));
+    }
 
     #[test]
     fn character_references_decode_and_map_back_to_whole_references() {

@@ -5,7 +5,7 @@
 # The workspace tests through cargo-nextest (.config/nextest.toml), then
 # doctests, which nextest does not run (ADR 0082). The script suites (release,
 # CI cache cleanup, local CI runner and its hosted fallback, the quarantine
-# list) need no build and mostly wait on fakes and timers, so they run beside
+# list, the merge gate, the merge-queue runner) need no build and mostly wait on fakes and timers, so they run beside
 # the Rust tests instead of after them: about a minute off a Windows run
 # (#240). Each suite's output is printed after the Rust tests, in order; any
 # failure fails the run.
@@ -54,7 +54,7 @@ nextest() {
 
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh)
 
 # Runs one tier's commands and exits with their status; nothing else runs.
 only() {
@@ -93,6 +93,8 @@ cleanup() {
   rm -rf "$tmp"
 }
 trap cleanup EXIT
+# Suites added on their own line (snapshots fetch) merge without touching the list above.
+suites+=(test-snapshots-fetch.sh)
 for suite in "${suites[@]}"; do
   bash "scripts/$suite" </dev/null >"$tmp/$suite.log" 2>&1 &
   pids+=($!)

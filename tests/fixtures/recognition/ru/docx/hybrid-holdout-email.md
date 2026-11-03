@@ -7,4 +7,4 @@ source: import
 ```json
 {"email": "⟦EMAIL|case-42@example.invalid⟧"}
 ```
-[contact](https://example.invalid/?email=⟦EMAIL|url@example.invalid⟧)
+[contact](⟦URL|https://example.invalid/?email=url@example.invalid⟧)

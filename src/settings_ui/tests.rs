@@ -1259,6 +1259,14 @@ fn detection_categories_save_on_change_by_mouse_and_keyboard(cx: &mut TestAppCon
     }
     assert!(cx.debug_bounds("settings-detect-REDACTED").is_none());
     assert!(cx.debug_bounds("settings-detect-DATE").is_some());
+    // Web address comes right after Email (ADR 0094).
+    let [email, url, phone] = ["EMAIL", "URL", "PHONE"].map(|token| {
+        let id: &'static str = format!("settings-detect-{token}").leak();
+        cx.debug_bounds(id).unwrap().origin
+    });
+    // Chips wrap, so order reads row by row.
+    assert!((email.y, email.x) < (url.y, url.x));
+    assert!((url.y, url.x) < (phone.y, phone.x));
     assert!(skip(&shared).is_empty());
 
     click(cx, "settings-detect-ADDRESS");

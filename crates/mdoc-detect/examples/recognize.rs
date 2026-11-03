@@ -3,9 +3,10 @@
 //! ```text
 //! just recognize <file.md|folder> [--gold] [--snapshot]
 //! just recognize --scoreboard [<folder>] [--snapshot]
-//! just recognize --refresh-snapshots [<file.md|folder>]
-//! just recognize --check [<folder>]
+//! just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]
+//! just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]
 //! just recognize --record-flaws [<file.md|folder>]
+//! just recognize --setup
 //! ```
 //!
 //! A file prints its proposals marked as gold is (`⟦CATEGORY|text⟧`);
@@ -20,7 +21,13 @@
 //! kind, and exits 0 whatever the documents did. `--refresh-snapshots` rewrites snapshots (on the Mac, the
 //! reference platform). `--check` is the detection gate: it reruns the model
 //! over every fixture, fails on a stale snapshot or an unexpected result,
-//! and on a model run over its 5-minute budget. `--record-flaws` writes each
+//! and on a model run over its 5-minute budget. `--shard k/n` checks (or
+//! refreshes) every n-th fixture from the k-th (1-based) in sorted order,
+//! one CI shard, and `--out` writes each stale or missing snapshot afresh under that folder at
+//! its path in the repository (CI's `detection-snapshots-<k>` artifact, which
+//! `just snapshots-fetch` applies; ADR 0095). `--setup` installs the pinned
+//! FP16 and the ONNX Runtime into the app data through mdoc's own verified
+//! setup, for CI's runner; no other mode downloads. `--record-flaws` writes each
 //! known-flaw fixture's flaws, from its snapshot, as its `expect:` lines:
 //! a known-flaw fixture fails on any flaw it has not recorded (the
 //! precision ratchet). Folders default to
@@ -48,6 +55,7 @@ enum Mode {
     Refresh,
     Check,
     Record,
+    Setup,
 }
 
 fn main() -> ExitCode {
@@ -64,9 +72,10 @@ fn main() -> ExitCode {
 fn usage() -> String {
     "usage: just recognize <file.md|folder> [--gold] [--snapshot]\n       \
      just recognize --scoreboard [<folder>] [--snapshot]\n       \
-     just recognize --refresh-snapshots [<file.md|folder>]\n       \
-     just recognize --check [<folder>]\n       \
-     just recognize --record-flaws [<file.md|folder>]"
+     just recognize --refresh-snapshots [--shard <k>/<n>] [<file.md|folder>]\n       \
+     just recognize --check [--shard <k>/<n>] [--out <dir>] [<folder>]\n       \
+     just recognize --record-flaws [<file.md|folder>]\n       \
+     just recognize --setup"
         .into()
 }
 
@@ -75,7 +84,10 @@ fn run() -> Result<bool, String> {
     let mut gold = false;
     let mut from_snapshot = false;
     let mut target = None;
-    for arg in std::env::args().skip(1) {
+    let mut shard = None;
+    let mut out = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--gold" => gold = true,
             "--snapshot" => from_snapshot = true,
@@ -83,6 +95,9 @@ fn run() -> Result<bool, String> {
             "--refresh-snapshots" => mode = Mode::Refresh,
             "--check" => mode = Mode::Check,
             "--record-flaws" => mode = Mode::Record,
+            "--setup" => mode = Mode::Setup,
+            "--shard" => shard = Some(parse_shard(&args.next().unwrap_or_default())?),
+            "--out" => out = Some(PathBuf::from(args.next().ok_or_else(usage)?)),
             "-h" | "--help" => {
                 println!("{}", usage());
                 return Ok(true);
@@ -97,6 +112,18 @@ fn run() -> Result<bool, String> {
     if mode == Mode::Annotate && gold {
         mode = Mode::Gold;
     }
+    if shard.is_some() && !matches!(mode, Mode::Check | Mode::Refresh) {
+        return Err(format!(
+            "--shard goes with --check or --refresh-snapshots\n{}",
+            usage()
+        ));
+    }
+    if out.is_some() && mode != Mode::Check {
+        return Err(format!("--out goes with --check\n{}", usage()));
+    }
+    if mode == Mode::Setup {
+        return setup().map(|()| true);
+    }
     if from_snapshot && matches!(mode, Mode::Refresh | Mode::Check) {
         return Err(
             "--snapshot reads snapshots; --refresh-snapshots and --check run the model".into(),
@@ -110,9 +137,12 @@ fn run() -> Result<bool, String> {
             .canonicalize()
             .map_err(|e| format!("tests/fixtures/recognition: {e}"))?,
     };
-    let paths = fixture_paths(&root)?;
+    let mut paths = fixture_paths(&root)?;
     if paths.is_empty() {
         return Err(format!("no fixtures under {}", root.display()));
+    }
+    if let Some((k, n)) = shard {
+        paths = paths.into_iter().skip(k - 1).step_by(n).collect();
     }
     let mut model = if from_snapshot || mode == Mode::Record {
         None
@@ -234,16 +264,23 @@ fn run() -> Result<bool, String> {
                     problems.push(error);
                 }
                 let fresh = model.snapshot(&fixture.source)?;
-                match Snapshot::read(&fixture.snapshot_path()) {
-                    Ok(saved) => {
-                        if let Some(why) = saved.stale(&fresh) {
-                            problems.push(format!(
-                                "stale snapshot ({why}): run just recognize --refresh-snapshots {} on the Mac",
-                                path.display()
-                            ));
+                let stale = match Snapshot::read(&fixture.snapshot_path()) {
+                    Ok(saved) => saved
+                        .stale(&fresh)
+                        .map(|why| format!("stale snapshot ({why})")),
+                    Err(error) => Some(format!("no snapshot: {error}")),
+                };
+                if let Some(why) = stale {
+                    problems.push(match &out {
+                        Some(out) => {
+                            write_fresh(out, &fixture, &fresh)?;
+                            format!("{why}: its fresh snapshot is under {}", out.display())
                         }
-                    }
-                    Err(error) => problems.push(format!("no snapshot: {error}")),
+                        None => format!(
+                            "{why}: run just recognize --refresh-snapshots {}",
+                            path.display()
+                        ),
+                    });
                 }
                 let proposed = proposals(&fixture.source, &fresh.entities)?;
                 let comparison = Comparison::new(&fixture.gold, &proposed);
@@ -255,15 +292,16 @@ fn run() -> Result<bool, String> {
                 }
             }
             let elapsed = started.elapsed();
+            let part = shard.map_or(String::new(), |(k, n)| format!(" (shard {k} of {n})"));
             println!(
-                "detection gate: {} fixtures, model run {:.1}s (budget {}s)",
+                "detection gate{part}: {} fixtures, model run {:.1}s (budget {}s)",
                 paths.len(),
                 elapsed.as_secs_f64(),
                 BUDGET.as_secs()
             );
             if elapsed > BUDGET {
                 failures.push(format!(
-                    "the model run took {:.0}s, over its {}s budget: split the fixtures into a per-PR set and a nightly full set (ADR 0093)",
+                    "the model run took {:.0}s, over its {}s budget: raise the detection gate's shards (ADR 0095)",
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 ));
@@ -273,7 +311,61 @@ fn run() -> Result<bool, String> {
             }
             Ok(failures.is_empty())
         }
+        Mode::Setup => unreachable!("set up above"),
     }
+}
+
+/// `k/n`: the k-th of n shards, 1-based.
+fn parse_shard(text: &str) -> Result<(usize, usize), String> {
+    let parsed = text
+        .split_once('/')
+        .and_then(|(k, n)| Some((k.parse::<usize>().ok()?, n.parse::<usize>().ok()?)));
+    match parsed {
+        Some((k, n)) if (1..=n).contains(&k) => Ok((k, n)),
+        _ => Err(format!(
+            "--shard takes <k>/<n> with 1 <= k <= n, not {text:?}"
+        )),
+    }
+}
+
+/// The fixture's fresh snapshot under `out`, at its path in the repository
+/// (or by its file name, for a fixture outside it).
+fn write_fresh(out: &Path, fixture: &Fixture, fresh: &Snapshot) -> Result<(), String> {
+    let saved = std::path::absolute(fixture.snapshot_path()).map_err(|e| e.to_string())?;
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let relative = match saved.strip_prefix(&repo) {
+        Ok(relative) => relative.to_path_buf(),
+        Err(_) => saved.file_name().map(PathBuf::from).unwrap_or_default(),
+    };
+    let path = out.join(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    std::fs::write(&path, fresh.to_json()).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The pinned FP16 and the shared ONNX Runtime, downloaded and verified as
+/// mdoc's own setup does them (CI's detection gate; ADR 0095). Files already
+/// in place and verified are kept.
+fn setup() -> Result<(), String> {
+    let config = mdoc_store::settings::PiiConfig {
+        model: mdoc_store::settings::PiiModel::Fp16,
+        ..Default::default()
+    };
+    let started = Instant::now();
+    mdoc_detect::setup_config(&config, &mdoc_import::model_download::Progress::default())
+        .map_err(|e| e.to_string())?;
+    let root = mdoc_detect::root_for(config.model).map_err(|e| e.to_string())?;
+    println!(
+        "set up {} in {} ({:.1}s)",
+        mdoc_detect::model_name(config.model),
+        root.display(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
 /// The fixture's raw entities: from the model, or its snapshot.

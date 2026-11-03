@@ -7,7 +7,7 @@ source: probe-r1
 ---
 # Schedule 1 - Licensed Patents and Marks
 
-Licensor: ⟦ORG|Quillon Freight LLC⟧. Patent US 99/123,456 (AU 2099000111), trademark Reg. No. 9876543, form STD009X.UK, NAICS 999999; see https://example.invalid/p?srsltid=AbCd_123xYz; call the toll-free "800" number.
+Licensor: ⟦ORG|Quillon Freight LLC⟧. Patent US 99/123,456 (AU 2099000111), trademark Reg. No. 9876543, form STD009X.UK, NAICS 999999; see ⟦URL|https://example.invalid/p?srsltid=AbCd_123xYz⟧; call the toll-free "800" number.
 
 COUNTRY      APP NO.                 FILING DATE    PATENT NUMBER    ISSUE DATE
 AU           2099241803              30-Apr-29      2099241803       26-Sep-33

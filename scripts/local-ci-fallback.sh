@@ -18,7 +18,8 @@
 #   "Running ..."    50 min: each step posts its own status, and the longest
 #                    step limit is 40 min, so the runner stopped
 #   other pending    45 min ("Queued": a long queue, or the runner is gone)
-#   "Queued" behind 2 or more   5 min, for local/macos and local/windows:
+#   "Queued" behind 2 or more (1 or more for local/macos)   5 min, for
+#                    local/macos and local/windows:
 #                    overflow. Each runner tests one head at a time; hosted
 #                    CI runs many at once (free on a public repository), so
 #                    heads that would wait behind two others go there. Ahead
@@ -49,6 +50,10 @@ waiting_min=${FALLBACK_WAITING_MIN:-15}
 running_min=${FALLBACK_RUNNING_MIN:-50}
 queued_min=${FALLBACK_QUEUED_MIN:-45}
 overflow_ahead=${FALLBACK_OVERFLOW_AHEAD:-2}
+# The Mac's queue overflows sooner: hosted macOS runs the suite as fast as the
+# shared Mac (ADR 0095 interim, 2026-11-02); hosted Windows is three times
+# slower than the PC, so the PC keeps two.
+overflow_ahead_macos=${FALLBACK_OVERFLOW_AHEAD_MACOS:-1}
 overflow_min=${FALLBACK_OVERFLOW_MIN:-5}
 retry_min=${FALLBACK_RETRY_MIN:-25}
 queued_retry_min=${FALLBACK_QUEUED_RETRY_MIN:-60}
@@ -150,8 +155,8 @@ rows() {
 
 # Why the context is stuck, or nothing (exit 1) when it is not. Ahead: the
 # heads queued or running before it (overflow, desktop contexts only).
-stuck_reason() { # state description status-time seen-time now [ahead]
-  local state=$1 desc=$2 at=$3 seen=$4 t=$5 ahead=${6:-0} age limit
+stuck_reason() { # state description status-time seen-time now [ahead [overflow-at]]
+  local state=$1 desc=$2 at=$3 seen=$4 t=$5 ahead=${6:-0} need=${7:-$overflow_ahead} age limit
   case "$state" in
     NONE)
       age=$(((t - seen) / 60))
@@ -167,7 +172,7 @@ stuck_reason() { # state description status-time seen-time now [ahead]
         *) limit=$queued_min ;;
       esac
       if [ "$age" -lt "$limit" ]; then
-        [[ $desc == Queued* ]] && [ "$ahead" -ge "$overflow_ahead" ] && [ "$age" -ge "$overflow_min" ] || return 1
+        [[ $desc == Queued* ]] && [ "$ahead" -ge "$need" ] && [ "$age" -ge "$overflow_min" ] || return 1
         echo "overflow: queued behind $ahead for ${age} min"
         return 0
       fi
@@ -175,6 +180,11 @@ stuck_reason() { # state description status-time seen-time now [ahead]
       ;;
     *) return 1 ;;
   esac
+}
+
+# How many heads ahead make a queued head overflow to hosted CI.
+overflow_for() { # context
+  if [ "$1" = local/macos ]; then echo "$overflow_ahead_macos"; else echo "$overflow_ahead"; fi
 }
 
 attempt_of() { # description
@@ -312,7 +322,7 @@ tick() {
       esac
       continue
     fi
-    reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t" "$ahead") || continue
+    reason=$(stuck_reason "$state" "$desc" "$at" "$seen" "$t" "$ahead" "$(overflow_for "$ctx")") || continue
     # TEMPORARY (ADR 0091 item 5): no hosted mobile job to dispatch yet.
     if job=$(untested_job "$ctx"); then
       post_over "$head" "$ctx" "$state" "$desc" success \

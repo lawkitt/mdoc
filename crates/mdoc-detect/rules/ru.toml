@@ -423,6 +423,20 @@ between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
 
+# Russian courts, public bodies, laws and legal databases are never web
+# addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
+# "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",
+# every "*.gov.ru" and every court's "*.sudrf.ru". Fedresurs is not listed:
+# its "/persons/…" pages are people's.
+[[url]]
+public = [
+    "gov.ru", "sudrf.ru", "arbitr.ru", "ksrf.ru", "vsrf.ru",
+    "consultant.ru", "garant.ru", "sudact.ru", "kodeks.ru", "cntd.ru",
+    "pravo.ru", "nalog.ru", "gosuslugi.ru", "mos.ru", "mos-sud.ru",
+    "mos-gorsud.ru", "rosreestr.ru", "kremlin.ru", "government.ru",
+    "sledcom.ru", "cbr.ru", "notariat.ru", "reestr-zalogov.ru",
+]
+
 # Legal references are never marked (guide rule 8, issue #480): a law's
 # number ("№ 127-ФЗ", "1-ФКЗ", "45-ОЗ"), an article of a code ("ст. 428 ГК
 # РФ", "статьи 431 ГК РФ", "п. 2 ст. 450", "428 ГК РФ").

@@ -186,6 +186,7 @@ class SurveyTest {
                 "PERSON" -> Category.PERSON
                 "ORG" -> Category.ORGANIZATION
                 "EMAIL" -> Category.EMAIL
+                "URL" -> Category.URL
                 "PHONE" -> Category.PHONE
                 "ADDRESS" -> Category.ADDRESS
                 "BANK" -> Category.BANK

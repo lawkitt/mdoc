@@ -32,6 +32,7 @@ extension Category {
         case .person: .person
         case .organization: .organization
         case .email: .email
+        case .url: .url
         case .phone: .phone
         case .address: .address
         case .identity: .identity
@@ -48,6 +49,7 @@ extension Category {
         case .person: .person
         case .organization: .organization
         case .email: .email
+        case .url: .url
         case .phone: .phone
         case .address: .address
         case .identity: .identity

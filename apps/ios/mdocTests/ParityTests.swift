@@ -26,6 +26,7 @@ final class ParityTests: XCTestCase {
         case "PERSON": .person
         case "ORG": .organization
         case "EMAIL": .email
+        case "URL": .url
         case "PHONE": .phone
         case "ADDRESS": .address
         case "IDENTITY": .identity

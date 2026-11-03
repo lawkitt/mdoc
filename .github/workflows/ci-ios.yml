@@ -1,0 +1,56 @@
+name: CI iOS
+
+# The iOS job on a hosted runner (ADR 0095, ADR 0091): the core, the app,
+# XCTest and XCUITest on the pinned Xcode and Simulator (scripts/tools.env).
+# The merge queue calls it for a queue commit that touches the ios or core
+# area; `merge-gate` reads its `ci/ios` status. Every step is a recipe or a
+# script, so `scripts/ios-toolchain.sh` and `just mobile --ios` reproduce it
+# on a Mac.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test; empty for the triggering ref.
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The commit to test; empty for the triggering ref.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: ci/ios
+    runs-on: macos-26
+    # ADR 0095's iOS job limit.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # The pinned Xcode for every later step, and the pinned Simulator
+      # runtime and device, downloaded when the image lacks them.
+      - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
+
+      # The caller decided the area already.
+      - run: just mobile --ios
+        env:
+          MDOC_IOS_JOB: always
+
+      - name: Test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-xcresult-${{ github.run_attempt }}
+          path: target/ios/DerivedData/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

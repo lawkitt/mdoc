@@ -43,7 +43,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -83,7 +83,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -123,7 +123,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -163,7 +163,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -203,7 +203,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -243,7 +243,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -283,7 +283,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -323,7 +323,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -363,7 +363,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -403,7 +403,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -443,7 +443,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -483,7 +483,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -523,7 +523,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -563,7 +563,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -603,7 +603,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -643,7 +643,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -683,7 +683,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -723,7 +723,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -763,7 +763,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -803,7 +803,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -843,7 +843,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -883,7 +883,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -923,7 +923,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -963,7 +963,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1003,7 +1003,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1043,7 +1043,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1083,7 +1083,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1123,7 +1123,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1163,7 +1163,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1203,7 +1203,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1243,7 +1243,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1283,7 +1283,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1323,7 +1323,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1363,7 +1363,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1403,7 +1403,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1443,7 +1443,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1483,7 +1483,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1523,7 +1523,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1563,7 +1563,7 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
 ## Section
 
@@ -1603,5 +1603,5 @@ Correspondence about this agreement should be sent to ⟦EMAIL|maya.bennett@exam
 
 ---
 
-*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved example.invalid domain.*
+*Fictional agreement for demonstration. People, companies, addresses and numbers are invented; the phone number is in Ofcom's drama range and the email uses the reserved ⟦URL|example.invalid⟧ domain.*
 
