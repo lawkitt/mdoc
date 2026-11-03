@@ -25,6 +25,16 @@ fmt-check:
 deny:
     cargo deny --locked check
 
+# The licence, ban and source checks alone, and the advisories alone. CI's lint
+# runs the first on every change and the advisories when Cargo.lock or
+# deny.toml changed (scripts/deny-ci.sh); the nightly run takes them daily, so
+# a new advisory never turns every PR red (ADR 0095)
+deny-policy:
+    cargo deny --locked check bans licenses sources
+
+deny-advisories:
+    cargo deny --locked check advisories
+
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under src/ (ADR 0069);
 # no GPUI under the GUI-free crates (ADR 0069); then clippy with warnings as errors
 lint:
@@ -155,10 +165,10 @@ release version *flags:
 ios-app: ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
 
-# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env)
+# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env), without the quarantined ones (.config/quarantine.txt)
 [macos]
 ios-test device="iPhone 17": ios-core
-    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet test
+    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); skip=$(bash scripts/quarantine.sh ios) || exit 1; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet test $skip
 
 # The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]

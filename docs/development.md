@@ -485,10 +485,24 @@ lines word for word (`scripts/test-local-ci.sh` checks).
 `recognition`); `just test-tier <tier>` runs one, `scripts` the script
 suites, and `just test` all of them. A test on `.config/quarantine.txt`
 (`<nextest filter>  #<issue>  <expires YYYY-MM-DD>`) is left out of every
-tier; `just test-tier quarantined` runs those alone (nightly, once CI
-redesign item 7 lands), and an expired line fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
+tier. An Android or iOS UI test goes there as `android:<class>#<method>` or
+`ios:<target>/<class>/<method>`; the Android job and `just ios-test` skip it,
+and nothing runs it until the line goes (fix the test, then remove the
+line). `just test-tier quarantined` runs the Rust ones alone, nightly too,
+and any line past its date fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
+
+**Tests and OS services.** A test never asks the OS's security or identity
+services: the build's code signature (`SecCodeCopySelf`), the case key
+(Keychain, Windows data protection, Secret Service) or the build identity
+built on them. Tests inject a case store (`Store::with_key`) and take the
+build label as `Dev`. `mdoc-store`'s feature `deny-os-services`, which the
+app's dev-dependencies turn on, makes those calls panic in every test
+build ("a test asked the OS for …"), and `tests/os_services_guard.rs`
+proves it. On macOS the signature query of an unsigned test binary read
+every file in `target/debug/deps` and took seconds per test process
+(#510). A new call into such a service goes behind the same guard.
 
 **Detection gate.** Hosted `macos-26` is its reference: the snapshots
 (`tests/fixtures/recognition/**/*.model.json`) are recorded there, not on a
@@ -554,9 +568,25 @@ minutes). The result that finished first counts. There is no hosted
 Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
 needs `ci/android` waits for it.
 
-**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, which
-also saves the build caches the queue's hosted jobs restore. A red `main`
-stops enqueueing.
+**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, and
+`main-caches.yml` builds the iOS core and the detection gate (model set up,
+no check). Between them they save every cache the queue's hosted jobs
+restore: a branch can restore only its own caches and `main`'s, so only
+`main` saves (the setup action's `save-if`, and the model's save step). A
+red `main` stops enqueueing.
+
+**Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
+desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
+and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
+red", or comments on the open one; a green night closes it
+(`scripts/nightly-issue.sh`). Run it by hand with `gh workflow run
+nightly.yml --repo lawkitt/mdoc`.
+
+**cargo-deny.** `lint (ubuntu)` checks licences, bans and sources on every
+change, and advisories only when `Cargo.lock` or `deny.toml` changes
+(`scripts/deny-ci.sh`): a newly published advisory turns red the PR that
+brings the crate in and the nightly run, never every PR. `just deny` still
+checks everything locally.
 
 **Shadow branches.** A branch under `ci-shadow/main/` runs exactly as a
 queue commit does (`queue.yml`, the PC, `merge-gate`), without merging

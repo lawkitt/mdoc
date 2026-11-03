@@ -95,6 +95,7 @@ cleanup() {
 trap cleanup EXIT
 # Suites added on their own line (snapshots fetch) merge without touching the list above.
 suites+=(test-snapshots-fetch.sh)
+suites+=(test-nightly.sh)
 for suite in "${suites[@]}"; do
   bash "scripts/$suite" </dev/null >"$tmp/$suite.log" 2>&1 &
   pids+=($!)

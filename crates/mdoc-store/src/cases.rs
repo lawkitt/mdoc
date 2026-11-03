@@ -622,6 +622,8 @@ impl Store {
         if crate::app_paths::isolated() {
             return Err(CaseError::KeysDisabled);
         }
+        #[cfg(feature = "deny-os-services")]
+        deny_os_service("the case key");
         Ok(key::load_quietly(&dir)?.map(|key| Self::with_key(dir, &key)))
     }
     /// Open the store, creating the OS-held key on first use.
@@ -629,6 +631,8 @@ impl Store {
         if crate::app_paths::isolated() {
             return Err(CaseError::KeysDisabled);
         }
+        #[cfg(feature = "deny-os-services")]
+        deny_os_service("the case key");
         let key = key::load_or_create(&dir)?;
         Ok(Self::with_key(dir, &key))
     }
@@ -820,9 +824,29 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Test builds (feature `deny-os-services`, ADR 0095): a call that would ask
+/// the OS's security or identity services panics, so a test that reaches one
+/// fails at once instead of waiting on macOS (#510). The headless render
+/// sandbox is a dev build that asks nothing: there it returns `true`, and the
+/// caller answers as a dev build without asking.
+#[cfg(feature = "deny-os-services")]
+fn deny_os_service(what: &str) -> bool {
+    if crate::app_paths::isolated() {
+        return true;
+    }
+    panic!(
+        "a test asked the OS for {what}: inject the case store and build identity instead \
+         (development.md, Tests and OS services)"
+    )
+}
+
 /// Public build label, using the same runtime identity as case storage (ADR 0045).
 /// This inspects signing metadata only; it never reads the case key.
 pub fn build_identity() -> &'static str {
+    #[cfg(feature = "deny-os-services")]
+    if deny_os_service("the build identity") {
+        return "Dev";
+    }
     #[cfg(target_os = "macos")]
     match key::keychain() {
         key::Keychain::Protected => "Protected",
@@ -872,6 +896,10 @@ mod key {
 
     #[cfg(target_os = "macos")]
     pub fn keychain() -> Keychain {
+        #[cfg(feature = "deny-os-services")]
+        if super::deny_os_service("the build's code signature") {
+            return Keychain::Dev;
+        }
         static KEYCHAIN: std::sync::LazyLock<Keychain> = std::sync::LazyLock::new(|| {
             use security_framework::os::macos::code_signing::{Flags, SecCode, SecRequirement};
             let requirement: Result<SecRequirement, _> =

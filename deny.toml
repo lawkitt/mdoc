@@ -1,5 +1,6 @@
-# cargo-deny configuration. Runs in CI on every PR; the matching
-# step lives in `.github/workflows/ci.yml`.
+# cargo-deny configuration. CI's lint checks licences, bans and sources on
+# every change and advisories when Cargo.lock or this file changes
+# (scripts/deny-ci.sh); nightly.yml checks advisories every day (ADR 0095).
 #
 # Four checks, scoped to what we actually care about:
 #   * advisories — RUSTSEC vulnerabilities + unmaintained warnings
