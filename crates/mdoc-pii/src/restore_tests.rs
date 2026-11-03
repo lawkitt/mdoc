@@ -1203,3 +1203,87 @@ fn changing_raw_only_categories_invalidates_discovery_and_its_cached_patterns() 
     review.refresh(other);
     assert_eq!(review.remaining(), 0);
 }
+
+/// Round 3 of #564: an identity with a marked and a plain spelling restores
+/// the plain one into a reopened document, so no stray markers appear.
+#[test]
+fn a_reopened_mixed_identity_reverts_without_stray_markers() {
+    let source = "*Pellam* *Industries Inc* and Pellam Industries Inc agree.";
+    let marked = "Pellam* *Industries Inc";
+    let plain_at = source.rfind("Pellam Industries Inc").unwrap();
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                Detection {
+                    range: 1..1 + marked.len(),
+                    category: Category::Organization,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+                Detection {
+                    range: plain_at..plain_at + "Pellam Industries Inc".len(),
+                    category: Category::Organization,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(review.remaining(), 2);
+    let changed = apply_pending(&mut review, source, 1);
+    let saved = review.export_identities();
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    assert_eq!(saved[0].originals[0].as_ref(), "Pellam Industries Inc");
+
+    let mut reopened = Review::default();
+    let ids = reopened.seed(&saved, &changed);
+    reopened.relink(&changed, &saved, &ids, 7);
+    let all = reopened.applied().iter().map(|a| a.id).collect();
+    let mut restored = changed.clone();
+    for (range, value) in reopened
+        .reversion_edits(&changed, &all)
+        .unwrap()
+        .iter()
+        .rev()
+    {
+        restored.replace_range(range.clone(), value);
+    }
+    assert_eq!(
+        restored,
+        "*Pellam Industries Inc* and Pellam Industries Inc agree."
+    );
+}
+
+/// Round 3 of #564: the wording a reply restores for a marked original is
+/// masked again when that text is pseudonymized (Copy for AI, the shelf).
+#[test]
+fn a_restored_marked_wording_is_pseudonymized_again() {
+    let map = RestoreMap::new(vec![ExportedIdentity {
+        alias: "ORG_1".into(),
+        previous: Vec::new(),
+        category: Category::Organization,
+        custom: false,
+        originals: vec!["Pellam* *Industries Inc".into()],
+    }]);
+    let restored = apply(&map, "ORG_1 must deliver.");
+    assert_eq!(restored, "Pellam Industries Inc must deliver.");
+    assert_eq!(
+        map.pseudonymize(&restored),
+        ("ORG_1 must deliver.".into(), 1)
+    );
+    // The raw spelling still matches, and a URL is matched raw only.
+    assert_eq!(map.pseudonymize("Pellam* *Industries Inc").1, 1);
+    let urls = RestoreMap::new(vec![ExportedIdentity {
+        alias: "URL_1".into(),
+        previous: Vec::new(),
+        category: Category::Url,
+        custom: false,
+        originals: vec!["https://x.invalid/files/page_".into()],
+    }]);
+    assert_eq!(
+        urls.pseudonymize("see https://x.invalid/files/page now").1,
+        0
+    );
+}
