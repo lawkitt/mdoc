@@ -222,7 +222,9 @@ What implementing it settled, by the CI redesign hub:
   CI sets `MDOC_DETECT_THREADS=4`, the count they are recorded with.
 - **The PC's heartbeat** is a pending status refreshed at least every 4
   minutes; `target/` goes only past 60 GB or on a toolchain change.
-- **Hosted Windows** gets 40 minutes: a cold build takes 32.
+- **Hosted Windows** gets 40 minutes: a cold build takes 32. Each detection
+  shard gets 20 until `main` saves its build cache (item 7): uncached, its
+  setup compiles for about 6 minutes, and a shard timed out at 10.
 - **PR heads run `lint (ubuntu)` on every change**, docs included: a
   required check that never runs blocks a PR. `local-ci-fallback.yml` is
   removed; the local CI scripts go with item 7.

@@ -53,8 +53,10 @@ jobs:
     name: ci/detection (${{ matrix.shard }})
     needs: shards
     runs-on: macos-26
-    # Job limits (ADR 0095): each shard 10 minutes.
-    timeout-minutes: 10
+    # Job limits (ADR 0095): each shard 10 minutes once `main` saves the
+    # detection build's cache (CI redesign item 7); until then a cold
+    # `just recognize --setup` compiles for about 6 minutes, so 20.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
