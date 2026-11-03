@@ -3,7 +3,7 @@
   "threshold": 0.5,
   "entities": [
     {"start":129,"end":143,"label":"tax_id","score":0.8613051,"text":"EIN 98-7654321"},
-    {"start":25,"end":40,"label":"tax_id","score":0.6694207,"text":"48 CFR 52.212-1"},
-    {"start":42,"end":57,"label":"tax_id","score":0.5899526,"text":"2031 WL 1234567"}
+    {"start":25,"end":40,"label":"tax_id","score":0.6692046,"text":"48 CFR 52.212-1"},
+    {"start":42,"end":57,"label":"tax_id","score":0.5900707,"text":"2031 WL 1234567"}
   ]
 }

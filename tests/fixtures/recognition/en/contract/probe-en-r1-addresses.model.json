@@ -4,6 +4,6 @@
   "entities": [
     {"start":123,"end":143,"label":"organization","score":0.99073195,"text":"Larkfield Supply LLC"},
     {"start":210,"end":222,"label":"organization","score":0.98215127,"text":"Harrow House"},
-    {"start":224,"end":260,"label":"address","score":0.96043545,"text":"12 Pellin Street\nSlocombe SL9 9ZZ\nUK"}
+    {"start":224,"end":260,"label":"address","score":0.9605836,"text":"12 Pellin Street\nSlocombe SL9 9ZZ\nUK"}
   ]
 }

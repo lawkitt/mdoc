@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":5,"end":51,"label":"full_name","score":0.961606,"text":"Павлова Марина Сергеевна"},
-    {"start":116,"end":130,"label":"tax_id","score":0.8652241,"text":"112-233-445 95"}
+    {"start":5,"end":51,"label":"full_name","score":0.961678,"text":"Павлова Марина Сергеевна"},
+    {"start":116,"end":130,"label":"tax_id","score":0.8649962,"text":"112-233-445 95"}
   ]
 }
