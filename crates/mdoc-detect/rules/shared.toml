@@ -223,15 +223,16 @@ category = "TAX"
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 
-# Bank details need a digit and no `/`: case and claim numbers
-# ("6001842/2026") are not bank details. A bare ten- or eleven-digit number is
-# a tax number, a phone or a contract number far more often than an account
-# (Russian accounts have 20 digits, UK ones 8 with a sort code): only a label
-# makes it bank details.
+# Bank details need a digit and no `/` beside a digit: case and claim
+# numbers ("6001842/2026") are not bank details, while an account's label
+# ("р/с", "a/c") is trimmed off its span (#486). A bare ten- or
+# eleven-digit number is a tax number, a phone or a contract number far
+# more often than an account (Russian accounts have 20 digits, UK ones 8
+# with a sort code): only a label makes it bank details.
 [[shape]]
 category = "BANK"
 require = ['\p{N}']
-forbid = ['/', '^\s*\d{10,11}\s*$']
+forbid = ['\p{N}[\p{Zs}\t]*/|/[\p{Zs}\t]*\p{N}', '^\s*\d{10,11}\s*$']
 
 # Numbers that are no tax, bank, identity or phone value, whatever the
 # model guessed (guide rules 6 and 8, issue #486): digits grouped by commas

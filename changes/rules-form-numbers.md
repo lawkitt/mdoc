@@ -8,6 +8,7 @@
   541511"), comma-grouped numbers, a GUID, a link's tracking token, a page
   number ("-44-") and a toll-free prefix alone ("800") are no longer
   proposed as tax, bank, identity or phone values. Real accounts, БИК,
-  ИНН, КПП, passport numbers, IBANs and whole toll-free numbers stay
+  ИНН, КПП, passport numbers, IBANs and whole toll-free numbers stay, and
+  an account's label («р/с», «к/с», "IBAN") stays outside its span
   ([ADR 0092](docs/adr/0092-recognition-correction-pipeline.md), fixes
   #486).

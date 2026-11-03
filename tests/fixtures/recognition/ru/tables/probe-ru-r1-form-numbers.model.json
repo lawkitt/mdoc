@@ -2,19 +2,17 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":3,"end":13,"label":"tax_id","score":0.71,"text":"0000  1234"},
-    {"start":80,"end":87,"label":"tax_id","score":0.66,"text":"1111501"},
-    {"start":122,"end":129,"label":"tax_id","score":0.62,"text":"Р11001"},
-    {"start":243,"end":255,"label":"bank_account","score":0.58,"text":"1.23456.2030"},
-    {"start":271,"end":282,"label":"tax_id","score":0.55,"text":"9.9.99-2030"},
-    {"start":332,"end":337,"label":"tax_id","score":0.57,"text":"47.11"},
-    {"start":350,"end":358,"label":"tax_id","score":0.6,"text":"99999000"},
-    {"start":425,"end":432,"label":"bank_account","score":0.64,"text":"0401060"},
-    {"start":441,"end":461,"label":"bank_account","score":0.83,"text":"99910102010011000110"},
-    {"start":491,"end":502,"label":"bank_account","score":0.61,"text":"ТН № 47"},
-    {"start":533,"end":536,"label":"bank_account","score":0.52,"text":"112"},
-    {"start":561,"end":599,"label":"organization","score":0.95,"text":"ООО «Ольховый склад»"},
-    {"start":608,"end":618,"label":"tax_id","score":0.93,"text":"7799000011"},
-    {"start":626,"end":646,"label":"bank_account","score":0.94,"text":"40702810900000004711"}
+    {"start":3,"end":13,"label":"phone_number","score":0.83894384,"text":"0000  1234"},
+    {"start":122,"end":129,"label":"routing_number","score":0.93640137,"text":"Р11001"},
+    {"start":561,"end":599,"label":"organization","score":0.9384633,"text":"ООО «Ольховый склад»"},
+    {"start":238,"end":255,"label":"passport_number","score":0.9956516,"text":"СП 1.23456.2030"},
+    {"start":522,"end":536,"label":"tax_id","score":0.8384153,"text":"ТТН № 112"},
+    {"start":491,"end":502,"label":"tax_id","score":0.8030194,"text":"ТН № 47"},
+    {"start":321,"end":337,"label":"tax_id","score":0.70811164,"text":"ОКВЭД 47.11"},
+    {"start":259,"end":282,"label":"tax_id","score":0.6855285,"text":"ГОСТ Р 9.9.99-2030"},
+    {"start":416,"end":432,"label":"routing_number","score":0.96615595,"text":"ОКУД 0401060"},
+    {"start":620,"end":646,"label":"bank_account","score":0.86916035,"text":"р/с 40702810900000004711"},
+    {"start":434,"end":461,"label":"bank_account","score":0.83801806,"text":"КБК 99910102010011000110"},
+    {"start":601,"end":618,"label":"bank_account","score":0.79660904,"text":"ИНН 7799000011"}
   ]
 }

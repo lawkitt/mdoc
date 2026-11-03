@@ -35,6 +35,17 @@ extend = [
 category = "PERSON"
 trim = ["г-н", "г-жа", "господин", "госпожа"]
 
+# An account's label stays outside its span: the model's "р/с
+# 40702810900000004711" is the number alone (guide rule 6, issue #486);
+# with the label's slash the span would go as no bank details.
+[[span]]
+category = "BANK"
+trim = [
+    "р/с", "р/сч", "к/с", "к/сч", "л/с", "счет", "счёт", "сч", "№",
+    "расчетный счет", "расчётный счёт", "корреспондентский счет",
+    "корреспондентский счёт",
+]
+
 # Two initials beside a surname belong to the name: the model's "Ветлин" in
 # "Ветлин Н. О." grows to the whole of it, as "Брюн" does in "Л.И. Брюн"
 # (guide rule 1, #391). Only spaces between: never across a sentence's
