@@ -1,0 +1,19 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":23,"end":35,"label":"person","score":0.9827573,"text":"Mara Quillon"},
+    {"start":122,"end":130,"label":"person","score":0.9686196,"text":"Jane Doe"},
+    {"start":196,"end":206,"label":"person","score":0.9638481,"text":"John Doe 1"},
+    {"start":275,"end":285,"label":"person","score":0.95991266,"text":"ROWAN PELL"},
+    {"start":339,"end":349,"label":"person","score":0.9546474,"text":"Tamsin Vey"},
+    {"start":219,"end":230,"label":"person","score":0.8906752,"text":"Ivo Ostrand"},
+    {"start":41,"end":55,"label":"person","score":0.6619229,"text":"JOHN DOES 1-25"},
+    {"start":57,"end":76,"label":"organization","score":0.93674946,"text":"DOE SUPERVISORS I-X"},
+    {"start":78,"end":99,"label":"organization","score":0.90878,"text":"DOE MEDICAL STAFF I-X"},
+    {"start":41,"end":55,"label":"organization","score":0.82204634,"text":"JOHN DOES 1-25"},
+    {"start":104,"end":120,"label":"organization","score":0.7849791,"text":"ROE ENTITIES I-X"},
+    {"start":328,"end":338,"label":"routing_number","score":0.6051575,"text":"SBN 299911"},
+    {"start":320,"end":327,"label":"routing_number","score":0.6001298,"text":"0099911"}
+  ]
+}

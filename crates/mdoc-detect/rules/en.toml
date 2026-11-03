@@ -459,6 +459,23 @@ patterns = [
 ]
 anywhere_in = ["ORG"]
 
+# A bar number's label belongs to the number: the model's organization
+# "Ohio State Bar" in "Ohio State Bar No. 0099911" grows to the whole of
+# it, and the never pattern below takes it (#484, item 3; #483).
+[[span]]
+category = "ORG"
+extend = [
+    '\b(?:\p{Uppercase}[\p{Alphabetic}.]*[\p{Zs}\t]+){0,3}(?:Bar|BAR)[\p{Zs}\t]*(?:No\.?|NO\.?|Number|NUMBER|#)[\p{Zs}\t:#.]*\d+',
+]
+
+# An attorney's bar number with its label is no organization: the model's
+# "Texas State Bar No. 12345" goes, and its number is IDENTITY by its label
+# (the maintainer's decision on #484, item 3; #483).
+[[never]]
+match = "pattern"
+patterns = ['(?i)\bbar[\p{Zs}\t]*(?:no\.?|number|#)[\p{Zs}\t:#.]*\d']
+anywhere_in = ["ORG", "PERSON"]
+
 # A country, state or city is a place, not an organization: alone, several
 # together, or as both sides of a caption ("Pakistan", "Illinois", "United
 # States", the "U.S." of "18 U.S.C.", "Boston", "Georgia v. Alabama"), and
@@ -630,6 +647,32 @@ forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
 category = "PERSON"
 forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
 
+# Fictitious parties are placeholders, never marked (guide rule 8, the
+# maintainer's decision on #484, item 1): "John Doe", "Jane Does 1-25",
+# "Richard Roe", "DOE SUPERVISORS I-X", "DOE MEDICAL STAFF I-X", "ROE
+# ENTITIES", "DOES I through X", and a bare range after them ("I-X",
+# "1-25"). Role words are listed, so "Doe Run Company" stays a company.
+# Alone, a placeholder is in capitals or plural ("DOE", "ROE", "the
+# Does"): "Mr Doe", "J. Doe" and "Samuel Doe" stay people.
+[[shape]]
+category = "PERSON"
+forbid = [
+    '^[\s\p{P}]*(?:DOES?|ROES?|Does|Roes)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?i:john|jane|richard|mary)[\p{Zs}\t]+(?i:does?|roes?)(?:[\p{Zs}\t]+(?i:defendants|entities|corporations|companies|businesses|individuals|persons|officers|supervisors|employees|agents|deputies|medical|staff|nurses|doctors|physicians|partnerships|insurers|contractors|guards|correctional|members|parties)){0,3}(?:[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?i:does?|roes?)(?:(?:[\p{Zs}\t]+(?i:defendants|entities|corporations|companies|businesses|individuals|persons|officers|supervisors|employees|agents|deputies|medical|staff|nurses|doctors|physicians|partnerships|insurers|contractors|guards|correctional|members|parties)){1,3}(?:[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))?|[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[IVXLC]{1,6}|\d{1,3})[\p{Zs}\t]*(?:[-–]|(?i:through|thru))[\p{Zs}\t]*(?:[IVXLC]{1,6}|\d{1,3})[\s\p{P}]*$',
+]
+
+# The same placeholders as an organization.
+[[shape]]
+category = "ORG"
+forbid = [
+    '^[\s\p{P}]*(?:DOES?|ROES?|Does|Roes)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?i:john|jane|richard|mary)[\p{Zs}\t]+(?i:does?|roes?)(?:[\p{Zs}\t]+(?i:defendants|entities|corporations|companies|businesses|individuals|persons|officers|supervisors|employees|agents|deputies|medical|staff|nurses|doctors|physicians|partnerships|insurers|contractors|guards|correctional|members|parties)){0,3}(?:[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?i:does?|roes?)(?:(?:[\p{Zs}\t]+(?i:defendants|entities|corporations|companies|businesses|individuals|persons|officers|supervisors|employees|agents|deputies|medical|staff|nurses|doctors|physicians|partnerships|insurers|contractors|guards|correctional|members|parties)){1,3}(?:[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))?|[\p{Zs}\t]+(?:\d{1,3}(?:[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*\d{1,3})?|[IVXLCl\d]{1,6}[\p{Zs}\t]*(?:[-–]|(?i:through|thru|to))[\p{Zs}\t]*[IVXLC\d]{1,6}))[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[IVXLC]{1,6}|\d{1,3})[\p{Zs}\t]*(?:[-–]|(?i:through|thru))[\p{Zs}\t]*(?:[IVXLC]{1,6}|\d{1,3})[\s\p{P}]*$',
+]
+
 # A tax year is a period, no tax number: "2014/15", "2029-30" (guide rule
 # 4, issue #480).
 [[shape]]
@@ -707,6 +750,40 @@ labels = [
 ]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
+
+# A number assigned to one person is IDENTITY, the value only (guide rule
+# 6, the maintainer's decision on #484, item 3; #483): an attorney's bar
+# number and a police officer's shield number after their label ("Ohio
+# State Bar No. 0099911", "Pa. Bar # 99911", "Bar No.: 12345", "Bar Roll
+# No. 4471", "Shield No. 9912"). The whole labels are listed for a table
+# column headed by one ("| Bar No |").
+[[context]]
+category = "IDENTITY"
+labels = [
+    "bar", "shield", "bar no", "bar number", "state bar no", "state bar number",
+    "shield no", "shield number",
+]
+between = '[\p{Zs}\t]*(?:[Nn]o\.?|NO\.?|[Nn]umber|NUMBER|#|ID|[Rr]oll[\p{Zs}\t]+[Nn]o\.?|ROLL[\p{Zs}\t]+NO\.?)[\p{Zs}\t:*_#.]{0,6}'
+value = '[A-Z]{0,3}\d{3,10}(?:-\d{1,4})?'
+min_digits = 3
+
+# The same numbers by their own abbreviations: "SBN 299911" (California),
+# "ARDC No. 6299911" (Illinois).
+[[context]]
+category = "IDENTITY"
+labels = ["sbn", "ardc", "ardc no"]
+between = '[\p{Zs}\t:*_#.]{1,6}(?:[Nn]o\.?[\p{Zs}\t:]*)?'
+value = '\d{3,10}'
+min_digits = 3
+
+# A bar code in brackets after an attorney's "Esq.": "ROWAN PELL, ESQ.
+# (RP9911)" (#483).
+[[context]]
+category = "IDENTITY"
+labels = ["esq"]
+between = '\.?,?[\p{Zs}\t]*\('
+value = '[A-Z]{2,3}-?\d{3,7}'
+min_digits = 3
 
 # Addresses (ADR 0092, issues #361, #498): from the first element, a
 # building name included, to the postcode or town: "Flat 3, 41 Larch Road,
