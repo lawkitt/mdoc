@@ -49,5 +49,9 @@ stop() {
 trap stop EXIT
 scripts/android-emulator.sh ci >/dev/null
 
-echo "android-check: instrumented tests on $serial"
-(cd apps/android && ANDROID_SERIAL=$serial ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest)
+# Quarantined tests (.config/quarantine.txt, ADR 0095) are left out.
+skip=$(bash scripts/quarantine.sh android) || die "scripts/quarantine.sh: .config/quarantine.txt does not parse"
+gradle=(--no-daemon --console=plain :app:connectedDebugAndroidTest)
+[ -z "$skip" ] || gradle+=("-Pandroid.testInstrumentationRunnerArguments.notClass=$skip")
+echo "android-check: instrumented tests on $serial${skip:+ (quarantined: $skip)}"
+(cd apps/android && ANDROID_SERIAL=$serial ./gradlew "${gradle[@]}")
