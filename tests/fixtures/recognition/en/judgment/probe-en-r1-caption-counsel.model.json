@@ -1,0 +1,24 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":264,"end":280,"label":"person","score":0.9982177,"text":"LUCIA BRENNEMANN"},
+    {"start":244,"end":259,"label":"person","score":0.9962927,"text":"OTTO K. FERRANT"},
+    {"start":113,"end":135,"label":"person","score":0.99499834,"text":"MARGUERITE A. TALLOWAY"},
+    {"start":45,"end":71,"label":"full_name","score":0.74853617,"text":"BRAMBLE & COVE TRADING LLC"},
+    {"start":140,"end":175,"label":"full_name","score":0.56505877,"text":"BRAMBLE CREDITOR RECOVERY TRUST LLC"},
+    {"start":45,"end":71,"label":"organization","score":0.99118686,"text":"BRAMBLE & COVE TRADING LLC"},
+    {"start":198,"end":242,"label":"organization","score":0.98862445,"text":"NORTHWIND REGIONAL CARE HOLDING SERVICES LLC"},
+    {"start":140,"end":175,"label":"organization","score":0.9866234,"text":"BRAMBLE CREDITOR RECOVERY TRUST LLC"},
+    {"start":448,"end":465,"label":"person","score":0.9974391,"text":"Theo B. Marchetti"},
+    {"start":469,"end":489,"label":"person","score":0.9973581,"text":"Saoirse N. Abernathy"},
+    {"start":291,"end":311,"label":"person","score":0.99014014,"text":"Imogen R. Castellane"},
+    {"start":403,"end":447,"label":"organization","score":0.9734434,"text":"Northwind Regional Care Holding Services LLC"},
+    {"start":315,"end":336,"label":"organization","score":0.8989441,"text":"Castellane & Hood LLP"},
+    {"start":493,"end":538,"label":"organization","score":0.82389593,"text":"Wren Ashby Pell Quist & Haldane Lindqvist LLP"},
+    {"start":542,"end":577,"label":"address","score":0.9949397,"text":"88 Quarry Street<br>Fenby, DE 19998"},
+    {"start":716,"end":738,"label":"person","score":0.99800444,"text":"Marguerite A. Talloway"},
+    {"start":643,"end":687,"label":"organization","score":0.99657035,"text":"Northwind Regional Care Holding Services LLC"},
+    {"start":775,"end":801,"label":"organization","score":0.9949593,"text":"Bramble & Cove Trading LLC"}
+  ]
+}
