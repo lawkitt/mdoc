@@ -29,6 +29,8 @@ pub struct DiscoveryInput {
     /// ([`crate::web::whole`]), and one shields the names, emails and IDs inside it
     /// even when kept.
     pub(super) url: Vec<bool>,
+    /// URLs and emails match exact source bytes only, never decoded text.
+    pub(super) raw_only: Vec<bool>,
     /// Dates of birth: a mention counts only after one of its cue words
     /// ([`cue_before`]); `None` counts every mention.
     pub(super) cues: Vec<Option<Vec<String>>>,
@@ -64,11 +66,17 @@ impl DiscoveryInput {
         let originals: Vec<_> = self
             .originals
             .iter()
-            .map(|s| crate::view::wording(s))
+            .zip(&self.raw_only)
+            .map(|(s, raw_only)| {
+                if *raw_only {
+                    std::borrow::Cow::Borrowed(s.as_ref())
+                } else {
+                    crate::view::wording(s)
+                }
+            })
             .collect();
         // Two patterns per variant: its exact source and its read wording.
-        // Raw matching also preserves URLs whose link context decodes parts
-        // differently from a standalone wording (e.g. `Alice_Morgan`).
+        // URL and email patterns stay raw, and only search the raw source.
         let matcher = self.matcher.unwrap_or_else(|| {
             Arc::new(
                 AhoCorasickBuilder::new()
@@ -86,7 +94,7 @@ impl DiscoveryInput {
             return None;
         }
         let protected = protected_syntax(source);
-        let view = crate::view::View::new(source);
+        let view = crate::view::View::for_discovery(source);
         let mut hits = Vec::new();
         // Prefer the exact source variant when it is already known, so a
         // kept or explicitly separated wording keeps its own policy.
@@ -99,17 +107,18 @@ impl DiscoveryInput {
         let raw = matcher
             .find_overlapping_iter(source)
             .map(|hit| (hit.pattern().as_usize() / 2, hit.start()..hit.end()));
-        let decoded = matcher.find_overlapping_iter(&view.text).map(|hit| {
-            (
-                hit.pattern().as_usize() / 2,
-                view.source_range(hit.start()..hit.end()),
-            )
+        let decoded = matcher.find_overlapping_iter(&view.text).filter_map(|hit| {
+            let pattern = hit.pattern().as_usize() / 2;
+            if self.raw_only[pattern] {
+                return None;
+            }
+            Some((pattern, view.source_range(hit.start()..hit.end())))
         });
+        let mut seen = HashSet::new();
         for (index, (pattern, range)) in raw.chain(decoded).enumerate() {
             if index % 1024 == 0 && cancel.load(Ordering::Relaxed) {
                 return None;
             }
-            // A table header inserted by the view has no source characters.
             if range.is_empty() {
                 continue;
             }
@@ -117,7 +126,9 @@ impl DiscoveryInput {
                 .get(&source[range.clone()])
                 .copied()
                 .unwrap_or(pattern);
-            hits.push((group, range));
+            if seen.insert((group, range.start, range.end)) {
+                hits.push((group, range));
+            }
         }
         // The user's own selection (a manual mark) counts every exact
         // match; only a scan's repeats must be whole addresses and stay out

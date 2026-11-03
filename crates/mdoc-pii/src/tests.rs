@@ -895,7 +895,9 @@ fn marked_and_plain_mentions_share_an_identity_and_restore_the_exact_source() {
                 restored.replace_range(range.clone(), replacement);
             }
             assert_eq!(restored, source);
-            assert_eq!(review.export_identities()[0].wording(), plain);
+            let exported = review.export_identities();
+            assert!(exported[0].originals.iter().any(|o| o.as_ref() == plain));
+            assert!(exported[0].originals.iter().any(|o| o.as_ref() == marked));
             let reply = "**ORG_1** must deliver.";
             let mut restored = reply.to_owned();
             for (range, wording) in restore::RestoreMap::new(review.export_identities())
@@ -908,6 +910,91 @@ fn marked_and_plain_mentions_share_an_identity_and_restore_the_exact_source() {
             }
             assert_eq!(restored, format!("**{plain}** must deliver."));
         }
+    }
+}
+
+#[test]
+fn discovery_keeps_urls_and_emails_with_underscores_distinct_and_raw() {
+    for (first, second, category) in [
+        (
+            "https://x.invalid/files/page_",
+            "https://x.invalid/files/page",
+            Category::Url,
+        ),
+        (
+            "https://x.invalid/_drafts_/memo",
+            "https://x.invalid/drafts/memo",
+            Category::Url,
+        ),
+        ("ann_@x.invalid", "ann@x.invalid", Category::Email),
+        ("ann_lee@x.invalid", "annlee@x.invalid", Category::Email),
+    ] {
+        let source = format!("See {first} and {second}");
+        for both in [false, true] {
+            let mut review = Review::default();
+            let values = if both {
+                vec![first, second]
+            } else {
+                vec![first]
+            };
+            review
+                .ingest(
+                    &source,
+                    values
+                        .iter()
+                        .map(|v| {
+                            let at = source.rfind(v).unwrap();
+                            detection(at..at + v.len(), category)
+                        })
+                        .collect(),
+                )
+                .unwrap();
+            assert_eq!(review.remaining(), if both { 2 } else { 1 });
+            assert_eq!(review.active_identities().len(), if both { 2 } else { 1 });
+            let changed = crate::restore::tests::apply_pending(&mut review, &source, 1);
+            let token = category.token();
+            assert_eq!(
+                changed,
+                if both {
+                    format!("See {token}_1 and {token}_2")
+                } else {
+                    format!("See {token}_1 and {second}")
+                }
+            );
+            let map = restore::RestoreMap::new(review.export_identities());
+            let mut reply = changed.clone();
+            for (range, value) in map.restore(&changed).edits.iter().rev() {
+                reply.replace_range(range.clone(), value);
+            }
+            assert_eq!(reply, source);
+        }
+    }
+}
+
+#[test]
+fn discovery_does_not_reach_through_nonordinal_scripts_or_other_view_rewrites() {
+    for (seed, other, category) in [
+        ("Pellam Ltd", "Pellam<sup>Ltd</sup>", Category::Organization),
+        ("Pellam Ltd", "Pellam<sub>Ltd</sub>", Category::Organization),
+        ("Anna Petrova", "Ann&#97; Petrova", Category::Organization),
+        (
+            "27 Wisp Lane, Norwich",
+            "27 Wisp Lane<br>Norwich",
+            Category::Address,
+        ),
+        ("ИНН", "И Н Н", Category::Other),
+    ] {
+        let source = format!("{seed} and {other}");
+        let mut review = Review::default();
+        review.refresh(&source);
+        review.add_manual(&source, 0..seed.len(), category).unwrap();
+        review.refresh(&source);
+        let changed = crate::restore::tests::apply_pending(&mut review, &source, 1);
+        assert_eq!(
+            changed,
+            format!("{}_1 and {other}", category.token()),
+            "{source}"
+        );
     }
 }
 

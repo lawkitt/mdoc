@@ -38,9 +38,6 @@ impl View {
     }
 
     fn read(source: &str, markup: Vec<InlineMarkup>) -> Self {
-        let mut text = String::with_capacity(source.len());
-        let mut edits = Vec::new();
-        let mut copied = 0;
         let mut rewrites = rewrites(source, &markup);
         let spaced: Vec<_> = letter_spacing(source)
             .into_iter()
@@ -66,6 +63,17 @@ impl View {
             .filter(|(range, _)| !inside(range.start))
             .collect();
         rewrites.extend(headers);
+        Self::apply(source, markup, rewrites)
+    }
+
+    fn apply(
+        source: &str,
+        markup: Vec<InlineMarkup>,
+        mut rewrites: Vec<(Range<usize>, String)>,
+    ) -> Self {
+        let mut text = String::with_capacity(source.len());
+        let mut edits = Vec::new();
+        let mut copied = 0;
         // An insertion sorts before a rewrite starting where it does.
         rewrites.sort_by_key(|(range, _)| (range.start, range.end));
         for (range, replacement) in rewrites {
@@ -86,6 +94,23 @@ impl View {
         }
     }
 
+    /// Only this PR's emphasis gaps and ordinal tags, with the complete
+    /// markup cache retained for source-span validation. Other view rewrites
+    /// must not broaden discovery of an existing wording.
+    pub(super) fn for_discovery(source: &str) -> Self {
+        Self::emphasis(source, true)
+    }
+
+    fn emphasis(source: &str, check_roles: bool) -> Self {
+        let markup = inline_markup_with(source, check_roles);
+        let edits = markup
+            .iter()
+            .filter(|m| m.inner.is_none() || m.ordinal)
+            .flat_map(|m| m.edits.iter().cloned())
+            .collect();
+        Self::apply(source, markup, edits)
+    }
+
     /// Whether the view reads the source unchanged.
     pub fn is_source(&self) -> bool {
         self.edits.is_empty()
@@ -97,7 +122,14 @@ impl View {
     pub fn source_range(&self, range: Range<usize>) -> Range<usize> {
         let mut source =
             self.source_offset(range.start, false)..self.source_offset(range.end, true);
-        for markup in &self.markup {
+        // Only a pair starting at/before the start (within its opening tag),
+        // or inside this span, can have its complete inner text covered.
+        let from = self
+            .markup
+            .partition_point(|m| m.range.start < source.start)
+            .saturating_sub(1);
+        let to = self.markup.partition_point(|m| m.range.start < source.end);
+        for markup in &self.markup[from..to] {
             if let Some(inner) = &markup.inner
                 && source.start <= inner.start
                 && inner.end <= source.end
@@ -161,12 +193,14 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// A validated mention's wording as read. Its outer emphasis delimiters
+/// Undo only emphasis-run joins and ordinal sup/sub tags. Entities, line
+/// breaks, underscores outside a joined gap and all other view rewrites stay
+/// byte-for-byte. A validated mention's outer emphasis delimiters
 /// belong to the surrounding document and may be absent from this fragment
 /// (`Pellam* *Rooke* *Ltd`), so delimiter roles must be checked against the
 /// complete source before calling this, not inferred again from the fragment.
 pub(super) fn wording(text: &str) -> std::borrow::Cow<'_, str> {
-    let view = View::read(text, inline_markup_with(text, false));
+    let view = View::emphasis(text, false);
     if view.is_source() {
         std::borrow::Cow::Borrowed(text)
     } else {
@@ -315,6 +349,7 @@ fn rewrites(source: &str, markup: &[InlineMarkup]) -> Vec<(Range<usize>, String)
 pub(super) struct InlineMarkup {
     pub range: Range<usize>,
     pub(super) inner: Option<Range<usize>>,
+    ordinal: bool,
     pub edits: Vec<(Range<usize>, String)>,
 }
 
@@ -367,6 +402,7 @@ fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
                 out.push(InlineMarkup {
                     range: at..end,
                     inner: None,
+                    ordinal: false,
                     edits: vec![(at..end, " ".into())],
                 });
                 at = end;
@@ -405,6 +441,7 @@ fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
             out.push(InlineMarkup {
                 range: at..close + 6,
                 inner: Some(at + 5..close),
+                ordinal,
                 edits: vec![
                     (at..at + 5, if ordinal { String::new() } else { " ".into() }),
                     (close..close + 6, String::new()),

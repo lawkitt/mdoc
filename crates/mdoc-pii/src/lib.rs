@@ -557,6 +557,11 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::Url)
                 .collect(),
+            raw_only: self
+                .variants()
+                .iter()
+                .map(|g| matches!(g.category, Category::Url | Category::Email))
+                .collect(),
             cues: self
                 .variants()
                 .iter()
@@ -749,6 +754,12 @@ impl Review {
         input.url.extend(fresh.iter().map(|text| {
             selected.iter().any(|detection| {
                 detection.category == Category::Url && source[detection.range.clone()] == **text
+            })
+        }));
+        input.raw_only.extend(fresh.iter().map(|text| {
+            selected.iter().any(|detection| {
+                matches!(detection.category, Category::Url | Category::Email)
+                    && source[detection.range.clone()] == **text
             })
         }));
         input.cues.extend(fresh.iter().map(|_| None));

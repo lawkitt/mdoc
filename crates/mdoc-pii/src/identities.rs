@@ -149,6 +149,9 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
     if category == Category::Url {
         return url_key(value);
     }
+    if category == Category::Email {
+        return canonical_raw(value);
+    }
     let words = name_words(value);
     if category == Category::Person
         && words.len() == 3
@@ -176,7 +179,10 @@ fn url_key(value: &str) -> String {
     rest.strip_suffix('/').unwrap_or(rest).to_owned()
 }
 fn canonical(value: &str) -> String {
-    crate::view::wording(value)
+    canonical_raw(&crate::view::wording(value))
+}
+fn canonical_raw(value: &str) -> String {
+    crate::view::unwrapped(value)
         .replace(['«', '»', '“', '”'], "\"")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -205,7 +211,7 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
 /// from a given name ("Van Morrison"). A word split by a line-end hyphen is
 /// one word ("Верес-\nтова" is "Верестова").
 pub(crate) fn name_words_cased(value: &str) -> Vec<String> {
-    crate::view::wording(value)
+    crate::view::unwrapped(&crate::view::wording(value))
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
@@ -602,12 +608,19 @@ impl Review {
                 (kept, self.variant_identity(group.id))
             })
             .collect();
+        let mut matching_changed = false;
         for (group, (kept, id)) in self.candidates.variants.iter_mut().zip(policies) {
             group.kept = kept;
             if let Some(identity) = id.and_then(|id| self.identities.get(id)) {
+                matching_changed |= matches!(group.category, Category::Url | Category::Email)
+                    != matches!(identity.category, Category::Url | Category::Email);
                 group.category = identity.category;
                 group.replacement.clone_from(&identity.alias);
             }
+        }
+        if matching_changed {
+            self.candidates.matcher = None;
+            self.discovery_version += 1;
         }
     }
     /// Identities that still own a pending or applied mention. One whose
@@ -1026,6 +1039,62 @@ impl Review {
 mod tests {
     use super::*;
     use crate::{Detection, Recognizer};
+
+    #[test]
+    fn keys_and_name_words_keep_mains_normalization_outside_emphasis_and_ordinals() {
+        for value in [
+            "_jdoe",
+            "Smith[^2]",
+            "Lee<sup>1</sup>",
+            "Pellam<sup>Ltd</sup>",
+            "27 Wisp Lane<br>Norwich",
+            "Ann&#97; Petrova",
+            "И Н Н",
+            "Ма\u{ad}рина",
+            "Арте\u{308}м",
+            "Верес-\nтова Дарья Ильинична",
+            "Ms. O'Neil,",
+            "ООО «Ромашка»",
+        ] {
+            let main = crate::view::unwrapped(value);
+            let key = main
+                .replace(['«', '»', '“', '”'], "\"")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            assert_eq!(canonical(value), key, "{value}");
+            let words: Vec<_> = main
+                .split_whitespace()
+                .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
+                .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
+                .collect();
+            assert_eq!(name_words_cased(value), words, "{value}");
+        }
+        for (marked, plain) in [
+            ("Pellam* *Industries Inc", "Pellam Industries Inc"),
+            ("Flat 2<sup>nd</sup>", "Flat 2nd"),
+            ("Flat 2<sub>nd</sub>", "Flat 2nd"),
+        ] {
+            assert_eq!(canonical(marked), canonical(plain));
+            assert_eq!(name_words_cased(marked), name_words_cased(plain));
+            assert_ne!(
+                normalization_key(marked, Category::Email),
+                normalization_key(plain, Category::Email)
+            );
+            assert_ne!(
+                normalization_key(marked, Category::Url),
+                normalization_key(plain, Category::Url)
+            );
+        }
+        for (raw, decoded) in [
+            ("_jdoe", "jdoe"),
+            ("Smith[^2]", "Smith"),
+            ("27 Wisp Lane<br>Norwich", "27 Wisp Lane, Norwich"),
+        ] {
+            assert_ne!(canonical(raw), canonical(decoded));
+        }
+    }
 
     #[test]
     #[ignore = "20,000 identity policy history storage; excludes editor layout and source matching"]
