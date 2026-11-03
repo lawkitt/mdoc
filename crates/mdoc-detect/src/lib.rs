@@ -1783,6 +1783,9 @@ mod tests {
         assert_eq!(
             found,
             [
+                // The partial model span is also an initial and surname;
+                // preserve it under the ambiguous-name policy.
+                ("B. General", Category::Person),
                 ("Ossian Draycott", Category::Person),
                 ("General", Category::Person),
                 ("Jane Federal", Category::Person),

@@ -128,7 +128,7 @@ words = [
     "applicant", "defendant", "plaintiff", "appellant", "party", "parties",
     "buyer", "seller", "landlord", "tenant", "lessor", "lessee", "licensor",
     "licensee", "contractor", "customer", "supplier", "company", "director",
-    "witness", "judge", "owner", "repairer", "assignee", "assignor", "principal",
+    "witness", "judge", "owner", "repairer", "assignee", "assignor",
     "provider", "debtor", "trustee", "creditor", "appellee", "affiliate",
     "agent", "subscriber", "dealer", "sponsor", "recipient", "franchisee",
     "participant", "user", "discloser",
@@ -177,7 +177,8 @@ unless_named = true
 person_role = true
 
 # Words that make a job title of a role: "Technical Reviewer", "Managing
-# Director" name no one (guide rule 8). Matched whole.
+# Director" name no one (guide rule 8). Alone they may name someone or
+# a company ("VICE"); only a multiword phrase uses them as modifiers.
 [[never]]
 match = "whole"
 words = [
@@ -188,9 +189,16 @@ words = [
     "circuit", "district", "bureau", "accident", "investigation", "vice",
     "other", "originating", "host", "agreement", "agreements",
     "division", "public", "fire", "costs",
+    "acting", "head", "general", "generals", "principal", "principals",
 ]
 unless_named = true
-person_role = true
+phrase_only = true
+
+# An explanatory note can explicitly define capacities rather than people.
+# Require the defining clause as well as role vocabulary; "Principal"
+# alone, or beside an actual name, remains a possible name.
+[[reference]]
+pattern = '(?i)\bthe[\p{Zs}\t]+terms?[\p{Zs}\t]+(?:principal|attorney|witness)(?:[\p{Zs}\t]*(?:,|and|or)[\p{Zs}\t]+(?:principal|attorney|witness))*[\p{Zs}\t]+describ(?:e|es)[\p{Zs}\t]+(?:a[\p{Zs}\t]+)?capacit(?:y|ies)\b'
 
 # Complete role-only phrases whose numbers, prepositions or optional
 # plural suffix escape word lists (#385). Both ends are anchored: a name
@@ -244,7 +252,7 @@ unless_named = true
 [[never]]
 match = "plural"
 words = [
-    "approved", "judgment", "judgement", "announcement", "general", "term",
+    "approved", "judgment", "judgement", "announcement", "term",
     "federal", "law", "school", "end", "product",
 ]
 unless_named = true

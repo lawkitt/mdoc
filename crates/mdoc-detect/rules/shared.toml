@@ -57,6 +57,8 @@
 #                               ("Ms St. Louis")
 #   person_role = true          with unless_named: a capitalized plural or
 #                               an initial + capitalized role remains PERSON
+#   phrase_only = true          with unless_named alone: role modifiers count
+#                               only inside multiword phrases, never alone
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
@@ -76,7 +78,7 @@
 #                         a comma before a trailing one; or phrases of them,
 #                         single-spaced ("in re"), with a word left beside
 #   role_trim = true      for ORG role words/phrases: require comma, dash,
-#                         colon or leading of/for; keep the whole span if
+#                         colon or leading for; keep the whole span if
 #                         the remainder does not identify an organization
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period

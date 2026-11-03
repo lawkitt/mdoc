@@ -173,21 +173,28 @@ not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёв
 words = [
     "представител", "доверител", "поверенн", "супруг", "адвокат", "юрист", "директор",
     "эксперт", "секретар", "свидетел", "собственник", "владел", "поставщик",
-    "руководител", "заместител", "бухгалтер", "уполномоченн", "управляющ",
+    "руководител", "бухгалтер", "уполномоченн", "управляющ",
 ]
 unless_named = true
 person_role = true
 
-# A child label and the inflected modifiers of insolvency officers are
-# roles, not names (#385). The same surname stays after a title or in a
-# full name; these stems are never an anywhere/last-word veto.
+# A child label is a role, not a name (#385).
 [[never]]
 match = "stem"
 ending = 3
-words = ["несовершеннолетн", "ребен", "ребён", "конкурсн", "финансов", "арбитражн"]
+words = ["ребен", "ребён"]
 not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
 unless_named = true
 person_role = true
+
+# Inflected role modifiers count only inside multiword role phrases.
+[[never]]
+match = "stem"
+ending = 3
+words = ["несовершеннолетн", "конкурсн", "финансов", "арбитражн", "заместител"]
+not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+unless_named = true
+phrase_only = true
 
 # Noun forms whose irregular endings are clearer listed whole (#385).
 # "Лица" in a procedural sentence and "Собрание кредиторов" name no one.
@@ -284,7 +291,7 @@ match = "whole"
 words = ["whatsapp", "telegram", "viber"]
 
 # Words that make a job title of a role: "Независимый эксперт", "Главный
-# бухгалтер" name no one (guide rule 8). Listed whole.
+# бухгалтер" name no one (guide rule 8). Alone they may be names.
 [[never]]
 match = "whole"
 words = [
@@ -301,6 +308,7 @@ words = [
     "индивидуальную",
 ]
 unless_named = true
+phrase_only = true
 
 # Codes of law, short court names and the country: "ГК РФ", "ГПК РФ", "ВС
 # РФ", "Российской Федерации" in "Именем Российской Федерации" or after a
