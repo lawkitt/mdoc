@@ -974,16 +974,18 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # "of", "the", "ex rel." and the like between them, a legal form after a
 # comma ("Murrin Bros. 1885, Ltd") and "et al.", in emphasis or not
 # ("*Pellam v. Ostrand*, 912 F.3d 455"). A word's period is an initial's or
-# a listed abbreviation's ("Bros.", "Cty."), so a sentence's end is no
-# party's ("… was Ivo Harrow. Pellam v. Ostrand, …"); a sentence's first
+# a listed abbreviation's ("Bros.", "Cty."), and a legal form's period
+# ("Ltd.") ends the party, so a sentence's end is no party's ("… was Ivo
+# Harrow. Pellam v. Ostrand, …", "… was Quillon Ltd. Pellam v. …"); a
+# sentence's first
 # word ("See Pellam") becomes part of it, which drops nothing more. "and"
 # joins no party: in "Ivo Harrow and Pellam v. Ostrand" Ivo Harrow is no
 # party. A docket number's court and year follow it at once, "(Tex. App.
 # 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
 # (admitted 2020)") is none of it.
 [[reference]]
-pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket})'
-parts.party = '(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von|ex[\p{Zs}\t]+rel\.|d/b/a|f/k/a|a/k/a|o/b/o))*[\p{Zs}\t]+(?:(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|(?P<docket>{docket}))'
+parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von|ex[\p{Zs}\t]+rel\.|d/b/a|f/k/a|a/k/a|o/b/o))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
@@ -994,6 +996,10 @@ roles = [
     "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",
     "relator", "complainant",
 ]
+cites = [
+    "in", "under", "see", "applying", "following", "per", "cf", "citing",
+    "quoting", "distinguishing", "unlike", "like", "accord", "also",
+]
 
 # A cited case's or a cited work's short citation (#561): "Pellam, 912 F.3d
 # at 460", "Pellam, 2031 WL 1234567, at *3", "Pellam, supra", "Rooke &
@@ -1002,7 +1008,7 @@ roles = [
 # the full citation's.
 [[reference]]
 pattern = '(?P<party>{party}),{s}(?:\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}(?:[\p{Zs}\t]*\d{1,9},?)?[\p{Zs}\t]+at[\p{Zs}\t]+\*?\d|supra\b)'
-parts.party = '(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von))*[\p{Zs}\t]+(?:(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
+parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 
 # "Id." and "Ibid." alone cite the authority before, and name no one: the
