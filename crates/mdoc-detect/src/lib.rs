@@ -68,6 +68,9 @@ use std::{
 
 pub const SUPPORTED: bool = mdoc_import::ocr::SUPPORTED;
 
+/// A name column's cell's score, as a `context` rule's value has (#397).
+const COLUMN_SCORE: f32 = 0.95;
+
 /// Guess a manual selection's category without a model, correctable in the
 /// popup (ADR 0025): a structured rule covering exactly the selection
 /// (evaluated on its line, so labels count), else the rule pack's guesses (a
@@ -573,6 +576,22 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 })
         })
         .collect();
+    // A cell under a name part's header (#397): before the span fixes, so
+    // their filters judge it as they judge the model's names.
+    detections.extend(
+        mdoc_pii::columns::name_cells(source)
+            .into_iter()
+            .filter(|range| {
+                let text = &view.text[view.view_range(range.clone())];
+                rules::pack().identifying_at(source, range.clone(), text, Category::Person)
+            })
+            .map(|range| Detection {
+                range,
+                category: Category::Person,
+                score: COLUMN_SCORE,
+                recognizer: mdoc_pii::Recognizer::Context,
+            }),
+    );
     rules::pack().fix_spans(source, &view, &mut detections);
     // After the span fixes, so each spelling copies the fixed wording.
     let respelt = respelt(source, &view, &detections);
@@ -1253,7 +1272,11 @@ mod tests {
             .into_iter()
             .map(|d| (&source[d.range], d.category))
             .collect();
-        assert_eq!(found, [("508614729031", Category::Tax)]);
+        // The surname by its column (#397), the INN by its label's.
+        assert_eq!(
+            found,
+            [("Кий", Category::Person), ("508614729031", Category::Tax)]
+        );
     }
 
     /// ADR 0094: a web address reaches the review whole, after a field's
@@ -1466,6 +1489,28 @@ mod tests {
                 .collect();
             assert_eq!(found, [(value, Category::Tax)], "{source}");
         }
+    }
+
+    /// #397: a cell under a name part's header is a person without the
+    /// model, unless the rule pack's filters take it for a role.
+    #[test]
+    fn name_columns_propose_their_cells() {
+        let people = |source: &str| -> Vec<String> {
+            correct(source, &[])
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        let source = "| Фамилия | Имя | Отчество | Паспорт |\n\
+                      | --- | --- | --- | --- |\n\
+                      | Кий | Ева | Оскаровна | 46 82 731609 |\n\
+                      | Истец | Ответчик | Директор | 46 83 862710 |\n";
+        assert_eq!(people(source), ["Кий", "Ева", "Оскаровна"]);
+        let source = "| Full name | Role |\n| --- | --- |\n| Claimant | Witness |\n";
+        assert!(people(source).is_empty());
+        let source = "| Name | Type |\n| --- | --- |\n| Hearing Bundle | Bundle |\n";
+        assert!(people(source).is_empty());
     }
 
     /// A wording the model gave two categories is copied to its other

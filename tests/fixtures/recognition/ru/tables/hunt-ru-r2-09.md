@@ -1,14 +1,9 @@
 ---
 status: known-flaw
-flaw: table-header-context role-as-name
-issue: 397 385
+flaw: role-as-name
+issue: 385
 kind: tables
 source: hunt-r2
-expect: miss: PERSON "Кий"
-expect: miss: PERSON "Оскаровна"
-expect: miss: PERSON "Лю"
-expect: miss: PERSON "Леон"
-expect: miss: PERSON "Янович"
 expect: false hit: PERSON "Получатель"
 ---
 # Ведомость получателей контрольных экземпляров

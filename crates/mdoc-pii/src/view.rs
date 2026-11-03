@@ -716,7 +716,8 @@ pub fn line_break_tag(text: &str) -> Option<usize> {
 /// running text. Matched whole, case and "ё" ignored, after
 /// [`header_name`] drops `*`, `:`, `#`, `№` and "No.". Only identifier
 /// columns: a header before a name or a heading word ("Фамилия: Кий",
-/// "Lead technician") makes the model read the header as part of the value.
+/// "Lead technician") makes the model read the header as part of the value;
+/// name parts' columns are proposed by [`crate::columns`] instead.
 const IDENTIFIER_HEADERS: &[&str] = &[
     // Russian.
     "паспорт",
@@ -773,7 +774,7 @@ const IDENTIFIER_HEADERS: &[&str] = &[
 
 /// A column header as [`IDENTIFIER_HEADERS`] lists it: lowercase, "ё" as
 /// "е", without `*`, `:`, `#`, `№` and a "No." word, words single-spaced.
-fn header_name(header: &str) -> String {
+pub(crate) fn header_name(header: &str) -> String {
     let header = header
         .to_lowercase()
         .replace('ё', "е")
@@ -792,6 +793,47 @@ fn header_name(header: &str) -> String {
 /// a totals row's "Итого" or a dash in the column is no identifier. A span
 /// over an inserted header maps to its cell; one only over it, to nothing.
 fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
+    let mut out = Vec::new();
+    for table in tables(source) {
+        let (_, header) = table.header;
+        let names: Vec<Option<&str>> = table
+            .columns
+            .iter()
+            .map(|cell| {
+                let name = header[cell.clone()]
+                    .trim_matches(|c: char| c.is_whitespace() || matches!(c, '*' | ':'));
+                IDENTIFIER_HEADERS
+                    .contains(&header_name(name).as_str())
+                    .then_some(name)
+            })
+            .collect();
+        for &(start, line) in &table.rows {
+            for (cell, name) in cells(line).into_iter().zip(&names) {
+                let Some(name) = name else { continue };
+                let value = &line[cell.clone()];
+                let content = start + cell.start + value.len() - value.trim_start().len();
+                if identifier_like(value) {
+                    out.push((content..content, format!("{name}: ")));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A GFM table of the source: its header row and its body rows, each with
+/// the offset its line starts at.
+pub(crate) struct Table<'a> {
+    pub(crate) header: (usize, &'a str),
+    /// The header row's cells, in its line.
+    pub(crate) columns: Vec<Range<usize>>,
+    pub(crate) rows: Vec<(usize, &'a str)>,
+}
+
+/// The source's GFM tables: a header row a delimiter row of as many cells
+/// follows, at most three spaces in and outside code blocks, and the rows
+/// after it up to a blank line, another block or the next table's header.
+pub(crate) fn tables(source: &str) -> Vec<Table<'_>> {
     let mut out = Vec::new();
     let mut lines = Vec::new();
     let mut at = 0;
@@ -824,35 +866,24 @@ fn table_headers(source: &str) -> Vec<(Range<usize>, String)> {
             row += 1;
             continue;
         }
-        let names: Vec<Option<&str>> = columns
-            .into_iter()
-            .map(|cell| {
-                let name = header[cell]
-                    .trim_matches(|c: char| c.is_whitespace() || matches!(c, '*' | ':'));
-                IDENTIFIER_HEADERS
-                    .contains(&header_name(name).as_str())
-                    .then_some(name)
-            })
-            .collect();
+        let mut table = Table {
+            header: lines[row],
+            columns,
+            rows: Vec::new(),
+        };
         row += 2;
         // Up to the next table's header, which a delimiter row follows.
-        while let Some(&(start, line)) = lines.get(row).filter(|(_, line)| {
+        while let Some(&found) = lines.get(row).filter(|(_, line)| {
             line.contains('|')
                 && !block_start(line)
                 && !lines
                     .get(row + 1)
                     .is_some_and(|(_, next)| delimiter_row(next))
         }) {
-            for (cell, name) in cells(line).into_iter().zip(&names) {
-                let Some(name) = name else { continue };
-                let value = &line[cell.clone()];
-                let content = start + cell.start + value.len() - value.trim_start().len();
-                if identifier_like(value) {
-                    out.push((content..content, format!("{name}: ")));
-                }
-            }
+            table.rows.push(found);
             row += 1;
         }
+        out.push(table);
     }
     out
 }
@@ -915,7 +946,7 @@ fn block_start(line: &str) -> bool {
 
 /// The cells of a table row, between its unescaped pipes (a pipe after an
 /// odd run of backslashes is escaped).
-fn cells(line: &str) -> Vec<Range<usize>> {
+pub(crate) fn cells(line: &str) -> Vec<Range<usize>> {
     let mut pipes: Vec<usize> = line
         .match_indices('|')
         .map(|(i, _)| i)
