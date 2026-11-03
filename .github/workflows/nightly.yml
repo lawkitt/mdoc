@@ -1,0 +1,95 @@
+name: Nightly
+
+# Every hosted job on main once a day (ADR 0095, ROADMAP CI redesign item 7):
+# the desktop jobs on both OSes, iOS, the detection gate, the quarantined
+# tests and cargo-deny's advisories, which PRs check only when their
+# dependencies change. A red night opens one issue, "Nightly CI is red", or
+# comments on the open one; a green night closes it
+# (scripts/nightly-issue.sh). Android has no hosted job yet (item 2), so the
+# PC's queue runner is its only check.
+on:
+  schedule:
+    # 02:17 UTC, between the maintainer's working days.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    uses: ./.github/workflows/ci-desktop.yml
+    with:
+      os: macos
+
+  windows:
+    uses: ./.github/workflows/ci-desktop.yml
+    with:
+      os: windows
+
+  ios:
+    uses: ./.github/workflows/ci-ios.yml
+
+  detection:
+    uses: ./.github/workflows/ci-detection.yml
+    with:
+      shards: 4
+
+  # Reports and never fails: a quarantined test still failing is expected.
+  quarantined:
+    name: quarantined tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: just cargo-nextest
+      - run: just test-tier quarantined
+
+  advisories:
+    name: cargo-deny advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: just cargo-deny
+      - run: just deny-advisories
+
+  report:
+    name: report
+    needs: [macos, windows, ios, detection, quarantined, advisories]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The only write permission here; this job runs main's script only.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - run: >-
+          bash scripts/nightly-issue.sh
+          macos=${{ needs.macos.result }}
+          windows=${{ needs.windows.result }}
+          ios=${{ needs.ios.result }}
+          detection=${{ needs.detection.result }}
+          quarantined=${{ needs.quarantined.result }}
+          advisories=${{ needs.advisories.result }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

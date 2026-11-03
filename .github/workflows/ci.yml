@@ -97,7 +97,13 @@ jobs:
             libxcb-render0-dev libfontconfig1-dev libfreetype-dev pkg-config
 
       - run: just fmt-check
-      - run: just deny
+      # Advisories only when the dependencies change (scripts/deny-ci.sh);
+      # nightly.yml runs them every day.
+      - run: scripts/deny-ci.sh
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          RELEASE_CALL: ${{ inputs.release-call }}
       - run: just lint-scripts
       - run: just lint
 

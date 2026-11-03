@@ -25,6 +25,16 @@ fmt-check:
 deny:
     cargo deny --locked check
 
+# The licence, ban and source checks alone, and the advisories alone. CI's lint
+# runs the first on every change and the advisories when Cargo.lock or
+# deny.toml changed (scripts/deny-ci.sh); the nightly run takes them daily, so
+# a new advisory never turns every PR red (ADR 0095)
+deny-policy:
+    cargo deny --locked check bans licenses sources
+
+deny-advisories:
+    cargo deny --locked check advisories
+
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under src/ (ADR 0069);
 # no GPUI under the GUI-free crates (ADR 0069); then clippy with warnings as errors
 lint:
