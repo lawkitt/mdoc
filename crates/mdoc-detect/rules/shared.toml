@@ -67,8 +67,8 @@
 #                         a person's never over a `never` word (a role);
 #                         earlier spans grow first
 #   trim      = […]       lowercase words that come off either edge, a
-#                         word's own final period with it, and a comma
-#                         before a trailing one; or phrases of them,
+#                         word's own final period or colon with it, and
+#                         a comma before a trailing one; or phrases of them,
 #                         single-spaced ("in re"), with a word left beside
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period
@@ -223,15 +223,87 @@ category = "TAX"
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 
-# Bank details need a digit and no `/`: case and claim numbers
-# ("6001842/2026") are not bank details. A bare ten- or eleven-digit number is
-# a tax number, a phone or a contract number far more often than an account
-# (Russian accounts have 20 digits, UK ones 8 with a sort code): only a label
-# makes it bank details.
+# Bank details need a digit and no `/` beside a digit: case and claim
+# numbers ("6001842/2026") are not bank details, while an account's label
+# ("р/с", "a/c") is trimmed off its span (#486). A bare ten- or
+# eleven-digit number is a tax number, a phone or a contract number far
+# more often than an account (Russian accounts have 20 digits, UK ones 8
+# with a sort code): only a label makes it bank details.
 [[shape]]
 category = "BANK"
 require = ['\p{N}']
-forbid = ['/', '^\s*\d{10,11}\s*$']
+forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']
+
+# Numbers that are no tax, bank, identity or phone value, whatever the
+# model guessed (guide rules 6 and 8, issue #486): digits grouped by commas
+# ("8,420,710", a US patent or an amount; "12/432,845", a patent
+# application), a span across a blank line (a page's footer), and a
+# document's code with its country after a dot ("STD001Y2K.UK", a form).
+# An account's decimals ("12345.67"), a passport's groups ("4510 123456")
+# and an IBAN's ("GB29 NWBK 6016 …") stay.
+[[shape]]
+category = "TAX"
+forbid = [
+    '^\s*(?:\d{1,2}/)?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\s*$',
+    '\n[\p{Zs}\t]*\r?\n',
+    '^\s*[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*\.[A-Z]{2,3}\s*$',
+]
+
+# The same as bank details.
+[[shape]]
+category = "BANK"
+forbid = [
+    '^\s*(?:\d{1,2}/)?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\s*$',
+    '\n[\p{Zs}\t]*\r?\n',
+    '^\s*[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*\.[A-Z]{2,3}\s*$',
+]
+
+# The same as an identity document's number.
+[[shape]]
+category = "IDENTITY"
+forbid = [
+    '^\s*(?:\d{1,2}/)?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\s*$',
+    '\n[\p{Zs}\t]*\r?\n',
+    '^\s*[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*\.[A-Z]{2,3}\s*$',
+]
+
+# The same as a phone, and a page number between dashes ("-44-", "– 12 –")
+# is no phone either; "555-12-34" keeps its dashes between digits.
+[[shape]]
+category = "PHONE"
+forbid = [
+    '^\s*(?:\d{1,2}/)?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?\s*$',
+    '\n[\p{Zs}\t]*\r?\n',
+    '(?:^|\s)[-–—][\p{Zs}\t]?\p{N}{1,4}[\p{Zs}\t]?[-–—](?:\s|$)',
+]
+
+# A GUID is a document's or a record's, no tax, bank or phone value
+# ("b539f4a9-4e5f-4abb-bec6-aae430c254f2", a power of attorney's; issue
+# #486), and neither is one token mixing lower and upper case letters, a
+# link's query value ("AfmBOorJnJ4Ys9vL"). Three lower case letters in a
+# row at least: an OCR-damaged number ("77l12345O7") stays.
+[[shape]]
+category = "TAX"
+forbid = [
+    '(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b',
+    '^\s*[A-Za-z0-9_-]*(?:[a-z]{3}[A-Za-z0-9_-]*[A-Z]|[A-Z][A-Za-z0-9_-]*[a-z]{3})[A-Za-z0-9_-]*\s*$',
+]
+
+# The same as bank details.
+[[shape]]
+category = "BANK"
+forbid = [
+    '(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b',
+    '^\s*[A-Za-z0-9_-]*(?:[a-z]{3}[A-Za-z0-9_-]*[A-Z]|[A-Z][A-Za-z0-9_-]*[a-z]{3})[A-Za-z0-9_-]*\s*$',
+]
+
+# The same as a phone.
+[[shape]]
+category = "PHONE"
+forbid = [
+    '(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b',
+    '^\s*[A-Za-z0-9_-]*(?:[a-z]{3}[A-Za-z0-9_-]*[A-Z]|[A-Z][A-Za-z0-9_-]*[a-z]{3})[A-Za-z0-9_-]*\s*$',
+]
 
 # Web addresses (ADR 0094, guide rule 9). Scans propose a URL by its shape:
 # a scheme (`http://`, `https://`, `ftp://`), `www.`, or a bare domain

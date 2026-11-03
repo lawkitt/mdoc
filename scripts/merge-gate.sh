@@ -76,6 +76,16 @@ fetch_queue() {
 
 fetch_main() { gh api "repos/$repo/commits/main" --jq .sha; }
 
+# Runs not yet finished: `<id> <branch>` lines, queued and in progress.
+fetch_active_runs() {
+  local s
+  for s in queued in_progress; do
+    gh api "repos/$repo/actions/runs?status=$s&per_page=100" --jq '.workflow_runs[] | "\(.id) \(.head_branch)"'
+  done
+}
+
+cancel_run() { gh api -X POST "repos/$repo/actions/runs/$1/cancel" >/dev/null; }
+
 # What a queue commit brings onto main: changed files and commit subjects.
 fetch_compare() { gh api "repos/$repo/compare/$1...$2"; }
 
@@ -336,10 +346,34 @@ queue_pass() {
   done < <(fetch_queue)
 }
 
+# Runs for queue commits the queue no longer has: GitHub deletes a branch
+# under gh-readonly-queue/ when it drops or rebuilds a group, but the runs
+# for it go on and hold the account's five macOS runners (2026-11-03). A
+# trial branch under ci-shadow/ is left alone until it is deleted too.
+stale_pass() {
+  local current runs id branch n=0
+  # Runs first: a branch exists before its runs start, so a group created
+  # between the two reads is in the queue list, never taken for stale.
+  runs=$(fetch_active_runs) || return 1
+  current=$(fetch_queue | awk '{ print $1 }') || return 1
+  while read -r id branch; do
+    [ -n "$id" ] || continue
+    case "$branch" in gh-readonly-queue/main/* | ci-shadow/main/*) ;; *) continue ;; esac
+    if ! grep -qxF "$branch" <<<"$current"; then
+      if cancel_run "$id"; then
+        log "cancelled run $id: $branch left the queue"
+        n=$((n + 1))
+      fi
+    fi
+  done <<<"$runs"
+  [ "$n" -eq 0 ] || log "cancelled $n run(s) of queue commits that left the queue"
+}
+
 if [ -z "${MERGE_GATE_SOURCED:-}" ]; then
   command -v jq >/dev/null || die "jq not found"
   rc=0
   heads_pass || rc=1
   queue_pass || rc=1
+  stale_pass || rc=1
   exit "$rc"
 fi

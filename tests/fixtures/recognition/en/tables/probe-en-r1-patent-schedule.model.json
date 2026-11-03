@@ -1,0 +1,21 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":53,"end":72,"label":"organization","score":0.9207897,"text":"Quillon Freight LLC"},
+    {"start":145,"end":155,"label":"organization","score":0.5245012,"text":"STD009X.UK"},
+    {"start":242,"end":245,"label":"phone_number","score":0.9959927,"text":"800"},
+    {"start":163,"end":169,"label":"national_id_number","score":0.97339296,"text":"999999"},
+    {"start":388,"end":398,"label":"tax_id","score":0.8253083,"text":"2099241803"},
+    {"start":546,"end":553,"label":"tax_id","score":0.80670035,"text":"2286018"},
+    {"start":625,"end":634,"label":"tax_id","score":0.7692536,"text":"9,420,710"},
+    {"start":336,"end":359,"label":"tax_id","score":0.7645402,"text":"AU           2099241803"},
+    {"start":467,"end":516,"label":"tax_id","score":0.75833166,"text":"2 424 911        23-Mar-36\nEP           9739191.6"},
+    {"start":693,"end":701,"label":"national_id_number","score":0.61132395,"text":"96920111"},
+    {"start":96,"end":109,"label":"tax_id","score":0.57224476,"text":"AU 2099000111"},
+    {"start":81,"end":94,"label":"tax_id","score":0.55250955,"text":"US 99/123,456"},
+    {"start":573,"end":596,"label":"tax_id","score":0.5483107,"text":"US           99/432,845"},
+    {"start":756,"end":788,"label":"iban","score":0.8873999,"text":"IBAN GB47 KELD 6012 4483 7196 02"},
+    {"start":96,"end":109,"label":"routing_number","score":0.53095096,"text":"AU 2099000111"}
+  ]
+}
