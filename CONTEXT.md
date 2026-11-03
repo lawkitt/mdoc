@@ -618,3 +618,22 @@ fallback, on Dependabot and fork PRs, and in release runs
 build on TestFlight's internal testers, Play's internal track and a draft
 GitHub Release. Everything users can install is the maintainer's step
 ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+
+**Beta build** (iOS): a TestFlight build tagged `ios-v<x.y.z>-rc.N`; the
+version stays `x.y.z` through the beta while the build number grows, and the
+plain `ios-v<x.y.z>` tag marks the build sent to App Store review
+([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).
+
+**Build 1**: `ios-v0.1.0-rc.1`, the one TestFlight build the maintainer
+archives and uploads by hand from Xcode; later beta builds come from the
+hosted release workflow ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).
+
+**Lawyers group**: the one external TestFlight group, 5 to 10 lawyers the
+maintainer invites by email, with no public link
+([ADR 0097](docs/adr/0097-ios-testflight-beta.md)). Play's closed testing
+track for Android uses the same name.
+
+**Never-client-files line**: the sentence that opens every beta description
+and What to Test: "Test with documents you are allowed to share, never
+client files; check a screenshot before you send it."
+([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).

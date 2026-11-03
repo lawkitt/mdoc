@@ -9,7 +9,9 @@ Status: Accepted, 2026-11-01. Amends [ADR 0037](0037-ci-and-release-pipeline.md)
 Amended by [ADR 0095](0095-ci-on-a-merge-queue.md) (2026-11-02): the iOS
 job runs hosted, Android falls back to hosted, no Mac takeover, no "NOT
 tested" status, a recognition-code area; releases, signing and changelogs
-unchanged.
+unchanged. Amended by [ADR 0097](0097-ios-testflight-beta.md) (2026-11-03):
+beta builds are `ios-v<x.y.z>-rc.N` tags; build 1 is the only manual
+upload.
 
 ## Problem
 
