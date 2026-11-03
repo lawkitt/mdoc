@@ -11,6 +11,7 @@
 #             to its postcode or city), and boundary fixes for model spans
 #   variants  nicknames of given names, for names already in the document
 #   reference legal references and markers no model span is inside
+#   private   bodies that are never public, whoever owns them
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
@@ -51,9 +52,20 @@
 #                               ("B. General Terms"). Takes no anywhere_in,
 #                               and last_word_of only for categories other
 #                               than PERSON ("Bright Paths Program")
-#   unless_titled = true        for a pattern with anywhere_in PERSON alone:
-#                               a person's title before the span keeps it
-#                               ("Ms St. Louis")
+#   unless_titled = true        with PERSON in anywhere_in: a person's
+#                               title before the span keeps it as a person
+#                               ("Ms St. Louis"), and for a stem initials
+#                               do too where the span is a name alone
+#                               ("Суд Н. О."); a pattern entry needs
+#                               anywhere_in PERSON alone
+#   person_endings = [ending…]  for a stem with PERSON in anywhere_in: in
+#                               a person's span the stem counts only with
+#                               one of these endings ("" for none), the
+#                               word's own forms; any other makes a
+#                               surname ("Судник", "Приставко")
+#   surname_endings = [ending…] with person_endings: those of them that
+#                               make a surname of a capitalized word
+#                               ("Судов", but "судов общей юрисдикции")
 #
 # A `span` entry for a `category` is one of two kinds. With a `pattern`
 # it proposes each match as a whole span; `{name}` in the pattern stands
@@ -89,6 +101,13 @@
 # structured rules are never checked against it. `pattern` and `parts` work
 # as in a `span` pattern, `lead` and `tail` groups included; a match stays
 # on one line.
+#
+# A `private` entry lists `patterns`, regexes: a span that matches one,
+# quotes and legal form included, is never a court or public body,
+# whatever `never` says ("ФГБОУ ВО «… университет»", "Негосударственный
+# пенсионный фонд «…»"), unless it matches one of its optional `unless`
+# regexes too ("Electoral College"). Anchor the patterns: a public body
+# may have the word inside ("Ministry of Colleges and Universities").
 #
 # A `shape` entry has any of:
 #   require = [regex…]  a model span must match each one somewhere

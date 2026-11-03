@@ -13,6 +13,50 @@ const FILES: [(&str, &str); 3] = [
     ("ru.toml", include_str!("../rules/ru.toml")),
 ];
 
+/// A surname's lowercase particles ("де Лаваль", "van Hoorn", "аль-Хадид"):
+/// a span they open is a name, never a public body's cut tail.
+const NAME_PARTICLES: &[&str] = &[
+    "де",
+    "ди",
+    "да",
+    "дю",
+    "дель",
+    "делла",
+    "дер",
+    "ден",
+    "ла",
+    "ле",
+    "фон",
+    "ван",
+    "оглы",
+    "кызы",
+    "ибн",
+    "бен",
+    "бин",
+    "аль",
+    "эль",
+    "de",
+    "di",
+    "da",
+    "du",
+    "del",
+    "della",
+    "der",
+    "den",
+    "la",
+    "le",
+    "von",
+    "van",
+    "bin",
+    "ibn",
+    "ben",
+    "al",
+    "el",
+    "ter",
+    "ten",
+    "dos",
+];
+
 /// A labelled value's score: rule evidence, like the structured rules'.
 const CONTEXT_SCORE: f32 = 0.95;
 
@@ -40,6 +84,20 @@ struct File {
     reference: Vec<ReferenceEntry>,
     #[serde(default)]
     url: Vec<UrlEntry>,
+    #[serde(default)]
+    private: Vec<PrivateEntry>,
+}
+
+/// Bodies that are never public, whoever owns them: a span that matches
+/// one of the `patterns`, quotes included, is no court or public body
+/// ("ФГБОУ ВО «… университет»", "Негосударственный пенсионный фонд «…»"),
+/// unless it matches one of `unless` too ("Electoral College").
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrivateEntry {
+    patterns: Vec<String>,
+    #[serde(default)]
+    unless: Vec<String>,
 }
 
 /// Web addresses' data (ADR 0094): which bare domains are addresses and
@@ -78,13 +136,25 @@ struct NeverEntry {
     /// of the stem ("Подрядчиков", "Директоров").
     #[serde(default)]
     not_endings: Vec<String>,
+    /// For a `stem` with PERSON in `anywhere_in`: in a person's span the
+    /// stem counts only with one of these endings, the body word's own
+    /// forms ("суда", "Судебной"); any other makes a surname of it
+    /// ("Судине", "Судник", "Приставко").
+    #[serde(default)]
+    person_endings: Vec<String>,
+    /// For a stem with `person_endings`: those of them that make a surname
+    /// of a capitalized word all the same ("Судов", but "судов общей
+    /// юрисдикции").
+    #[serde(default)]
+    surname_endings: Vec<String>,
     /// Common words that name no one alone ("He", "Program", "Christian")
     /// but stay a person's name in context: after a title ("Mr He") or
     /// where another person span has them beside a name ("Dawn French").
     #[serde(default)]
     unless_named: bool,
-    /// For `pattern`: a person's title before the span keeps it, a
-    /// surname that reads like the phrase ("Ms St. Louis").
+    /// A person's title before a person's span keeps it, a surname that
+    /// reads like the phrase or word ("Ms St. Louis", "г-н Суд"); for
+    /// words an initial in the span does too ("Суд Н. О.").
     #[serde(default)]
     unless_titled: bool,
 }
@@ -213,6 +283,9 @@ pub(crate) struct Pack {
     public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
     references: Vec<Regex>,
+    /// Bodies never public: a span matching one of an entry's patterns and
+    /// none of its `unless` is no court or public body.
+    private: Vec<(Vec<Regex>, Vec<Regex>)>,
 }
 
 /// A `span` entry: a whole span by its pattern, or a boundary fix.
@@ -370,6 +443,8 @@ struct Never {
     last_word_of: Vec<Category>,
     anywhere_in: Vec<Category>,
     not_endings: Vec<String>,
+    person_endings: Vec<String>,
+    surname_endings: Vec<String>,
     unless_named: bool,
     unless_titled: bool,
 }
@@ -387,6 +462,22 @@ impl Never {
             }),
             Form::Pattern => false,
         })
+    }
+
+    /// Whether lowercase `word`, one of this entry's words, is a surname
+    /// in a person's span: a stem with an ending that is none of its
+    /// `person_endings` ("судине", "судник" after "суд"), or, written
+    /// `capitalized`, one of its `surname_endings` ("Судов").
+    fn surname(&self, word: &str, capitalized: bool) -> bool {
+        let own = |endings: &[String]| {
+            self.words.iter().any(|listed| {
+                word.strip_prefix(listed.as_str())
+                    .is_some_and(|ending| endings.iter().any(|own| own == ending))
+            })
+        };
+        self.form == Form::Stem
+            && !self.person_endings.is_empty()
+            && (!own(&self.person_endings) || capitalized && own(&self.surname_endings))
     }
 }
 
@@ -414,6 +505,7 @@ impl Pack {
             zones: std::collections::HashSet::new(),
             public: std::collections::HashSet::new(),
             references: Vec::new(),
+            private: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         for (name, source) in files {
@@ -426,8 +518,24 @@ impl Pack {
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
-                if entry.form != Form::Stem && !entry.not_endings.is_empty() {
-                    return Err(at("only a stem takes not_endings".into()));
+                if entry.form != Form::Stem
+                    && !(entry.not_endings.is_empty() && entry.person_endings.is_empty())
+                {
+                    return Err(at("only a stem takes not_endings or person_endings".into()));
+                }
+                if !entry.person_endings.is_empty()
+                    && !entry.anywhere_in.iter().any(|c| c == "PERSON")
+                {
+                    return Err(at("person_endings needs PERSON in anywhere_in".into()));
+                }
+                if let Some(ending) = entry
+                    .surname_endings
+                    .iter()
+                    .find(|ending| !entry.person_endings.contains(ending))
+                {
+                    return Err(at(format!(
+                        "surname ending {ending:?} is no person_endings"
+                    )));
                 }
                 if entry.form == Form::Pattern {
                     if entry.patterns.is_empty() || !entry.words.is_empty() {
@@ -452,8 +560,18 @@ impl Pack {
                         "unless_named takes no anywhere_in or last_word_of PERSON".into(),
                     ));
                 }
-                if entry.unless_titled && entry.anywhere_in != ["PERSON"] {
-                    return Err(at("unless_titled needs anywhere_in PERSON alone".into()));
+                if entry.unless_titled
+                    && if entry.form == Form::Pattern {
+                        entry.anywhere_in != ["PERSON"]
+                    } else {
+                        !entry.anywhere_in.iter().any(|c| c == "PERSON")
+                    }
+                {
+                    return Err(at(if entry.form == Form::Pattern {
+                        "unless_titled needs anywhere_in PERSON alone".into()
+                    } else {
+                        "unless_titled needs PERSON in anywhere_in".into()
+                    }));
                 }
                 let patterns = entry
                     .patterns
@@ -487,6 +605,8 @@ impl Pack {
                     last_word_of: tokens(&entry.last_word_of)?,
                     anywhere_in: tokens(&entry.anywhere_in)?,
                     not_endings: entry.not_endings,
+                    person_endings: entry.person_endings,
+                    surname_endings: entry.surname_endings,
                     unless_named: entry.unless_named,
                     unless_titled: entry.unless_titled,
                 });
@@ -796,6 +916,21 @@ impl Pack {
                     }
                 }
             }
+            for (index, entry) in file.private.iter().enumerate() {
+                let at = |problem: String| format!("{name}: private #{}: {problem}", index + 1);
+                if entry.patterns.is_empty() {
+                    return Err(at("no patterns".into()));
+                }
+                let compile = |patterns: &[String]| {
+                    patterns
+                        .iter()
+                        .map(|pattern| Regex::new(&rust_classes(pattern)))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|e| at(e.to_string()))
+                };
+                pack.private
+                    .push((compile(&entry.patterns)?, compile(&entry.unless)?));
+            }
             for (index, entry) in file.reference.iter().enumerate() {
                 let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
                 pack.references
@@ -905,7 +1040,18 @@ impl Pack {
     /// the span fixes, so a company's inner name ("Северная область Строй")
     /// first grows to its legal form.
     fn public_body(&self, text: &str, category: Category, titled: bool) -> bool {
-        if self.legal_form(text) {
+        self.public_body_by(text, category, titled, true)
+    }
+
+    /// `public_body`, by the `never` patterns alone unless `words`.
+    fn public_body_by(&self, text: &str, category: Category, titled: bool, words: bool) -> bool {
+        // A university or a non-state fund is no public body, its quoted
+        // name included (#484).
+        let private = self.private.iter().any(|(patterns, unless)| {
+            patterns.iter().any(|pattern| pattern.is_match(text))
+                && !unless.iter().any(|pattern| pattern.is_match(text))
+        });
+        if self.legal_form(text) || private {
             return false;
         }
         // Quotes around the whole span hide nothing: "«Арбитражный суд»".
@@ -915,14 +1061,57 @@ impl Pack {
         } else {
             text.to_owned()
         };
-        outside
-            .split_whitespace()
-            .map(|word| bare(word).to_lowercase())
-            .any(|word| {
-                self.never
-                    .iter()
-                    .any(|entry| entry.anywhere_in.contains(&category) && entry.has(&word))
-            })
+        let person = category == Category::Person;
+        // Initials make a person of a surname that is a public body's word
+        // ("Суд Н. О.", "СУД Н. О.", "Н.О. Судова"), where the span is a
+        // name alone: initials and capitalized words, no lowercase word
+        // ("ГБУ имени Н. О. Ветлина" is an institution); an abbreviation
+        // like "ГБУ" is no stem, so initials never spare it.
+        let initialed = person && {
+            let initial = |word: &str| {
+                let mut parts = word.split('.').filter(|part| !part.is_empty()).peekable();
+                word.contains('.')
+                    && parts.peek().is_some()
+                    && parts.all(|part| {
+                        part.chars().count() == 1 && part.chars().all(char::is_uppercase)
+                    })
+            };
+            let name = |word: &str| {
+                word.chars().next().is_some_and(char::is_uppercase)
+                    && word.chars().all(|c| c.is_alphabetic() || c == '-')
+            };
+            let words: Vec<&str> = outside
+                .split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric() && c != '.'))
+                .filter(|word| !word.is_empty())
+                .collect();
+            words.iter().any(|word| initial(word))
+                && words.iter().all(|word| initial(word) || name(word))
+        };
+        // A title keeps any entry's word that is `unless_titled`; initials
+        // only a stem's, a surname's ("Суд Н. О.", not "Мэрия Н. О.").
+        let spared = |entry: &Never, word: &str, capitalized: bool| {
+            person
+                && (entry.unless_titled && (titled || initialed && entry.form == Form::Stem)
+                    || entry.surname(word, capitalized))
+        };
+        words
+            && outside
+                .split_whitespace()
+                .map(|word| {
+                    let word = bare(word);
+                    (
+                        word.to_lowercase(),
+                        word.chars().next().is_some_and(char::is_uppercase),
+                    )
+                })
+                .any(|(word, capitalized)| {
+                    self.never.iter().any(|entry| {
+                        entry.anywhere_in.contains(&category)
+                            && entry.has(&word)
+                            && !spared(entry, &word, capitalized)
+                    })
+                })
             || self
                 .never
                 .iter()
@@ -931,6 +1120,77 @@ impl Pack {
                 })
                 .flat_map(|entry| &entry.patterns)
                 .any(|pattern| pattern.is_match(&outside))
+    }
+
+    /// Whether a model span at `range` of `text` is cut out of a court's,
+    /// public body's or law's name, read with the words beside it (#378):
+    /// a lowercase tail after the name's capitalized head ("Министерства
+    /// ⟦финансов …⟧"), a span cut at a possessive's apostrophe
+    /// ("⟦Sheriff’⟧s Office"), or a head before "of" ("⟦Bureau⟧ of
+    /// Oceans"; by the patterns alone, so "⟦Quill⟧ of the Department"
+    /// stays).
+    fn cut_from_public_body(
+        &self,
+        text: &str,
+        range: std::ops::Range<usize>,
+        category: Category,
+        titled: bool,
+    ) -> bool {
+        static TAIL: OnceLock<Regex> = OnceLock::new();
+        static OF: OnceLock<Regex> = OnceLock::new();
+        let tail = TAIL.get_or_init(|| {
+            Regex::new(&rust_classes(
+                r"^s?[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*",
+            ))
+            .expect("possessive pattern")
+        });
+        let of = OF.get_or_init(|| {
+            Regex::new(&rust_classes(
+                r"^[\p{Zs}\t]+(?:of|for)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\x27’-]*",
+            ))
+            .expect("of pattern")
+        });
+        let span = &text[range.clone()];
+        // A surname's lowercase particle opens a name, not a body's tail:
+        // "начальник Отдела ⟦де Лаваль⟧".
+        let particle = span
+            .split(|c: char| c.is_whitespace() || c == '-')
+            .next()
+            .is_some_and(|word| NAME_PARTICLES.contains(&word));
+        if span.chars().next().is_some_and(char::is_lowercase) && !particle {
+            let head = text[..range.start].trim_end_matches([' ', '\t']);
+            let from = head
+                .char_indices()
+                .rev()
+                .find(|(_, c)| !c.is_alphanumeric() && *c != '-')
+                .map_or(0, |(at, c)| at + c.len_utf8());
+            let word = &head[from..];
+            if head.len() < range.start
+                && word.chars().next().is_some_and(char::is_uppercase)
+                && self.public_body(&text[from..range.end], category, titled)
+            {
+                return true;
+            }
+        }
+        let after = &text[range.end..];
+        if span.ends_with(['’', '\''])
+            && let Some(found) = tail.find(after)
+            && self.public_body(
+                &text[range.start..range.end + found.end()],
+                category,
+                titled,
+            )
+        {
+            return true;
+        }
+        of.find(after).is_some_and(|found| {
+            self.public_body_by(
+                &text[range.start..range.end + found.end()],
+                category,
+                titled,
+                false,
+            )
+        })
     }
 
     /// Abbreviations `text` defines in brackets beside a long form that
@@ -953,9 +1213,18 @@ impl Pack {
                 // The words before: any case, across a line break too.
                 r"((?:[\p{Alphabetic}\p{N}&][\p{Alphabetic}\p{N}'’.&-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*",
                 r"\r?\n[\p{Zs}\t]*))*[\p{Alphabetic}\p{N}&][\p{Alphabetic}\p{N}'’.&-]*)",
-                // A citation may stand between: ", 740 ILCS 14/1".
-                r"(?:,[\p{Zs}\t]*\d[^()\n;,]{0,40}?)?\s*\(",
-                r"(?:the[\p{Zs}\t]+|hereinafter[\p{Zs}\t]+)?[“\x22‘']?",
+                // A citation may stand between, piece by piece: ", 740 ILCS
+                // 14/1", ", 29 U.S.C. §§ 201, et seq.", ", 42 Stat. 123":
+                // numbers, initials, capitals, section signs and a few
+                // citation words, never prose ("Act, 2026, applies to …")
+                // or a sentence's end ("Act, 2026. ASHMOOR …").
+                r"(?:,[\p{Zs}\t]*\d[\p{N}/:–-]*(?:(?:[\p{Zs}\t]+|,[\p{Zs}\t]*)",
+                r"(?:\d[\p{N}/:–-]*|(?:\p{Uppercase}\.){1,4}|\p{Uppercase}{2,6}",
+                r"|\p{Uppercase}\p{Lowercase}{1,5}\.|§{1,2}|et[\p{Zs}\t]+seq\.?",
+                r"|(?:c|ch|ss?|art|pt|para)\.?)){0,12})?\s*\(",
+                // "hereinafter", "hereinafter referred to as", "the".
+                r"(?:hereinafter(?:[\p{Zs}\t]+(?:referred[\p{Zs}\t]+to[\p{Zs}\t]+as|called))?",
+                r"[\p{Zs}\t]*[,:]?[\p{Zs}\t]*)?(?:the[\p{Zs}\t]+)?[“\x22‘']?",
                 r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
             )))
             .expect("abbreviation pattern")
@@ -1163,6 +1432,13 @@ impl Pack {
             let text = &view.text[view.view_range(d.range.clone())];
             let titled = d.category == Category::Person && self.titled(source, d.range.start);
             !d.range.is_empty()
+                && !(matches!(d.category, Category::Organization | Category::Person)
+                    && self.cut_from_public_body(
+                        &view.text,
+                        view.view_range(d.range.clone()),
+                        d.category,
+                        titled,
+                    ))
                 && self.identifying_named(
                     text,
                     d.category,
@@ -1202,12 +1478,12 @@ impl Pack {
     }
 
     /// Whether a person's title stands just before `at` in `source` ("Mr
-    /// He", "Dr. General"): the person fixes' `trim` words.
+    /// He", "Dr. General", "г-н Суд"): the person fixes' `trim` words.
     fn titled(&self, source: &str, at: usize) -> bool {
         let before = source[..at].trim_end();
         let before = before.strip_suffix('.').unwrap_or(before);
         let word = before
-            .rsplit(|c: char| !c.is_alphanumeric())
+            .rsplit(|c: char| !c.is_alphanumeric() && c != '-')
             .next()
             .unwrap_or_default()
             .to_lowercase();
@@ -2922,6 +3198,434 @@ Privacy Act (“BIPA”). BIPA applies.",
         }];
         pack.fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
         assert_eq!(detections.len(), 1);
+    }
+
+    /// Probe round 2 of #378 in Russian: courts and public bodies go as
+    /// people too, and so do the pension and social funds, their offices,
+    /// the central bank and more short forms; a surname with a body's
+    /// stem, a titled or initialled person and companies stay.
+    #[test]
+    fn russian_public_bodies_are_no_people_and_funds_no_organizations() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        for text in [
+            "Арбитражный суд Республики Сосновия",
+            "Арбитражный суд Северной области",
+            "Министерства обороны Российской Федерации",
+            "Министерства",
+            "Администрации г. Ольховска",
+            "Государственное учреждение - Управление Пенсионного фонда \
+             Российской Федерации по Ольховскому району",
+            "Минобороны России",
+            "Минфина России",
+            "Президента Российской Федерации",
+            "Гражданского кодекса Российской Федерации",
+            "Суд",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Пенсионный фонд Российской Федерации",
+            "Пенсионного фонда РФ",
+            "Фонда пенсионного и социального страхования Российской Федерации",
+            "Фонда социального страхования",
+            "Фонда социального страхованияРоссийской Федерации",
+            "Социальный фонд России",
+            "бюджет Фонда",
+            "Фонда",
+            "УПФР",
+            "ОПФР по Северной области",
+            "ОСФР",
+            "УФК по Северной области",
+            "ГУ",
+            "Регистрационно-лицензионной палатой",
+            "Президента Российской Федерации",
+            "ЦБ РФ",
+            "Банк России",
+            "Центрального банка Российской Федерации",
+            "ВАС РФ",
+            "Президиума ВАС РФ",
+            "АС Ольховска и Северной обл",
+            "АС Северной области",
+            "ЛК РФ",
+            "Депнедра",
+            "ФГАУ «Жилкомплекс»",
+            "Вооруженных Сил Российской Федерации",
+            "Налоговые органы",
+            "гражданским законодательством Российской Федерации",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            "Судов",
+            "Суднев",
+            "Судина",
+            "Приставко",
+            "Приставкина",
+            "Законов",
+            "Палатова",
+            "Суд Н. О.",
+            "Н.О. Суд",
+            "Гу",
+            "Иван Суднев",
+        ] {
+            assert!(person(text), "{text}");
+        }
+        for text in [
+            "ООО «Фонд Север»",
+            "Фонд «Север»",
+            "Благотворительный фонд «Север»",
+            "Сбербанк России",
+            "Банк «Россия»",
+            "АС Групп",
+            "ООО «Палата»",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        // A title keeps a surname that is a court's word.
+        assert_eq!(
+            fixed("Г-н Суд пояснил.", &[("Суд", Category::Person)]),
+            ["Суд"]
+        );
+        // A state institution's quoted name, as a person, goes with it.
+        assert!(
+            fixed(
+                "жалобу ГБУ СО «Кедровый дом-интернат»",
+                &[("Кедровый дом-интернат", Category::Person)]
+            )
+            .is_empty()
+        );
+    }
+
+    /// Probe round 2 of #378: a span cut out of a public body's name goes,
+    /// read with the words beside it; a person beside a body's word stays.
+    #[test]
+    fn a_span_cut_out_of_a_public_body_goes() {
+        for (source, span, category) in [
+            (
+                "жалобу Министерства финансов Российской Федерации",
+                "финансов Российской Федерации",
+                Category::Organization,
+            ),
+            (
+                "жалобу Министерства обороны Российской Федерации",
+                "обороны Российской Федерации",
+                Category::Person,
+            ),
+            (
+                "the Ashmoor County Sheriff’s Office arrested him",
+                "Ashmoor County Sheriff’",
+                Category::Organization,
+            ),
+            (
+                "the Bureau of Oceans, Environment, and Science",
+                "Bureau",
+                Category::Organization,
+            ),
+            (
+                "the Office of the Attorney General",
+                "Office",
+                Category::Person,
+            ),
+        ] {
+            assert!(fixed(source, &[(span, category)]).is_empty(), "{source}");
+        }
+        for (source, span, category) in [
+            (
+                "начальник Отдела Ветлина Н. О. пояснила",
+                "Ветлина Н. О.",
+                Category::Person,
+            ),
+            (
+                "Ms Quill of the Department of Labor",
+                "Quill",
+                Category::Person,
+            ),
+            ("Quill’s Office", "Quill", Category::Person),
+            (
+                "Quillon Freight LLC of the Bureau of Prisons",
+                "Quillon Freight LLC",
+                Category::Organization,
+            ),
+        ] {
+            assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
+        }
+    }
+
+    /// The review of probe round 2 of #378: a surname with a body's stem,
+    /// a particle after a body's word, a non-state fund, a university, a
+    /// private name with an agency's letters and a company's abbreviation
+    /// after a law stay; an institution named after a person goes.
+    #[test]
+    fn names_and_private_bodies_beside_public_ones_stay() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        // A surname with a court's stem, whatever its ending; the court's
+        // own forms still go.
+        for text in ["Николае Судине", "Иван Судник", "Судине", "Судник"]
+        {
+            assert!(person(text), "{text}");
+        }
+        for text in ["Суда", "Судом", "Судебной коллегии", "Законом", "Палатой"]
+        {
+            assert!(!person(text), "{text}");
+        }
+        // A lowercase particle opens the person's name, not the body's.
+        assert_eq!(
+            fixed(
+                "начальник Отдела де Лаваль пояснил",
+                &[("де Лаваль", Category::Person)]
+            ),
+            ["де Лаваль"]
+        );
+        // Non-state funds, universities and colleges are no public bodies
+        // (#484), whoever owns them.
+        for text in [
+            "Негосударственный пенсионный фонд «Кедр»",
+            "Негосударственного пенсионного фонда «Кедр»",
+            "НПФ «Кедр»",
+            "ФГБОУ ВО «Северный государственный университет»",
+            "Северный государственный университет",
+            "ГБПОУ «Ольховский колледж»",
+            "Ashmoor State University",
+            "University of Ashmoor",
+            "Ashmoor County Community College",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        assert_eq!(
+            fixed(
+                "ректор ФГБОУ ВО «Северный государственный университет» сообщил",
+                &[(
+                    "Северный государственный университет",
+                    Category::Organization
+                )]
+            ),
+            ["ФГБОУ ВО «Северный государственный университет»"]
+        );
+        // An agency's letters or a grand jury inside a private name.
+        assert!(person("Nato Venn"));
+        assert!(org("NATO Logistics"));
+        assert!(org("Grand Jury Games"));
+        assert!(!org("the Ashmoor County Grand Jury"));
+        // Prose after a law's year is no citation: the company's own
+        // abbreviation stays.
+        assert_eq!(
+            fixed(
+                "Ashmoor Freight Safety Act, 2026, applies to Ashmoor Freight Services \
+                 (hereinafter “AFS”). AFS wrote.",
+                &[("AFS", Category::Organization)]
+            ),
+            ["AFS"]
+        );
+        // Only a name of initials and capitalized words is a person's: an
+        // institution named after one, or a lone period, spares nothing.
+        assert!(pack.public_body("ГБУ имени Н. О. Ветлина", Category::Person, false));
+        assert!(pack.public_body("Суд .", Category::Person, false));
+        assert!(!pack.public_body("Суд Н. О.", Category::Person, false));
+        // A body's own address and phone are marked like anyone's (#553).
+        let source = "Арбитражный суд Северной области: 190000, г. Ольховск, ул. Лесная, \
+                      д. 1, тел. +7 (812) 555-01-01";
+        assert_eq!(
+            fixed(
+                source,
+                &[
+                    ("190000, г. Ольховск, ул. Лесная, д. 1", Category::Address),
+                    ("+7 (812) 555-01-01", Category::Phone),
+                ]
+            ),
+            [
+                "190000, г. Ольховск, ул. Лесная, д. 1",
+                "+7 (812) 555-01-01"
+            ]
+        );
+    }
+
+    /// The second review of probe round 2 of #378: a sentence's end stops
+    /// a citation, an uppercase surname keeps its initials, only a
+    /// university or college itself is private, a body's word keeps all
+    /// its case forms, and a grand jury and an agency's organ go with
+    /// what follows them.
+    #[test]
+    fn second_review_of_public_bodies_round_two() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        // A sentence's end is no citation, and neither is "Act." before
+        // the next sentence's capitals: the company keeps its "AFS".
+        for source in [
+            "Ashmoor Freight Safety Act, 2026. ASHMOOR FREIGHT SERVICES \
+             (hereinafter “AFS”). AFS wrote.",
+            "Ashmoor Freight Safety Act. ASHMOOR FREIGHT SERVICES (hereinafter \
+             “AFS”). AFS wrote.",
+        ] {
+            assert_eq!(
+                fixed(source, &[("AFS", Category::Organization)]),
+                ["AFS"],
+                "{source}"
+            );
+        }
+        // An uppercase surname with initials is a person; an institution
+        // abbreviation with initials is not.
+        assert_eq!(
+            fixed("Подпись: СУД Н. О.", &[("СУД Н. О.", Category::Person)]),
+            ["СУД Н. О."]
+        );
+        assert!(pack.public_body("ГБУ Н. О.", Category::Person, false));
+        // Only a span that names a university or college itself is
+        // private; the Electoral College is public.
+        for text in [
+            "Ministry of Colleges and Universities",
+            "ГБУ «Университетская больница»",
+            "Министерство науки и университетов",
+            "Electoral College",
+            "the Electoral College",
+            "College of Policing",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            "ФГБОУ ВО «Северный государственный университет»",
+            "Северного государственного университета",
+            "University of Ashmoor",
+            "Royal College of Surgeons",
+            "Негосударственный пенсионный фонд «Кедр»",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        // A body's word goes as a person in its case forms; a capitalized
+        // surname with "-ов" stays.
+        for text in [
+            "Министерство финансов",
+            "Министерства финансов",
+            "Министерству финансов",
+            "Правительство",
+            "Правительства Северной области",
+            "Правительством",
+            "Управление",
+            "Администрацией",
+            "Прокуратуру",
+            "Прокуратурою",
+            "Росимущество",
+            "Минстрой",
+            "Законодательство",
+            "Конституцию",
+            "Кодексом",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        assert!(pack.public_body("судов общей юрисдикции", Category::Person, false));
+        for text in ["Судов", "Иван Судов", "Законов", "Приставов"] {
+            assert!(person(text), "{text}");
+        }
+        // A grand jury with its jurisdiction, and an agency's organ with
+        // an adjective, go; private names stay.
+        for text in [
+            "Grand Jury of Ashmoor County",
+            "the Grand Jury for the Southern District of Ashmoor",
+            "NATO Parliamentary Assembly",
+            "IMF Executive Board",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            "Grand Jury Games",
+            "NATO Logistics",
+            "Grand Jury Games of Ashmoor LLC",
+        ] {
+            assert!(org(text), "{text}");
+        }
+    }
+
+    /// Probe round 2 of #378 in English: more agencies and their units,
+    /// treaties, ordinances, rules and laws whose head is "Law" go, as an
+    /// organization or a person; companies and people stay.
+    #[test]
+    fn english_agencies_treaties_and_laws_of_probe_round_two() {
+        let pack = pack();
+        let org = |text: &str| pack.identifying(text, Category::Organization);
+        let person = |text: &str| pack.identifying(text, Category::Person);
+        for text in [
+            "Customs",
+            "U.S. Customs",
+            "Customs and Border Protection",
+            "Northvale Constabulary",
+            "Elko County Jail",
+            "TEXARKANA DIVISION",
+            "Utah Division of Wildlife Resources",
+            "the Board",
+            "Central Office",
+            "Secretary of State for the Home Department",
+            "Director of Public Prosecutions",
+            "Grand Jury",
+            "Ashmoor District Registry",
+            "ICAO",
+            "ICAO Council",
+            "NASA",
+            "the IMF",
+            "NATO",
+            "USFWS",
+            "Court’s",
+            "CAFTA-DR",
+            "Environmental Cooperation Agreement",
+            "Dunmere Trade Agreement",
+            "Environment Chapter",
+            "Brussels I",
+            "Lugano Conventions",
+            "Treaty of Rome",
+            "Philadelphia Fair Practices Ordinance",
+            "Federal Rules of Bankruptcy Procedure",
+            "Tex. R. App. P.",
+            "Ashmoor Executive Law",
+            "New York State Criminal Procedure Law",
+            "Debtor and Creditor Law",
+            "the FDCPA",
+            "TCPA",
+            "FLSA",
+            "SB 9",
+        ] {
+            assert!(!org(text), "{text}");
+        }
+        for text in [
+            "BLM",
+            "Customs",
+            "Northvale Constabulary",
+            "Grand Jury",
+            "Brussels I",
+        ] {
+            assert!(!person(text), "{text}");
+        }
+        for text in [
+            "Customs Brokers Inc",
+            "Treaty Oak Capital LLC",
+            "Treaty Oak Capital",
+            "Ashmoor Convention Center",
+            "Agreement Solutions LLC",
+            "Brussels Airlines",
+            "Quill Tax Law",
+            "Board Street Partners LLP",
+            "NASA Federal Credit Union",
+        ] {
+            assert!(org(text), "{text}");
+        }
+        for text in ["Nasa Quill", "Treaty Quill"] {
+            assert!(person(text), "{text}");
+        }
+        // An abbreviation defined after "hereinafter", or after a citation
+        // with commas, is the law wherever it stands.
+        assert_eq!(
+            fixed(
+                "the Ashmoor Freight Safety Act, 12 A.S.C. § 41, et seq. (hereinafter, \
+                 the “AFSA”) binds Quillon Freight LLC (“QF”). AFSA applies to QF.",
+                &[
+                    ("AFSA", Category::Organization),
+                    ("QF", Category::Organization),
+                ]
+            ),
+            ["QF"]
+        );
     }
 
     /// Pronouns, common words, religions and nationalities name no one

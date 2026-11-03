@@ -1,0 +1,20 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":476,"end":555,"label":"organization","score":0.99515146,"text":"Министерства обороны Российской Федерации"},
+    {"start":557,"end":566,"label":"organization","score":0.9937344,"text":"ЦБ РФ"},
+    {"start":219,"end":300,"label":"organization","score":0.9882221,"text":"Министерство финансов Российской Федерации"},
+    {"start":355,"end":412,"label":"organization","score":0.98384714,"text":"Арбитражный суд Энской области"},
+    {"start":88,"end":182,"label":"organization","score":0.98201376,"text":"Управление Пенсионного фонда Российской Федерации"},
+    {"start":1102,"end":1159,"label":"organization","score":0.98148894,"text":"Арбитражный суд Энской области"},
+    {"start":570,"end":626,"label":"organization","score":0.9705764,"text":"ГБУ ЭО «Кедровый дом-интернат»"},
+    {"start":2,"end":59,"label":"organization","score":0.96577066,"text":"Арбитражный суд Энской области"},
+    {"start":890,"end":898,"label":"organization","score":0.9651848,"text":"ОСФР"},
+    {"start":702,"end":837,"label":"organization","score":0.9606575,"text":"бюджет Фонда пенсионного и социального страхования Российской Федерации"},
+    {"start":849,"end":855,"label":"organization","score":0.91535604,"text":"УФК"},
+    {"start":630,"end":664,"label":"organization","score":0.9113377,"text":"ООО «Кедровый бор»"},
+    {"start":935,"end":993,"label":"organization","score":0.8720208,"text":"Президент Российской Федерации"},
+    {"start":318,"end":352,"label":"organization","score":0.84169555,"text":"ООО «Кедровый бор»"}
+  ]
+}
