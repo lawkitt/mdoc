@@ -653,6 +653,104 @@ fn a_rule_address_over_lines_is_one_span_before_more_text() {
         source
     );
 }
+/// #552: mapped spans across imported formatting are reviewable; Apply
+/// and its reversal preserve the exact source, including interior markup.
+#[test]
+fn values_across_emphasis_and_script_tags_apply_and_restore_exactly() {
+    for (source, value, category) in [
+        (
+            "See *Pellam* *Industries Inc*.",
+            "Pellam Industries Inc",
+            Category::Organization,
+        ),
+        (
+            "**Rooke & Venn** **Groundworks Ltd**",
+            "Rooke & Venn Groundworks Ltd",
+            Category::Organization,
+        ),
+        (
+            "d/b/a Quillon** **Freight Media",
+            "Quillon Freight Media",
+            Category::Organization,
+        ),
+        (
+            "_Pellam_ _Industries Inc_",
+            "Pellam Industries Inc",
+            Category::Organization,
+        ),
+        (
+            "**4410 Quarry Street** **Brindlecombe, CA 95999**",
+            "4410 Quarry Street Brindlecombe, CA 95999",
+            Category::Address,
+        ),
+        (
+            "At 4300 South 26<sup>th</sup> Street, Slocombe, PA 19999.",
+            "4300 South 26th Street, Slocombe, PA 19999",
+            Category::Address,
+        ),
+        (
+            "At 4300 South 26<sub>th</sub> Street, Slocombe, PA 19999.",
+            "4300 South 26th Street, Slocombe, PA 19999",
+            Category::Address,
+        ),
+    ] {
+        let view = view::View::new(source);
+        let start = view.text.find(value).unwrap();
+        let range = view.source_range(start..start + value.len());
+        for recognizer in [Recognizer::Model, Recognizer::Span] {
+            let mut review = Review::default();
+            let mut found = detection(range.clone(), category);
+            found.recognizer = recognizer;
+            review.ingest(source, vec![found]).unwrap();
+            assert_eq!(review.candidates().len(), 1, "{source}: {recognizer:?}");
+            assert_eq!(plan_all(&review, source).unwrap()[0].0, range);
+            let changed = crate::restore::tests::apply_pending(&mut review, source, 1);
+            assert!(
+                changed.contains(&format!("{}_1", category.token())),
+                "{changed}"
+            );
+            let ids = review.applied().iter().map(|a| a.id).collect();
+            let mut restored = changed.clone();
+            for (range, replacement) in review.reversion_edits(&changed, &ids).unwrap().iter().rev()
+            {
+                restored.replace_range(range.clone(), replacement);
+            }
+            assert_eq!(restored, source);
+        }
+    }
+}
+
+#[test]
+fn formatting_joins_do_not_allow_partial_or_structural_spans() {
+    for (source, value) in [
+        ("**bold** text", "bold** text"),
+        ("# A** **B", "# A** **B"),
+        ("At 26<sup>th</sup> Street", "26<sup>th"),
+        ("At 26<sup>th</sup> Street", "th</sup> Street"),
+        ("`26<sup>th</sup> Street`", "26<sup>th</sup> Street"),
+        ("```\n26<sup>th</sup> Street\n```", "26<sup>th</sup> Street"),
+        (
+            "At 26<sup class=\"n\">th</sup> Street",
+            "26<sup class=\"n\">th</sup> Street",
+        ),
+        ("| A | B |", "A | B"),
+    ] {
+        let start = source.find(value).unwrap();
+        assert_eq!(
+            applied(
+                source,
+                vec![detection(start..start + value.len(), Category::Address)]
+            ),
+            source
+        );
+    }
+    // The real list marker is trimmed by review, and remains in the source.
+    assert_eq!(
+        applied("* A** **B", vec![detection(0..9, Category::Organization)]),
+        "* ORG_1"
+    );
+}
+
 /// #402: a value over the lines of a table cell (`<br>`) is one span; a
 /// tag that is not a line break, or one at the span's edge, is syntax.
 #[test]

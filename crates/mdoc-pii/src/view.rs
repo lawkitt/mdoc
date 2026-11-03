@@ -9,7 +9,9 @@
 //! maps to an empty source range. Letter-spaced words read whole ("И Н Н"
 //! reads "ИНН") and footnote references drop out (`**ИНН**[^1]:` reads
 //! `**ИНН**:`). The source itself never changes: spans found in the view map back to
-//! whole source characters.
+//! whole source characters. Adjacent emphasis runs read across their gap
+//! (`*Pellam* *Industries Inc*`), and inline `<sup>`/`<sub>` tags read as
+//! their inner text (`26<sup>th</sup>` reads `26th`).
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 
@@ -141,6 +143,12 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
 /// Source ranges and what the view reads for each, in order, never
 /// overlapping.
 fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
+    let mut markup: Vec<_> = inline_markup(source)
+        .into_iter()
+        .flat_map(|m| m.edits)
+        .collect();
+    markup.sort_by_key(|(r, _)| r.start);
+    let mut markup = markup.iter().peekable();
     let mut out = Vec::new();
     let destinations = link_destinations(source);
     let opaque: Vec<Range<usize>> = destinations
@@ -158,7 +166,11 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
         while destination.next_if(|range| range.end <= at).is_some() {}
         let hidden = destination.peek().filter(|range| range.start <= at);
         while opaque.next_if(|part| part.end <= at).is_some() {}
-        if let Some(part) = opaque.next_if(|part| part.start <= at) {
+        if let Some((range, replacement)) = markup.next_if(|(range, _)| range.start == at) {
+            out.push((range.clone(), replacement.clone()));
+            while chars.next_if(|&(i, _)| i < range.end).is_some() {}
+            previous = replacement.chars().next_back().or(before);
+        } else if let Some(part) = opaque.next_if(|part| part.start <= at) {
             // "consultantplus://offline/ref=0A1B…": not the document's text.
             previous = None;
             while chars.next_if(|&(i, _)| i < part.end).is_some() {}
@@ -260,6 +272,109 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
             }
         }
     }
+    out
+}
+
+/// Formatting wholly inside a value, with the source edits that read it
+/// as text. Keeping paired tags together lets review require the whole pair.
+pub(super) struct InlineMarkup {
+    pub range: Range<usize>,
+    pub edits: Vec<(Range<usize>, String)>,
+}
+
+/// PDF imports often close and reopen emphasis between a value's words.
+/// Only that horizontal gap is a space; outer emphasis stays as written.
+/// Inline superscripts/subscripts keep their text and drop both bare tags.
+/// Code, escaped syntax, HTML blocks/attributes and link targets keep theirs.
+pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
+    let mut out = Vec::new();
+    let escaped = |at: usize| {
+        source[..at]
+            .bytes()
+            .rev()
+            .take_while(|&b| b == b'\\')
+            .count()
+            % 2
+            == 1
+    };
+    let mut at = 0;
+    while at < source.len() {
+        let rest = &source[at..];
+        let c = rest.chars().next().unwrap_or_default();
+        if matches!(c, '*' | '_')
+            && source[..at]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            && !escaped(at)
+        {
+            let run = rest.len() - rest.trim_start_matches(c).len();
+            let after = rest[run..].trim_start_matches([' ', '\t']);
+            let gap = rest[run..].len() - after.len();
+            if run <= 3
+                && gap > 0
+                && after.starts_with(&rest[..run])
+                && after[run..].starts_with(char::is_alphanumeric)
+            {
+                let end = at + run * 2 + gap;
+                out.push(InlineMarkup {
+                    range: at..end,
+                    edits: vec![(at..end, " ".into())],
+                });
+                at = end;
+                continue;
+            }
+        } else if c == '<'
+            && !escaped(at)
+            && let Some(tag) = rest.get(..5)
+            && (tag.eq_ignore_ascii_case("<sup>") || tag.eq_ignore_ascii_case("<sub>"))
+            && let Some(close) = rest[5..].find('<').map(|i| at + 5 + i)
+            && let Some(end_tag) = source.get(close..close + 6)
+            && end_tag.as_bytes().get(1) == Some(&b'/')
+            && end_tag[2..].eq_ignore_ascii_case(&tag[1..])
+            && close > at + 5
+            && !source[at + 5..close].contains(['\r', '\n', '`'])
+            && !escaped(close)
+        {
+            out.push(InlineMarkup {
+                range: at..close + 6,
+                edits: vec![
+                    (at..at + 5, String::new()),
+                    (close..close + 6, String::new()),
+                ],
+            });
+            // Inspect the inner text too, so its character references and
+            // emphasis gaps still take their own rewrites.
+        }
+        at += c.len_utf8();
+    }
+    if out.is_empty() {
+        return out;
+    }
+    let mut protected = link_destinations(source);
+    let Ok(root) = markdown::to_mdast(source, &markdown::ParseOptions::gfm()) else {
+        return Vec::new();
+    };
+    let mut stack = vec![&root];
+    while let Some(node) = stack.pop() {
+        use markdown::mdast::Node;
+        let opaque = match node {
+            Node::Code(_) | Node::InlineCode(_) => true,
+            Node::Html(html) => !["<sup>", "</sup>", "<sub>", "</sub>"]
+                .iter()
+                .any(|tag| html.value.eq_ignore_ascii_case(tag)),
+            _ => false,
+        };
+        if opaque && let Some(pos) = node.position() {
+            protected.push(pos.start.offset..pos.end.offset);
+        }
+        stack.extend(node.children().into_iter().flatten());
+    }
+    out.retain(|m| {
+        !protected
+            .iter()
+            .any(|p| p.start < m.range.end && m.range.start < p.end)
+    });
     out
 }
 
@@ -1111,6 +1226,104 @@ fn character_reference(text: &str) -> Option<(usize, String)> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn adjacent_emphasis_and_script_tags_read_as_one_value() {
+        for (source, expected, value, original) in [
+            (
+                "See *Pellam* *Industries Inc*.",
+                "See *Pellam Industries Inc*.",
+                "Pellam Industries Inc",
+                "Pellam* *Industries Inc",
+            ),
+            (
+                "**Rooke & Venn** **Groundworks Ltd**",
+                "**Rooke & Venn Groundworks Ltd**",
+                "Rooke & Venn Groundworks Ltd",
+                "Rooke & Venn** **Groundworks Ltd",
+            ),
+            (
+                "d/b/a Quillon** **Freight Media",
+                "d/b/a Quillon Freight Media",
+                "Quillon Freight Media",
+                "Quillon** **Freight Media",
+            ),
+            (
+                "**4410 Quarry Street** **Brindlecombe, CA 95999**",
+                "**4410 Quarry Street Brindlecombe, CA 95999**",
+                "4410 Quarry Street Brindlecombe, CA 95999",
+                "4410 Quarry Street** **Brindlecombe, CA 95999",
+            ),
+            (
+                "_Pellam_ _Industries Inc_",
+                "Pellam Industries Inc",
+                "Pellam Industries Inc",
+                "Pellam_ _Industries Inc",
+            ),
+            (
+                "4300 South 26<sup>th</sup> Street",
+                "4300 South 26th Street",
+                "26th Street",
+                "26<sup>th</sup> Street",
+            ),
+            (
+                "4300 South 26<SUB>th</SUB> Street",
+                "4300 South 26th Street",
+                "26th Street",
+                "26<SUB>th</SUB> Street",
+            ),
+            (
+                "At 26<sup>t&#104;</sup> Street",
+                "At 26th Street",
+                "26th Street",
+                "26<sup>t&#104;</sup> Street",
+            ),
+        ] {
+            let view = View::new(source);
+            assert_eq!(view.text, expected, "{source}");
+            let start = view.text.find(value).unwrap();
+            let range = view.source_range(start..start + value.len());
+            assert_eq!(&source[range.clone()], original, "{source}");
+            assert_eq!(&view.text[view.view_range(range)], value);
+        }
+        let source = "At 26<sup>th</sup> Street";
+        let view = View::new(source);
+        let at = view.text.find("th").unwrap();
+        assert_eq!(&source[view.source_range(at..at + 1)], "t");
+        assert_eq!(&source[view.source_range(at + 1..at + 2)], "h");
+    }
+
+    #[test]
+    fn inline_markup_keeps_markdown_structure_and_code() {
+        for source in [
+            "* real list item",
+            "# A heading",
+            "**bold** text",
+            "**a whole value**",
+            "A*\n*B",
+            "A** ** B",
+            "A**** ****B",
+            "snake_case",
+            "`26<sup>th</sup> Street`",
+            "`A** **B`",
+            "```html\n26<sup>th</sup> Street\nA** **B\n```",
+            "    26<sup>th</sup> Street\n    A** **B\n",
+            "At 26<sup class=\"n\">th</sup> Street",
+            "At 26<sup>th</sub> Street",
+            "At 26\\<sup>th</sup> Street",
+            "A\\* *B",
+            "[file](https://x.invalid/A** **B)",
+            "<span title=\"A** **B\">label</span>",
+            "| A | B |\n|---|---|\n| C | D |",
+        ] {
+            assert_eq!(View::new(source).text, source, "{source}");
+        }
+        // Normalizing text within a list, heading or cell keeps its markers.
+        assert_eq!(
+            View::new("* **A** **B**\n# *C* *D*\n| **E** **F** |").text,
+            "* **A B**\n# *C D*\n| **E F** |"
+        );
+    }
+
     /// #498: an address found whole over its own lines stays one value with
     /// text after it on its last line; any other value over two lines, or an
     /// address before a field's label, is two lines' text (#459).
@@ -1277,12 +1490,15 @@ mod tests {
         assert_eq!(View::new("Подпись: И\u{306} О Ж").text, "Подпись: ЙОЖ");
         assert_eq!(View::new("И Н Н¹: 5").text, "ИНН ¹: 5");
         assert_eq!(View::new("J R R¹ Tolkien").text, "J R R ¹ Tolkien");
+        assert_eq!(
+            View::new("**J R R** **Tolkien** and J R R\u{a0}Tolkien").text,
+            "**J R R Tolkien** and J R R\u{a0}Tolkien"
+        );
         for source in [
             // Initials and one-letter words next to a word.
             "J. R. R. Tolkien and J R R Tolkien",
             "J R R  Tolkien",
             "**J R R** Tolkien and J R R\tTolkien",
-            "**J R R** **Tolkien** and J R R\u{a0}Tolkien",
             "Smith *J R R*",
             "Я и я.",
             "D e l v a  R o s k",

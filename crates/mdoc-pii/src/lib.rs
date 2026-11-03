@@ -249,7 +249,8 @@ fn safe_span(value: &str) -> bool {
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
-/// or between the lines of an address the rule pack found whole.
+/// or between the lines of an address the rule pack found whole. Adjacent
+/// emphasis runs and paired inline `<sup>`/`<sub>` tags inside it are text too.
 ///
 /// A web address keeps its own characters (ADR 0094): a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
@@ -267,15 +268,15 @@ fn detected_span(source: &str, detection: &Detection) -> bool {
         && (url || !value.ends_with('_'))
         && !value.chars().any(|ch| forbidden.contains(ch))
         && !(url && (value.contains("](") || value.contains("][")))
-        && !outside_line_breaks(source, range).contains(['<', '>'])
+        && !outside_value_syntax(source, range).contains(['<', '>'])
         && view::wrapped_value(source, range, address)
         && plain_text_span(source, range.clone())
 }
-/// `range` of `source` without the `<br>` tags inside it.
-fn outside_line_breaks(source: &str, range: &Range<usize>) -> String {
+/// `range` of `source` without the formatting detection reads as text.
+fn outside_value_syntax(source: &str, range: &Range<usize>) -> String {
     let mut out = String::new();
     let mut at = range.start;
-    for line_break in syntax::line_breaks_in(source, range) {
+    for line_break in syntax::value_syntax_in(source, range) {
         out.push_str(&source[at..line_break.start]);
         at = line_break.end;
     }
