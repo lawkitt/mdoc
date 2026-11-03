@@ -558,6 +558,19 @@ needs `ci/android` waits for it.
 also saves the build caches the queue's hosted jobs restore. A red `main`
 stops enqueueing.
 
+**Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
+desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
+and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
+red", or comments on the open one; a green night closes it
+(`scripts/nightly-issue.sh`). Run it by hand with `gh workflow run
+nightly.yml --repo lawkitt/mdoc`.
+
+**cargo-deny.** `lint (ubuntu)` checks licences, bans and sources on every
+change, and advisories only when `Cargo.lock` or `deny.toml` changes
+(`scripts/deny-ci.sh`): a newly published advisory turns red the PR that
+brings the crate in and the nightly run, never every PR. `just deny` still
+checks everything locally.
+
 **Shadow branches.** A branch under `ci-shadow/main/` runs exactly as a
 queue commit does (`queue.yml`, the PC, `merge-gate`), without merging
 anything: for trying a change to CI itself. Its commit subjects end
