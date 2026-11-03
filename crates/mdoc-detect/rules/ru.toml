@@ -471,11 +471,11 @@ pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[
 # and 8, issue #486): "Форма № Р11001", "Форма по КНД 1111501", "Форма по
 # ОКУД 0401060", "код по ОКУД 0401060", "ОКВЭД 47.11, 47.19", "ОКТМО
 # 45382000", "КБК 18210102010011000110", "код ТН ВЭД 8471300000", a table
-# cell between the code and its value too. These codes classify a form, an
+# cell or a dash between the code and its value too ("ОКФС - 12"). These codes classify a form, an
 # activity, a place or a payment; an organization's own numbers (ОКПО,
 # ОГРН, ИНН, КПП) are no classifier's codes and stay.
 [[reference]]
-pattern = '\b[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]*(?:№|N|No\.?)[\p{Zs}\t]*\p{Alphabetic}{0,3}-?\d[\p{Alphabetic}\d.\-/]*|\b(?:[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:[Кк]од\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:формы[\p{Zs}\t]+)?(?:по[\p{Zs}\t]+)?(?:ОКУД|КНД|ОКВЭД2?|ОКПД2?|ОКОПФ|ОКФС|ОКОГУ|ОКАТО|ОКТМО|ОКВ|ОКЕИ|ОКСМ|ОКИН|ОКОФ|ОКПДТР|ОКЗ|ОКСО|КБК|ТН[\p{Zs}\t]+ВЭД(?:[\p{Zs}\t]+ЕАЭС)?)\b[\p{Zs}\t:|*_№]*\d[\d.\-]*(?:[\p{Zs}\t]*[,;][\p{Zs}\t]*\d{2}(?:\.\d{1,2}){1,3})*'
+pattern = '\b[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]*(?:№|N|No\.?)[\p{Zs}\t]*\p{Alphabetic}{0,3}-?\d[\p{Alphabetic}\d.\-/]*|\b(?:[Фф]орм\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:[Кк]од\p{Alphabetic}{0,2}[\p{Zs}\t]+)?(?:формы[\p{Zs}\t]+)?(?:по[\p{Zs}\t]+)?(?:ОКУД|КНД|ОКВЭД2?|ОКПД2?|ОКОПФ|ОКФС|ОКОГУ|ОКАТО|ОКТМО|ОКВ|ОКЕИ|ОКСМ|ОКИН|ОКОФ|ОКПДТР|ОКЗ|ОКСО|КБК|ТН[\p{Zs}\t]+ВЭД(?:[\p{Zs}\t]+ЕАЭС)?)\b[\p{Zs}\t:|*_№\-–—]*\d[\d.\-]*(?:[\p{Zs}\t]*[,;][\p{Zs}\t]*\d{2}(?:\.\d{1,2}){1,3})*'
 
 # A standard's or a building code's number is a reference, no identifier
 # (guide rule 8, issue #486): "ГОСТ Р 7.0.97-2016", "ГОСТ Р ИСО 9001-2015",

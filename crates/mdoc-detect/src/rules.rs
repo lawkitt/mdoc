@@ -4379,6 +4379,20 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
     }
 
+    /// A dash may stand between a classifier's code and its value, as a
+    /// form's table writes it (issue #486).
+    #[test]
+    fn classifier_codes_after_a_dash_are_no_identifiers() {
+        let source = "Коды: ОКФС - 61, ОКВЭД – 84.30; ИНН 7707083893.
+";
+        let raw = [
+            ("61", "tax_id"),
+            ("84.30", "tax_id"),
+            ("7707083893", "tax_id"),
+        ];
+        assert_eq!(shown(source, &raw), pairs(&[("7707083893", "TAX")]));
+    }
+
     #[test]
     fn russian_form_numbers_and_codes_are_no_identifiers() {
         let source = "   7000  2034\nИНН\n\n2990  2026  КПП  Стр. 0 0 2\n\n\
