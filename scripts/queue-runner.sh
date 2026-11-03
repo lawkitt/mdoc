@@ -403,13 +403,8 @@ kill_job() {
   local pid=$1 w
   if [ "$(platform)" = windows-x64 ] && command -v taskkill >/dev/null; then
     # Git Bash: native children (cargo.exe, rustc.exe) are not in the MSYS
-    # process group, so end each group member's Windows process tree. The
-    # job's own shell goes first: a step whose child dies can return 0, and
-    # the job would start its next step before its turn came.
-    local members
-    members=$(ps | awk -v g="$pid" 'NR > 1 { if ($1 !~ /^[0-9]+$/) $1 = ""; $0 = $0; if ($3 == g) print $4 }')
-    kill -KILL "$pid" 2>/dev/null || true
-    for w in $members; do
+    # process group, so end each group member's Windows process tree.
+    for w in $(ps | awk -v g="$pid" 'NR > 1 { if ($1 !~ /^[0-9]+$/) $1 = ""; $0 = $0; if ($3 == g) print $4 }'); do
       taskkill //F //T //PID "$w" >/dev/null 2>&1 || true
     done
   fi
