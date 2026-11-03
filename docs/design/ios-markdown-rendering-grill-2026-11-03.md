@@ -67,7 +67,8 @@ that part itself.
    while more is off screen. Candidates in cells stay tappable; Replace…
    works inside a cell. No per-row cards: they would break parallel
    bilingual columns.
-5. **Lists as desktop draws them:** `•` `◦` `▪` by depth, `1.` → `a.` →
+5. **Lists as desktop draws them:** `•` (desktop uses it at every depth;
+   the `•` `◦` `▪` asked about was a wrong assumption, corrected in the ADR), `1.` → `a.` →
    `i.` numbering (renumbered, not the source digits), hanging indent, task
    items as ☐ / ☑ that do not toggle. The rules come from the core.
 6. **Other blocks:** headings at desktop's relative sizes and spacing,

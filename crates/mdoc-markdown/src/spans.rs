@@ -389,6 +389,35 @@ fn scan_inline(
             i += n;
             continue;
         }
+        // Bold italic: ***text*** (check before bold), one construct as the
+        // reader nests it, so no stray `*` is left over either side.
+        if c == b'*'
+            && !is_backslash_escaped(b, i)
+            && b.get(i + 1..i + 3) == Some(b"**".as_slice())
+            && b.get(i + 3).is_some_and(|&n| n != b'*')
+            && let Some(close) = find3_stars(b, i + 3, end)
+        {
+            let id = *next_id;
+            *next_id += 1;
+            fmt_marker(out, i..i + 3, id);
+            scan_styled_body(
+                text,
+                i + 3,
+                close,
+                out,
+                SpanStyle {
+                    bold: true,
+                    italic: true,
+                    ..Default::default()
+                }
+                .over(base),
+                depth,
+                next_id,
+            );
+            fmt_marker(out, close..close + 3, id);
+            i = close + 3;
+            continue;
+        }
         // Bold: **text** (check before single-* italic). A `\*` (escaped)
         // opener or closer is literal text, matching the reader's CommonMark.
         if c == b'*'
@@ -991,6 +1020,24 @@ fn decode_numeric_entity(token: &str) -> Option<char> {
     char::from_u32(digits)
 }
 
+/// The start of the first unescaped `***` in `b[from..end]` that closes a
+/// bold-italic run: not inside a longer run of stars, with text before it.
+fn find3_stars(b: &[u8], from: usize, end: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 3 <= end {
+        if &b[i..i + 3] == b"***"
+            && i > from
+            && b[i - 1] != b' '
+            && !is_backslash_escaped(b, i)
+            && b.get(i + 3).is_none_or(|&n| n != b'*')
+        {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Whether the byte at `i` is escaped: preceded by an ODD number of `\`s.
 pub fn is_backslash_escaped(b: &[u8], i: usize) -> bool {
     let mut n = 0;
@@ -1187,6 +1234,24 @@ mod tests {
 
     #[test]
     fn nested_inline_styles_layer() {
+        // ***both*** is one bold-italic run with three-star markers each
+        // side (a converter writes it for a bold italic heading).
+        let line = "### ***Left blank***";
+        let mut out = Vec::new();
+        scan_line(line, 0, line.len(), &mut out);
+        let body = out
+            .iter()
+            .find(|s| &line[s.range.clone()] == "Left blank")
+            .expect("body span");
+        assert!(body.style.bold && body.style.italic);
+        assert!(
+            out.iter()
+                .any(|s| &line[s.range.clone()] == "***" && s.style.hide && s.range.start == 4)
+        );
+        assert!(
+            out.iter()
+                .any(|s| &line[s.range.clone()] == "***" && s.style.hide && s.range.start == 17)
+        );
         // **bold *italic* bold** — the inner run carries BOTH styles, the
         // gaps around it stay bold (the reader nests the same way).
         let line = "**bold *it* bold**";

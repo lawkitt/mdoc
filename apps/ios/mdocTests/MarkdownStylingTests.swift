@@ -14,7 +14,9 @@ final class MarkdownStylingTests: XCTestCase {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }()
 
-    private let styler = MarkdownStyler(traits: UITraitCollection(userInterfaceStyle: .light), selected: nil)
+    /// Show Markdown's source view; `RenderedMarkdownTests` covers the
+    /// rendered one.
+    private let styler = MarkdownStyler(traits: UITraitCollection(userInterfaceStyle: .light), selected: nil, rendered: false)
 
     /// The source text of a byte range, read as UTF-8.
     private func source(_ range: SourceRange, in text: String) -> String {
