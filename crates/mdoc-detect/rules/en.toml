@@ -753,17 +753,23 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # text, which name the case at hand's parties outside citations, decide.
 # A party is capitalised words (with periods, initials, numbers and "&"),
 # "of", "the", "ex rel." and the like between them, a legal form after a
-# comma ("Murrin Bros. 1885, Ltd") and "et al."; a sentence's first word
-# ("See Pellam") becomes part of it, which drops nothing more. "and" joins
-# no party: in "Ivo Harrow and Pellam v. Ostrand" Ivo Harrow is no party.
+# comma ("Murrin Bros. 1885, Ltd") and "et al.", in emphasis or not
+# ("*Pellam v. Ostrand*, 912 F.3d 455"). A word's period is an initial's or
+# a listed abbreviation's ("Bros.", "Cty."), so a sentence's end is no
+# party's ("… was Ivo Harrow. Pellam v. Ostrand, …"); a sentence's first
+# word ("See Pellam") becomes part of it, which drops nothing more. "and"
+# joins no party: in "Ivo Harrow and Pellam v. Ostrand" Ivo Harrow is no
+# party. A docket number's court and year follow it at once, "(Tex. App.
+# 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
+# (admitted 2020)") is none of it.
 [[reference]]
 pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket})'
-parts.party = '\p{Uppercase}[\p{Alphabetic}\x27’.\-]*(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von|ex[\p{Zs}\t]+rel\.|d/b/a|f/k/a|a/k/a|o/b/o))*[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.\-]*|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?'
+parts.party = '(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von|ex[\p{Zs}\t]+rel\.|d/b/a|f/k/a|a/k/a|o/b/o))*[\p{Zs}\t]+(?:(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
 parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
-parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*(?:slip[\p{Zs}\t]+op\.|(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+)|[^()\n]{0,40}?\([^()\n]{0,60}?(?:19|20)\d{2}\))'
+parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+|(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\))'
 roles = [
     "plaintiff", "defendant", "claimant", "respondent", "appellant", "appellee",
     "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",
@@ -772,11 +778,12 @@ roles = [
 
 # A cited case's or a cited work's short citation (#561): "Pellam, 912 F.3d
 # at 460", "Pellam, 2031 WL 1234567, at *3", "Pellam, supra", "Rooke &
-# Larkfield, supra". Its name goes like the full citation's, unless it
-# names a party of the case at hand.
+# Larkfield, supra", "*Pellam*, supra". Its name goes like the full
+# citation's, unless it names a party of the case at hand; its words are
+# the full citation's.
 [[reference]]
 pattern = '(?P<party>{party}),{s}(?:\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}(?:[\p{Zs}\t]*\d{1,9},?)?[\p{Zs}\t]+at[\p{Zs}\t]+\*?\d|supra\b)'
-parts.party = '\p{Uppercase}[\p{Alphabetic}\x27’.\-]*(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von))*[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.\-]*|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?'
+parts.party = '(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|for|de|del|der|da|di|du|la|le|van|von))*[\p{Zs}\t]+(?:(?:(?:Co|Corp|Inc|Ltd|Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|Cos|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|LLP|Co|Corp|PLC|plc)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 
 # "Id." and "Ibid." alone cite the authority before, and name no one: the
@@ -786,12 +793,13 @@ pattern = '\b(?:Id|id|Ibid|ibid)\.'
 
 # A doctrine, a warning or an equation named after a person is no one's
 # name (#506 item 5, #561): "the Miranda warnings", "the Brindle doctrine",
-# "the Navier-Stokes equations", "the Gell-Mann and Low equation". One word
-# of a name only, no possessive: "Ivo Harrow" in "the Ivo Harrow doctrine"
-# and "Harrow's principle" stay, and so do people named in prose
-# ("equations of Gell-Mann and Low", #506 item 4).
+# "the Navier-Stokes equations", "the Gell-Mann and Low equation". After
+# "the" or "a" only: "gave Pellam warnings" warns a person. One word of a
+# name only, no possessive: "Ivo Harrow" in "the Ivo Harrow doctrine" and
+# "Harrow's principle" stay, and so do people named in prose ("equations
+# of Gell-Mann and Low", #506 item 4).
 [[reference]]
-pattern = '\b{name}(?:[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+{name})?[\p{Zs}\t]+(?:doctrines?|warnings?|principles?|equations?|theorems?|deference|abstention|presumption|inequality|paradox)\b'
+pattern = '(?P<lead>\b(?:[Tt]he|[Aa]n?)[\p{Zs}\t]+){name}(?:[\p{Zs}\t]+(?:and|&)[\p{Zs}\t]+{name})?[\p{Zs}\t]+(?:doctrines?|warnings?|principles?|equations?|theorems?|deference|abstention|presumption|inequality|paradox)\b'
 parts.name = '\p{Uppercase}\p{Alphabetic}*(?:[-–]\p{Uppercase}\p{Alphabetic}*)*'
 
 # A cited work's authors or editors before its edition are part of its
@@ -805,10 +813,13 @@ parts.author = '\p{Uppercase}[\p{Alphabetic}\x27’-]+'
 # A reference list's entry names its authors by surname and initials
 # before the year: "Morvilius, M. and R. Fridell (2031)", "Quill, A. B.,
 # Harrow, I. & Rooke, T. 2031" (#489, #506 item 4). It opens its line, a
-# list marker before it or not; a name with a given name ("VALECROFT, Jorin
-# P.") is no entry.
+# list marker before it or not, and the line goes on to its source: pages,
+# a volume's issue, a journal, a press, editors, a DOI or a link ("…
+# (2031). On tests. J. Brindle Stud. 4(2), 12–30"). A name with a given name
+# ("VALECROFT, Jorin P.") is no entry, and nor is a list of people with
+# years ("Harrow, I. (1988)").
 [[reference]]
-pattern = '(?m:^)(?P<lead>[\p{Zs}\t]*(?:[-*+]|\d{1,3}\.|\[\d{1,3}\])?[\p{Zs}\t]*){surname},[\p{Zs}\t]+{initials}(?:(?:,|,?[\p{Zs}\t]+(?:and|&))[\p{Zs}\t]+(?:{initials}[\p{Zs}\t]+{surname}|{surname},[\p{Zs}\t]+{initials}))*[,.]?[\p{Zs}\t]+\(?(?:19|20)\d{2}[a-z]?\)?'
+pattern = '(?m:^)(?P<lead>[\p{Zs}\t]*(?:[-*+]|\d{1,3}\.|\[\d{1,3}\])?[\p{Zs}\t]*){surname},[\p{Zs}\t]+{initials}(?:(?:,|,?[\p{Zs}\t]+(?:and|&))[\p{Zs}\t]+(?:{initials}[\p{Zs}\t]+{surname}|{surname},[\p{Zs}\t]+{initials}))*[,.]?[\p{Zs}\t]+\(?(?:19|20)\d{2}[a-z]?\)?(?P<tail>[.,:][\p{Zs}\t]+[^\n]*?(?:\bpp?\.[\p{Zs}\t]*\d|\b\d+\(\d+\)|\b\d+[–-]\d+\b|\bdoi\b|\bPress\b|\bJournal\b|\bJ\.|\bRev\.|\b[Ee]ds?\.|https?://))'
 parts.surname = '\p{Uppercase}[\p{Alphabetic}\x27’-]+'
 parts.initials = '\p{Uppercase}\.(?:[\p{Zs}\t-]?\p{Uppercase}\.)*'
 
