@@ -73,6 +73,8 @@ struct File {
     #[serde(default)]
     never: Vec<NeverEntry>,
     #[serde(default)]
+    defined: Vec<DefinedEntry>,
+    #[serde(default)]
     context: Vec<ContextEntry>,
     #[serde(default)]
     shape: Vec<ShapeEntry>,
@@ -109,6 +111,31 @@ struct UrlEntry {
     zones: Vec<String>,
     #[serde(default)]
     public: Vec<String>,
+}
+
+/// Generic common nouns a document may define as a term for a party, a
+/// thing or a filing ("the Distributor", "the Territory", «Положение»; #390).
+/// Unlike `never` words they name no one only where the document itself
+/// defines the term (or a term made of generic words, one of them this
+/// word): a company that happens to share one is still proposed elsewhere.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DefinedEntry {
+    #[serde(rename = "match")]
+    form: Form,
+    /// For `stem`: how many letters may follow the stem.
+    ending: Option<usize>,
+    #[serde(default)]
+    words: Vec<String>,
+    /// For `stem`: endings that never count, because they make a surname
+    /// of the stem.
+    #[serde(default)]
+    not_endings: Vec<String>,
+    /// Names of filings and contract documents ("Statement", "Motion"): a
+    /// long form of generic words with one among them has an abbreviation
+    /// that names no one ("Def.'s Statement of Material Facts (“DSMF”)").
+    #[serde(default)]
+    document: bool,
 }
 
 #[derive(Deserialize)]
@@ -272,6 +299,8 @@ struct VariantsEntry {
 /// The checked pack, merged across files.
 pub(crate) struct Pack {
     never: Vec<Never>,
+    /// Generic nouns a document may define as a term (see `DefinedEntry`).
+    defined: Vec<Defined>,
     /// One per category, in the order categories first appear.
     shapes: Vec<Shape>,
     contexts: Vec<Context>,
@@ -412,6 +441,132 @@ fn bare(word: &str) -> &str {
         .unwrap_or(word)
 }
 
+/// The lowercase words of `text` as generic words are listed: `bare`, and
+/// without a final period ("Def.'s" is "def").
+fn plain_words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|word| bare(word).trim_end_matches('.').to_lowercase())
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// Words that join the generic words of a defined term ("Terms of
+/// Business", "Покупатель и Продавец").
+const JOINERS: &[&str] = &["of", "and", "&", "the", "for", "in", "и", "для"];
+
+/// Words that may stand around a quoted defined term in its brackets:
+/// "(hereinafter referred to as the “Distributor”)", «(далее по тексту –
+/// «Общество»)».
+const DEFINING: &[&str] = &[
+    "hereinafter",
+    "hereafter",
+    "herein",
+    "referred",
+    "to",
+    "as",
+    "the",
+    "a",
+    "an",
+    "each",
+    "collectively",
+    "individually",
+    "together",
+    "called",
+    "and",
+    "or",
+    "jointly",
+    "severally",
+    "defined",
+    "being",
+    "also",
+    "respectively",
+    "singular",
+    "plural",
+    "now",
+    "sometimes",
+    "далее",
+    "по",
+    "тексту",
+    "в",
+    "дальнейшем",
+    "именуемое",
+    "именуемый",
+    "именуемая",
+    "именуемые",
+    "также",
+    "сокращенно",
+    "сокращённо",
+    "или",
+    "и",
+];
+
+/// The terms `text` defines, as written: a quoted term in brackets after
+/// "hereinafter", "the" or nothing ("(the “Distributor”)", "(“Townhouse”)",
+/// «(далее – «Общество»)»), a bare capitalised one after "hereinafter" or
+/// «далее» ("(hereinafter the Distributor)", «(далее – Положение)»), a
+/// party named «именуемое в дальнейшем «Поставщик»», and a quoted term its
+/// own definition opens with (“Territory” means …, in bold too).
+fn definitions(text: &str) -> Vec<String> {
+    static PATTERNS: OnceLock<[Regex; 6]> = OnceLock::new();
+    let [bracket, quoted, hereinafter, further, named, means] = PATTERNS.get_or_init(|| {
+        let compile = |pattern: &str| Regex::new(&rust_classes(pattern)).expect("definition");
+        [
+            compile(r"[(\[]([^()\[\]\n]{2,200})[)\]]"),
+            compile(r"[“\x22«]([^”\x22»\n]{2,60})[”\x22»]"),
+            compile(concat!(
+                r"^\s*[Hh]ereinafter\b[\s,:]*(?:(?:referred\s+to\s+as|called)\b[\s,:]*)?(?:the\s+)?",
+                r"(\p{Uppercase}[\p{Alphabetic}'’-]*(?:\s+\p{Uppercase}[\p{Alphabetic}'’-]*){0,3})\s*$",
+            )),
+            compile(concat!(
+                r"^\s*(?:[Дд]алее(?:\s+по\s+тексту)?|[Вв]\s+дальнейшем(?:\s+по\s+тексту)?)",
+                r"\s*[-–—:,]?\s*(\p{Uppercase}\p{Alphabetic}+(?:\s+\p{Alphabetic}+){0,2})\s*$",
+            )),
+            compile(concat!(
+                r"(?i:именуем)\p{Alphabetic}*\s+(?i:в\s+дальнейшем|далее)(?:\s+по\s+тексту)?",
+                r"\s*[-–—,:]?\s*[«\x22“]([^»\x22”\n]{2,60})[»\x22”]",
+            )),
+            compile(concat!(
+                r"[“\x22]([^”\x22\n]{2,60})[”\x22]\*{0,2}\s+",
+                r"(?:shall\s+)?(?:means?|has\s+the\s+meaning|refers?\s+to)\b",
+            )),
+        ]
+    });
+    let mut terms = Vec::new();
+    for found in bracket.captures_iter(text) {
+        let inside = &found[1];
+        let quotes: Vec<&str> = quoted
+            .captures_iter(inside)
+            .filter_map(|quote| quote.get(1))
+            .map(|quote| quote.as_str())
+            .collect();
+        if quotes.is_empty() {
+            for pattern in [hereinafter, further] {
+                if let Some(term) = pattern.captures(inside).and_then(|c| c.get(1)) {
+                    terms.push(term.as_str().to_owned());
+                }
+            }
+            continue;
+        }
+        let lead = quoted.replace_all(inside, " ");
+        if lead
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|word| !word.is_empty())
+            .all(|word| DEFINING.contains(&word.to_lowercase().as_str()))
+        {
+            terms.extend(quotes.into_iter().map(str::to_owned));
+        }
+    }
+    for pattern in [named, means] {
+        terms.extend(
+            pattern
+                .captures_iter(text)
+                .filter_map(|found| found.get(1))
+                .map(|term| term.as_str().to_owned()),
+        );
+    }
+    terms
+}
+
 /// Whether `text` ends with a single capital letter on its own, an
 /// initial whose period belongs to the name ("Белявская О. М", "Smith J").
 fn ends_with_initial(text: &str) -> bool {
@@ -435,6 +590,12 @@ struct Context {
     only_guessed: Vec<Category>,
 }
 
+/// A `defined` entry: its words, as a `never` entry holds them.
+struct Defined {
+    list: Never,
+    document: bool,
+}
+
 struct Never {
     form: Form,
     ending: usize,
@@ -452,7 +613,12 @@ struct Never {
 impl Never {
     /// Whether lowercase `word` is one of this entry's words.
     fn has(&self, word: &str) -> bool {
-        self.words.iter().any(|listed| match self.form {
+        self.listed(word).is_some()
+    }
+
+    /// The index of the entry's word that lowercase `word` is, or a form of.
+    fn listed(&self, word: &str) -> Option<usize> {
+        self.words.iter().position(|listed| match self.form {
             Form::Whole => word == listed,
             Form::Plural => word == listed || word.strip_suffix('s') == Some(listed),
             Form::Stem => word.strip_prefix(listed.as_str()).is_some_and(|ending| {
@@ -499,6 +665,7 @@ impl Pack {
     fn load(files: &[(&str, &str)]) -> Result<Self, String> {
         let mut pack = Self {
             never: Vec::new(),
+            defined: Vec::new(),
             shapes: Vec::new(),
             contexts: Vec::new(),
             spans: Vec::new(),
@@ -508,6 +675,7 @@ impl Pack {
             private: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
+        let mut defined_seen = std::collections::HashSet::new();
         for (name, source) in files {
             let file: File = toml::from_str(source).map_err(|e| format!("{name}: {e}"))?;
             for (index, entry) in file.never.into_iter().enumerate() {
@@ -609,6 +777,49 @@ impl Pack {
                     surname_endings: entry.surname_endings,
                     unless_named: entry.unless_named,
                     unless_titled: entry.unless_titled,
+                });
+            }
+            for (index, entry) in file.defined.into_iter().enumerate() {
+                let at = |problem: String| format!("{name}: defined #{}: {problem}", index + 1);
+                let ending = match (entry.form, entry.ending) {
+                    (Form::Stem, Some(ending)) if ending > 0 => ending,
+                    (Form::Stem, _) => return Err(at("a stem needs an ending above 0".into())),
+                    (Form::Pattern, _) => return Err(at("a pattern entry takes no words".into())),
+                    (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
+                    (_, None) => 0,
+                };
+                if entry.form != Form::Stem && !entry.not_endings.is_empty() {
+                    return Err(at("only a stem takes not_endings".into()));
+                }
+                if entry.words.is_empty() {
+                    return Err(at("no words".into()));
+                }
+                for word in &entry.words {
+                    if word.is_empty() || word.chars().any(char::is_whitespace) {
+                        return Err(at(format!("{word:?} is not one word")));
+                    }
+                    if *word != word.to_lowercase() {
+                        return Err(at(format!("{word:?} is not lowercase")));
+                    }
+                    if !defined_seen.insert((entry.form, word.clone())) {
+                        return Err(at(format!("{word:?} is listed twice")));
+                    }
+                }
+                pack.defined.push(Defined {
+                    list: Never {
+                        form: entry.form,
+                        ending,
+                        words: entry.words,
+                        patterns: Vec::new(),
+                        last_word_of: Vec::new(),
+                        anywhere_in: Vec::new(),
+                        not_endings: entry.not_endings,
+                        person_endings: Vec::new(),
+                        surname_endings: Vec::new(),
+                        unless_named: false,
+                        unless_titled: false,
+                    },
+                    document: entry.document,
                 });
             }
             for (index, entry) in file.shape.into_iter().enumerate() {
@@ -1274,6 +1485,7 @@ impl Pack {
             };
             let long = &text[words[from].0..title.end()];
             let name = !self.public_body(long, Category::Organization, false)
+                && !self.generic_filing(long)
                 && (self.legal_form(long)
                     || self.shaped_named(long, Category::Organization, &|_| false));
             if name {
@@ -1284,6 +1496,88 @@ impl Pack {
         }
         unnamed.retain(|short| !other.contains(short));
         unnamed
+    }
+
+    /// The `defined` word that lowercase `word` is, as the entry's and the
+    /// word's indexes.
+    fn defined_word(&self, word: &str) -> Option<(usize, usize)> {
+        self.defined
+            .iter()
+            .enumerate()
+            .find_map(|(entry, defined)| defined.list.listed(word).map(|at| (entry, at)))
+    }
+
+    /// Whether lowercase `word` is generic wherever it stands: a joiner, or
+    /// a role or category `never` word that no person's name is ("Party",
+    /// "Buyer", "Bank"; not "French" or "Program").
+    fn generic_anywhere(&self, word: &str) -> bool {
+        JOINERS.contains(&word) || self.never(word) && !self.common(word)
+    }
+
+    /// The `defined` words `text` defines as terms (#390): each word of a
+    /// term whose every word is generic ("the “Distributor”", "the
+    /// “Franchised Business”", «(далее – Положение)»). A term with a coined
+    /// or real word ("the “Kew Project”", “Quillon”, “Fox”) defines none.
+    fn defined_terms(&self, text: &str) -> std::collections::HashSet<(usize, usize)> {
+        let mut found = std::collections::HashSet::new();
+        if self.defined.is_empty() {
+            return found;
+        }
+        for term in definitions(text) {
+            let mut listed = Vec::new();
+            let words = plain_words(&term);
+            let generic = !words.is_empty()
+                && words.iter().all(|word| match self.defined_word(word) {
+                    Some(at) => {
+                        listed.push(at);
+                        true
+                    }
+                    None => self.generic_anywhere(word),
+                });
+            if generic {
+                found.extend(listed);
+            }
+        }
+        found
+    }
+
+    /// Whether `text`, an organization span, is wholly generic words, one
+    /// of them a term the document `defined` (#390): "Distributor",
+    /// "the Sponsor’s", "RESELLER AGREEMENT", «Положение». A word that is
+    /// not generic, a legal form included, makes it a name.
+    fn defined_generic(
+        &self,
+        text: &str,
+        defined: &std::collections::HashSet<(usize, usize)>,
+    ) -> bool {
+        let mut known = false;
+        let words = plain_words(text);
+        !words.is_empty()
+            && words.iter().all(|word| match self.defined_word(word) {
+                Some(at) if defined.contains(&at) => {
+                    known = true;
+                    true
+                }
+                // A document's name is generic beside a defined term
+                // ("RESELLER AGREEMENT").
+                Some((entry, _)) if self.defined[entry].document => true,
+                _ => self.generic_anywhere(word),
+            })
+            && known
+    }
+
+    /// Whether `long`, the words before an abbreviation's bracket, names a
+    /// filing or document in generic words only ("Statement of Uncontested
+    /// Material Fact", "Motion for Summary Judgment"): a `document` word
+    /// among them, and no word that is not generic.
+    fn generic_filing(&self, long: &str) -> bool {
+        let words = plain_words(long);
+        words.iter().any(|word| {
+            self.defined_word(word)
+                .is_some_and(|(entry, _)| self.defined[entry].document)
+        }) && words
+            .iter()
+            .all(|word| self.defined_word(word).is_some() || self.generic_anywhere(word))
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -1427,6 +1721,7 @@ impl Pack {
         }
         self.person_documents(source, detections);
         let abbreviations = self.unnamed_abbreviations(&view.text);
+        let defined = self.defined_terms(&view.text);
         let named = self.named_words(view, detections);
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
@@ -1446,6 +1741,9 @@ impl Pack {
                     titled,
                 )
                 && !field_code(source, d)
+                && !(d.category == Category::Organization
+                    && !defined.is_empty()
+                    && self.defined_generic(text, &defined))
                 && !(matches!(d.category, Category::Organization | Category::Person)
                     && abbreviations.contains(
                         text.trim_matches(|c: char| !c.is_alphanumeric())
@@ -3777,6 +4075,269 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "Quillon Freight LLC",
                 "St. Louis",
             ]
+        );
+    }
+
+    /// Every whole-word occurrence of each text in `spans`, as a model
+    /// would tag them (earlier texts first, none inside another), after
+    /// the span fixes.
+    fn fixed_every(source: &str, spans: &[(&str, Category)]) -> Vec<String> {
+        let mut detections: Vec<Detection> = Vec::new();
+        for (text, category) in spans {
+            for (start, _) in source.match_indices(text) {
+                let before = source[..start].chars().next_back();
+                let after = source[start + text.len()..].chars().next();
+                let end = start + text.len();
+                if before.is_some_and(char::is_alphanumeric)
+                    || after.is_some_and(char::is_alphanumeric)
+                    || detections
+                        .iter()
+                        .any(|d| d.range.start < end && start < d.range.end)
+                {
+                    continue;
+                }
+                detections.push(Detection {
+                    range: start..start + text.len(),
+                    category: *category,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                });
+            }
+        }
+        detections.sort_by_key(|d| d.range.start);
+        pack().fix_spans(source, &mdoc_pii::view::View::new(source), &mut detections);
+        detections
+            .into_iter()
+            .map(|d| source[d.range].to_owned())
+            .collect()
+    }
+
+    /// The terms a document defines, in every form of definition (#390).
+    #[test]
+    fn definitions_are_found_in_brackets_after_hereinafter_and_in_bold() {
+        for (source, terms) in [
+            (
+                "Larkfield LLC (the “Distributor”) sells",
+                vec!["Distributor"],
+            ),
+            (
+                "Larkfield LLC (the \"Distributor\") sells",
+                vec!["Distributor"],
+            ),
+            ("the land (“Townhouse”) is let", vec!["Townhouse"]),
+            (
+                "Larkfield LLC (hereinafter referred to as the “Buyer”)",
+                vec!["Buyer"],
+            ),
+            ("Larkfield LLC (hereinafter, “Buyer”)", vec!["Buyer"]),
+            (
+                "Larkfield LLC and Quillon LLC (collectively, the “Parties”)",
+                vec!["Parties"],
+            ),
+            ("Larkfield LLC (each a “Party”)", vec!["Party"]),
+            (
+                "the Kew Project (the “Kew Project” or the “Project”)",
+                vec!["Kew Project", "Project"],
+            ),
+            (
+                "Larkfield LLC (hereinafter the Distributor)",
+                vec!["Distributor"],
+            ),
+            (
+                "**“Franchised Business”** means the shops",
+                vec!["Franchised Business"],
+            ),
+            ("“Territory” has the meaning in clause 2", vec!["Territory"]),
+            ("ООО «Север» (далее – «Общество»)", vec!["Общество"]),
+            (
+                "ООО «Север» (далее по тексту – Положение)",
+                vec!["Положение"],
+            ),
+            (
+                "ООО «Север», именуемое в дальнейшем «Поставщик», и",
+                vec!["Поставщик"],
+            ),
+            // Not a definition: a reference, a plain bracket, a quotation.
+            ("as stated (see “Exhibit A”)", vec![]),
+            ("the network (Network) runs", vec![]),
+            ("he said “Distributor” twice", vec![]),
+        ] {
+            assert_eq!(definitions(source), terms, "{source}");
+        }
+    }
+
+    /// A term the document defines in generic words is no organization,
+    /// wherever it stands, in any of its forms; the parties' names and a
+    /// term with a coined word stay (#390).
+    #[test]
+    fn defined_terms_of_generic_words_are_no_organizations() {
+        let source = "This agreement is between Larkfield Supply LLC (the “Distributor”) \
+                      and Quillon Freight LLC (the “Sponsor”). The Distributor sells in \
+                      the Territory (the “Territory”); the Sponsor’s Franchised Business \
+                      (the “Franchised Business”) funds the Kew Project (the “Project”). \
+                      The Project ends when the Distributor leaves the Territory. \
+                      Quillon (the “Quillon Group”) agrees.";
+        assert_eq!(
+            fixed_every(
+                source,
+                &[
+                    ("Larkfield Supply LLC", Category::Organization),
+                    ("Quillon Freight LLC", Category::Organization),
+                    ("Distributor", Category::Organization),
+                    ("Sponsor’s", Category::Organization),
+                    ("Sponsor", Category::Organization),
+                    ("Territory", Category::Organization),
+                    ("Franchised Business", Category::Organization),
+                    ("Kew Project", Category::Organization),
+                    ("Project", Category::Organization),
+                    ("Quillon", Category::Organization),
+                ]
+            ),
+            [
+                "Larkfield Supply LLC",
+                "Quillon Freight LLC",
+                "Quillon",
+                "Quillon"
+            ]
+        );
+        // Bold quotes, other terms and the title made of them.
+        let source = "RESELLER AGREEMENT\n\nLarkfield Supply LLC (the “Reseller”) buys from \
+                      Quillon Freight LLC. The Reseller pays. **“Concessionaire”** means a \
+                      shop; each Concessionaire reports to the Reseller. The Estate (the \
+                      “Estate”) is let by the Reseller’s Affiliates.";
+        assert_eq!(
+            fixed_every(
+                source,
+                &[
+                    ("RESELLER AGREEMENT", Category::Organization),
+                    ("Larkfield Supply LLC", Category::Organization),
+                    ("Quillon Freight LLC", Category::Organization),
+                    ("Reseller", Category::Organization),
+                    ("Concessionaire", Category::Organization),
+                    ("Estate", Category::Organization),
+                    ("Affiliates", Category::Organization),
+                ]
+            ),
+            ["Larkfield Supply LLC", "Quillon Freight LLC", "Affiliates"]
+        );
+        // The same words without a definition are proposed as before.
+        assert_eq!(
+            fixed_every(
+                "The Distributor sells in the Territory.",
+                &[("Distributor", Category::Organization)]
+            ),
+            ["Distributor"]
+        );
+        // A person's span is never dropped for it.
+        assert_eq!(
+            fixed_every(
+                "Larkfield LLC (the “Estate”) pays Mr Estate.",
+                &[("Estate", Category::Person)]
+            ),
+            ["Estate", "Estate"]
+        );
+    }
+
+    /// A defined short form of a real name stays an organization: a coined
+    /// word, a ticker, a surname firm, a company's own name; and a generic
+    /// word with a name beside it or a legal form is a name (#390, #506).
+    #[test]
+    fn real_short_names_stay_when_defined() {
+        let source = "Quillon Freight LLC (“Quillon”), Harbour Chase Bank Ltd (the “Chase”),                       Berkshire Hills Bancorp (“BHLB”), Twentieth Century Fox (“Fox”) and                       Vell & Ostrand LLP (the “Vell”) met Larkfield Supply LLC (the                       “Distributor”). Quillon, Chase, BHLB, Fox and Vell sued the                       Distributor. Distributor Quillon and Distributor LLC agreed.";
+        let names = [
+            "Distributor Quillon",
+            "Distributor LLC",
+            "Quillon Freight LLC",
+            "Harbour Chase Bank Ltd",
+            "Twentieth Century Fox",
+            "Vell & Ostrand LLP",
+            "Larkfield Supply LLC",
+            "Quillon",
+            "Chase",
+            "BHLB",
+            "Fox",
+            "Vell",
+            "Distributor",
+        ];
+        let found = fixed_every(source, &names.map(|name| (name, Category::Organization)));
+        let count = |name: &str| found.iter().filter(|f| *f == name).count();
+        // Each short form is proposed where it is defined and where it is
+        // used; the defined generic word nowhere alone.
+        for (name, times) in [
+            ("Quillon Freight LLC", 1),
+            ("Harbour Chase Bank Ltd", 1),
+            ("Twentieth Century Fox", 1),
+            ("Vell & Ostrand LLP", 1),
+            ("Larkfield Supply LLC", 1),
+            ("Distributor Quillon", 1),
+            ("Distributor LLC", 1),
+            ("Quillon", 2),
+            ("Chase", 2),
+            ("BHLB", 2),
+            ("Fox", 2),
+            ("Vell", 2),
+            ("Distributor", 0),
+        ] {
+            assert_eq!(count(name), times, "{name}: {found:?}");
+        }
+    }
+
+    /// A filing's abbreviation, defined after a long form of generic words,
+    /// names no one; a company's does (#390).
+    #[test]
+    fn abbreviations_of_generic_filings_are_no_organizations() {
+        let source = "Def.’s Statement of Uncontested Material Fact (“DSUMF”) ¶ 2 and \
+                      Pl.’s Motion for Summary Judgment (“PMSJ”) ¶ 3. DSUMF ¶ 4; PMSJ. \
+                      Quillon Freight LLC (“QF”) and Berkshire Hills Bancorp (“BHB”) \
+                      met; QF and BHB agreed.";
+        assert_eq!(
+            fixed_every(
+                source,
+                &[
+                    ("DSUMF", Category::Organization),
+                    ("PMSJ", Category::Organization),
+                    ("QF", Category::Organization),
+                    ("BHB", Category::Organization),
+                ]
+            ),
+            ["QF", "BHB", "QF", "BHB"]
+        );
+    }
+
+    /// The Russian shape: «(далее – <Слово>)», «именуемое в дальнейшем
+    /// «Поставщик»», any case form; a short name stays (#390).
+    #[test]
+    fn russian_defined_terms_are_no_organizations() {
+        let source = "Утверждено Положение о закупках (далее – Положение); ООО «Кедровое» \
+                      (далее – Учреждение). Учреждение возражает против Положения, \
+                      Учреждению отказано. ООО «Север» (далее – «Север»), именуемое в \
+                      дальнейшем «Займодавец», передало заём. Займодавца известили, \
+                      Займодавцу выплатили; Север согласен.";
+        assert_eq!(
+            fixed_every(
+                source,
+                &[
+                    ("Положение", Category::Organization),
+                    ("Положения", Category::Organization),
+                    ("Учреждение", Category::Organization),
+                    ("Учреждению", Category::Organization),
+                    ("Займодавец", Category::Organization),
+                    ("Займодавца", Category::Organization),
+                    ("Займодавцу", Category::Organization),
+                    ("ООО «Кедровое»", Category::Organization),
+                    ("ООО «Север»", Category::Organization),
+                    ("Север", Category::Organization),
+                ]
+            ),
+            ["ООО «Кедровое»", "ООО «Север»", "Север", "Север"]
+        );
+        // Not defined: a company's name with the same word stays.
+        assert_eq!(
+            fixed_every(
+                "Положение утверждено ООО «Север».",
+                &[("Положение", Category::Organization)]
+            ),
+            ["Положение"]
         );
     }
 
