@@ -4,7 +4,7 @@
 # the emulator, light, dark and at the largest font, and the screenshots are
 # copied into the folder (tablet ones prefixed "tablet-"). Boots the emulator
 # if needed (scripts/android-emulator.sh) and needs the core built
-# (just android-core). Not part of local CI. Windows x64.
+# (just android-core). Not part of CI. Windows x64.
 source "$(dirname "$0")/lib.sh"
 
 out=${1:?usage: scripts/android-survey.sh <output folder> [phone|tablet]}

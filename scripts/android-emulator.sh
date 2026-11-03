@@ -5,7 +5,7 @@
 # until Android has booted and prints its adb serial (ADR 0089). The virtual
 # devices live in $(android_home)/avd and are written here on first use: a
 # Pixel 8-sized phone (emulator-5554), a Pixel Tablet-sized tablet
-# (emulator-5556) and local CI's own phone (emulator-5560), so a CI run
+# (emulator-5556) and CI's own phone (emulator-5560), so a CI run
 # never tests on an emulator someone is using. Already running, it checks
 # the device is that AVD with 16 KB pages and prints the serial.
 # `adb -s <serial> emu kill` stops it. Windows x64.

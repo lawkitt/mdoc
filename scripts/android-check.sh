@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Usage: scripts/android-check.sh
-# The Android job (ADR 0089), the Windows PC's local/android (ADR 0091), when
+# The Android job (ADR 0089), ci/android on the PC's queue runner (ADR 0095), when
 # the commit touches the android area of scripts/ci-areas.txt (on a merge
 # ref, against its main): the Android core, the app's JVM parity and unit
 # tests, the app and its instrumented tests built, then those tests on CI's
 # own emulator (emulator-5560), which is stopped afterwards if this run
 # booted it. MDOC_ANDROID_JOB=always or never
-# overrides the area check (local CI sets always: it has already decided).
+# overrides the area check (the queue runner sets always: it has already
+# decided).
 # Windows x64.
 source "$(dirname "$0")/lib.sh"
 

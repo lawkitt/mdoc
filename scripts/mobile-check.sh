@@ -2,14 +2,13 @@
 # Usage: scripts/mobile-check.sh [--ffi | --ios]
 # The mobile check (ADR 0085, ADR 0091), macOS only. `--ffi`: `cargo check`
 # of mdoc-ffi for iOS (device and Simulator) and Android, so desktop-only
-# code cannot creep into the core; the Mac's local CI runs it in
-# local/macos. `--ios`: the iOS job, when the commit touches the ios area of
+# code cannot creep into the core; ci/macos runs it. `--ios`: the iOS job, when the commit touches the ios area of
 # scripts/ci-areas.txt (on a merge ref, against its main): the core, the app
 # and its tests on a Simulator of the pinned Xcode and runtime
-# (scripts/tools.env), shut down afterwards if this run booted it; the Mac's
-# local CI runs it as local/ios. Neither: both, as `just mobile`.
-# MDOC_IOS_JOB=always or never overrides the area check (local CI sets
-# always: it has already decided).
+# (scripts/tools.env), shut down afterwards if this run booted it; ci/ios
+# runs it (ADR 0095). Neither: both, as `just mobile`.
+# MDOC_IOS_JOB=always or never overrides the area check (ci/ios sets
+# always: the queue has already decided).
 source "$(dirname "$0")/lib.sh"
 
 [ "$(uname -s)" = Darwin ] || die "the mobile check runs on macOS"

@@ -3,7 +3,7 @@
 # every screen, light and dark, downscaled to 1000 px high, into a folder.
 #   scripts/ios-survey.sh "iPhone 17" docs/evidence/ios-app/<date>-survey
 # Needs the core built (`just ios-core`). Shuts the Simulators down after,
-# since a booted one can push the Mac into swap and stall local CI.
+# since a booted one can push the Mac into swap.
 set -euo pipefail
 cd "$(dirname "$0")/.." # repo root
 DEVICE="${1:-iPhone 17}"
