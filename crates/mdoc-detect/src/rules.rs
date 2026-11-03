@@ -248,10 +248,11 @@ struct SpanFix {
 }
 
 impl SpanFix {
-    /// `range` without its `trim` words or phrases at either edge (a comma
-    /// before a trailing one goes with it) and its `strip_end` characters.
+    /// `range` without its `trim` words or phrases at either edge (a word's
+    /// final period or colon with it; a comma before a trailing one goes
+    /// with it) and its `strip_end` characters.
     fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
-        let plain = |word: &str| word.strip_suffix('.').unwrap_or(word).to_lowercase();
+        let plain = |word: &str| word.strip_suffix(['.', ':']).unwrap_or(word).to_lowercase();
         let listed = |word: &str| self.trim.contains(&plain(word));
         let phrases: Vec<Vec<&str>> = self
             .trim
@@ -4333,6 +4334,290 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
         assert!(!pack().identifying("Anor", Category::Person));
         assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
+    /// Russian form numbers, classifier codes, standards, a form's barcode
+    /// line and waybill numbers are no identifiers; bank details, tax,
+    /// registration and passport numbers and phones beside them stay
+    /// (guide rules 6 and 8, issue #486).
+    /// An account's label comes off its span, a colon with it, and a label
+    /// the trim takes no part of still gives its value ("acct"); a value's
+    /// own final letters stay, and a case number wrapped over lines is no
+    /// account (guide rule 6, issue #486).
+    #[test]
+    fn account_labels_stay_outside_bank_spans() {
+        let source = "Pay to acct 1234567890 or IBAN: GB47 KELD 6012 4483 7196 02;             ref LU12 3456 7890 1234 ACCT. Claim No.
+6001842
+/
+2026 is pending.
+";
+        let raw = [
+            ("acct 1234567890", "bank_account"),
+            ("IBAN: GB47 KELD 6012 4483 7196 02", "iban"),
+            ("LU12 3456 7890 1234 ACCT", "bank_account"),
+            (
+                "6001842
+/
+2026",
+                "bank_account",
+            ),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("1234567890", "BANK"),
+                ("GB47 KELD 6012 4483 7196 02", "BANK"),
+                ("LU12 3456 7890 1234 ACCT", "BANK"),
+            ])
+        );
+        let source = "Плательщик перечисляет на р/с: 40702810900000004711.
+";
+        let raw = [("р/с: 40702810900000004711", "bank_account")];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[("40702810900000004711", "BANK")])
+        );
+    }
+
+    /// A dash may stand between a classifier's code and its value, as a
+    /// form's table writes it (issue #486).
+    #[test]
+    fn classifier_codes_after_a_dash_are_no_identifiers() {
+        let source = "Коды: ОКФС - 61, ОКВЭД – 84.30; ИНН 7707083893.
+";
+        let raw = [
+            ("61", "tax_id"),
+            ("84.30", "tax_id"),
+            ("7707083893", "tax_id"),
+        ];
+        assert_eq!(shown(source, &raw), pairs(&[("7707083893", "TAX")]));
+    }
+
+    #[test]
+    fn russian_form_numbers_and_codes_are_no_identifiers() {
+        let source = "   7000  2034\nИНН\n\n2990  2026  КПП  Стр. 0 0 2\n\n\
+            Форма по КНД 1111501   Форма № Р11001\n\n\
+            Платёжное поручение, форма по ОКУД 0401060, ОКВЭД 47.11, 47.19, \
+            ОКТМО 45382000, КБК 18210102010011000110, код ТН ВЭД 8471300000.\n\n\
+            Помещение соответствует СП 2.13130.2020, ГОСТ Р 7.0.97-2016 и СНиП 2.01.07-85*.\n\n\
+            Груз принят по ТН № 47 от 03.02.2026, ТТН № 112 и товарной накладной № 58, \
+            счёт-фактура № 123/4.\n\n\
+            Получатель: ООО «Вега», ИНН 7707083893, КПП 770701001, ОКПО 12345678, \
+            р/с 40702810900000001234 в банке, БИК 044525225, к/с 30101810400000000225, \
+            расчётный счёт № 40702810500000009876, паспорт 4510 123456, \
+            тел. 8-800-555-35-35, +7 (495) 123-45-67.\n";
+        let raw = [
+            ("7000  2034", "tax_id"),
+            ("2990  2026", "bank_account"),
+            ("1111501", "tax_id"),
+            ("Р11001", "tax_id"),
+            ("0401060", "bank_account"),
+            ("47.11", "tax_id"),
+            ("45382000", "tax_id"),
+            ("18210102010011000110", "bank_account"),
+            ("8471300000", "tax_id"),
+            ("2.13130.2020", "bank_account"),
+            ("7.0.97-2016", "tax_id"),
+            ("2.01.07-85", "tax_id"),
+            ("ТН № 47", "bank_account"),
+            ("112", "bank_account"),
+            ("58", "bank_account"),
+            ("123/4", "tax_id"),
+            ("7707083893", "tax_id"),
+            ("770701001", "tax_id"),
+            ("12345678", "tax_id"),
+            ("р/с 40702810900000001234", "bank_account"),
+            ("044525225", "bank_account"),
+            ("к/с 30101810400000000225", "bank_account"),
+            ("расчётный счёт № 40702810500000009876", "bank_account"),
+            ("4510 123456", "passport_number"),
+            ("8-800-555-35-35", "phone_number"),
+            ("+7 (495) 123-45-67", "phone_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("7707083893", "TAX"),
+                ("770701001", "TAX"),
+                ("12345678", "TAX"),
+                ("40702810900000001234", "BANK"),
+                ("044525225", "BANK"),
+                ("30101810400000000225", "BANK"),
+                ("40702810500000009876", "BANK"),
+                ("4510 123456", "IDENTITY"),
+                ("8-800-555-35-35", "PHONE"),
+                ("+7 (495) 123-45-67", "PHONE"),
+            ])
+        );
+        // A joint venture's name after «СП» stays; so does a number after
+        // a barcode-like group that is no barcode line.
+        assert_eq!(
+            shown(
+                "Арендатор: СП «Восход», тел. 4951 2345 678.",
+                &[
+                    ("СП «Восход»", "organization"),
+                    ("4951 2345 678", "phone_number")
+                ]
+            ),
+            pairs(&[("СП «Восход»", "ORG"), ("4951 2345 678", "PHONE")])
+        );
+        // An account typed with one space on its own line is no barcode,
+        // in either language.
+        for source in [
+            "Account number:\n1234 5678\n",
+            "Номер счёта:\n1234 5678\nИНН\n",
+        ] {
+            assert_eq!(
+                shown(source, &[("1234 5678", "bank_account")]),
+                pairs(&[("1234 5678", "BANK")]),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// English patent and trademark schedules, labelled patent and form
+    /// numbers, industry codes, a link's query token, a page footer and a
+    /// toll-free prefix are no identifiers; an IBAN, a VAT number, a
+    /// company number, a toll-free number and a phone stay (guide rules 6
+    /// and 8, issue #486).
+    #[test]
+    fn english_patent_form_and_page_numbers_are_no_identifiers() {
+        let source = "COUNTRY  APP NO.  FILING DATE  PATENT NUMBER  ISSUE DATE\n\
+            AU  2099241803  30-Apr-29  2099241803  26-Sep-33\n\
+            DE  DE 60 2090 031 448.0  29-Nov-31  2 424 911  23-Mar-36\n\
+            EP  9739191.6  30-Apr-29  2286018  11-Jun-34\n\
+            US  12/432,845  30-Apr-29  8,420,710  16-Apr-33\n\
+            US  SIGNATURE SCRAPE  Registered  86920111  25-Feb-36  5187924\n\
+            CA  SIGNATURE SCRAPE  Published  1769731  26-Feb-36\n\n\
+            Patent US 99/123,456 (AU 2099000111), trademark Reg. No. 9876543, \
+            form STD009X.UK, NAICS 999999; see https://example.invalid/p?srsltid=AbCd_123xYz \
+            or call the toll-free \"800\" number.\n\nFinal PLZ\n\n   -12-\n\nDraft QRT\n   -13-\n\n\
+            NAICS:\n335931\n\n\
+            IBAN DE89 3704 0044 0532 0130 00, VAT No. GB 123 4567 89, \
+            Company Registration No. 01234567, toll-free 1-800-555-0199, \
+            phone +1 (202) 555-0164.\n";
+        let raw = [
+            ("AU", "organization"),
+            ("2099241803", "tax_id"),
+            ("DE 60 2090 031 448.0", "bank_account"),
+            ("2 424 911", "tax_id"),
+            ("9739191.6", "tax_id"),
+            ("12/432,845", "tax_id"),
+            ("8,420,710", "tax_id"),
+            ("86920111", "national_id_number"),
+            ("1769731", "national_id_number"),
+            ("99/123,456", "tax_id"),
+            ("2099000111", "tax_id"),
+            ("9876543", "national_id_number"),
+            ("STD009X.UK", "national_id_number"),
+            ("999999", "tax_id"),
+            ("AbCd_123xYz", "tax_id"),
+            ("800", "phone_number"),
+            ("PLZ\n\n   -12-", "phone_number"),
+            ("QRT\n   -13-", "phone_number"),
+            ("-12-", "phone_number"),
+            ("335931", "tax_id"),
+            ("IBAN DE89 3704 0044 0532 0130 00", "bank_account"),
+            ("GB 123 4567 89", "tax_id"),
+            ("01234567", "national_id_number"),
+            ("1-800-555-0199", "phone_number"),
+            ("+1 (202) 555-0164", "phone_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("https://example.invalid/p?srsltid=AbCd_123xYz", "URL"),
+                ("DE89 3704 0044 0532 0130 00", "BANK"),
+                ("GB 123 4567 89", "TAX"),
+                ("01234567", "IDENTITY"),
+                ("1-800-555-0199", "PHONE"),
+                ("+1 (202) 555-0164", "PHONE"),
+            ])
+        );
+        // Out of a schedule's row, a company's table (a status column too)
+        // and a sentence opening "US" keep their values, and so do a query's
+        // values of digits alone, of one case or without digits (inside a
+        // whole link they are its URL's, rule 7). A row ends on its own
+        // line: the line after it keeps its name and passport.
+        let source = "| UK | Acme Holdings Ltd | 01234567 | 01/02/2030 |\n\
+            | UK | Bryn Holdings Ltd | Registered | 07654321 | 01/03/2030 |\n\n\
+            US law applies to Vela Quist from 30-Apr-29, SSN 123-45-6789.\n\n\
+            Query: inn=7799000011&doc=AB1234567&who=JaneMorgan.\n\n\
+            AU  2099241803  30-Apr-29   \n\
+            Contact: Jane Morgan, passport RM6841932, acct 2099000111223.\n";
+        let raw = [
+            ("Acme Holdings Ltd", "organization"),
+            ("01234567", "national_id_number"),
+            ("Bryn Holdings Ltd", "organization"),
+            ("07654321", "national_id_number"),
+            ("Vela Quist", "person"),
+            ("123-45-6789", "tax_id"),
+            ("7799000011", "tax_id"),
+            ("AB1234567", "passport_number"),
+            ("JaneMorgan", "person"),
+            ("2099241803", "tax_id"),
+            ("Jane Morgan", "person"),
+            ("RM6841932", "passport_number"),
+            ("2099000111223", "bank_account"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Acme Holdings Ltd", "ORG"),
+                ("01234567", "IDENTITY"),
+                ("Bryn Holdings Ltd", "ORG"),
+                ("07654321", "IDENTITY"),
+                ("Vela Quist", "PERSON"),
+                ("123-45-6789", "TAX"),
+                ("7799000011", "TAX"),
+                ("AB1234567", "IDENTITY"),
+                ("JaneMorgan", "PERSON"),
+                ("Jane Morgan", "PERSON"),
+                ("RM6841932", "IDENTITY"),
+                ("2099000111223", "BANK"),
+            ])
+        );
+    }
+
+    /// The number shapes that are no tax, bank, identity or phone value
+    /// alone, and the real values beside them (issue #486).
+    #[test]
+    fn grouped_numbers_guids_and_tokens_are_no_identifiers() {
+        let keeps = |text: &str, category| pack().identifying(text, category);
+        for (text, category) in [
+            ("8,420,710", Category::Tax),
+            ("12/432,845", Category::Bank),
+            ("1,250,000.00", Category::Identity),
+            ("2,000", Category::Phone),
+            ("b539f4a9-4e5f-4abb-bec6-aae430c254f2", Category::Tax),
+            ("B539F4A9-4E5F-4ABB-BEC6-AAE430C254F2", Category::Bank),
+            (
+                "AfmBOorJnJ4Ys9vL_zXDXNKRcwv2xdd4zUKdwjsQuHUWB4mbpigOS4O3",
+                Category::Tax,
+            ),
+            ("AbcD_123xyzQ", Category::Phone),
+            ("STD001Y2K.UK", Category::Identity),
+            ("PLZ\n\n   -44-", Category::Phone),
+            ("-44-", Category::Phone),
+            ("– 12 –", Category::Phone),
+            ("4510\r\n\r\n123456", Category::Identity),
+        ] {
+            assert!(!keeps(text, category), "{text:?}");
+        }
+        for (text, category) in [
+            ("12345.67", Category::Bank),
+            ("4510 123456", Category::Identity),
+            ("GB29 NWBK 6016 1331 9268 19", Category::Bank),
+            ("77l12345O7", Category::Tax),
+            ("4510\n123456", Category::Identity),
+            ("555-12-34", Category::Phone),
+            ("8-800-555-35-35", Category::Phone),
+            ("42", Category::Phone),
+            ("RM6841932", Category::Identity),
+            ("GB123456789", Category::Tax),
+        ] {
+            assert!(keeps(text, category), "{text:?}");
+        }
     }
 
     #[test]

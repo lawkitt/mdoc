@@ -118,6 +118,13 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
     // Before a two-letter zone the name has three letters or more ("ГК.РФ"
     // is a law's abbreviation), unless a path follows ("t.invalid/…").
     let path = end > start + host.len();
+    // A host in capitals before a two-letter zone, with a digit in its name
+    // and no path, is a document's code ("STD009X.UK", a form; issue #486);
+    // "STUDIO7.INVALID" and "STUDIO7.UK/share/…" stay addresses.
+    let code = *zone != zone.to_lowercase()
+        && zone.chars().count() <= 2
+        && name.chars().any(char::is_numeric)
+        && !path;
     let letters = name.chars().filter(|c| c.is_alphabetic()).count();
     let long_enough = if zone.chars().count() <= 2 {
         letters >= 3 || path
@@ -127,6 +134,7 @@ fn bare_domain(source: &str, start: usize, end: usize, host: &str, authority: &s
     rules::pack().web_zone(zone)
         && zone.chars().all(char::is_alphabetic)
         && cased
+        && !code
         && long_enough
         && letters > 0
 }
@@ -152,6 +160,14 @@ mod tests {
             ),
             ("сайт ivanov-law.ru.", vec!["ivanov-law.ru"]),
             ("на сайте FORMY.SVOD.INVALID.", vec!["FORMY.SVOD.INVALID"]),
+            (
+                "Website: STUDIO7.INVALID/share/AbCd123, STUDIO7.INVALID, STUDIO7.UK/share/x.",
+                vec![
+                    "STUDIO7.INVALID/share/AbCd123",
+                    "STUDIO7.INVALID",
+                    "STUDIO7.UK/share/x",
+                ],
+            ),
             (
                 "канал t.chat.invalid/kovrigin_r",
                 vec!["t.chat.invalid/kovrigin_r"],
@@ -224,6 +240,7 @@ mod tests {
             "<pavel@\u{200b}vector.invalid>, ksen.rav@\nsvod.invalid, a&#64;b-c.invalid",
             "the email uses the reserved example.com domain",
             "ООО«Север».Москва",
+            "form STD009X.UK, code STD001Y2K.UK",
         ] {
             assert_eq!(urls(source), Vec::<&str>::new(), "{source}");
         }
