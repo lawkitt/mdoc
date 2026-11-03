@@ -206,4 +206,18 @@ eq "$(cat "$dispatched")" "ci-desktop.yml gh-readonly-queue/main/pr-514-mmmm qqq
 ci-android.yml gh-readonly-queue/main/pr-514-mmmm qqqq"
 echo "ok: queue: a fork or bot PR never runs on the PC"
 
+# Runs of queue commits the queue dropped are cancelled; current ones,
+# other branches and PR runs are not.
+cancelled="$tmp/cancelled"
+: >"$cancelled"
+fetch_queue() { echo "gh-readonly-queue/main/pr-514-mmmm qqqq"; }
+fetch_active_runs() {
+  printf '%s\n' "11 gh-readonly-queue/main/pr-514-mmmm" "12 gh-readonly-queue/main/pr-513-oldbase" \
+    "13 main" "14 mac/topic" "15 ci-shadow/main/gone" "16 gh-readonly-queue/main/pr-513-oldbase"
+}
+cancel_run() { echo "$1" >>"$cancelled"; }
+stale_pass
+eq "$(tr '\n' ' ' <"$cancelled")" "12 15 16 "
+echo "ok: runs of queue commits that left the queue are cancelled"
+
 echo "merge gate: all checks passed"

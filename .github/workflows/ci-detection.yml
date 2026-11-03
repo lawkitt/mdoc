@@ -19,7 +19,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 6
+        default: 4
   workflow_dispatch:
     inputs:
       ref:
@@ -27,9 +27,9 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over.
+        description: Parallel jobs the fixtures split over. A manual run takes 2 of the account's 5 macOS runners, leaving the queue the rest.
         type: number
-        default: 6
+        default: 2
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 6 }}
+          SHARDS: ${{ inputs.shards || 2 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
