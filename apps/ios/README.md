@@ -24,8 +24,10 @@ Simulator builds exclude x86_64.
 (`scripts/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
 build number is the number of commits up to HEAD and `MdocCoreCommit` in
 Info.plist is HEAD, which Settings › About shows and links. Without it a
-build is number 1 from an unknown commit. A TestFlight build is a tagged
-`main` commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
+build is number 1 from an unknown commit. A shallow clone has too few
+commits to count: it warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`,
+which every TestFlight build sets. A TestFlight build is a tagged `main`
+commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
 [release run](../../docs/release-run.md#ios-beta-build)). The app, the
 Restore extension and both embedded frameworks carry a
 `PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
