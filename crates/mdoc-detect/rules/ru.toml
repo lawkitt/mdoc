@@ -340,22 +340,32 @@ category = "DATE"
 forbid = ['(?i)^\s*[«"(]?[дмгхx_]{2,4}(?:[./][дмгхx_]{2,4}){1,2}(?:г\.?)?(?:[^\p{Alphabetic}\p{N}_]|$)']
 
 # A placeholder for a party in a depersonalised act is no one: «ФИО1»,
-# «ФИО 2», «ИП ФИО1», «ФИО1 и ФИО2», whatever the model guessed (guide
-# rule 8, the maintainer's decision on #484, item 1). Only the whole span:
-# a real name or initials beside one keep it ("ИП ФИО3 А-Х.О.").
+# «ФИО 2», «ИП ФИО1», «ФИО1 и ФИО2», «ФИО3 – ФИО6», «Потерпевший №1»,
+# with a role before it in the span («конкурсного управляющего ФИО1»),
+# whatever the model guessed (guide rule 8, the maintainer's decision on
+# #484, item 1). Real initials after one go with the span here and come
+# back alone as PERSON by the span pattern below: «ИП ФИО3 А-Х.О.» is
+# «А-Х.О.». A real name beside one keeps the span.
 [[shape]]
 category = "ORG"
-forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$']
 
 # The same placeholder as a person.
 [[shape]]
 category = "PERSON"
-forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$']
+
+# Real initials after a placeholder surname are a name part, PERSON alone:
+# «А-Х.О.» in «ИП ФИО3 А-Х.О.», «В. С.» in «ФИО2 В. С.» (guide rules 1
+# and 8, the maintainer's decision on #484, item 1).
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>\bФИО[\p{Zs}\t]?\d{1,3}[\p{Zs}\t]+)\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?(?P<tail>[^\p{Alphabetic}]|$)'
 
 # The same placeholder as an identity document: its digit is no number.
 [[shape]]
 category = "IDENTITY"
-forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$']
+forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$']
 
 # A cadastral number is no tax number, phone or account (the maintainer's
 # decision on #484, item 2): a model span that starts with one, is its
@@ -365,7 +375,7 @@ forbid = ['^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*
 category = "TAX"
 forbid = [
     '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
-    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$',
 ]
 
 # The same as a phone.
@@ -373,7 +383,7 @@ forbid = [
 category = "PHONE"
 forbid = [
     '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
-    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$',
 ]
 
 # The same as bank details.
@@ -381,7 +391,7 @@ forbid = [
 category = "BANK"
 forbid = [
     '^\s*(?:\d{2}:)?\d{2}:\d{6,7}(?::\d|\s*$)|^\s*\d{6,7}:\d{1,7}\s*$',
-    '^[\s\p{P}]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3}(?:[\p{Zs}\t]*(?:,|и)[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?ФИО[\p{Zs}\t]?\d{1,3})*[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})(?:[\p{Zs}\t]*(?:,|и|[–—-])[\p{Zs}\t]*(?:ИП[\p{Zs}\t]+)?(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3}))*(?:[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?)?[\s\p{P}]*$',
 ]
 
 # A product's name in quotes after the word for it is no organization: "ПО

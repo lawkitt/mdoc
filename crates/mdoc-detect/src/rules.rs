@@ -4374,12 +4374,26 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("ФИО1", Category::Tax),
             ("ФИО1", Category::Phone),
             ("ФИО1", Category::Bank),
+            // A role before it, a dash between two, a role-number
+            // placeholder (#484 item 1, extended).
+            ("конкурсного управляющего ФИО1", Category::Person),
+            ("ФИО3 – ФИО6", Category::Organization),
+            ("ФИО3-ФИО6", Category::Person),
+            ("Потерпевший №1", Category::Person),
+            ("потерпевшего № 2", Category::Organization),
+            ("представителя потерпевшего №1", Category::Person),
+            ("Свидетель №3", Category::Person),
+            ("Потерпевший №1", Category::Identity),
+            // Real initials after one come back alone by the span pattern.
+            ("ИП ФИО3 А-Х.О.", Category::Organization),
+            ("ФИО3 А-Х.О.", Category::Person),
+            ("ФИО2 В. С.", Category::Person),
         ] {
             assert!(!pack.identifying(text, category), "{text}");
         }
         for (text, category) in [
-            ("ИП ФИО3 А-Х.О.", Category::Organization),
-            ("ФИО3 А-Х.О.", Category::Person),
+            ("ФИО3 Иванов", Category::Person),
+            ("Потерпевший Ветлин", Category::Person),
             ("ИП Мохов Л. Р.", Category::Organization),
             ("Мирон Павлович Грендель", Category::Person),
             ("Samuel Doe", Category::Person),
@@ -4394,18 +4408,26 @@ Privacy Act (“BIPA”). BIPA applies.",
         ] {
             assert!(pack.identifying(text, category), "{text}");
         }
-        // In context: "ФИО:" is a label, the name after it a person; "Doe"
+        // In context: "ФИО:" is a label, the name after it a person; real
+        // initials after a placeholder are PERSON alone, whether the model
+        // took them with it, as an organization, or not at all. "Doe"
         // alone is a person's after a title or beside a real first name.
-        let source = "ФИО: Мирон Грендель. Истец ФИО1 и ИП ФИО2 подали иск к ИП ФИО3 А-Х.О.";
+        let source = "ФИО: Мирон Грендель. Истец ФИО1 и ИП ФИО2 подали иск к ИП ФИО3 А-Х.О. \
+            и к ФИО4 В. С., Потерпевший №1 возражал.";
         let raw = [
             ("Мирон Грендель", "person"),
             ("ФИО1", "organization"),
             ("ИП ФИО2", "organization"),
-            ("ФИО3 А-Х.О.", "person"),
+            ("ИП ФИО3 А-Х.О.", "organization"),
+            ("Потерпевший №1", "person"),
         ];
         assert_eq!(
             shown(source, &raw),
-            pairs(&[("Мирон Грендель", "PERSON"), ("ФИО3 А-Х.О.", "PERSON")])
+            pairs(&[
+                ("Мирон Грендель", "PERSON"),
+                ("А-Х.О.", "PERSON"),
+                ("В. С.", "PERSON")
+            ])
         );
         let source = "Plaintiffs sue John Does 1-25, DOE SUPERVISORS I-X and ROE ENTITIES; \
             DOE agreed.";
