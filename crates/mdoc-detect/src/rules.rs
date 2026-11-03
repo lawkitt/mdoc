@@ -1148,12 +1148,23 @@ impl Pack {
                 let trimmed = fix.trimmed(source, grown.clone());
                 // A trim never leaves a company's legal form alone: "АО ТТН"
                 // stays whole, "АЗС ООО «Бета-Ойл»" loses "АЗС".
-                detections[i].range =
-                    if trimmed != grown && self.only_legal_form(&source[trimmed.clone()]) {
-                        grown
-                    } else {
-                        trimmed
-                    };
+                // Nor may a job phrase consume a titled person's whole
+                // name: "Mr Team Leader" must not become just "Mr". The
+                // title fix can then remove Mr and establish the name.
+                detections[i].range = if trimmed != grown
+                    && (self.only_legal_form(&source[trimmed.clone()])
+                        || fix.category == Category::Person
+                            && self.titled(source, trimmed.end)
+                            && !self.titled(source, trimmed.start)
+                            && !self.shaped_named(
+                                &source[trimmed.clone()],
+                                Category::Person,
+                                &|_| false,
+                            )) {
+                    grown
+                } else {
+                    trimmed
+                };
             }
         }
         self.person_documents(source, detections);
@@ -5046,6 +5057,329 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("Lea", "PERSON"),
             ])
         );
+    }
+
+    /// Probe rounds 1 and 2 (#385): only complete roles go, in either
+    /// model category. Do not use an arbitrary job head as a span veto.
+    #[test]
+    fn english_probe_roles_are_no_names() {
+        for role in [
+            "Debtor",
+            "Trustee",
+            "Chapter 7 Trustee",
+            "Chapter 11 Trustee",
+            "First Defendant",
+            "Defendants",
+            "Second Claimant",
+            "First",
+            "Claimant",
+            "Party",
+            "Bankrupt Party",
+            "Plaintiff(s)",
+            "Affiliate",
+            "Agents",
+            "Lead Agent",
+            "Dealer Covered Person",
+            "Sponsor Staff",
+            "Operating Principal",
+            "Recipient",
+            "Discloser",
+            "Franchisee",
+            "Subscriber",
+            "Judges",
+            "Masters",
+            "Recorders",
+            "Circuit Judges",
+            "Circuit Judge(s)",
+            "UNITED STATES DISTRICT JUDGE",
+            "Sergeant",
+            "SHERIFF",
+            "UNDERSHERIFF",
+            "DEPUTY",
+            "Monsieur",
+            "King of Sweden",
+            "Esquire",
+            "Team Leader",
+            "Chief Investigator",
+            "Bureau Safety Manager",
+            "Chair",
+            "Director",
+            "Accident Investigation Advisor",
+            "Program Manager",
+            "Vice President of Infrastructure",
+            "CxO",
+            "CEO",
+            "Supervisors",
+            "Fire Marshal",
+            "Chief",
+            "Officer",
+            "TREASURER",
+            "Participant",
+            "Participants",
+            "other Participant",
+            "originating Participants",
+            "host Participant's",
+            "Head of Delegation",
+            "HOD",
+            "Chairman",
+            "INTERNATIONAL AGREEMENTS SPECIALIST",
+            "Appellees",
+            "Appellants",
+            "Attorneys for Plaintiffs",
+            "Magistrate Judge",
+            "Notary Public",
+            "User",
+            "Division Administrator",
+            "Administrative Adviser",
+        ] {
+            for label in ["person", "organization"] {
+                assert!(shown(role, &[(role, label)]).is_empty(), "{label}: {role}");
+            }
+        }
+    }
+
+    /// Russian roles include oblique cases, plurals and multiword offices
+    /// (#385), never a wildcard that would also take an officer's name.
+    #[test]
+    fn russian_probe_roles_are_no_names() {
+        for role in [
+            "Собрание кредиторов",
+            "Истец",
+            "Истца",
+            "Ответчику",
+            "Заемщика",
+            "Заёмщиком",
+            "Заимодавец",
+            "Заимодавца",
+            "Заимодавцу",
+            "Заимодавцем",
+            "Заимодавце",
+            "Займодавец",
+            "Лицо",
+            "Лица",
+            "Лицами",
+            "Несовершеннолетний ребенок",
+            "Несовершеннолетнего ребёнка",
+            "Несовершеннолетнему ребёнку",
+            "Несовершеннолетним ребенком",
+            "Руководитель",
+            "Руководителя",
+            "Руководителю",
+            "Руководителем",
+            "Руководителе",
+            "Заместитель руководителя",
+            "Заместителя главного бухгалтера",
+            "Заместителю главного бухгалтера",
+            "Уполномоченный",
+            "Уполномоченного",
+            "Заместитель",
+            "Предприниматель",
+            "Предпринимателя",
+            "Предпринимателю",
+            "Предпринимателем",
+            "Предпринимателе",
+            "Правообладатель",
+            "Правообладателя",
+            "Правообладателю",
+            "Правообладателем",
+            "Правообладателе",
+            "Должник",
+            "Должника",
+            "Должнику",
+            "Должником",
+            "Должнике",
+            "Должник холост",
+            "Кассатор",
+            "Кассатора",
+            "Кассатором",
+            "Заявитель",
+            "Заявителя",
+            "Заявителю",
+            "Заявителем",
+            "Заявителе",
+            "конкурсный управляющий",
+            "конкурсного управляющего",
+            "конкурсному управляющему",
+            "финансовому управляющему",
+            "финансовым управляющим",
+            "арбитражного управляющего",
+            "арбитражном управляющем",
+            "Уполномоченный по защите прав предпринимателей",
+            "Уполномоченному по защите прав предпринимателей",
+            "Индивидуальный предприниматель",
+            "ИП",
+        ] {
+            for label in ["person", "organization"] {
+                assert!(shown(role, &[(role, label)]).is_empty(), "{label}: {role}");
+            }
+        }
+    }
+
+    /// Complete edge phrases are safe to trim; a role-like surname on
+    /// either edge is retained. ИП is outside an entrepreneur's name
+    /// (guide rule 1, #484 item 5).
+    #[test]
+    fn probe_role_edges_leave_the_name() {
+        for (source, expected) in [
+            ("Chief Investigator Ms Edda Brannock", "Edda Brannock"),
+            ("Team Leader Edda Brannock", "Edda Brannock"),
+            ("Edda Brannock, Division Administrator", "Edda Brannock"),
+            (
+                "Vice President of Infrastructure Edda Brannock",
+                "Edda Brannock",
+            ),
+            ("Monsieur Ivo Penrow", "Ivo Penrow"),
+            ("Chapter 7 Trustee Ivo Penrow", "Ivo Penrow"),
+            ("First Defendant Edda Brannock", "Edda Brannock"),
+            ("Attorneys for Plaintiffs Ivo Penrow", "Ivo Penrow"),
+            (
+                "Уполномоченный по защите прав предпринимателей Лада Брюн",
+                "Лада Брюн",
+            ),
+            ("ИП Пахомцев И. В.", "Пахомцев И. В."),
+            (
+                "Индивидуальный предприниматель Пахомцев И. В.",
+                "Пахомцев И. В.",
+            ),
+            (
+                "конкурсного управляющего Пахомцева И. В.",
+                "Пахомцева И. В.",
+            ),
+            (
+                "финансовому управляющему Пахомцеву И. В.",
+                "Пахомцеву И. В.",
+            ),
+            (
+                "Пахомцевым И. В., арбитражным управляющим",
+                "Пахомцевым И. В.",
+            ),
+            ("Заместитель главного бухгалтера Лада Брюн", "Лада Брюн"),
+        ] {
+            assert_eq!(
+                shown(source, &[(source, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
+        for (source, expected) in [
+            ("Team Leader Brannock Services Ltd", "Brannock Services Ltd"),
+            (
+                "Brannock Services Ltd, Chief Investigator",
+                "Brannock Services Ltd",
+            ),
+            ("конкурсного управляющего ООО «Листолёт»", "ООО «Листолёт»"),
+        ] {
+            assert_eq!(
+                shown(source, &[(source, "organization")]),
+                pairs(&[(expected, "ORG")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// A role can also be a surname. Titles, initials, full names and
+    /// later surname-only mentions must keep that real name (#385).
+    #[test]
+    fn probe_role_surnames_stay_names() {
+        for name in [
+            "Edda Leader",
+            "Ivo Chair",
+            "Edda Trustee",
+            "Ivo Esquire",
+            "Edda Investigator",
+            "Ivo Participant",
+            "Edda Clerk",
+            "Лада Должник",
+            "Иво Кассатор",
+            "Лада Руководитель",
+            "Иво Уполномоченный",
+            "Лада Предприниматель",
+            "Иво Правообладатель",
+            "Подрядчиков",
+            "Директоров",
+            "Кредиторов",
+            "Руководителев",
+        ] {
+            assert_eq!(
+                shown(name, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{name}"
+            );
+        }
+        for (source, name) in [
+            ("Mr Leader", "Leader"),
+            ("Ms Trustee", "Trustee"),
+            ("Dr. Chair", "Chair"),
+            ("Ms Participant", "Participant"),
+            ("Mr Team Leader", "Team Leader"),
+            ("Ms Chief Investigator", "Chief Investigator"),
+            ("господин Должник", "Должник"),
+            ("госпожа Руководитель", "Руководитель"),
+            ("господин Предприниматель", "Предприниматель"),
+            ("госпожа Кредиторов", "Кредиторов"),
+        ] {
+            for detected in [source, name] {
+                assert_eq!(
+                    shown(source, &[(detected, "person")]),
+                    pairs(&[(name, "PERSON")]),
+                    "{detected}"
+                );
+            }
+        }
+        for (source, full, surname) in [
+            ("Edda Leader met Leader", "Edda Leader", "Leader"),
+            ("Иво Должник встретил Должник", "Иво Должник", "Должник"),
+        ] {
+            let raw: Vec<crate::RawEntity> = [
+                (source.find(full).unwrap(), full),
+                (source.rfind(surname).unwrap(), surname),
+            ]
+            .into_iter()
+            .map(|(start, text)| crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.8,
+                text: text.into(),
+            })
+            .collect();
+            let found: Vec<(String, String)> = crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect();
+            assert_eq!(
+                found,
+                pairs(&[(full, "PERSON"), (surname, "PERSON")]),
+                "{source}"
+            );
+        }
+        for name in ["J. R. Leader", "Должник И. В."] {
+            assert_eq!(
+                shown(name, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{name}"
+            );
+        }
+        // A role inside a longer model span cannot veto the whole name.
+        for name in ["Trustee Edda Brannock", "Руководитель Лада Брюн"] {
+            assert_eq!(
+                shown(name, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{name}"
+            );
+        }
+        for name in [
+            "Brannock Leader",
+            "Brannock Officer",
+            "Trustee Brannock Ltd",
+        ] {
+            assert_eq!(
+                shown(name, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{name}"
+            );
+        }
     }
 
     /// Russian form numbers, classifier codes, standards, a form's barcode
