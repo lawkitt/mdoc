@@ -921,10 +921,42 @@ fn percent_encoded(text: &str) -> Option<(usize, String)> {
     (value == ' ' || value.is_alphabetic()).then(|| (len, value.to_string()))
 }
 
+/// `text` with the line-end hyphens that split its words dropped, as the
+/// view reads them: a wording found in the source ("Верес-\nтова Дарья
+/// Ильинична") reads as the name it is ("Верестова Дарья Ильинична"). A
+/// hyphen before a capital ("Санкт-\nПетербург"), after a space (a dash)
+/// or before a list marker stays, and so does its line break.
+pub fn unwrapped(text: &str) -> std::borrow::Cow<'_, str> {
+    let mut out = String::new();
+    let mut from = 0;
+    let mut previous = None;
+    let mut chars = text.char_indices();
+    while let Some((at, c)) = chars.next() {
+        if c == '-'
+            && previous.is_some_and(char::is_alphabetic)
+            && let Some(len) = line_end_hyphen(&text[at..])
+        {
+            out.push_str(&text[from..at]);
+            from = at + len;
+            while chars.offset() < from {
+                chars.next();
+            }
+            previous = None;
+        } else {
+            previous = Some(c);
+        }
+    }
+    if from == 0 {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    out.push_str(&text[from..]);
+    std::borrow::Cow::Owned(out)
+}
+
 /// The length of a line-end hyphen that splits a word at the start of
 /// `text` ("-\n" and the next line's indent before a lowercase letter, as
 /// in "Brin-\nsett"), which the word reads without.
-fn line_end_hyphen(text: &str) -> Option<usize> {
+pub(crate) fn line_end_hyphen(text: &str) -> Option<usize> {
     let rest = text.strip_prefix('-')?;
     let len = line_break(rest)?;
     rest[len..]
@@ -1167,6 +1199,17 @@ mod tests {
             view.text,
             "Melora Brinsett, Верестова, Ли-\nВельт, 000-\n74, list -\nnext, ksen@svod.invalid"
         );
+        // A wording reads the same, its other line breaks kept (#388).
+        assert_eq!(
+            unwrapped(
+                "Верес-\n  това Дарья, Санкт-\nПетербург, list -\nnext, 000-\n74, Ли-\r\nвельт"
+            ),
+            "Верестова Дарья, Санкт-\nПетербург, list -\nnext, 000-\n74, Ливельт"
+        );
+        assert!(matches!(
+            unwrapped("Верес-\n> това"),
+            std::borrow::Cow::Borrowed("Верес-\n> това")
+        ));
         // Link destinations read "%20" and "_" between letters as spaces,
         // and percent-encoded letters as letters; visible text keeps them.
         let source = "[a](x.invalid/Liora%20Nesket/%D0%90%D0%BD%D0%BD%D0%B0_Ёлкина?q=%3D) a_b Liora%20Nesket ![s](Alice_Morgan.png \"t_t\")";

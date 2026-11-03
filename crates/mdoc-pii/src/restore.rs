@@ -611,24 +611,31 @@ impl Review {
                 if entry.originals.is_empty() {
                     return None;
                 }
-                // The primary wording is the fullest form: most characters,
-                // then the saved or merge target's primary, then first seen.
-                // The pin only breaks ties, so a longer wording linked later
-                // still becomes primary.
+                // The primary wording is the fullest form: most characters
+                // as read (a word split by a line-end hyphen counts whole),
+                // then one with no such hyphen, then the saved or merge
+                // target's primary, then first seen. The pin only breaks
+                // ties, so a longer wording linked later still becomes
+                // primary; "Верес-\nтова Дарья Ильинична" never restores
+                // over "Дарья Ильинична Верестова" (#388).
+                let read = |o: &str| crate::view::unwrapped(o).chars().count();
                 let pinned = self.identities.primary_wording(id);
                 let primary = entry
                     .originals
                     .iter()
                     .enumerate()
                     .max_by_key(|(i, o)| {
-                        (o.chars().count(), pinned == Some(o), std::cmp::Reverse(*i))
+                        (
+                            read(o),
+                            read(o) == o.chars().count(),
+                            pinned == Some(o),
+                            std::cmp::Reverse(*i),
+                        )
                     })
                     .map_or(0, |(i, _)| i);
                 entry.originals.swap(0, primary);
                 let wording = entry.originals.remove(0);
-                entry
-                    .originals
-                    .sort_by_key(|o| std::cmp::Reverse(o.chars().count()));
+                entry.originals.sort_by_key(|o| std::cmp::Reverse(read(o)));
                 entry.originals.insert(0, wording);
                 for alias in self.identities.retired_aliases(id) {
                     push(&mut entry.aliases, alias.clone());
