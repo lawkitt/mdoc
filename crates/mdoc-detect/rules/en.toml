@@ -995,6 +995,14 @@ roles = [
     "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",
     "relator", "complainant",
 ]
+# A decision identified as the subject of this appeal/action is the case
+# at hand's: keep its parties when one of these phrases occurs in the 60
+# characters before the citation, ignoring case. Uncertain names stay.
+own_before = [
+    "under appeal", "appealed from", "appeal from", "the decision below",
+    "the judgment below", "the order below", "on appeal from", "the court below",
+    "this appeal", "the present case", "the instant case", "this case", "this action",
+]
 
 # A short citation with a reporter (#561): "Pellam, 912 F.3d at 460"
 # or "Pellam, 2031 WL 1234567, at *3". A bare surname or "supra" alone
