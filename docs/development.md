@@ -485,8 +485,11 @@ lines word for word (`scripts/test-local-ci.sh` checks).
 `recognition`); `just test-tier <tier>` runs one, `scripts` the script
 suites, and `just test` all of them. A test on `.config/quarantine.txt`
 (`<nextest filter>  #<issue>  <expires YYYY-MM-DD>`) is left out of every
-tier; `just test-tier quarantined` runs those alone (nightly, once CI
-redesign item 7 lands), and an expired line fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
+tier. An Android or iOS UI test goes there as `android:<class>#<method>` or
+`ios:<target>/<class>/<method>`; the Android job and `just ios-test` skip it,
+and nothing runs it until the line goes (fix the test, then remove the
+line). `just test-tier quarantined` runs the Rust ones alone, nightly too,
+and any line past its date fails the scripts tier. A lane runs what it touched before marking a PR ready (see the
 profile's `gate`) and may dispatch the full hosted desktop job on its
 branch: `gh workflow run ci-desktop.yml --repo lawkitt/mdoc --ref <branch> -f os=macos`.
 
