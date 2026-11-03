@@ -25,6 +25,26 @@ own data terms then apply.
 > Review the whole document before you share it; mdoc does not guarantee that
 > the result is anonymous.
 
+## iPhone and iPad
+
+The iOS app ([ADR 0085](adr/0085-mobile-apps.md)) collects no data: no
+account, no analytics, no tracking. Its App Store privacy label is "Data
+Not Collected", and this section is its privacy policy.
+
+- **Network:** only the model downloads you start: text recognition from
+  GitHub and the name detector from Hugging Face, each checked against a
+  pinned SHA-256 digest. On cellular mdoc asks first. There is no update
+  check; the App Store updates the app.
+- **On the phone:** documents, their Markdown, cases and models stay in
+  mdoc's own storage, excluded from iCloud and device backups. Documents
+  and cases are unreadable while the phone is locked, and the case key
+  never leaves this device. A new phone starts empty.
+- **Sharing:** text leaves mdoc only when you share or copy it, and then
+  with aliases in place of the names you replaced.
+- **Crash reports** stay on the phone and show at the next launch. Beta
+  testers may also send crash reports and feedback through Apple's
+  TestFlight, under TestFlight's terms; never attach client documents.
+
 ## Limitations
 
 - **Copy Markdown** copies the current text, including unsaved edits.

@@ -81,13 +81,17 @@ green and leave desktop unchanged. Record:
 [mobile grill](docs/design/mobile-grill-2026-10-31.md).
 
 1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
-   (#269, #272, #275–#278).* The app runs on the real core in the Simulator
-   with parity, unit and UI tests in local CI; it has never been signed or
-   run on a phone. Sign in to Xcode with the team's Apple ID, upload a
-   TestFlight build, and run the iOS section of
-   [platform acceptance](docs/platform-acceptance.md) (Device rows by hand).
-   The first build waits for the measured floor and the device checklist
-   (P17). *Done when:* that section passes on a TestFlight build.
+   (#269, #272, #275–#278) and the
+   [TestFlight grill](docs/design/testflight-grill-2026-11-03.md)
+   ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).* The app record
+   exists ("mdoc: private docs for AI"). Left, in order: an iOS PR with the
+   privacy manifests, `ITSAppUsesNonExemptEncryption`, the core commit in
+   Settings › About and the build number from `main`'s commit count; #576
+   and item 3; P17 on the iPhone 17 Pro; the maintainer's Xcode archive of
+   `ios-v0.1.0-rc.1` ([release run](docs/release-run.md#ios-beta-build));
+   section 13 of [platform acceptance](docs/platform-acceptance.md) on that
+   build (Device rows by hand, P12 in the iPad Simulator). External testers
+   wait for item 4. *Done when:* section 13 passes on a TestFlight build.
 3. **[Mobile] Device UI tests on Wi-Fi.** *From the device grill
    (#295).* `just ios-device-test <udid>` is merged and its review flow
    passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition

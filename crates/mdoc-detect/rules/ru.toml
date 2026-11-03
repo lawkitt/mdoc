@@ -21,11 +21,22 @@ extend = [
 # парков" in "ГКУ города Ольховска «Дирекция парков»" grows to the
 # whole of it and goes (guide rule 8, issue #378). The institution's city or
 # region, of up to two words, may stand between ("ГБУ Северной области «…»",
-# "ГКУ города Нижнего Ольховска «…»").
+# "ГКУ города Нижнего Ольховска «…»"), or its region's short name ("ГБУ СО
+# «…»"). A person's span there grows the same way (below).
 [[span]]
 category = "ORG"
 extend = [
-    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФГАУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:\p{Uppercase}{2,4}|(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+]
+
+# The same for a person: the model's "Кедровый дом-интернат" as a person in
+# "ГБУ СО «Кедровый дом-интернат»" grows to the institution and goes
+# (issue #378).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФГАУ|ФКУ|МКУ|МБУ|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:\p{Uppercase}{2,4}|(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
     '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
 ]
 
@@ -115,14 +126,15 @@ words = [
 ]
 
 # Defined terms: "Общество", "Компания", "Организация" stand for a party
-# named elsewhere (issue #390). Their case forms are listed whole, so
-# surnames such as "Компаниец" stay.
+# named elsewhere (issue #390), and so does "Фонд" ("бюджет Фонда", #378).
+# Their case forms are listed whole, so surnames such as "Компаниец" stay.
 [[never]]
 match = "whole"
 words = [
     "общество", "общества", "обществу", "обществом", "обществе", "компания",
     "компании", "компанию", "компанией", "организация", "организации",
-    "организацию", "организацией",
+    "организацию", "организацией", "фонд", "фонда", "фонду", "фондом",
+    "фонде",
 ]
 
 # Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
@@ -199,7 +211,7 @@ words = [
 match = "whole"
 words = [
     "гк", "рф", "гпк", "апк", "ук", "коап", "нк", "тк", "упк", "жк", "ск",
-    "зк", "бк", "кас", "фз", "фкз", "вс", "ас", "россии", "россию", "россией",
+    "зк", "бк", "кас", "лк", "грк", "фз", "фкз", "вс", "ас", "россии", "россию", "россией",
     "российская", "российской", "российскую", "федерация", "федерации",
     "федерацию", "федерацией", "именем", "коллегия", "коллегии", "коллегию",
     "коллегией",
@@ -212,42 +224,104 @@ ending = 3
 words = ["субъект"]
 
 # Courts and public bodies are never marked (the fixture guide's rule 8):
-# an organization span with one of these stems anywhere is dropped
-# ("Районный суд", "Верховный Суд Российской Федерации", "Министерства
-# юстиции", "Судебная коллегия", "Управлением Росреестра", "отдела
-# судебных приставов", "Правительства … области"; issue #378), unless it
-# has a legal form; words in quotes are a name. A state or municipal
-# institution is a public body ("Федерального казенного учреждения",
-# "государственного бюджетного учреждения").
+# an organization or person span with one of these stems anywhere is
+# dropped ("Районный суд", "Верховный Суд Российской Федерации",
+# "Министерства юстиции", "Судебная коллегия", "Управлением Росреестра",
+# "отдела судебных приставов", "Правительства … области", "Президиума",
+# "Регистрационной палатой"; issue #378), unless it has a legal form;
+# words in quotes are a name. A state or municipal institution is a public
+# body ("Федерального казенного учреждения", "государственного бюджетного
+# учреждения"). In a person's span a stem counts only with the body
+# words' own case endings ("Министерство", "Правительству", "судов
+# общей юрисдикции"), so a surname with it stays ("Судине", "Судник",
+# "Приставко", and "Судов" capitalized), and so does one after a title
+# ("г-н Суд") or with initials ("Суд Н. О.", "СУД Н. О.").
 [[never]]
 match = "stem"
 ending = 3
 words = [
     "суд", "судебн", "министерств", "прокуратур", "департамент", "администраци",
     "инспекци", "правительств", "управлени", "отдел", "отделени", "комитет",
-    "пристав", "полици", "пленум", "федеральн", "государственн", "муниципальн",
-    "казенн", "казённ", "бюджетн", "минтруд", "минфин", "минюст", "минздрав",
-    "минпромторг", "минтранс", "минсельхоз", "минспорт", "минстро", "росреестр",
-    "росгварди", "роспотребнадзор", "ростехнадзор", "роскомнадзор",
-    "росприроднадзор", "росимуществ", "росстат", "роструд",
+    "пристав", "полици", "пленум", "президиум", "палат", "федеральн",
+    "государственн", "муниципальн", "казенн", "казённ", "бюджетн", "минтруд",
+    "минфин", "минюст", "минздрав", "минпромторг", "минтранс", "минсельхоз",
+    "минспорт", "минстро", "росреестр", "росгварди", "роспотребнадзор",
+    "ростехнадзор", "роскомнадзор", "росприроднадзор", "росимуществ",
+    "росстат", "роструд",
 ]
-anywhere_in = ["ORG"]
+anywhere_in = ["ORG", "PERSON"]
+person_endings = [
+    "", "а", "я", "у", "ю", "о", "е", "и", "ы", "й", "ом", "ем", "ой", "ою",
+    "ей", "ов", "ам", "ям", "ах", "ях", "ами", "ями", "ый", "ий", "ая", "яя",
+    "ое", "ее", "ые", "ие", "ого", "его", "ому", "ему", "ую", "юю", "ым", "им",
+    "ых", "их", "ыми", "ими",
+]
+surname_endings = ["ов"]
+unless_titled = true
 
 # The same bodies' abbreviations and indeclinable names, matched whole:
 # "ГУ МВД России по …", "МИФНС России № 9", "УФССП", "14 ААС", "ГКУ
-# города Ольховска", "ГБ МСЭ по … области" (issue #378).
+# города Ольховска", "ГБ МСЭ по … области", the pension and social funds'
+# offices ("УПФР", "ОСФР"), the Treasury's ("УФК") and the central bank
+# ("ЦБ РФ") (issue #378).
 [[never]]
 match = "whole"
 words = [
     "фнс", "ифнс", "мифнс", "уфнс", "мвд", "умвд", "омвд", "овд", "гибдд",
     "мчс", "фссп", "уфссп", "гуфссп", "осп", "росп", "госп", "загс", "гиаз",
-    "пфр", "сфр", "фсс", "фас", "фсин", "уфсин", "фсб", "фмс", "уфмс", "гку",
-    "гбу", "гау", "фгбу", "фгку", "фку", "мку", "мбу", "гбоу", "фгбоу", "мбоу",
-    "гбуз", "мсэ", "аас", "минэнерго", "минэкономразвития", "минобороны",
+    "пфр", "упфр", "опфр", "гупфр", "сфр", "осфр", "фсс", "уфк", "цб",
+    "фас", "фсин", "уфсин", "фсб", "фмс", "уфмс", "гку", "гбу", "гау", "фгбу",
+    "фгку", "фгау", "фку", "мку", "мбу", "гбоу", "фгбоу", "мбоу", "гбуз",
+    "мсэ", "аас", "депнедра", "минэнерго", "минэкономразвития", "минобороны",
     "минприроды", "минцифры", "минкультуры", "минпросвещения", "минобрнауки",
     "мэрия", "мэрии", "мэрию", "мэрией",
 ]
+anywhere_in = ["ORG", "PERSON"]
+unless_titled = true
+
+# A bare "ГУ" (a state institution) before a body's name: "ГУ - Управление
+# …", "ГУ «…»" (issue #378). An organization only: "Гу" is a surname.
+[[never]]
+match = "whole"
+words = ["гу"]
 anywhere_in = ["ORG"]
+
+# Public bodies by their phrases, as an organization or a person (issue
+# #378): the pension and social funds ("Пенсионный фонд Российской
+# Федерации", "Фонда пенсионного и социального страхования", "Фонда
+# социального страхования", "бюджета Фонда"), the President, the central
+# bank ("Банк России", "Центрального банка Российской Федерации"), the
+# armed forces, the tax authorities, the former Supreme Arbitration Court
+# ("Президиума ВАС РФ") and an arbitration court's short name before its
+# region ("АС Северной области", "АС Ольховска и Северной обл"). A
+# charity's "Благотворительный фонд «…»" and "ООО «Фонд Север»" stay.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)\b(?:пенсионн|социальн)\p{Alphabetic}*[\p{Zs}\t]+фонд',
+    '(?i)\bфонд\p{Alphabetic}{0,2}[\p{Zs}\t]+(?:пенсионн|социальн|обязательн)',
+    '(?i)\bбюджет\p{Alphabetic}{0,2}[\p{Zs}\t]+фонд',
+    '(?i)\bпрезидент\p{Alphabetic}{0,3}[\p{Zs}\t]+(?:российской[\p{Zs}\t]+федерации|рф|россии)\b',
+    '(?i)^[\s\p{P}]*(?:центральн\p{Alphabetic}*[\p{Zs}\t]+)?банк\p{Alphabetic}{0,3}[\p{Zs}\t]+(?:россии|рф|российской[\p{Zs}\t]+федерации)[\s\p{P}]*$',
+    '(?i)\bвооруж[её]нн\p{Alphabetic}*[\p{Zs}\t]+сил',
+    '(?i)\bналогов\p{Alphabetic}{0,3}[\p{Zs}\t]+орган',
+    '\bВАС\b',
+    '^[\s\p{P}]*(?:\d+[\p{Zs}\t]*)?(?:АС|ФАС|ААС)[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:ой|ого|ей|ы|и|а|я)\b',
+]
+anywhere_in = ["ORG", "PERSON"]
+
+# Never public bodies, whoever owns them: a span that names a university
+# or college itself, after its abbreviations and adjectives, a state one
+# too ("ФГБОУ ВО «Северный государственный университет»", "ГБПОУ
+# «Ольховский колледж»"; #484), and one that opens with a non-state or
+# charitable fund ("Негосударственный пенсионный фонд «Кедр»", "НПФ
+# «Кедр»"). "ГБУ «Университетская больница»" and "Министерство науки и
+# университетов" name no university, and go.
+[[private]]
+patterns = [
+    '^[\s\p{P}]*(?:\p{Uppercase}{2,7}[\p{Zs}\t]+){0,2}[«"]?(?i:(?:\p{Alphabetic}+(?:ый|ий|ой|ая|яя|ое|ее|ого|его|ому|ему|ым|им|ую|юю|ых|их)[\p{Zs}\t-]+){0,4}(?:университет|колледж)(?:а|у|ом|ем|е|ы|и|ов|ей|ам|ами|ах)?)(?:[^\p{Alphabetic}]|$)',
+    '^[\s\p{P}]*(?:АО[\p{Zs}\t]+)?[«"]?(?:(?i:негосударственн|благотворительн)|НПФ\b)',
+]
 
 # A public-law company is a public body (guide rule 8, the maintainer's
 # decision on #484, item 4): "ППК «Роскадастр»", "публично-правовая
@@ -276,13 +350,22 @@ words = ["публично-правов", "роскадастр"]
 anywhere_in = ["ORG", "PERSON"]
 
 # Codes and laws by their full names: "Гражданского кодекса Российской
-# Федерации", "Федерального закона", "Конституции Российской Федерации"
-# (guide rule 8, issue #378).
+# Федерации", "Федерального закона", "Конституции Российской Федерации",
+# "законодательством Российской Федерации" (guide rule 8, issue #378), as
+# an organization or a person.
 [[never]]
 match = "stem"
 ending = 3
-words = ["кодекс", "закон", "конституци"]
-anywhere_in = ["ORG"]
+words = ["кодекс", "закон", "законодательств", "конституци"]
+anywhere_in = ["ORG", "PERSON"]
+person_endings = [
+    "", "а", "я", "у", "ю", "о", "е", "и", "ы", "й", "ом", "ем", "ой", "ою",
+    "ей", "ов", "ам", "ям", "ах", "ях", "ами", "ями", "ый", "ий", "ая", "яя",
+    "ое", "ее", "ые", "ие", "ого", "его", "ому", "ему", "ую", "юю", "ым", "им",
+    "ых", "их", "ыми", "ими",
+]
+surname_endings = ["ов"]
+unless_titled = true
 
 # A region, district, city or settlement is a place, not an organization,
 # alone or as a public body's tail: "Северной области", "Ольховскому
@@ -298,12 +381,12 @@ words = ["област", "республик", "район", "округ", "по
 anywhere_in = ["ORG"]
 
 # The same places' designators that are matched whole: "края" and "города"
-# are common words in other forms.
+# are common words in other forms; "обл" is "области" cut short.
 [[never]]
 match = "whole"
 words = [
     "край", "края", "краю", "краем", "крае", "город", "города", "городу",
-    "городом", "городе", "г", "пгт", "поселок", "посёлок",
+    "городом", "городе", "г", "пгт", "поселок", "посёлок", "обл",
 ]
 anywhere_in = ["ORG"]
 

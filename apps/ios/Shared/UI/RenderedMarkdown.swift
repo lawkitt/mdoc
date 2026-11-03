@@ -62,6 +62,10 @@ final class LineDecoration: NSObject {
     var title: (text: NSAttributedString, symbol: UIImage?, x: CGFloat)?
     /// A thematic break's line.
     var rule: UIColor?
+    /// Image chips: each sits in the space kerned after the hidden `[` at
+    /// `location` (paragraph-relative), with a symbol and, for an image with
+    /// no alt text, a label.
+    var chips: [(location: Int, width: CGFloat, symbol: UIImage?, label: NSAttributedString?, fill: UIColor)] = []
 }
 
 /// Lays out the rendered view's blocks over styled source text.
@@ -130,6 +134,28 @@ struct BlockLayout {
                         attributedString: content.map { text.attributedSubstring(from: $0) } ?? NSAttributedString())
                     let align = column < table.aligns.count ? table.aligns[column] : .left
                     style(cell: piece, ratio: ratio, header: rowIndex == 0, align: align, rtl: table.rtl)
+                    if let content {
+                        // The cell's images, as chips drawn by the cell's own fragment.
+                        let decoration = LineDecoration()
+                        for image in styling.images {
+                            let range = offsets.nsRange(image.range)
+                            guard NSLocationInRange(range.location, content), range.length > 2 else { continue }
+                            let alt = offsets.nsRange(image.alt)
+                            decoration.chips.append(chip(
+                                in: piece, image: NSRange(location: range.location - content.location, length: range.length),
+                                alt: alt, font: body.withSize(body.pointSize * ratio), paragraph: 0))
+                        }
+                        if !decoration.chips.isEmpty {
+                            let whole = NSRange(location: 0, length: piece.length)
+                            piece.addAttribute(.mdocDecoration, value: decoration, range: whole)
+                            // A cell of nothing but hidden image syntax keeps a line's height.
+                            if let paragraph = (piece.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?
+                                .mutableCopy() as? NSMutableParagraphStyle {
+                                paragraph.minimumLineHeight = body.withSize(body.pointSize * ratio).lineHeight
+                                piece.addAttribute(.paragraphStyle, value: paragraph, range: whole)
+                            }
+                        }
+                    }
                     cells.append(RenderedCell(text: piece, location: content?.location ?? tableRange.location))
                 }
                 rows.append(cells)
@@ -251,6 +277,7 @@ struct BlockLayout {
             blocks[offsets.nsRange(block.range).location] = block.kind
         }
         let tableRanges = styling.tables.map { offsets.nsRange($0.range) }
+        let images = styling.images.map { (offsets.nsRange($0.range), offsets.nsRange($0.alt)) }
         let laidOut = Dictionary(tables.map { ($0.anchor, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Each line and its role, in order.
@@ -402,6 +429,16 @@ struct BlockLayout {
                     break
                 }
             }
+            // Image chips, kerned into the space after each hidden `[`.
+            for (image, alt) in images where NSLocationInRange(image.location, range) && image.length > 2 {
+                if case .table = line.role { continue }
+                if case .code = line.role { continue }
+                decoration.chips.append(chip(in: text, image: image, alt: alt, font: body, paragraph: range.location))
+                decorated = true
+                fold = false
+                // A line of nothing but hidden image syntax keeps a line's height.
+                style.minimumLineHeight = max(style.minimumLineHeight, lineHeight)
+            }
             if fold {
                 text.addAttributes(MarkdownStyler.hiddenAttributes, range: range)
                 strip(range)
@@ -416,6 +453,25 @@ struct BlockLayout {
                 text.addAttribute(.mdocDecoration, value: decoration, range: range)
             }
         }
+    }
+
+    /// An Image chip for `image` in `text`: a gap kerned after the hidden
+    /// `[`, which the layout fragment fills with a photo symbol and, with no
+    /// alt text, "Image"; VoiceOver hears "Image" after the alt text.
+    /// `paragraph` is where the chip's paragraph starts in `text`.
+    private func chip(
+        in text: NSMutableAttributedString, image: NSRange, alt: NSRange, font: UIFont, paragraph: Int
+    ) -> (location: Int, width: CGFloat, symbol: UIImage?, label: NSAttributedString?, fill: UIColor) {
+        let symbol = UIImage(systemName: "photo", withConfiguration: UIImage.SymbolConfiguration(font: font))?
+            .withTintColor(resolved(.secondaryLabel), renderingMode: .alwaysOriginal)
+        let label: NSAttributedString? = alt.length == 0
+            ? NSAttributedString(string: Self.imageLabel, attributes: [.font: font, .foregroundColor: resolved(.secondaryLabel)])
+            : nil
+        let pad = 4 * scale
+        let width = pad + (symbol?.size.width ?? 0) + (label.map { 4 * scale + ceil($0.size().width) } ?? 0) + pad + 2 * scale
+        text.addAttribute(.kern, value: width, range: NSRange(location: image.location + 1, length: 1))
+        text.addAttribute(.accessibilityTextCustom, value: [Self.imageLabel], range: image)
+        return (image.location + 1 - paragraph, width, symbol, label, resolved(.tertiarySystemFill))
     }
 
     /// A folded line's height: as near nothing as a paragraph style keeps
@@ -450,6 +506,11 @@ struct BlockLayout {
 
     private func labelWidth(_ label: String) -> CGFloat {
         ceil((label as NSString).size(withAttributes: [.font: body]).width)
+    }
+
+    /// What an image with no alt text says in its chip.
+    static var imageLabel: String {
+        String(localized: "Image", comment: "Chip in place of a Markdown image with no description")
     }
 
     static func colour(of alert: MarkdownBlock.Alert) -> UIColor {
@@ -556,6 +617,31 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
                 path.stroke()
             }
         }
+        for chip in decoration.chips {
+            // The kerned space starts at the hidden `[`, which has next to no
+            // width of its own.
+            guard let line = textLineFragments.first(where: { NSLocationInRange(chip.location, $0.characterRange) }) else { continue }
+            let start = line.locationForCharacter(at: chip.location)
+            let top = point.y + line.typographicBounds.minY
+            // Centred in its line: a line of nothing but hidden image syntax
+            // has its baseline at the bottom.
+            let font = chip.label?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+            let lineHeight = line.typographicBounds.height
+            let height = min(font?.lineHeight ?? lineHeight * 0.8, lineHeight) + 2
+            let box = CGRect(
+                x: point.x + line.typographicBounds.minX + start.x + 1,
+                y: top + (lineHeight - height) / 2, width: chip.width - 5, height: height)
+            chip.fill.setFill()
+            UIBezierPath(roundedRect: box, cornerRadius: 5).fill()
+            var x = box.minX + 4
+            if let symbol = chip.symbol {
+                symbol.draw(at: CGPoint(x: x, y: box.midY - symbol.size.height / 2))
+                x += symbol.size.width + 4
+            }
+            if let label = chip.label {
+                label.draw(at: CGPoint(x: x, y: box.midY - (font?.lineHeight ?? label.size().height) / 2))
+            }
+        }
         if let title = decoration.title {
             // The title's line holds only the hidden marker, so the title
             // centres in the line rather than sitting on its baseline.
@@ -624,7 +710,9 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
             var x: CGFloat = 0
             var views: [CellTextView] = []
             for (column, cell) in row.enumerated() {
-                let view = CellTextView(usingTextLayoutManager: false)
+                // TextKit 2, so the cell's layout fragments draw Image chips;
+                // `configure` sets their delegate before the text arrives.
+                let view = CellTextView(usingTextLayoutManager: true)
                 view.isEditable = false
                 view.isSelectable = true
                 view.isScrollEnabled = false
@@ -635,6 +723,8 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
                 view.textDragInteraction?.isEnabled = false
                 view.textContainerInset = table.padding
                 view.textContainer.lineFragmentPadding = 0
+                view.textLayoutManager?.usesHyphenation = false
+                configure(view)
                 view.attributedText = cell.text
                 view.location = cell.location
                 view.row = rowIndex
@@ -643,7 +733,6 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
                 if rowIndex == 0 {
                     view.accessibilityTraits.insert(.header)
                 }
-                configure(view)
                 addSubview(view)
                 views.append(view)
                 x += table.columns[column]
@@ -830,6 +919,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         }
         tableViews = document.tables.map { table in
             let view = MarkdownTableView(table: table) { [weak self] cell in
+                cell.textLayoutManager?.delegate = self
                 self?.configureCell?(cell)
             }
             addSubview(view)

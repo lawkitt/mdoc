@@ -278,7 +278,7 @@ another editor since its last save.
 
 *iOS only* (ADR 0085); a separate copy of this file per run,
 `docs/evidence/mobile/<date>/ios.md`, keeping the Header and this section.
-Install the TestFlight build. Rows marked *Simulator* may be run by an agent
+Install the TestFlight build ([ADR 0097](adr/0097-ios-testflight-beta.md)). Rows marked *Simulator* may be run by an agent
 in the iOS Simulator with `xcrun simctl` and XCUITest; *Device* rows need
 the maintainer's iPhone (and an iPad for *iPad* rows). Use the public
 fixtures only.
@@ -288,7 +288,7 @@ fixtures only.
 | P1 | *Simulator*: first launch shows Home with no network, Keychain or permission prompt; Settings › About shows the version, the GPL and app-store permission notice and the source link | | |
 | P2 | *Simulator*: Settings says "mdoc's documents stay on this iPhone and are not in backups."; the app container's documents, cases and models carry `isExcludedFromBackup` | | |
 | P3 | *Device*: the setup card names the model size; on cellular it asks before downloading; leaving the app keeps the download going; a corrupted file fails verification and is not used | | |
-| P4 | *Device*: on a phone below the device floor, setup offers only OCR and the rule-based detectors, labelled as such | | |
+| P4 | *Device*: on a phone below the device floor, setup offers only text recognition; where Find names would be, the document says the phone cannot find names, why, and that selecting text marks one, and Settings says the same (ADR 0088) | | |
 | P5 | *Device*: Scan (document camera) of a printed fixture page recognizes English and Russian text with the original page beside it | | |
 | P6 | *Simulator*: Files › PDF, DOCX and image import; "Open in mdoc" from the Files app's share sheet opens the document | | |
 | P7 | *Simulator*: candidates are underlined; tapping one opens the sheet with its alias; Keep, Replace, All occurrences and Just this one act as on desktop; the Identities sheet lists identities by category | | |

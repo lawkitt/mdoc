@@ -16,18 +16,21 @@ struct MarkdownStyling: Equatable, Sendable {
     var blocks: [MarkdownBlock]
     /// Tables, in source order (ADR 0096).
     var tables: [MarkdownTable]
+    /// Inline images outside code and tables, in source order (ADR 0096).
+    var images: [MarkdownImage]
 
     static let empty = MarkdownStyling(spans: [], lines: [])
 
     init(
         spans: [MarkdownSpan], lines: [MarkdownLine], listItems: [MarkdownListItem] = [],
-        blocks: [MarkdownBlock] = [], tables: [MarkdownTable] = []
+        blocks: [MarkdownBlock] = [], tables: [MarkdownTable] = [], images: [MarkdownImage] = []
     ) {
         self.spans = spans
         self.lines = lines
         self.listItems = listItems
         self.blocks = blocks
         self.tables = tables
+        self.images = images
     }
 
     /// Asks the core for the spans of `markdown`.
@@ -38,6 +41,7 @@ struct MarkdownStyling: Equatable, Sendable {
         listItems = styling.listItems.map(MarkdownListItem.init)
         blocks = styling.blocks.map(MarkdownBlock.init)
         tables = styling.tables.map(MarkdownTable.init)
+        images = styling.images.map { MarkdownImage(range: SourceRange($0.range), alt: SourceRange($0.alt)) }
     }
 }
 
@@ -45,6 +49,13 @@ private extension SourceRange {
     init(_ range: MdocFFI.TextRange) {
         self.init(start: Int(range.start), end: Int(range.end))
     }
+}
+
+/// An inline `![alt](src)`, drawn as an Image chip.
+struct MarkdownImage: Hashable, Sendable {
+    var range: SourceRange
+    /// The alt text; empty for `![](src)`.
+    var alt: SourceRange
 }
 
 /// A list item's line: the bullet, number or box desktop paints where its

@@ -1,0 +1,26 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":36,"end":59,"label":"organization","score":0.9918753,"text":"Bureau of Quarry Safety"},
+    {"start":551,"end":573,"label":"organization","score":0.9854405,"text":"Treaty Oak Capital LLC"},
+    {"start":71,"end":104,"label":"organization","score":0.9844564,"text":"Ashmoor County Sheriff’s Office"},
+    {"start":304,"end":308,"label":"organization","score":0.98334295,"text":"NASA"},
+    {"start":577,"end":597,"label":"organization","score":0.97821885,"text":"Customs Brokers Inc."},
+    {"start":320,"end":334,"label":"organization","score":0.9731388,"text":"Central Office"},
+    {"start":113,"end":135,"label":"organization","score":0.97241473,"text":"Northvale Constabulary"},
+    {"start":241,"end":260,"label":"organization","score":0.9641868,"text":"Brindle County Jail"},
+    {"start":175,"end":194,"label":"organization","score":0.9563905,"text":"Quillon Freight LLC"},
+    {"start":443,"end":469,"label":"organization","score":0.93403506,"text":"Ashmoor Freight Safety Act"},
+    {"start":390,"end":407,"label":"organization","score":0.8916225,"text":"Lugano Convention"},
+    {"start":269,"end":274,"label":"organization","score":0.88759494,"text":"Board"},
+    {"start":225,"end":235,"label":"organization","score":0.8761053,"text":"Grand Jury"},
+    {"start":61,"end":64,"label":"organization","score":0.859428,"text":"BQS"},
+    {"start":517,"end":521,"label":"organization","score":0.8119744,"text":"AFSA"},
+    {"start":531,"end":535,"label":"organization","score":0.80115914,"text":"AFSA"},
+    {"start":363,"end":384,"label":"organization","score":0.7994423,"text":"Brussels I Regulation"},
+    {"start":413,"end":434,"label":"organization","score":0.79865825,"text":"Ashmoor Executive Law"},
+    {"start":197,"end":204,"label":"organization","score":0.787768,"text":"Customs"},
+    {"start":286,"end":289,"label":"organization","score":0.68246794,"text":"BQS"}
+  ]
+}
