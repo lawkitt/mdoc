@@ -1000,3 +1000,290 @@ fn a_case_number_alias_restores_like_any_alias() {
         "Settle 6001842/2026 and 6001842/2026 by Friday."
     );
 }
+
+#[test]
+fn reply_restoration_reads_a_legacy_marked_wording_without_stray_markers() {
+    for (original, expected) in [
+        (
+            "Pellam* *Rooke* *Holdings* *Ltd",
+            "Pellam Rooke Holdings Ltd",
+        ),
+        ("Integrated** **Sports Media", "Integrated Sports Media"),
+        ("Flat 2<sup>nd</sup>", "Flat 2nd"),
+    ] {
+        let map = RestoreMap::new(vec![ExportedIdentity {
+            alias: "ORG_1".into(),
+            previous: Vec::new(),
+            category: Category::Organization,
+            custom: false,
+            originals: vec![original.into()],
+        }]);
+        assert_eq!(
+            apply(&map, "**ORG_1** must deliver."),
+            format!("**{expected}** must deliver.")
+        );
+    }
+}
+
+#[test]
+fn saved_raw_originals_survive_reopen_relink_revert_and_join() {
+    for (original, category) in [
+        ("27 Wisp Lane<br>Norwich NR2 8ZZ", Category::Address),
+        ("Ann&#97; Petrova", Category::Person),
+        ("Pellam* *Industries Inc", Category::Organization),
+        ("Flat 2<sup>nd</sup>", Category::Address),
+        ("https://x.invalid/files/page_", Category::Url),
+        ("https://x.invalid/_drafts_/memo", Category::Url),
+    ] {
+        let wrapper = if original.contains('*') { "*" } else { "" };
+        let source = format!("| {wrapper}{original}{wrapper} |");
+        let start = 2 + wrapper.len();
+        let mut review = Review::default();
+        review
+            .ingest(
+                &source,
+                vec![Detection {
+                    range: start..start + original.len(),
+                    category,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                }],
+            )
+            .unwrap();
+        assert_eq!(review.remaining(), 1, "{original}");
+        let changed = apply_pending(&mut review, &source, 1);
+        let saved = review.export_identities();
+        assert_eq!(saved[0].originals, [Arc::<str>::from(original)]);
+        assert_eq!(RestoreMap::new(saved.clone()).identities(), saved);
+
+        let mut reopened = Review::default();
+        let ids = reopened.seed(&saved, &changed);
+        assert_eq!(reopened.relink(&changed, &saved, &ids, 7), 1);
+        let all = reopened.applied().iter().map(|a| a.id).collect();
+        let mut restored = changed.clone();
+        for (range, value) in reopened
+            .reversion_edits(&changed, &all)
+            .unwrap()
+            .iter()
+            .rev()
+        {
+            restored.replace_range(range.clone(), value);
+        }
+        assert_eq!(restored, source, "{original}");
+        let exported = reopened.export_identities_with_ids();
+        assert_eq!(exported[0].1.originals, saved[0].originals);
+        let joined = plan_join(&saved, &exported, &[]);
+        assert!(joined.changes.is_empty(), "{original}: {joined:?}");
+        assert!(joined.unmatched.is_empty(), "{original}: {joined:?}");
+    }
+}
+
+#[test]
+fn an_old_raw_case_keeps_its_alias_on_save() {
+    for (alias, category, original) in [
+        (
+            "ADDRESS_1",
+            Category::Address,
+            "27 Wisp Lane<br>Norwich NR2 8ZZ",
+        ),
+        ("PERSON_1", Category::Person, "Ann&#97; Petrova"),
+        ("PERSON_1", Category::Person, "Верес-\nтова Дарья Ильинична"),
+        ("PERSON_1", Category::Person, "Ма\u{ad}рина Лебедева"),
+        ("ORG_1", Category::Organization, "Pellam* *Industries Inc"),
+    ] {
+        let old = vec![identity(alias, category, &[original])];
+        let mut review = Review::default();
+        let source = format!("| {alias} |");
+        let ids = review.seed(&old, &source);
+        assert_eq!(review.relink(&source, &old, &ids, 1), 1, "{original}");
+        let exported = review.export_identities_with_ids();
+        assert_eq!(exported[0].1.originals, old[0].originals, "{original}");
+        assert_eq!(exported[0].1.alias, alias, "{original}");
+        let joined = plan_join(&old, &exported, &[]);
+        assert_eq!(joined, JoinPlan::default(), "{original}");
+    }
+}
+
+#[test]
+fn reply_decoding_is_narrow_and_never_changes_urls_or_emails() {
+    for original in [
+        "Ann&#97; Petrova",
+        "27 Wisp Lane<br>Norwich",
+        "_jdoe",
+        "Smith[^2]",
+        "Lee<sup>1</sup>",
+        "Pellam<sup>Ltd</sup>",
+        "И Н Н",
+        "Ма\u{ad}рина",
+        "Арте\u{308}м",
+        "Верес-\nтова",
+        "<b>Anna</b>",
+        "26<sup>t&#104;</sup>",
+    ] {
+        let expected = if original == "26<sup>t&#104;</sup>" {
+            "26t&#104;"
+        } else {
+            original
+        };
+        let map = RestoreMap::new(vec![identity("ORG_1", Category::Organization, &[original])]);
+        assert_eq!(apply(&map, "ORG_1"), expected);
+        assert_eq!(map.identities()[0].wording(), original);
+    }
+    for category in [Category::Url, Category::Email] {
+        for original in [
+            "https://x.invalid/files/page_",
+            "https://x.invalid/_drafts_/memo",
+            "ann_@x.invalid",
+            "ann_lee@x.invalid",
+            "A* *B",
+            "26<sup>th</sup>",
+        ] {
+            let alias = format!("{}_1", category.token());
+            let map = RestoreMap::new(vec![identity(&alias, category, &[original])]);
+            assert_eq!(apply(&map, &alias), original);
+        }
+    }
+}
+
+#[test]
+fn merging_keeps_the_targets_raw_primary_pin() {
+    // Equal-length raw forms: the target pin wins even though its variant
+    // was seen second. Reply decoding never changes the stored merge pin.
+    let first = "Quillon* *Trading Ltd";
+    let target = "Pellam* *Trading Ltd.";
+    assert_eq!(first.chars().count(), target.chars().count());
+    let source = format!("*{first}* and *{target}*");
+    let mut review = Review::default();
+    review.refresh(&source);
+    let a = review
+        .add_manual(&source, 1..1 + first.len(), Category::Organization)
+        .unwrap();
+    let at = source.find(target).unwrap();
+    let b = review
+        .add_manual(&source, at..at + target.len(), Category::Organization)
+        .unwrap();
+    let from = review.variant_identity(a).unwrap();
+    let to = review.variant_identity(b).unwrap();
+    review.merge_identity(from, to).unwrap();
+    assert_eq!(
+        review.identities.primary_wording(to).unwrap().as_ref(),
+        target
+    );
+    assert_eq!(review.export_identities()[0].wording(), target);
+    apply_pending(&mut review, &source, 1);
+    let exported = review.export_identities();
+    assert_eq!(exported[0].wording(), target);
+    let unique: HashSet<_> = exported[0].originals.iter().collect();
+    assert_eq!(unique.len(), exported[0].originals.len());
+}
+
+#[test]
+fn changing_raw_only_categories_invalidates_discovery_and_its_cached_patterns() {
+    let marked = "Pellam* *Industries Inc";
+    let plain = "Pellam Industries Inc";
+    let mut review = Review::default();
+    let ids = review.seed(&[identity("EMAIL_1", Category::Email, &[marked])], plain);
+    assert_eq!(review.remaining(), 0);
+    let before = review.identity_snapshot();
+    let old_input = review.discovery_input();
+    review
+        .recategorize_identity(ids[0], Category::Organization)
+        .unwrap();
+    let old_result = old_input
+        .run(&std::sync::atomic::AtomicBool::new(false))
+        .unwrap();
+    assert!(!review.apply_discovery(old_result));
+    review.refresh(plain);
+    assert_eq!(review.remaining(), 1);
+    assert_eq!(review.variants().last().unwrap().original.as_ref(), plain);
+    review.restore_identity_snapshot(before);
+    // A separate source never reached by the raw email seed stays literal
+    // after undo, even if the matcher was built while it was an organization.
+    let other = "Pellam** **Industries Inc";
+    review.refresh(other);
+    assert_eq!(review.remaining(), 0);
+}
+
+/// Round 3 of #564: an identity with a marked and a plain spelling restores
+/// the plain one into a reopened document, so no stray markers appear.
+#[test]
+fn a_reopened_mixed_identity_reverts_without_stray_markers() {
+    let source = "*Pellam* *Industries Inc* and Pellam Industries Inc agree.";
+    let marked = "Pellam* *Industries Inc";
+    let plain_at = source.rfind("Pellam Industries Inc").unwrap();
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                Detection {
+                    range: 1..1 + marked.len(),
+                    category: Category::Organization,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+                Detection {
+                    range: plain_at..plain_at + "Pellam Industries Inc".len(),
+                    category: Category::Organization,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(review.remaining(), 2);
+    let changed = apply_pending(&mut review, source, 1);
+    let saved = review.export_identities();
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    assert_eq!(saved[0].originals[0].as_ref(), "Pellam Industries Inc");
+
+    let mut reopened = Review::default();
+    let ids = reopened.seed(&saved, &changed);
+    reopened.relink(&changed, &saved, &ids, 7);
+    let all = reopened.applied().iter().map(|a| a.id).collect();
+    let mut restored = changed.clone();
+    for (range, value) in reopened
+        .reversion_edits(&changed, &all)
+        .unwrap()
+        .iter()
+        .rev()
+    {
+        restored.replace_range(range.clone(), value);
+    }
+    assert_eq!(
+        restored,
+        "*Pellam Industries Inc* and Pellam Industries Inc agree."
+    );
+}
+
+/// Round 3 of #564: the wording a reply restores for a marked original is
+/// masked again when that text is pseudonymized (Copy for AI, the shelf).
+#[test]
+fn a_restored_marked_wording_is_pseudonymized_again() {
+    let map = RestoreMap::new(vec![ExportedIdentity {
+        alias: "ORG_1".into(),
+        previous: Vec::new(),
+        category: Category::Organization,
+        custom: false,
+        originals: vec!["Pellam* *Industries Inc".into()],
+    }]);
+    let restored = apply(&map, "ORG_1 must deliver.");
+    assert_eq!(restored, "Pellam Industries Inc must deliver.");
+    assert_eq!(
+        map.pseudonymize(&restored),
+        ("ORG_1 must deliver.".into(), 1)
+    );
+    // The raw spelling still matches, and a URL is matched raw only.
+    assert_eq!(map.pseudonymize("Pellam* *Industries Inc").1, 1);
+    let urls = RestoreMap::new(vec![ExportedIdentity {
+        alias: "URL_1".into(),
+        previous: Vec::new(),
+        category: Category::Url,
+        custom: false,
+        originals: vec!["https://x.invalid/files/page_".into()],
+    }]);
+    assert_eq!(
+        urls.pseudonymize("see https://x.invalid/files/page now").1,
+        0
+    );
+}

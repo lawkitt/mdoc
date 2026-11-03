@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":195,"end":220,"label":"full_name","score":0.682891,"text":"Quillon** **Freight Media"},
+    {"start":53,"end":76,"label":"full_name","score":0.56643826,"text":"Pellam* *Industries Inc"},
+    {"start":119,"end":151,"label":"organization","score":0.99293363,"text":"Rooke & Venn** **Groundworks Ltd"},
+    {"start":195,"end":220,"label":"organization","score":0.9865718,"text":"Quillon** **Freight Media"},
+    {"start":53,"end":76,"label":"organization","score":0.97958964,"text":"Pellam* *Industries Inc"},
+    {"start":465,"end":487,"label":"email","score":0.9994341,"text":"records@pellam.invalid"},
+    {"start":285,"end":330,"label":"address","score":0.9871292,"text":"4410 Quarry Street** **Brindlecombe, CA 95999"}
+  ]
+}

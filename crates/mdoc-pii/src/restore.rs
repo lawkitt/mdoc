@@ -40,11 +40,31 @@ pub(crate) fn parse_alias(value: &str) -> Option<(Category, u64)> {
 #[derive(Clone, Debug, Default)]
 pub struct RestoreMap {
     identities: Vec<ExportedIdentity>,
+    /// Reply-only readable primaries; saved originals remain exact source.
+    wordings: Vec<Arc<str>>,
     generated: HashMap<(Category, u64), usize>,
     custom: Vec<(String, usize)>,
 }
 impl RestoreMap {
     pub fn new(identities: Vec<ExportedIdentity>) -> Self {
+        let wordings = identities
+            .iter()
+            .map(|identity| {
+                let primary = identity
+                    .originals
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "".into());
+                match crate::view::wording(&primary) {
+                    std::borrow::Cow::Owned(read)
+                        if !matches!(identity.category, Category::Url | Category::Email) =>
+                    {
+                        Arc::from(read)
+                    }
+                    _ => primary,
+                }
+            })
+            .collect();
         let mut generated = HashMap::new();
         let mut custom = Vec::new();
         // Current aliases first: an alias that is one identity's own names it,
@@ -73,6 +93,7 @@ impl RestoreMap {
         custom.sort_by_key(|(alias, _)| std::cmp::Reverse(alias.len()));
         Self {
             identities,
+            wordings,
             generated,
             custom,
         }
@@ -133,7 +154,7 @@ impl RestoreMap {
             match token.identity {
                 Some(index) => {
                     values.insert(index);
-                    let mut wording = self.identities[index].wording();
+                    let mut wording = self.wordings[index].as_ref();
                     // A wording detected with its full stop ("Ltd.") does not
                     // double the one the reply already has after the alias.
                     if wording.ends_with('.') && text[token.range.end..].starts_with('.') {
@@ -279,20 +300,30 @@ impl RestoreMap {
     /// Known originals in `text` with their identity index: exact wording,
     /// whole words, then the leftmost and longest of those, non-overlapping.
     fn originals_in(&self, text: &str) -> Vec<(Range<usize>, usize)> {
-        let mut patterns = Vec::new();
+        let mut patterns: Vec<Cow<'_, str>> = Vec::new();
         let mut owners = Vec::new();
         for (index, identity) in self.identities.iter().enumerate() {
+            let raw = matches!(identity.category, Category::Url | Category::Email);
             for original in &identity.originals {
-                if !original.trim().is_empty() {
-                    patterns.push(original.as_ref());
+                if original.trim().is_empty() {
+                    continue;
+                }
+                // Also the wording a reply restores ("Pellam Industries Inc"
+                // for "Pellam* *Industries Inc"), so restored text pasted
+                // back is masked again (#552).
+                if !raw && let Cow::Owned(read) = super::view::wording(original) {
+                    patterns.push(Cow::Owned(read));
                     owners.push(index);
                 }
+                patterns.push(Cow::Borrowed(original.as_ref()));
+                owners.push(index);
             }
         }
         if patterns.is_empty() {
             return Vec::new();
         }
-        let Ok(matcher) = aho_corasick::AhoCorasick::new(&patterns) else {
+        let Ok(matcher) = aho_corasick::AhoCorasick::new(patterns.iter().map(|p| p.as_bytes()))
+        else {
             return Vec::new();
         };
         // Whole words first, then the leftmost and longest of those: a longer
@@ -617,8 +648,15 @@ impl Review {
                 // target's primary, then first seen. The pin only breaks
                 // ties, so a longer wording linked later still becomes
                 // primary; "Верес-\nтова Дарья Ильинична" never restores
-                // over "Дарья Ильинична Верестова" (#388).
-                let read = |o: &str| crate::view::unwrapped(o).chars().count();
+                // over "Дарья Ильинична Верестова" (#388). Emphasis gaps and
+                // ordinal tags count as read too, so "Pellam* *Industries
+                // Inc" ties with "Pellam Industries Inc" and the plain one
+                // wins: a reopened document restores no stray markers (#552).
+                let read = |o: &str| {
+                    crate::view::unwrapped(&crate::view::wording(o))
+                        .chars()
+                        .count()
+                };
                 let pinned = self.identities.primary_wording(id);
                 let primary = entry
                     .originals
@@ -637,6 +675,8 @@ impl Review {
                 let wording = entry.originals.remove(0);
                 entry.originals.sort_by_key(|o| std::cmp::Reverse(read(o)));
                 entry.originals.insert(0, wording);
+                let mut seen = HashSet::new();
+                entry.originals.retain(|o| seen.insert(o.clone()));
                 for alias in self.identities.retired_aliases(id) {
                     push(&mut entry.aliases, alias.clone());
                 }
@@ -713,6 +753,7 @@ impl Review {
                     category: exported.category,
                     replacement: exported.alias.clone(),
                     mentions: Vec::new(),
+                    source_variant: None,
                     kept: false,
                     keep_default: on_step,
                     priority: 0,

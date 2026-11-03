@@ -1,4 +1,5 @@
 //! Source grammar protection shared by discovery and manual selection.
+use crate::view::InlineMarkup;
 use std::ops::Range;
 /// Protect letter/number-bearing grammar: list prefixes, ATX heading marks,
 /// HTML tag and attribute names, and attribute quotes. Identifying-information detection stays in GLiNER2.
@@ -382,15 +383,53 @@ pub(super) fn line_breaks_in(source: &str, range: &Range<usize>) -> Vec<Range<us
     }
     breaks
 }
-/// Whether `range` crosses protected syntax, where a whole `<br>` inside
-/// it is part of the value.
+/// Rewrites allowed only wholly inside a detected value. A tag pair is
+/// indivisible: a partial superscript/subscript stays protected syntax.
+fn markup_in(
+    source: &str,
+    markup: &[InlineMarkup],
+    range: &Range<usize>,
+) -> Vec<(Range<usize>, String)> {
+    if !source[range.clone()].contains(['*', '_', '<']) {
+        return Vec::new();
+    }
+    let first = markup.partition_point(|m| m.range.start < range.start);
+    let mut edits: Vec<_> = markup[first..]
+        .iter()
+        .take_while(|m| m.range.start < range.end)
+        .filter(|m| m.range.end <= range.end)
+        // A script pair may be the value's edge. An emphasis join needs
+        // value text on both sides, so it cannot consume a neighbour's run.
+        .filter(|m| m.inner.is_some() || (range.start < m.range.start && m.range.end < range.end))
+        .flat_map(|m| m.edits.iter().cloned())
+        .collect();
+    edits.sort_by_key(|(r, _)| r.start);
+    edits
+}
+
+/// Syntax that detection reads as text inside this value: line breaks,
+/// emphasis joins and paired superscript/subscript tags.
+pub(super) fn value_syntax_in(
+    source: &str,
+    markup: &[InlineMarkup],
+    range: &Range<usize>,
+) -> Vec<Range<usize>> {
+    let mut parts = line_breaks_in(source, range);
+    parts.extend(markup_in(source, markup, range).into_iter().map(|(r, _)| r));
+    parts.sort_by_key(|r| r.start);
+    parts
+}
+
+/// Whether `range` crosses protected syntax, allowing the formatting
+/// detection reads as text wholly inside the value.
 pub(super) fn crosses_syntax(
     protected: &[Range<usize>],
+    markup: &[InlineMarkup],
     source: &str,
     range: &Range<usize>,
 ) -> bool {
     let first = protected.partition_point(|r| r.end <= range.start);
-    let breaks = line_breaks_in(source, range);
+    let breaks = value_syntax_in(source, markup, range);
     protected[first..]
         .iter()
         .take_while(|r| r.start < range.end)
@@ -403,7 +442,11 @@ const DELIMITERS: &[char] = &['\\', '*', '_', '~', '#', '\n', '\r', '<'];
 /// Whether replacing `range` with a plain token leaves the Markdown structure
 /// of its block unchanged: escaped (`\_`) or literal (`____`) delimiters are
 /// text, while a span that opens or closes emphasis, or splits an escape, is not.
-pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bool {
+pub(super) fn plain_text_span(
+    source: &str,
+    markup: &[InlineMarkup],
+    range: std::ops::Range<usize>,
+) -> bool {
     let value = &source[range.clone()];
     if !value.contains(DELIMITERS) {
         return true;
@@ -417,8 +460,15 @@ pub(super) fn plain_text_span(source: &str, range: std::ops::Range<usize>) -> bo
     let end = source[range.end..]
         .find("\n\n")
         .map_or(source.len(), |i| range.end + i);
-    let block = &source[start..end];
-    let local = range.start - start..range.end - start;
+    let mut block = source[start..end].to_owned();
+    let mut local = range.start - start..range.end - start;
+    // Compare the grammar with the same formatting joins detection reads.
+    // Outer emphasis and every other structural marker still participate.
+    for (part, replacement) in markup_in(source, markup, &range).into_iter().rev() {
+        local.end -= part.len() - replacement.len();
+        block.replace_range(part.start - start..part.end - start, &replacement);
+    }
+    let block = block.as_str();
     let mut replaced = String::with_capacity(block.len());
     replaced.push_str(&block[..local.start]);
     // In a URI autolink's brackets, "<X_>" is text: "<X>" would be an HTML

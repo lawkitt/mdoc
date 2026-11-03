@@ -137,6 +137,9 @@ pub struct Variant {
     pub category: Category,
     pub replacement: String,
     pub mentions: Vec<Range<usize>>,
+    /// Another source spelling of this wording, discovered through the view.
+    /// Its policy follows that seed until explicitly changed for this variant.
+    source_variant: Option<u64>,
     kept: bool,
     keep_default: bool,
     /// Manual additions win discovery overlaps, the latest first; 0 when detected.
@@ -249,12 +252,13 @@ fn safe_span(value: &str) -> bool {
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
-/// or between the lines of an address the rule pack found whole.
+/// or between the lines of an address the rule pack found whole. Adjacent
+/// emphasis runs and paired inline `<sup>`/`<sub>` tags inside it are text too.
 ///
 /// A web address keeps its own characters (ADR 0094): a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
 /// a link's own bracket.
-fn detected_span(source: &str, detection: &Detection) -> bool {
+fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
     let address =
         detection.recognizer == Recognizer::Span && detection.category == Category::Address;
@@ -267,15 +271,19 @@ fn detected_span(source: &str, detection: &Detection) -> bool {
         && (url || !value.ends_with('_'))
         && !value.chars().any(|ch| forbidden.contains(ch))
         && !(url && (value.contains("](") || value.contains("][")))
-        && !outside_line_breaks(source, range).contains(['<', '>'])
+        && !outside_value_syntax(source, markup, range).contains(['<', '>'])
         && view::wrapped_value(source, range, address)
-        && plain_text_span(source, range.clone())
+        && plain_text_span(source, markup, range.clone())
 }
-/// `range` of `source` without the `<br>` tags inside it.
-fn outside_line_breaks(source: &str, range: &Range<usize>) -> String {
+/// `range` of `source` without the formatting detection reads as text.
+fn outside_value_syntax(
+    source: &str,
+    markup: &[view::InlineMarkup],
+    range: &Range<usize>,
+) -> String {
     let mut out = String::new();
     let mut at = range.start;
-    for line_break in syntax::line_breaks_in(source, range) {
+    for line_break in syntax::value_syntax_in(source, markup, range) {
         out.push_str(&source[at..line_break.start]);
         at = line_break.end;
     }
@@ -549,6 +557,11 @@ impl Review {
                 .iter()
                 .map(|g| g.category == Category::Url)
                 .collect(),
+            raw_only: self
+                .variants()
+                .iter()
+                .map(|g| matches!(g.category, Category::Url | Category::Email))
+                .collect(),
             cues: self
                 .variants()
                 .iter()
@@ -572,10 +585,41 @@ impl Review {
             return false;
         }
         self.revision.advance();
+        self.candidates.matcher = result.matcher;
+        // Matching reads decoded wording; variants and replacement provenance
+        // retain each exact source spelling for document restoration.
+        let groups = self.variants().len();
+        for index in 0..groups {
+            let seed = self.variants()[index].clone();
+            let mut exact = Vec::new();
+            for range in std::mem::take(&mut result.mentions[index]) {
+                let original: Arc<str> = Arc::from(&self.source[range.clone()]);
+                if original == seed.original {
+                    exact.push(range);
+                    continue;
+                }
+                let id = if let Some(id) = self.candidates.by_original(&original) {
+                    id
+                } else {
+                    self.next_id += 1;
+                    let id = self.next_id;
+                    let mut variant = seed.clone();
+                    variant.id = id;
+                    variant.original = original;
+                    variant.source_variant = Some(seed.id);
+                    variant.mentions.clear();
+                    self.candidates.push(variant);
+                    result.mentions.push(Vec::new());
+                    id
+                };
+                let target = self.variants().iter().position(|v| v.id == id).unwrap();
+                result.mentions[target].push(range);
+            }
+            result.mentions[index] = exact;
+        }
         for (variant, mentions) in self.variants().iter().zip(&mut result.mentions) {
             mentions.retain(|range| self.occurrence_identity(variant.id, range).is_some());
         }
-        self.candidates.matcher = result.matcher;
         self.awaiting_discovery = false;
         self.occupied_tokens = result.tokens;
         self.occupied_tokens
@@ -645,6 +689,7 @@ impl Review {
                 .then(a.range.start.cmp(&b.range.start))
         });
         let protected = protected_syntax(source);
+        let markup = view::inline_markup(source);
         // Applied replacements and alias text (generated or custom) are this
         // review's own output; a rescan must not alias them again.
         let mut applied: Vec<_> = self
@@ -672,8 +717,8 @@ impl Review {
             {
                 continue;
             }
-            if !detected_span(source, &detection)
-                || syntax::crosses_syntax(&protected, source, &detection.range)
+            if !detected_span(source, &markup, &detection)
+                || syntax::crosses_syntax(&protected, &markup, source, &detection.range)
                 || interval_conflict(&accepted, &detection.range)
             {
                 continue;
@@ -709,6 +754,12 @@ impl Review {
         input.url.extend(fresh.iter().map(|text| {
             selected.iter().any(|detection| {
                 detection.category == Category::Url && source[detection.range.clone()] == **text
+            })
+        }));
+        input.raw_only.extend(fresh.iter().map(|text| {
+            selected.iter().any(|detection| {
+                matches!(detection.category, Category::Url | Category::Email)
+                    && source[detection.range.clone()] == **text
             })
         }));
         input.cues.extend(fresh.iter().map(|_| None));
@@ -881,6 +932,7 @@ impl Review {
             category,
             replacement,
             mentions: Vec::new(),
+            source_variant: None,
             kept: false,
             keep_default: false,
             priority: 0,
@@ -898,12 +950,13 @@ impl Review {
     /// crossing no Markdown syntax. Returns the wording.
     pub fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
         let protected = protected_syntax(source);
+        let markup = view::inline_markup(source);
         source
             .get(range.clone())
             .filter(|value| {
                 manual_span(value)
                     && !protected.iter().any(|syntax| overlaps(&range, syntax))
-                    && plain_text_span(source, range.clone())
+                    && plain_text_span(source, &markup, range.clone())
             })
             .ok_or_else(|| "Selection crosses Markdown formatting.".into())
     }

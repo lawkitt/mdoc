@@ -149,6 +149,9 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
     if category == Category::Url {
         return url_key(value);
     }
+    if category == Category::Email {
+        return canonical_raw(value);
+    }
     let words = name_words(value);
     if category == Category::Person
         && words.len() == 3
@@ -176,6 +179,9 @@ fn url_key(value: &str) -> String {
     rest.strip_suffix('/').unwrap_or(rest).to_owned()
 }
 fn canonical(value: &str) -> String {
+    canonical_raw(&crate::view::wording(value))
+}
+fn canonical_raw(value: &str) -> String {
     crate::view::unwrapped(value)
         .replace(['«', '»', '“', '”'], "\"")
         .split_whitespace()
@@ -205,7 +211,7 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
 /// from a given name ("Van Morrison"). A word split by a line-end hyphen is
 /// one word ("Верес-\nтова" is "Верестова").
 pub(crate) fn name_words_cased(value: &str) -> Vec<String> {
-    crate::view::unwrapped(value)
+    crate::view::unwrapped(&crate::view::wording(value))
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
@@ -559,13 +565,15 @@ impl Review {
         self.identities.get(id)
     }
     pub fn variant_identity(&self, group: u64) -> Option<u64> {
-        self.identities
-            .policy
-            .variants
-            .get(&group)
-            .copied()
+        self.variant_lineage(group)
+            .find_map(|g| self.identities.policy.variants.get(&g.id).copied())
             .or_else(|| self.variant(group).map(|g| g.identity))
             .filter(|id| self.identities.get(*id).is_some())
+    }
+    fn variant_lineage(&self, group: u64) -> impl Iterator<Item = &super::Variant> {
+        std::iter::successors(self.variant(group), |g| {
+            g.source_variant.and_then(|id| self.variant(id))
+        })
     }
     pub fn occurrence_identity(&self, group: u64, range: &Range<usize>) -> Option<u64> {
         self.tracking
@@ -589,25 +597,30 @@ impl Review {
             .insert(after, self.identities.policy.clone());
     }
     pub(super) fn sync_identity_variants(&mut self) {
-        for group in &mut self.candidates.variants {
-            group.kept = self
-                .identities
-                .policy
-                .kept
-                .get(&group.id)
-                .copied()
-                .unwrap_or(group.keep_default);
-            let id = self
-                .identities
-                .policy
-                .variants
-                .get(&group.id)
-                .copied()
-                .unwrap_or(group.identity);
-            if let Some(identity) = self.identities.get(id) {
+        let policies: Vec<_> = self
+            .variants()
+            .iter()
+            .map(|group| {
+                let kept = self
+                    .variant_lineage(group.id)
+                    .find_map(|g| self.identities.policy.kept.get(&g.id).copied())
+                    .unwrap_or(group.keep_default);
+                (kept, self.variant_identity(group.id))
+            })
+            .collect();
+        let mut matching_changed = false;
+        for (group, (kept, id)) in self.candidates.variants.iter_mut().zip(policies) {
+            group.kept = kept;
+            if let Some(identity) = id.and_then(|id| self.identities.get(id)) {
+                matching_changed |= matches!(group.category, Category::Url | Category::Email)
+                    != matches!(identity.category, Category::Url | Category::Email);
                 group.category = identity.category;
                 group.replacement.clone_from(&identity.alias);
             }
+        }
+        if matching_changed {
+            self.candidates.matcher = None;
+            self.discovery_version += 1;
         }
     }
     /// Identities that still own a pending or applied mention. One whose
@@ -644,7 +657,9 @@ impl Review {
     /// (a case join, a manual addition) withdrew it. No Keep of its own.
     pub(super) fn withdrawn(&self, group: u64) -> bool {
         self.variant(group).is_some_and(|g| g.keep_default)
-            && !self.identities.policy.kept.contains_key(&group)
+            && !self
+                .variant_lineage(group)
+                .any(|g| self.identities.policy.kept.contains_key(&g.id))
     }
     pub(super) fn set_kept(&mut self, group: u64, kept: bool) {
         Arc::make_mut(&mut self.identities.policy)
@@ -1024,6 +1039,62 @@ impl Review {
 mod tests {
     use super::*;
     use crate::{Detection, Recognizer};
+
+    #[test]
+    fn keys_and_name_words_keep_mains_normalization_outside_emphasis_and_ordinals() {
+        for value in [
+            "_jdoe",
+            "Smith[^2]",
+            "Lee<sup>1</sup>",
+            "Pellam<sup>Ltd</sup>",
+            "27 Wisp Lane<br>Norwich",
+            "Ann&#97; Petrova",
+            "И Н Н",
+            "Ма\u{ad}рина",
+            "Арте\u{308}м",
+            "Верес-\nтова Дарья Ильинична",
+            "Ms. O'Neil,",
+            "ООО «Ромашка»",
+        ] {
+            let main = crate::view::unwrapped(value);
+            let key = main
+                .replace(['«', '»', '“', '”'], "\"")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            assert_eq!(canonical(value), key, "{value}");
+            let words: Vec<_> = main
+                .split_whitespace()
+                .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
+                .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
+                .collect();
+            assert_eq!(name_words_cased(value), words, "{value}");
+        }
+        for (marked, plain) in [
+            ("Pellam* *Industries Inc", "Pellam Industries Inc"),
+            ("Flat 2<sup>nd</sup>", "Flat 2nd"),
+            ("Flat 2<sub>nd</sub>", "Flat 2nd"),
+        ] {
+            assert_eq!(canonical(marked), canonical(plain));
+            assert_eq!(name_words_cased(marked), name_words_cased(plain));
+            assert_ne!(
+                normalization_key(marked, Category::Email),
+                normalization_key(plain, Category::Email)
+            );
+            assert_ne!(
+                normalization_key(marked, Category::Url),
+                normalization_key(plain, Category::Url)
+            );
+        }
+        for (raw, decoded) in [
+            ("_jdoe", "jdoe"),
+            ("Smith[^2]", "Smith"),
+            ("27 Wisp Lane<br>Norwich", "27 Wisp Lane, Norwich"),
+        ] {
+            assert_ne!(canonical(raw), canonical(decoded));
+        }
+    }
 
     #[test]
     #[ignore = "20,000 identity policy history storage; excludes editor layout and source matching"]
