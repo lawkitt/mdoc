@@ -1000,3 +1000,27 @@ fn a_case_number_alias_restores_like_any_alias() {
         "Settle 6001842/2026 and 6001842/2026 by Friday."
     );
 }
+
+#[test]
+fn reply_restoration_reads_a_legacy_marked_wording_without_stray_markers() {
+    for (original, expected) in [
+        (
+            "Pellam* *Rooke* *Holdings* *Ltd",
+            "Pellam Rooke Holdings Ltd",
+        ),
+        ("Integrated** **Sports Media", "Integrated Sports Media"),
+        ("Flat 2<sup>nd</sup>", "Flat 2nd"),
+    ] {
+        let map = RestoreMap::new(vec![ExportedIdentity {
+            alias: "ORG_1".into(),
+            previous: Vec::new(),
+            category: Category::Organization,
+            custom: false,
+            originals: vec![original.into()],
+        }]);
+        assert_eq!(
+            apply(&map, "**ORG_1** must deliver."),
+            format!("**{expected}** must deliver.")
+        );
+    }
+}

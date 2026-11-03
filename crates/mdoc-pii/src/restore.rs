@@ -44,7 +44,14 @@ pub struct RestoreMap {
     custom: Vec<(String, usize)>,
 }
 impl RestoreMap {
-    pub fn new(identities: Vec<ExportedIdentity>) -> Self {
+    pub fn new(mut identities: Vec<ExportedIdentity>) -> Self {
+        // Also read older cases' raw wordings as visible text. Document
+        // reversions use tracking's exact originals, never this reply map.
+        for identity in &mut identities {
+            for original in &mut identity.originals {
+                *original = Arc::from(crate::view::wording(original).as_ref());
+            }
+        }
         let mut generated = HashMap::new();
         let mut custom = Vec::new();
         // Current aliases first: an alias that is one identity's own names it,
@@ -618,7 +625,7 @@ impl Review {
                 // ties, so a longer wording linked later still becomes
                 // primary; "Верес-\nтова Дарья Ильинична" never restores
                 // over "Дарья Ильинична Верестова" (#388).
-                let read = |o: &str| crate::view::unwrapped(o).chars().count();
+                let read = |o: &str| crate::view::wording(o).chars().count();
                 let pinned = self.identities.primary_wording(id);
                 let primary = entry
                     .originals
@@ -637,6 +644,12 @@ impl Review {
                 let wording = entry.originals.remove(0);
                 entry.originals.sort_by_key(|o| std::cmp::Reverse(read(o)));
                 entry.originals.insert(0, wording);
+                entry.originals = entry
+                    .originals
+                    .into_iter()
+                    .map(|o| Arc::from(crate::view::wording(&o).as_ref()))
+                    .collect();
+                entry.originals.dedup();
                 for alias in self.identities.retired_aliases(id) {
                     push(&mut entry.aliases, alias.clone());
                 }
@@ -713,6 +726,7 @@ impl Review {
                     category: exported.category,
                     replacement: exported.alias.clone(),
                     mentions: Vec::new(),
+                    source_variant: None,
                     kept: false,
                     keep_default: on_step,
                     priority: 0,

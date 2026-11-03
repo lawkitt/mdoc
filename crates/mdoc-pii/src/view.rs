@@ -11,7 +11,8 @@
 //! `**ИНН**:`). The source itself never changes: spans found in the view map back to
 //! whole source characters. Adjacent emphasis runs read across their gap
 //! (`*Pellam* *Industries Inc*`), and inline `<sup>`/`<sub>` tags read as
-//! their inner text (`26<sup>th</sup>` reads `26th`).
+//! their inner text. Ordinals glue (`26<sup>th</sup>` reads `26th`);
+//! other superscripts/subscripts start a separate word (`Durnell<sup>1</sup>`).
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 
@@ -22,6 +23,7 @@ pub struct View {
     pub text: String,
     /// Each rewritten source range and the view range it became, in order.
     edits: Vec<Edit>,
+    pub(super) markup: Vec<InlineMarkup>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,10 +34,14 @@ struct Edit {
 
 impl View {
     pub fn new(source: &str) -> Self {
+        Self::read(source, inline_markup(source))
+    }
+
+    fn read(source: &str, markup: Vec<InlineMarkup>) -> Self {
         let mut text = String::with_capacity(source.len());
         let mut edits = Vec::new();
         let mut copied = 0;
-        let mut rewrites = rewrites(source);
+        let mut rewrites = rewrites(source, &markup);
         let spaced: Vec<_> = letter_spacing(source)
             .into_iter()
             .filter(|(range, _)| {
@@ -73,7 +79,11 @@ impl View {
             copied = range.end;
         }
         text.push_str(&source[copied..]);
-        Self { text, edits }
+        Self {
+            text,
+            edits,
+            markup,
+        }
     }
 
     /// Whether the view reads the source unchanged.
@@ -85,7 +95,18 @@ impl View {
     /// rewritten part widens to all of it, so a span covers whole source
     /// characters ("&#97;", never "&#9").
     pub fn source_range(&self, range: Range<usize>) -> Range<usize> {
-        self.source_offset(range.start, false)..self.source_offset(range.end, true)
+        let mut source =
+            self.source_offset(range.start, false)..self.source_offset(range.end, true);
+        for markup in &self.markup {
+            if let Some(inner) = &markup.inner
+                && source.start <= inner.start
+                && inner.end <= source.end
+            {
+                source.start = source.start.min(markup.range.start);
+                source.end = source.end.max(markup.range.end);
+            }
+        }
+        source
     }
 
     /// The view range source `range` reads as: the inverse of
@@ -140,12 +161,25 @@ pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// A validated mention's wording as read. Its outer emphasis delimiters
+/// belong to the surrounding document and may be absent from this fragment
+/// (`Pellam* *Rooke* *Ltd`), so delimiter roles must be checked against the
+/// complete source before calling this, not inferred again from the fragment.
+pub(super) fn wording(text: &str) -> std::borrow::Cow<'_, str> {
+    let view = View::read(text, inline_markup_with(text, false));
+    if view.is_source() {
+        std::borrow::Cow::Borrowed(text)
+    } else {
+        std::borrow::Cow::Owned(view.text)
+    }
+}
+
 /// Source ranges and what the view reads for each, in order, never
 /// overlapping.
-fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
-    let mut markup: Vec<_> = inline_markup(source)
-        .into_iter()
-        .flat_map(|m| m.edits)
+fn rewrites(source: &str, markup: &[InlineMarkup]) -> Vec<(Range<usize>, String)> {
+    let mut markup: Vec<_> = markup
+        .iter()
+        .flat_map(|m| m.edits.iter().cloned())
         .collect();
     markup.sort_by_key(|(r, _)| r.start);
     let mut markup = markup.iter().peekable();
@@ -277,16 +311,29 @@ fn rewrites(source: &str) -> Vec<(Range<usize>, String)> {
 
 /// Formatting wholly inside a value, with the source edits that read it
 /// as text. Keeping paired tags together lets review require the whole pair.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct InlineMarkup {
     pub range: Range<usize>,
+    pub(super) inner: Option<Range<usize>>,
     pub edits: Vec<(Range<usize>, String)>,
 }
 
 /// PDF imports often close and reopen emphasis between a value's words.
-/// Only that horizontal gap is a space; outer emphasis stays as written.
-/// Inline superscripts/subscripts keep their text and drop both bare tags.
+/// Spaces, tabs and NBSP between matching runs read as one space; outer
+/// emphasis stays as written. Mixed `*`/`_` runs and other inline HTML
+/// (`<u>`, `<i>`, `<b>`, `<span>`, or tags with attributes) are out of scope.
+/// Bare superscripts/subscripts keep their text: ordinal suffixes after a
+/// digit glue to it, while footnotes and other text start a separate word.
 /// Code, escaped syntax, HTML blocks/attributes and link targets keep theirs.
 pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
+    inline_markup_with(source, true)
+}
+
+fn inline_markup_with(source: &str, check_roles: bool) -> Vec<InlineMarkup> {
+    #[cfg(test)]
+    if source.len() >= 20_000 {
+        LARGE_MARKUP_SCANS.with(|count| count.set(count.get() + 1));
+    }
     let mut out = Vec::new();
     let escaped = |at: usize| {
         source[..at]
@@ -305,20 +352,21 @@ pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
             && source[..at]
                 .chars()
                 .next_back()
-                .is_some_and(char::is_alphanumeric)
+                .is_some_and(|before| !before.is_whitespace() && before != c)
             && !escaped(at)
         {
             let run = rest.len() - rest.trim_start_matches(c).len();
-            let after = rest[run..].trim_start_matches([' ', '\t']);
+            let after = rest[run..].trim_start_matches([' ', '\t', '\u{a0}']);
             let gap = rest[run..].len() - after.len();
             if run <= 3
                 && gap > 0
                 && after.starts_with(&rest[..run])
-                && after[run..].starts_with(char::is_alphanumeric)
+                && after[run..].starts_with(|after: char| !after.is_whitespace() && after != c)
             {
                 let end = at + run * 2 + gap;
                 out.push(InlineMarkup {
                     range: at..end,
+                    inner: None,
                     edits: vec![(at..end, " ".into())],
                 });
                 at = end;
@@ -336,10 +384,29 @@ pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
             && !source[at + 5..close].contains(['\r', '\n', '`'])
             && !escaped(close)
         {
+            let inner = &source[at + 5..close];
+            let inner = decoded_ordinal(inner);
+            let ordinal = source[..at].ends_with(|c: char| c.is_ascii_digit())
+                && matches!(
+                    inner.to_lowercase().as_str(),
+                    "st" | "nd"
+                        | "rd"
+                        | "th"
+                        | "-й"
+                        | "-я"
+                        | "-е"
+                        | "-го"
+                        | "-ый"
+                        | "-ой"
+                        | "-ая"
+                        | "-ое"
+                        | "-ого"
+                );
             out.push(InlineMarkup {
                 range: at..close + 6,
+                inner: Some(at + 5..close),
                 edits: vec![
-                    (at..at + 5, String::new()),
+                    (at..at + 5, if ordinal { String::new() } else { " ".into() }),
                     (close..close + 6, String::new()),
                 ],
             });
@@ -356,8 +423,21 @@ pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
         return Vec::new();
     };
     let mut stack = vec![&root];
+    let mut openers = std::collections::HashSet::new();
+    let mut closers = std::collections::HashSet::new();
     while let Some(node) = stack.pop() {
         use markdown::mdast::Node;
+        if matches!(node, Node::Emphasis(_) | Node::Strong(_))
+            && let Some(pos) = node.position()
+        {
+            let width = if matches!(node, Node::Strong(_)) {
+                2
+            } else {
+                1
+            };
+            openers.extend(pos.start.offset..pos.start.offset + width);
+            closers.extend(pos.end.offset - width..pos.end.offset);
+        }
         let opaque = match node {
             Node::Code(_) | Node::InlineCode(_) => true,
             Node::Html(html) => !["<sup>", "</sup>", "<sub>", "</sub>"]
@@ -374,8 +454,46 @@ pub(super) fn inline_markup(source: &str) -> Vec<InlineMarkup> {
         !protected
             .iter()
             .any(|p| p.start < m.range.end && m.range.start < p.end)
+            && (!check_roles || m.inner.is_some() || {
+                let run = source[m.range.clone()].chars().next().unwrap();
+                let width = source[m.range.clone()]
+                    .chars()
+                    .take_while(|&c| c == run)
+                    .count();
+                let left = m.range.start..m.range.start + width;
+                let right = m.range.end - width..m.range.end;
+                let marked = |at: &usize| openers.contains(at) || closers.contains(at);
+                (left.clone().all(|at| closers.contains(&at))
+                    && right.clone().all(|at| openers.contains(&at)))
+                    || (!left.into_iter().any(|at| marked(&at))
+                        && !right.into_iter().any(|at| marked(&at)))
+            })
     });
     out
+}
+
+/// Decode references in a suffix without recursively inspecting markup.
+fn decoded_ordinal(text: &str) -> String {
+    let mut out = String::new();
+    let mut at = 0;
+    while at < text.len() {
+        if text[at..].starts_with('&')
+            && let Some((len, value)) = character_reference(&text[at..])
+        {
+            out.push_str(&value);
+            at += len;
+        } else {
+            let c = text[at..].chars().next().unwrap();
+            out.push(c);
+            at += c.len_utf8();
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static LARGE_MARKUP_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The length of the footnote reference at `at` in `source` (`[^1]`,
@@ -1302,6 +1420,7 @@ mod tests {
             "A*\n*B",
             "A** ** B",
             "A**** ****B",
+            "Pellam** **Ltd and more** text",
             "snake_case",
             "`26<sup>th</sup> Street`",
             "`A** **B`",
@@ -1322,6 +1441,36 @@ mod tests {
             View::new("* **A** **B**\n# *C* *D*\n| **E** **F** |").text,
             "* **A B**\n# *C D*\n| **E F** |"
         );
+        for (source, expected) in [
+            ("*A* _B_", "*A* B"),
+            ("**A** __B__", "**A** B"),
+            ("***A*** ___B___", "***A*** B"),
+        ] {
+            assert!(inline_markup(source).is_empty(), "{source}");
+            assert_eq!(View::new(source).text, expected);
+        }
+    }
+
+    #[test]
+    fn ordinals_glue_but_other_superscripts_are_separate_words() {
+        for tag in ["sup", "sub"] {
+            for suffix in ["st", "nd", "rd", "th", "TH", "-й", "-я", "-е", "-го"] {
+                let source = format!("Flat 2<{tag}>{suffix}</{tag}>");
+                let view = View::new(&source);
+                assert_eq!(view.text, format!("Flat 2{suffix}"));
+                assert_eq!(view.source_range(0..view.text.len()), 0..source.len());
+                let start = view.text.find(suffix).unwrap();
+                let range = view.source_range(start..view.text.len());
+                assert_eq!(&source[range], format!("<{tag}>{suffix}</{tag}>"));
+            }
+            for (source, expected) in [
+                (format!("Durnell<{tag}>th</{tag}>"), "Durnell th"),
+                (format!("26<{tag}>1</{tag}>"), "26 1"),
+                (format!("26<{tag}>other</{tag}>"), "26 other"),
+            ] {
+                assert_eq!(View::new(&source).text, expected);
+            }
+        }
     }
 
     /// #498: an address found whole over its own lines stays one value with

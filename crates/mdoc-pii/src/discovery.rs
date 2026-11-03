@@ -61,11 +61,24 @@ impl DiscoveryInput {
                 tokens,
             });
         }
+        let originals: Vec<_> = self
+            .originals
+            .iter()
+            .map(|s| crate::view::wording(s))
+            .collect();
+        // Two patterns per variant: its exact source and its read wording.
+        // Raw matching also preserves URLs whose link context decodes parts
+        // differently from a standalone wording (e.g. `Alice_Morgan`).
         let matcher = self.matcher.unwrap_or_else(|| {
             Arc::new(
                 AhoCorasickBuilder::new()
                     .kind(Some(AhoCorasickKind::ContiguousNFA))
-                    .build(self.originals.iter().map(|s| s.as_ref()))
+                    .build(
+                        self.originals
+                            .iter()
+                            .zip(&originals)
+                            .flat_map(|(raw, read)| [raw.as_ref(), read.as_ref()]),
+                    )
                     .expect("bounded nonempty seeds"),
             )
         });
@@ -73,12 +86,38 @@ impl DiscoveryInput {
             return None;
         }
         let protected = protected_syntax(source);
+        let view = crate::view::View::new(source);
         let mut hits = Vec::new();
-        for (index, hit) in matcher.find_overlapping_iter(source).enumerate() {
+        // Prefer the exact source variant when it is already known, so a
+        // kept or explicitly separated wording keeps its own policy.
+        let exact: std::collections::HashMap<&str, usize> = self
+            .originals
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_ref(), i))
+            .collect();
+        let raw = matcher
+            .find_overlapping_iter(source)
+            .map(|hit| (hit.pattern().as_usize() / 2, hit.start()..hit.end()));
+        let decoded = matcher.find_overlapping_iter(&view.text).map(|hit| {
+            (
+                hit.pattern().as_usize() / 2,
+                view.source_range(hit.start()..hit.end()),
+            )
+        });
+        for (index, (pattern, range)) in raw.chain(decoded).enumerate() {
             if index % 1024 == 0 && cancel.load(Ordering::Relaxed) {
                 return None;
             }
-            hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
+            // A table header inserted by the view has no source characters.
+            if range.is_empty() {
+                continue;
+            }
+            let group = exact
+                .get(&source[range.clone()])
+                .copied()
+                .unwrap_or(pattern);
+            hits.push((group, range));
         }
         // The user's own selection (a manual mark) counts every exact
         // match; only a scan's repeats must be whole addresses and stay out
@@ -118,10 +157,11 @@ impl DiscoveryInput {
             self.enabled[*index]
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
+                && (source[range.clone()] == *self.originals[*index] || !glued(source, range))
                 && (!self.url[*index] || manual(*index) || crate::web::whole(source, range))
                 && (manual(*index) || !shielded(range))
-                && !crosses_syntax(&protected, source, range)
-                && plain_text_span(source, range.clone())
+                && !crosses_syntax(&protected, &view.markup, source, range)
+                && plain_text_span(source, &view.markup, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
                 && !(self.unglued[*index] && glued(source, range))
                 && !(self.whole[*index] && !whole_value(source, range))

@@ -693,6 +693,51 @@ fn values_across_emphasis_and_script_tags_apply_and_restore_exactly() {
             "4300 South 26th Street, Slocombe, PA 19999",
             Category::Address,
         ),
+        (
+            "See *Pellam* *Rooke* *Holdings* *Ltd* v *Larkfield* *Supply* *LLC*.",
+            "Pellam Rooke Holdings Ltd",
+            Category::Organization,
+        ),
+        (
+            "See *Pellam* *Rooke* *Holdings* *Ltd* v *Larkfield* *Supply* *LLC*.",
+            "Larkfield Supply LLC",
+            Category::Organization,
+        ),
+        (
+            "*Swiss* *Post* *International* *(Uk)* *Ltd*",
+            "Swiss Post International (Uk) Ltd",
+            Category::Organization,
+        ),
+        (
+            "*Excalibur* *&* *Keswick*",
+            "Excalibur & Keswick",
+            Category::Organization,
+        ),
+        (
+            "**75 Hawthorne Street,** **San Francisco, CA 94105**",
+            "75 Hawthorne Street, San Francisco, CA 94105",
+            Category::Address,
+        ),
+        ("*ООО* *«Ромашка»*", "ООО «Ромашка»", Category::Organization),
+        (
+            "*Марина* *Ивановна* *Верестова*",
+            "Марина Ивановна Верестова",
+            Category::Person,
+        ),
+        ("***A*** ***B***", "A B", Category::Organization),
+        ("**A**\u{a0}**B**", "A B", Category::Organization),
+        (
+            "At 26<sup>th</sup><br>Street",
+            "26th, Street",
+            Category::Address,
+        ),
+        ("At Flat 2<sup>nd</sup>", "Flat 2nd", Category::Address),
+        ("At Flat 2<sub>nd</sub>", "Flat 2nd", Category::Address),
+        (
+            "At <sup>Anna</sup> Petrova",
+            "Anna Petrova",
+            Category::Person,
+        ),
     ] {
         let view = view::View::new(source);
         let start = view.text.find(value).unwrap();
@@ -724,6 +769,9 @@ fn values_across_emphasis_and_script_tags_apply_and_restore_exactly() {
 fn formatting_joins_do_not_allow_partial_or_structural_spans() {
     for (source, value) in [
         ("**bold** text", "bold** text"),
+        ("*Pellam* *Ltd*", "* *Ltd"),
+        ("*Pellam* *Ltd*", "Pellam* *"),
+        ("Pellam** **Ltd and more** text", "Pellam** **Ltd"),
         ("# A** **B", "# A** **B"),
         ("At 26<sup>th</sup> Street", "26<sup>th"),
         ("At 26<sup>th</sup> Street", "th</sup> Street"),
@@ -749,6 +797,187 @@ fn formatting_joins_do_not_allow_partial_or_structural_spans() {
         applied("* A** **B", vec![detection(0..9, Category::Organization)]),
         "* ORG_1"
     );
+}
+
+#[test]
+fn html_footnotes_leave_the_preceding_value_whole() {
+    for tag in ["sup", "sub"] {
+        for (value, category) in [
+            ("ann@x.invalid", Category::Email),
+            ("+44 20 7946 0018", Category::Phone),
+            ("A40/2026", Category::CaseNumber),
+            ("Avelina Durnell", Category::Person),
+        ] {
+            let source = format!("Recorded: {value}<{tag}>1</{tag}>.");
+            let view = view::View::new(&source);
+            assert_eq!(view.text, format!("Recorded: {value} 1."));
+            let start = view.text.find(value).unwrap();
+            let range = view.source_range(start..start + value.len());
+            assert_eq!(&source[range.clone()], value);
+            let mut review = Review::default();
+            review
+                .ingest(&source, vec![detection(range, category)])
+                .unwrap();
+            assert_eq!(review.remaining(), 1, "{source}");
+            let changed = crate::restore::tests::apply_pending(&mut review, &source, 1);
+            assert_eq!(
+                changed,
+                format!("Recorded: {}_1<{tag}>1</{tag}>.", category.token())
+            );
+        }
+    }
+}
+
+#[test]
+fn the_issues_complete_synthetic_reproduction_maps_and_replaces_whole_values() {
+    let source = "See *Pellam* *Rooke* *Holdings* *Ltd* v *Larkfield* *Supply* *LLC*; d/b/a Quillon** **Freight Media; **4410 Quarry Street** **Brindlecombe, CA 95999**; 4300 South 26<sup>th</sup> Street, Slocombe, PA 19999.";
+    let view = view::View::new(source);
+    let mut review = Review::default();
+    let found = [
+        ("Pellam Rooke Holdings Ltd", Category::Organization),
+        ("Larkfield Supply LLC", Category::Organization),
+        ("Quillon Freight Media", Category::Organization),
+        (
+            "4410 Quarry Street Brindlecombe, CA 95999",
+            Category::Address,
+        ),
+        (
+            "4300 South 26th Street, Slocombe, PA 19999",
+            Category::Address,
+        ),
+    ]
+    .into_iter()
+    .map(|(value, category)| {
+        let start = view.text.find(value).unwrap();
+        detection(view.source_range(start..start + value.len()), category)
+    })
+    .collect();
+    review.ingest(source, found).unwrap();
+    assert_eq!(review.remaining(), 5);
+    assert_eq!(
+        crate::restore::tests::apply_pending(&mut review, source, 1),
+        "See *ORG_1* v *ORG_2*; d/b/a ORG_3; **ADDRESS_1**; ADDRESS_2."
+    );
+}
+
+#[test]
+fn marked_and_plain_mentions_share_an_identity_and_restore_the_exact_source() {
+    for (plain, marked) in [
+        ("Integrated Sports Media", "Integrated** **Sports Media"),
+        ("Pellam Industries Inc", "Pellam* *Industries Inc"),
+    ] {
+        let wrapper = if marked.contains("**") { "" } else { "*" };
+        let source = format!("{plain} and {wrapper}{marked}{wrapper}.");
+        // Either wording alone discovers the other; detecting both still
+        // makes one identity. Every raw spelling retains its own variant.
+        for values in [vec![plain], vec![marked], vec![plain, marked]] {
+            let mut review = Review::default();
+            review
+                .ingest(
+                    &source,
+                    values
+                        .iter()
+                        .map(|value| {
+                            let start = source.find(value).unwrap();
+                            detection(start..start + value.len(), Category::Organization)
+                        })
+                        .collect(),
+                )
+                .unwrap();
+            assert_eq!(review.active_identities().len(), 1, "{values:?}");
+            assert_eq!(review.remaining(), 2, "{values:?}");
+            let changed = crate::restore::tests::apply_pending(&mut review, &source, 1);
+            assert_eq!(changed, format!("ORG_1 and {wrapper}ORG_1{wrapper}."));
+            let ids = review.applied().iter().map(|a| a.id).collect();
+            let mut restored = changed.clone();
+            for (range, replacement) in review.reversion_edits(&changed, &ids).unwrap().iter().rev()
+            {
+                restored.replace_range(range.clone(), replacement);
+            }
+            assert_eq!(restored, source);
+            assert_eq!(review.export_identities()[0].wording(), plain);
+            let reply = "**ORG_1** must deliver.";
+            let mut restored = reply.to_owned();
+            for (range, wording) in restore::RestoreMap::new(review.export_identities())
+                .restore(reply)
+                .edits
+                .iter()
+                .rev()
+            {
+                restored.replace_range(range.clone(), wording);
+            }
+            assert_eq!(restored, format!("**{plain}** must deliver."));
+        }
+    }
+}
+
+#[test]
+fn a_discovered_source_spelling_follows_the_seeds_policy_and_undo() {
+    let plain = "Integrated Sports Media";
+    let source = format!("{plain} and Integrated** **Sports Media.");
+    let mut review = Review::default();
+    let before_mark = review.identity_snapshot();
+    let seed = review
+        .add_manual(plain, 0..plain.len(), Category::Organization)
+        .unwrap();
+    let first = review.variant_identity(seed).unwrap();
+    review.refresh(&source);
+    assert_eq!(review.remaining(), 2);
+    let before_move = review.identity_snapshot();
+    let second = review.new_identity(Category::Organization);
+    review.assign_variant(seed, second).unwrap();
+    review.refresh(&source);
+    assert_eq!(review.active_identities(), [second]);
+    assert_eq!(review.remaining(), 2);
+    let moved = review.identity_snapshot();
+    review.restore_identity_snapshot(before_move);
+    review.refresh(&source);
+    assert_eq!(review.active_identities(), [first]);
+    assert_eq!(review.remaining(), 2);
+    review.restore_identity_snapshot(moved);
+    review.refresh(&source);
+    assert_eq!(review.active_identities(), [second]);
+    // A Keep of only the marked spelling does not turn off the plain one.
+    let marked = proposed(&review, "Integrated** **Sports Media").id;
+    review.keep(marked, None);
+    review.refresh(&source);
+    assert_eq!(review.remaining(), 1);
+    assert_eq!(plan_all(&review, &source).unwrap()[0].0, 0..plain.len());
+    // Undoing the original manual mark withdraws its discovered spelling too.
+    review.restore_identity_snapshot(before_mark);
+    review.refresh(&source);
+    assert_eq!(review.remaining(), 0);
+}
+
+#[test]
+fn many_underscore_emails_do_not_rescan_inline_markup_per_value() {
+    fn scans(emails: usize) -> usize {
+        let mut source = "Ordinary document text. ".repeat(1000);
+        source.push_str("\n\nPellam* *Industries Inc\n\n");
+        let start = source.find("Pellam").unwrap();
+        let mut found = vec![detection(
+            start..start + "Pellam* *Industries Inc".len(),
+            Category::Organization,
+        )];
+        for index in 0..emails {
+            let value = format!("ann_{index}@x.invalid");
+            let start = source.len();
+            source.push_str(&value);
+            source.push_str("\n\n");
+            found.push(detection(start..start + value.len(), Category::Email));
+        }
+        assert!(source.len() > 20_000);
+        view::LARGE_MARKUP_SCANS.with(|count| count.set(0));
+        let mut review = Review::default();
+        review.ingest(&source, found).unwrap();
+        assert_eq!(review.remaining(), emails + 1);
+        assert_eq!(plan_all(&review, &source).unwrap().len(), emails + 1);
+        view::LARGE_MARKUP_SCANS.with(|count| count.get())
+    }
+    let few = scans(4);
+    let many = scans(200);
+    assert!(few > 0 && few <= 5, "{few} full-source scans");
+    assert_eq!(many, few, "markup work must not grow with the value count");
 }
 
 /// #402: a value over the lines of a table cell (`<br>`) is one span; a

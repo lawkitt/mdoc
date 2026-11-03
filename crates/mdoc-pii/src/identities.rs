@@ -176,7 +176,7 @@ fn url_key(value: &str) -> String {
     rest.strip_suffix('/').unwrap_or(rest).to_owned()
 }
 fn canonical(value: &str) -> String {
-    crate::view::unwrapped(value)
+    crate::view::wording(value)
         .replace(['«', '»', '“', '”'], "\"")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -205,7 +205,7 @@ pub(crate) fn name_words(value: &str) -> Vec<String> {
 /// from a given name ("Van Morrison"). A word split by a line-end hyphen is
 /// one word ("Верес-\nтова" is "Верестова").
 pub(crate) fn name_words_cased(value: &str) -> Vec<String> {
-    crate::view::unwrapped(value)
+    crate::view::wording(value)
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_owned())
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.to_lowercase().as_str()))
@@ -559,13 +559,15 @@ impl Review {
         self.identities.get(id)
     }
     pub fn variant_identity(&self, group: u64) -> Option<u64> {
-        self.identities
-            .policy
-            .variants
-            .get(&group)
-            .copied()
+        self.variant_lineage(group)
+            .find_map(|g| self.identities.policy.variants.get(&g.id).copied())
             .or_else(|| self.variant(group).map(|g| g.identity))
             .filter(|id| self.identities.get(*id).is_some())
+    }
+    fn variant_lineage(&self, group: u64) -> impl Iterator<Item = &super::Variant> {
+        std::iter::successors(self.variant(group), |g| {
+            g.source_variant.and_then(|id| self.variant(id))
+        })
     }
     pub fn occurrence_identity(&self, group: u64, range: &Range<usize>) -> Option<u64> {
         self.tracking
@@ -589,22 +591,20 @@ impl Review {
             .insert(after, self.identities.policy.clone());
     }
     pub(super) fn sync_identity_variants(&mut self) {
-        for group in &mut self.candidates.variants {
-            group.kept = self
-                .identities
-                .policy
-                .kept
-                .get(&group.id)
-                .copied()
-                .unwrap_or(group.keep_default);
-            let id = self
-                .identities
-                .policy
-                .variants
-                .get(&group.id)
-                .copied()
-                .unwrap_or(group.identity);
-            if let Some(identity) = self.identities.get(id) {
+        let policies: Vec<_> = self
+            .variants()
+            .iter()
+            .map(|group| {
+                let kept = self
+                    .variant_lineage(group.id)
+                    .find_map(|g| self.identities.policy.kept.get(&g.id).copied())
+                    .unwrap_or(group.keep_default);
+                (kept, self.variant_identity(group.id))
+            })
+            .collect();
+        for (group, (kept, id)) in self.candidates.variants.iter_mut().zip(policies) {
+            group.kept = kept;
+            if let Some(identity) = id.and_then(|id| self.identities.get(id)) {
                 group.category = identity.category;
                 group.replacement.clone_from(&identity.alias);
             }
@@ -644,7 +644,9 @@ impl Review {
     /// (a case join, a manual addition) withdrew it. No Keep of its own.
     pub(super) fn withdrawn(&self, group: u64) -> bool {
         self.variant(group).is_some_and(|g| g.keep_default)
-            && !self.identities.policy.kept.contains_key(&group)
+            && !self
+                .variant_lineage(group)
+                .any(|g| self.identities.policy.kept.contains_key(&g.id))
     }
     pub(super) fn set_kept(&mut self, group: u64, kept: bool) {
         Arc::make_mut(&mut self.identities.policy)
