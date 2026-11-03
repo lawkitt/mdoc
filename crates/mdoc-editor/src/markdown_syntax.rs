@@ -28,7 +28,7 @@ pub(crate) use mdoc_markdown::lines::{
     blockquote_prefix, footnote_def, heading_level, html_block, list_prefix, ordered_scan,
     task_prefix, thematic_break,
 };
-pub(crate) use mdoc_markdown::spans::is_backslash_escaped;
+pub(crate) use mdoc_markdown::spans::{inline_code_end, inline_image_spans, is_backslash_escaped};
 pub(crate) use mdoc_markdown::syntax::{TableStyle, table_style_marker};
 pub(crate) use mdoc_markdown::tables::{
     Align, TableRegion, is_table_separator, table_cell_ranges, table_cells, table_regions,
@@ -919,60 +919,6 @@ fn one_line_math(line: &str) -> Option<&str> {
 ///
 /// `$` and `\` are ASCII bytes that can't occur inside a multi-byte UTF-8 sequence, so the
 /// byte scan is char-safe and the returned ranges fall on char boundaries.
-/// Every inline `![alt](src)` image on `line`, as `(full span, src range)`.
-/// A whole-line image is handled as a block widget (`image_row`) before a line
-/// reaches inline shaping, so these are the mixed-line (text + image) ones.
-/// Images inside inline code aren't matched.
-// Inline objects cannot begin inside a code span. Reuse this boundary check
-// in both object scanners, which also feed rendering and hit testing.
-fn inline_code_end(line: &str, start: usize) -> Option<usize> {
-    let bytes = line.as_bytes();
-    if bytes.get(start) != Some(&b'`') || is_backslash_escaped(bytes, start) {
-        return None;
-    }
-    let width = bytes[start..].iter().take_while(|&&b| b == b'`').count();
-    let mut at = start + width;
-    while at < bytes.len() {
-        if bytes[at] == b'`' {
-            let count = bytes[at..].iter().take_while(|&&b| b == b'`').count();
-            if count == width {
-                return Some(at + count);
-            }
-            at += count;
-        } else {
-            at += 1;
-        }
-    }
-    None
-}
-
-pub(crate) fn inline_image_spans(line: &str) -> Vec<(Range<usize>, Range<usize>)> {
-    let b = line.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + 1 < b.len() {
-        if let Some(end) = inline_code_end(line, i) {
-            i = end;
-            continue;
-        }
-
-        if b[i] == b'!'
-            && !is_backslash_escaped(b, i)
-            && b[i + 1] == b'['
-            && let Some(rb) = line[i + 2..].find(']')
-            && line[i + 2 + rb + 1..].starts_with('(')
-            && let Some(rp) = line[i + 2 + rb + 2..].find(')')
-        {
-            let src = (i + 2 + rb + 2)..(i + 2 + rb + 2 + rp);
-            out.push((i..(src.end + 1), src.clone()));
-            i = src.end + 1;
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
 pub(crate) fn inline_math_spans(line: &str) -> Vec<Range<usize>> {
     let bytes = line.as_bytes();
     let mut out = Vec::new();

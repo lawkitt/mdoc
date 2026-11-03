@@ -1047,6 +1047,58 @@ pub fn is_backslash_escaped(b: &[u8], i: usize) -> bool {
     n % 2 == 1
 }
 
+/// The end of the inline code span that starts at `start`, if one does:
+/// inline objects (images, math) cannot begin inside a code span.
+pub fn inline_code_end(line: &str, start: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    if bytes.get(start) != Some(&b'`') || is_backslash_escaped(bytes, start) {
+        return None;
+    }
+    let width = bytes[start..].iter().take_while(|&&b| b == b'`').count();
+    let mut at = start + width;
+    while at < bytes.len() {
+        if bytes[at] == b'`' {
+            let count = bytes[at..].iter().take_while(|&&b| b == b'`').count();
+            if count == width {
+                return Some(at + count);
+            }
+            at += count;
+        } else {
+            at += 1;
+        }
+    }
+    None
+}
+
+/// Every inline `![alt](src)` image on `line`, as `(full span, src range)`.
+/// Images inside inline code aren't matched.
+pub fn inline_image_spans(line: &str) -> Vec<(Range<usize>, Range<usize>)> {
+    let b = line.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 1 < b.len() {
+        if let Some(end) = inline_code_end(line, i) {
+            i = end;
+            continue;
+        }
+
+        if b[i] == b'!'
+            && !is_backslash_escaped(b, i)
+            && b[i + 1] == b'['
+            && let Some(rb) = line[i + 2..].find(']')
+            && line[i + 2 + rb + 1..].starts_with('(')
+            && let Some(rp) = line[i + 2 + rb + 2..].find(')')
+        {
+            let src = (i + 2 + rb + 2)..(i + 2 + rb + 2 + rp);
+            out.push((i..(src.end + 1), src.clone()));
+            i = src.end + 1;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

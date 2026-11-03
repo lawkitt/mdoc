@@ -114,6 +114,9 @@
     "Found": {},
     "Identities": {},
     "Identity": {},
+    "Image": {
+      "comment": "Chip in place of a Markdown image with no description"
+    },
     "Import not finished": {},
     "Important": {
       "comment": "A Markdown alert's title"

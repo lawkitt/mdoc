@@ -155,6 +155,38 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertFalse(isHidden(document.text, (text as NSString).range(of: "| a").location))
     }
 
+    /// An image becomes a chip: space kerned after its hidden `[`, labelled
+    /// "Image" when it has no alt text, and its line never folds away.
+    func testImagesBecomeChips() throws {
+        let text = "Plan: ![Floor plan](plan.png)\n![](scan.png)\nEnd"
+        let styled = render(text).text
+        let ns = text as NSString
+        let first = ns.range(of: "![Floor").location
+        XCTAssertTrue(isHidden(styled, first))
+        XCTAssertGreaterThan(styled.attribute(.kern, at: first + 1, effectiveRange: nil) as? CGFloat ?? 0, 10)
+        XCTAssertFalse(isHidden(styled, ns.range(of: "Floor plan").location))
+        let chips = try XCTUnwrap(decoration(styled, at: "Plan:")?.chips)
+        XCTAssertEqual(chips.count, 1)
+        XCTAssertNil(chips[0].label)
+        let empty = try XCTUnwrap(decoration(styled, at: "![](scan")?.chips.first)
+        XCTAssertEqual(empty.label?.string, "Image")
+        let style = try XCTUnwrap(styled.attribute(.paragraphStyle, at: ns.range(of: "![](scan").location, effectiveRange: nil) as? NSParagraphStyle)
+        XCTAssertNotEqual(style.maximumLineHeight, BlockLayout.folded, "an image's line does not fold")
+    }
+
+    /// A table cell's image gets its chip in the cell's text; an image inside
+    /// raw HTML stays literal; VoiceOver hears "Image".
+    func testCellImagesAndLiteralHTML() throws {
+        let text = "<!-- ![](scan.png) -->\n\n| Seal | Note |\n| --- | --- |\n| ![](stamp.png) | ok |"
+        let document = render(text)
+        let cell = try XCTUnwrap(document.tables.first?.rows[1][0].text)
+        let chips = try XCTUnwrap(cell.attribute(.mdocDecoration, at: 0, effectiveRange: nil) as? LineDecoration).chips
+        XCTAssertEqual(chips.count, 1)
+        XCTAssertEqual(chips.first?.label?.string, "Image")
+        XCTAssertEqual(cell.attribute(.accessibilityTextCustom, at: 0, effectiveRange: nil) as? [String], ["Image"])
+        XCTAssertNil(document.text.attribute(.kern, at: 1, effectiveRange: nil), "no chip inside an HTML comment")
+    }
+
     /// Without a width yet, a table stays as its source rows.
     func testNoWidthLeavesTheSource() {
         let text = "| A | B |\n| --- | --- |\n| a | b |"
