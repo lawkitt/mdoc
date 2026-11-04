@@ -108,6 +108,15 @@ for _ in $(seq 1 180); do
     "${adb[@]}" shell settings put global window_animation_scale 0 >/dev/null
     "${adb[@]}" shell settings put global transition_animation_scale 0 >/dev/null
     "${adb[@]}" shell settings put global animator_duration_scale 0 >/dev/null
+    # CI's tests need the app's window to keep input focus (the clipboard
+    # reads null without it, #545): the screen stays on, no ANR or crash
+    # dialog takes focus, and the keyguard and any system dialog close.
+    if [ "$kind" = ci ]; then
+      "${adb[@]}" shell svc power stayon true >/dev/null
+      "${adb[@]}" shell settings put global hide_error_dialogs 1 >/dev/null
+      "${adb[@]}" shell wm dismiss-keyguard >/dev/null || true
+      "${adb[@]}" shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null || true
+    fi
     echo "$serial"
     exit
   fi

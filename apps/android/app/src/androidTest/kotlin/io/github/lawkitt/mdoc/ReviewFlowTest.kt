@@ -64,8 +64,11 @@ class ReviewFlowTest {
 
         // Copy for AI: the alias, never the original.
         waitFor("Copy")
+        // Only the app with window focus reads the clipboard (#545).
+        awaitWindowFocus({ compose.activity })
         compose.onNodeWithText("Copy").performClick()
         compose.waitForIdle()
+        awaitWindowFocus({ compose.activity })
         val clipboard = app.getSystemService(ClipboardManager::class.java)
         var copied = ""
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
