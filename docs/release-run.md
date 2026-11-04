@@ -111,8 +111,8 @@ report.
 A TestFlight build of the iOS app ([ADR 0097](adr/0097-ios-testflight-beta.md)).
 Steps in order; an agent does each unless it names the maintainer.
 
-1. **Gate.** Build 1: #576 merged, ROADMAP iOS item 3's device run passing on
-   the iPhone 17 Pro, P17 by hand there on a development build of the same
+1. **Gate.** Build 1: #576 merged, `just ios-device-test` passing on the
+   iPhone 17 Pro, P17 by hand there on a development build of the same
    commit. Later builds: a fix that affects testers (at most weekly) and `just
    ios-device-test` on both phones, detector tier on the 17 Pro and
    below-floor on the 12 Pro.
@@ -121,17 +121,18 @@ Steps in order; an agent does each unless it names the maintainer.
    checkout of the tag, and the maintainer archives it in Xcode on the
    macbook-air and distributes it with "App Store Connect" (not "TestFlight
    Internal Only"). Later builds: the tag's workflow builds and uploads.
-3. **Export compliance** (maintainer, first upload): "standard encryption
-   algorithms in addition to Apple's"; not on the App Store in France.
-   Later builds carry `ITSAppUsesNonExemptEncryption`.
-4. **What to Test.** `rc.1`: the text below. From `rc.2`: the version's
+3. **Export compliance.** Every build carries `ITSAppUsesNonExemptEncryption`
+   NO (ADR 0097): App Store Connect's App Encryption Documentation answers
+   are "standard encryption algorithms in addition to Apple's" and not in
+   France, which need no documents. The App Store in France stays off.
+4. **What to Test.** Build 1: the text below. From build 2: the version's
    section of `apps/ios/CHANGELOG.md`, after the never-client-files line.
 5. **Internal install and acceptance.** The maintainer installs from
    TestFlight; section 13 of [platform acceptance](platform-acceptance.md)
    goes to `docs/evidence/mobile/<date>/ios.md` (P12 in the iPad Simulator,
    marked "Simulator only", until an iPad run).
-6. **External** (maintainer): once section 13 and ROADMAP iOS item 4 have
-   passed, add the build to the Lawyers group; the first external build of a
+6. **External** (maintainer): once section 13 and the below-floor device
+   run on the iPhone 12 Pro have passed, add the build to the Lawyers group; the first external build of a
    version goes through Beta App Review with the notes below.
 
 **Beta description:**
@@ -142,7 +143,7 @@ Steps in order; an agent does each unless it names the maintainer.
 > replaces them with aliases before you share the text, and puts the names
 > back into the AI's reply. Nothing is uploaded.
 
-**What to Test, `rc.1`:**
+**What to Test, build 1:**
 
 > Test with documents you are allowed to share, never client files; check a
 > screenshot before you send it. Try: + → Files, Scan or Paste; Find names;

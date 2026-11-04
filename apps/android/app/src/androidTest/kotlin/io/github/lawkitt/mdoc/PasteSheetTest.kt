@@ -31,6 +31,8 @@ class PasteSheetTest {
             MdocTheme { AddSheet(PendingAdd.Text("Pasted text"), emptyList(), onAdd = { _, _, _ -> }, onDismiss = {}) }
         }
         compose.waitForIdle()
+        // The sheet's window must have focus to read the clipboard (#545).
+        awaitWindowFocus()
         // The clipboard filled after the sheet is up: the button reads it at the tap.
         instrumentation.runOnMainSync {
             context.getSystemService(ClipboardManager::class.java)

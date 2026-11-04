@@ -29,6 +29,13 @@ protocol Library: AnyObject, Sendable {
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult
     /// Keeps `reply`, in alias form, as the document's reply (ADR 0078).
     func saveReply(_ reply: String, to document: DocumentID) throws
+    /// Saves the jobs that finished while the phone was locked, and returns
+    /// their documents.
+    func saveDeferred() throws -> [DocumentID]
+}
+
+extension Library {
+    func saveDeferred() throws -> [DocumentID] { [] }
 }
 
 /// One document's import, OCR, review and hand-off.

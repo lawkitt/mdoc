@@ -103,24 +103,53 @@ private struct ModelDownloadButton: View {
     }
 }
 
+/// The version, build number and core commit of this build, from Info.plist
+/// (ADR 0091, 0097). The commit is the source this build was made from.
+struct BuildInfo: Equatable {
+    static let repositoryURL = URL(string: "https://github.com/lawkitt/mdoc")!
+
+    let version: String
+    let build: String
+    /// The full commit hash, or nil for a build made without git.
+    let commit: String?
+
+    init(info: [String: Any]?) {
+        version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        build = info?["CFBundleVersion"] as? String ?? "?"
+        let raw = info?["MdocCoreCommit"] as? String ?? ""
+        let isHash = raw.count >= 7 && raw.allSatisfy { $0.isHexDigit }
+        commit = isHash ? raw.lowercased() : nil
+    }
+
+    static var current: BuildInfo { BuildInfo(info: Bundle.main.infoDictionary) }
+
+    var versionText: String { "\(version) (\(build))" }
+    var shortCommit: String? { commit.map { String($0.prefix(7)) } }
+
+    /// The source tree at this build's commit, or the repository without one.
+    var sourceURL: URL {
+        guard let commit else { return Self.repositoryURL }
+        return Self.repositoryURL.appending(path: "tree/\(commit)")
+    }
+}
+
 /// The licence notice (GPL with the app store permission, ADR 0086) and the
-/// source link.
+/// source link, which opens the commit this build was made from.
 struct AboutView: View {
-    static let sourceURL = URL(string: "https://github.com/lawkitt/mdoc")!
     static let permissionURL = URL(string: "https://github.com/lawkitt/mdoc/blob/main/LICENSE-APP-STORES.md")!
 
-    private var version: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
-    }
+    private let build = BuildInfo.current
 
     var body: some View {
         Form {
             Section {
-                LabeledContent("Version", value: version)
-                Link(destination: Self.sourceURL) {
+                LabeledContent("Version", value: build.versionText)
+                if let commit = build.shortCommit {
+                    LabeledContent("Core commit") {
+                        Text(commit).monospaced()
+                    }
+                }
+                Link(destination: build.sourceURL) {
                     Label("Source code", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
             } footer: {

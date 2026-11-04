@@ -98,7 +98,13 @@ pub(super) fn import_file(
                 options.native_text_only,
                 cancel,
                 kept,
-                &|_, _| {},
+                // Each finished page: the bar shows it, and iOS keeps a
+                // background job only while it reports progress.
+                &|page, pages| {
+                    if let Some(progress) = progress {
+                        progress.advanced(u64::from(page), u64::from(pages));
+                    }
+                },
             )?,
             None => (
                 mdoc_import::import::prepare_cancellable(
