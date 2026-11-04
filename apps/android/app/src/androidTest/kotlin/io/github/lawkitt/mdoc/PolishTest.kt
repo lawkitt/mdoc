@@ -30,6 +30,7 @@ class PolishTest {
     @Test
     fun aRestoredReplyIsSensitiveAndCopyForAiIsNot() = ActivityScenario.launch(MainActivity::class.java).use {
         // On screen: Android shows the clipboard only to the app in front.
+        awaitWindowFocus()
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         instrumentation.runOnMainSync {
             copy(context, "Thank you, Maya Bennett.", sensitive = true)
