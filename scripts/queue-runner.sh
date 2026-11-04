@@ -14,7 +14,9 @@
 # scripts/merge-gate.sh reads its statuses (its header and pc_job):
 #   - a commit outside the job's area: success "Not affected: no core or
 #     <area> change", or "Docs only", from the diff, without a build;
-#   - a group holding a fork or bot PR: nothing; merge-gate runs it hosted;
+#   - a group holding a fork or bot PR: nothing; merge-gate runs it hosted
+#     (a PR that cannot be read is retried at the next poll, never taken
+#     for third-party);
 #   - a build: pending "Running <step> (<elapsed>)" at the start, at each
 #     step and at least every 4 minutes (the heartbeat: 10 minutes without
 #     one sends the job to hosted CI), then success "Passed in <time>",
@@ -29,7 +31,8 @@
 # 60 GB or rust-toolchain.toml changed, and output older than 7 days or past
 # 20 GB goes, oldest first. Results are under $LOCAL_CI_HOME/out/queue-<job>/,
 # which the local CI web task serves at $LOCAL_CI_URL/queue-<job>/;
-# status.txt there has the runner's heartbeat, job and queue.
+# status.txt there has the runner's heartbeat, job and queue, and an
+# "offline:" line while it cannot read GitHub or origin (status then fails).
 #
 #   run     the runner loop (what the scheduled task runs)
 #   once    the loop until nothing is queued or running, then exit
@@ -134,8 +137,11 @@ list_queue() {
   done
 }
 
-# `<author type> <cross-repository>` of PR $1; false when GitHub has no such PR.
-pr_kind() { bounded gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
+# `<author type> <cross-repository>` of PR $1. False when it cannot be read;
+# its error is in $state/gh.err (a 404 when GitHub has no such PR).
+pr_kind() {
+  bounded gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"' 2>"$state/gh.err"
+}
 
 # Sets post_ok to whether GitHub took it.
 post() { # sha state description [target url]
@@ -185,7 +191,10 @@ group_prs() { # merge-base sha
 }
 
 # True when the group holds third-party code: a PR from a fork or by a bot,
-# one GitHub does not know, or no PR number at all. Sets third_why.
+# one GitHub does not know (404), or no PR number at all. Sets third_why.
+# Exit 2 when a PR could not be read (GitHub down, a network or login
+# error): undecided, so the commit is settled again at the next poll rather
+# than left to hosted CI for good.
 third_party() { # merge-base sha
   local prs pr line kind cross
   prs=$(group_prs "$1" "$2") || prs=''
@@ -194,7 +203,13 @@ third_party() { # merge-base sha
     return 0
   fi
   for pr in $prs; do
-    line=$(pr_kind "$pr" 2>/dev/null | tr -d '\r') || line='unknown true'
+    if ! line=$(pr_kind "$pr" | tr -d '\r'); then
+      if ! grep -q 'HTTP 404' "$state/gh.err" 2>/dev/null; then
+        third_why="could not read #$pr: $(tr -d '\r' <"$state/gh.err" 2>/dev/null | head -n 1)"
+        return 2
+      fi
+      line='unknown true'
+    fi
     read -r kind cross <<<"$line"
     if [ "$kind" != User ] || [ "$cross" != false ]; then
       third_why="#$pr (author ${kind:-unknown}, from a fork: ${cross:-unknown})"
@@ -226,11 +241,19 @@ settle() { # branch sha
     ! $post_ok || mark_done "$sha"
     return 0
   fi
-  if third_party "$mb" "$sha"; then
-    log "$(short "$sha") $branch: third-party code ($third_why); left to hosted CI"
-    mark_done "$sha"
-    return 0
-  fi
+  local rc=0
+  third_party "$mb" "$sha" || rc=$?
+  case "$rc" in
+    0)
+      log "$(short "$sha") $branch: third-party code ($third_why); left to hosted CI"
+      mark_done "$sha"
+      return 0
+      ;;
+    2)
+      log "warning: $(short "$sha") $branch: $third_why; retrying at the next poll"
+      return 0
+      ;;
+  esac
   log "$(short "$sha") $branch: queued ($areas)"
   queued+="$(g log -1 --format=%ct "$sha") $(g rev-list --count "$sha") $sha $branch"$'\n'
 }
@@ -242,12 +265,16 @@ poll() {
   local listing branch sha ref kept='' ct n
   if ! listing=$(list_queue | tr -d '\r'); then
     log "warning: could not list the queue; retrying at the next poll"
+    unreachable "could not list the queue on GitHub"
     return 1
   fi
   if ! fetch "+refs/heads/main:refs/queue-ci/main"; then
     log "warning: could not fetch main; retrying at the next poll"
+    unreachable "could not fetch main from origin"
     return 1
   fi
+  [ -z "$offline_since" ] || log "GitHub reachable again after $(duration $(($(date +%s) - offline_since)))"
+  offline_since='' offline_why=''
   listed=$listing
   polled=true
   [ -z "$run_pid" ] || is_listed "$run_sha" || stop_dropped
@@ -275,6 +302,15 @@ poll() {
 }
 
 is_listed() { [[ $'\n'$listed$'\n' == *" $1"$'\n'* ]]; }
+
+# A poll that could not read the queue: status.txt says so from the first
+# failure on, so a fresh heartbeat with "queue: empty" never hides a runner
+# that cannot see GitHub (the PC lost its route to GitHub for hours on
+# 2026-11-04 while its status page looked idle).
+unreachable() { # why
+  [ -n "$offline_since" ] || offline_since=$(date +%s) offline_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  offline_why=$1
+}
 
 # --- the job ----------------------------------------------------------------
 
@@ -575,7 +611,12 @@ write_status() {
     else
       echo "running: nothing"
     fi
-    echo "queue: ${q:-empty}"
+    if [ -n "$offline_since" ]; then
+      echo "queue: unknown (${q:-nothing known})"
+      echo "offline: $offline_why since $offline_at; no status can be posted"
+    else
+      echo "queue: ${q:-empty}"
+    fi
     [ -z "$waiting" ] || echo "waiting: $waiting"
     [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@$(short "$update_failed")"
   } >"$next" && mv -f "$next" "$out/status.txt"
@@ -637,7 +678,7 @@ cmd_run() { # run|once
   log "runner started: $context for $repo ($prefixes), checkout $checkout, copy in $runner_dir"
   kill_stale_job
   queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
-  waiting='' disk_noted='' next_poll=0 post_ok=true update_failed=''
+  waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why=''
   prune_out
   while :; do
     [ -z "$run_pid" ] || check_job
@@ -672,6 +713,10 @@ cmd_status() {
   fi
   cat "$out/status.txt"
   [ -z "$url" ] || echo "results: $url/"
+  if grep -q '^offline: ' "$out/status.txt"; then
+    echo "unhealthy: the runner cannot read GitHub"
+    return 1
+  fi
   age=$(($(date +%s) - $(file_epoch "$out/status.txt")))
   if [ "$age" -gt $((poll_s * 3)) ]; then
     echo "stale: last heartbeat ${age}s ago; the runner is not running"
