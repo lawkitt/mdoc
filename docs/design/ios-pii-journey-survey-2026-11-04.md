@@ -38,8 +38,11 @@ The rules every change keeps:
 2. **Next proposal could open a name hidden under the sheet.** The text
    never scrolled to the candidate under review. Now opening a candidate
    scrolls it into the top third of the text, the part the sheet leaves in
-   view, in a table cell too. The scroll is not animated with Reduce Motion
-   on.
+   view.
+   - In a table, the grid also scrolls sideways to the name.
+   - Near the end of the document, the text gets room below its end while
+     the sheet is up.
+   - The scroll is not animated with Reduce Motion on.
 3. **iPad: the candidate sheet was a short card** that cut off its
    explanation and Apply to (medium detent on a form sheet). On iPad the
    review sheets now open at full height.
@@ -79,7 +82,8 @@ The rules every change keeps:
     titles "Settlement agreement" and "Settlement agreement 2", but both new
     cases were named "Settlement agreement", which the Restore with mdoc
     case picker cannot tell apart. A new case now takes the same number the
-    core gives the document's title.
+    core gives the document's title. The name is trimmed first, as the
+    core trims it.
 
 ### Hand-off and reply
 
@@ -105,6 +109,19 @@ The rules every change keeps:
     and "Licence" is now "License". Android keeps its ROADMAP item.
 
 ## Logged, not changed
+
+- **UI tests can't find the .docx email candidate as a link since #594.**
+  #594 overrides the review text view's `accessibilityValue` (VoiceOver
+  hears the rendered text). Since then, the survey's `test2Review` and the
+  quarantined `ReviewFlowUITests` fail on main in the Simulator: no link
+  named `maya.bennett@example.com` appears in the imported demo .docx,
+  though the Markdown survey still finds its links. Removing the override
+  makes `ReviewFlowUITests` pass. Overriding `accessibilityAttributedValue`
+  with the link attributes kept did not help. VoiceOver may be affected
+  the same way; the Candidates rotor still reaches every candidate. The
+  fix needs a VoiceOver check on a phone, so it is a follow-up. The after
+  survey here ran with the override removed locally, which changes no
+  pixels.
 
 - **Share from mdoc lists mdoc itself.** The share sheet's app row offers
   Restore with mdoc (labelled "mdoc") for mdoc's own text, where it does

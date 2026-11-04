@@ -22,16 +22,27 @@ its names.
 
 ## after/
 
-The same screens from this branch, under the same names. The `live-…` shots
-are by hand with the real name detector:
+The same screens from this branch, under the same names.
+
+- The survey (`NN-…`, `ipad-…`) ran with the review text view's
+  `accessibilityValue` override (#594) removed locally. With it, the survey
+  can't find the .docx email candidate as a link; see the survey note. The
+  override changes no pixels.
+- `ipad-14` and `ipad-19`: the review sheets at full height on iPad.
+- `ax-…`: `LargeTextExploreUITests` at AX XXXL. `ax-03` shows Settings'
+  Download; `ax-05` and `ax-06` show the candidate sheet with lists; `ax-08`
+  shows the two-row hand-off bar.
+
+The `live-…` shots were taken by hand with the real name detector:
 
 - `live-07-find-names-notice`: the notice after Find names.
 - `live-14-candidate-first-height`: the whole candidate sheet at its first
   height.
 - `live-14-candidate-revealed`: a name tapped near the bottom, scrolled
   above the sheet.
+- `live-14-candidate-at-the-end`: the last name in the document, above the
+  sheet.
+- `live-14-candidate-dark` and `live-17-identities-dark`: both in dark.
 - `live-16-replace-all-notice`: the notice after Replace all.
 - `live-04-paste-long`: Title and Case stay on the Paste sheet.
 - `live-25-remove-reply`: Remove reply asks first.
-- `ax-…`: the AX XXXL shots, among them the hand-off bar and Settings'
-  Download.
