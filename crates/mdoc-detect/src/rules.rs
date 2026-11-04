@@ -429,20 +429,22 @@ impl SpanFix {
             let text = &source[range.clone()];
             if self.list_letter
                 && let Some((marker, rest)) = text.split_once(char::is_whitespace)
-                && (marker.len() == 2
-                    && marker.as_bytes()[0].is_ascii_lowercase()
-                    && marker.ends_with('.')
-                    || marker.len() == 3
-                        && marker.starts_with('(')
-                        && marker.as_bytes()[1].is_ascii_lowercase()
-                        && marker.ends_with(')'))
+                && let Some(letter) = marker
+                    .strip_prefix('(')
+                    .and_then(|s| s.strip_suffix(')'))
+                    .or_else(|| marker.strip_suffix(['.', ')']))
+                && (letter.len() == 1 && letter.as_bytes()[0].is_ascii_lowercase()
+                    || matches!(
+                        letter,
+                        "ii" | "iii" | "iv" | "vi" | "vii" | "viii" | "ix" | "xi" | "xii"
+                    ))
             {
                 let line = source[..range.start]
                     .rsplit('\n')
                     .next()
                     .unwrap_or_default();
                 let before = line.trim_matches(|c: char| c.is_whitespace() || "#>*_|-".contains(c));
-                if before.is_empty() || before.ends_with([':', ';', '.', '!', '?', '…']) {
+                if before.is_empty() || before.ends_with([':', ';']) {
                     range.start = range.end - rest.len();
                     continue;
                 }
@@ -2053,7 +2055,15 @@ impl Pack {
         // Before citations, common-name evidence and propagation: a party
         // code must never become evidence that a real name was mentioned.
         for reference in &self.conditional_references {
-            let series: std::collections::HashSet<&str> = reference
+            let code = |series: regex::Match<'_>| {
+                let end = series.end()
+                    + view.text[series.end()..]
+                        .bytes()
+                        .take_while(u8::is_ascii_digit)
+                        .count();
+                &view.text[series.start()..end]
+            };
+            let defined: std::collections::HashSet<&str> = reference
                 .when
                 .iter()
                 .flat_map(|pattern| pattern.captures_iter(&view.text))
@@ -2068,27 +2078,87 @@ impl Pack {
                     // word; an uncertain name keeps its marks.
                     !self.company_continuation(&view.text[whole.end()..])
                 })
-                .filter_map(|captures| captures.name("series").map(|m| m.as_str()))
+                .filter_map(|captures| captures.name("series").map(code))
                 .collect();
+            let series: std::collections::HashSet<_> =
+                defined.iter().map(|name| &name[..1]).collect();
             if series.is_empty() {
                 continue;
             }
-            let ranges: Vec<_> = reference
+            struct Code<'a> {
+                range: std::ops::Range<usize>,
+                name: &'a str,
+                established: bool,
+                compound: bool,
+            }
+            let codes: Vec<_> = reference
                 .pattern
                 .captures_iter(&view.text)
-                .filter(|captures| {
-                    ["series", "series2"].into_iter().all(|group| {
-                        captures
-                            .name(group)
-                            .is_none_or(|m| series.contains(m.as_str()))
-                    })
-                })
                 .map(|captures| {
                     let whole = captures.get(0).expect("group 0 is the match");
                     let start = captures.name("lead").map_or(whole.start(), |m| m.end());
                     let end = captures.name("tail").map_or(whole.end(), |m| m.start());
-                    start..end.max(start)
+                    Code {
+                        range: start..end.max(start),
+                        name: code(captures.name("series").expect("checked at load")),
+                        established: ["series", "series2"].into_iter().all(|group| {
+                            captures
+                                .name(group)
+                                .is_none_or(|m| series.contains(m.as_str()))
+                        }),
+                        compound: captures.name("series2").is_some(),
+                    }
                 })
+                .collect();
+            // Join only code enumerations. Every member must have an
+            // established series; an unknown series or real name keeps
+            // the whole model span. Do this before looking for names so
+            // "C1 and C2" is not evidence of a company's short form.
+            let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+            for (index, current) in codes.iter().enumerate() {
+                if let Some(group) = groups.last_mut()
+                    && let previous = &codes[group.end - 1]
+                    && matches!(
+                        view.text[previous.range.end..current.range.start].trim(),
+                        "," | "and" | ", and" | ",and"
+                    )
+                {
+                    group.end = index + 1;
+                } else {
+                    groups.push(index..index + 1);
+                }
+            }
+            // A code that opens a kept name protects its short mentions
+            // too (GUIDE rule 2), even if another party defines that code.
+            let protected: std::collections::HashSet<_> = codes
+                .iter()
+                .enumerate()
+                .filter(|(index, current)| {
+                    let group = groups.iter().find(|g| g.contains(index)).unwrap();
+                    self.company_continuation(&view.text[current.range.end..])
+                        || detections.iter().any(|d| {
+                            if !reference.categories.contains(&d.category) {
+                                return false;
+                            }
+                            let range = view.view_range(d.range.clone());
+                            current.range.start <= range.start
+                                && range.start < current.range.end
+                                && codes[group.end - 1].range.end < range.end
+                        })
+                })
+                .map(|(_, current)| current.name)
+                .collect();
+            let ranges: Vec<_> = groups
+                .into_iter()
+                .filter(|group| {
+                    codes[group.clone()]
+                        .iter()
+                        .all(|current| current.established && !protected.contains(current.name))
+                        && (group.len() > 1
+                            || codes[group.start].compound
+                            || defined.contains(codes[group.start].name))
+                })
+                .map(|group| codes[group.start].range.start..codes[group.end - 1].range.end)
                 .collect();
             detections.retain_mut(|d| {
                 if !reference.categories.contains(&d.category) {
@@ -2776,8 +2846,17 @@ impl Pack {
     /// place ("C1 of North Quay"), a legal form within a few words ("C1
     /// international holdings ltd") or a trading name ("C1 trading as").
     fn company_continuation(&self, rest: &str) -> bool {
+        // A comma before a legal form belongs to the company, unlike a
+        // comma before the next person or clause ("C1, Mrs Penrow").
+        if rest.strip_prefix(',').is_some_and(|tail| {
+            tail.split_whitespace()
+                .next()
+                .is_some_and(|word| self.legal_form(bare(word)))
+        }) {
+            return true;
+        }
         let clause = rest
-            .split(['.', ';', ':', '!', '?'])
+            .split(['.', ',', ';', ':', '!', '?', '\n', '\r'])
             .next()
             .unwrap_or_default();
         let words: Vec<_> = clause
@@ -2791,7 +2870,21 @@ impl Pack {
                 && word.starts_with(['C', 'D', 'P', 'R'])
                 && word.as_bytes()[1..].iter().all(u8::is_ascii_digit)
         };
-        let capitalized = |word: &&str| word.starts_with(char::is_uppercase) && !code(word);
+        let capitalized = |word: &&str| {
+            word.starts_with(char::is_uppercase)
+                && !code(word)
+                && !self.party_roles.iter().any(|role| {
+                    role.eq_ignore_ascii_case(word)
+                        || word
+                            .strip_suffix('s')
+                            .is_some_and(|single| role.eq_ignore_ascii_case(single))
+                })
+                && !self.spans.iter().any(|span| {
+                    matches!(span, Span::Fix(fix)
+                        if fix.category == Category::Person
+                            && fix.trim.iter().any(|title| title.eq_ignore_ascii_case(word)))
+                })
+        };
         words.first().is_some_and(capitalized)
             || (words.first() == Some(&"of") && words.get(1).is_some_and(capitalized))
             || words[..words.len().min(4)]
@@ -6553,7 +6646,7 @@ Privacy Act (“BIPA”). BIPA applies.",
                 format!("{role}: {code}"),
                 format!("{code} – {role}"),
             ] {
-                let source = format!("{definition}. {next}; {next}’s trustees.\nc. {next}");
+                let source = format!("{definition}. {role}: {next}; {next}’s trustees.\nc. {next}");
                 assert_eq!(
                     shown(
                         &source,
@@ -6564,7 +6657,8 @@ Privacy Act (“BIPA”). BIPA applies.",
                             (&format!("c. {next}"), "person")
                         ]
                     ),
-                    []
+                    [],
+                    "{source}"
                 );
             }
         }
@@ -6639,7 +6733,8 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{source}"
             );
         }
-        // A company name broken over a line keeps its trading name too.
+        // A newline ends evidence, so a heading after C1 is not a name
+        // continuation. With no kept full name, this is a defined code.
         let source = "Claimant C1\nholdings ltd paid C1.";
         let start = source.rfind("C1").unwrap();
         let raw = [crate::RawEntity {
@@ -6652,9 +6747,7 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(
             crate::recognition::proposals(source, &raw)
                 .unwrap()
-                .iter()
-                .any(|span| span.range == (start..start + 2)),
-            "{source}"
+                .is_empty()
         );
         // A role and code before a lowercase clause still define a code.
         assert_eq!(
@@ -6817,6 +6910,202 @@ Privacy Act (“BIPA”). BIPA applies.",
             fixed("  a. Penrow  ", &[("  a. Penrow  ", Category::Person)]),
             ["Penrow"]
         );
+        for ending in [".", "!", "?", "…"] {
+            let source = format!("The deed was signed{ending} j. Penrow witnessed it.");
+            assert_eq!(
+                shown(&source, &[("j. Penrow", "person")]),
+                pairs(&[("j. Penrow", "PERSON")]),
+                "{source}"
+            );
+        }
+        for marker in ["ii.", "(iv)", "a)", "viii."] {
+            for before in ["", "Attending: ", "First; ", "Signed.\n"] {
+                for (name, label, category) in [
+                    ("Penrow", "person", "PERSON"),
+                    ("Quillon Media Inc", "organization", "ORG"),
+                ] {
+                    let span = format!("{marker} {name}");
+                    let source = format!("{before}{span} replied.");
+                    assert_eq!(
+                        shown(&source, &[(&span, label)]),
+                        pairs(&[(name, category)])
+                    );
+                }
+            }
+        }
+    }
+
+    /// Review #599: a defined series must not hide a real name or an
+    /// unexplained standalone code that may itself name an organization.
+    #[test]
+    fn established_series_keep_names_and_unexplained_members() {
+        assert_eq!(
+            shown(
+                "Pellam Rooke Ltd (D1). The goods went to D3 Logistics Ltd.",
+                &[("Pellam Rooke Ltd", "organization"), ("D3", "organization")]
+            ),
+            pairs(&[("Pellam Rooke Ltd", "ORG"), ("D3", "ORG")])
+        );
+        let source = "Mrs Penrow (C2). Claimant C1 Holdings Ltd, trading as C1.";
+        let raw: Vec<_> = [
+            (source.find("Penrow").unwrap(), "Penrow", "person"),
+            (
+                source.find("C1 Holdings Ltd").unwrap(),
+                "C1 Holdings Ltd",
+                "organization",
+            ),
+            (source.rfind("C1").unwrap(), "C1", "organization"),
+        ]
+        .into_iter()
+        .map(|(start, text, label)| crate::RawEntity {
+            start,
+            end: start + text.len(),
+            label: label.into(),
+            score: 0.8,
+            text: text.into(),
+        })
+        .collect();
+        let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            actual,
+            pairs(&[
+                ("Penrow", "PERSON"),
+                ("C1 Holdings Ltd", "ORG"),
+                ("C1", "ORG")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) watched C4.",
+                &[("Mrs Penrow", "person"), ("C4", "organization")]
+            ),
+            pairs(&[("Penrow", "PERSON"), ("C4", "ORG")])
+        );
+        // Even the very same code can also open a name. Keep both its
+        // full form and later short mentions when their meanings collide.
+        for (source, name, label) in [
+            (
+                "Mrs Penrow (C1). C1 Holdings Ltd, trading as C1.",
+                "C1 Holdings Ltd",
+                "organization",
+            ),
+            (
+                "Mrs Brannock (C1). C1 Penrow replied for C1.",
+                "C1 Penrow",
+                "person",
+            ),
+        ] {
+            let raw: Vec<_> = [
+                (source.find(name).unwrap(), name),
+                (source.rfind("C1").unwrap(), "C1"),
+            ]
+            .into_iter()
+            .map(|(start, text)| crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            })
+            .collect();
+            let actual = crate::recognition::proposals(source, &raw).unwrap();
+            for entity in raw {
+                assert!(
+                    actual
+                        .iter()
+                        .any(|span| span.range == (entity.start..entity.end)),
+                    "{source}: {}",
+                    entity.text
+                );
+            }
+        }
+        // The model may mark only the code at the start of a company,
+        // even when that exact code has been defined for another party.
+        for name in ["D3 Logistics Ltd", "D3 – Logistics Ltd"] {
+            let source = format!("Pellam Rooke Ltd (D3). {name} received the goods.");
+            let start = source.rfind("D3").unwrap();
+            let raw = [crate::RawEntity {
+                start,
+                end: start + 2,
+                label: "organization".into(),
+                score: 0.8,
+                text: "D3".into(),
+            }];
+            assert!(
+                crate::recognition::proposals(&source, &raw)
+                    .unwrap()
+                    .iter()
+                    .any(|span| span.range == (start..start + 2)),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn party_code_evidence_stops_at_clauses_and_ignores_titles() {
+        for source in [
+            "Claimant C1, Mrs Penrow, sued. C1 lost.",
+            "First Claimant\nC1\nSecond Claimant\nC2",
+            "Claimant C1 Mrs Penrow sued. C1 lost.",
+        ] {
+            assert!(
+                shown(source, &[("C1", "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Claimant C1, Mrs Penrow, sued. C1 lost.",
+                &[("Mrs Penrow", "person"), ("C1", "organization")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Pellam Rooke plc (D1). D1 lost.",
+                &[("Pellam Rooke plc", "organization"), ("D1", "organization")]
+            ),
+            pairs(&[("Pellam Rooke plc", "ORG")])
+        );
+    }
+
+    #[test]
+    fn established_code_pairs_and_lists_go_only_as_whole_codes() {
+        for list in ["C1 and C2", "D1, D2 and D3", "D1, D2, and D3", "C1 and D2"] {
+            let source = format!("Mrs Penrow (C1). Pellam Ltd (D1). {list} replied.");
+            for label in ["person", "organization"] {
+                assert_eq!(
+                    shown(
+                        &source,
+                        &[
+                            ("Mrs Penrow", "person"),
+                            ("Pellam Ltd", "organization"),
+                            (list, label)
+                        ]
+                    ),
+                    pairs(&[("Penrow", "PERSON"), ("Pellam Ltd", "ORG")]),
+                    "{source}: {label}"
+                );
+            }
+        }
+        for list in [
+            "C1 and R2",
+            "C1 and C2 Penrow",
+            "D1, D2 and D3 Logistics Ltd",
+            "C1 and Ivo Penrow",
+        ] {
+            let source = format!("Mrs Penrow (C1). Pellam Ltd (D1). {list} replied.");
+            assert!(
+                shown(&source, &[(list, "organization")])
+                    .iter()
+                    .any(|(text, _)| text == list),
+                "{source}"
+            );
+        }
     }
 
     #[test]
