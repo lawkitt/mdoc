@@ -303,10 +303,14 @@ final class RealLibrary: Library, @unchecked Sendable {
             do {
                 try save()
                 saved.append(id)
-            } catch where !ProtectedData.isAvailable {
-                lock.withLock { unsaved[id] = save }
             } catch {
-                failure = failure ?? error
+                // Kept until it saves: the result exists nowhere else. A
+                // failure with the phone unlocked (a full disk) is reported
+                // too, and tried again next time.
+                lock.withLock { unsaved[id] = unsaved[id] ?? save }
+                if ProtectedData.isAvailable {
+                    failure = failure ?? error
+                }
             }
         }
         if let failure {
@@ -522,6 +526,11 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         } catch {
             guard !ProtectedData.isAvailable else { throw error }
             library.saveOnUnlock(id, finish)
+            // The phone may have unlocked since the check, its save already
+            // run with nothing queued: then this one saves now.
+            if ProtectedData.isAvailable {
+                _ = try? library.saveDeferred()
+            }
         }
     }
 

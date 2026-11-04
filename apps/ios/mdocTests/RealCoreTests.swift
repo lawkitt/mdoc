@@ -156,8 +156,10 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(scanned.phase, .reviewing)
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .unscanned, "not saved while locked")
         XCTAssertEqual(try core.library.saveDeferred(), [], "still locked")
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+        // Unlocked but still failing (a full disk): reported, and kept.
         ProtectedData.isAvailable = true
+        XCTAssertThrowsError(try core.library.saveDeferred())
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
         XCTAssertEqual(try core.library.saveDeferred(), [session.id])
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
         XCTAssertEqual(try core.library.saveDeferred(), [], "saved once")
