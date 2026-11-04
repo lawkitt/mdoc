@@ -1,12 +1,9 @@
 ---
 status: known-flaw
-flaw: table-header-context document-heading-org
-issue: 397 426
+flaw: document-heading-org
+issue: 426
 kind: ocr
 source: hunt-r6
-expect: miss: PERSON "Nerian"
-expect: miss: PERSON "McVellin"
-expect: miss: PERSON "O’Kell–Venn"
 expect: false hit: ORG "COLLECTION AUTHORITY"
 ---
 COLLECTION AUTHORITY / TWO-COLUMN FORM

@@ -27,6 +27,9 @@ enum CoreFactory {
         if isUITesting {
             let storage = try MdocStorage.shared(folder: uiTestingFolder)
             clearKeepingDetector(storage)
+            if detectorTierInUITests && realDownloadsInUITests, let library = try? MdocStorage.shared() {
+                reuseDetector(from: library, into: storage)
+            }
             defaults?.set(true, forKey: uiTestingKey)
             return storage
         }
@@ -35,8 +38,9 @@ enum CoreFactory {
     }
 
     /// A fresh test library, all but a downloaded name detector: only the
-    /// device tests download one (hundreds of megabytes), and their next run
-    /// reuses it. Text recognition is downloaded again each time.
+    /// device tests need one (hundreds of megabytes), cloned from the phone's
+    /// own library or downloaded, and their next run keeps it. Text
+    /// recognition is downloaded again each time.
     private static func clearKeepingDetector(_ storage: MdocStorage) {
         let files = FileManager.default
         let models = storage.url(.models)
@@ -54,10 +58,47 @@ enum CoreFactory {
         }
     }
 
+    /// The device tests' name detector, from the phone's own library when it
+    /// has one: each file the test library lacks is cloned (on APFS, no
+    /// copy and no extra space), so a phone that downloaded the detector
+    /// never downloads its 630 MB again for the tests. Only files installed
+    /// there are read, each checked by the core when it was installed; the
+    /// core counts a file by its pinned size, so a cut clone is fetched again.
+    static func reuseDetector(from library: MdocStorage, into storage: MdocStorage) {
+        let files = FileManager.default
+        let detector = "pseudonymization"
+        let source = library.url(.models).appendingPathComponent(detector, isDirectory: true).resolvingSymlinksInPath()
+        let target = storage.url(.models).appendingPathComponent(detector, isDirectory: true)
+        guard
+            source != target.resolvingSymlinksInPath(),
+            let items = files.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey])
+        else { return }
+        for case let item as URL in items {
+            guard (try? item.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+            let relative = String(item.resolvingSymlinksInPath().path.dropFirst(source.path.count + 1))
+            let copy = target.appendingPathComponent(relative)
+            guard !relative.isEmpty, !files.fileExists(atPath: copy.path) else { continue }
+            let partial = copy.appendingPathExtension("part")
+            try? files.removeItem(at: partial)
+            do {
+                try files.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try files.copyItem(at: item, to: partial)
+                try files.moveItem(at: partial, to: copy)
+            } catch {
+                try? files.removeItem(at: partial)
+            }
+        }
+    }
+
     static func appCore(storage: MdocStorage) throws -> Core {
         try RealCore.make(
             storage: storage, keys: keyStore(testing: isUITesting),
             physicalMemory: isUITesting && !detectorTierInUITests ? belowFloorMemory : ProcessInfo.processInfo.physicalMemory)
+    }
+
+    /// UI tests that need a model (OCR) download it for real.
+    static var realDownloadsInUITests: Bool {
+        ProcessInfo.processInfo.environment["MDOC_REAL_DOWNLOADS"] == "1"
     }
 
     /// The UI survey shows the detector tier's setup screens too; nothing

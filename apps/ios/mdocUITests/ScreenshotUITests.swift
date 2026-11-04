@@ -121,7 +121,7 @@ final class ScreenshotUITests: XCTestCase {
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         let email = text.links[MdocUITest.email].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 30))
-        email.tap()
+        MdocUITest.tapAboveBottomBar(email, in: text, app)
         XCTAssertTrue(app.buttons["candidate-done"].waitForExistence(timeout: 5))
         keep("candidate-sheet-\(name)")
 

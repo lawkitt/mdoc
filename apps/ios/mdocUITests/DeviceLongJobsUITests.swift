@@ -3,13 +3,13 @@ import XCTest
 /// The long jobs on a phone (ADR 0088), which the Simulator cannot run: it
 /// refuses `BGContinuedProcessingTask`, so every job here goes through the
 /// real background task only on a device. A camera scan downloads text
-/// recognition for real on Wi-Fi and is recognized while mdoc leaves the
-/// screen; the name detector finds names in it; Find names on a 37-page
+/// recognition for real (on cellular, the test answers Use cellular) and is
+/// recognized while mdoc leaves the screen; the name detector finds names in it; Find names on a 37-page
 /// .docx keeps running in the background past the short grace iOS gives
 /// without that task; a text PDF comes in. `just ios-device-test <udid>`
 /// copies the fixtures into the app's container and runs this; it skips on the Simulator. It needs a phone at
-/// the detector tier (8 GB); the first run also downloads the detector,
-/// which later runs keep.
+/// the detector tier (8 GB); the detector comes from the phone's own
+/// library or, the first time, a download that later runs keep.
 final class DeviceLongJobsUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -26,8 +26,9 @@ final class DeviceLongJobsUITests: XCTestCase {
     }
 
     /// The scan waits for text recognition; Download & continue downloads
-    /// it (and the detector, the first time) and recognizes the pages, with
-    /// mdoc in the background part of the time. Then Find names.
+    /// it and recognizes the pages, with mdoc in the background part of the
+    /// time. Then Find names, which downloads the detector first when neither
+    /// library has it.
     @MainActor
     private func scanDownloadRecognizeAndFindNames() throws {
         let app = launch(seed: MdocUITest.deviceScan)
@@ -38,15 +39,13 @@ final class DeviceLongJobsUITests: XCTestCase {
         let download = app.buttons["setup-download"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 30))
         download.tap()
-        if app.buttons["Use cellular"].firstMatch.waitForExistence(timeout: 3) {
-            XCTFail("mdoc asks about cellular: connect the phone to Wi-Fi")
-            return
-        }
+        MdocUITest.answerCellularQuestion(app)
 
-        // Leave while the pages are being recognized. The first run's
-        // download includes the detector, so allow for it.
-        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        expect(NSPredicate(format: "label CONTAINS 'Recognizing page'"), on: progress, timeout: 1800)
+        // Leave while the pages are being recognized (or just after, on a
+        // fast phone).
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { MdocUITest.recognizingOrRecognized(app) },
+            "the pages were never recognized")
         try leaveAndReturn(app)
 
         let text = app.textViews["document-text"]
@@ -58,8 +57,17 @@ final class DeviceLongJobsUITests: XCTestCase {
         let primary = app.buttons["primary-action"]
         expect(NSPredicate(format: "label == 'Find names'"), on: primary, timeout: 30)
         primary.tap()
+        // A phone with no detector in either library: Find names offers its
+        // download (ADR 0090) and goes on once it is in.
+        let detector = app.buttons["setup-download"].firstMatch
+        if detector.waitForExistence(timeout: 5) {
+            detector.tap()
+            MdocUITest.answerCellularQuestion(app)
+        }
         let name = app.links.matching(NSPredicate(format: "label CONTAINS 'Whitlow'")).firstMatch
-        XCTAssertTrue(name.waitForExistence(timeout: 120), "the detector found no name in the scan")
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { name.exists },
+            "the detector found no name in the scan")
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
 
@@ -77,8 +85,20 @@ final class DeviceLongJobsUITests: XCTestCase {
         row.tap()
         let progress = app.descendants(matching: .any)["job-progress"].firstMatch
         expect(NSPredicate(format: "label CONTAINS 'Finding names'"), on: progress, timeout: 120)
+        // The bar has a fraction once the first windows are done.
+        expect(NSPredicate(format: "value CONTAINS '%'"), on: progress, timeout: 60)
+        let before = Self.percent(progress)
         try leaveAndReturn(app, seconds: 45, stillWorking: true)
         let primary = app.buttons["primary-action"]
+        // Done as mdoc came back: the bar is gone and Replace shows.
+        let after = progress.exists ? Self.percent(progress) : (primary.label.hasPrefix("Replace") ? 100 : 0)
+        let note = XCTAttachment(string: "Find names: \(before)% before leaving, \(after)% on return after 45 s away")
+        note.name = "background-progress"
+        note.lifetime = .keepAlways
+        add(note)
+        // More than the second or two between coming back and this read
+        // could add, had the job been paused all along (45 s away gave 65).
+        XCTAssertGreaterThan(after, before + 25, "Find names made no progress in the background")
         expect(NSPredicate(format: "label BEGINSWITH 'Replace'"), on: primary, timeout: 180)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
@@ -107,6 +127,13 @@ final class DeviceLongJobsUITests: XCTestCase {
         app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1"
         app.launch()
         return app
+    }
+
+    /// The bar's percentage, 0 when it shows none.
+    @MainActor
+    private static func percent(_ progress: XCUIElement) -> Int {
+        let value = (progress.value as? String) ?? ""
+        return Int(value.filter(\.isNumber)) ?? 0
     }
 
     /// Home, `seconds` in the background, and back. The app must still be

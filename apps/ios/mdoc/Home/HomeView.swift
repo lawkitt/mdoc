@@ -16,11 +16,19 @@ struct HomeView: View {
 
     var body: some View {
         List(selection: $app.selection) {
-            if app.setup.showsCard && !app.openDocumentShowsSetup {
+            if showsSetupCard {
                 Section {
                     SetupCard(model: app.setup)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                }
+                // Under the card, not over the list: the card grows while
+                // the models download.
+                if home.isEmpty {
+                    Section {
+                        emptyState
+                            .listRowBackground(Color.clear)
+                    }
                 }
             }
             // Its own section, so the setup card above reads apart from it.
@@ -37,20 +45,8 @@ struct HomeView: View {
             }
         }
         .overlay {
-            if home.isEmpty {
-                ContentUnavailableView {
-                    Label("No documents yet", systemImage: "doc.text.magnifyingglass")
-                } description: {
-                    // Below the floor mdoc finds no names: no promise it does
-                    // not keep (ADR 0088).
-                    if home.findsNames {
-                        Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
-                    } else {
-                        Text("Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.")
-                    }
-                } actions: {
-                    addMenu
-                }
+            if home.isEmpty && !showsSetupCard {
+                emptyState
             }
         }
         .navigationTitle("mdoc")
@@ -116,6 +112,28 @@ struct HomeView: View {
             Button("OK") { home.errorMessage = nil }
         } message: { message in
             Text(message)
+        }
+    }
+
+    private var showsSetupCard: Bool {
+        app.setup.showsCard && !app.openDocumentShowsSetup
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No documents yet", systemImage: "doc.text.magnifyingglass")
+        } description: {
+            // Below the floor mdoc finds no names: no promise it does
+            // not keep (ADR 0088).
+            if home.findsNames {
+                Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
+            } else {
+                Text("Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.")
+            }
+        } actions: {
+            // In a list row the menu would draw its icon alone.
+            addMenu
+                .labelStyle(.titleAndIcon)
         }
     }
 

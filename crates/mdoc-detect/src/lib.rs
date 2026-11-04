@@ -496,11 +496,25 @@ pub fn scan_at(
     runtime: &Path,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
+    scan_at_with_progress(source, cancel, root, runtime, config, &|_| {})
+}
+
+/// [`scan_at`] that also reports the model windows done, as
+/// [`scan_config_with_progress`] does: a phone passes them on to the
+/// system, which stops a background job that shows no progress.
+pub fn scan_at_with_progress(
+    source: &str,
+    cancel: &AtomicBool,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &dyn Fn(ScanProgress),
+) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     if !mdoc_store::settings::unit_interval(config.threshold) {
         return Err(DetectError::InvalidThreshold);
     }
     let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
-    scan_timed(source, cancel, root, runtime, config, &|_| {})
+    scan_timed(source, cancel, root, runtime, config, progress)
 }
 
 fn scan_timed(
@@ -631,11 +645,13 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 })
         })
         .collect();
-    // A cell under a name part's header (#397): before the span fixes, so
-    // their filters judge it as they judge the model's names.
+    // A cell under a name part's header, or a value after a name part's
+    // label (#397): before the span fixes, so their filters judge it as
+    // they judge the model's names.
     detections.extend(
         mdoc_pii::columns::name_cells(source)
             .into_iter()
+            .chain(mdoc_pii::columns::labelled_names(source))
             .filter(|range| {
                 let text = &view.text[view.view_range(range.clone())];
                 rules::pack().identifying_at(source, range.clone(), text, Category::Person)
@@ -1722,6 +1738,13 @@ mod tests {
         assert!(people(source).is_empty());
         let source = "| Name | Type |\n| --- | --- |\n| Hearing Bundle | Bundle |\n";
         assert!(people(source).is_empty());
+        let source = "Given name: Alvora        Given name: Nerian\n\
+                      Surname: McVellin        Surname: O’Kell–Venn\n";
+        assert_eq!(
+            people(source),
+            ["Alvora", "Nerian", "McVellin", "O’Kell–Venn"]
+        );
+        assert!(people("Фамилия: Истец\n").is_empty());
     }
 
     /// A wording the model gave two categories is copied to its other
