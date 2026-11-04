@@ -467,14 +467,24 @@ const NOUN_ENDINGS: &[&str] = &[
 ];
 
 /// A span's `word` as never words are listed: without the punctuation
-/// around it (a hyphen stays) or a possessive "'s" ("the LEA's IEP").
+/// around it (a hyphen stays) or a possessive "'s" in either case ("the
+/// LEA's IEP", "DISTRIBUTOR’S").
 fn bare(word: &str) -> &str {
     let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
-    word.strip_suffix("'s")
-        .or_else(|| word.strip_suffix("’s"))
+    ["'s", "’s", "'S", "’S"]
+        .iter()
+        .find_map(|possessive| word.strip_suffix(possessive))
         .filter(|rest| !rest.is_empty())
         .unwrap_or(word)
 }
+
+/// English legal forms spelled out, lowercase: a company's name ends in
+/// one ("Contract Corporation", "Acme Holdings Limited").
+const SPELLED_FORMS: &[&str] = &["corporation", "company", "incorporated", "limited"];
+
+/// Russian words of a legal form spelled out, lowercase: «Общество с
+/// ограниченной ответственностью», «Акционерное общество».
+const SPELLED_FORMS_RU: &[&str] = &["ответственностью", "акционерное"];
 
 /// The lowercase words of `text` as generic words are listed: `bare`, and
 /// without a final period ("Def.'s" is "def").
@@ -1621,10 +1631,12 @@ impl Pack {
                 continue;
             };
             let long = &text[words[from].0..title.end()];
+            // A company's long form names it, whatever its other words
+            // ("Contract Corporation (“CC”)"); a filing's names no one.
             let name = !self.public_body(long, Category::Organization, false)
-                && !self.generic_filing(long)
-                && (self.legal_form(long)
-                    || self.shaped_named(long, Category::Organization, &|_| false));
+                && (self.company_form(long)
+                    || !self.generic_filing(long)
+                        && self.shaped_named(long, Category::Organization, &|_| false));
             if name {
                 other.insert(short);
             } else {
@@ -1636,12 +1648,38 @@ impl Pack {
     }
 
     /// The `defined` word that lowercase `word` is, as the entry's and the
-    /// word's indexes.
+    /// word's indexes. An -ies or -es plural is its singular's word
+    /// ("Subsidiaries" is "Subsidiary", "Businesses" "Business").
     fn defined_word(&self, word: &str) -> Option<(usize, usize)> {
-        self.defined
-            .iter()
-            .enumerate()
-            .find_map(|(entry, defined)| defined.list.listed(word).map(|at| (entry, at)))
+        let listed = |word: &str| {
+            self.defined
+                .iter()
+                .enumerate()
+                .find_map(|(entry, defined)| defined.list.listed(word).map(|at| (entry, at)))
+        };
+        let singular = word
+            .strip_suffix("ies")
+            .map(|stem| format!("{stem}y"))
+            .or_else(|| word.strip_suffix("es").map(str::to_owned))
+            .filter(|singular| singular.chars().count() > 1);
+        singular
+            .and_then(|singular| listed(&singular))
+            .or_else(|| listed(word))
+    }
+
+    /// Whether `text` has a company's legal form, abbreviated ("Ltd",
+    /// "ООО") or spelled out: an English one its last words are
+    /// ("Contract Corporation", "Acme Company Limited"), a Russian one
+    /// anywhere.
+    fn company_form(&self, text: &str) -> bool {
+        let words = plain_words(text);
+        self.legal_form(text)
+            || words
+                .last()
+                .is_some_and(|word| SPELLED_FORMS.contains(&word.as_str()))
+            || words
+                .iter()
+                .any(|word| SPELLED_FORMS_RU.contains(&word.as_str()))
     }
 
     /// Whether lowercase `word` is generic wherever it stands: a joiner, or
@@ -1689,8 +1727,11 @@ impl Pack {
                     .filter(|word| !word.is_empty())
                     .map(str::to_lowercase)
                     .collect();
-                if self.legal_form(definition.subject)
-                    && !name_words.is_empty()
+                let form_only = name_words
+                    .iter()
+                    .all(|word| SPELLED_FORMS.contains(&word.as_str()) || self.legal_form(word));
+                if self.company_form(definition.subject)
+                    && !form_only
                     && subject
                         .windows(name_words.len())
                         .any(|part| part == name_words)
@@ -1722,10 +1763,11 @@ impl Pack {
                     known = true;
                     true
                 }
-                // A document's name is generic beside a defined term
-                // ("RESELLER AGREEMENT").
-                Some((entry, _)) if self.defined[entry].document => true,
-                _ => self.generic_anywhere(word),
+                // Another listed word is generic beside a defined term: a
+                // document's name ("RESELLER AGREEMENT"), a companion
+                // ("Sponsor Business").
+                Some(_) => true,
+                None => self.generic_anywhere(word),
             })
             && known
     }
@@ -4722,6 +4764,8 @@ Privacy Act (“BIPA”). BIPA applies.",
             "Larkfield LLC (hereinafter\nreferred to as the “Distributor”). The Distributor pays.",
             "Larkfield LLC (the “Franchised\nBusiness”). Franchised Business pays.",
             "Банки (далее\n— «Кредиторы»). Кредиторы платят.",
+            "Quillon LLC (the\n“Distributor”). Distributor pays.",
+            "ООО «Север»\n(далее —\n«Кредитор»). Кредитор платит.",
         ] {
             assert!(
                 fixed_every(
@@ -4731,6 +4775,7 @@ Privacy Act (“BIPA”). BIPA applies.",
                         ("Franchised\nBusiness", Category::Organization),
                         ("Franchised Business", Category::Organization),
                         ("Кредиторы", Category::Organization),
+                        ("Кредитор", Category::Organization),
                     ]
                 )
                 .is_empty(),
@@ -4927,6 +4972,95 @@ Privacy Act (“BIPA”). BIPA applies.",
         ] {
             assert_eq!(count(name), times, "{name}: {found:?}");
         }
+    }
+
+    /// The Mac hub's review of #580 (#390): a company's long form keeps its
+    /// abbreviation, irregular plurals are their singular's term, listed
+    /// companions go beside a defined term, uppercase possessives go.
+    #[test]
+    fn defined_terms_review_cases() {
+        // A long form with a legal form, spelled out or abbreviated, is a
+        // company's, never a filing's.
+        for (source, short) in [
+            ("Contract Corporation (“CC”). CC supplies goods.", "CC"),
+            ("Contract Company (“CC”). CC supplies goods.", "CC"),
+            ("Contract Incorporated (“CI”). CI supplies goods.", "CI"),
+            (
+                "Contract Holdings Limited (“CHL”). CHL supplies goods.",
+                "CHL",
+            ),
+            ("Contract Corp (“CC”). CC supplies goods.", "CC"),
+            (
+                "Agreement Statement LLC (“ASL”). ASL supplies goods.",
+                "ASL",
+            ),
+        ] {
+            assert_eq!(
+                fixed_every(source, &[(short, Category::Organization)]),
+                [short, short],
+                "{source}"
+            );
+        }
+        // A company's short name defined from a spelled-out form stays.
+        assert_eq!(
+            fixed_every(
+                "Network Corporation (“Network”). Network pays.",
+                &[("Network", Category::Organization)]
+            ),
+            ["Network", "Network", "Network"]
+        );
+        // A filing still names no one.
+        assert!(
+            fixed_every(
+                "Corporation Statement of Material Fact (“CSMF”). CSMF ¶ 2.",
+                &[("CSMF", Category::Organization)]
+            )
+            .is_empty()
+        );
+        // Irregular plurals, both directions.
+        for (singular, plural) in [
+            ("Subsidiary", "Subsidiaries"),
+            ("Territory", "Territories"),
+            ("Business", "Businesses"),
+        ] {
+            for (defined, used) in [(singular, plural), (plural, singular)] {
+                let source = format!("Larkfield LLC (the “{defined}”). The {used} pay.");
+                assert!(
+                    fixed_every(
+                        &source,
+                        &[
+                            (defined, Category::Organization),
+                            (used, Category::Organization)
+                        ]
+                    )
+                    .is_empty(),
+                    "{source}"
+                );
+            }
+        }
+        // Listed generic words go beside a defined one; a real word keeps
+        // the span.
+        assert_eq!(
+            fixed_every(
+                "Quillon LLC (the “Sponsor”). The Sponsor Business and Sponsor Quillon pay.",
+                &[
+                    ("Sponsor Business", Category::Organization),
+                    ("Sponsor Quillon", Category::Organization),
+                ]
+            ),
+            ["Sponsor Quillon"]
+        );
+        // Uppercase possessives, straight and curly.
+        assert!(
+            fixed_every(
+                "Quillon LLC (the “Distributor”). DISTRIBUTOR’S and DISTRIBUTOR'S duties.",
+                &[
+                    ("DISTRIBUTOR’S", Category::Organization),
+                    ("DISTRIBUTOR'S", Category::Organization),
+                ]
+            )
+            .is_empty()
+        );
     }
 
     /// A filing's abbreviation, defined after a long form of generic words,
