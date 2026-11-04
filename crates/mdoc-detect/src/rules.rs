@@ -1603,13 +1603,14 @@ impl Pack {
                 .flat_map(|pattern| pattern.captures_iter(&view.text))
                 .filter(|captures| {
                     let whole = captures.get(0).expect("group 0 is the match");
-                    // "Claimant C1 Ltd" names a company, not a code.
-                    !whole.as_str().ends_with(|c: char| c.is_ascii_digit())
-                        || !view.text[whole.end()..]
-                            .trim_start_matches(|c: char| c.is_whitespace() || c == ',')
-                            .split_whitespace()
-                            .next()
-                            .is_some_and(|word| self.only_legal_form(word))
+                    if !whole.as_str().ends_with(|c: char| c.is_ascii_digit()) {
+                        return true;
+                    }
+                    // A role followed by a code may instead open a company
+                    // name: "Claimant C1 Holdings Ltd, trading as C1". The
+                    // whole continuation is checked, not just the next
+                    // word; an uncertain name keeps its marks.
+                    !self.company_continuation(&view.text[whole.end()..])
                 })
                 .filter_map(|captures| captures.name("series").map(|m| m.as_str()))
                 .collect();
@@ -2307,6 +2308,42 @@ impl Pack {
                         .any(|form| form.eq_ignore_ascii_case(word))
                 })
             })
+    }
+
+    /// Whether `rest`, the text after a role and its code, carries on a
+    /// company or other name, so the code opens a name rather than
+    /// defining a party code: more capitalized words ("C1 Holdings"), a
+    /// place ("C1 of North Quay"), a legal form within a few words ("C1
+    /// international holdings ltd") or a trading name ("C1 trading as").
+    fn company_continuation(&self, rest: &str) -> bool {
+        let clause = rest
+            .split(['.', ';', ':', '!', '?'])
+            .next()
+            .unwrap_or_default();
+        let words: Vec<_> = clause
+            .split_whitespace()
+            .map(bare)
+            .filter(|word| !word.is_empty())
+            .take(5)
+            .collect();
+        let code = |word: &str| {
+            (2..=3).contains(&word.len())
+                && word.starts_with(['C', 'D', 'P', 'R'])
+                && word.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+        };
+        let capitalized = |word: &&str| word.starts_with(char::is_uppercase) && !code(word);
+        words.first().is_some_and(capitalized)
+            || (words.first() == Some(&"of") && words.get(1).is_some_and(capitalized))
+            || words[..words.len().min(4)]
+                .iter()
+                .any(|word| self.legal_form(word))
+            || words.windows(2).take(3).any(|pair| {
+                pair[0].eq_ignore_ascii_case("trading") && pair[1].eq_ignore_ascii_case("as")
+            })
+            || words
+                .iter()
+                .take(3)
+                .any(|word| word.eq_ignore_ascii_case("t/a"))
     }
 
     /// Whether `text`'s words are all legal forms ("АО", "LLC").
@@ -5587,6 +5624,125 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
     }
 
+    /// A role before a company name must not suppress its trading name.
+    #[test]
+    fn party_code_company_continuations_do_not_establish_a_series() {
+        for (source, company) in [
+            (
+                "Claimant C1 Holdings Ltd, trading as C1, paid the invoice.",
+                "C1 Holdings Ltd",
+            ),
+            ("Claimant C1 Holdings paid C1.", "C1 Holdings"),
+            ("Claimant C1 Holdings2 paid C1.", "C1 Holdings2"),
+            ("Claimant C1 trading as C1 paid the invoice.", "C1"),
+            (
+                "Claimant C1 international holdings ltd paid C1.",
+                "C1 international holdings ltd",
+            ),
+            ("Claimant C1 of North Quay paid C1.", "C1 of North Quay"),
+            ("Claimant C1 t/a C1 paid the invoice.", "C1"),
+            (
+                "Claimant C1 (international holdings) Ltd, trading as C1, paid the invoice.",
+                "C1 (international holdings) Ltd",
+            ),
+        ] {
+            // Use the later occurrence for the trading/short name: the
+            // first C1 is inside the company's full name.
+            let raw: Vec<_> = [
+                (source.find(company).unwrap(), company),
+                (source.rfind("C1").unwrap(), "C1"),
+            ]
+            .into_iter()
+            .map(|(start, text)| crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: "organization".into(),
+                score: 0.8,
+                text: text.into(),
+            })
+            .collect();
+            let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect();
+            assert_eq!(
+                actual,
+                pairs(&[(company, "ORG"), ("C1", "ORG")]),
+                "{source}"
+            );
+        }
+        // A company name broken over a line keeps its trading name too.
+        let source = "Claimant C1\nholdings ltd paid C1.";
+        let start = source.rfind("C1").unwrap();
+        let raw = [crate::RawEntity {
+            start,
+            end: start + 2,
+            label: "organization".into(),
+            score: 0.8,
+            text: "C1".into(),
+        }];
+        assert!(
+            crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .iter()
+                .any(|span| span.range == (start..start + 2)),
+            "{source}"
+        );
+        // A role and code before a lowercase clause still define a code.
+        assert_eq!(
+            shown(
+                "Claimant C1 and Defendant D1 called C1.",
+                &[("C1", "organization")]
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn party_code_definition_removal_consumes_quotes_and_inner_spaces() {
+        for bracket in [
+            "('C1')",
+            "( C1 )",
+            "( 'C1' )",
+            "(‘C1’)",
+            "( ‘C1’ )",
+            "(\"C1\")",
+            "( \"C1\" )",
+            "(“C1”)",
+            "( “C1” )",
+            "('C1', as appropriate)",
+            "( ‘C1’, as appropriate )",
+            "(C1, as appropriate)",
+            "( C1, as appropriate )",
+            "(\t'C1'\t)",
+            "(\u{a0}“C1”\u{a0})",
+        ] {
+            let definition = format!("Mrs Penrow {bracket}");
+            let source = format!("{definition} called C1.");
+            let expected = pairs(&[("Penrow", "PERSON")]);
+            assert_eq!(
+                shown(&source, &[(&definition, "person")]),
+                expected,
+                "{source}"
+            );
+            for label in ["person", "organization"] {
+                assert_eq!(
+                    shown(&source, &[("Mrs Penrow", "person"), (bracket, label)]),
+                    expected,
+                    "{source}: {label}"
+                );
+            }
+            let company = format!("Pellam Ltd {bracket}");
+            let source = format!("{company} called C1.");
+            assert_eq!(
+                shown(&source, &[(&company, "organization")]),
+                pairs(&[("Pellam Ltd", "ORG")]),
+                "{source}"
+            );
+        }
+    }
+
     /// Uncertain labels, short real names, other code series and real
     /// identifiers stay: the cost of losing a real value is higher.
     #[test]
@@ -5606,6 +5762,10 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{source}"
             );
         }
+        assert_eq!(
+            shown("Claimant C1 called C1.", &[("C1", "organization")]),
+            []
+        );
         let source = "Mrs Penrow (C1). D1 met R2; C100 and C1A attended with C1 Penrow. \
             Staff ID: C123. C1's trustee Ivo Penrow replied.\nМ1. О1.";
         assert_eq!(

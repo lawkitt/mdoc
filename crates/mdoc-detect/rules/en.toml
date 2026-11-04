@@ -1096,8 +1096,10 @@ pattern = '\b(?:Id|id|Ibid|ibid)\.'
 # label followed by a code, establishes only that letter's series. A
 # bare code without such evidence stays. Ranges and possessive trustees
 # go too, but a real name or company extending past a code stays.
+# The bracket/quote syntax in the removal pattern consumes every form
+# accepted by the first evidence pattern, including "as appropriate".
 [[reference]]
-pattern = '[“"‘\x27(]*\b(?P<series>[CDPR])[0-9]{1,2}\b(?:[\p{Zs}\t]*(?:[-–—]|to)[\p{Zs}\t]*(?P<series2>[CDPR])[0-9]{1,2}\b)?(?:[\x27’]s\b(?:[\p{Zs}\t]+(?:trustees?|representatives?|solicitors?|counsel|estate|agents?)\b)?)?[”"’)]*'
+pattern = '(?:\([\p{Zs}\t]*[“"‘\x27]?|[“"‘\x27])?\b(?P<series>[CDPR])[0-9]{1,2}\b(?:[\p{Zs}\t]*(?:[-–—]|to)[\p{Zs}\t]*(?P<series2>[CDPR])[0-9]{1,2}\b)?(?:[\x27’]s\b(?:[\p{Zs}\t]+(?:trustees?|representatives?|solicitors?|counsel|estate|agents?)\b)?)?(?:[”"’\x27]?(?:,[\p{Zs}\t]+as[\p{Zs}\t]+appropriate)?[\p{Zs}\t]*\)|[”"’\x27])?'
 when = [
     '\b\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+\([\p{Zs}\t]*[“"‘\x27]?(?P<series>[CDPR])[0-9]{1,2}\b[”"’\x27]?(?:,[\p{Zs}\t]+as[\p{Zs}\t]+appropriate)?[\p{Zs}\t]*\)',
     '\b(?i:claimants?|defendants?|plaintiffs?|petitioners?|respondents?)[\p{Zs}\t:*(“"‘\x27]+(?P<series>[CDPR])[0-9]{1,2}\b',
