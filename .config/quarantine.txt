@@ -14,4 +14,3 @@
 
 # The app UI tests the merge queue dropped PRs on, 2026-11-03.
 android:io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage  #537  2026-12-03
-ios:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore  #542  2026-12-03
