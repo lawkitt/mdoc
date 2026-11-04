@@ -242,6 +242,9 @@ struct SpanEntry {
     absorbs: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     trim: Vec<String>,
+    /// Case-sensitive regexes removed only from the start of a span.
+    #[serde(default)]
+    trim_start: Vec<String>,
     #[serde(default)]
     extend: Vec<String>,
     #[serde(default)]
@@ -345,6 +348,8 @@ struct SpanFix {
     /// Lowercase words that come off either edge ("ms", "kc"), or phrases
     /// of them ("in re").
     trim: Vec<String>,
+    /// Anchored, case-sensitive prefixes, with some name left after them.
+    trim_start: Vec<Regex>,
     /// A span inside a match grows to the whole match.
     extend: Vec<Regex>,
     /// Characters that come off the end (a sentence's period).
@@ -358,7 +363,7 @@ struct SpanFix {
 impl SpanFix {
     /// `range` without its `trim` words or phrases at either edge (a word's
     /// final period or colon with it; a comma before a trailing one goes
-    /// with it) and its `strip_end` characters.
+    /// with it), its `trim_start` prefixes and its `strip_end` characters.
     fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
         let plain = |word: &str| word.strip_suffix(['.', ':']).unwrap_or(word).to_lowercase();
         let listed = |word: &str| self.trim.contains(&plain(word));
@@ -374,6 +379,15 @@ impl SpanFix {
             let tail = text.len() - text.trim_end().len();
             range = range.start + lead..range.end - tail;
             let text = &source[range.clone()];
+            if let Some(prefix) = self
+                .trim_start
+                .iter()
+                .filter_map(|pattern| pattern.find(text))
+                .find(|prefix| 0 < prefix.end() && prefix.end() < text.len())
+            {
+                range.start += prefix.end();
+                continue;
+            }
             // A phrase at either edge, with a word left beside it: "In re
             // Quill" is "Quill".
             let words: Vec<(usize, &str)> = text
@@ -845,13 +859,14 @@ impl Pack {
                 let at = |problem: String| format!("{name}: span #{}: {problem}", index + 1);
                 let category = category(&entry.category).map_err(at)?;
                 let fixes = !entry.trim.is_empty()
+                    || !entry.trim_start.is_empty()
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, extend, strip_end or person_before".into(),
+                            "a pattern takes no trim, trim_start, extend, strip_end or person_before".into(),
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
@@ -884,7 +899,7 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, extend patterns, strip_end or person_before"
+                        "needs a pattern, trim words, trim_start, extend patterns, strip_end or person_before"
                             .into(),
                     ));
                 }
@@ -920,9 +935,22 @@ impl Pack {
                         Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let trim_start = entry
+                    .trim_start
+                    .iter()
+                    .map(|pattern| {
+                        let regex = Regex::new(&rust_classes(&format!(r"\A(?:{pattern})")))
+                            .map_err(|e| at(e.to_string()))?;
+                        if regex.is_match("") {
+                            return Err(at("trim_start matches an empty prefix".into()));
+                        }
+                        Ok(regex)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 pack.spans.push(Span::Fix(SpanFix {
                     category,
                     trim: entry.trim.clone(),
+                    trim_start,
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
@@ -6151,6 +6179,119 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         );
     }
 
+    #[test]
+    fn entrepreneur_prefix_trim_preserves_the_surname_ip() {
+        let source = "Свидетель Ип Ман подписал заявление";
+        assert_eq!(
+            shown(source, &[("Ип Ман", "person")]),
+            pairs(&[("Ип Ман", "PERSON")])
+        );
+        // Only the uppercase status at the start comes off. A surname at
+        // the end and a name after the status must both survive.
+        for (source, name) in [
+            ("ИП Ип Ман", "Ип Ман"),
+            ("ИП Ман Ип", "Ман Ип"),
+            ("Ман ИП", "Ман ИП"),
+            (
+                "Ман индивидуальный предприниматель",
+                "Ман индивидуальный предприниматель",
+            ),
+            ("ИП Ветлин", "Ветлин"),
+            ("индивидуального предпринимателя Ип Ман", "Ип Ман"),
+            ("ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ Ип Ман", "Ип Ман"),
+        ] {
+            let raw = crate::RawEntity {
+                start: 0,
+                end: source.len(),
+                label: "person".into(),
+                score: 0.8,
+                text: source.into(),
+            };
+            let corrected: Vec<_> = crate::correct(source, &[raw])
+                .into_iter()
+                .map(|d| (source[d.range].to_owned(), d.category.token().to_owned()))
+                .collect();
+            assert_eq!(corrected, pairs(&[(name, "PERSON")]), "{source}");
+        }
+    }
+
+    #[test]
+    fn entrepreneur_name_only_org_yields_to_person() {
+        for (source, name) in [
+            ("ИП Ветлин Н. О.", "Ветлин Н. О."),
+            (
+                "индивидуальный предприниматель Ветлин Н. О.",
+                "Ветлин Н. О.",
+            ),
+            (
+                "индивидуальному предпринимателю Ветлину Н.О.",
+                "Ветлину Н.О.",
+            ),
+            (
+                "индивидуальный предприниматель Брюн Лидия Игоревна",
+                "Брюн Лидия Игоревна",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "organization")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+        // With no entrepreneur status, this rule has no evidence to
+        // override an organization. Quoted trading names stay as well.
+        assert_eq!(
+            shown("Ветлин Н. О.", &[("Ветлин Н. О.", "organization")]),
+            pairs(&[("Ветлин Н. О.", "ORG")])
+        );
+        let source = "ИП Ветлин Н. О., магазин «Кедрач»";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Ветлин Н. О.", "organization"),
+                    ("«Кедрач»", "organization")
+                ]
+            ),
+            pairs(&[("Ветлин Н. О.", "PERSON"), ("«Кедрач»", "ORG")])
+        );
+    }
+
+    #[test]
+    fn entrepreneur_full_names_in_capitals_are_people() {
+        for (source, name) in [
+            ("ИП МОХОВ ЛЕВ РОМАНОВИЧ", "МОХОВ ЛЕВ РОМАНОВИЧ"),
+            ("ИП ЛЕВ РОМАНОВИЧ МОХОВ", "ЛЕВ РОМАНОВИЧ МОХОВ"),
+            ("ИП МОХОВА ЛИДИЯ ИГОРЕВНА", "МОХОВА ЛИДИЯ ИГОРЕВНА"),
+            ("ИП МОХОВ-БРЮН ЛЕВ РОМАНОВИЧ", "МОХОВ-БРЮН ЛЕВ РОМАНОВИЧ"),
+            (
+                "индивидуального предпринимателя МОХОВА ЛЬВА РОМАНОВИЧА",
+                "МОХОВА ЛЬВА РОМАНОВИЧА",
+            ),
+            (
+                "ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ МОХОВ ЛЕВ РОМАНОВИЧ",
+                "МОХОВ ЛЕВ РОМАНОВИЧ",
+            ),
+        ] {
+            assert!(
+                !pack().identifying(source, Category::Organization),
+                "{source}"
+            );
+            for raw in [
+                vec![],
+                vec![(source, "organization")],
+                vec![(name, "organization")],
+                vec![(source, "person")],
+            ] {
+                assert_eq!(
+                    shown(source, &raw),
+                    pairs(&[(name, "PERSON")]),
+                    "{source}: {raw:?}"
+                );
+            }
+        }
+    }
+
     /// An individual entrepreneur is a person, «ИП» or «индивидуальный
     /// предприниматель» outside the name, in any case form; a trading name
     /// in quotes stays an organization, and placeholders stay no one (guide
@@ -7189,6 +7330,14 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[span]]\ncategory = \"PERSON\"\ntrim = [\"Ms\"]",
                 "not lowercase",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim_start = ['x*']",
+                "empty prefix",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim_start = ['(']",
+                "span #1",
             ),
             (
                 "[[span]]\ncategory = \"ORG\"\nstrip_end = \"a.\"",
