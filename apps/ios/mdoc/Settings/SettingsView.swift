@@ -89,13 +89,24 @@ struct SettingsView: View {
 private struct ModelDownloadButton: View {
     let setup: SetupViewModel
     let offer: ModelOffer
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let size = offer.byteSize.formatted(.byteCount(style: .file))
         Button {
             setup.download([offer])
         } label: {
-            Label("Download \(size)", systemImage: "arrow.down.circle")
+            // At accessibility sizes the size goes under the word, with no
+            // icon beside it, so the word keeps its line: squeezed, it broke
+            // as "Down- / load 18…".
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading) {
+                    Text("Download")
+                    Text(size)
+                }
+            } else {
+                Label("Download \(size)", systemImage: "arrow.down.circle")
+            }
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(Text("Download \(ModelRow.plainName(offer.purpose)), \(size)"))
@@ -133,7 +144,7 @@ struct BuildInfo: Equatable {
     }
 }
 
-/// The licence notice (GPL with the app store permission, ADR 0086) and the
+/// The license notice (GPL with the app store permission, ADR 0086) and the
 /// source link, which opens the commit this build was made from.
 struct AboutView: View {
     static let permissionURL = URL(string: "https://github.com/lawkitt/mdoc/blob/main/LICENSE-APP-STORES.md")!
@@ -163,7 +174,7 @@ struct AboutView: View {
                 Link("Permission text (LICENSE-APP-STORES.md)", destination: Self.permissionURL)
                     .font(.footnote)
             } header: {
-                Text("Licence")
+                Text("License")
             }
         }
         .navigationTitle("About mdoc")

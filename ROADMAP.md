@@ -269,15 +269,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
   2026-10-31 shelf GUI run.*
-- **[Mobile]** Settings' Download button at the largest text size: on an
-  iPhone at AX XXXL its label breaks as "Down- / load 18…", hyphenated and
-  cut off (`ModelDownloadButton` in `SettingsView.swift`); stack the icon
-  above the label or let it wrap without hyphens, as the review rows do
-  (#312). *From build 1's acceptance run
-  ([P13](docs/evidence/mobile/2026-11-04/ios.md)).*
-- **[Mobile]** US spelling in the iOS and Android apps: desktop moved every
-  UI string to US spelling (UI polish decision 8, #327), but the mobile apps
-  still say "unrecognised" and "Licence". *From the 2026-11-01 UI polish run.*
+- **[Mobile]** US spelling in the Android app: desktop moved every UI
+  string to US spelling (UI polish decision 8, #327), and iOS followed in
+  the 2026-11-04 journey polish, but Android still says "unrecognised" and
+  "Licence". *From the 2026-11-01 UI polish run.*
 - **[Shelf]** Review the shelf preview's Markdown block reading (`src/shelf.rs`,
   `preview_lines`) against CommonMark as a whole rather than case by case:
   round after round of Codex review on #280 found another container or

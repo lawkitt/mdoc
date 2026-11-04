@@ -59,7 +59,7 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue((restored.value as? String)?.contains("Write to \(MdocUITest.email) today.") ?? false)
         let summary = app.staticTexts["restore-summary"]
         XCTAssertTrue(summary.label.contains("1 value restored"))
-        XCTAssertTrue(summary.label.contains("1 unrecognised"))
+        XCTAssertTrue(summary.label.contains("1 unrecognized"))
     }
 }
 

@@ -313,6 +313,19 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
     }
 
+    /// A new case never takes a name a case already has: the case pickers
+    /// could not tell the two apart.
+    func testANewCaseOfATakenNameIsNumbered() throws {
+        let home = HomeViewModel(library: Fixture.core().library)
+        let taken = try XCTUnwrap(home.cases.first?.name)
+        let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
+        _ = home.importDocument(pending, title: "Note", into: .newCase(name: taken))
+        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
+        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 2" })
+        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
+        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Other"]), "Lease")
+    }
+
     /// A scan that found nothing says so on Home (ADR 0087).
     func testStatusSaysWhenNothingWasFound() {
         var document = DocumentSummary(

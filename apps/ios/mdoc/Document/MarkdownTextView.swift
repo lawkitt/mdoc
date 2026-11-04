@@ -100,10 +100,49 @@ struct MarkdownTextView: UIViewRepresentable {
         func restyle(_ key: StyleKey, _ view: CandidateTextView) {
             pending = nil
             let textChanged = styled?.snapshot.markdown != key.snapshot.markdown
+            let newlySelected = key.selected != styled?.selected ? key.selected : nil
             styled = key
             offsets = TextOffsets(key.snapshot.markdown)
             render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
             keepsScroll = true
+            if let newlySelected {
+                // After the tables are placed, which follows the layout.
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.reveal(newlySelected, in: view)
+                }
+            }
+        }
+
+        /// Scrolls the candidate under review into the top third of the
+        /// text, the part the candidate sheet leaves in view, so Next
+        /// proposal never opens one hidden under the sheet.
+        func reveal(_ id: CandidateID, in view: CandidateTextView) {
+            guard let candidate = parent.snapshot.candidate(id) else { return }
+            let range = offsets.nsRange(candidate.range)
+            let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
+                NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+            }
+            let rect: CGRect
+            if let cell {
+                rect = cell.convert(cell.bounds, to: view)
+            } else {
+                guard
+                    let start = view.position(from: view.beginningOfDocument, offset: range.location),
+                    let end = view.position(from: start, offset: range.length),
+                    let textRange = view.textRange(from: start, to: end)
+                else { return }
+                rect = view.firstRect(for: textRange)
+            }
+            guard !rect.isNull, !rect.isInfinite else { return }
+            let insets = view.adjustedContentInset
+            let top = view.contentOffset.y + insets.top
+            let band = (view.bounds.height - insets.top - insets.bottom) / 3
+            guard rect.minY < top + 8 || rect.maxY > top + band else { return }
+            let highest = -insets.top
+            let lowest = max(highest, view.contentSize.height + insets.bottom - view.bounds.height)
+            let target = min(max(rect.minY - insets.top - band / 3, highest), lowest)
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
         }
 
         func restyleOnReturn(_ key: StyleKey, _ view: CandidateTextView) {

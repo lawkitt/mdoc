@@ -4,9 +4,6 @@
     "%@ (%lld)": {
       "shouldTranslate": false
     },
-    "%@ · %lld": {
-      "shouldTranslate": false
-    },
     "%@, kept": {},
     "%@, proposed as %@": {},
     "%@, replaced; was %@": {},
@@ -32,8 +29,31 @@
         }
       }
     },
+    "%lld replaced. Tap one to keep the original.": {},
     "%lld to review": {},
-    "%lld unrecognised": {},
+    "%lld to review: tap underlined text": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld to review: tap the underlined text"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld to review: tap underlined text"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld unrecognized": {},
     "%lld values restored": {
       "localizations": {
         "en": {
@@ -95,6 +115,7 @@
     "Decision": {},
     "Delete": {},
     "Done": {},
+    "Download": {},
     "Download %@": {},
     "Download %@ & continue": {},
     "Download %@ over cellular?": {},
@@ -103,6 +124,7 @@
     "Download all models (%@)": {},
     "Download the models first.": {},
     "Downloading": {},
+    "Each gets its alias. You can still keep any of them.": {},
     "Email": {},
     "Every exact repeat in this document is replaced too.": {},
     "Files": {},
@@ -131,7 +153,7 @@
     "Keep all": {},
     "Keeps the reply with %@.": {},
     "Kept": {},
-    "Licence": {},
+    "License": {},
     "Memory": {},
     "Models": {},
     "Models download once, on Wi-Fi unless you allow cellular, and then run on this device.": {},
@@ -188,9 +210,32 @@
     "Recognizing page %lld of %lld": {},
     "Recognizing text": {},
     "Remove reply": {},
+    "Remove the reply?": {},
     "Replace": {},
     "Replace %lld": {},
     "Replace all": {},
+    "Replace all %lld proposals": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Replace %lld proposal"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Replace all %lld proposals"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Replaced": {},
     "Replace…": {},
     "Reply": {},
@@ -253,6 +298,7 @@
     "Text recognition (PP-OCR)": {},
     "Text recognition, English and Russian": {},
     "The AI sees the alias; mdoc puts the original back when you restore its reply.": {},
+    "The document and its names stay as they are.": {},
     "The download failed (HTTP %lld).": {},
     "The import stopped before mdoc read the text. Finish import reads it now.": {},
     "The import stopped when mdoc left the screen.": {},

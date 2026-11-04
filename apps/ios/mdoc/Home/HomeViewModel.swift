@@ -45,6 +45,12 @@ final class HomeViewModel {
     /// Imports into the chosen case and returns the new document's session.
     func importDocument(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) -> (any DocumentSession)? {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var caseChoice = caseChoice
+        if case .newCase(let caseName) = caseChoice {
+            // Documents' titles count too, so a case named after its
+            // document takes the number the core gives that title.
+            caseChoice = .newCase(name: Self.unusedName(caseName, among: cases.map(\.name) + documents.map(\.title)))
+        }
         do {
             let session = try library.importDocument(
                 pending.source, title: name.isEmpty ? pending.suggestedTitle : name, into: caseChoice)
@@ -55,6 +61,15 @@ final class HomeViewModel {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    /// `name`, or "name 2", "name 3"… when a case has it already, as the
+    /// core numbers a document's title: two cases of one name could not be
+    /// told apart in the case pickers.
+    static func unusedName(_ name: String, among names: [String]) -> String {
+        let taken = Set(names)
+        guard taken.contains(name) else { return name }
+        return (2...).lazy.map { "\(name) \($0)" }.first { !taken.contains($0) }!
     }
 
     func delete(_ document: DocumentID) {
@@ -88,7 +103,7 @@ final class HomeViewModel {
         case .recognizing where !document.kind.needsRecognition: "doc.badge.clock"
         case .recognizing: "text.viewfinder"
         case .unscanned where !findsNames: "character.cursor.ibeam"
-        case .unscanned: "person.text.rectangle"
+        case .unscanned: "text.magnifyingglass"
         case .reviewing: "exclamationmark.circle"
         case .ready: "checkmark.circle"
         }

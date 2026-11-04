@@ -153,8 +153,14 @@ final class DocumentViewModel {
         finish(outcome)
         // A scan that finds nothing says so, rather than going quietly to
         // Share (ADR 0087).
-        if case .finished(let scanned) = outcome, scanned.candidates.isEmpty {
-            say(String(localized: "No names found. Select text to mark one."))
+        if case .finished(let scanned) = outcome {
+            let proposed = scanned.candidates.filter { $0.state == .proposed }.count
+            if scanned.candidates.isEmpty {
+                say(String(localized: "No names found. Select text to mark one."))
+            } else if proposed > 0 {
+                // Where to look next, the first time a reader sees the colours.
+                say(String(localized: "\(proposed) to review: tap underlined text"), symbol: "text.magnifyingglass")
+            }
         }
     }
 
@@ -254,7 +260,12 @@ final class DocumentViewModel {
 
     func replaceAllPending() {
         guard !reviewWaits() else { return }
+        let count = snapshot.candidates.filter { $0.state == .proposed }.count
         perform { try session.replaceAllPending() }
+        // One tap changed them all: says so, and that each can still be kept.
+        if errorMessage == nil && count > 0 {
+            say(String(localized: "\(count) replaced. Tap one to keep the original."))
+        }
     }
 
     func beginReplace(_ selection: SourceRange) {

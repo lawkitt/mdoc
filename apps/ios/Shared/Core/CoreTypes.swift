@@ -201,8 +201,8 @@ enum RestoredSegment: Hashable, Sendable {
 
 struct RestoreResult: Hashable, Sendable {
     var segments: [RestoredSegment]
-    /// Distinct identities restored and distinct unrecognised tokens, as
-    /// "N values restored · M unrecognised" counts them (ADR 0078).
+    /// Distinct identities restored and distinct unrecognized tokens, as
+    /// "N values restored · M unrecognized" counts them (ADR 0078).
     var restoredCount: Int
     var unresolvedCount: Int
 
