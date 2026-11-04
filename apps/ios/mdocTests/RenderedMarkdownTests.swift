@@ -288,26 +288,33 @@ final class RenderedMarkdownTests: XCTestCase {
     }
 
     /// VoiceOver hears the rendered text: no markers, no folded table source
-    /// (the grid reads the table), at unchanged offsets.
+    /// (the grid reads the table), at unchanged offsets, with a word split by
+    /// markers kept whole; review cells read as drawn too.
     @MainActor
     func testVoiceOverHearsTheRenderedText() throws {
-        let text = "Some **bold** words.\n\n| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |\n\nAfter"
+        let text = "Some **bold** words, 12**34**56.\n\n| Name | Role |\n| --- | --- |\n| **Maya Bennett** | Tenant |\n\nAfter"
         let view = CandidateTextView()
         view.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
         view.show(render(text), width: 360)
         let whole = try XCTUnwrap(view.textRange(from: view.beginningOfDocument, to: view.endOfDocument))
         let spoken = try XCTUnwrap(view.text(in: whole))
+        let visible = spoken.replacingOccurrences(of: "\u{2060}", with: "")
         XCTAssertEqual((spoken as NSString).length, (text as NSString).length)
-        XCTAssertTrue(spoken.contains("bold"))
-        XCTAssertTrue(spoken.contains("After"))
-        XCTAssertFalse(spoken.contains("**"))
-        XCTAssertFalse(spoken.contains("Maya"), "the folded table is read from its grid")
-        XCTAssertFalse(spoken.contains("|"))
+        XCTAssertTrue(visible.contains("Some bold words, 123456."), visible)
+        XCTAssertTrue(visible.contains("After"))
+        XCTAssertFalse(visible.contains("|"))
+        XCTAssertFalse(visible.contains("Maya"), "the folded table is read from its grid")
         XCTAssertEqual(view.accessibilityValue, spoken)
         // A part of the text keeps its own offsets.
         let start = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: 5))
         let end = try XCTUnwrap(view.position(from: start, offset: 8))
-        XCTAssertEqual(view.text(in: try XCTUnwrap(view.textRange(from: start, to: end))), "  bold  ")
+        XCTAssertEqual(view.text(in: try XCTUnwrap(view.textRange(from: start, to: end)))?.replacingOccurrences(of: "\u{2060}", with: ""), "bold")
+        // A review cell reads as drawn; a Reply cell, which copies, keeps its source.
+        let cell = try XCTUnwrap(view.tableViews.first?.cells[1][0])
+        XCTAssertEqual(cell.accessibilityValue?.replacingOccurrences(of: "\u{2060}", with: ""), "Maya Bennett")
+        cell.allowsCopy = true
+        let cellText = try XCTUnwrap(cell.textRange(from: cell.beginningOfDocument, to: cell.endOfDocument))
+        XCTAssertEqual(cell.text(in: cellText), "**Maya Bennett**")
     }
 
     @MainActor
