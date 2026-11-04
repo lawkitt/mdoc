@@ -126,9 +126,13 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(item.title, model.snapshot.title)
         XCTAssertTrue(item.text.contains("PERSON_1"))
         XCTAssertFalse(item.text.contains("Maya Ellison"))
+        // Save to Files gets the same text as a .md file.
+        let file = try XCTUnwrap(item.file)
+        XCTAssertEqual(file.pathExtension, "md")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), item.text)
     }
 
-    func testShareAsFileWritesAMarkdownFileAndRemovesIt() throws {
+    func testShareAsFileWritesAMarkdownFileAndKeepsIt() throws {
         let model = try model()
         model.replaceAllPending()
         model.share(asFile: true)
@@ -136,8 +140,13 @@ final class DocumentViewModelTests: XCTestCase {
         let url = try XCTUnwrap(items.items.first as? URL)
         XCTAssertEqual(url.lastPathComponent, "Letter before claim.md")
         XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).hasPrefix("Note:"))
-        model.shareFinished(items)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        // Kept after the sheet closes, since the receiving app may read it
+        // later; the next share replaces it.
+        model.share = nil
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        model.share(asFile: false)
+        let files = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+        XCTAssertEqual(files, [url.lastPathComponent])
     }
 
     func testCopyForAIConfirms() throws {
@@ -239,6 +248,31 @@ final class DocumentViewModelTests: XCTestCase {
         await run.value
         XCTAssertNil(model.runningJob)
         XCTAssertEqual(model.primaryAction, .recognize(resume: true))
+    }
+
+    /// While Find names runs on the document, review waits and says so: a
+    /// change to the text would make the core throw the scan away.
+    func testReviewWaitsWhileFindNamesRuns() async throws {
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let core = Fixture.core(timing: FakeCore.Timing(page: 0, scan: 5, install: 0))
+        let model = try model(core: core, jobs: jobs)
+        let candidate = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
+        let pending = model.snapshot.pendingCount
+        let run = Task { await model.findNames() }
+        while model.runningJob == nil { await Task.yield() }
+        model.open(candidate.id)
+        XCTAssertNil(model.reviewing)
+        XCTAssertEqual(model.notice, "Finding names. Review when it finishes.")
+        XCTAssertEqual(model.noticeSymbol, "hourglass")
+        model.decide(candidate.id, .replace, scope: .allOccurrences)
+        model.replaceAllPending()
+        XCTAssertEqual(model.snapshot.pendingCount, pending)
+        model.beginReplace(candidate.range)
+        XCTAssertNil(model.manualSelection)
+        model.cancelJob()
+        await run.value
+        model.open(candidate.id)
+        XCTAssertEqual(model.reviewing, candidate.id)
     }
 
     func testSafeFileNameDropsPathSeparators() {

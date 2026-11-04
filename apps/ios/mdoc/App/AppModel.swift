@@ -149,6 +149,21 @@ final class AppModel {
         selection.flatMap { documents[$0] }?.needsSetup ?? false
     }
 
+    /// Saves what finished while the phone was locked, and shows it saved.
+    func saveDeferred() {
+        do {
+            let saved = try core.library.saveDeferred()
+            guard !saved.isEmpty else { return }
+            for id in saved {
+                documents[id]?.refresh()
+            }
+            home.refresh()
+        } catch {
+            home.errorMessage = error.localizedDescription
+            home.refresh()
+        }
+    }
+
     func documentModel(for id: DocumentID) -> DocumentViewModel? {
         if let model = documents[id] {
             return model

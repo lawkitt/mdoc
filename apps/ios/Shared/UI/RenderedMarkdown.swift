@@ -881,7 +881,6 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     var configureCell: ((CellTextView) -> Void)?
     private(set) var tableViews: [MarkdownTableView] = []
     private var shownWidth: CGFloat = 0
-    private var needsPlacement = false
 
     /// A TextKit 2 text view that draws decorations. Built here rather than
     /// through `UITextView(usingTextLayoutManager:)`, which skips a Swift
@@ -928,7 +927,6 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             }
             return view
         }
-        needsPlacement = !tableViews.isEmpty
         setNeedsLayout()
     }
 
@@ -939,28 +937,42 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             shownWidth = width
             onWidth?(width)
         }
-        if needsPlacement {
+        if !tableViews.isEmpty {
             placeTables()
         }
     }
 
-    /// Puts each grid on the gap its table's first line leaves.
+    /// Puts each grid on the gap its table's first line leaves, on every
+    /// layout pass (scrolling is one). TextKit 2 estimates the lines it has
+    /// not laid out and moves the text as it lays them out for the
+    /// viewport, so a grid placed once drifted off its gap: after a restyle
+    /// while scrolled, screens away. Here, after the viewport's layout, the
+    /// fragment's frame is the one the text is drawn with.
     private func placeTables() {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
-        needsPlacement = false
         let start = content.documentRange.location
         let x = textContainerInset.left + textContainer.lineFragmentPadding
         let column = textWidth
         for view in tableViews {
             guard let location = content.location(start, offsetBy: view.table.anchor),
-                  let range = NSTextRange(location: start, end: location) else { continue }
-            layout.ensureLayout(for: range)
-            guard let fragment = layout.textLayoutFragment(for: location) else { continue }
-            let line = fragment.textLineFragments.first
+                  let fragment = layout.textLayoutFragment(for: location) else { continue }
+            if fragment.state != .layoutAvailable {
+                // Off screen and not laid out yet: an estimate, corrected
+                // once it scrolls into the viewport.
+                layout.ensureLayout(for: fragment.rangeInElement)
+            }
+            // The line the table starts on: its paragraph may begin earlier.
+            let paragraphStart = fragment.textElement?.elementRange?.location ?? fragment.rangeInElement.location
+            let into = content.offset(from: paragraphStart, to: location)
+            let line = fragment.textLineFragments.first { NSLocationInRange(into, $0.characterRange) }
+                ?? fragment.textLineFragments.first
             let y = fragment.layoutFragmentFrame.minY + (line?.typographicBounds.minY ?? 0) + textContainerInset.top
             let width = min(column, view.table.width)
             let offset = view.table.rtl ? column - width : 0
-            view.frame = CGRect(x: x + offset, y: y, width: width, height: view.table.height)
+            let frame = CGRect(x: x + offset, y: y, width: width, height: view.table.height)
+            if view.frame != frame {
+                view.frame = frame
+            }
         }
     }
 

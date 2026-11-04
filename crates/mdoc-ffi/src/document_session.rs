@@ -41,8 +41,9 @@ pub enum JobStage {
 pub trait JobProgress: Send + Sync {
     fn stage(&self, stage: JobStage);
     /// How far the current stage is: `done` of `total` units (the
-    /// detector's windows while scanning). A phone shows it and passes it
-    /// to the system, which stops a background job that reports none.
+    /// detector's windows while scanning, pages while recognizing). A phone
+    /// shows it and passes it to the system, which stops a background job
+    /// that reports none.
     fn advanced(&self, done: u64, total: u64);
 }
 

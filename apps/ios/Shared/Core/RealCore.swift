@@ -161,7 +161,13 @@ private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     func advanced(done: UInt64, total: UInt64) {
         guard total > 0 else { return }
         let stage = lock.withLock { current }
-        observer.progress(JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total))))
+        var update = JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total)))
+        if stage == .recognizing {
+            // Pages: the bar reads "Recognizing page 3 of 12".
+            update.page = Int(done)
+            update.pageCount = Int(total)
+        }
+        observer.progress(update)
     }
 }
 
@@ -177,6 +183,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     private var ids: [String: DocumentID] = [:]
     private let originals: OriginalsIndex
     private let pending: PendingImports
+    /// Saves that wait for the phone to unlock, by document.
+    private var unsaved: [DocumentID: () throws -> Void] = [:]
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
         self.storage = storage
@@ -279,6 +287,34 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     /// OCR began on an import: once stopped, it resumes with the pages left.
+    fileprivate func saveOnUnlock(_ id: DocumentID, _ save: @escaping () throws -> Void) {
+        lock.withLock { unsaved[id] = save }
+    }
+
+    func saveDeferred() throws -> [DocumentID] {
+        let waiting = lock.withLock {
+            let waiting = unsaved
+            unsaved = [:]
+            return waiting
+        }
+        var saved: [DocumentID] = []
+        var failure: (any Error)?
+        for (id, save) in waiting {
+            do {
+                try save()
+                saved.append(id)
+            } catch where !ProtectedData.isAvailable {
+                lock.withLock { unsaved[id] = save }
+            } catch {
+                failure = failure ?? error
+            }
+        }
+        if let failure {
+            throw failure
+        }
+        return saved
+    }
+
     fileprivate func ocrStarted(_ session: RealSession) {
         pending.markOCRStarted(session.id)
     }
@@ -439,15 +475,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             }
         }
         let caseID = lock.withLock { self.caseID }
-        if let caseID {
-            _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
-        }
         lock.withLock {
             review = imported
             self.source = nil
             ocrStarted = false
         }
-        try save()
+        try saveAfterJob { [self] in
+            if let caseID {
+                _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
+            }
+            try save()
+        }
         return snapshot()
     }
 
@@ -470,8 +508,21 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             review = scanned
             self.scanned = true
         }
-        try save()
+        try saveAfterJob { [self] in try save() }
         return snapshot()
+    }
+
+    /// The save that ends a job. A job left running when the phone locks
+    /// finishes with the library's files unwritable (Data Protection
+    /// Complete), so its result stays in this session and the library saves
+    /// it once the phone unlocks.
+    private func saveAfterJob(_ finish: @escaping () throws -> Void) throws {
+        do {
+            try finish()
+        } catch {
+            guard !ProtectedData.isAvailable else { throw error }
+            library.saveOnUnlock(id, finish)
+        }
     }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {

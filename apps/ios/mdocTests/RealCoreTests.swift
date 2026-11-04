@@ -136,6 +136,33 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
     }
 
+    /// Find names that ends while the phone is locked cannot write the
+    /// library (Data Protection Complete): the result shows at once and is
+    /// saved on unlock. Unlocked, a failed save is still an error.
+    func testAScanThatEndsWhileLockedIsSavedOnUnlock() throws {
+        let core = try core()
+        let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
+        _ = try session.recognize(observer: TestObserver())
+        let documents = storage.url(.documents)
+        // Unwritable, as the library's folders are once the phone locks.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+            ProtectedData.isAvailable = true
+        }
+        XCTAssertThrowsError(try session.scan(observer: TestObserver()), "unlocked, a failed save is an error")
+        ProtectedData.isAvailable = false
+        let scanned = try session.scan(observer: TestObserver())
+        XCTAssertEqual(scanned.phase, .reviewing)
+        XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .unscanned, "not saved while locked")
+        XCTAssertEqual(try core.library.saveDeferred(), [], "still locked")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+        ProtectedData.isAvailable = true
+        XCTAssertEqual(try core.library.saveDeferred(), [session.id])
+        XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
+        XCTAssertEqual(try core.library.saveDeferred(), [], "saved once")
+    }
+
     func testManualReplacementReplacesEveryRepeat() throws {
         let session = try reviewed(core())
         let text = session.snapshot().markdown

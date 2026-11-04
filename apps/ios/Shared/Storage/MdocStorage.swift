@@ -24,7 +24,7 @@ struct MdocStorage: Sendable {
         case models
         /// Model files downloaded and waiting for the core to install them.
         case downloads
-        /// The `.md` files Share writes; emptied after each share and at launch.
+        /// The `.md` file Share writes; emptied at the next share and at launch.
         case handOff = "hand-off"
 
         var protection: FileProtectionType? {

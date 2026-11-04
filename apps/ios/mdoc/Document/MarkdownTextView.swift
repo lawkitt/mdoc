@@ -54,12 +54,19 @@ struct MarkdownTextView: UIViewRepresentable {
             snapshot: snapshot, selected: selected, rendered: rendered,
             dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
-        guard key != coordinator.styled else { return }
-        let textChanged = coordinator.styled?.snapshot.markdown != snapshot.markdown
-        coordinator.styled = key
-        coordinator.offsets = TextOffsets(snapshot.markdown)
-        coordinator.render(view, width: view.textWidth, keepsScroll: !textChanged || coordinator.keepsScroll)
-        coordinator.keepsScroll = true
+        guard key != coordinator.styled else {
+            coordinator.pending = nil
+            return
+        }
+        // iOS draws a backgrounded app again in light and dark for the app
+        // switcher. Restyling then rebuilt every table's cells twice, and
+        // with Find names using the CPU it ran past the 10 s iOS allows, so
+        // iOS stopped mdoc. The text catches up on return.
+        if view.window?.windowScene?.activationState == .background {
+            coordinator.restyleOnReturn(key, view)
+            return
+        }
+        coordinator.restyle(key, view)
     }
 
     struct StyleKey: Equatable {
@@ -76,9 +83,40 @@ struct MarkdownTextView: UIViewRepresentable {
         var offsets = TextOffsets("")
         /// False until the first text is shown, so a new document starts at the top.
         var keepsScroll = false
+        /// The style the view waits to show until mdoc is back on screen.
+        var pending: StyleKey?
+        nonisolated(unsafe) private var foreground: NSObjectProtocol?
 
         init(parent: MarkdownTextView) {
             self.parent = parent
+        }
+
+        deinit {
+            if let foreground {
+                NotificationCenter.default.removeObserver(foreground)
+            }
+        }
+
+        func restyle(_ key: StyleKey, _ view: CandidateTextView) {
+            pending = nil
+            let textChanged = styled?.snapshot.markdown != key.snapshot.markdown
+            styled = key
+            offsets = TextOffsets(key.snapshot.markdown)
+            render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
+            keepsScroll = true
+        }
+
+        func restyleOnReturn(_ key: StyleKey, _ view: CandidateTextView) {
+            pending = key
+            guard foreground == nil else { return }
+            foreground = NotificationCenter.default.addObserver(
+                forName: UIScene.willEnterForegroundNotification, object: nil, queue: .main
+            ) { [weak self, weak view] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let view, let key = self.pending, key != self.styled else { return }
+                    self.restyle(key, view)
+                }
+            }
         }
 
         /// Styles the snapshot for a text column `width` wide (tables need

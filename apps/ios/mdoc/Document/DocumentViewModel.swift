@@ -45,6 +45,8 @@ final class DocumentViewModel {
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
     private(set) var notice: String?
+    /// The notice's symbol: a check, or an hourglass while review waits.
+    private(set) var noticeSymbol = "checkmark.circle.fill"
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
@@ -152,7 +154,7 @@ final class DocumentViewModel {
         // A scan that finds nothing says so, rather than going quietly to
         // Share (ADR 0087).
         if case .finished(let scanned) = outcome, scanned.candidates.isEmpty {
-            notice = String(localized: "No names found. Select text to mark one.")
+            say(String(localized: "No names found. Select text to mark one."))
         }
     }
 
@@ -203,7 +205,22 @@ final class DocumentViewModel {
 
     // MARK: Review
 
+    /// Review waits while this document's job runs: a scan whose text
+    /// changed meanwhile is thrown away at the end (the core's rule, as on
+    /// desktop), so a Replace now would cost the whole Find names. Says so
+    /// and returns true when it waits.
+    private func reviewWaits() -> Bool {
+        guard let job = runningJob else { return false }
+        say(
+            job.kind == .scan
+                ? String(localized: "Finding names. Review when it finishes.")
+                : String(localized: "Reading the document. Review when it finishes."),
+            symbol: "hourglass")
+        return true
+    }
+
     func open(_ candidate: CandidateID) {
+        guard !reviewWaits() else { return }
         reviewing = candidate
     }
 
@@ -226,6 +243,7 @@ final class DocumentViewModel {
     }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) {
+        guard !reviewWaits() else { return }
         perform { try session.decide(candidate, decision, scope: scope) }
     }
 
@@ -235,16 +253,19 @@ final class DocumentViewModel {
     }
 
     func replaceAllPending() {
+        guard !reviewWaits() else { return }
         perform { try session.replaceAllPending() }
     }
 
     func beginReplace(_ selection: SourceRange) {
+        guard !reviewWaits() else { return }
         manualSelection = selection
     }
 
     func addReplacement(category: Category) {
         guard let selection = manualSelection else { return }
         manualSelection = nil
+        guard !reviewWaits() else { return }
         perform { try session.addReplacement(selection, category: category) }
     }
 
@@ -263,23 +284,25 @@ final class DocumentViewModel {
         do {
             let handOff = try session.copyForAI()
             pasteboard(handOff.text)
-            notice = String(localized: "Copied for AI")
+            say(String(localized: "Copied for AI"))
             onChange()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Share Copy for AI's text, as text or as a `.md` file.
+    /// Share Copy for AI's text, as text or as a `.md` file. Save to Files
+    /// gets the file either way. The file stays until the next share or
+    /// launch: an app such as Telegram reads it after the sheet closes.
     func share(asFile: Bool) {
         do {
             let handOff = try session.copyForAI()
+            storage.clear(.handOff)
+            let url = try storage.write(Data(handOff.text.utf8), named: Self.safeFileName(handOff.fileName), in: .handOff)
             if asFile {
-                storage.clear(.handOff)
-                let url = try storage.write(Data(handOff.text.utf8), named: Self.safeFileName(handOff.fileName), in: .handOff)
-                share = ShareItems(items: [url], temporaryFile: url)
+                share = ShareItems(items: [url])
             } else {
-                share = ShareItems(items: [TitledText(text: handOff.text, title: snapshot.title)])
+                share = ShareItems(items: [TitledText(text: handOff.text, title: snapshot.title, file: url)])
             }
             onChange()
         } catch {
@@ -287,14 +310,13 @@ final class DocumentViewModel {
         }
     }
 
-    func shareFinished(_ items: ShareItems) {
-        if let file = items.temporaryFile {
-            try? FileManager.default.removeItem(at: file)
-        }
-    }
-
     func clearNotice() {
         notice = nil
+    }
+
+    private func say(_ text: String, symbol: String = "checkmark.circle.fill") {
+        notice = text
+        noticeSymbol = symbol
     }
 
     static func safeFileName(_ name: String) -> String {
@@ -319,7 +341,7 @@ final class DocumentViewModel {
     func copyReply(to pasteboard: (String) -> Void) {
         guard let reply = snapshot.reply else { return }
         pasteboard(reply.restored.text)
-        notice = String(localized: "Copied reply")
+        say(String(localized: "Copied reply"))
     }
 
     func shareReply() {
