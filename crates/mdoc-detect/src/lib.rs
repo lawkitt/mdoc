@@ -1691,7 +1691,7 @@ mod tests {
     }
 
     /// #397: a cell under a name part's header is a person without the
-    /// model, unless the rule pack's filters take it for a role.
+    /// model. The header establishes a name even for role-like surnames.
     #[test]
     fn name_columns_propose_their_cells() {
         let people = |source: &str| -> Vec<String> {
@@ -1705,11 +1705,26 @@ mod tests {
                       | --- | --- | --- | --- |\n\
                       | Кий | Ева | Оскаровна | 46 82 731609 |\n\
                       | Истец | Ответчик | Директор | 46 83 862710 |\n";
-        assert_eq!(people(source), ["Кий", "Ева", "Оскаровна"]);
+        assert_eq!(
+            people(source),
+            ["Кий", "Ева", "Оскаровна", "Истец", "Ответчик", "Директор"]
+        );
         let source = "| Full name | Role |\n| --- | --- |\n| Claimant | Witness |\n";
-        assert!(people(source).is_empty());
+        assert_eq!(people(source), ["Claimant"]);
         let source = "| Name | Type |\n| --- | --- |\n| Hearing Bundle | Bundle |\n";
         assert!(people(source).is_empty());
+        for (source, expected) in [
+            (
+                "| First name | Surname |\n|---|---|\n| Edda | Trustee |\n| Ivo | Agent |",
+                ["Edda", "Trustee", "Ivo", "Agent"],
+            ),
+            (
+                "| Имя | Фамилия |\n|---|---|\n| Лада | Должник |\n| Иво | Руководитель |",
+                ["Лада", "Должник", "Иво", "Руководитель"],
+            ),
+        ] {
+            assert_eq!(people(source), expected, "{source}");
+        }
     }
 
     /// A wording the model gave two categories is copied to its other

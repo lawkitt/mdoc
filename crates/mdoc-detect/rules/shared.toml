@@ -59,10 +59,11 @@
 #                               do too where the span is a name alone
 #                               ("Суд Н. О."); a pattern entry needs
 #                               anywhere_in PERSON alone
-#   person_role = true          with unless_named: a capitalized plural or
-#                               an initial + capitalized role remains PERSON
+#   person_role = true          with unless_named: an initial + capitalized
+#                               role remains PERSON; plural surnames must
+#                               be listed in role_surnames
 #   phrase_only = true          with unless_named alone: role modifiers count
-#                               only inside multiword phrases, never alone
+#                               only beside a role head, never alone
 #   person_endings = [ending…]  for a stem with PERSON in anywhere_in: in
 #                               a person's span the stem counts only with
 #                               one of these endings ("" for none), the

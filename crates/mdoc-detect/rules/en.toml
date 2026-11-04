@@ -7,13 +7,12 @@ variants = []
 
 # Capitalized occupational surnames remain PERSON even without another mention.
 # Most are already outside the role vocabulary; listing them also protects
-# future additions. Plural role forms and initial + role are protected in code.
+# future additions. Initial + role is protected in code; plurals need listing.
 role_surnames = [
     "master", "masters", "steward", "stewards", "judge", "marshal", "sheriff",
     "bishop", "chancellor", "clerk", "mayor", "dean", "sergeant", "banker",
     "cook", "porter", "baker", "taylor", "mason", "carter", "fowler",
-    "leader", "chair", "chairman", "president", "recorder", "specialist",
-    "treasurer", "notary", "esquire",
+    "leader", "chair", "chairman",
 ]
 
 # Complete job titles come off a name's edges (#385). Do not trim their
@@ -159,8 +158,8 @@ words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this",
 [[never]]
 match = "plural"
 words = [
-    "officer", "reviewer", "team", "surveyor", "representative", "secretary",
-    "expert", "registrar", "assessor", "inspector", "adjudicator", "mediator",
+    "reviewer", "surveyor", "representative", "secretary",
+    "expert", "registrar", "assessor", "adjudicator", "mediator",
     "arbitrator", "clerk", "leader", "investigator", "specialist", "marshal",
     "supervisor", "chair", "chairman", "president", "sergeant", "sheriff",
     "undersheriff", "master", "recorder", "administrator", "notary",
@@ -168,6 +167,17 @@ words = [
 ]
 unless_named = true
 person_role = true
+
+# A private body's department is no organization (GUIDE #506 item 9).
+# A legal form keeps the company; these words may still be person surnames.
+[[never]]
+match = "plural"
+words = [
+    "team", "officer", "committee", "inspector", "desk",
+]
+unless_named = true
+person_role = true
+last_word_of = ["ORG"]
 
 # The same roles' -ies plurals.
 [[never]]
@@ -220,6 +230,24 @@ patterns = [
 ]
 anywhere_in = ["ORG"]
 
+# These complete headings/roles contain modifiers alone; they do not
+# make other modifier combinations ("General Accident") generic.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:(?:[a-z]\.[\p{Zs}\t]+)?general[\p{Zs}\t]+terms|operating[\p{Zs}\t]+principals?)[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+
+# The same complete headings/roles misclassified as organizations.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:(?:[a-z]\.[\p{Zs}\t]+)?general[\p{Zs}\t]+terms|operating[\p{Zs}\t]+principals?)[\s\p{P}]*$',
+]
+anywhere_in = ["ORG"]
+
 # Category words: "Email", "Address", "Bank" in a table header name no one
 # (issue #379). Matched whole, with their plurals listed, so the surname
 # "Banks" stays.
@@ -269,10 +297,18 @@ unless_named = true
 match = "plural"
 words = [
     "program", "programme", "initiative", "standard", "plan", "assurance",
-    "project", "trial", "online", "manager", "portal", "platform", "website",
+    "project", "trial", "online", "portal", "platform", "website",
     "app",
 ]
 unless_named = true
+last_word_of = ["ORG"]
+
+# A manager is both a job's head and software's ("Application Manager").
+[[never]]
+match = "plural"
+words = ["manager"]
+unless_named = true
+person_role = true
 last_word_of = ["ORG"]
 
 # The same for "system", whose plural ends many a company's name ("Acme
@@ -481,10 +517,16 @@ anywhere_in = ["ORG", "PERSON"]
 [[never]]
 match = "plural"
 words = [
-    "department", "agency", "bureau", "office", "county", "district",
-    "council", "commission", "board", "division",
+    "agency", "bureau", "county", "district", "council", "commission",
 ]
 anywhere_in = ["PERSON"]
+
+# Department words also end private departments, not company names (#506).
+[[never]]
+match = "plural"
+words = ["department", "office", "board", "division"]
+anywhere_in = ["PERSON"]
+last_word_of = ["ORG"]
 
 # Public bodies, laws and courts by their phrases, as an organization or a
 # person (issue #378). A legal form keeps a company; words in quotes are a
@@ -1027,9 +1069,16 @@ forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mai
 match = "plural"
 words = [
     "suite", "ste", "floor", "bldg", "building", "room", "rm", "mailstop",
-    "mail", "stop", "apt", "apartment", "flat", "unit",
+    "mail", "stop", "apt", "apartment", "flat",
 ]
 anywhere_in = ["BANK", "IDENTITY"]
+
+# A unit also ends a department's name (#506).
+[[never]]
+match = "plural"
+words = ["unit"]
+anywhere_in = ["BANK", "IDENTITY"]
+last_word_of = ["ORG"]
 
 # Dates of birth (ADR 0092): a date after born, DOB or date of birth is a
 # personal date ("born 14 March 1988", "**DOB:** 23 September 1991"). Every

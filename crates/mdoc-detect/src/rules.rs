@@ -155,7 +155,7 @@ struct NeverEntry {
     /// where another person span has them beside a name ("Dawn French").
     #[serde(default)]
     unless_named: bool,
-    /// Initial plus capitalized role, or a capitalized plural, may be a name.
+    /// Initial plus capitalized role may be a name.
     #[serde(default)]
     person_role: bool,
     /// A role modifier counts only inside a multiword phrase, never alone.
@@ -383,7 +383,14 @@ impl SpanFix {
                 if rest.get(..3).is_some_and(|s| s.eq_ignore_ascii_case("for"))
                     && rest[3..].starts_with(char::is_whitespace)
                 {
-                    return Some(text.len() - rest[3..].trim_start().len());
+                    let mut name = rest[3..].trim_start();
+                    if let Some((first, rest)) = name.split_once(char::is_whitespace)
+                        && ["the", "a", "an", "these", "those", "such"]
+                            .contains(&first.to_lowercase().as_str())
+                    {
+                        name = rest.trim_start();
+                    }
+                    return Some(text.len() - name.len());
                 }
                 None
             };
@@ -1388,11 +1395,11 @@ impl Pack {
         };
         let lowercase: Vec<String> = words().map(str::to_lowercase).collect();
         // A company's legal form keeps a common head word its name ends in
-        // ("ООО «Bright Paths Program»"); a role stays a role.
+        // ("ООО «Bright Paths Program»", "ООО «Acme Office»").
         let formed = self.legal_form(text);
         let vetoed = self.never.iter().any(|entry| {
             entry.last_word_of.contains(&category)
-                && !(entry.unless_named && formed)
+                && !formed
                 && lowercase.last().is_some_and(|w| entry.has(w))
         });
         if vetoed {
@@ -1426,21 +1433,11 @@ impl Pack {
             return false;
         }
         let lower = word.to_lowercase();
-        let plural = self.never.iter().any(|entry| {
-            entry.person_role
-                && entry.has(&lower)
-                && match entry.form {
-                    Form::Plural => !entry.words.contains(&lower),
-                    // Explicit English irregular plurals in the role pack.
-                    Form::Whole => lower.ends_with("ies") || lower.ends_with("men"),
-                    _ => false,
-                }
-        });
         let role = self
             .never
             .iter()
             .any(|entry| entry.person_role && entry.has(&lower));
-        (initialed && role) || plural || self.role_surnames.contains(&lower)
+        (initialed && role) || self.role_surnames.contains(&lower)
     }
 
     /// A determiner immediately before a single role span resolves the
@@ -1463,20 +1460,7 @@ impl Pack {
             .unwrap_or_default()
             .to_lowercase();
         before.ends_with(char::is_whitespace)
-            && [
-                "the",
-                "a",
-                "an",
-                "this",
-                "that",
-                "these",
-                "those",
-                "such",
-                "данный",
-                "указанный",
-                "этот",
-            ]
-            .contains(&word.as_str())
+            && ["the", "these", "those", "such", "данный", "указанный"].contains(&word.as_str())
     }
 
     /// Whether `words`, those a shape's `word` takes, name someone: one is
@@ -1495,17 +1479,17 @@ impl Pack {
         };
         // Initials do not make a role phrase: "R. General" may be a name,
         // while "B. General Terms" is still a heading. Count the whole
-        // phrase, including lowercase role heads ("Независимый эксперт")
-        // that the name-word shape does not take.
-        let multiword = text
-            .split_whitespace()
-            .map(bare)
-            .filter(|word| !word.is_empty() && !initial(word))
-            .count()
-            > 1;
+        // phrase for role heads, including lowercase ones ("Независимый
+        // эксперт") that the name-word shape does not take. Modifiers
+        // alone may name a company ("General Accident", "Head First").
+        let role_head = text.split_whitespace().map(bare).any(|word| {
+            self.never
+                .iter()
+                .any(|entry| entry.person_role && entry.has(&word.to_lowercase()))
+        });
         let (mut name, mut letters, mut common) = (false, 0, false);
         for (index, word) in words.enumerate() {
-            let modifier = multiword
+            let modifier = role_head
                 && self
                     .never
                     .iter()
@@ -1625,6 +1609,9 @@ impl Pack {
         self.person_documents(source, detections);
         let abbreviations = self.unnamed_abbreviations(&view.text);
         let named = self.named_words(view, detections);
+        // A name-part header establishes the cell's name even when the
+        // spelling is also a role ("Trustee", "Должник"; #575).
+        let name_cells = mdoc_pii::columns::name_cells(source);
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
             let titled = d.category == Category::Person && self.titled(source, d.range.start);
@@ -1641,7 +1628,10 @@ impl Pack {
                 && self.identifying_named(
                     text,
                     d.category,
-                    &|word| d.category == Category::Person && (titled || named.contains(word)),
+                    &|word| {
+                        d.category == Category::Person
+                            && (titled || name_cells.contains(&d.range) || named.contains(word))
+                    },
                     titled,
                 )
                 && !field_code(source, d)
@@ -3304,7 +3294,6 @@ mod tests {
             "SEC Newgate",
             "Commission Junction",
             "The Republic of Tea",
-            "Ashmoor Advisory Board",
         ] {
             assert!(org(text), "{text}");
         }
@@ -6026,29 +6015,10 @@ Privacy Act (“BIPA”). BIPA applies.",
             "Administrative Adviser",
         ] {
             for label in ["person", "organization"] {
-                // Ambiguous capitalized surnames/plurals are deliberately
+                // Listed capitalized surnames are deliberately
                 // retained as PERSON; their lowercase role readings still go.
-                let person_name = [
-                    "Defendants",
-                    "Agents",
-                    "Judges",
-                    "Masters",
-                    "Recorders",
-                    "Sergeant",
-                    "SHERIFF",
-                    "Esquire",
-                    "Chair",
-                    "Supervisors",
-                    "TREASURER",
-                    "Participants",
-                    "Chairman",
-                    "Appellees",
-                    "Appellants",
-                    "Chairmen",
-                    "Deputies",
-                    "Secretaries",
-                ]
-                .contains(&role);
+                let person_name =
+                    ["Masters", "Sergeant", "SHERIFF", "Chair", "Chairman"].contains(&role);
                 let expected = if label == "person" && person_name {
                     pairs(&[(role, "PERSON")])
                 } else {
@@ -6211,7 +6181,6 @@ Privacy Act (“BIPA”). BIPA applies.",
             "R. Masters",
             "Masters",
             "Stewards",
-            "Judges",
             "Master",
             "Steward",
             "Judge",
@@ -6262,7 +6231,7 @@ Privacy Act (“BIPA”). BIPA applies.",
                 }
             }
         }
-        for role in ["masters", "judges", "the Masters", "the Judges"] {
+        for role in ["masters", "judges", "Judges", "the Masters", "the Judges"] {
             assert!(shown(role, &[(role, "person")]).is_empty(), "{role}");
         }
         for (source, detected) in [("the Masters", "Masters"), ("these Judges", "Judges")] {
@@ -6367,13 +6336,21 @@ Privacy Act (“BIPA”). BIPA applies.",
 
     #[test]
     fn role_surnames_after_said_and_possessives_survive() {
-        let source = "Willis said Masters did not author these two notes";
         // Only Masters is supplied: no other name seed can rescue it.
-        assert_eq!(
-            shown(source, &[("Masters", "person")]),
-            pairs(&[("Masters", "PERSON")])
-        );
-        for before in ["said", "her", "his", "their", "its", "our", "my", "your"] {
+        for source in [
+            "Willis said Masters did not author these two notes",
+            "Willis testified that Masters did not sign.",
+        ] {
+            assert_eq!(
+                shown(source, &[("Masters", "person")]),
+                pairs(&[("Masters", "PERSON")]),
+                "{source}"
+            );
+        }
+        for before in [
+            "said", "her", "his", "their", "its", "our", "my", "your", "a", "an", "this", "that",
+            "этот",
+        ] {
             let source = format!("{before} Masters");
             assert_eq!(
                 shown(&source, &[("Masters", "person")]),
@@ -6381,19 +6358,7 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{source}"
             );
         }
-        for before in [
-            "the",
-            "a",
-            "an",
-            "this",
-            "that",
-            "these",
-            "those",
-            "such",
-            "данный",
-            "указанный",
-            "этот",
-        ] {
+        for before in ["the", "these", "those", "such", "данный", "указанный"] {
             let source = format!("{before} Masters");
             assert!(
                 shown(&source, &[("Masters", "person")]).is_empty(),
@@ -6457,6 +6422,10 @@ Privacy Act (“BIPA”). BIPA applies.",
         }
         for (source, name) in [
             ("Trustee for Quillon Ltd", "Quillon Ltd"),
+            (
+                "Trustee for the Brannock Family Trust",
+                "Brannock Family Trust",
+            ),
             ("Chief Investigator, Quillon Ltd", "Quillon Ltd"),
             ("Notary Public — Quillon Ltd", "Quillon Ltd"),
             ("Notary Public - Quillon Ltd", "Quillon Ltd"),
@@ -6581,15 +6550,134 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{name}"
             );
         }
+        for name in ["Brannock Leader", "Trustee Brannock Ltd"] {
+            assert_eq!(
+                shown(name, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn role_modifiers_without_a_role_head_keep_organization_names() {
+        for name in ["General Accident", "Head First", "First General"] {
+            assert_eq!(
+                shown(name, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn unlisted_capitalized_roles_and_plurals_are_not_surnames() {
+        for (source, role) in [
+            ("Defendants filed a motion.", "Defendants"),
+            ("Plaintiffs", "Plaintiffs"),
+            ("Tenants", "Tenants"),
+            ("Directors", "Directors"),
+            ("Specialist", "Specialist"),
+            ("Notary", "Notary"),
+            ("Esquire", "Esquire"),
+            ("Recorder", "Recorder"),
+            ("Treasurer", "Treasurer"),
+            ("President", "President"),
+        ] {
+            assert!(shown(source, &[(role, "person")]).is_empty(), "{source}");
+        }
+        for name in ["Masters", "Stewards", "Judge", "Clerk", "Chair"] {
+            assert_eq!(
+                shown(name, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_departments_are_not_organizations_but_company_forms_and_people_stay() {
         for name in [
-            "Brannock Leader",
-            "Brannock Officer",
-            "Trustee Brannock Ltd",
+            "Legal Team",
+            "Sales Team",
+            "Data Protection Officer",
+            "Planning Inspector",
+            "Acme Legal Team",
+            "Acme Office",
+            "Acme Department",
+            "Acme Committee",
+            "Acme Board",
+            "Acme Unit",
+            "Acme Division",
+            "Acme Desk",
+            "Ashmoor Advisory Board",
+        ] {
+            assert!(shown(name, &[(name, "organization")]).is_empty(), "{name}");
+        }
+        for name in [
+            "Officer & Co",
+            "Leader Group",
+            "Trustee Ltd",
+            "Acme Legal Team Ltd",
+            "ООО «Acme Office»",
         ] {
             assert_eq!(
                 shown(name, &[(name, "organization")]),
                 pairs(&[(name, "ORG")]),
                 "{name}"
+            );
+        }
+        let name = "Brannock Officer";
+        assert_eq!(shown(name, &[(name, "person")]), pairs(&[(name, "PERSON")]));
+    }
+
+    #[test]
+    fn public_bodies_misclassified_as_people_still_go_after_role_changes() {
+        for body in [
+            "Министерство финансов",
+            "Арбитражный суд города Москвы",
+            "Department of Justice",
+        ] {
+            assert!(shown(body, &[(body, "person")]).is_empty(), "{body}");
+        }
+    }
+
+    #[test]
+    fn cross_provider_review_verified_safe_names_stay() {
+        for name in [
+            "Vice Media",
+            "VICE",
+            "Officer & Co",
+            "Trustee Ltd",
+            "Leader Group",
+            "General Electric",
+            "Master Builders Ltd",
+            "ООО «Директор»",
+            "ООО «Кредитор»",
+            "ООО «Руководитель»",
+            "Trustees of Princeton University",
+            "Chief Executive Officer of Acme Ltd",
+        ] {
+            assert_eq!(
+                shown(name, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{name}"
+            );
+        }
+        for (source, name) in [
+            ("Судья", "Судья"),
+            ("Начальник", "Начальник"),
+            ("Кузнецов", "Кузнецов"),
+            ("Должников", "Должников"),
+            ("Judge Edda Brannock", "Judge Edda Brannock"),
+            ("Sheriff Brannock", "Sheriff Brannock"),
+            ("John Smith, Chief", "John Smith, Chief"),
+            ("ИП ФИО3 К-Л.М.", "К-Л.М."),
+        ] {
+            assert_eq!(
+                shown(source, &[(source, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
             );
         }
     }
