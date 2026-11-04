@@ -471,7 +471,7 @@ patterns = [
     # Exchange Commission", "National Labor Relations Board", "Board of
     # Education".
     '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
-    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
+    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security|game[\p{Zs}\t]+and[\p{Zs}\t]+fish)[\p{Zs}\t]+departments?\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
     '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
     '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
@@ -490,9 +490,10 @@ patterns = [
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+|hm[\p{Zs}\t]+|h\.m\.[\p{Zs}\t]+|u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+)?treasury(?:[\p{Zs}\t]+department)?[\s\p{P}]*$',
     '(?i)^[\s\p{P}]*(?:hm|h\.m\.|(?:her|his)[\p{Zs}\t]+majesty[\x27’]s)[\p{Zs}\t]+(?:treasury|revenue|courts|prison|land|government|customs|inspectorate|coastguard|passport|procurator|chief|attorney|crown|stationery|forces)\b',
     # Prosecutors and ministers alone: "Attorney General", "U.S. Attorney",
-    # "District Attorney", "Secretary of State" ("Attorney General Quill" is
+    # "District Attorney", "Secretary of Defense", "Minister of Defence"
+    # ("Attorney General Quill" is
     # a person with a title).
-    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?|attorneys?[\p{Zs}\t-]+generals?|secretary[\p{Zs}\t]+of[\p{Zs}\t]+state)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?|attorneys?[\p{Zs}\t-]+generals?|(?:secretary|minister)[\p{Zs}\t]+of[\p{Zs}\t]+(?:state|defen[cs]e|justice|finance|health|education)(?:[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[\p{Alphabetic}\p{Zs}\t]+)?)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
     # Circuit", "Northern District of …", "Chancery Division".
     '(?i)(?:^|[\s\p{P}])(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|d\.[\p{Zs}\t]?c\.|federal)[\p{Zs}\t]+cir(?:cuit\b|\.|[\s\p{P}]|$)',
@@ -500,11 +501,11 @@ patterns = [
     '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
     # Short names that companies share count alone only: "the IRS", "SEC",
     # "ET", "EAT", "NASA", "BLM" (but "CMA CGM", "SEC Newgate").
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP|ChD|PBGC|ARRC)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Codes and rules of law: "Bankruptcy Code", "Code of Federal
     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
     # Evidence".
-    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
+    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?|health[\p{Zs}\t]+and[\p{Zs}\t]+safety)[\p{Zs}\t]+code\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
     '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
     '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
@@ -535,6 +536,9 @@ patterns = [
     # treaties' short names as written, alone ("FLSA", "the FDCPA",
     # "CAFTA-DR").
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Alphabetic}+[\p{Zs}\t]+){0,2}(?:Council|Assembly|Secretariat|Board|Committee|Commission|Command|Headquarters|Summit|Staff))?[\s\p{P}]*$',
+    # Further named organs (#378); these end the name, so private names
+    # such as "NATO Logistics" keep their spans.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:NATO[\p{Zs}\t]+Land[\p{Zs}\t]+Group[\p{Zs}\t]+\d+|CAFTA-DR[\p{Zs}\t]+Secretariat)[\s\p{P}]*$',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:FLSA|FDCPA|TCPA|DTPA|PHRA|NYDCL|ERISA|HIPAA|FMLA|ECHR|CAFTA-DR|CAFTA|NAFTA|USMCA)(?:[\x27’]s?)?[\s\p{P}]*$',
     # A court's division in a caption ("TEXARKANA DIVISION") and a state's
     # divisions ("Utah Division of Wildlife Resources").
@@ -563,6 +567,28 @@ patterns = [
     '(?i)\b(?:executive|criminal[\p{Zs}\t]+procedure|civil[\p{Zs}\t]+practice|penal|general[\p{Zs}\t]+obligations|general[\p{Zs}\t]+business|business[\p{Zs}\t]+corporation|debtor[\p{Zs}\t]+and[\p{Zs}\t]+creditor|real[\p{Zs}\t]+property|social[\p{Zs}\t]+services|public[\p{Zs}\t]+health|vehicle[\p{Zs}\t]+and[\p{Zs}\t]+traffic|environmental[\p{Zs}\t]+conservation|correction|judiciary|administrative[\p{Zs}\t]+procedure)[\p{Zs}\t]+law\b',
     # A bill by its number: "SB 8", "H.B. 1234".
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?[SHA]\.?[\p{Zs}\t]?B\.?[\p{Zs}\t]*\d{1,5}[\s\p{P}]*$',
+    # Remaining public institutions in #378, in full only: a private
+    # "Basel Committee Consulting" or "Research Laboratory Partners" stays.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:federal[\p{Zs}\t]+deposit[\p{Zs}\t]+insurance[\p{Zs}\t]+corporation|bank[\p{Zs}\t]+of[\p{Zs}\t]+england|national[\p{Zs}\t]+archives|basel[\p{Zs}\t]+committee|international[\p{Zs}\t]+monetary[\p{Zs}\t]+fund|corps[\p{Zs}\t]+of[\p{Zs}\t]+engineers|agricultural[\p{Zs}\t]+research[\p{Zs}\t]+service|soil[\p{Zs}\t]+conservation[\p{Zs}\t]+service|security[\p{Zs}\t]+authority|armaments[\p{Zs}\t]+cooperation[\p{Zs}\t]+division)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # Congressional committees, with the observed OCR "SUMCOMMITTEE";
+    # field offices and research facilities with an institutional head. Only
+    # the observed OCR spellings of Station and Research are accepted.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:health|oversight)[\p{Zs}\t]+su[bm]committees?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:field[\p{Zs}\t]+office|(?:state[\p{Zs}\t]+)?experiment[\p{Zs}\t]+(?:statione?|ststion)|regional[\p{Zs}\t]+(?:research|reseerch)[\p{Zs}\t]+laboratory)[\s\p{P}]*$',
+    # Agency regional offices and law enforcement units; an Office span
+    # cut out of the latter is checked with the words before it.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:(?:EPA|USFWS|FWS|BLM|USGS)(?:[\x27’]s)?[\p{Zs}\t]+)?(?i:regional[\p{Zs}\t]+office|law[\p{Zs}\t]+enforcement[\p{Zs}\t]+office)[\s\p{P}]*$',
+    # A county's appraisal district, also abbreviated in the probe.
+    '(?i)\b(?:county|cnty\.?)[\p{Zs}\t]+appraisal[\p{Zs}\t]+dist(?:rict\b|\.?(?:\s|$))',
+    # The public units cut from their parents in #378: a county dispatch
+    # or medical examiner and the pesticide registration division.
+    '(?i)\b(?:county|city|municipal)[\p{Zs}\t]+(?:dispatch|medical[\p{Zs}\t]+examiner)(?:[\x27’]s)?(?:[\p{Zs}\t]+office)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?fungicide-herbicide[\p{Zs}\t]+branch[\p{Zs}\t]+registration[\p{Zs}\t]+division[\s\p{P}]*$',
+    # Statutory bodies under the reach decision (#484 item 4, #378): a
+    # federal national laboratory, NHS trusts, port authorities and law
+    # societies. Universities and colleges are exempt through `private`.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,4}(?:National[\p{Zs}\t]+Laboratory|NHS[\p{Zs}\t]+Trust|Port[\p{Zs}\t]+Authority)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?Law[\p{Zs}\t]+Society[\p{Zs}\t]+of[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]*){1,4}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
 

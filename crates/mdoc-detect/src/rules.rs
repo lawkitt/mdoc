@@ -1524,6 +1524,8 @@ impl Pack {
     ) -> bool {
         static TAIL: OnceLock<Regex> = OnceLock::new();
         static OF: OnceLock<Regex> = OnceLock::new();
+        static CUT_NAME: OnceLock<Regex> = OnceLock::new();
+        static LAW_END: OnceLock<Regex> = OnceLock::new();
         let tail = TAIL.get_or_init(|| {
             Regex::new(&rust_classes(
                 r"^s?[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*",
@@ -1537,6 +1539,23 @@ impl Pack {
             .expect("of pattern")
         });
         let span = &text[range.clone()];
+        // Only these fixed phrases establish the missing head; a person's
+        // name beside a court or an office is not part of that body (#378).
+        let cut_name = CUT_NAME.get_or_init(|| {
+            Regex::new(r"\b(?:High[ \t]+Court[ \t]+of[ \t]+Justice|Law[ \t]+Enforcement[ \t]+Office|Fire[ \t]+and[ \t]+Police[ \t]+Employees['’][ \t]+Retirement[ \t]+System)\b")
+                .expect("cut public name pattern")
+        });
+        let line_start = text[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        let line_end = text[range.end..]
+            .find('\n')
+            .map_or(text.len(), |at| range.end + at);
+        if cut_name.find_iter(&text[line_start..line_end]).any(|m| {
+            line_start + m.start() <= range.start
+                && range.end <= line_start + m.end()
+                && self.public_body(m.as_str(), category, titled)
+        }) {
+            return true;
+        }
         // A surname's lowercase particle opens a name, not a body's tail:
         // "начальник Отдела ⟦де Лаваль⟧".
         let particle = span
@@ -1544,7 +1563,13 @@ impl Pack {
             .next()
             .is_some_and(|word| NAME_PARTICLES.contains(&word));
         if span.chars().next().is_some_and(char::is_lowercase) && !particle {
-            let head = text[..range.start].trim_end_matches([' ', '\t']);
+            // One wrapped line belongs to the name; a paragraph break
+            // does not connect a ministry with the following text.
+            let before = &text[..range.start];
+            let head = before.trim_end_matches([' ', '\t']);
+            let head = head
+                .strip_suffix('\n')
+                .map_or(head, |head| head.trim_end_matches([' ', '\t', '\r']));
             let from = head
                 .char_indices()
                 .rev()
@@ -1559,6 +1584,31 @@ impl Pack {
             }
         }
         let after = &text[range.end..];
+        // A title cut just before its legal head, including a heading
+        // wrapped onto the next line. Require a multiword title and keep
+        // companies by their legal form, as for every other public veto.
+        let law_end = LAW_END.get_or_init(|| {
+            Regex::new(r"^[\p{Zs}\t]+(?:\r?\n[\p{Zs}\t]*)?(?:Act|Code|Ordinance)\b|^\r?\n[\p{Zs}\t]*(?:Act|Code|Ordinance)\b")
+                .expect("cut law title pattern")
+        });
+        let title_words: Vec<&str> = span.split_whitespace().collect();
+        if title_words.len() >= 2
+            && title_words.iter().all(|word| {
+                word.chars().next().is_some_and(char::is_uppercase)
+                    && word
+                        .chars()
+                        .all(|c| c.is_alphabetic() || ['-', '\'', '’'].contains(&c))
+                    || ["of", "the", "and", "for", "on", "&"].contains(word)
+            })
+            && let Some(found) = law_end.find(after)
+            && self.public_body(
+                &text[range.start..range.end + found.end()],
+                category,
+                titled,
+            )
+        {
+            return true;
+        }
         if span.ends_with(['’', '\''])
             && let Some(found) = tail.find(after)
             && self.public_body(
@@ -1594,6 +1644,7 @@ impl Pack {
     /// which is ambiguous.
     fn unnamed_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
         static DEFINED: OnceLock<Regex> = OnceLock::new();
+        static PENSION_TITLE: OnceLock<Regex> = OnceLock::new();
         let defined = DEFINED.get_or_init(|| {
             Regex::new(&rust_classes(concat!(
                 // The words before: any case, across a line break too.
@@ -1611,9 +1662,18 @@ impl Pack {
                 // "hereinafter", "hereinafter referred to as", "the".
                 r"(?:hereinafter(?:[\p{Zs}\t]+(?:referred[\p{Zs}\t]+to[\p{Zs}\t]+as|called))?",
                 r"[\p{Zs}\t]*[,:]?[\p{Zs}\t]*)?(?:the[\p{Zs}\t]+)?[“\x22‘']?",
-                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+                r"(\p{Uppercase}(?:[\p{Alphabetic}\p{N}&. \t-]){1,39})[”\x22’']?\)",
             )))
             .expect("abbreviation pattern")
+        });
+        let pension_title = PENSION_TITLE.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                r"^(?:(?:\p{Uppercase}[\p{Alphabetic}'’-]*|of|the|and|&)[ \t]+){1,12}",
+                r"(?:Pension|Retirement)[ \t]+System(?:[ \t]+of[ \t]+(?:the[ \t]+)?",
+                r"(?:City|County)[ \t]+of[ \t]+\p{Uppercase}[\p{Alphabetic}'’-]*",
+                r"(?:[ \t]+\p{Uppercase}[\p{Alphabetic}'’-]*){0,2})?$",
+            )))
+            .expect("public pension title pattern")
         });
         let initials = |word: &str| -> Vec<char> {
             word.split('-')
@@ -1642,7 +1702,7 @@ impl Pack {
             // initials spell the abbreviation, the first one its first
             // letter ("Electronic funds transfer", not "pay by electronic
             // funds transfer").
-            let from = (letters.len() >= 2)
+            let from = (letters.len() >= 2 && !short.as_str().chars().any(char::is_lowercase))
                 .then(|| {
                     (0..words.len()).rev().find(|&first| {
                         let mut spelt = words[first..].iter().flat_map(|(_, w)| initials(w));
@@ -1653,7 +1713,53 @@ impl Pack {
                     })
                 })
                 .flatten();
-            let short = short.as_str().trim_end_matches('.').to_owned();
+            // A public body can define a short name rather than initials
+            // ("Brindle County Police Pension System (“Brindle P&P”)").
+            // Require a copied name word plus initials in order, and an
+            // independently public long form. Unrelated bracketed names
+            // and a company's short name remain names (#378).
+            let from = from.or_else(|| {
+                let parts: Vec<&str> = short
+                    .as_str()
+                    .split([' ', '\t', '&'])
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                let copied = parts
+                    .iter()
+                    .any(|part| part.chars().any(char::is_lowercase));
+                let acronym = parts
+                    .iter()
+                    .any(|part| part.chars().all(char::is_uppercase));
+                (copied && acronym)
+                    .then(|| {
+                        (0..words.len()).rev().find(|&first| {
+                            let long = &text[words[first].0..title.end()];
+                            let mut remaining = words[first..].iter();
+                            parts.iter().all(|part| {
+                                if part.chars().all(char::is_uppercase) {
+                                    part.chars().all(|letter| {
+                                        remaining.by_ref().any(|(_, word)| {
+                                            word.chars()
+                                                .next()
+                                                .is_some_and(|c| c.eq_ignore_ascii_case(&letter))
+                                        })
+                                    })
+                                } else {
+                                    // A geographic qualifier can be moved to
+                                    // the front ("… of the City of Baltimore"
+                                    // -> "Baltimore F&P"). It must still be
+                                    // copied exactly from the public long form.
+                                    words[first..]
+                                        .iter()
+                                        .any(|(_, word)| word.eq_ignore_ascii_case(part))
+                                }
+                            }) && pension_title.is_match(long)
+                                && self.public_body(long, Category::Organization, false)
+                        })
+                    })
+                    .flatten()
+            });
+            let short = short.as_str().trim().trim_end_matches('.').to_owned();
             let Some(from) = from else {
                 other.insert(short);
                 continue;
@@ -1932,6 +2038,12 @@ impl Pack {
                         && source[m.start..range.start]
                             .split(|c: char| !c.is_alphanumeric() && c != '-')
                             .any(|word| !word.is_empty() && self.never(word))
+                        // A quoted police unit is the body's own name,
+                        // even after a generic country word ("МВД России
+                        // «Энский»"); universities and companies are spared
+                        // by public_body as everywhere else (#378).
+                        && !(source[m.clone()].contains(['«', '"'])
+                            && self.public_body(&source[m.clone()], fix.category, false))
                 };
                 let grown = matches
                     .iter()
@@ -4489,6 +4601,296 @@ Privacy Act (“BIPA”). BIPA applies.",
             ),
             ["QF"]
         );
+    }
+
+    /// Recheck the outstanding #378 probe shapes against the current pack,
+    /// as both categories the model used. Collect failures to see the gaps
+    /// together before extending the existing public-body rules.
+    #[test]
+    fn public_bodies_round_three_reported_names() {
+        let mut missed = Vec::new();
+        for text in [
+            "HEALTH SUBCOMMITTEE",
+            "OVERSIGHT SUMCOMMITTEE",
+            "Federal Deposit Insurance Corporation",
+            "EPA Regional Office",
+            "Arizona Game and Fish Department",
+            "FWS's Law Enforcement Office",
+            "Ashmoor Field Office",
+            "Ashmoor State Experiment Station",
+            "Northern Regional Research Laboratory",
+            "Ashmoor Experiment Station",
+            "Iova State Experiment Statione",
+            "Georgia Experiment Ststion",
+            "Northern Regional Reseerch Laboratory",
+            "Fungicide-Herbicide Branch Registration Division",
+            "Ashmoor County Dispatch",
+            "Ashmoor County Medical Examiner",
+            "Agricultural Research Service",
+            "Soil Conservation Service",
+            "Corps of Engineers",
+            "Secretary of Defense",
+            "Minister of Defence of the French Republic",
+            "NATO Land Group 1",
+            "Armaments Cooperation Division",
+            "Security Authority",
+            "Bank of England",
+            "National Archives",
+            "Basel Committee",
+            "International Monetary Fund",
+            "Brindle County Police Pension System",
+            "Fire and Police Employees' Retirement System of the City of Brindle",
+            "Williamson Cnty. Appraisal Dist.",
+            "Texas Health and Safety Code",
+            "CAFTA-DR Secretariat",
+            "ChD",
+            "Арбитражный суд Энской области",
+            "Министерства обороны Российской Федерации",
+            "Пенсионного фонда Российской Федерации",
+            "Фонда пенсионного и социального страхованияРоссийской Федерации",
+            "ОПФР",
+            "Регистрационно-лицензионной палатой",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(text, &[(text, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {text}"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// #378 cut spans and defined short names need the body's context;
+    /// adjacent personal names and private bodies must keep their spans.
+    #[test]
+    fn public_bodies_round_three_fragments() {
+        let mut missed = Vec::new();
+        for (source, span) in [
+            ("High Court of Justice", "Justice"),
+            ("the Law Enforcement Office", "Office"),
+            (
+                "Министерства\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            (
+                "Министерства\r\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            ("бюджет Фонда", "Фонда"),
+            ("МО МВД России «Энский»", "Энский"),
+            ("Brindle Freight Safety\nAct", "Brindle Freight Safety"),
+            (
+                "Brindle County Police Pension System (“Brindle P&P”). Brindle P&P replied.",
+                "Brindle P&P",
+            ),
+            (
+                "Fire and Police Employees' Retirement System of the City of Baltimore (“Baltimore F&P”).",
+                "Baltimore F&P",
+            ),
+            (
+                "Fire and Police Employees' Retirement System of the City of Brindle",
+                "Employees' Retirement System",
+            ),
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(source, &[(span, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {source} [span {span}]"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// The reach decision in #378's last comment (#484 item 4): statutory
+    /// corporations, enterprises, laboratories and regulators are bodies;
+    /// ownership alone never removes a university or a college.
+    #[test]
+    fn public_bodies_round_three_statutory_bodies() {
+        let mut missed = Vec::new();
+        for text in [
+            "PBGC",
+            "ARRC",
+            "Brookhaven National Laboratory",
+            "Brindle NHS Trust",
+            "Brindle Port Authority",
+            "Law Society of Brindle",
+            "Росатом",
+            "Роскосмос",
+            "ГУП «Энский водоканал»",
+            "МУП «Энский водоканал»",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(text, &[(text, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {text}"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// The privacy side of #378: similar people, companies, universities,
+    /// non-state funds and the body's own identifiers remain marked.
+    #[test]
+    fn public_bodies_round_three_preserves_names_and_details() {
+        for text in [
+            "Quillon Freight LLC",
+            "Bank of England Services Ltd",
+            "Security Authority Ltd",
+            "Basel Committee Consulting",
+            "Research Laboratory Partners",
+            "Field Office Supplies",
+            "Ashmoor Experiment Station Ltd",
+            "Experiment Station Productions",
+            "Regional Research Laboratory Services",
+            "NATO Logistics",
+            "NASA Federal Credit Union",
+            "Treaty Oak Capital",
+            "Ashmoor County Community College",
+            "ФГБОУ ВО «Энский государственный университет»",
+            "Негосударственный пенсионный фонд «Кедровый бор»",
+            "Благотворительный фонд «Кедровый бор»",
+            "ООО «Палата»",
+        ] {
+            assert_eq!(
+                fixed(text, &[(text, Category::Organization)]),
+                [text],
+                "{text}"
+            );
+        }
+        for (source, span) in [
+            ("Ms Justice wrote", "Justice"),
+            ("Secretary of Defense Orrin Quill wrote", "Orrin Quill"),
+            ("Minister of Defence Orrin Quill wrote", "Orrin Quill"),
+            ("начальник Министерства де Лаваль", "де Лаваль"),
+            ("Суд Н. О.", "Суд Н. О."),
+            ("Иван Судов", "Иван Судов"),
+            ("ГУ МВД России: Иван Ветлин", "Иван Ветлин"),
+            ("Police met Orrin Quill (“Orrin Q”).", "Orrin Q"),
+            (
+                "Brindle County Police Pension System; Brindle Paper Partners (“Brindle P&P”).",
+                "Brindle P&P",
+            ),
+        ] {
+            assert_eq!(
+                fixed(source, &[(span, Category::Person)]),
+                [span],
+                "{source}"
+            );
+        }
+        // The same short name also defined for a company is ambiguous.
+        assert_eq!(
+            fixed(
+                "Brindle County Police Pension System (“Brindle P&P”); \
+                 Brindle Paper Partners LLC (“Brindle P&P”).",
+                &[("Brindle P&P", Category::Organization)],
+            ),
+            ["Brindle P&P"]
+        );
+        // A line wrap is context; a paragraph break or a sentence is not.
+        assert_eq!(
+            fixed(
+                "Министерства\n\nФинансов Иван",
+                &[("Финансов Иван", Category::Person)]
+            ),
+            ["Финансов Иван"]
+        );
+        assert_eq!(
+            fixed(
+                "Министерства\n\nфинансов Российской Федерации",
+                &[("финансов Российской Федерации", Category::Organization)]
+            ),
+            ["финансов Российской Федерации"]
+        );
+        assert_eq!(
+            fixed(
+                "Treaty Oak Capital Agreement",
+                &[("Treaty Oak Capital", Category::Organization)]
+            ),
+            ["Treaty Oak Capital"]
+        );
+        assert_eq!(
+            fixed(
+                "Quillon Freight LLC\nAct",
+                &[("Quillon Freight LLC", Category::Organization)]
+            ),
+            ["Quillon Freight LLC"]
+        );
+        for (value, category) in [
+            ("41 Larch Road, Ashmoor AS1 9ZZ", Category::Address),
+            ("+1 (202) 555-0164", Category::Phone),
+            ("office@quarry.invalid", Category::Email),
+            ("7701234567", Category::Tax),
+            ("40702810900000012345", Category::Bank),
+        ] {
+            let source = format!("Bureau of Quarry Safety / Министерство финансов: {value}");
+            assert_eq!(fixed(&source, &[(value, category)]), [value]);
+        }
+    }
+
+    /// Exercise the complete correction/review path on the new synthetic
+    /// documents with injected model spans; no model snapshot is written.
+    #[test]
+    fn public_bodies_round_three_fixtures_with_injected_spans() {
+        use crate::recognition::{Fixture, proposals};
+        for (lang, extra) in [
+            (
+                "en",
+                vec![
+                    ("Ashmoor Field Office", Category::Organization),
+                    ("Northern Regional Research Laboratory", Category::Person),
+                    ("Justice", Category::Person),
+                    ("Law Enforcement Office", Category::Organization),
+                    ("Brindle P&P", Category::Person),
+                    ("Brindle Freight Safety", Category::Organization),
+                ],
+            ),
+            (
+                "ru",
+                vec![
+                    ("МО МВД России «Энский»", Category::Organization),
+                    ("Энский»", Category::Person),
+                    ("финансов Российской Федерации", Category::Organization),
+                    ("МУП «Энский водоканал»", Category::Person),
+                ],
+            ),
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../tests/fixtures/recognition/{lang}/judgment/probe-{lang}-r3-public-bodies-r3.md"));
+            let fixture = Fixture::read(&path).unwrap();
+            fixture.validate().unwrap();
+            fixture.validate_layout().unwrap();
+            let raw = |range: std::ops::Range<usize>, category: Category| {
+                let label = crate::FAMILIES
+                    .iter()
+                    .flat_map(|family| family.iter())
+                    .find(|(_, value)| *value == category)
+                    .unwrap()
+                    .0;
+                crate::RawEntity {
+                    start: range.start,
+                    end: range.end,
+                    label: label.into(),
+                    score: 0.9,
+                    text: fixture.source[range].to_owned(),
+                }
+            };
+            let mut entities: Vec<_> = fixture
+                .gold
+                .iter()
+                .map(|span| raw(span.range.clone(), category(&span.category).unwrap()))
+                .collect();
+            for (needle, category) in extra {
+                assert!(fixture.source.contains(needle), "{lang}: {needle}");
+                for (at, _) in fixture.source.match_indices(needle) {
+                    entities.push(raw(at..at + needle.len(), category));
+                }
+            }
+            let mut proposed = proposals(&fixture.source, &entities).unwrap();
+            let mut gold = fixture.gold;
+            proposed.sort();
+            gold.sort();
+            assert_eq!(proposed, gold, "{lang}");
+        }
     }
 
     /// Pronouns, common words, religions and nationalities name no one

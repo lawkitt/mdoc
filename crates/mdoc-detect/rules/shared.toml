@@ -78,7 +78,9 @@
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
 #                         into part of another span of its category, and
-#                         a person's never over a `never` word (a role);
+#                         a person's never over a `never` word (a role),
+#                         except to drop a quoted public institution's own
+#                         name ("МВД России «…»");
 #                         earlier spans grow first
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
 #                         with some name left after them
