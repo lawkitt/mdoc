@@ -2310,7 +2310,9 @@ impl Pack {
         if self.grows_to_company(source, range.clone(), category) {
             return true;
         }
-        if self.in_reference(source, range.clone()) {
+        if self.in_reference(source, range.clone())
+            && !(category == Category::Organization && self.company_short_name(source, text))
+        {
             return false;
         }
         let quoted = self
@@ -2480,7 +2482,16 @@ impl Pack {
             }
             .is_some_and(|after| {
                 let after = after.trim_start_matches([' ', '\t']);
+                let after = after
+                    .strip_prefix(',')
+                    .unwrap_or(after)
+                    .trim_start_matches([' ', '\t']);
+                static PAGE_LINE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"^\d+:\d+(?:[-–](?:\d+:)?\d+)?(?:$|[\s),;.\]])")
+                        .expect("constant page-line pinpoint pattern")
+                });
                 after.starts_with('¶')
+                    || PAGE_LINE.is_match(after)
                     || after.starts_with([')', ';'])
                         && people.iter().any(|person| {
                             // A closing bracket alone is ambiguous. Need
@@ -2648,6 +2659,52 @@ impl Pack {
             .filter(|word| !word.is_empty())
             .peekable();
         words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// A reference-looking short name stays when the document also gives
+    /// its company's legal form: "Chapter 11 Ltd" protects "Chapter 11"
+    /// everywhere, even before the full name. No model span is required
+    /// over the full name to establish that evidence (guide rule 2).
+    fn company_short_name(&self, source: &str, text: &str) -> bool {
+        let source = mdoc_pii::view::decoded(source);
+        source.match_indices(text).any(|(at, _)| {
+            if source[..at]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            {
+                return false;
+            }
+            let after = &source[at + text.len()..];
+            if !after.starts_with([' ', '\t', '\u{a0}']) {
+                return false;
+            }
+            // Only contiguous name words on this line can lead to the
+            // legal form; prose or a sentence boundary ends the name.
+            for word in after
+                .split(['\r', '\n'])
+                .next()
+                .unwrap_or_default()
+                .split_whitespace()
+            {
+                let word = word.trim_end_matches(['.', ',', ';', ')', '»', '”', '"']);
+                if self.legal_form(word) {
+                    return true;
+                }
+                if word != "&"
+                    && !(word
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_uppercase() || c.is_ascii_digit())
+                        && word
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '\'' | '’')))
+                {
+                    break;
+                }
+            }
+            false
+        })
     }
 
     /// Whether an organization `span` fix grows the span at `range` of
@@ -6633,6 +6690,113 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
+    /// A capital S followed by a Roman-looking initial names a person,
+    /// including when the model leaves the last period outside its span.
+    #[test]
+    fn citation_parts_keep_witness_initials() {
+        let source = "The witness S. M. testified.";
+        for name in ["S. M", "S. M."] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")])
+            );
+        }
+        for reference in ["Section XII", "Sec. XII", "§ XII", "s. 12", "s. 12(a)"] {
+            let source = format!("See {reference}.");
+            assert!(
+                shown(&source, &[(reference, "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// A company's full name protects its short name throughout the
+    /// document, including when it resembles a chapter reference.
+    #[test]
+    fn citation_parts_keep_established_company_short_names() {
+        let source = "Chapter 11 Ltd supplied the books.\nChapter 11 refused repayment.";
+        assert_eq!(
+            shown_at(
+                source,
+                &[
+                    ("Chapter 11 Ltd", 0, "organization"),
+                    ("Chapter 11", 1, "organization")
+                ]
+            ),
+            pairs(&[("Chapter 11 Ltd", "ORG"), ("Chapter 11", "ORG")])
+        );
+        for source in [
+            source,
+            "Chapter 11 refused repayment.\nChapter 11 Ltd supplied the books.",
+            "Chapter 11 refused repayment.\nChapter 11 Books Ltd supplied the books.",
+        ] {
+            // The full name is evidence even without a model span over it.
+            let at = source.find("Chapter 11 refused").unwrap();
+            assert!(
+                pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+        for source in [
+            "Chapter 11 governs repayment.",
+            "SubChapter 11 Ltd supplied the books.\nChapter 11 governs repayment.",
+            "Chapter 11 applies to the debtor Ltd.\nChapter 11 governs repayment.",
+        ] {
+            let at = source.rfind("Chapter 11").unwrap();
+            assert!(
+                !pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+    }
+
+    /// A comma before a paragraph or a page:line pinpoint supplies the
+    /// citation context needed to remove an abbreviated document label.
+    #[test]
+    fn citation_parts_trim_document_labels_before_pinpoints() {
+        for (source, name) in [
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl"),
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl."),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep."),
+            ("(Penrow Dep., 12:4-13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4-9)", "Penrow Dep"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[("Penrow", "PERSON")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "The witness (Penrow Decl., who testified).",
+            "The witness (Penrow Dep. 12:4smith).",
+            "The witness (Penrow Dep. 12).",
+            "The witness (Penrow Dep. 12:4–).",
+        ] {
+            let name = if source.contains("Decl") {
+                "Penrow Decl"
+            } else {
+                "Penrow Dep"
+            };
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+    }
+
     /// A citation-part fix must never hide a real name, company or number
     /// that merely resembles its marker (issue #499).
     #[test]
@@ -6831,9 +6995,22 @@ Privacy Act (“BIPA”). BIPA applies.",
                 text: text.into(),
             });
         }
+        // The fixture also names Chapter 11 Ltd and Comm Trading Ltd.
+        // Their short names stay everywhere under the conservative name
+        // policy, even in references the fixture's existing gold omits.
+        // Keep this expectation here without changing the fixture.
+        let mut expected = fixture.gold.clone();
+        for text in ["Chapter 11", "Comm"] {
+            let start = source.find(text).unwrap();
+            expected.push(crate::recognition::Span {
+                range: start..start + text.len(),
+                category: "ORG".into(),
+            });
+        }
+        expected.sort();
         assert_eq!(
             crate::recognition::proposals(source, &raw).unwrap(),
-            fixture.gold
+            expected
         );
     }
 

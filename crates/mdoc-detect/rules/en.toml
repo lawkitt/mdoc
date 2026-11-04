@@ -1105,8 +1105,14 @@ parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 # "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
 # stay unmarked).
 [[reference]]
-pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Cc]hapters?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Ss]ecs?\.|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Cc]hapters?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
 parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|[IVXLCDM]{1,12}\b)'
+
+# Only lowercase "s." followed by digits is an abbreviated section cue:
+# "S. M." may be a witness's initials, even without the final model dot.
+[[reference]]
+pattern = '\bs{1,2}\.[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
 # Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
 # 13526", "Executive Order No. 14028", "Pub. L. No. 115-97", "Release No.
