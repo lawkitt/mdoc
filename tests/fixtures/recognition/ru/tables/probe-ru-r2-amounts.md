@@ -1,9 +1,11 @@
 ---
-status: pass
-flaw: amount-as-identifier
+status: known-flaw
+flaw: amount-as-identifier ogrn-as-org
 issue: 547
 kind: tables
 source: probe-r2
+expect: miss: TAX "779901001"
+expect: boundary: gold TAX "1199900000011"; proposed ORG "ОГРН 1199900000011"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 # Балансовая справка и исполнение бюджета за 2031 год

@@ -186,6 +186,8 @@ guess = [
 # Amounts are never TAX, BANK or PHONE (guide rule 8, #547): the shared
 # `forbid_in` patterns below read decimal parts, currency/scale words and
 # arithmetic around a model span, including OCR-joined numeric table cells.
+# Numeric groups and their cues use at most one space, never a tab: a
+# column gap (two or more spaces or a tab) starts a neighbouring field.
 # A space-grouped integer without an amount cue stays: it might identify
 # someone. A contiguous 20-digit account is outside these amount patterns;
 # labelled values are proposed separately and always win.
@@ -196,12 +198,12 @@ guess = [
 [[shape]]
 category = "PHONE"
 forbid_in = [
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:,\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*)+\b',
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?[\p{Zs}\t:]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€][\p{Zs}\t]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?(?:[\p{Zs}\t]*(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?[\p{Zs}\t]*(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:[\p{Zs}\t]*[xх×*][\p{Zs}\t]*\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
+    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
+    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
@@ -279,12 +281,12 @@ require = ['\p{N}']
 [[shape]]
 category = "TAX"
 forbid_in = [
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:,\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*)+\b',
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?[\p{Zs}\t:]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€][\p{Zs}\t]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?(?:[\p{Zs}\t]*(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?[\p{Zs}\t]*(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:[\p{Zs}\t]*[xх×*][\p{Zs}\t]*\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
+    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
+    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
 ]
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
@@ -299,14 +301,14 @@ forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 category = "BANK"
 # Twenty digits, with optional spaces, can be a real account even beside
 # money. Keep that evidence over the surrounding amount cues.
-unless_in = ['\b\d(?:[\p{Zs}\t]*\d){19}\b']
+unless_in = ['\b\d(?:\p{Zs}?\d){19}\b']
 forbid_in = [
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:,\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*)+\b',
-    '\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?[\p{Zs}\t:]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€][\p{Zs}\t]*\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?(?:[\p{Zs}\t]*(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*(?:[,.]\d{1,19})?[\p{Zs}\t]*(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:[\p{Zs}\t]*[xх×*][\p{Zs}\t]*\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
+    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
+    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
+    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']

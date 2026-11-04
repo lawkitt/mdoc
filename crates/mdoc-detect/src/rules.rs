@@ -7104,6 +7104,124 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         );
     }
 
+    /// A column gap ends the amount's token group, even without a label (#547).
+    #[test]
+    fn amount_guards_keep_neighbouring_columns() {
+        assert_eq!(
+            shown(
+                "Account     Balance\n12345678    1000.00",
+                &[("12345678", "bank_account"), ("1000.00", "bank_account")]
+            ),
+            pairs(&[("12345678", "BANK")])
+        );
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (value, label, category) in [
+                ("12345678", "bank_account", "BANK"),
+                ("7709999999", "tax_id", "TAX"),
+                ("2025550199", "phone_number", "PHONE"),
+            ] {
+                for amount in [
+                    "1000.00",
+                    "714157,31",
+                    "350 dollars.",
+                    "$350",
+                    "350 (триста пятьдесят) рублей.",
+                ] {
+                    let source = format!("{value}{gap}{amount}");
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+                // A currency in the previous column is not this value's cue.
+                let source = format!("350 dollars{gap}{value}");
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    /// An identifier label exempts its own value, not the next column (#547).
+    #[test]
+    fn amount_label_exemptions_end_at_column_gaps() {
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (prefix, value, amount, fragment, label, category) in [
+                (
+                    "Bank account: ",
+                    "12345678",
+                    "350 dollars.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "ИНН ",
+                    "7709999999",
+                    "714157,31 руб.",
+                    "714157",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Tax ID: ",
+                    "999991111",
+                    "350 dollars.",
+                    "350",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Счёт: ",
+                    "12345678",
+                    "350 руб.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "Phone: ",
+                    "2025550199",
+                    "350 dollars.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+                (
+                    "Телефон: ",
+                    "79990000123",
+                    "350 руб.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+            ] {
+                let source = format!("{prefix}{value}{gap}{amount}");
+                assert_eq!(
+                    shown(&source, &[(value, label), (fragment, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+            // Twenty digits in separate columns do not make one bank account.
+            let source = format!("12345678{gap}123456789012 dollars.");
+            assert_eq!(
+                shown(
+                    &source,
+                    &[
+                        ("12345678", "bank_account"),
+                        ("123456789012", "bank_account")
+                    ]
+                ),
+                pairs(&[("12345678", "BANK")]),
+                "{source:?}"
+            );
+        }
+    }
+
     /// No amount cue means no reason to discard an identifier. Labels and
     /// twenty-digit accounts win even with monetary context beside them.
     #[test]
@@ -7164,6 +7282,32 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "999991111",
                 "tax_id",
                 "TAX",
+            ),
+            (
+                "Tax ID: 999 991 111 dollars.",
+                "999 991 111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Bank account: 1234 5678 dollars.",
+                "1234 5678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone: +1 (202) 555-0199 dollars.",
+                "+1 (202) 555-0199",
+                "phone_number",
+                "PHONE",
+            ),
+            ("ИНН 770 999 9999 руб.", "770 999 9999", "tax_id", "TAX"),
+            ("Счёт: 1234 5678 руб.", "1234 5678", "bank_account", "BANK"),
+            (
+                "Телефон: +7 (999) 555-01-23 руб.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
             ),
             (
                 "ИНН 7709999999; остаток 714157,31 руб.",
