@@ -287,6 +287,29 @@ final class RenderedMarkdownTests: XCTestCase {
         try check("scrolled back up")
     }
 
+    /// VoiceOver hears the rendered text: no markers, no folded table source
+    /// (the grid reads the table), at unchanged offsets.
+    @MainActor
+    func testVoiceOverHearsTheRenderedText() throws {
+        let text = "Some **bold** words.\n\n| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |\n\nAfter"
+        let view = CandidateTextView()
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
+        view.show(render(text), width: 360)
+        let whole = try XCTUnwrap(view.textRange(from: view.beginningOfDocument, to: view.endOfDocument))
+        let spoken = try XCTUnwrap(view.text(in: whole))
+        XCTAssertEqual((spoken as NSString).length, (text as NSString).length)
+        XCTAssertTrue(spoken.contains("bold"))
+        XCTAssertTrue(spoken.contains("After"))
+        XCTAssertFalse(spoken.contains("**"))
+        XCTAssertFalse(spoken.contains("Maya"), "the folded table is read from its grid")
+        XCTAssertFalse(spoken.contains("|"))
+        XCTAssertEqual(view.accessibilityValue, spoken)
+        // A part of the text keeps its own offsets.
+        let start = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: 5))
+        let end = try XCTUnwrap(view.position(from: start, offset: 8))
+        XCTAssertEqual(view.text(in: try XCTUnwrap(view.textRange(from: start, to: end))), "  bold  ")
+    }
+
     @MainActor
     func testTableCellsCannotBeCopied() {
         let cell = CellTextView(usingTextLayoutManager: false)
