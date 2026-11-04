@@ -185,19 +185,28 @@ case "$behavior $1" in
     echo "        FAIL [   0.020s] mdoc workspace::tests::flaky"
     exit 100
     ;;
-  "beat test") sleep 10 ;;
+  # Runs until the runner has refreshed its pending status once (or 50 s,
+  # under the 60 s limit): a fixed sleep raced the runner's polls, which
+  # take seconds each on Windows beside nextest (#532, #585).
+  "beat test")
+    sha=$(git rev-parse HEAD)
+    for _ in $(seq 1 50); do
+      [ "$(awk -F'\t' -v h="$sha" '$1 == h && index($4, "Running just test (") == 1' "$FAKE/statuses.tsv" | wc -l)" -lt 2 ] || break
+      sleep 1
+    done
+    ;;
   "slow test")
     touch "$FAKE/stall"
-    sleep 60
+    sleep 120
     ;;
   "vanish lint")
     drop_branch
-    sleep 60
+    sleep 120
     ;;
   "merged lint")
     git --git-dir="$FAKE_ORIGIN" update-ref refs/heads/main "$(git rev-parse HEAD)"
     drop_branch
-    sleep 60
+    sleep 120
     ;;
   # A new runner reaches main while this job runs.
   "bump lint") git --git-dir="$FAKE_ORIGIN" update-ref refs/heads/main "$(cat "$FAKE/next-main")" ;;
@@ -282,10 +291,11 @@ echo 2 >"$FAKE/pr-down-15"
 # --- the Windows job --------------------------------------------------------------
 
 export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=example/mdoc
-# A 30 s job limit: room for the 10 s heartbeat job while just test runs this
-# beside nextest (scripts/test.sh), where one poll of the runner takes up to
-# 4 s on Windows (Git Bash); the slow one sleeps 60 s.
-export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=30 QUEUE_CI_MIN_FREE_GB=0
+# A 60 s job limit, for the whole job: on the PC beside nextest (scripts/test.sh)
+# the heartbeat job's checkout, setup and lint took 16 s and its refreshed
+# status came 12 s after the first (c066ec0, #585), so 30 s left too little.
+# The slow, dropped and merged ones sleep 120 s, past it.
+export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=60 QUEUE_CI_MIN_FREE_GB=0
 # A stalled gh call ends after 3 s (the fake stalls for 30).
 export QUEUE_CI_NET_TIMEOUT=3
 export CARGO_TARGET_DIR="$tmp/shared-target"
@@ -356,7 +366,7 @@ check "which are listed in the run folder" [ "$(wc -l <"$wout/${fail:0:7}/failed
 check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 0m30s	*"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 1m00s	*"
 check "a stalled gh call during it is ended, and the next poll goes on" \
   grep -q "warning: could not list the queue" "$tmp/windows.log"
 check "the next poll that reads GitHub says it is back" grep -q "GitHub reachable again after " "$tmp/windows.log"
