@@ -250,6 +250,20 @@ fetch_status() {
 : >"$posted"
 queue_pass
 eq "$(grep '^qqqq' "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (hosted)"
+# The earlier group's statuses cannot be read: the PC may be busy there, so
+# wait (Codex review on #588); main's the same.
+for down in pppp mmmm; do
+  fetch_status() {
+    case "$1" in
+      "$down") return 1 ;;
+      qqqq) echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z", "target_url": "https://pc/w"}]}' ;;
+      *) echo '{"statuses": []}' ;;
+    esac
+  }
+  : >"$posted"
+  queue_pass
+  eq "$(grep '^qqqq' "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (hosted)"
+done
 # Its runner erred, or its heartbeat stopped: nowhere to run.
 for s in "error 2026-11-02T11:58:00Z" "pending 2026-11-02T11:45:00Z"; do
   fetch_status() { printf '{"statuses": [{"context": "ci/android", "state": "%s", "updated_at": "%s"}]}\n' "${s% *}" "${s#* }"; }

@@ -255,10 +255,13 @@ hosted_ready() { # workflow
 
 # The newest time the PC posted ci/$1 on main or a queue commit, in epoch
 # seconds (0 when never): whether its runner is up, busy with another group.
+# False when a commit's statuses could not be read: the PC may be busy there.
 pc_seen() { # job main queue-lines
-  local job=$1 latest=0 sha at
+  local job=$1 latest=0 sha json line at
   for sha in $2 $(awk '{ print $2 }' <<<"$3"); do
-    read -r _ at _ <<<"$(fetch_status "$sha" 2>/dev/null | status_of "ci/$job" 2>/dev/null || echo "none 0 -")"
+    json=$(fetch_status "$sha") || return 1
+    line=$(status_of "ci/$job" <<<"$json") || return 1
+    read -r _ at _ <<<"$line"
     [ "${at:-0}" -le "$latest" ] || latest=$at
   done
   echo "$latest"
@@ -273,7 +276,8 @@ nowhere() { # fallback-reason job main queue-lines now
     stale) echo "${no_hosted// /_};_PC_heartbeat_stopped" ;;
     *)
       local seen
-      seen=$(pc_seen "$2" "$3" "$4")
+      # Unknown: decided at the next pass.
+      seen=$(pc_seen "$2" "$3" "$4") || return 0
       [ $((($5 - seen) / 60)) -lt "$silent_min" ] || echo "${no_hosted// /_};_PC_silent_${silent_min}_min"
       ;;
   esac
