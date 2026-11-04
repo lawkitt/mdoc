@@ -111,12 +111,16 @@ struct MarkdownTextView: UIViewRepresentable {
                     guard let self, let view else { return }
                     self.reveal(newlySelected, in: view)
                 }
+            } else if key.selected == nil {
+                dropRevealRoom(in: view)
             }
         }
 
         /// Scrolls the candidate under review into the top third of the
         /// text, the part the candidate sheet leaves in view, so Next
-        /// proposal never opens one hidden under the sheet.
+        /// proposal never opens one hidden under the sheet. In a table the
+        /// grid scrolls sideways to it too. Near the end of the document the
+        /// text gets room below its end while the sheet is up.
         func reveal(_ id: CandidateID, in view: CandidateTextView) {
             guard let candidate = parent.snapshot.candidate(id) else { return }
             let range = offsets.nsRange(candidate.range)
@@ -125,24 +129,54 @@ struct MarkdownTextView: UIViewRepresentable {
             }
             let rect: CGRect
             if let cell {
-                rect = cell.convert(cell.bounds, to: view)
+                guard let local = Self.firstRect(in: cell, location: range.location - cell.location, length: range.length) else { return }
+                if let table = cell.superview as? MarkdownTableView {
+                    table.scrollRectToVisible(cell.convert(local, to: table).insetBy(dx: -12, dy: 0), animated: false)
+                }
+                rect = cell.convert(local, to: view)
             } else {
-                guard
-                    let start = view.position(from: view.beginningOfDocument, offset: range.location),
-                    let end = view.position(from: start, offset: range.length),
-                    let textRange = view.textRange(from: start, to: end)
-                else { return }
-                rect = view.firstRect(for: textRange)
+                guard let found = Self.firstRect(in: view, location: range.location, length: range.length) else { return }
+                rect = found
             }
-            guard !rect.isNull, !rect.isInfinite else { return }
             let insets = view.adjustedContentInset
             let top = view.contentOffset.y + insets.top
             let band = (view.bounds.height - insets.top - insets.bottom) / 3
             guard rect.minY < top + 8 || rect.maxY > top + band else { return }
             let highest = -insets.top
-            let lowest = max(highest, view.contentSize.height + insets.bottom - view.bounds.height)
-            let target = min(max(rect.minY - insets.top - band / 3, highest), lowest)
+            let target = max(rect.minY - insets.top - band / 3, highest)
+            // Room below the end, so a candidate there can rise above the sheet.
+            let lowest = view.contentSize.height + insets.bottom - view.bounds.height
+            if target > lowest {
+                let more = target - lowest
+                view.contentInset.bottom += more
+                revealRoom += more
+            }
             view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
+        }
+
+        /// The room `reveal` added below the text, taken away once no
+        /// candidate is under review.
+        var revealRoom: CGFloat = 0
+
+        func dropRevealRoom(in view: CandidateTextView) {
+            guard revealRoom > 0 else { return }
+            view.contentInset.bottom -= revealRoom
+            revealRoom = 0
+            let insets = view.adjustedContentInset
+            let lowest = max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height)
+            if view.contentOffset.y > lowest {
+                view.setContentOffset(CGPoint(x: view.contentOffset.x, y: lowest), animated: !UIAccessibility.isReduceMotionEnabled)
+            }
+        }
+
+        private static func firstRect(in view: UITextView, location: Int, length: Int) -> CGRect? {
+            guard
+                let start = view.position(from: view.beginningOfDocument, offset: location),
+                let end = view.position(from: start, offset: length),
+                let textRange = view.textRange(from: start, to: end)
+            else { return nil }
+            let rect = view.firstRect(for: textRange)
+            return rect.isNull || rect.isInfinite ? nil : rect
         }
 
         func restyleOnReturn(_ key: StyleKey, _ view: CandidateTextView) {

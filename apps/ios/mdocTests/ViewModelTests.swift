@@ -322,6 +322,10 @@ final class HomeViewModelTests: XCTestCase {
         _ = home.importDocument(pending, title: "Note", into: .newCase(name: taken))
         XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
         XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 2" })
+        // Spaces around a name count for nothing, as the core trims them.
+        _ = home.importDocument(pending, title: "Note", into: .newCase(name: " \(taken) "))
+        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
+        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 3" })
         XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
         XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Other"]), "Lease")
     }

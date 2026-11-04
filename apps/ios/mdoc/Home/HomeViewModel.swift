@@ -47,6 +47,8 @@ final class HomeViewModel {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         var caseChoice = caseChoice
         if case .newCase(let caseName) = caseChoice {
+            // Trimmed first, as the core trims it: " Lease" is "Lease".
+            let caseName = caseName.trimmingCharacters(in: .whitespacesAndNewlines)
             // Documents' titles count too, so a case named after its
             // document takes the number the core gives that title.
             caseChoice = .newCase(name: Self.unusedName(caseName, among: cases.map(\.name) + documents.map(\.title)))
