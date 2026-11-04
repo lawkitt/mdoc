@@ -151,7 +151,14 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   with markers dimmed and candidates on top.
 - **One long job at a time**, with progress and cancel. iOS 26 keeps it
   running in the background through `BGContinuedProcessingTask`; earlier
-  versions get the short grace, then cancel and offer to resume.
+  versions get the short grace, then cancel and offer to resume. The job
+  reports a fraction (the detector's windows, recognition's pages), since
+  iOS stops a continued task that shows no progress. While a document's job
+  runs, its review waits: a Replace would make the core throw the scan away.
+- **A job that ends while the phone is locked** cannot write the library
+  (Data Protection Complete). Its result stays in the session and is saved
+  when the phone unlocks or mdoc comes back (`ProtectedData`,
+  `Library.saveDeferred`).
 - **OCR keeps finished pages.** Recognition imports through
   `import_file_in`, which keeps each recognized page in the core's
   `imports/` folder; after a cancel, or mdoc stopping, Resume recognition

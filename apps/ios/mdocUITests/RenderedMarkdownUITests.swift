@@ -10,6 +10,7 @@ import XCTest
 final class RenderedMarkdownUITests: XCTestCase {
     static let documents = [
         "bilingual-contract", "supply-contract-ru", "loan-agreement", "itinerary", "prompt-guide",
+        "registration-ru",
     ]
 
     override func setUpWithError() throws {
@@ -34,7 +35,7 @@ final class RenderedMarkdownUITests: XCTestCase {
             let seconds = Date().timeIntervalSince(started)
             let prefix = String(format: "%02d-%@", index + 1, name)
             shot(app, "\(prefix)-top")
-            if ["bilingual-contract", "itinerary", "prompt-guide"].contains(name) {
+            if ["bilingual-contract", "itinerary", "prompt-guide", "registration-ru"].contains(name) {
                 // A table's cells are text views of their own.
                 XCTAssertGreaterThan(app.textViews.count, 4, "\(name): no table grid")
             }

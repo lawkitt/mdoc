@@ -216,6 +216,77 @@ final class RenderedMarkdownTests: XCTestCase {
         }
     }
 
+    /// Each grid sits on its own line, after the text above it, also when
+    /// the view shows a restyled document while scrolled past the table (as
+    /// when Find names ends) and after it scrolls back up.
+    @MainActor
+    func testTablesSitOnTheirLinesAfterARestyle() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("tests/fixtures/mobile-markdown/rendering/registration-ru.md")
+        // A long document before the tables, as a multi-page import is.
+        let filler = (1...60).map { "## Раздел \($0)\n\nСведения о заявителе, пункт \($0): **Фамилия Имя** Дата рождения 01.01.1990 Адрес 190000, г. Санкт-Петербург, ул. Примерная, д. \($0)." }
+        let text = filler.joined(separator: "\n\n") + "\n\n" + (try String(contentsOf: url, encoding: .utf8))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let view = RenderedTextView()
+        view.isEditable = false
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
+        view.frame = window.bounds
+        window.addSubview(view)
+        window.isHidden = false
+        view.layoutIfNeeded()
+        let width = view.textWidth
+        func show(_ candidates: [Candidate]) {
+            let document = MarkdownStyler(traits: view.traitCollection, selected: nil, width: width)
+                .document(markdown: text, styling: MarkdownStyling(markdown: text), candidates: candidates)
+            view.show(document, width: width)
+            view.layoutIfNeeded()
+        }
+        // Each grid, scrolled into view, sits in its gap: below the text
+        // before the table and above the text after it, as drawn.
+        func check(_ moment: String) throws {
+            XCTAssertEqual(view.tableViews.count, 2, moment)
+            let layout = try XCTUnwrap(view.textLayoutManager)
+            let content = try XCTUnwrap(layout.textContentManager)
+            let documentStart = content.documentRange.location
+            let kept = view.contentOffset
+            for table in view.tableViews {
+                // Twice: the first scroll lands on an estimate.
+                for _ in 0..<2 {
+                    view.setContentOffset(CGPoint(x: 0, y: max(0, table.frame.minY - 200)), animated: false)
+                    view.layoutIfNeeded()
+                }
+                let before = try XCTUnwrap(content.location(documentStart, offsetBy: table.table.anchor - 1))
+                let after = try XCTUnwrap(content.location(documentStart, offsetBy: NSMaxRange(table.table.range)))
+                let previous = try XCTUnwrap(layout.textLayoutFragment(for: before))
+                let next = try XCTUnwrap(layout.textLayoutFragment(for: after))
+                XCTAssertEqual(previous.state, .layoutAvailable, moment)
+                XCTAssertEqual(next.state, .layoutAvailable, moment)
+                let above = previous.layoutFragmentFrame.maxY + view.textContainerInset.top
+                let below = next.layoutFragmentFrame.minY + view.textContainerInset.top
+                XCTAssertGreaterThanOrEqual(table.frame.minY, above - 1, "\(moment): table at \(table.table.anchor) covers the text above")
+                XCTAssertLessThanOrEqual(table.frame.maxY, below + 1, "\(moment): table at \(table.table.anchor) covers the text below")
+            }
+            view.setContentOffset(kept, animated: false)
+            view.layoutIfNeeded()
+        }
+        show([])
+        try check("first shown")
+        // Scrolled down the way a reader does, a screen at a time.
+        var y: CGFloat = 0
+        while y < view.contentSize.height - view.bounds.height {
+            y += view.bounds.height / 2
+            view.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+            view.layoutIfNeeded()
+        }
+        try check("scrolled down")
+        show([try candidate("0452644", in: text), try candidate("Новак Ян", in: text, 2)])
+        try check("restyled while scrolled")
+        view.setContentOffset(.zero, animated: false)
+        view.layoutIfNeeded()
+        try check("scrolled back up")
+    }
+
     @MainActor
     func testTableCellsCannotBeCopied() {
         let cell = CellTextView(usingTextLayoutManager: false)

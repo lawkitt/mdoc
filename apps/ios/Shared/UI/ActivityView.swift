@@ -20,19 +20,30 @@ struct ActivityView: UIViewControllerRepresentable {
 
 /// Text to share that the share sheet previews by a title (the document's)
 /// rather than by its first words, which are Copy for AI's placeholder note.
-/// The text itself is unchanged.
+/// The text itself is unchanged. Save to Files gets `file`, the same text as
+/// a `.md` file, rather than a `.txt` the system would make of it.
 final class TitledText: NSObject, UIActivityItemSource {
     let text: String
     let title: String
+    let file: URL?
 
-    init(text: String, title: String) {
+    /// The Files app's Save to Files.
+    static let saveToFiles = UIActivity.ActivityType("com.apple.DocumentManagerUICore.SaveToFiles")
+
+    init(text: String, title: String, file: URL? = nil) {
         self.text = text
         self.title = title
+        self.file = file
     }
 
     func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { text }
 
-    func activityViewController(_ controller: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? { text }
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? {
+        if type == Self.saveToFiles, let file {
+            return file
+        }
+        return text
+    }
 
     func activityViewController(_ controller: UIActivityViewController, subjectForActivityType type: UIActivity.ActivityType?) -> String { title }
 
@@ -62,6 +73,4 @@ final class TitledText: NSObject, UIActivityItemSource {
 struct ShareItems: Identifiable {
     let id = UUID()
     let items: [Any]
-    /// A hand-off file to delete once the sheet closes.
-    var temporaryFile: URL?
 }

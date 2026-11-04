@@ -55,9 +55,7 @@ struct DocumentScreen: View {
                 }
             }
             .sheet(item: $model.share, onDismiss: nil) { items in
-                ActivityView(items: items.items) { _ in
-                    model.shareFinished(items)
-                }
+                ActivityView(items: items.items)
             }
             .alert(
                 "Something went wrong",
@@ -271,7 +269,7 @@ struct DocumentScreen: View {
     private var bottomBar: some View {
         VStack(spacing: 8) {
             if let notice = model.notice {
-                Label(notice, systemImage: "checkmark.circle.fill")
+                Label(notice, systemImage: model.noticeSymbol)
                     .font(.subheadline)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
