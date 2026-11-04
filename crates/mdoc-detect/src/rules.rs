@@ -2343,10 +2343,21 @@ impl Pack {
         if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
             && !shape.forbid_in.is_empty()
         {
-            let start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
-            let end = source[range.end..]
+            // OCR can put an entire document on one line. Bound both the
+            // newline search and the decoded context per span; if an amount
+            // needs more distant evidence, keep the possible identifier.
+            let mut start = range.start.saturating_sub(300);
+            while !source.is_char_boundary(start) {
+                start += 1;
+            }
+            let mut end = range.end.saturating_add(300).min(source.len());
+            while !source.is_char_boundary(end) {
+                end -= 1;
+            }
+            start += source[start..range.start].rfind('\n').map_or(0, |i| i + 1);
+            end = source[range.end..end]
                 .find('\n')
-                .map_or(source.len(), |i| range.end + i);
+                .map_or(end, |i| range.end + i);
             let view = mdoc_pii::view::View::new(&source[start..end]);
             let span = view.view_range(range.start - start..range.end - start);
             let inside = |pattern: &Regex| {
@@ -8532,6 +8543,135 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
     #[test]
     fn amount_guards_keep_identifiers_and_names() {
         for (source, value, label, category) in [
+            // Single-space OCR columns must not join identifiers to money.
+            (
+                "Иванов И.И. 770912345678 15 000 руб.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ООО «Ромашка» 7709999999 1 000,00",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            ("Сумма 1 000,00 7709999999", "7709999999", "tax_id", "TAX"),
+            (
+                "Петров П.П. 8 916 123 45 67 1 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Карта 4276 3801 2345 6789 500 руб.",
+                "4276 3801 2345 6789",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Сумма 1 000,00 4081781009991000431",
+                "4081781009991000431",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Паспорт 4506 123456 01.02.2020",
+                "4506 123456",
+                "tax_id",
+                "TAX",
+            ),
+            ("770912345678 01.02.2020", "770912345678", "tax_id", "TAX"),
+            (
+                "Взыскать 500 руб. 7709999999",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Оплачено 500 руб. 8 916 123 45 67",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 0199 $500",
+                "202 555 0199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Call 020 7946 0958 £0.10",
+                "020 7946 0958",
+                "phone_number",
+                "PHONE",
+            ),
+            ("SSN 123 45 6789 $500", "123 45 6789", "tax_id", "TAX"),
+            ("UTR 12345 67890 £500", "12345 67890", "tax_id", "TAX"),
+            (
+                "IBAN DE89 3704 0044 0532 0130 00 € 500",
+                "3704 0044 0532 0130 00",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 8 916 123 45 67 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 $500",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            // Working labels in the review remain working beside money.
+            (
+                "тел. 8 (495) 123-45-67 500 руб.",
+                "8 (495) 123-45-67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Account No. 12 345 678 $500",
+                "12 345 678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "р/с 40702810900000004711 500 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone 202.555.0199 $500",
+                "202.555.0199",
+                "phone_number",
+                "PHONE",
+            ),
+            // Dates with a decimal-looking prefix are not amount evidence.
+            ("770912345678 01.02,2020", "770912345678", "tax_id", "TAX"),
+            // Written-out amounts have the same integer boundaries.
+            (
+                "770912345678 500 (пятьсот) рублей.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
             ("Номер: 164 353 783.", "164 353 783", "tax_id", "TAX"),
             ("Номер: 942838 306.", "942838 306", "bank_account", "BANK"),
             (
@@ -8651,6 +8791,103 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "{source}"
             );
         }
+    }
+
+    /// Labels win even when the identifier itself has an amount's shape.
+    #[test]
+    fn amount_guards_keep_additional_labelled_values() {
+        for (source, value, label, category) in [
+            (
+                "ИНН/КПП 7709999999/770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "сот. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "мобильный: 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Cell: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            ("SSN 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("UTR 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("Паспорт 4506 123456 руб.", "4506 123456", "tax_id", "TAX"),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Context searches stay local and preserve UTF-8 boundaries on long OCR lines.
+    #[test]
+    fn amount_guards_use_bounded_context() {
+        for (value, label, category) in [
+            ("7709999999", "tax_id", "TAX"),
+            ("12345678", "bank_account", "BANK"),
+            ("2025550199", "phone_number", "PHONE"),
+        ] {
+            let source = format!(
+                "{} {value} 500 руб. {}",
+                "ё ".repeat(1000),
+                "ё ".repeat(1000)
+            );
+            assert_eq!(
+                shown(&source, &[(value, label), ("500", label)]),
+                pairs(&[(value, category)])
+            );
+        }
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            # Distant context is insufficient to discard a possible identifier.
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['price: .*\d+ units']
+        "#,
+        )])
+        .unwrap();
+        let source = format!("price: {} 123 units", "ё ".repeat(1000));
+        let at = source.find("123").unwrap();
+        assert!(pack.identifying_at(&source, at..at + 3, "123", Category::Tax));
     }
 
     /// The contextual shape extension uses the pack's existing match

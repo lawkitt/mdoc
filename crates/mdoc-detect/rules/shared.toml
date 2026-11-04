@@ -191,8 +191,13 @@ guess = [
 # Numeric groups and their cues use at most one space, never a tab: a
 # column gap (two or more spaces or a tab) starts a neighbouring field.
 # A space-grouped integer without an amount cue stays: it might identify
-# someone. A contiguous 20-digit account is outside these amount patterns;
-# labelled values are proposed separately and always win.
+# someone. Integer groups contain three digits, so a neighbouring identifier
+# cannot become another group. Comma decimals have two digits, except for
+# the explicit OCR-join form ("762,0323 058 712,74"). Currency symbols are
+# prefixes; a currency word before a bare integer needs a colon.
+# Dot decimals exclude dates: `tail` implements `(?![.,]\d)` without
+# look-around, which the regex engine does not support.
+# Twenty-digit bank accounts and labelled values are exempt and always win.
 # Phones: a model span needs a digit; a manual selection of at least seven
 # digits with only spaces, `+`, brackets and dashes between is a phone. No
 # phone number has 16 digits in a row (E.164 allows 15), and a bare nine-digit
@@ -200,12 +205,14 @@ guess = [
 [[shape]]
 category = "PHONE"
 forbid_in = [
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
+    # An explicit total label identifies a grouped amount without a symbol suffix.
+    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
@@ -283,12 +290,14 @@ require = ['\p{N}']
 [[shape]]
 category = "TAX"
 forbid_in = [
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
+    # An explicit total label identifies a grouped amount without a symbol suffix.
+    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
@@ -305,12 +314,14 @@ category = "BANK"
 # money. Keep that evidence over the surrounding amount cues.
 unless_in = ['\b\d(?:\p{Zs}?\d){19}\b']
 forbid_in = [
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:,\d{1,19}(?:\p{Zs}\d{1,19})*)+\b',
-    '\b\d{1,19}(?:\p{Zs}\d{1,19})*\.\d{2}\b',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:)?\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?',
-    '(?i)[$£€]\p{Zs}?\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
-    '(?i)\b\d{1,19}(?:\p{Zs}\d{1,19})*(?:[,.]\d{1,19})?\p{Zs}?(?:[$£€]|(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)',
-    '(?i)\b\d{1,19}[,.]\d{1,19}(?:\p{Zs}?[xх×*]\p{Zs}?\d{1,19}(?:[,.]\d{1,19})?)+\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
+    # An explicit total label identifies a grouped amount without a symbol suffix.
+    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']
