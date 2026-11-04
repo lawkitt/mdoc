@@ -89,13 +89,16 @@ final class DeviceLongJobsUITests: XCTestCase {
         expect(NSPredicate(format: "value CONTAINS '%'"), on: progress, timeout: 60)
         let before = Self.percent(progress)
         try leaveAndReturn(app, seconds: 45, stillWorking: true)
-        let after = Self.percent(progress)
+        let primary = app.buttons["primary-action"]
+        // Done as mdoc came back: the bar is gone and Replace shows.
+        let after = progress.exists ? Self.percent(progress) : (primary.label.hasPrefix("Replace") ? 100 : 0)
         let note = XCTAttachment(string: "Find names: \(before)% before leaving, \(after)% on return after 45 s away")
         note.name = "background-progress"
         note.lifetime = .keepAlways
         add(note)
-        XCTAssertGreaterThan(after, before + 10, "Find names made no progress in the background")
-        let primary = app.buttons["primary-action"]
+        // More than the second or two between coming back and this read
+        // could add, had the job been paused all along (45 s away gave 65).
+        XCTAssertGreaterThan(after, before + 25, "Find names made no progress in the background")
         expect(NSPredicate(format: "label BEGINSWITH 'Replace'"), on: primary, timeout: 180)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
