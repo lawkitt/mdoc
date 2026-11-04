@@ -92,6 +92,8 @@
 #                         it a person's document ("Ostrand Decl."): the
 #                         words before become a person's span when a person
 #                         span holds each of them
+#                         An existing PERSON loses the same document word
+#                         in a punctuated citation ("Ostrand Decl. ¶ 3").
 # A fixed span left without its category's shape goes. An entry takes one
 # kind's keys only.
 #

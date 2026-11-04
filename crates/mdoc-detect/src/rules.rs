@@ -2431,7 +2431,8 @@ impl Pack {
     /// An organization span ending in a `person_before` word ("Ostrand
     /// Decl.") becomes the person before it ("Ostrand") when a person's span
     /// holds each of that name's words: a declaration is a person's, never
-    /// a company.
+    /// a company. The same suffix comes off an existing person's span in
+    /// a document citation ("Ostrand Decl. ¶ 3", #499).
     fn person_documents(&self, source: &str, detections: &mut [Detection]) {
         let words: Vec<&String> = self
             .spans
@@ -2459,7 +2460,7 @@ impl Pack {
             .collect();
         for detection in detections
             .iter_mut()
-            .filter(|d| d.category == Category::Organization)
+            .filter(|d| matches!(d.category, Category::Organization | Category::Person))
         {
             let text = source[detection.range.clone()].trim_end();
             let Some((name, last)) = text.rsplit_once(char::is_whitespace) else {
@@ -2468,11 +2469,40 @@ impl Pack {
             let last = last.trim_end_matches('.').to_lowercase();
             let name = name.trim_end();
             let wanted = name_words(name);
+            // An existing PERSON needs citation punctuation after the
+            // abbreviated document word. A surname at a sentence end
+            // ("Ivo Decl.") or without the dot stays as the model gave it.
+            let after = &source[detection.range.end..];
+            let citation_tail = if text.ends_with('.') {
+                Some(after)
+            } else {
+                after.strip_prefix('.')
+            }
+            .is_some_and(|after| {
+                let after = after.trim_start_matches([' ', '\t']);
+                after.starts_with('¶')
+                    || after.starts_with([')', ';'])
+                        && people.iter().any(|person| {
+                            // A closing bracket alone is ambiguous. Need
+                            // another person span without a document word
+                            // ("Ivo Penrow" beside "Penrow Decl.").
+                            !person.last().is_some_and(|last| {
+                                words.iter().any(|word| word.eq_ignore_ascii_case(last))
+                            }) && wanted.iter().all(|word| person.contains(word))
+                        })
+                    || after
+                        .strip_prefix("at ")
+                        .is_some_and(|page| page.starts_with(|c: char| c.is_ascii_digit()))
+            });
             if !words.iter().any(|word| **word == last)
                 || wanted.is_empty()
-                || !people
-                    .iter()
-                    .any(|person| wanted.iter().all(|word| person.contains(word)))
+                || if detection.category == Category::Person {
+                    !citation_tail
+                } else {
+                    !people
+                        .iter()
+                        .any(|person| wanted.iter().all(|word| person.contains(word)))
+                }
             {
                 continue;
             }
@@ -6505,6 +6535,306 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
         assert!(!pack().identifying("Anor", Category::Person));
         assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
+    /// Issue #499's follow-up probes: citation parts name nobody, while
+    /// the declarant and people following a reporter keep their full names.
+    #[test]
+    fn citation_parts_follow_up_probes() {
+        let mut failures = Vec::new();
+        for (source, text, label) in [
+            ("See 424 U.S. at 38.", "424 U.S. at 38", "address"),
+            (
+                "See 904 F.2d 275, 277.",
+                "904 F.2d 275, 277",
+                "phone_number",
+            ),
+            ("See 33 A.D.3d 352.", "A.D.", "person"),
+            ("Under 42 U.S.C. § 1983.", "S.C.", "person"),
+            ("Under I.R.C. § 61.", "I.R.C.", "person"),
+            (
+                "See n. 14; Tr. 112-14; 123sa.",
+                "n. 14",
+                "national_id_number",
+            ),
+            (
+                "Under Chapter 7 of the Bankruptcy Code.",
+                "Chapter 7",
+                "organization",
+            ),
+            ("Chapter 11 Case", "Chapter 11", "organization"),
+            ("R (on the application of Penrow)", "R", "person"),
+            ("See at p. 478A.", "478A", "address"),
+            ("See 1931 S.C. (H.L.) 13.", "S.C.", "person"),
+            ("See 1931 S.C. (H.L.) 13.", "H.L", "person"),
+            ("See [2031] All ER (Comm) 9.", "Comm", "organization"),
+            (
+                "Under National Instrument 45-999.",
+                "National Instrument 45-999",
+                "national_id_number",
+            ),
+            ("Under PD 57ZZ.", "PD 57ZZ", "organization"),
+            (
+                "See 352 DM - Aviation Safety.",
+                "352 DM - Aviation Safety",
+                "organization",
+            ),
+            (
+                "See AHCP/CCAA p. S-19.",
+                "AHCP/CCAA p. S-19",
+                "organization",
+            ),
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl", "person"),
+            ("See Decl. ¶ 4.", "Decl", "person"),
+            ("See Dep. of Ivo Penrow at 4.", "Dep", "person"),
+            ("See Aff. of Ivo Penrow ¶ 4.", "Aff", "person"),
+            ("See Ex. 1 to Penrow Decl.", "Ex. 1", "person"),
+            ("Under Tex. R. Civ. P. 91a.", "Tex. R. Civ", "organization"),
+            ("Under Tex. R. App. P. 9.", "Tex. R. App", "organization"),
+            ("Under Fed. R. Civ. P. 12.", "Fed. R. Civ", "organization"),
+            (
+                "See (Tex. App.—Slocombe 2031, pet. filed).",
+                "Slocombe 2031",
+                "address",
+            ),
+            ("See Section XII.", "Section XII", "organization"),
+            (
+                "As held in Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+                "09-31-00888-CV",
+                "national_id_number",
+            ),
+        ] {
+            let actual = shown(source, &[(text, label)]);
+            if !actual.is_empty() {
+                failures.push(format!("{source:?}: {actual:?}"));
+            }
+        }
+        for (source, text, expected) in [
+            ("(Ostrand Decl. ¶ 3)", "Ostrand Decl", "Ostrand"),
+            ("(Penrow Dep. at 4)", "Penrow Dep", "Penrow"),
+            ("(Penrow Aff. ¶ 4)", "Penrow Aff", "Penrow"),
+            (
+                "[2031] 1 W.L.R. 12, Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+            (
+                "[2031] 1 W.L.R. Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+        ] {
+            let actual = shown(source, &[(text, "person")]);
+            let wanted = pairs(&[(expected, "PERSON")]);
+            if actual != wanted {
+                failures.push(format!("{source:?}: {actual:?}, expected {wanted:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A citation-part fix must never hide a real name, company or number
+    /// that merely resembles its marker (issue #499).
+    #[test]
+    fn citation_parts_keep_real_names_and_identifiers() {
+        assert_eq!(
+            shown(
+                "The witness (Ivo Decl.) testified.",
+                &[("Ivo Decl", "person")]
+            ),
+            pairs(&[("Ivo Decl", "PERSON")])
+        );
+        for name in [
+            "Declan Penrow",
+            "Ivo Affleck",
+            "Ms Decl",
+            "Mr Aff",
+            "Ivo Decl",
+            "Decl",
+            "Aff",
+            "Ex",
+        ] {
+            let expected = name
+                .strip_prefix("Ms ")
+                .or_else(|| name.strip_prefix("Mr "))
+                .unwrap_or(name);
+            let source = format!("The witness is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
+        for name in [
+            "Decl Research Ltd",
+            "Aff Analytics LLC",
+            "Chapter 11 Ltd",
+            "National Instrument 45-999 Ltd",
+            "PD 57ZZ Ltd",
+            "Section XII LLC",
+            "Comm Trading Ltd",
+        ] {
+            let source = format!("The applicant is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        for (source, text) in [
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl. of Ivo Penrow"),
+            (
+                "See Ex. 1 to Ivo Penrow Decl. ¶ 4.",
+                "Ex. 1 to Ivo Penrow Decl",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(text, "person")]),
+                pairs(&[("Ivo Penrow", "PERSON")])
+            );
+        }
+        // The same docket in this action or its caption must stay; only
+        // a docket attached to a precedent is suppressed.
+        for source in [
+            "Case No. 09-31-00888-CV.",
+            "Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+            "The judgment under appeal is Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+        ] {
+            let detections = crate::correct(
+                source,
+                &[crate::RawEntity {
+                    start: source.find("09-31-00888-CV").unwrap(),
+                    end: source.find("09-31-00888-CV").unwrap() + "09-31-00888-CV".len(),
+                    label: "national_id_number".into(),
+                    score: 0.8,
+                    text: "09-31-00888-CV".into(),
+                }],
+            );
+            assert!(
+                detections
+                    .iter()
+                    .any(|d| &source[d.range.clone()] == "09-31-00888-CV"),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "S.C. Penrow and H.L. Venn testified.",
+                &[("S.C. Penrow", "person"), ("H.L. Venn", "person")]
+            ),
+            pairs(&[("S.C. Penrow", "PERSON"), ("H.L. Venn", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "R. Penrow lives at 478A Cedar Road, Slocombe 45999.",
+                &[
+                    ("R. Penrow", "person"),
+                    ("478A Cedar Road, Slocombe 45999", "address")
+                ]
+            ),
+            pairs(&[
+                ("R. Penrow", "PERSON"),
+                ("478A Cedar Road, Slocombe 45999", "ADDRESS")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "Account 45-999; ID S-19; badge 57ZZ.",
+                &[
+                    ("45-999", "bank_account"),
+                    ("S-19", "national_id_number"),
+                    ("57ZZ", "national_id_number")
+                ]
+            ),
+            pairs(&[
+                ("45-999", "BANK"),
+                ("S-19", "IDENTITY"),
+                ("57ZZ", "IDENTITY")
+            ])
+        );
+    }
+
+    /// Exercise the CC0 fixture through correction and review with the
+    /// faulty model boundaries from the probes, without inventing a model
+    /// snapshot. The model gate supplies its own real output later (#499).
+    #[test]
+    fn citation_parts_fixture_keeps_its_declarants() {
+        let fixture = crate::recognition::Fixture::parse(
+            std::path::Path::new("en/judgment/probe-en-r3-citation-parts.md"),
+            include_str!(
+                "../../../tests/fixtures/recognition/en/judgment/probe-en-r3-citation-parts.md"
+            ),
+        )
+        .unwrap();
+        fixture.validate().unwrap();
+        fixture.validate_layout().unwrap();
+        let source = fixture.source.as_str();
+        let mut raw: Vec<_> = fixture
+            .gold
+            .iter()
+            .map(|span| {
+                let mut range = span.range.clone();
+                let label = match span.category.as_str() {
+                    "PERSON" => "person",
+                    "ORG" => "organization",
+                    "IDENTITY" => "national_id_number",
+                    other => panic!("unexpected category {other}"),
+                };
+                if label == "person" {
+                    for word in [" Decl", " Aff", " Dep"] {
+                        if source[range.end..].starts_with(word) {
+                            range.end += word.len();
+                            break;
+                        }
+                    }
+                }
+                crate::RawEntity {
+                    start: range.start,
+                    end: range.end,
+                    label: label.into(),
+                    score: 0.8,
+                    text: source[range].into(),
+                }
+            })
+            .collect();
+        for (text, label) in [
+            ("Chapter 11", "organization"),
+            ("S.C.", "person"),
+            ("H.L", "person"),
+            ("Comm", "organization"),
+            ("National Instrument 45-999", "national_id_number"),
+            ("PD 57ZZ", "organization"),
+            ("478A", "address"),
+            ("Section XII", "organization"),
+            ("352 DM - Aviation Safety", "organization"),
+            ("AHCP/CCAA p. S-19", "organization"),
+            ("Decl", "person"),
+            ("Ex. 1", "person"),
+            ("Tex. R. Civ", "organization"),
+            ("Pellam", "person"),
+            ("Brindle", "person"),
+            ("Slocombe 2031", "address"),
+            ("09-31-00888-CV", "national_id_number"),
+            ("R", "person"),
+        ] {
+            // R is the judicial-review marker, not a letter in "Research".
+            let start = if text == "R" {
+                source.find("R (on").unwrap()
+            } else {
+                source.find(text).unwrap()
+            };
+            raw.push(crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            });
+        }
+        assert_eq!(
+            crate::recognition::proposals(source, &raw).unwrap(),
+            fixture.gold
+        );
     }
 
     /// [`shown`] for spans each at the `n`th place of its text (from 0).

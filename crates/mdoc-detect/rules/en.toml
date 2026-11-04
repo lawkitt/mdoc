@@ -59,7 +59,22 @@ trim = [
 # ("Mr Ivo Ostrand"; guide rule 1, issue #499).
 [[span]]
 category = "ORG"
-person_before = ["decl", "declaration", "aff", "affidavit"]
+person_before = ["decl", "declaration", "aff", "affidavit", "dep", "deposition"]
+
+# A document label before "of" or a pinpoint page is no person's name
+# (#499). Require the dot and citation context: an untitled person called
+# Decl or Aff in prose must stay marked (guide rule 1).
+[[reference]]
+pattern = '\b(?:Decl|Dep|Aff)\.(?P<tail>[\p{Zs}\t]+(?:of\b|at[\p{Zs}\t]+\d)|[\p{Zs}\t]*¶)'
+
+# A declaration's or exhibit's label before a person's name is outside
+# it, as is a numbered exhibit leading into the declarant (#499).
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:Decl|Dep|Aff)\.[\p{Zs}\t]+of[\p{Zs}\t]+',
+    'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
+]
 
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
@@ -1044,9 +1059,37 @@ pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|U\.S\.[\p{Zs}\t]+(?:Dist\.|App\.)[\p
 
 # English and Welsh reports and neutral citations: "[2020] STC 960",
 # "[2019] EWCA Civ 1234", "(2004) 1 WLR 12", and the distinctive reports
-# without their year ("ICR 801").
+# without their year ("ICR 801"); "All ER (Comm)" puts its division before
+# the page (issue #499).
 [[reference]]
-pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER(?:[\p{Zs}\t]+\(Comm\))?|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+
+# Scottish reports have a year, reporter, court and page: "1931 S.C.
+# (H.L.) 13"; the initials inside name nobody (guide rule 8, #499).
+[[reference]]
+pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+S\.[\p{Zs}\t]?C\.[\p{Zs}\t]+\(H\.[\p{Zs}\t]?L\.\)[\p{Zs}\t]+\d{1,5}\b'
+
+# The Crown's R in a judicial-review title is no person. Only the marker
+# is suppressed, leaving the applicant's name to the cited-case rules
+# and the case-at-hand safeguards (guide rules 1 and 8, #499).
+[[reference]]
+pattern = '\bR(?P<tail>[\p{Zs}\t]+\(on[\p{Zs}\t]+the[\p{Zs}\t]+application[\p{Zs}\t]+of\b)'
+
+# Numbered instruments, practice directions and the cited manual's
+# heading/page are legal references (#499). Restrict the manual title
+# rather than taking arbitrary capitalized words after a number.
+[[reference]]
+pattern = '\bNational[\p{Zs}\t]+Instrument[\p{Zs}\t]+\d{2}-\d{3}\b|\bPD[\p{Zs}\t]+\d{1,3}[A-Z]{1,2}\b|\b\d{3}[\p{Zs}\t]+DM(?:[\p{Zs}\t]+[-–][\p{Zs}\t]+Aviation[\p{Zs}\t]+Safety\b)?|\bAHCP/CCAA[\p{Zs}\t]+p\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b'
+
+# Pinpoint pages ("at p. 478A", "p. S-19") and numbered exhibits are no
+# addresses or names; bare numbers and letters beside them stay (#499).
+[[reference]]
+pattern = '\bat[\p{Zs}\t]+p\.[\p{Zs}\t]+\d{1,5}[A-Z]?\b|\bp\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b|\bEx\.[\p{Zs}\t]+\d{1,4}\b'
+
+# A Texas appellate court's city and year are citation parts, not an
+# address. The court cue is required, never a city/year alone (#499).
+[[reference]]
+pattern = '\bTex\.[\p{Zs}\t]+App\.[\p{Zs}\t]*[—–-][\p{Zs}\t]*\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+\p{Uppercase}\p{Ll}+){0,3}[\p{Zs}\t]+(?:19|20)\d{2}\b'
 
 # US codes and regulations: "26 U.S.C. § 6212", "31 U.S.C. 3903", "48 CFR
 # 52.212-1", "735 ILCS 5/2-619", "I.R.C. § 61", and the dotted
@@ -1056,13 +1099,14 @@ pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|
 pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section})?|\b\d{1,3}[\p{Zs}\t]+(?:CFR|ILCS|USC)[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section}'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
-# Sections, paragraphs and clauses: "§ 6212", "§§ 1-3", "¶ 4", "section
-# 12", "Article 6", "clause 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)",
+# Sections (including Roman numerals), chapters, paragraphs and clauses
+# (#499): "§ 6212", "§§ 1-3", "¶ 4", "section 12", "Article 6", "clause
+# 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)", "Tex. R. Civ. P. 91a",
 # "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
 # stay unmarked).
 [[reference]]
-pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|Fed\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
-parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Cc]hapters?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|[IVXLCDM]{1,12}\b)'
 
 # Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
 # 13526", "Executive Order No. 14028", "Pub. L. No. 115-97", "Release No.
@@ -1110,11 +1154,13 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
 # (admitted 2020)") is none of it.
 [[reference]]
-pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}(?:{tex_docket})?|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
 parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|de|der|du|la|le|van|von|ex[\p{Zs}\t]+rel\.))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
+# A trailing docket belongs to the cited Texas appeal, not this case (#499).
+parts.tex_docket = '[\p{Zs}\t]*\(Tex\.[\p{Zs}\t]+App\.[^()\n]{0,60}?(?:19|20)\d{2}(?:,[\p{Zs}\t]*pet\.[\p{Zs}\t]+filed)?\),[\p{Zs}\t]+No\.[\p{Zs}\t]+\d{2}-\d{2}-\d{5}-CV\b'
 parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
 parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
 parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+'
