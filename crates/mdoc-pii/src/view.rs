@@ -920,7 +920,7 @@ fn delimiter_row(line: &str) -> bool {
 
 /// The fence a code block opens with on `line` ("```" or "~~~", at most
 /// three spaces in), which its closing line starts with too.
-fn fence(line: &str) -> Option<&'static str> {
+pub(crate) fn fence(line: &str) -> Option<&'static str> {
     let text = line.trim_start_matches(' ');
     (line.len() - text.len() <= 3)
         .then(|| ["```", "~~~"].into_iter().find(|f| text.starts_with(f)))
