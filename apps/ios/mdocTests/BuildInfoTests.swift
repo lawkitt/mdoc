@@ -35,9 +35,13 @@ final class BuildInfoTests: XCTestCase {
         XCTAssertGreaterThan(build, 0)
     }
 
+    /// NO, as App Store Connect asks for an app whose only encryption beyond
+    /// Apple's is a standard algorithm (the core's AES-GCM) and which is not
+    /// on the App Store in France: no documentation is needed. YES made the
+    /// upload of `ios-v0.1.0-rc.1` fail for want of a compliance code.
     func testTheAppAnswersExportCompliance() {
         let value = Bundle.main.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool
-        XCTAssertEqual(value, true)
+        XCTAssertEqual(value, false)
     }
 
     func testTheAppShipsItsPrivacyManifest() throws {

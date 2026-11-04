@@ -88,8 +88,10 @@ green and leave desktop unchanged. Record:
    (#578), and `just ios-device-test` passes on the iPhone 17 Pro on
    cellular and the 12 Pro on Wi-Fi (#583, #584): the maintainer kept the
    17 Pro on cellular (slow Wi-Fi), so each download path ran on one phone
-   instead of the 17 Pro on Wi-Fi. Left, in order: P17 on the
-   iPhone 17 Pro; the maintainer's Xcode archive of `ios-v0.1.0-rc.1`
+   instead of the 17 Pro on Wi-Fi. P17 passed on the 17 Pro after its fixes
+   (#591; a locked phone pauses a job, accepted). Left, in order: the
+   maintainer's Xcode archive of build 1, `ios-v0.1.0-rc.2` (`rc.1`'s upload
+   failed on the export key, now NO)
    ([release run](docs/release-run.md#ios-beta-build)); section 13 of
    [platform acceptance](docs/platform-acceptance.md) on that build (Device
    rows by hand, P12 in the iPad Simulator). *Done when:* section 13 passes

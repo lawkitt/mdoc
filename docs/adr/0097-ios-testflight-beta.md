@@ -1,6 +1,7 @@
 # iOS TestFlight beta
 
-Status: Accepted, 2026-11-03. Amends [ADR 0091](0091-mobile-ci-and-releases.md)
+Status: Accepted, 2026-11-03; amended 2026-11-04 (the export key is NO, and
+build 1 is `ios-v0.1.0-rc.2`). Amends [ADR 0091](0091-mobile-ci-and-releases.md)
 (mobile tags and the first build) and details [ADR 0085](0085-mobile-apps.md)'s
 Distribution bullet and [ADR 0088](0088-ios-on-real-devices.md)'s first-build
 gate.
@@ -38,7 +39,8 @@ tool without sending client documents through feedback. Findings:
   plain `ios-v<x.y.z>` tag marks the build submitted to App Store review.
   This replaces ADR 0091's "tag `ios-v<version>` matching the repository's
   version" for betas: an `-rc.N` tag matches when its `x.y.z` does.
-- **Build 1 (`ios-v0.1.0-rc.1`) is the only manual upload.** An agent
+- **Build 1 (`ios-v0.1.0-rc.2`) is the only manual upload.** (`rc.1` was
+  tagged and archived, and Apple refused it: see the export key below.) An agent
   prepares a clean checkout of the tagged `main` commit; the maintainer
   archives it in Xcode on the macbook-air, signed in with their Apple ID,
   and distributes with "App Store Connect" (never "TestFlight Internal
@@ -60,11 +62,17 @@ tool without sending client documents through feedback. Findings:
   Restore extension: no tracking, no collected data, and the required-reason
   APIs they use (`UserDefaults` for the app's own and the App Group's
   settings; file timestamps if the core's `stat` calls need declaring).
-- **`ITSAppUsesNonExemptEncryption = YES`.** Cases are AES-256-GCM through
-  the core's `aes-gcm` crate, not Apple's OS, so the export answer is
-  "standard encryption algorithms in addition to Apple's". The App Store's
-  France storefront stays off until a French (ANSSI) encryption declaration
-  is filed. The core keeps its encryption; no CryptoKit copy in Swift.
+- **`ITSAppUsesNonExemptEncryption = NO`** (amended 2026-11-04; was YES).
+  Cases are AES-256-GCM through the core's `aes-gcm` crate, not Apple's OS:
+  a standard algorithm "in addition to" Apple's. For that App Store
+  Connect's encryption questions ask only for a French (ANSSI) declaration,
+  and only for the App Store in France, which stays off until one is filed.
+  Answered there on 2026-11-04 ("Based on your answers, you don't need to
+  upload any documents"), it says to declare no non-exempt encryption in
+  Info.plist. YES with no documentation on file failed the upload of
+  `rc.1` ("Invalid Export Compliance Code"). Offering France later means YES
+  again, with the declaration and the code App Store Connect then issues.
+  The core keeps its encryption; no CryptoKit copy in Swift.
 - **The core commit** as an Info.plist key, shown in Settings › About, whose
   source link opens that commit. With the public tag per build, that is how
   each build's Corresponding Source stays available
@@ -101,10 +109,9 @@ tool without sending client documents through feedback. Findings:
   selection; and a short path (+ → Paste a fictional paragraph given in the
   notes → Find names → Share → Restore with mdoc). They live in
   `docs/release-run.md`.
-- **What to Test:** written by hand for `rc.1` (the flow, the known gaps,
-  the line above); `changes/ios/` joins `apps/ios/CHANGELOG.md` at
-  `ios-v0.1.0-rc.1`, and from `rc.2` that version's section fills it
-  (ADR 0091).
+- **What to Test:** written by hand for build 1 (the flow, the known gaps,
+  the line above); `changes/ios/` joins `apps/ios/CHANGELOG.md` at build 1's
+  tag, and from build 2 that version's section fills it (ADR 0091).
 
 ### Android
 
@@ -133,7 +140,7 @@ client files" line, and agents stopping at the internal track.
 - Order of work: this record and the docs (privacy, release run, P4); an
   iOS PR with the manifest, the encryption key, the core commit and the
   build number; #576 and item 3's device run; P17 and the manual archive of
-  `ios-v0.1.0-rc.1`; section 13 on that build and item 4; the Admin key and
+  build 1 (`ios-v0.1.0-rc.2`); section 13 on that build and item 4; the Admin key and
   the hosted workflow; then the Lawyers group.
 
 References: [interview](../design/testflight-grill-2026-11-03.md).
