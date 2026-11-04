@@ -179,6 +179,7 @@ fetch_commit_time() { echo $((1793620800 - 720)); }
 fetch_pr() { echo "User false"; }
 fetch_dispatched() { echo 0; }
 dispatch() { echo "$*" >>"$dispatched"; }
+fetch_workflow_state() { echo active; }
 
 heads_pass
 eq "$(sort "$posted")" "aaaa success Docs only: no job runs
@@ -205,6 +206,74 @@ queue_pass
 eq "$(cat "$dispatched")" "ci-desktop.yml gh-readonly-queue/main/pr-514-mmmm qqqq os=windows
 ci-android.yml gh-readonly-queue/main/pr-514-mmmm qqqq"
 echo "ok: queue: a fork or bot PR never runs on the PC"
+
+# No hosted Android job yet (ci-android.yml is a 404): the Android job fails
+# at once, saying why, when it has nowhere to run; hosted Windows still runs.
+fetch_workflow_state() {
+  case "$1" in
+    ci-android.yml)
+      echo "gh: Not Found (HTTP 404)" >&2
+      return 1
+      ;;
+    *) echo active ;;
+  esac
+}
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(cat "$dispatched")" "ci-desktop.yml gh-readonly-queue/main/pr-514-mmmm qqqq os=windows"
+eq "$(cat "$posted")" "qqqq failure Failed: android (no hosted job; third-party code never runs on the PC); passed: macos (hosted), detection (hosted)"
+# A PC that has posted ci/android nowhere for 12 minutes: gone.
+fetch_pr() { echo "User false"; }
+fetch_commit_time() { echo $((1793620800 - 720)); }
+fetch_status() {
+  case "$1" in
+    qqqq) echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z", "target_url": "https://pc/w"}]}' ;;
+    mmmm) echo '{"statuses": [{"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:40:00Z"}]}' ;;
+    *) echo '{"statuses": []}' ;;
+  esac
+}
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(cat "$dispatched")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: android (no hosted job; PC silent 10 min); passed: macos (hosted), windows (PC), detection (hosted)"
+# The PC busy with an earlier group (a fresh pending ci/android there): wait.
+fetch_queue() { printf '%s\n' "gh-readonly-queue/main/pr-513-mmmm pppp" "gh-readonly-queue/main/pr-514-pppp qqqq"; }
+fetch_status() {
+  case "$1" in
+    qqqq) echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z", "target_url": "https://pc/w"}]}' ;;
+    pppp) echo '{"statuses": [{"context": "ci/android", "state": "pending", "updated_at": "2026-11-02T11:58:00Z"}]}' ;;
+    *) echo '{"statuses": []}' ;;
+  esac
+}
+: >"$posted"
+queue_pass
+eq "$(grep '^qqqq' "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (hosted)"
+# Its runner erred, or its heartbeat stopped: nowhere to run.
+for s in "error 2026-11-02T11:58:00Z" "pending 2026-11-02T11:45:00Z"; do
+  fetch_status() { printf '{"statuses": [{"context": "ci/android", "state": "%s", "updated_at": "%s"}]}\n' "${s% *}" "${s#* }"; }
+  : >"$posted"
+  queue_pass
+  case "$s" in error*) why="PC runner error" ;; *) why="PC heartbeat stopped" ;; esac
+  eq "$(grep '^qqqq' "$posted" | sed 's/;  *passed.*//; s/)$//')" "qqqq failure Failed: android (no hosted job; $why"
+done
+# GitHub could not say whether the workflow exists: wait for the next pass.
+fetch_workflow_state() {
+  echo "error connecting to api.github.com" >&2
+  return 1
+}
+fetch_status() { echo '{"statuses": []}'; }
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(grep -c failure "$posted")" 0
+# A disabled workflow is no fallback either.
+fetch_workflow_state() { echo disabled_manually; }
+: >"$posted"
+queue_pass
+eq "$(grep '^qqqq' "$posted" | sed 's/;  *passed.*//')" "qqqq failure Failed: windows (ci-desktop.yml is disabled manually; PC silent 10 min), android (ci-android.yml is disabled manually; PC silent 10 min)"
+echo "ok: queue: with no hosted job a PC job that cannot run fails at once, saying why"
 
 # Runs of queue commits the queue dropped are cancelled; current ones,
 # other branches and PR runs are not.

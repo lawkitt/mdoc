@@ -215,7 +215,11 @@ What implementing it settled, by the CI redesign hub:
 - **Android has no hosted job yet.** The cutover went ahead with Android on
   the PC only; the hosted Android job (`ci-android.yml`, after Mobile CI/CD
   item 3) is a ROADMAP follow-up. Until then a queue group that needs
-  `ci/android` waits for the PC.
+  `ci/android` waits for the PC while it is up, and `merge-gate` fails it
+  at once, saying why, when it has nowhere to run: third-party code, a PC
+  runner error, a stale heartbeat, or a PC that has posted `ci/android` on
+  no queue commit and not on `main` for 10 minutes (2026-11-04: with the PC
+  offline, #584 otherwise waited for the queue's 2-hour timeout).
 - **Detection snapshots are re-recorded on hosted `macos-26`** at the
   cutover (#534): scores only, at most 0.00193 from the M4's, every entity
   the same. The existing 1e-4 check stays. The queue runs 4 shards, and

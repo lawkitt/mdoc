@@ -23,6 +23,13 @@
 # never runs on the PC. Whichever result finished first counts. A renamed
 # file counts in the areas of both its old and its new path.
 #
+# With no hosted workflow to fall back to (ci-android.yml does not exist
+# yet, ROADMAP CI item 2), the job fails at once and says why, rather than
+# leaving the group to the queue's 2-hour timeout: for third-party code, a
+# PC runner error or a stale heartbeat; for a silent PC, only when the PC
+# has posted that job on no queue commit and not on main for 10 minutes
+# (a PC busy with an earlier group is still there).
+#
 # .github/workflows/merge-gate.yml runs main's copy of this script every 5
 # minutes and after statuses and CI runs, with statuses: write and actions:
 # write; it never checks out PR code. Bash 3.2 compatible (the suite runs
@@ -101,6 +108,10 @@ fetch_status() { gh api "repos/$repo/commits/$1/status?per_page=100"; }
 
 # `<author type> <cross-repository>` of PR $1.
 fetch_pr() { gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
+
+# A workflow's state on GitHub (active, disabled_manually, ...); fails with
+# "HTTP 404" in its error when the repository has no such workflow.
+fetch_workflow_state() { gh api "repos/$repo/actions/workflows/$1" --jq .state; }
 
 # How many manual runs of a workflow exist for a commit.
 fetch_dispatched() { # workflow sha
@@ -222,12 +233,59 @@ pc_job() { # pc-status-line hosted-verdict hosted-dispatched third-party commit-
   fi
 }
 
+# Whether a hosted fallback workflow can be dispatched: 0 yes, 1 no (GitHub
+# has none, or it is disabled: sets no_hosted to why), 2 could not tell.
+hosted_ready() { # workflow
+  local out rc=0
+  out=$(fetch_workflow_state "$1" 2>&1) || rc=$?
+  out=$(tr -d '\r' <<<"$out")
+  if [ "$rc" -eq 0 ]; then
+    [ "$out" != active ] || return 0
+    no_hosted="$1 is $out"
+    return 1
+  fi
+  case "$out" in
+    *"HTTP 404"*)
+      no_hosted="no hosted job"
+      return 1
+      ;;
+  esac
+  return 2
+}
+
+# The newest time the PC posted ci/$1 on main or a queue commit, in epoch
+# seconds (0 when never): whether its runner is up, busy with another group.
+pc_seen() { # job main queue-lines
+  local job=$1 latest=0 sha at
+  for sha in $2 $(awk '{ print $2 }' <<<"$3"); do
+    read -r _ at _ <<<"$(fetch_status "$sha" 2>/dev/null | status_of "ci/$job" 2>/dev/null || echo "none 0 -")"
+    [ "${at:-0}" -le "$latest" ] || latest=$at
+  done
+  echo "$latest"
+}
+
+# Why a PC job has nowhere to run, as one word (underscores read as spaces in
+# the gate's description), or nothing when the PC may still run it.
+nowhere() { # fallback-reason job main queue-lines now
+  case "$1" in
+    third-party) echo "${no_hosted// /_};_third-party_code_never_runs_on_the_PC" ;;
+    pc-error) echo "${no_hosted// /_};_PC_runner_error" ;;
+    stale) echo "${no_hosted// /_};_PC_heartbeat_stopped" ;;
+    *)
+      local seen
+      seen=$(pc_seen "$2" "$3" "$4")
+      [ $((($5 - seen) / 60)) -lt "$silent_min" ] || echo "${no_hosted// /_};_PC_silent_${silent_min}_min"
+      ;;
+  esac
+}
+
 # The merge-gate state for a queue commit from job lines on stdin
 # (`<job> <verdict> <where> <url>`): `<state>|<description>|<url>`.
 queue_gate() {
   awk -v run="$1" '
     {
       job = $1; v = $2; where = $3; url = $4
+      gsub(/_/, " ", where)
       if (v == "success") ok = ok (ok ? ", " : "") job (where != "" && where != "-" ? " (" where ")" : "")
       else if (v == "skipped") na = na (na ? ", " : "") job
       else if (v == "failure") { bad = bad (bad ? ", " : "") job (where != "" && where != "-" ? " (" where ")" : ""); if (badurl == "" && url != "-") badurl = url }
@@ -281,9 +339,14 @@ heads_pass() {
 
 queue_pass() {
   local t main branch sha cmp areas jobs checks status age third prs pr kind cross job hv line state desc url v where u
+  local queue why ready no_hosted=''
   t=$(now)
   main=$(fetch_main) || {
     log "could not read main"
+    return 1
+  }
+  queue=$(fetch_queue) || {
+    log "could not list the queue"
     return 1
   }
   while read -r branch sha; do
@@ -325,13 +388,32 @@ queue_pass() {
             "$(fetch_dispatched "$wf" "$sha" 2>/dev/null || echo 0)" "$third" "$age" "$t")
           read -r v where u <<<"$line"
           if [ "$v" = fallback ]; then
-            # shellcheck disable=SC2086 # extra is one key=value or nothing
-            if dispatch "$wf" "$branch" "$sha" $extra; then
-              log "${sha:0:7} $job: hosted fallback dispatched ($u)"
-            else
-              log "${sha:0:7} $job: could not dispatch $wf"
-            fi
-            v=pending u=-
+            ready=0
+            hosted_ready "$wf" || ready=$?
+            case "$ready" in
+              0)
+                # shellcheck disable=SC2086 # extra is one key=value or nothing
+                if dispatch "$wf" "$branch" "$sha" $extra; then
+                  log "${sha:0:7} $job: hosted fallback dispatched ($u)"
+                else
+                  log "${sha:0:7} $job: could not dispatch $wf"
+                fi
+                v=pending u=-
+                ;;
+              1)
+                why=$(nowhere "$u" "$job" "$main" "$queue" "$t")
+                if [ -n "$why" ]; then
+                  log "${sha:0:7} $job: nowhere to run: ${why//_/ }"
+                  v=failure where=$why u=-
+                else
+                  v=pending where=PC u=-
+                fi
+                ;;
+              *)
+                log "${sha:0:7} $job: could not read $wf; deciding at the next pass"
+                v=pending u=-
+                ;;
+            esac
           fi
           lines+="$job $v $where ${u:--}"$'\n'
           ;;
@@ -343,7 +425,7 @@ queue_pass() {
     url=${desc##*|}
     desc=${desc%|*}
     settle "$sha" "$state" "$desc" "$url" "$status"
-  done < <(fetch_queue)
+  done <<<"$queue"
 }
 
 # Runs for queue commits the queue no longer has: GitHub deletes a branch
