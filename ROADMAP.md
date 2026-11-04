@@ -89,13 +89,14 @@ green and leave desktop unchanged. Record:
    cellular and the 12 Pro on Wi-Fi (#583, #584): the maintainer kept the
    17 Pro on cellular (slow Wi-Fi), so each download path ran on one phone
    instead of the 17 Pro on Wi-Fi. P17 passed on the 17 Pro after its fixes
-   (#591; a locked phone pauses a job, accepted). Left, in order: the
-   maintainer's Xcode archive of build 1, `ios-v0.1.0-rc.2` (`rc.1`'s upload
-   failed on the export key, now NO)
-   ([release run](docs/release-run.md#ios-beta-build)); section 13 of
-   [platform acceptance](docs/platform-acceptance.md) on that build (Device
-   rows by hand, P12 in the iPad Simulator). *Done when:* section 13 passes
-   on a TestFlight build.
+   (#591; a locked phone pauses a job, accepted). Build 1,
+   `ios-v0.1.0-rc.2` (734), is on TestFlight for the internal group and
+   installed on the 17 Pro (`rc.1`'s upload failed on the export key, now
+   NO). Section 13's Simulator rows and P12 ran on 2026-11-04
+   ([evidence](docs/evidence/mobile/2026-11-04/ios.md)): all pass except
+   P13, a Later item. Left: the Device rows, and P18's device half, by hand
+   on the TestFlight build.
+   *Done when:* section 13 passes on a TestFlight build.
 
 ## Android 0.1
 
@@ -268,6 +269,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
   2026-10-31 shelf GUI run.*
+- **[Mobile]** Settings' Download button at the largest text size: on an
+  iPhone at AX XXXL its label breaks as "Down- / load 18…", hyphenated and
+  cut off (`ModelDownloadButton` in `SettingsView.swift`); stack the icon
+  above the label or let it wrap without hyphens, as the review rows do
+  (#312). *From build 1's acceptance run
+  ([P13](docs/evidence/mobile/2026-11-04/ios.md)).*
 - **[Mobile]** US spelling in the iOS and Android apps: desktop moved every
   UI string to US spelling (UI polish decision 8, #327), but the mobile apps
   still say "unrecognised" and "Licence". *From the 2026-11-01 UI polish run.*

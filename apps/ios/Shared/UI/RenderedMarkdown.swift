@@ -15,6 +15,24 @@ extension NSAttributedString.Key {
     static let mdocDecoration = NSAttributedString.Key("io.github.lawkitt.mdoc.decoration")
 }
 
+extension NSAttributedString {
+    /// `text`, which starts at UTF-16 `start` of this string, as VoiceOver
+    /// should read it: each hidden unit a word joiner (U+2060), which keeps
+    /// the length and every offset, says nothing and breaks no word, so
+    /// `12**34**` stays one number (ADR 0096).
+    func spoken(_ text: String, at start: Int) -> String {
+        let spoken = NSMutableString(string: text)
+        let range = NSIntersectionRange(NSRange(location: start, length: spoken.length), NSRange(location: 0, length: length))
+        enumerateAttribute(.mdocHidden, in: range) { value, run, _ in
+            guard value != nil else { return }
+            spoken.replaceCharacters(
+                in: NSRange(location: run.location - start, length: run.length),
+                with: String(repeating: "\u{2060}", count: run.length))
+        }
+        return spoken as String
+    }
+}
+
 /// The styled text and the tables laid over it.
 struct RenderedDocument {
     var text: NSAttributedString
@@ -680,6 +698,18 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
 
     override func copy(_ sender: Any?) {
         if allowsCopy { super.copy(sender) }
+    }
+
+    /// In the review, where nothing copies, VoiceOver hears the cell as
+    /// drawn: hidden markers as word joiners (see `spoken`).
+    override func text(in range: UITextRange) -> String? {
+        guard let text = super.text(in: range) else { return nil }
+        return allowsCopy ? text : attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
+    }
+
+    override var accessibilityValue: String? {
+        get { allowsCopy ? super.accessibilityValue : attributedText.spoken(attributedText.string, at: 0) }
+        set { super.accessibilityValue = newValue }
     }
 
     func accessibilityRowRange() -> NSRange { NSRange(location: row, length: 1) }

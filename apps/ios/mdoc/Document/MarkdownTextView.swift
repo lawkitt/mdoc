@@ -203,6 +203,21 @@ final class CandidateTextView: RenderedTextView {
     var rotorItems: [RotorItem] = []
     var onReviewNext: (() -> Void)?
 
+    /// VoiceOver reads what the rendered view shows (ADR 0096): hidden
+    /// markers and folded table source come back as word joiners, so
+    /// offsets (the Candidates rotor, Replace…) still line up, a word split
+    /// by markers stays one word, and the table is read from its grid. Copy
+    /// is off here, so nothing else takes text from this.
+    override func text(in range: UITextRange) -> String? {
+        guard let text = super.text(in: range) else { return nil }
+        return attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
+    }
+
+    override var accessibilityValue: String? {
+        get { attributedText.spoken(attributedText.string, at: 0) }
+        set { super.accessibilityValue = newValue }
+    }
+
     /// Selecting is the only standard action left.
     static let allowedActions: Set<Selector> = [
         #selector(UIResponderStandardEditActions.select(_:)),
