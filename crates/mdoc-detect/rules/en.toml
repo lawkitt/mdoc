@@ -569,12 +569,17 @@ patterns = [
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?[SHA]\.?[\p{Zs}\t]?B\.?[\p{Zs}\t]*\d{1,5}[\s\p{P}]*$',
     # Remaining public institutions in #378, in full only: a private
     # "Basel Committee Consulting" or "Research Laboratory Partners" stays.
-    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:federal[\p{Zs}\t]+deposit[\p{Zs}\t]+insurance[\p{Zs}\t]+corporation|bank[\p{Zs}\t]+of[\p{Zs}\t]+england|national[\p{Zs}\t]+archives|basel[\p{Zs}\t]+committee|international[\p{Zs}\t]+monetary[\p{Zs}\t]+fund|corps[\p{Zs}\t]+of[\p{Zs}\t]+engineers|agricultural[\p{Zs}\t]+research[\p{Zs}\t]+service|soil[\p{Zs}\t]+conservation[\p{Zs}\t]+service|security[\p{Zs}\t]+authority|armaments[\p{Zs}\t]+cooperation[\p{Zs}\t]+division)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # Bank of England also names a private lender: correction requires
+    # local public context rather than an unconditional never pattern.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:federal[\p{Zs}\t]+deposit[\p{Zs}\t]+insurance[\p{Zs}\t]+corporation|national[\p{Zs}\t]+archives|basel[\p{Zs}\t]+committee|international[\p{Zs}\t]+monetary[\p{Zs}\t]+fund|corps[\p{Zs}\t]+of[\p{Zs}\t]+engineers|agricultural[\p{Zs}\t]+research[\p{Zs}\t]+service|soil[\p{Zs}\t]+conservation[\p{Zs}\t]+service|security[\p{Zs}\t]+authority|armaments[\p{Zs}\t]+cooperation[\p{Zs}\t]+division)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Congressional committees, with the observed OCR "SUMCOMMITTEE";
     # field offices and research facilities with an institutional head. Only
     # the observed OCR spellings of Station and Research are accepted.
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:health|oversight)[\p{Zs}\t]+su[bm]committees?[\s\p{P}]*$',
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:field[\p{Zs}\t]+office|(?:state[\p{Zs}\t]+)?experiment[\p{Zs}\t]+(?:statione?|ststion)|regional[\p{Zs}\t]+(?:research|reseerch)[\p{Zs}\t]+laboratory)[\s\p{P}]*$',
+    # "The Field Office" is a private trading name. Require the public
+    # parent in the span; neither an article nor a place establishes one.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,4}(?:(?-i:FBI|ICE|USCIS)|Social[\p{Zs}\t]+Security|Department|Agency|Bureau|Service)(?:[\x27’]s)?[\p{Zs}\t]+(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,4}field[\p{Zs}\t]+office[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:(?:state[\p{Zs}\t]+)?experiment[\p{Zs}\t]+(?:statione?|ststion)|regional[\p{Zs}\t]+(?:research|reseerch)[\p{Zs}\t]+laboratory)[\s\p{P}]*$',
     # Agency regional offices and law enforcement units; an Office span
     # cut out of the latter is checked with the words before it.
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:(?:EPA|USFWS|FWS|BLM|USGS)(?:[\x27’]s)?[\p{Zs}\t]+)?(?i:regional[\p{Zs}\t]+office|law[\p{Zs}\t]+enforcement[\p{Zs}\t]+office)[\s\p{P}]*$',
@@ -587,10 +592,18 @@ patterns = [
     # Statutory bodies under the reach decision (#484 item 4, #378): a
     # federal national laboratory, NHS trusts, port authorities and law
     # societies. Universities and colleges are exempt through `private`.
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,4}(?:National[\p{Zs}\t]+Laboratory|NHS[\p{Zs}\t]+Trust|Port[\p{Zs}\t]+Authority)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,4}(?:National[\p{Zs}\t]+Laboratory|Port[\p{Zs}\t]+Authority)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){0,4}NHS[\p{Zs}\t]+(?:Foundation[\p{Zs}\t]+)?Trust(?:[\p{Zs}\t]+Hospital)?[\s\p{P}]*$',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?Law[\p{Zs}\t]+Society[\p{Zs}\t]+of[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]*){1,4}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# An ambiguous Field Office stays even when labelled PERSON: the generic
+# `office` word above is not public ownership. Require a public parent in
+# this same span before allowing any public-body veto.
+[[private]]
+patterns = ['(?i)^[\s\p{P}]*(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,6}field[\p{Zs}\t]+office[\s\p{P}]*$']
+unless = ['(?i)\b(?:(?-i:FBI|ICE|USCIS)|social[\p{Zs}\t]+security|department|agency|bureau|service)\b']
 
 # Universities and colleges are never public bodies, whoever owns them:
 # a span that names one itself, after capitalized words only ("Ashmoor
