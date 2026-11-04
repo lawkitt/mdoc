@@ -25,7 +25,7 @@
 #     log folder.
 # Whole-job limits: 30 minutes (windows), 40 (android); gh calls and fetches
 # end after a minute, so a stalled one cannot hold the limit or the heartbeat
-# up; setup retries once, tests never. Upkeep: a job starts
+# up; setup and the checkout retry once, tests never. Upkeep: a job starts
 # only with 40 GB free (a pending status says so once, so the heartbeat goes
 # stale and merge-gate falls back), deletes target/ first when it is over
 # 60 GB or rust-toolchain.toml changed, and output older than 7 days or past
@@ -80,6 +80,8 @@ config() {
   heartbeat_s=${QUEUE_CI_HEARTBEAT:-240}
   # The longest a gh call or fetch may take.
   net_s=${QUEUE_CI_NET_TIMEOUT:-60}
+  # How long a failed checkout waits before its one retry.
+  clean_wait_s=${QUEUE_CI_CLEAN_WAIT:-30}
   # The job's area (scripts/ci-areas.txt), steps and whole-job limit (ADR 0095).
   case "$job" in
     windows) area=desktop steps='setup lint test' limit_s=${QUEUE_CI_TIMEOUT:-1800} ;;
@@ -356,6 +358,14 @@ failed_tests() { # log
     sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\([0-9]+\/[0-9]+\) +)?//p' | sort -u
 }
 
+# The commit checked out with no untracked files but target/.
+checkout_clean() { # sha
+  git checkout --quiet --force --detach "$1" || return 1
+  # Keep the build cache. Git Bash rewrites a native program's argument that
+  # starts with / as a Windows path, so /target/ would match nothing.
+  MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/
+}
+
 # Runs in the background in its own process group; output goes to log.txt.
 # Exit 0 passed, 1 a step failed (named in .step), 3 the checkout failed.
 job() { # sha dir clean-reason
@@ -374,10 +384,16 @@ job() { # sha dir clean-reason
     rm -rf "${checkout:?}/target" || exit 3
   fi
   echo "queue-runner: checkout $sha"
-  git checkout --quiet --force --detach "$sha" || exit 3
-  # Keep the build cache. Git Bash rewrites a native program's argument that
-  # starts with / as a Windows path, so /target/ would match nothing.
-  MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/ || exit 3
+  if ! checkout_clean "$sha"; then
+    # A stopped job's processes (Gradle, its test run) can hold files for a
+    # while after they are killed; on Windows git then cannot remove them
+    # (2026-11-04, the job after a stopped Android job). Infrastructure: one
+    # retry, logged (ADR 0095).
+    echo "queue-runner: checkout failed; retrying once in ${clean_wait_s}s"
+    echo "checkout: failed once; retried" >>"$dir/summary.txt"
+    sleep "$clean_wait_s"
+    checkout_clean "$sha" || exit 3
+  fi
   for step in $steps; do
     start=$(date +%s)
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
