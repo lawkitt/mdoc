@@ -86,6 +86,8 @@
 #                         into part of another span of its category, and
 #                         a person's never over a `never` word (a role);
 #                         earlier spans grow first
+#   trim_start = [regex…] case-sensitive prefixes that come off the start,
+#                         with some name left after them
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period or colon with it, and
 #                         a comma before a trailing one; or phrases of them,

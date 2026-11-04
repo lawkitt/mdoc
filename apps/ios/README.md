@@ -135,6 +135,13 @@ The app embeds `MdocFFI.framework` and `pdfium.framework`; the extension
 links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
 `OrtGetApiBase` in the image that holds it, so `MdocFFI` keeps that symbol
 (`-u _OrtGetApiBase`), strips local symbols only and builds no debug dylib.
+PDFium's prebuilt binary has no DWARF, so its dSYM in `pdfium.xcframework`
+holds the symbol table only: PDFium frames in crash reports get function
+names but no file or line.
+
+Archiving in Xcode syncs the `InfoPlist.xcstrings` catalogs from Info.plist
+(its spacing, a `comment` per key, extracted `CFBundleName`); they are
+committed as Xcode writes them, so an archive leaves the checkout clean.
 
 ## Rules
 

@@ -55,10 +55,11 @@ extend = [
 ]
 
 # Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
-# rule 1, #382). An entrepreneur's ИП is outside the name too (#484 item 5).
+# rule 1, #382). An entrepreneur's «ИП» comes off by its own case-sensitive
+# trim_start below (#562), so the surname «Ип» stays.
 [[span]]
 category = "PERSON"
-trim = ["г-н", "г-жа", "господин", "госпожа", "ип"]
+trim = ["г-н", "г-жа", "господин", "госпожа"]
 
 # Complete roles come off a person's edges (#385), in their case forms.
 # Do not trim a single role-like surname ("Иво Должник").
@@ -213,7 +214,7 @@ phrase_only = true
 match = "whole"
 words = [
     "лицо", "лица", "лицу", "лицом", "лице", "лиц", "лицам", "лицами", "лицах",
-    "собрание", "собрания", "собранию", "собранием", "собрании", "ип",
+    "собрание", "собрания", "собранию", "собранием", "собрании",
 ]
 unless_named = true
 person_role = true
@@ -246,6 +247,30 @@ words = [
     "компании", "компанию", "компанией", "организация", "организации",
     "организацию", "организацией", "фонд", "фонда", "фонду", "фондом",
     "фонде",
+]
+
+# Generic nouns a document defines as a term after «далее –» or «именуемое
+# в дальнейшем»: «(далее – Положение)», «(далее – Учреждение)», «Займодавец»,
+# «Заёмщик». Once the document defines one, every mention of it, in any case,
+# is a defined term and no organization (guide rule 2, issue #390). Only
+# where the document defines it: elsewhere a company may share the word, and
+# a term with any coined or real word («Кедровое») defines none. As stems
+# with up to three letters of ending, including genitive plurals
+# («Кредиторов»). Other surname endings remain excluded. This filter
+# applies only to ORG; the separate PERSON surname guards are unchanged.
+[[defined]]
+match = "stem"
+ending = 3
+not_endings = ["ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+words = [
+    "положени", "учреждени", "предприяти", "соглашени", "договор", "контракт",
+    "приложени", "регламент", "устав", "программ", "объект", "имуществ",
+    "территори", "кредитор", "должник", "заемщик", "заёмщик", "займодав",
+    "залогодател", "залогодержател", "принципал", "агент", "учредител",
+    "участник", "акционер", "страховщик", "страхователь", "перевозчик",
+    "грузоотправител", "грузополучател", "наймодател", "нанимател",
+    "лицензиат", "лицензиар", "цедент", "цессионари", "правообладател",
+    "пользовател", "оператор", "организатор", "корпораци", "фирм",
 ]
 
 # Category words and identifier labels: "СНИЛС", "ИНН", "Телефон", "Адрес"
@@ -567,6 +592,45 @@ forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП[\p{Zs}
 category = "PERSON"
 pattern = '(?P<lead>\b(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[Сс]видетел|[Оо]бвиняем|[Пп]одсудим|[Оо]сужд[её]нн)\p{Alphabetic}*[\p{Zs}\t]*№[\p{Zs}\t]*\d{1,3})[\p{Zs}\t]+)\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?(?P<tail>[^\p{Alphabetic}]|$)'
 
+# An individual entrepreneur is not an organization: the name after «ИП»
+# or «индивидуальный предприниматель» (any case form) is PERSON, and the
+# words for the status stay outside the span (guide rule 1, the
+# maintainer's decision on #484 item 5, issue #562). A span of exactly the
+# status and a name, surname with initials or a full name in any order and
+# case form, goes as an organization; the span pattern below gives the
+# name back as PERSON. A trading name in quotes after the name («ИП …
+# магазин «Кедрач»») is no part of the span and stays an organization
+# (item 8). A placeholder («ИП ФИО1») is dropped above.
+[[shape]]
+category = "ORG"
+forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*))[\s\p{P}]*$']
+
+# The name after the status of an individual entrepreneur is PERSON alone
+# («Ветлин Н. О.» in «ИП Ветлин Н. О.», «Брюн Лидия Игоревна» in
+# «индивидуальный предприниматель Брюн Лидия Игоревна», «Ветлину Н.О.» in
+# «ИП Ветлину Н.О.»), whether the model took the status with the name, as
+# an organization (with or without the status), or not at all (issue #562).
+# Surname and initials, initials and surname, surname, name and patronymic,
+# or name, patronymic and surname, in any case form («Моховым Ильёй
+# Ильичом»), each word in title case or capitals («МОХОВ Лев Романович»);
+# a missed real name leaks, an extra mark costs one untick. An ORG exactly
+# on the name yields to this PERSON.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>{lead})(?:{name})(?P<tail>[^\p{Alphabetic}]|$)'
+parts.lead = '(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+'
+parts.name = '(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)'
+absorbs.ORG = '(?P<span>{name})$'
+
+# The status of an individual entrepreneur stays outside a person's span:
+# the model's «ИП Мохов Л. Р.» as a person is «Мохов Л. Р.», and so is
+# «индивидуального предпринимателя Мохова Л. Р.» (issue #562), with up to
+# three lowercase words before it («об индивидуальном предпринимателе …»).
+# Only the uppercase abbreviation is status: «Ип Ман» keeps its surname.
+[[span]]
+category = "PERSON"
+trim_start = ['(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:индивидуальн(?:ый|ого|ому|ым|ом)[\p{Zs}\t]+предпринимател(?:ь|я|ю|ем|е)))[\p{Zs}\t]+']
+
 # The same placeholder as an identity document: its digit is no number.
 [[shape]]
 category = "IDENTITY"
@@ -872,3 +936,14 @@ pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]{2,}\d{4}(?:[\p{Zs}\t]*(?m:$)|(?P<tai
 # after "счёт №" is no invoice's and stays.
 [[reference]]
 pattern = '\b(?:ТН|ТТН|ТрН|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*)[\p{Zs}\t]*№[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
+
+# The uppercase status alone is no one, as a person or an organization (#385,
+# #562); the surname «Ип» is written otherwise and stays.
+[[shape]]
+category = "PERSON"
+forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']
+
+# The same as an organization.
+[[shape]]
+category = "ORG"
+forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']

@@ -4,7 +4,8 @@
 # and assembles what an iOS app links (ADR 0085):
 #   target/ios/MdocCore.xcframework  the core with ONNX Runtime linked in
 #   target/ios/swift/                its generated Swift bindings
-#   target/ios/pdfium.xcframework    PDFium as an embedded framework
+#   target/ios/pdfium.xcframework    PDFium as an embedded framework, with
+#                                    symbols-only dSYMs
 # ONNX Runtime and PDFium are pinned, checksum-verified downloads; nothing
 # is downloaded at run time. The app must export _OrtGetApiBase and keep it
 # through stripping (tools/ios-spike shows the build settings).
@@ -62,6 +63,15 @@ slice() {
   tar -xzf "$deps/$3" -C "$stage/pdfium"
   cp "$stage/pdfium/lib/libpdfium.dylib" "$stage/pdfium.framework/pdfium"
   install_name_tool -id @rpath/pdfium.framework/pdfium "$stage/pdfium.framework/pdfium"
+  # The prebuilt dylib has no DWARF (its debug map names object files on the
+  # upstream runner) but keeps its full symbol table, so dsymutil makes a dSYM
+  # that symbolicates PDFium crashes to function names; without one, uploads
+  # warn "Upload Symbols Failed". Its warnings are those missing objects.
+  dsymutil "$stage/pdfium.framework/pdfium" -o "$stage/pdfium.framework.dSYM" 2>/dev/null ||
+    die "dsymutil failed on the $target PDFium"
+  [ "$(dwarfdump --uuid "$stage/pdfium.framework.dSYM" | cut -d' ' -f2)" = \
+    "$(dwarfdump --uuid "$stage/pdfium.framework/pdfium" | cut -d' ' -f2)" ] ||
+    die "the $target PDFium dSYM does not match its binary"
   cat >"$stage/pdfium.framework/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -124,7 +134,9 @@ xcodebuild -create-xcframework \
   -output "$out/MdocCore.xcframework" >/dev/null
 xcodebuild -create-xcframework \
   -framework "$out/stage/aarch64-apple-ios/pdfium.framework" \
+  -debug-symbols "$PWD/$out/stage/aarch64-apple-ios/pdfium.framework.dSYM" \
   -framework "$out/stage/aarch64-apple-ios-sim/pdfium.framework" \
+  -debug-symbols "$PWD/$out/stage/aarch64-apple-ios-sim/pdfium.framework.dSYM" \
   -output "$out/pdfium.xcframework" >/dev/null
 mkdir -p "$out/licenses"
 cp "$deps/onnxruntime/LICENSE" "$out/licenses/onnxruntime-LICENSE"

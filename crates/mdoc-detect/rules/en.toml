@@ -260,6 +260,64 @@ words = [
     "names",
 ]
 
+# Generic nouns of a contract or a complaint that a document defines as a
+# term for a party or its business ("(the “Distributor”)", "(the
+# “Franchised Business”)", "(“Townhouse”)"): once the document defines one,
+# every mention of it, alone or with the other generic words of the term
+# ("RESELLER AGREEMENT"), is a defined term and no organization (guide rule
+# 2, issue #390). Only where the document defines it: elsewhere a company
+# may share the word, and a term with any coined or real word ("Kew
+# Project", "Quillon", "Fox") defines none. Plurals are matched; the -ies
+# plurals are listed.
+[[defined]]
+match = "plural"
+words = [
+    "distributor", "sponsor", "reseller", "club", "concessionaire",
+    "franchisee", "franchisor", "firm", "affiliate", "subsidiary", "agent", "member",
+    "subscriber", "vendor", "purchaser", "operator", "guarantor", "borrower",
+    "lender", "mortgagor", "mortgagee", "trustee", "beneficiary",
+    "consultant", "developer", "corporation", "group", "fund", "estate",
+    "authority", "territory", "townhouse", "network", "site", "property",
+    "premises", "business", "agency", "shareholder", "stockholder", "class",
+    "proceeding", "action", "loan", "mortgage", "asset", "transfer",
+    "application", "jurisdiction", "trade", "judgment",
+]
+
+# The -ies and -es plurals of the same words.
+[[defined]]
+match = "whole"
+words = [
+    "subsidiaries", "beneficiaries", "entities", "entity", "businesses",
+    "authorities", "territories", "properties", "companies", "agencies",
+]
+
+# Words that qualify a defined term ("Franchised Business", "Selling
+# Jurisdictions", "Named Account", "Declaratory Judgment Action", "other
+# Party", "Uncontested Material Fact").
+[[defined]]
+match = "plural"
+words = [
+    "franchised", "proprietary", "subscription", "selling", "named",
+    "declaratory", "other", "such", "uncontested", "undisputed", "material",
+    "summary", "supplemental", "amended", "def", "pl",
+]
+
+# Documents of a contract or a case: a defined term of them is no
+# organization ("Agency Agreement", "Subscription Agreements"), and an
+# abbreviation defined after a long form of generic words with one of these
+# among them names no one: "Def.'s Statement of Uncontested Material Fact
+# (“DSUMF”)" (guide rule 2, issue #390). A long form with any other word, or
+# a legal form, keeps its abbreviation.
+[[defined]]
+match = "plural"
+document = true
+words = [
+    "agreement", "contract", "statement", "motion", "memorandum", "response",
+    "reply", "brief", "declaration", "affidavit", "complaint", "petition",
+    "opposition", "order", "report", "notice", "exhibit", "schedule", "annex",
+    "fact", "answer", "request", "stipulation", "opinion",
+]
+
 # Common words that name no one alone, though a person may be called so
 # (issue #500, guide rules 1 and 8): pronouns ("He appeals", "It contends"
 # as an organization), the "In" of "In re" and a sentence's "In", and a

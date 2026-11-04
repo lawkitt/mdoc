@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":338,"end":380,"label":"person","score":0.9947798,"text":"Мохова Льва Романовича"},
+    {"start":126,"end":162,"label":"person","score":0.9916195,"text":"Брюн Лидия Игоревна"},
+    {"start":37,"end":62,"label":"organization","score":0.8807971,"text":"ИП Ветлин Н. О."},
+    {"start":200,"end":221,"label":"organization","score":0.8104789,"text":"ООО «Север»"},
+    {"start":544,"end":575,"label":"organization","score":0.72758853,"text":"магазин «Кедрач»"},
+    {"start":435,"end":461,"label":"organization","score":0.66823107,"text":"ИП Ветлину Н.О."},
+    {"start":519,"end":542,"label":"organization","score":0.59561014,"text":"ИП Мохов Л. Р."},
+    {"start":604,"end":611,"label":"organization","score":0.5733798,"text":"ФИО1"},
+    {"start":615,"end":637,"label":"organization","score":0.57170683,"text":"ИП ФИО3 К-Л.М."}
+  ]
+}

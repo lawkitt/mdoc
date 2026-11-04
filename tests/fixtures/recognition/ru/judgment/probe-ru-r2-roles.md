@@ -5,8 +5,7 @@ issue: 385
 kind: judgment
 source: probe-r2
 expect: miss: PERSON "Должник"
-expect: miss: PERSON "Лада Руководитель"
-expect: boundary: gold PERSON "Брюн Лада Игоревна"; proposed PERSON "Лада Игоревна"
+expect: boundary: gold PERSON "Лада Руководитель"; proposed PERSON "Лада"
 ---
 Руководитель: ⟦PERSON|Пахомцева И. В.⟧; Заместитель руководителя; Заместитель главного бухгалтера. В таблице указано: Несовершеннолетний ребенок. Уполномоченный по защите прав предпринимателей направил письмо Руководителю.
 
