@@ -111,8 +111,8 @@ report.
 A TestFlight build of the iOS app ([ADR 0097](adr/0097-ios-testflight-beta.md)).
 Steps in order; an agent does each unless it names the maintainer.
 
-1. **Gate.** Build 1: #576 merged, ROADMAP iOS item 3's device run passing on
-   the iPhone 17 Pro, P17 by hand there on a development build of the same
+1. **Gate.** Build 1: #576 merged, `just ios-device-test` passing on the
+   iPhone 17 Pro, P17 by hand there on a development build of the same
    commit. Later builds: a fix that affects testers (at most weekly) and `just
    ios-device-test` on both phones, detector tier on the 17 Pro and
    below-floor on the 12 Pro.
@@ -130,8 +130,8 @@ Steps in order; an agent does each unless it names the maintainer.
    TestFlight; section 13 of [platform acceptance](platform-acceptance.md)
    goes to `docs/evidence/mobile/<date>/ios.md` (P12 in the iPad Simulator,
    marked "Simulator only", until an iPad run).
-6. **External** (maintainer): once section 13 and ROADMAP iOS item 4 have
-   passed, add the build to the Lawyers group; the first external build of a
+6. **External** (maintainer): once section 13 and the below-floor device
+   run on the iPhone 12 Pro have passed, add the build to the Lawyers group; the first external build of a
    version goes through Beta App Review with the notes below.
 
 **Beta description:**

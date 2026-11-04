@@ -84,29 +84,16 @@ green and leave desktop unchanged. Record:
    (#269, #272, #275–#278) and the
    [TestFlight grill](docs/design/testflight-grill-2026-11-03.md)
    ([ADR 0097](docs/adr/0097-ios-testflight-beta.md)).* The app record
-   exists ("mdoc: private docs for AI"). Left, in order: an iOS PR with the
-   privacy manifests, `ITSAppUsesNonExemptEncryption`, the core commit in
-   Settings › About and the build number from `main`'s commit count; #576
-   and item 3; P17 on the iPhone 17 Pro; the maintainer's Xcode archive of
-   `ios-v0.1.0-rc.1` ([release run](docs/release-run.md#ios-beta-build));
-   section 13 of [platform acceptance](docs/platform-acceptance.md) on that
-   build (Device rows by hand, P12 in the iPad Simulator). External testers
-   wait for item 4. *Done when:* section 13 passes on a TestFlight build.
-3. **[Mobile] Device UI tests on Wi-Fi.** *From the device grill
-   (#295).* `just ios-device-test <udid>` is merged and its review flow
-   passed on the iPhone 17 Pro; the long-jobs test (a real text-recognition
-   download, then 45 s away during Find names) stopped at its Wi-Fi check
-   on 5G. *Done when:* the whole run passes on the iPhone 17 Pro on Wi-Fi.
-4. **[Mobile] Device tests below the floor.** *From the device grill
-   ([ADR 0088](docs/adr/0088-ios-on-real-devices.md)).* The long-jobs test
-   needs the detector tier, so nothing checks a phone below the 8 GB floor:
-   the text-recognition download, a scan and a .docx import that survive
-   leaving the app, the below-floor note where Find names would be (and in
-   Settings), and marking a name by selecting it. *Done when:* `just
-   ios-device-test` runs a below-floor test on the iPhone 12 Pro and it
-   passes, with no new crash report. The test is in #296; on the 12 Pro the
-   runner timed out enabling automation, so turn on Settings → Developer →
-   UI Automation there first.
+   exists ("mdoc: private docs for AI"), the upload's pieces are merged
+   (#578), and `just ios-device-test` passes on the iPhone 17 Pro on
+   cellular and the 12 Pro on Wi-Fi (#583, #584): the maintainer kept the
+   17 Pro on cellular (slow Wi-Fi), so each download path ran on one phone
+   instead of the 17 Pro on Wi-Fi. Left, in order: P17 on the
+   iPhone 17 Pro; the maintainer's Xcode archive of `ios-v0.1.0-rc.1`
+   ([release run](docs/release-run.md#ios-beta-build)); section 13 of
+   [platform acceptance](docs/platform-acceptance.md) on that build (Device
+   rows by hand, P12 in the iPad Simulator). *Done when:* section 13 passes
+   on a TestFlight build.
 
 ## Android 0.1
 

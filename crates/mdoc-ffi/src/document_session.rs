@@ -40,6 +40,10 @@ pub enum JobStage {
 #[uniffi::export(callback_interface)]
 pub trait JobProgress: Send + Sync {
     fn stage(&self, stage: JobStage);
+    /// How far the current stage is: `done` of `total` units (the
+    /// detector's windows while scanning). A phone shows it and passes it
+    /// to the system, which stops a background job that reports none.
+    fn advanced(&self, done: u64, total: u64);
 }
 
 /// How to import a file.
@@ -226,12 +230,17 @@ impl DocumentSession {
         }
         let detections = match &detector {
             Some(paths) => {
-                mdoc_detect::scan_at(
+                mdoc_detect::scan_at_with_progress(
                     &source,
                     &cancel,
                     std::path::Path::new(&paths.model),
                     std::path::Path::new(&paths.onnx),
                     &mdoc_store::settings::PiiConfig::default(),
+                    &|windows| {
+                        if let Some(progress) = &progress {
+                            progress.advanced(windows.done as u64, windows.windows as u64);
+                        }
+                    },
                 )?
                 .0
             }
@@ -621,6 +630,7 @@ mod tests {
                     self.0.import_text("Newer".into(), "Newer".into()).unwrap();
                 }
             }
+            fn advanced(&self, _: u64, _: u64) {}
         }
         let scratch = Scratch::new();
         let path = scratch.path().join("old.md");
