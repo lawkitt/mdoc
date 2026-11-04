@@ -85,8 +85,20 @@ final class DeviceLongJobsUITests: XCTestCase {
         row.tap()
         let progress = app.descendants(matching: .any)["job-progress"].firstMatch
         expect(NSPredicate(format: "label CONTAINS 'Finding names'"), on: progress, timeout: 120)
+        // The bar has a fraction once the first windows are done.
+        expect(NSPredicate(format: "value CONTAINS '%'"), on: progress, timeout: 60)
+        let before = Self.percent(progress)
         try leaveAndReturn(app, seconds: 45, stillWorking: true)
         let primary = app.buttons["primary-action"]
+        // Done as mdoc came back: the bar is gone and Replace shows.
+        let after = progress.exists ? Self.percent(progress) : (primary.label.hasPrefix("Replace") ? 100 : 0)
+        let note = XCTAttachment(string: "Find names: \(before)% before leaving, \(after)% on return after 45 s away")
+        note.name = "background-progress"
+        note.lifetime = .keepAlways
+        add(note)
+        // More than the second or two between coming back and this read
+        // could add, had the job been paused all along (45 s away gave 65).
+        XCTAssertGreaterThan(after, before + 25, "Find names made no progress in the background")
         expect(NSPredicate(format: "label BEGINSWITH 'Replace'"), on: primary, timeout: 180)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "Find names stopped in the background")
     }
@@ -115,6 +127,13 @@ final class DeviceLongJobsUITests: XCTestCase {
         app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1"
         app.launch()
         return app
+    }
+
+    /// The bar's percentage, 0 when it shows none.
+    @MainActor
+    private static func percent(_ progress: XCUIElement) -> Int {
+        let value = (progress.value as? String) ?? ""
+        return Int(value.filter(\.isNumber)) ?? 0
     }
 
     /// Home, `seconds` in the background, and back. The app must still be

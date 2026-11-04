@@ -159,6 +159,12 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   (Data Protection Complete). Its result stays in the session and is saved
   when the phone unlocks or mdoc comes back (`ProtectedData`,
   `Library.saveDeferred`).
+- **Locking the phone pauses a job.** Leaving mdoc does not: the continued
+  processing task keeps Find names going (on the iPhone 17 Pro, 4% to 69%
+  in 45 s away, which `DeviceLongJobsUITests` checks). With the phone
+  locked iOS gives it no time, and it goes on after the unlock. Apple's
+  engineers say iOS may end such tasks on lock; the maintainer accepted
+  the pause for build 1 (2026-11-04).
 - **OCR keeps finished pages.** Recognition imports through
   `import_file_in`, which keeps each recognized page in the core's
   `imports/` folder; after a cancel, or mdoc stopping, Resume recognition
