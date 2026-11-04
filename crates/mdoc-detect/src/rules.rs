@@ -248,6 +248,9 @@ struct SpanEntry {
     strip_end: String,
     #[serde(default)]
     person_before: Vec<String>,
+    /// A lowercase list marker at a line or list break is no initial.
+    #[serde(default)]
+    list_letter: bool,
 }
 
 /// A legal reference or other marker no model span inside is (guide rule 8):
@@ -272,6 +275,13 @@ struct ReferenceEntry {
     /// identify it as the case at hand's decision.
     #[serde(default)]
     own_before: Vec<String>,
+    /// Document evidence for a defined code series. Both this pattern and
+    /// each evidence pattern capture `series`; a range may use `series2`.
+    #[serde(default)]
+    when: Vec<String>,
+    /// Conditional references filter only these categories after fixes.
+    #[serde(default)]
+    categories: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -295,6 +305,7 @@ pub(crate) struct Pack {
     public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
     references: Vec<Regex>,
+    conditional_references: Vec<ConditionalReference>,
     /// Cited cases, references naming their parties: a model span inside
     /// a match goes unless it names a party of the case at hand.
     cases: Vec<Regex>,
@@ -315,6 +326,13 @@ struct Cited {
     range: std::ops::Range<usize>,
     parties: Vec<std::ops::Range<usize>>,
     docket: bool,
+}
+
+/// A defined label is not a name, but its shape alone proves nothing.
+struct ConditionalReference {
+    pattern: Regex,
+    when: Vec<Regex>,
+    categories: Vec<Category>,
 }
 
 /// Where `at` in `text` starts once the emphasis just before it is left
@@ -353,6 +371,7 @@ struct SpanFix {
     /// person's document: "Ostrand Decl." is the declaration of a person
     /// named Ostrand.
     person_before: Vec<String>,
+    list_letter: bool,
 }
 
 impl SpanFix {
@@ -374,6 +393,26 @@ impl SpanFix {
             let tail = text.len() - text.trim_end().len();
             range = range.start + lead..range.end - tail;
             let text = &source[range.clone()];
+            if self.list_letter
+                && let Some((marker, rest)) = text.split_once(char::is_whitespace)
+                && (marker.len() == 2
+                    && marker.as_bytes()[0].is_ascii_lowercase()
+                    && marker.ends_with('.')
+                    || marker.len() == 3
+                        && marker.starts_with('(')
+                        && marker.as_bytes()[1].is_ascii_lowercase()
+                        && marker.ends_with(')'))
+            {
+                let line = source[..range.start]
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or_default();
+                let before = line.trim_matches(|c: char| c.is_whitespace() || "#>*_|-".contains(c));
+                if before.is_empty() || before.ends_with([':', ';', '.', '!', '?', '…']) {
+                    range.start = range.end - rest.len();
+                    continue;
+                }
+            }
             // A phrase at either edge, with a word left beside it: "In re
             // Quill" is "Quill".
             let words: Vec<(usize, &str)> = text
@@ -540,6 +579,7 @@ impl Pack {
             zones: std::collections::HashSet::new(),
             public: std::collections::HashSet::new(),
             references: Vec::new(),
+            conditional_references: Vec::new(),
             cases: Vec::new(),
             party_roles: std::collections::HashSet::new(),
             own_before: Vec::new(),
@@ -847,11 +887,12 @@ impl Pack {
                 let fixes = !entry.trim.is_empty()
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
-                    || !entry.person_before.is_empty();
+                    || !entry.person_before.is_empty()
+                    || entry.list_letter;
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, extend, strip_end or person_before".into(),
+                            "a pattern takes no trim, extend, strip_end, person_before or list_letter".into(),
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
@@ -891,6 +932,11 @@ impl Pack {
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
                 }
+                if entry.list_letter
+                    && !matches!(category, Category::Person | Category::Organization)
+                {
+                    return Err(at("only PERSON or ORG takes list_letter".into()));
+                }
                 // A trim may be a phrase of single-spaced words ("in re").
                 for word in &entry.trim {
                     if word
@@ -926,6 +972,7 @@ impl Pack {
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
+                    list_letter: entry.list_letter,
                 }));
             }
             for (index, entry) in file.url.iter().enumerate() {
@@ -971,6 +1018,53 @@ impl Pack {
             }
             for (index, entry) in file.reference.iter().enumerate() {
                 let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
+                if !entry.when.is_empty() {
+                    if entry.categories.is_empty()
+                        || !entry.roles.is_empty()
+                        || !entry.own_before.is_empty()
+                    {
+                        return Err(at(
+                            "when needs categories and takes no cited-case fields".into()
+                        ));
+                    }
+                    let pattern = with_groups(
+                        &entry.pattern,
+                        &entry.parts,
+                        &["lead", "tail", "series", "series2"],
+                        false,
+                    )
+                    .map_err(at)?;
+                    let when = entry
+                        .when
+                        .iter()
+                        .map(|pattern| {
+                            with_groups(pattern, &entry.parts, &["lead", "tail", "series"], false)
+                                .map_err(at)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if std::iter::once(&pattern).chain(&when).any(|pattern| {
+                        !pattern
+                            .capture_names()
+                            .flatten()
+                            .any(|group| group == "series")
+                    }) {
+                        return Err(at("when and pattern need a series group".into()));
+                    }
+                    let categories = entry
+                        .categories
+                        .iter()
+                        .map(|token| self::category(token).map_err(at))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    pack.conditional_references.push(ConditionalReference {
+                        pattern,
+                        when,
+                        categories,
+                    });
+                    continue;
+                }
+                if !entry.categories.is_empty() {
+                    return Err(at("categories needs when".into()));
+                }
                 let pattern = with_groups(
                     &entry.pattern,
                     &entry.parts,
@@ -1500,6 +1594,70 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        // Before citations, common-name evidence and propagation: a party
+        // code must never become evidence that a real name was mentioned.
+        for reference in &self.conditional_references {
+            let series: std::collections::HashSet<&str> = reference
+                .when
+                .iter()
+                .flat_map(|pattern| pattern.captures_iter(&view.text))
+                .filter(|captures| {
+                    let whole = captures.get(0).expect("group 0 is the match");
+                    // "Claimant C1 Ltd" names a company, not a code.
+                    !whole.as_str().ends_with(|c: char| c.is_ascii_digit())
+                        || !view.text[whole.end()..]
+                            .trim_start_matches(|c: char| c.is_whitespace() || c == ',')
+                            .split_whitespace()
+                            .next()
+                            .is_some_and(|word| self.only_legal_form(word))
+                })
+                .filter_map(|captures| captures.name("series").map(|m| m.as_str()))
+                .collect();
+            if series.is_empty() {
+                continue;
+            }
+            let ranges: Vec<_> = reference
+                .pattern
+                .captures_iter(&view.text)
+                .filter(|captures| {
+                    ["series", "series2"].into_iter().all(|group| {
+                        captures
+                            .name(group)
+                            .is_none_or(|m| series.contains(m.as_str()))
+                    })
+                })
+                .map(|captures| {
+                    let whole = captures.get(0).expect("group 0 is the match");
+                    let start = captures.name("lead").map_or(whole.start(), |m| m.end());
+                    let end = captures.name("tail").map_or(whole.end(), |m| m.start());
+                    start..end.max(start)
+                })
+                .collect();
+            detections.retain_mut(|d| {
+                if !reference.categories.contains(&d.category) {
+                    return true;
+                }
+                let range = view.view_range(d.range.clone());
+                if ranges
+                    .iter()
+                    .any(|found| found.start <= range.start && range.end <= found.end)
+                {
+                    return false;
+                }
+                // A model may include the defining label with its real
+                // name: "Mrs Penrow (C1)" must keep "Penrow" alone.
+                if let Some(found) = ranges.iter().find(|found| {
+                    range.start < found.start
+                        && found.end == range.end
+                        && view.text[(*found).clone()].starts_with('(')
+                        && view.text[(*found).clone()].ends_with(')')
+                }) {
+                    let end = range.start + view.text[range.start..found.start].trim_end().len();
+                    d.range.end = view.source_range(range.start..end).end;
+                }
+                !d.range.is_empty()
+            });
+        }
         let precedents = self.cited_cases(view, detections);
         let abbreviations = self.unnamed_abbreviations(&view.text);
         let named = self.named_words(view, detections);
@@ -5342,6 +5500,222 @@ Privacy Act (“BIPA”). BIPA applies.",
             .collect()
     }
 
+    /// #546: defined party labels disappear before the review propagates
+    /// names, whether the model calls them people or organizations.
+    #[test]
+    fn defined_party_codes_are_not_names() {
+        let source = "The claimants are Ivo Penrow (“C1”) and Edda Brannock (“C2”); \
+            the defendants are Pellam Rooke Ltd (“D1”) and Harrow Ostrand (“D2”).\n\
+            a. C1 sued D1; C1's trustees and D2 replied; D3 – D5 took no part.";
+        for label in ["person", "organization"] {
+            assert_eq!(
+                shown(
+                    source,
+                    &[
+                        ("Ivo Penrow", "person"),
+                        ("Edda Brannock", "person"),
+                        ("Pellam Rooke Ltd", "organization"),
+                        ("Harrow Ostrand", "person"),
+                        ("C1", label),
+                        ("C2", label),
+                        ("D1", label),
+                        ("D2", label),
+                        ("a. C1", label),
+                        ("C1's trustees", label),
+                        ("D3 – D5", label),
+                    ]
+                ),
+                pairs(&[
+                    ("Ivo Penrow", "PERSON"),
+                    ("Edda Brannock", "PERSON"),
+                    ("Pellam Rooke Ltd", "ORG"),
+                    ("Harrow Ostrand", "PERSON")
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn party_code_definitions_keep_the_real_name_and_cover_each_series() {
+        for (role, code, next) in [
+            ("Claimant", "C1", "C12"),
+            ("Defendant", "D1", "D12"),
+            ("Plaintiff", "P1", "P12"),
+            ("Respondent", "R1", "R12"),
+        ] {
+            for definition in [
+                format!("Mrs Penrow ({code})"),
+                format!("Pellam Ltd (\"{code}\", as appropriate)"),
+                format!("{role}: {code}"),
+                format!("{code} – {role}"),
+            ] {
+                let source = format!("{definition}. {next}; {next}’s trustees.\nc. {next}");
+                assert_eq!(
+                    shown(
+                        &source,
+                        &[
+                            (code, "person"),
+                            (next, "organization"),
+                            (&format!("{next}’s trustees"), "organization"),
+                            (&format!("c. {next}"), "person")
+                        ]
+                    ),
+                    []
+                );
+            }
+        }
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) called C1.",
+                &[("Mrs Penrow", "person"), ("C1", "person")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) called C1.",
+                &[("Mrs Penrow (C1)", "person")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Pellam Ltd (“D1”) sued D1.",
+                &[("Pellam Ltd (“D1”)", "organization")]
+            ),
+            pairs(&[("Pellam Ltd", "ORG")])
+        );
+    }
+
+    /// Uncertain labels, short real names, other code series and real
+    /// identifiers stay: the cost of losing a real value is higher.
+    #[test]
+    fn unexplained_codes_and_names_beside_party_codes_stay() {
+        for source in [
+            "C1 met D12 and R2.",
+            "The claimant is C1 Ltd.",
+            "Penrow (C100) called C1.",
+            "The product C1 arrived.",
+            "Claimant C1 Ltd called C1.",
+            "Defendant C1, Inc called C1.",
+        ] {
+            assert!(
+                shown(source, &[("C1", "organization")])
+                    .iter()
+                    .any(|(text, _)| text == "C1" || text == "C1 Ltd"),
+                "{source}"
+            );
+        }
+        let source = "Mrs Penrow (C1). D1 met R2; C100 and C1A attended with C1 Penrow. \
+            Staff ID: C123. C1's trustee Ivo Penrow replied.\nМ1. О1.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("D1", "person"),
+                    ("R2", "organization"),
+                    ("C100", "organization"),
+                    ("C1A", "organization"),
+                    ("C1 Penrow", "person"),
+                    ("C1's trustee Ivo Penrow", "person"),
+                    ("М1", "person"),
+                    ("О1", "person")
+                ]
+            ),
+            pairs(&[
+                ("D1", "PERSON"),
+                ("R2", "ORG"),
+                ("C100", "ORG"),
+                ("C1A", "ORG"),
+                ("C1 Penrow", "PERSON"),
+                ("C123", "IDENTITY"),
+                ("C1's trustee Ivo Penrow", "PERSON"),
+                ("М1", "PERSON"),
+                ("О1", "PERSON")
+            ])
+        );
+        // A range with a series that was never established is uncertain.
+        assert_eq!(
+            shown("Claimant C1: C3 – R5.", &[("C3 – R5", "organization")]),
+            pairs(&[("C3 – R5", "ORG")])
+        );
+    }
+
+    #[test]
+    fn list_letters_come_off_names_only_at_list_breaks() {
+        let source = "a. Penrow represents and warrants; b. Brannock will attend; \
+            d. Quillon Media Inc agrees to defend.\n(c) Ostrand replied.\ni. Larkfield replied.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("a. Penrow", "person"),
+                    ("b. Brannock", "person"),
+                    ("d. Quillon Media Inc", "organization"),
+                    ("(c) Ostrand", "person"),
+                    ("i. Larkfield", "person")
+                ]
+            ),
+            pairs(&[
+                ("Penrow", "PERSON"),
+                ("Brannock", "PERSON"),
+                ("Quillon Media Inc", "ORG"),
+                ("Ostrand", "PERSON"),
+                ("Larkfield", "PERSON")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "A. Penrow met J. R. Ostrand and van Hoorn.",
+                &[
+                    ("A. Penrow", "person"),
+                    ("J. R. Ostrand", "person"),
+                    ("van Hoorn", "person")
+                ]
+            ),
+            pairs(&[
+                ("A. Penrow", "PERSON"),
+                ("J. R. Ostrand", "PERSON"),
+                ("van Hoorn", "PERSON")
+            ])
+        );
+        assert_eq!(
+            fixed(
+                "Met a. Penrow yesterday.",
+                &[("a. Penrow", Category::Person)]
+            ),
+            ["a. Penrow"]
+        );
+        assert_eq!(
+            fixed("  a. Penrow  ", &[("  a. Penrow  ", Category::Person)]),
+            ["Penrow"]
+        );
+    }
+
+    #[test]
+    fn party_codes_use_the_decoded_document_and_keep_other_categories() {
+        let source = "Mrs Penrow (&ldquo;C1&rdquo;).\n(a) C1’s trustees; C3—C5; staff C1.";
+        assert_eq!(
+            shown(
+                source,
+                &[("(a) C1’s trustees", "organization"), ("C3—C5", "person")]
+            ),
+            []
+        );
+        let raw = [crate::RawEntity {
+            start: source.rfind("C1").unwrap(),
+            end: source.rfind("C1").unwrap() + 2,
+            label: "national_id_number".into(),
+            score: 0.8,
+            text: "C1".into(),
+        }];
+        assert!(
+            crate::correct(source, &raw)
+                .iter()
+                .any(|d| d.category == Category::Identity)
+        );
+    }
+
     /// US and UK citations are no identifiers, addresses or names: reporter,
     /// Westlaw and law-report citations, codes and their abbreviations,
     /// sections, the record and a form's outline letter (guide rule 8,
@@ -7057,6 +7431,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "punctuation only",
             ),
             ("[[span]]\ncategory = \"ORG\"\nextend = ['(']", "span #1"),
+            (
+                "[[span]]\ncategory = \"BANK\"\nlist_letter = true",
+                "only PERSON or ORG",
+            ),
             ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nparts = { street = 'x' }",
@@ -7105,6 +7483,22 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[reference]]\npattern = 'x*'",
                 "reference #1: the pattern matches an empty span",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\ncategories = ['PERSON']",
+                "categories needs when",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\nwhen = ['x']",
+                "when needs categories",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\nwhen = ['x']\ncategories = ['PERSON']",
+                "need a series group",
+            ),
+            (
+                "[[reference]]\npattern = '(?P<series>C)'\nwhen = ['(?P<series>C)']\ncategories = ['NAME']",
+                "unknown category",
             ),
             (
                 "[[reference]]\npattern = '\\d+'\nparts = { code = 'x' }",
