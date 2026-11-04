@@ -32,7 +32,8 @@ commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
 Restore extension and both embedded frameworks carry a
 `PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
 APIs they call); `Info.plist` answers export compliance
-(`ITSAppUsesNonExemptEncryption`: the core's AES-GCM cases).
+(`ITSAppUsesNonExemptEncryption` NO: the core's AES-GCM is a standard
+algorithm, and off the App Store in France it needs no documentation).
 
 ## On a phone
 
