@@ -91,7 +91,7 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
 
   # status.txt while the queue cannot be read, then once it can.
   # shellcheck disable=SC2034 # read by write_status
-  out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed=''
+  out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''
   mkdir -p "$out"
   # shellcheck disable=SC2034
   offline_since=1 offline_at=2026-11-04T02:29:00Z offline_why="could not list the queue on GitHub"
@@ -425,6 +425,21 @@ check "and the oldest commit's status says so, once" \
 check "as does status.txt" grep -q "^waiting: .* GB free; a job starts at 100000000 GB" "$LOCAL_CI_HOME/out/queue-disk/status.txt"
 check "a stopped runner releases its lock" [ ! -e "$dhome/state/lock" ]
 
+# --- a lone commit whose PR cannot be read at first ------------------------------
+
+# Nothing else keeps the runner polling: `once` must not take the queue for
+# empty while the commit waits to be settled again.
+: >"$FAKE/just.log"
+lone=$(prefix=lone/main/ qc 16 lone src/lib.rs)
+echo "16 User false" >>"$FAKE/prs.tsv"
+echo 2 >"$FAKE/pr-down-16"
+lhome=$LOCAL_CI_HOME/queue-lone
+git clone --quiet "$FAKE_ORIGIN" "$lhome/mdoc"
+QUEUE_CI_HOME=$lhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-lone QUEUE_CI_PREFIXES=lone/main/ \
+  run_once windows "$tmp/lone.log"
+check "a lone commit whose PR read fails is built once it can be read" has "$lone" "$W" "success	Passed in *"
+check "after the runner said it was retrying" grep -q "${lone:0:7} .*could not read #16" "$tmp/lone.log"
+
 # --- self-update --------------------------------------------------------------------
 
 # A newer copy of the runner reaches main while a job runs: the installed
@@ -470,7 +485,7 @@ check "which does not run the job again" [ "$(grep -c "^bump lint" "$FAKE/just.l
 ) || failures=$((failures + $?))
 
 if [ "$failures" -gt 0 ]; then
-  for f in windows android disk update; do
+  for f in windows android disk lone update; do
     echo "--- $f runner log" >&2
     cat "$tmp/$f.log" >&2 2>/dev/null || true
   done

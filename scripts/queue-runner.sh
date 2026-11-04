@@ -251,6 +251,7 @@ settle() { # branch sha
       ;;
     2)
       log "warning: $(short "$sha") $branch: $third_why; retrying at the next poll"
+      unsettled+="${unsettled:+, }$(short "$sha") ($third_why)"
       return 0
       ;;
   esac
@@ -274,7 +275,7 @@ poll() {
     return 1
   fi
   [ -z "$offline_since" ] || log "GitHub reachable again after $(duration $(($(date +%s) - offline_since)))"
-  offline_since='' offline_why=''
+  offline_since='' offline_why='' unsettled=''
   listed=$listing
   polled=true
   [ -z "$run_pid" ] || is_listed "$run_sha" || stop_dropped
@@ -290,6 +291,7 @@ poll() {
     if ! fetch "+refs/heads/$branch:refs/queue-ci/c/$sha" ||
       [ "$(g rev-parse "refs/queue-ci/c/$sha")" != "$sha" ]; then
       log "warning: could not fetch $branch at $(short "$sha")"
+      unsettled+="${unsettled:+, }$(short "$sha") (could not fetch it)"
       continue
     fi
     settle "$branch" "$sha"
@@ -618,6 +620,7 @@ write_status() {
       echo "queue: ${q:-empty}"
     fi
     [ -z "$waiting" ] || echo "waiting: $waiting"
+    [ -z "$unsettled" ] || echo "retrying: $unsettled"
     [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@$(short "$update_failed")"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
@@ -678,7 +681,7 @@ cmd_run() { # run|once
   log "runner started: $context for $repo ($prefixes), checkout $checkout, copy in $runner_dir"
   kill_stale_job
   queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
-  waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why=''
+  waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why='' unsettled=''
   prune_out
   while :; do
     [ -z "$run_pid" ] || check_job
@@ -691,7 +694,10 @@ cmd_run() { # run|once
       fi
     fi
     write_status
-    if [ "$mode" = once ] && $polled && [ -z "$run_pid" ] && [ "$next_poll" != 0 ] && [ -z "$queued" ]; then
+    # Not while a commit waits to be settled again or GitHub cannot be read:
+    # the queue is not known to be empty.
+    if [ "$mode" = once ] && $polled && [ -z "$run_pid" ] && [ "$next_poll" != 0 ] && [ -z "$queued" ] &&
+      [ -z "$unsettled" ] && [ -z "$offline_since" ]; then
       log "queue empty"
       return 0
     fi
