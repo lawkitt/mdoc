@@ -457,7 +457,7 @@ pattern = '(?P<lead>\b(?:ФИО[\p{Zs}\t]?\d{1,3}|(?:[Пп]отерпевш|[С�
 # (item 8). A placeholder («ИП ФИО1») is dropped above.
 [[shape]]
 category = "ORG"
-forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*))[\s\p{P}]*$']
+forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*))[\s\p{P}]*$']
 
 # The name after the status of an individual entrepreneur is PERSON alone
 # («Ветлин Н. О.» in «ИП Ветлин Н. О.», «Брюн Лидия Игоревна» in
@@ -465,23 +465,25 @@ forbid = ['^[\s\p{P}]*(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:и
 # «ИП Ветлину Н.О.»), whether the model took the status with the name, as
 # an organization (with or without the status), or not at all (issue #562).
 # Surname and initials, initials and surname, surname, name and patronymic,
-# or name, patronymic
-# and surname, in title case or capitals; a missed real name leaks, an extra
-# mark costs one untick. An ORG exactly on the name yields to this PERSON.
+# or name, patronymic and surname, in any case form («Моховым Ильёй
+# Ильичом»), each word in title case or capitals («МОХОВ Лев Романович»);
+# a missed real name leaks, an extra mark costs one untick. An ORG exactly
+# on the name yields to this PERSON.
 [[span]]
 category = "PERSON"
 pattern = '(?P<lead>{lead})(?:{name})(?P<tail>[^\p{Alphabetic}]|$)'
 parts.lead = '(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+'
-parts.name = '(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)'
+parts.name = '(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)'
 absorbs.ORG = '(?P<span>{name})$'
 
 # The status of an individual entrepreneur stays outside a person's span:
 # the model's «ИП Мохов Л. Р.» as a person is «Мохов Л. Р.», and so is
-# «индивидуального предпринимателя Мохова Л. Р.» (issue #562). Only the
-# uppercase abbreviation at the start is status: «Ип Ман» keeps its surname.
+# «индивидуального предпринимателя Мохова Л. Р.» (issue #562), with up to
+# three lowercase words before it («об индивидуальном предпринимателе …»).
+# Only the uppercase abbreviation is status: «Ип Ман» keeps its surname.
 [[span]]
 category = "PERSON"
-trim_start = ['(?:ИП|(?i:индивидуальн(?:ый|ого|ому|ым|ом)[\p{Zs}\t]+предпринимател(?:ь|я|ю|ем|е)))[\p{Zs}\t]+']
+trim_start = ['(?:\p{Ll}[\p{Alphabetic}-]*[\p{Zs}\t]+){0,3}(?:ИП|(?i:индивидуальн(?:ый|ого|ому|ым|ом)[\p{Zs}\t]+предпринимател(?:ь|я|ю|ем|е)))[\p{Zs}\t]+']
 
 # The same placeholder as an identity document: its digit is no number.
 [[shape]]
