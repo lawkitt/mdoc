@@ -1,9 +1,10 @@
 ---
-status: pass
-flaw: party-code-as-name
+status: known-flaw
+flaw: party-code-as-name person-as-org
 issue: 546
 kind: judgment
 source: probe-r2
+expect: boundary: gold PERSON "Harrow Ostrand"; proposed ORG "Harrow Ostrand"
 ---
 The claimants are ⟦PERSON|Ivo Penrow⟧ (“C1”) and ⟦PERSON|Edda Brannock⟧ (“C2”); the defendants are ⟦ORG|Pellam Rooke Ltd⟧ (“D1”) and ⟦PERSON|Harrow Ostrand⟧ (“D2”).
 
