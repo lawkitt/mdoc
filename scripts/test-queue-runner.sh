@@ -164,7 +164,16 @@ case "$behavior $1" in
     echo "        FAIL [   0.020s] mdoc workspace::tests::flaky"
     exit 100
     ;;
-  "beat test") sleep 10 ;;
+  # Runs until the runner has refreshed its pending status once (or 25 s,
+  # under the 30 s limit): a fixed sleep raced the runner's polls, which
+  # take seconds each on Windows beside nextest (#532, #585).
+  "beat test")
+    sha=$(git rev-parse HEAD)
+    for _ in $(seq 1 25); do
+      [ "$(awk -F'\t' -v h="$sha" '$1 == h && index($4, "Running just test (") == 1' "$FAKE/statuses.tsv" | wc -l)" -lt 2 ] || break
+      sleep 1
+    done
+    ;;
   "slow test")
     touch "$FAKE/stall"
     sleep 60
