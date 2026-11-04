@@ -20,6 +20,21 @@ They need Xcode with the iOS 26.1 platform. Both build the core first
 `target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
 Simulator builds exclude x86_64.
 
+`just ios-core` also writes `target/ios/Build.xcconfig`
+(`scripts/ios-build-info.sh`), which `Config/Build.xcconfig` includes: the
+build number is the number of commits up to HEAD and `MdocCoreCommit` in
+Info.plist is HEAD, which Settings › About shows and links. Without it a
+build is number 1 from an unknown commit. A shallow clone has too few
+commits to count: it warns, and fails with `MDOC_REQUIRE_FULL_HISTORY=1`,
+which every TestFlight build sets. A TestFlight build is a tagged `main`
+commit ([ADR 0097](../../docs/adr/0097-ios-testflight-beta.md),
+[release run](../../docs/release-run.md#ios-beta-build)). The app, the
+Restore extension and both embedded frameworks carry a
+`PrivacyInfo.xcprivacy` (no tracking, no collected data, the required-reason
+APIs they call); `Info.plist` answers export compliance
+(`ITSAppUsesNonExemptEncryption` NO: the core's AES-GCM is a standard
+algorithm, and off the App Store in France it needs no documentation).
+
 ## On a phone
 
 The project signs with the maintainer's team (`DEVELOPMENT_TEAM =
@@ -46,7 +61,13 @@ phone with `ppq.apple.com` reachable before iOS lets it launch.
 The Simulator refuses `BGContinuedProcessingTask`, so only a phone runs a
 long job through the real background task ([ADR 0088](../../docs/adr/0088-ios-on-real-devices.md)).
 Before every TestFlight build after the first, with the phone connected,
-unlocked, on Wi-Fi, and with UI Automation on (Settings → Developer):
+unlocked, online, and with UI Automation on (Settings → Developer). On
+cellular (or a hotspot) the tests answer Use cellular when mdoc asks, and
+whenever a download waits for Wi-Fi, so a phone can switch networks during a
+run. Each run downloads text recognition (18 MB). At the detector tier the
+test library clones the name detector from the phone's own mdoc library when
+that has it (no copy, no space); otherwise the first run downloads it (about
+630 MB, over the data plan on cellular) and later runs keep it:
 
 ```sh
 just ios-device-test <hardware UDID>
@@ -62,20 +83,20 @@ pages it renders (`scripts/ios-scan-pages.swift`), in
 `Library/mdoc-ui-fixtures` of the app's container: the UI-testing seed reads
 a fixture there when its Mac path does not exist. The long-jobs test runs
 at the detector tier with real downloads: the scan's Download & continue
-fetches text recognition on Wi-Fi and recognizes the pages while the test
+fetches text recognition and recognizes the pages while the test
 leaves the app for ten seconds, and Find names underlines the tenant. Find
 names on the legal opinion takes over a minute; the test leaves for 45 s,
 past the grace iOS gives without a continued processing task, and mdoc must
 still be running (not suspended) and finish the job. The text PDF comes in
-last. The first run also downloads the name detector, which later runs
-keep; it skips on the Simulator.
+last. The name detector comes from the phone's own library or, the first
+time, a download, as above; the test skips on the Simulator.
 
 The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
 every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
 `DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
 UI tests take the tier from a stand-in memory size. Below the floor, Settings
 says the phone cannot find names and Home has no setup card; the scan's
-Download & continue fetches text recognition on Wi-Fi and recognizes the pages
+Download & continue fetches text recognition and recognizes the pages
 while the test leaves for ten seconds; where Find names would be, the
 document says so; a word selected and replaced as a person becomes
 `PERSON_1`, and the text shares. Then the legal opinion comes in (in about
@@ -131,7 +152,20 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   with markers dimmed and candidates on top.
 - **One long job at a time**, with progress and cancel. iOS 26 keeps it
   running in the background through `BGContinuedProcessingTask`; earlier
-  versions get the short grace, then cancel and offer to resume.
+  versions get the short grace, then cancel and offer to resume. The job
+  reports a fraction (the detector's windows, recognition's pages), since
+  iOS stops a continued task that shows no progress. While a document's job
+  runs, its review waits: a Replace would make the core throw the scan away.
+- **A job that ends while the phone is locked** cannot write the library
+  (Data Protection Complete). Its result stays in the session and is saved
+  when the phone unlocks or mdoc comes back (`ProtectedData`,
+  `Library.saveDeferred`).
+- **Locking the phone pauses a job.** Leaving mdoc does not: the continued
+  processing task keeps Find names going (on the iPhone 17 Pro, 4% to 69%
+  in 45 s away, which `DeviceLongJobsUITests` checks). With the phone
+  locked iOS gives it no time, and it goes on after the unlock. Apple's
+  engineers say iOS may end such tasks on lock; the maintainer accepted
+  the pause for build 1 (2026-11-04).
 - **OCR keeps finished pages.** Recognition imports through
   `import_file_in`, which keeps each recognized page in the core's
   `imports/` folder; after a cancel, or mdoc stopping, Resume recognition

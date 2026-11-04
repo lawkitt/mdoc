@@ -88,6 +88,20 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   check "then the oldest folder while the output is over its size" [ ! -e "$out/a" ]
   check "and no more" eval '[ -d "$out/b" ] && [ -d "$out/c" ] && [ -f "$out/status.txt" ]'
   check "each deletion is logged" [ "$(grep -c '^.* deleting ' "$tmp/prune.log")" = 2 ]
+
+  # status.txt while the queue cannot be read, then once it can.
+  # shellcheck disable=SC2034 # read by write_status
+  out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''
+  mkdir -p "$out"
+  # shellcheck disable=SC2034
+  offline_since=1 offline_at=2026-11-04T02:29:00Z offline_why="could not list the queue on GitHub"
+  write_status
+  check "an unreadable queue is not shown as empty" grep -q "^queue: unknown (nothing known)" "$out/status.txt"
+  check "status.txt says since when GitHub cannot be read" \
+    grep -q "^offline: could not list the queue on GitHub since 2026-11-04T02:29:00Z; no status can be posted" "$out/status.txt"
+  offline_since=''
+  write_status
+  check "and stops once it can" eval 'grep -q "^queue: empty" "$out/status.txt" && ! grep -q "^offline:" "$out/status.txt"'
   exit "$failures"
 ) || failures=$((failures + $?))
 
@@ -135,6 +149,13 @@ case "$1" in
     git --git-dir="$FAKE_ORIGIN" for-each-ref --format='%(refname:lstrip=2) %(objectname)' "refs/heads/${p%/}"
     ;;
   */pulls/*)
+    # GitHub cannot be reached for this PR the first $(cat pr-down-N) reads.
+    down=$FAKE/pr-down-${1##*/}
+    if [ -s "$down" ] && [ "$(cat "$down")" -gt 0 ]; then
+      echo $(($(cat "$down") - 1)) >"$down"
+      echo "error connecting to api.github.com" >&2
+      exit 1
+    fi
     awk -v n="${1##*/}" '$1 == n { print $2, $3; found = 1 } END { exit !found }' "$FAKE/prs.tsv" ||
       { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     ;;
@@ -164,19 +185,28 @@ case "$behavior $1" in
     echo "        FAIL [   0.020s] mdoc workspace::tests::flaky"
     exit 100
     ;;
-  "beat test") sleep 10 ;;
+  # Runs until the runner has refreshed its pending status once (or 50 s,
+  # under the 60 s limit): a fixed sleep raced the runner's polls, which
+  # take seconds each on Windows beside nextest (#532, #585).
+  "beat test")
+    sha=$(git rev-parse HEAD)
+    for _ in $(seq 1 50); do
+      [ "$(awk -F'\t' -v h="$sha" '$1 == h && index($4, "Running just test (") == 1' "$FAKE/statuses.tsv" | wc -l)" -lt 2 ] || break
+      sleep 1
+    done
+    ;;
   "slow test")
     touch "$FAKE/stall"
-    sleep 60
+    sleep 120
     ;;
   "vanish lint")
     drop_branch
-    sleep 60
+    sleep 120
     ;;
   "merged lint")
     git --git-dir="$FAKE_ORIGIN" update-ref refs/heads/main "$(git rev-parse HEAD)"
     drop_branch
-    sleep 60
+    sleep 120
     ;;
   # A new runner reaches main while this job runs.
   "bump lint") git --git-dir="$FAKE_ORIGIN" update-ref refs/heads/main "$(cat "$FAKE/next-main")" ;;
@@ -249,8 +279,11 @@ vanish=$(qc 10 vanish src/lib.rs)
 toolchain=$(qc 11 toolchain rust-toolchain.toml src/lib.rs)
 merged=$(qc 12 merged src/lib.rs)
 flake=$(qc 14 setupflake src/lib.rs)
+# Its PR cannot be read at first: GitHub is unreachable for two reads.
+unread=$(qc 15 unread src/lib.rs)
+echo 2 >"$FAKE/pr-down-15"
 {
-  for n in 1 2 3 7 8 9 10 11 12 14; do echo "$n User false"; done
+  for n in 1 2 3 7 8 9 10 11 12 14 15; do echo "$n User false"; done
   echo "4 User true"
   echo "5 Bot false"
 } >"$FAKE/prs.tsv"
@@ -258,10 +291,11 @@ flake=$(qc 14 setupflake src/lib.rs)
 # --- the Windows job --------------------------------------------------------------
 
 export LOCAL_CI_HOME="$tmp/ci" LOCAL_CI_URL=https://ci.example/ci QUEUE_CI_REPO=example/mdoc
-# A 30 s job limit: room for the 10 s heartbeat job while just test runs this
-# beside nextest (scripts/test.sh), where one poll of the runner takes up to
-# 4 s on Windows (Git Bash); the slow one sleeps 60 s.
-export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=30 QUEUE_CI_MIN_FREE_GB=0
+# A 60 s job limit, for the whole job: on the PC beside nextest (scripts/test.sh)
+# the heartbeat job's checkout, setup and lint took 16 s and its refreshed
+# status came 12 s after the first (c066ec0, #585), so 30 s left too little.
+# The slow, dropped and merged ones sleep 120 s, past it.
+export QUEUE_CI_POLL=1 QUEUE_CI_TICK=1 QUEUE_CI_HEARTBEAT=1 QUEUE_CI_TIMEOUT=60 QUEUE_CI_MIN_FREE_GB=0
 # A stalled gh call ends after 3 s (the fake stalls for 30).
 export QUEUE_CI_NET_TIMEOUT=3
 export CARGO_TARGET_DIR="$tmp/shared-target"
@@ -322,15 +356,20 @@ for c in "$fork" "$bot" "$unknown"; do
 done
 check "nor a build" [ -z "$(ran fork)$(ran bot)$(ran unknown)" ]
 check "and is logged" [ "$(grep -c 'third-party code' "$tmp/windows.log")" = 3 ]
+check "a PR GitHub cannot be read for is retried at the next poll" \
+  grep -q "${unread:0:7} .*could not read #15: error connecting to api.github.com; retrying at the next poll" "$tmp/windows.log"
+check "not taken for third-party code" not grep -q "${unread:0:7} .*third-party code" "$tmp/windows.log"
+check "and is built once it can be read" has "$unread" "$W" "success	Passed in *"
 check "a failing test fails, naming the step and the tests" \
   has "$fail" "$W" "failure	Failed in just test: mdoc* and 1 more	https://ci.example/ci/queue-windows/${fail:0:7}/"
 check "which are listed in the run folder" [ "$(wc -l <"$wout/${fail:0:7}/failed-tests.txt" | tr -d ' ')" = 2 ]
 check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
-check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 0m30s	*"
+check "a job over its limit is killed and times out" has "$slow" "$W" "failure	Timed out in just test after 1m00s	*"
 check "a stalled gh call during it is ended, and the next poll goes on" \
   grep -q "warning: could not list the queue" "$tmp/windows.log"
+check "the next poll that reads GitHub says it is back" grep -q "GitHub reachable again after " "$tmp/windows.log"
 check "a setup that fails once is retried, logged" eval '[ "$(ran setupflake)" = "setup setup lint test " ] &&
   grep -q "^scripts/setup.sh: failed once; retried" "$wout/${flake:0:7}/summary.txt"'
 check "and the job passes" has "$flake" "$W" "success	Passed in *"
@@ -374,6 +413,36 @@ check "a core change runs it" has "$toolchain" "$A" "success	Passed in *"
 check "the Android runner posts no ci/windows status" [ "$(grep -c "	$W	" "$FAKE/statuses.tsv")" = "$wposts" ]
 check "nor builds the desktop commits" [ -z "$(ran pass)$(ran fail)" ]
 
+# --- files a stopped job still holds ----------------------------------------------
+
+# The checkout cannot clean at first (on Windows, a killed Gradle's open
+# files; a git that fails `clean` once stands in): the job waits, retries
+# once, and runs.
+: >"$FAKE/just.log"
+held=$(prefix=held/main/ qc 17 held src/lib.rs)
+echo "17 User false" >>"$FAKE/prs.tsv"
+hhome=$LOCAL_CI_HOME/queue-held
+git clone --quiet "$FAKE_ORIGIN" "$hhome/mdoc"
+mkdir -p "$hhome/mdoc/held" "$tmp/heldbin"
+echo lock >"$hhome/mdoc/held/file.lock"
+touch "$FAKE/held"
+cat >"$tmp/heldbin/git" <<GIT
+#!/usr/bin/env bash
+if [ "\${1:-}" = clean ] && [ -e "$FAKE/held" ]; then
+  rm -f "$FAKE/held"
+  echo "warning: failed to remove held/file.lock: Invalid argument" >&2
+  exit 1
+fi
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$tmp/heldbin/git"
+PATH="$tmp/heldbin:$PATH" QUEUE_CI_HOME=$hhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-held QUEUE_CI_PREFIXES=held/main/ \
+  QUEUE_CI_CLEAN_WAIT=1 run_once windows "$tmp/held.log"
+check "a checkout that cannot clean at first is retried once, logged" \
+  grep -q "^checkout: failed once; retried" "$LOCAL_CI_HOME/out/queue-held/${held:0:7}/summary.txt"
+check "and the job runs" has "$held" "$W" "success	Passed in *"
+check "with the folder gone" [ ! -e "$hhome/mdoc/held" ]
+
 # --- the disk floor ----------------------------------------------------------------
 
 : >"$FAKE/just.log"
@@ -395,6 +464,21 @@ check "and the oldest commit's status says so, once" \
   [ "$(grep -c "^$pass	$W	pending	Waiting for disk space: [0-9]* GB free; a job starts at 100000000 GB	https://ci.example/ci/queue-windows/status.txt" "$FAKE/statuses.tsv")" = 1 ]
 check "as does status.txt" grep -q "^waiting: .* GB free; a job starts at 100000000 GB" "$LOCAL_CI_HOME/out/queue-disk/status.txt"
 check "a stopped runner releases its lock" [ ! -e "$dhome/state/lock" ]
+
+# --- a lone commit whose PR cannot be read at first ------------------------------
+
+# Nothing else keeps the runner polling: `once` must not take the queue for
+# empty while the commit waits to be settled again.
+: >"$FAKE/just.log"
+lone=$(prefix=lone/main/ qc 16 lone src/lib.rs)
+echo "16 User false" >>"$FAKE/prs.tsv"
+echo 2 >"$FAKE/pr-down-16"
+lhome=$LOCAL_CI_HOME/queue-lone
+git clone --quiet "$FAKE_ORIGIN" "$lhome/mdoc"
+QUEUE_CI_HOME=$lhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-lone QUEUE_CI_PREFIXES=lone/main/ \
+  run_once windows "$tmp/lone.log"
+check "a lone commit whose PR read fails is built once it can be read" has "$lone" "$W" "success	Passed in *"
+check "after the runner said it was retrying" grep -q "${lone:0:7} .*could not read #16" "$tmp/lone.log"
 
 # --- self-update --------------------------------------------------------------------
 
@@ -441,7 +525,7 @@ check "which does not run the job again" [ "$(grep -c "^bump lint" "$FAKE/just.l
 ) || failures=$((failures + $?))
 
 if [ "$failures" -gt 0 ]; then
-  for f in windows android disk update; do
+  for f in windows android disk lone held update; do
     echo "--- $f runner log" >&2
     cat "$tmp/$f.log" >&2 2>/dev/null || true
   done

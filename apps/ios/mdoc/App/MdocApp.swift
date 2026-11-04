@@ -14,10 +14,17 @@ struct MdocApp: App {
                     // "Open in mdoc" from the share sheet's app row.
                     app.receiveFile(url)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+                    app.saveDeferred()
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             app = app.reopened(isActive: phase == .active) {
                 AppModel.live(downloader: AppDelegate.downloader)
+            }
+            // The unlock's notification can come while mdoc is suspended.
+            if phase == .active {
+                app.saveDeferred()
             }
         }
     }
@@ -36,7 +43,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         // Downloads reconnect whether or not the core can open yet.
         Self.downloader.resumeSessions()
+        ProtectedData.isAvailable = application.isProtectedDataAvailable
         return true
+    }
+
+    func applicationProtectedDataWillBecomeUnavailable(_ application: UIApplication) {
+        ProtectedData.isAvailable = false
+    }
+
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        ProtectedData.isAvailable = true
     }
 
     func application(

@@ -77,6 +77,33 @@ slice() {
 </dict>
 </plist>
 PLIST
+  # PDFium reads files' metadata with stat and fstat, a required-reason API
+  # (ADR 0097): its own files, inside mdoc's containers.
+  cat >"$stage/pdfium.framework/PrivacyInfo.xcprivacy" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
+PLIST
 }
 
 slice aarch64-apple-ios ios-arm64 pdfium-ios-device-arm64.tgz "$pdfium_device_sha"
@@ -102,4 +129,5 @@ xcodebuild -create-xcframework \
 mkdir -p "$out/licenses"
 cp "$deps/onnxruntime/LICENSE" "$out/licenses/onnxruntime-LICENSE"
 cp -R "$out/stage/aarch64-apple-ios/pdfium/licenses" "$out/licenses/pdfium"
+scripts/ios-build-info.sh
 echo "$out/MdocCore.xcframework"

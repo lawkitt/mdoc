@@ -4,8 +4,8 @@ import XCTest
 /// cannot cover: it needs the detector tier. Below the floor mdoc still
 /// reads, recognizes and lets you mark. Settings and the document say the
 /// phone cannot find names, and Home has no setup card; a camera scan
-/// downloads text recognition for real on Wi-Fi and is recognized while
-/// mdoc leaves the screen; selecting a word marks it and the text shares;
+/// downloads text recognition for real (on cellular, the test answers Use
+/// cellular) and is recognized while mdoc leaves the screen; selecting a word marks it and the text shares;
 /// the 37-page .docx comes in and is whole after mdoc is away. Every job
 /// goes through the real background task, which the Simulator refuses, so this skips there.
 /// `just ios-device-test <udid>` runs it on a phone below the floor (or with
@@ -35,10 +35,14 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let settings = app.buttons["settings-button"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists, "a setup card on Home below the floor")
-        settings.tap()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 10),
-            "Settings does not say the phone cannot find names")
+        // iOS's banner for the background job the seed starts can cover the
+        // button for a few seconds after launch; tap until Settings opens.
+        let note = app.descendants(matching: .any)["below-floor-note"].firstMatch
+        for _ in 0..<4 where !note.exists {
+            settings.tap()
+            _ = note.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(note.exists, "Settings does not say the phone cannot find names")
         app.buttons["Done"].firstMatch.tap()
 
         let row = Self.row(app, title: MdocUITest.deviceScanTitle)
@@ -48,14 +52,13 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let download = app.buttons["setup-download"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 30), "no text recognition setup in the scan")
         download.tap()
-        if app.buttons["Use cellular"].firstMatch.waitForExistence(timeout: 3) {
-            XCTFail("mdoc asks about cellular: connect the phone to Wi-Fi")
-            return
-        }
+        MdocUITest.answerCellularQuestion(app)
 
-        // Leave while the pages are being recognized.
-        let progress = app.descendants(matching: .any)["job-progress"].firstMatch
-        expect(NSPredicate(format: "label CONTAINS 'Recognizing page'"), on: progress, timeout: 1800)
+        // Leave while the pages are being recognized (or just after, on a
+        // fast phone).
+        XCTAssertTrue(
+            MdocUITest.waitThroughDownload(app, timeout: 1800) { MdocUITest.recognizingOrRecognized(app) },
+            "the pages were never recognized")
         try leaveAndReturn(app)
 
         let text = app.textViews["document-text"]
@@ -77,9 +80,10 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let replace = app.menuItems["Replace…"].firstMatch
         XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
         replace.tap()
-        let sheet = app.navigationBars["Replace"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
-        sheet.buttons["Replace"].tap()
+        // The sheet is titled with the category ("Person"); its Replace confirms.
+        let confirm = app.navigationBars.buttons["Replace"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no Replace sheet")
+        confirm.tap()
         // The text view rebuilds its elements after a change; ask the app.
         XCTAssertTrue(app.links["PERSON_1"].firstMatch.waitForExistence(timeout: 10), "the selection was not marked")
 

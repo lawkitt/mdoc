@@ -10,7 +10,8 @@
 # its data container with devicectl (the app ships none; the UI tests' seed
 # looks there when the Mac path does not exist), runs the tests, and fails on
 # a new mdoc crash report. The phone must be unlocked, trusted, in Developer
-# Mode with UI Automation on, and on Wi-Fi; the maintainer's team signs
+# Mode with UI Automation on, and online (on cellular the tests answer Use
+# cellular); the maintainer's team signs
 # (apps/ios/README.md). The UDID is the 00008150-… id xcodebuild lists, not
 # devicectl's CoreDevice identifier. Needs the core built (`just ios-core`).
 source "$(dirname "$0")/lib.sh"

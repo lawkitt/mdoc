@@ -135,9 +135,11 @@ private func core<T>(_ call: () throws -> T) throws -> T {
     }
 }
 
-/// Reports the core's job stages to a `JobObserver`.
+/// Reports the core's job stages, and how far each is, to a `JobObserver`.
 private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
+    private let lock = NSLock()
+    private var current = CoreStage.reading
 
     init(_ observer: any JobObserver) {
         self.observer = observer
@@ -150,7 +152,22 @@ private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
         case .recognizing: .recognizing
         case .scanning: .scanning
         }
+        lock.withLock { current = mapped }
         observer.progress(JobUpdate(stage: mapped))
+    }
+
+    /// The fraction also reaches the background task, whose progress iOS
+    /// watches: a continued processing task that shows none is stopped.
+    func advanced(done: UInt64, total: UInt64) {
+        guard total > 0 else { return }
+        let stage = lock.withLock { current }
+        var update = JobUpdate(stage: stage, fraction: min(1, Double(done) / Double(total)))
+        if stage == .recognizing {
+            // Pages: the bar reads "Recognizing page 3 of 12".
+            update.page = Int(done)
+            update.pageCount = Int(total)
+        }
+        observer.progress(update)
     }
 }
 
@@ -166,6 +183,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     private var ids: [String: DocumentID] = [:]
     private let originals: OriginalsIndex
     private let pending: PendingImports
+    /// Saves that wait for the phone to unlock, by document.
+    private var unsaved: [DocumentID: () throws -> Void] = [:]
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
         self.storage = storage
@@ -268,6 +287,38 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     /// OCR began on an import: once stopped, it resumes with the pages left.
+    fileprivate func saveOnUnlock(_ id: DocumentID, _ save: @escaping () throws -> Void) {
+        lock.withLock { unsaved[id] = save }
+    }
+
+    func saveDeferred() throws -> [DocumentID] {
+        let waiting = lock.withLock {
+            let waiting = unsaved
+            unsaved = [:]
+            return waiting
+        }
+        var saved: [DocumentID] = []
+        var failure: (any Error)?
+        for (id, save) in waiting {
+            do {
+                try save()
+                saved.append(id)
+            } catch {
+                // Kept until it saves: the result exists nowhere else. A
+                // failure with the phone unlocked (a full disk) is reported
+                // too, and tried again next time.
+                lock.withLock { unsaved[id] = unsaved[id] ?? save }
+                if ProtectedData.isAvailable {
+                    failure = failure ?? error
+                }
+            }
+        }
+        if let failure {
+            throw failure
+        }
+        return saved
+    }
+
     fileprivate func ocrStarted(_ session: RealSession) {
         pending.markOCRStarted(session.id)
     }
@@ -428,15 +479,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             }
         }
         let caseID = lock.withLock { self.caseID }
-        if let caseID {
-            _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
-        }
         lock.withLock {
             review = imported
             self.source = nil
             ocrStarted = false
         }
-        try save()
+        try saveAfterJob { [self] in
+            if let caseID {
+                _ = try core { try ffi.joinCase(library: library.ffi, caseId: caseID) }
+            }
+            try save()
+        }
         return snapshot()
     }
 
@@ -459,8 +512,26 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             review = scanned
             self.scanned = true
         }
-        try save()
+        try saveAfterJob { [self] in try save() }
         return snapshot()
+    }
+
+    /// The save that ends a job. A job left running when the phone locks
+    /// finishes with the library's files unwritable (Data Protection
+    /// Complete), so its result stays in this session and the library saves
+    /// it once the phone unlocks.
+    private func saveAfterJob(_ finish: @escaping () throws -> Void) throws {
+        do {
+            try finish()
+        } catch {
+            guard !ProtectedData.isAvailable else { throw error }
+            library.saveOnUnlock(id, finish)
+            // The phone may have unlocked since the check, its save already
+            // run with nothing queued: then this one saves now.
+            if ProtectedData.isAvailable {
+                _ = try? library.saveDeferred()
+            }
+        }
     }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {

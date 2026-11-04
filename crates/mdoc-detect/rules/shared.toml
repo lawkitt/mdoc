@@ -111,6 +111,20 @@
 # as in a `span` pattern, `lead` and `tail` groups included; a match stays
 # on one line.
 #
+# A `reference` whose pattern has groups named `party`, `party2`, … is a
+# cited case ("Pellam v. Ostrand, 912 F.3d 455"), its parties those groups.
+# Its matches are searched over the whole text (a match may wrap), after the
+# span fixes. A name inside one goes unless it names a party of the case at
+# hand: a name the model found outside every cited case, a word of the
+# document's caption, or a name beside a role or after a title. Any other
+# model span inside a cited case naming no such party goes, and so does a
+# labelled case number (`context`) there. A `docket` group marks a citation
+# by docket number, which a caption may carry too. Such an entry may list
+# `roles`, lowercase words ("plaintiff") that make the name beside them a
+# party of the case at hand, and `own_before`, phrases ("under appeal")
+# that make the cited case after them the case at hand's, for every cited
+# case in the pack. Short forms ("in Pellam") are not cited cases (#561).
+#
 # A `private` entry lists `patterns`, regexes: a span that matches one,
 # quotes and legal form included, is never a court or public body,
 # whatever `never` says ("ФГБОУ ВО «… университет»", "Негосударственный

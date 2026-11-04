@@ -1,0 +1,7 @@
+// The project's base settings (ADR 0091, 0097): the build number and the
+// core commit Settings › About shows. `just ios-core` writes the real values
+// to target/ios/Build.xcconfig from git (scripts/ios-build-info.sh); without
+// it a build is number 1 from an unknown commit.
+CURRENT_PROJECT_VERSION = 1
+MDOC_CORE_COMMIT = unknown
+#include? "../../../target/ios/Build.xcconfig"
