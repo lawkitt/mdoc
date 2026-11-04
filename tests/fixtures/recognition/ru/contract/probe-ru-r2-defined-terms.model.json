@@ -1,0 +1,13 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":147,"end":170,"label":"full_name","score":0.5755284,"text":"ООО «Тополь»"},
+    {"start":29,"end":50,"label":"full_name","score":0.5076021,"text":"ООО «Север»"},
+    {"start":430,"end":457,"label":"organization","score":0.95945925,"text":"ООО «Кедровое»"},
+    {"start":29,"end":50,"label":"organization","score":0.9480584,"text":"ООО «Север»"},
+    {"start":147,"end":170,"label":"organization","score":0.89787453,"text":"ООО «Тополь»"},
+    {"start":535,"end":555,"label":"organization","score":0.8374871,"text":"Учреждение"},
+    {"start":474,"end":494,"label":"organization","score":0.63125336,"text":"Учреждение"}
+  ]
+}
