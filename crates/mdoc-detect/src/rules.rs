@@ -204,6 +204,15 @@ struct ShapeEntry {
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
+    /// A model span inside one of these matches in its surrounding line
+    /// is not this category (an amount's decimals or currency may be outside
+    /// the model's span). Labelled values are proposed separately.
+    #[serde(default)]
+    forbid_in: Vec<String>,
+    /// Matches that exempt a model span from `forbid_in` only: a labelled
+    /// identifier stays even beside an amount. Other shape checks still apply.
+    #[serde(default)]
+    unless_in: Vec<String>,
     word: Option<String>,
     #[serde(default)]
     guess: Vec<String>,
@@ -520,6 +529,8 @@ struct Shape {
     category: Category,
     require: Vec<Regex>,
     forbid: Vec<Regex>,
+    forbid_in: Vec<Regex>,
+    unless_in: Vec<Regex>,
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
@@ -669,6 +680,8 @@ impl Pack {
                 };
                 if entry.require.is_empty()
                     && entry.forbid.is_empty()
+                    && entry.forbid_in.is_empty()
+                    && entry.unless_in.is_empty()
                     && entry.word.is_none()
                     && entry.guess.is_empty()
                     && entry.guess_words.is_empty()
@@ -720,6 +733,16 @@ impl Pack {
                 }
                 let require = compile_all(&entry.require, false)?;
                 let forbid = compile_all(&entry.forbid, false)?;
+                let forbid_in = entry
+                    .forbid_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let unless_in = entry
+                    .unless_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let word = entry
                     .word
                     .as_deref()
@@ -733,6 +756,8 @@ impl Pack {
                             category,
                             require: Vec::new(),
                             forbid: Vec::new(),
+                            forbid_in: Vec::new(),
+                            unless_in: Vec::new(),
                             word: None,
                             guess: Vec::new(),
                             guess_words: Vec::new(),
@@ -748,6 +773,8 @@ impl Pack {
                 }
                 shape.require.extend(require);
                 shape.forbid.extend(forbid);
+                shape.forbid_in.extend(forbid_in);
+                shape.unless_in.extend(unless_in);
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
@@ -1852,6 +1879,24 @@ impl Pack {
         }
         if self.in_reference(source, range.clone()) {
             return false;
+        }
+        if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
+            && !shape.forbid_in.is_empty()
+        {
+            let start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
+            let end = source[range.end..]
+                .find('\n')
+                .map_or(source.len(), |i| range.end + i);
+            let view = mdoc_pii::view::View::new(&source[start..end]);
+            let span = view.view_range(range.start - start..range.end - start);
+            let inside = |pattern: &Regex| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            };
+            if shape.forbid_in.iter().any(inside) && !shape.unless_in.iter().any(inside) {
+                return false;
+            }
         }
         let quoted = self
             .shapes
@@ -6994,6 +7039,205 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("GB123456789", Category::Tax),
         ] {
             assert!(keeps(text, category), "{text:?}");
+        }
+    }
+
+    /// Money, including OCR-joined balance-sheet cells and fragments cut
+    /// at their decimal comma, is never TAX, BANK or PHONE (#547).
+    #[test]
+    fn money_and_its_fragments_are_no_identifiers() {
+        for (source, fragment) in [
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "0323 058 712"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "762,0323 058"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "4 588 762"),
+            ("Итого 12 345,67942838 306,12.", "942838 306"),
+            ("Итого 12 345,670321 448 312,74.", "0321 448 312"),
+            ("Бюджет: 164 353 783 тыс. руб.", "164 353 783"),
+            ("Бюджет: 12 345,05 8 443 789 778,00.", "05 8 443 789 778"),
+            ("Выплачено 135 130 руб. 86 коп.", "86"),
+            ("Выплачено 135 130 руб. 86 коп.", "135 130"),
+            ("Итого 714157,31.", "714157"),
+            ("Итого 23 707 750,02.", "23 707 750"),
+            ("Итого 2903,02.", "2903"),
+            ("Итого 714157.31.", "714157"),
+            ("Итого 23\u{a0}707\u{202f}750,02.", "23\u{a0}707\u{202f}750"),
+            ("Итого 23&nbsp;707&#32;750,02.", "23&nbsp;707&#32;750"),
+            ("Итого 164 353 783 млн рублей.", "164 353 783"),
+            ("Итого 164 353 783 €.", "164 353 783"),
+            ("Сумма, руб.: 164 353 783.", "164 353 783"),
+            ("The fund lost $350 billion.", "$350 billion"),
+            ("The fund lost $350 billion.", "350"),
+            ("The fund lost $11.2 billion a year.", "$11.2 billion"),
+            ("The fund lost $11.2 billion a year.", "11.2"),
+            ("The fund lost £350 million.", "350 million"),
+            ("The fund lost €350 million.", "350"),
+            ("The fund lost 350 billion dollars.", "350 billion"),
+            ("Tax ID: 999991111 received 350 billion.", "350 billion"),
+            ("Пени: ((0,06x159548,05) х2).", "06x159548"),
+            ("Пени: (0,05х199999,05) ×2.", "05х199999"),
+            ("Пени: (0,05*199999,05) *2.", "05*199999"),
+            (
+                "Взыскать 1 199999 (один миллион сто девяносто девять тысяч девятьсот девяносто девять) рублей.",
+                "1 199999",
+            ),
+            (
+                "Взыскать 1 129731 (один миллион сто двадцать девять тысяч семьсот тридцать один) рубль.",
+                "1 129731",
+            ),
+        ] {
+            for label in ["tax_id", "bank_account", "phone_number"] {
+                assert_eq!(
+                    shown(source, &[(fragment, label)]),
+                    [],
+                    "{source}: {label} {fragment}"
+                );
+            }
+        }
+        // A labelled identifier earlier in the sentence must not exempt
+        // a later amount; the context rule still proposes the account.
+        assert_eq!(
+            shown(
+                "Bank account: 12345678 funded 350 million.",
+                &[("350 million", "bank_account")]
+            ),
+            [("12345678".into(), "BANK".into())]
+        );
+    }
+
+    /// No amount cue means no reason to discard an identifier. Labels and
+    /// twenty-digit accounts win even with monetary context beside them.
+    #[test]
+    fn amount_guards_keep_identifiers_and_names() {
+        for (source, value, label, category) in [
+            ("Номер: 164 353 783.", "164 353 783", "tax_id", "TAX"),
+            ("Номер: 942838 306.", "942838 306", "bank_account", "BANK"),
+            (
+                "Номер: 0321 448 312.",
+                "0321 448 312",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Номер: 1 199999 (основной) рублей не содержит.",
+                "1 199999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Счёт: 40702810900000004711 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "40702 810 9 0000 0004711 руб.",
+                "40702 810 9 0000 0004711",
+                "bank_account",
+                "BANK",
+            ),
+            ("ИНН 7709999999,02 руб.", "7709999999", "tax_id", "TAX"),
+            ("ОГРН 1199900000011 руб.", "1199900000011", "tax_id", "TAX"),
+            ("КПП 779901001 руб.", "779901001", "tax_id", "TAX"),
+            ("БИК 049999999 руб.", "049999999", "bank_account", "BANK"),
+            ("account: 12345.67.", "12345.67", "bank_account", "BANK"),
+            ("Счёт: 12345.67 руб.", "12345.67", "bank_account", "BANK"),
+            (
+                "Телефон: 79990000123 руб.",
+                "79990000123",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Phone: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Bank account: 12345678 dollars.",
+                "12345678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Tax ID: 999991111,02 dollars.",
+                "999991111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН 7709999999; остаток 714157,31 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Остаток 714157,31 руб.; БИК 049999999.",
+                "049999999",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Остаток 714157,31 руб.; телефон +7 (999) 555-01-23.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "1 199999 рублей перечислены ООО «Кедровый бор».",
+                "ООО «Кедровый бор»",
+                "organization",
+                "ORG",
+            ),
+            (
+                "£350 million paid to Maren Quill.",
+                "Maren Quill",
+                "person",
+                "PERSON",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                [(value.into(), category.into())],
+                "{source}"
+            );
+        }
+    }
+
+    /// The contextual shape extension uses the pack's existing match
+    /// boundaries and validates its regexes just like span patterns.
+    #[test]
+    fn contextual_shapes_have_bounded_ranges_and_checked_patterns() {
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['(?P<lead>price: )\d+(?P<tail> units)']
+        "#,
+        )])
+        .unwrap();
+        let source = "price: 123 units; 456";
+        assert!(!pack.identifying_at(source, 7..10, "123", Category::Tax));
+        assert!(pack.identifying_at(source, 18..21, "456", Category::Tax));
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid = ['^666$']
+            forbid_in = ['\d+ units']
+            unless_in = ['ID: \d+ units']
+        "#,
+        )])
+        .unwrap();
+        assert!(pack.identifying_at("ID: 123 units", 4..7, "123", Category::Tax));
+        assert!(!pack.identifying_at("ID: 666 units", 4..7, "666", Category::Tax));
+        for field in ["forbid_in", "unless_in"] {
+            for pattern in ["x*", "(", "(?P<unknown>x)"] {
+                let toml = format!("[[shape]]\ncategory = 'TAX'\n{field} = ['{pattern}']");
+                assert!(Pack::load(&[("test", &toml)]).is_err(), "{toml}");
+            }
         }
     }
 

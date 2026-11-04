@@ -751,3 +751,39 @@ pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]{2,}\d{4}(?:[\p{Zs}\t]*(?m:$)|(?P<tai
 # after "счёт №" is no invoice's and stays.
 [[reference]]
 pattern = '\b(?:ТН|ТТН|ТрН|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*)[\p{Zs}\t]*№[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
+
+# An amount repeated in words after its digits is no TAX value (#547).
+# The numeric spelling may have a misplaced OCR space ("1 199999"). The
+# bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify.
+[[shape]]
+category = "TAX"
+# A value after its identifier label wins over amount cues.
+unless_in = ['(?i)\b(?:инн|огрнип|огрн|кпп|окпо)\b[\p{Zs}\t:*_№.]{1,8}[0-9OОoIlІ]+(?:[\p{Zs}\t]+[0-9OОoIlІ]+)*']
+forbid_in = [
+    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*[\p{Zs}\t]*\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)[\p{Zs}\t]*руб(?:л[а-яё]*)?\b\.?',
+]
+
+# An amount repeated in words after its digits is no BANK value (#547).
+# The numeric spelling may have a misplaced OCR space ("1 199999"). The
+# bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify.
+[[shape]]
+category = "BANK"
+# A value after its identifier label wins over amount cues.
+unless_in = ['(?i)(?:\bбик\b|\b[ркл]/с(?:ч)?\b|\b(?:расч[её]тный|корреспондентский|лицевой)[\p{Zs}\t]+сч[её]т\b|\bсч[её]т\b)[\p{Zs}\t:*_№.]{1,8}\d+(?:[\p{Zs}\t]+\d+)*(?:[,.]\d+)?']
+forbid_in = [
+    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*[\p{Zs}\t]*\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)[\p{Zs}\t]*руб(?:л[а-яё]*)?\b\.?',
+]
+
+# An amount repeated in words after its digits is no PHONE value (#547).
+# The numeric spelling may have a misplaced OCR space ("1 199999"). The
+# bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify.
+[[shape]]
+category = "PHONE"
+# A value after its identifier label wins over amount cues.
+unless_in = ['(?i)\b(?:телефон|тел|факс)\b[\p{Zs}\t:*_№.]{1,8}\+?\d[\d\p{Zs}\t()–-]*\d']
+forbid_in = [
+    '(?i)\b\d{1,19}(?:[\p{Zs}\t]+\d{1,19})*[\p{Zs}\t]*\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)[\p{Zs}\t]*руб(?:л[а-яё]*)?\b\.?',
+]

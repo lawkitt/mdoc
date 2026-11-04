@@ -1149,3 +1149,27 @@ parts.prefix = '[“"‘\x27]?(?:1-[\p{Zs}\t]?)?\d{3}\b[”"’\x27]?'
 [[reference]]
 pattern = '(?P<lead>\b(?:https?://|www\.)[^\s?#<>()\[\]]*\?(?:[^\s#&<>()\[\]]*&)*[A-Za-z_][A-Za-z0-9_.-]*=){token}'
 parts.token = '[A-Za-z0-9_~-]*(?:[a-z][A-Za-z0-9_~-]*[A-Z][A-Za-z0-9_~-]*\d|[a-z][A-Za-z0-9_~-]*\d[A-Za-z0-9_~-]*[A-Z]|[A-Z][A-Za-z0-9_~-]*[a-z][A-Za-z0-9_~-]*\d|[A-Z][A-Za-z0-9_~-]*\d[A-Za-z0-9_~-]*[a-z]|\d[A-Za-z0-9_~-]*[a-z][A-Za-z0-9_~-]*[A-Z]|\d[A-Za-z0-9_~-]*[A-Z][A-Za-z0-9_~-]*[a-z])[A-Za-z0-9_~-]*'
+
+# A money scale or a written-out number is no tax identifier (#547, and
+# #389's rate-as-TAX root). Labels still decide real identifier values.
+[[shape]]
+category = "TAX"
+forbid = ['(?i)[$£€]|\b(?:hundred|thousand|million|billion|trillion)\b']
+
+# A labelled TAX value stays beside money; only contextual amount
+# guards are bypassed, never the category's ordinary shape checks.
+[[shape]]
+category = "TAX"
+unless_in = ['(?i:\b(?:tax id|tin|ein|inn|vat)\b)[\p{Zs}\t:*_№.#]{1,8}[A-Z]{0,2}\d[0-9OIl\p{Zs}\t-]*\b']
+
+# A labelled BANK value stays beside money; only contextual amount
+# guards are bypassed, never the category's ordinary shape checks.
+[[shape]]
+category = "BANK"
+unless_in = ['(?i:\b(?:bank account|account number|account no|account|sort code|iban|acct|a/c)\b)[\p{Zs}\t:*_№.#]{1,8}(?:[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d[\d\p{Zs}\t/-]*\d(?:[,.]\d+)?)\b']
+
+# A labelled PHONE value stays beside money; only contextual amount
+# guards are bypassed, never the category's ordinary shape checks.
+[[shape]]
+category = "PHONE"
+unless_in = ['(?i)\b(?:phone|telephone|tel|fax)\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d\p{Zs}\t()–-]*\d']
