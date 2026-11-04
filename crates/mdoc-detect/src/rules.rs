@@ -500,19 +500,64 @@ const DEFINING: &[&str] = &[
     "и",
 ];
 
+/// A defined term and the adjacent clause that identifies what it names.
+struct Definition<'a> {
+    term: &'a str,
+    subject: &'a str,
+}
+
+/// Keep the adjacent clause, bounded even when extracted text has no punctuation.
+fn definition_subject(text: &str, before: bool) -> &str {
+    let boundary = [';', '!', '?', '(', ')', '[', ']'];
+    if before {
+        let clause = text
+            .rsplit(boundary)
+            .next()
+            .unwrap_or_default()
+            .rsplit("\n\n")
+            .next()
+            .unwrap_or_default()
+            .rsplit("\r\n\r\n")
+            .next()
+            .unwrap_or_default();
+        let start = clause.char_indices().rev().nth(199).map_or(0, |(at, _)| at);
+        &clause[start..]
+    } else {
+        let clause = text
+            .split(boundary)
+            .next()
+            .unwrap_or_default()
+            .split(". ")
+            .next()
+            .unwrap_or_default()
+            .split("\n\n")
+            .next()
+            .unwrap_or_default()
+            .split("\r\n\r\n")
+            .next()
+            .unwrap_or_default();
+        let end = clause
+            .char_indices()
+            .nth(200)
+            .map_or(clause.len(), |(at, _)| at);
+        &clause[..end]
+    }
+}
+
 /// The terms `text` defines, as written: a quoted term in brackets after
 /// "hereinafter", "the" or nothing ("(the “Distributor”)", "(“Townhouse”)",
 /// «(далее – «Общество»)»), a bare capitalised one after "hereinafter" or
 /// «далее» ("(hereinafter the Distributor)", «(далее – Положение)»), a
 /// party named «именуемое в дальнейшем «Поставщик»», and a quoted term its
 /// own definition opens with (“Territory” means …, in bold too).
-fn definitions(text: &str) -> Vec<String> {
+fn definitions(text: &str) -> Vec<Definition<'_>> {
     static PATTERNS: OnceLock<[Regex; 6]> = OnceLock::new();
     let [bracket, quoted, hereinafter, further, named, means] = PATTERNS.get_or_init(|| {
         let compile = |pattern: &str| Regex::new(&rust_classes(pattern)).expect("definition");
+        let quotes = r#"“([^“”]{2,60})”|"([^"]{2,60})"|«([^«»]{2,60})»|‘([^‘’]{2,60})’|'([^']{2,60})'"#;
         [
-            compile(r"[(\[]([^()\[\]\n]{2,200})[)\]]"),
-            compile(r"[“\x22«]([^”\x22»\n]{2,60})[”\x22»]"),
+            compile(r"[(\[]([^()\[\]]{2,200})[)\]]"),
+            compile(quotes),
             compile(concat!(
                 r"^\s*[Hh]ereinafter\b[\s,:]*(?:(?:referred\s+to\s+as|called)\b[\s,:]*)?(?:the\s+)?",
                 r"(\p{Uppercase}[\p{Alphabetic}'’-]*(?:\s+\p{Uppercase}[\p{Alphabetic}'’-]*){0,3})\s*$",
@@ -521,28 +566,40 @@ fn definitions(text: &str) -> Vec<String> {
                 r"^\s*(?:[Дд]алее(?:\s+по\s+тексту)?|[Вв]\s+дальнейшем(?:\s+по\s+тексту)?)",
                 r"\s*[-–—:,]?\s*(\p{Uppercase}\p{Alphabetic}+(?:\s+\p{Alphabetic}+){0,2})\s*$",
             )),
-            compile(concat!(
+            compile(&format!(r"{}\s*[-–—,:]?\s*(?:{quotes})",
                 r"(?i:именуем)\p{Alphabetic}*\s+(?i:в\s+дальнейшем|далее)(?:\s+по\s+тексту)?",
-                r"\s*[-–—,:]?\s*[«\x22“]([^»\x22”\n]{2,60})[»\x22”]",
             )),
-            compile(concat!(
-                r"[“\x22]([^”\x22\n]{2,60})[”\x22]\*{0,2}\s+",
+            compile(&format!(concat!(
+                r"(?:{})\*{{0,2}}\s+",
                 r"(?:shall\s+)?(?:means?|has\s+the\s+meaning|refers?\s+to)\b",
-            )),
+            ), quotes)),
         ]
     });
     let mut terms = Vec::new();
     for found in bracket.captures_iter(text) {
-        let inside = &found[1];
+        let inside = found.get(1).expect("definition contents").as_str();
+        let subject = definition_subject(
+            &text[..found.get(0).expect("definition bracket").start()],
+            true,
+        );
         let quotes: Vec<&str> = quoted
             .captures_iter(inside)
-            .filter_map(|quote| quote.get(1))
-            .map(|quote| quote.as_str())
+            .filter_map(|quote| {
+                quote
+                    .iter()
+                    .skip(1)
+                    .flatten()
+                    .next()
+                    .map(|term| term.as_str())
+            })
             .collect();
         if quotes.is_empty() {
             for pattern in [hereinafter, further] {
                 if let Some(term) = pattern.captures(inside).and_then(|c| c.get(1)) {
-                    terms.push(term.as_str().to_owned());
+                    terms.push(Definition {
+                        term: term.as_str(),
+                        subject,
+                    });
                 }
             }
             continue;
@@ -553,16 +610,24 @@ fn definitions(text: &str) -> Vec<String> {
             .filter(|word| !word.is_empty())
             .all(|word| DEFINING.contains(&word.to_lowercase().as_str()))
         {
-            terms.extend(quotes.into_iter().map(str::to_owned));
+            terms.extend(quotes.into_iter().map(|term| Definition { term, subject }));
         }
     }
-    for pattern in [named, means] {
-        terms.extend(
-            pattern
-                .captures_iter(text)
-                .filter_map(|found| found.get(1))
-                .map(|term| term.as_str().to_owned()),
-        );
+    for (pattern, follows) in [(named, false), (means, true)] {
+        for found in pattern.captures_iter(text) {
+            if let Some(term) = found.iter().skip(1).flatten().next() {
+                let range = found.get(0).expect("definition").range();
+                let subject = if follows {
+                    &text[range.end..]
+                } else {
+                    &text[..range.start]
+                };
+                terms.push(Definition {
+                    term: term.as_str(),
+                    subject: definition_subject(subject, !follows),
+                });
+            }
+        }
     }
     terms
 }
@@ -1520,12 +1585,13 @@ impl Pack {
     /// or real word ("the “Kew Project”", “Quillon”, “Fox”) defines none.
     fn defined_terms(&self, text: &str) -> std::collections::HashSet<(usize, usize)> {
         let mut found = std::collections::HashSet::new();
+        let mut named = std::collections::HashSet::new();
         if self.defined.is_empty() {
             return found;
         }
-        for term in definitions(text) {
+        for definition in definitions(text) {
             let mut listed = Vec::new();
-            let words = plain_words(&term);
+            let words = plain_words(definition.term);
             let generic = !words.is_empty()
                 && words.iter().all(|word| match self.defined_word(word) {
                     Some(at) => {
@@ -1535,9 +1601,35 @@ impl Pack {
                     None => self.generic_anywhere(word),
                 });
             if generic {
-                found.extend(listed);
+                // A generic-looking word can be the company's own short
+                // name: Network International Ltd (“Network”), ООО
+                // «Контракт» (далее — «Контракт»). Name evidence wins even
+                // if another definition uses the same word generically.
+                let subject: Vec<String> = definition
+                    .subject
+                    .split(|c: char| !c.is_alphanumeric() && c != '-')
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_lowercase)
+                    .collect();
+                let name_words: Vec<String> = definition
+                    .term
+                    .split(|c: char| !c.is_alphanumeric() && c != '-')
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_lowercase)
+                    .collect();
+                if self.legal_form(definition.subject)
+                    && !name_words.is_empty()
+                    && subject
+                        .windows(name_words.len())
+                        .any(|part| part == name_words)
+                {
+                    named.extend(listed);
+                } else {
+                    found.extend(listed);
+                }
             }
         }
+        found.retain(|at| !named.contains(at));
         found
     }
 
@@ -4162,8 +4254,160 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("the network (Network) runs", vec![]),
             ("he said “Distributor” twice", vec![]),
         ] {
-            assert_eq!(definitions(source), terms, "{source}");
+            assert_eq!(
+                definitions(source)
+                    .iter()
+                    .map(|d| d.term)
+                    .collect::<Vec<_>>(),
+                terms,
+                "{source}"
+            );
         }
+    }
+
+    #[test]
+    fn generic_vocabulary_keeps_a_companys_defined_short_name() {
+        for (source, names, expected) in [
+            (
+                "Network International Ltd (“Network”). Network shall pay…",
+                vec!["Network International Ltd", "Network"],
+                vec!["Network International Ltd", "Network", "Network"],
+            ),
+            (
+                "ООО «Контракт» (далее — «Контракт»). Контракт платит.",
+                vec!["ООО «Контракт»", "Контракт"],
+                vec!["ООО «Контракт»", "Контракт", "Контракт"],
+            ),
+            (
+                "Larkfield LLC (the “Network”). Network International Ltd (“Network”). Network pays.",
+                vec!["Network"],
+                vec!["Network", "Network", "Network", "Network"],
+            ),
+            (
+                "“Network” means Network International Ltd. Network pays.",
+                vec!["Network International Ltd", "Network"],
+                vec!["Network", "Network International Ltd", "Network"],
+            ),
+        ] {
+            assert_eq!(
+                fixed_every(
+                    source,
+                    &names
+                        .into_iter()
+                        .map(|name| (name, Category::Organization))
+                        .collect::<Vec<_>>()
+                ),
+                expected,
+                "{source}",
+            );
+        }
+        // A role assigned to a different company is still generic.
+        assert!(
+            fixed_every(
+                "Larkfield LLC (the “Network”). Network shall pay…",
+                &[("Network", Category::Organization)],
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn wrapped_definitions_suppress_generic_organization_proposals() {
+        for source in [
+            "Larkfield LLC (the\n“Distributor”). The Distributor pays.",
+            "Larkfield LLC (the\r\n“Distributor”). The Distributor pays.",
+            "Larkfield LLC (hereinafter\nreferred to as the “Distributor”). The Distributor pays.",
+            "Larkfield LLC (the “Franchised\nBusiness”). Franchised Business pays.",
+            "Банки (далее\n— «Кредиторы»). Кредиторы платят.",
+        ] {
+            assert!(
+                fixed_every(
+                    source,
+                    &[
+                        ("Distributor", Category::Organization),
+                        ("Franchised\nBusiness", Category::Organization),
+                        ("Franchised Business", Category::Organization),
+                        ("Кредиторы", Category::Organization),
+                    ]
+                )
+                .is_empty(),
+                "{source}"
+            );
+        }
+        // Wrapping is bounded by the same 200-character bracket limit.
+        let source = format!(
+            "Larkfield LLC (the{}“Distributor”). The Distributor pays.",
+            "\n".repeat(200)
+        );
+        assert_eq!(
+            fixed_every(&source, &[("Distributor", Category::Organization)]),
+            ["Distributor", "Distributor"]
+        );
+    }
+
+    #[test]
+    fn single_quoted_definitions_suppress_generic_organization_proposals() {
+        for source in [
+            "Larkfield Ltd (the ‘Distributor’). The Distributor pays.",
+            "Larkfield Ltd (the 'Distributor'). The Distributor pays.",
+            "‘Distributor’ means Larkfield Ltd. The Distributor pays.",
+            "'Distributor' means Larkfield Ltd. The Distributor pays.",
+            "**‘Distributor’** shall mean Larkfield Ltd. The Distributor pays.",
+            "ООО «Север», именуемое в дальнейшем ‘Кредитор’. Кредитор платит.",
+        ] {
+            assert!(
+                fixed_every(
+                    source,
+                    &[
+                        ("Distributor", Category::Organization),
+                        ("Кредитор", Category::Organization),
+                    ]
+                )
+                .is_empty(),
+                "{source}"
+            );
+        }
+        // An unmatched quotation is insufficient evidence to drop a name.
+        assert!(definitions("Larkfield Ltd (the ‘Distributor\").").is_empty());
+        assert!(definitions("Larkfield Ltd (the 'Distributor’).").is_empty());
+    }
+
+    #[test]
+    fn russian_defined_nouns_include_genitive_plurals_but_keep_people() {
+        let source = "Банки (далее — «Кредиторы»). Согласие Кредиторов обязательно.";
+        assert!(
+            fixed_every(
+                source,
+                &[
+                    ("Кредиторы", Category::Organization),
+                    ("Кредиторов", Category::Organization),
+                ]
+            )
+            .is_empty()
+        );
+        // The noun's case forms do not change the PERSON surname guards.
+        let source = "Банки (далее — «Кредиторы»). Кредиторов И. П. и г-н Кредиторов согласны.";
+        assert_eq!(
+            fixed_every(source, &[("Кредиторов", Category::Person)]),
+            ["Кредиторов И. П.", "Кредиторов"]
+        );
+        assert_eq!(
+            fixed_every(
+                "Банки (далее — «Кредиторы»). Кредиторин согласен.",
+                &[("Кредиторин", Category::Organization)],
+            ),
+            ["Кредиторин"]
+        );
+        assert!(
+            fixed_every(
+                "Компании (далее — «Должники»). Согласие Должников обязательно.",
+                &[
+                    ("Должники", Category::Organization),
+                    ("Должников", Category::Organization)
+                ],
+            )
+            .is_empty()
+        );
     }
 
     /// A term the document defines in generic words is no organization,

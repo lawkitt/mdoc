@@ -143,12 +143,13 @@ words = [
 # is a defined term and no organization (guide rule 2, issue #390). Only
 # where the document defines it: elsewhere a company may share the word, and
 # a term with any coined or real word («Кедровое») defines none. As stems
-# with up to three letters of ending, without the endings that make a
-# surname of them.
+# with up to three letters of ending, including genitive plurals
+# («Кредиторов»). Other surname endings remain excluded. This filter
+# applies only to ORG; the separate PERSON surname guards are unchanged.
 [[defined]]
 match = "stem"
 ending = 3
-not_endings = ["ов", "ев", "ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
+not_endings = ["ёв", "ин", "ын", "ова", "ева", "ёва", "ина", "ына", "ову", "еву", "ину"]
 words = [
     "положени", "учреждени", "предприяти", "соглашени", "договор", "контракт",
     "приложени", "регламент", "устав", "программ", "объект", "имуществ",
