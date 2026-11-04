@@ -403,6 +403,36 @@ check "a core change runs it" has "$toolchain" "$A" "success	Passed in *"
 check "the Android runner posts no ci/windows status" [ "$(grep -c "	$W	" "$FAKE/statuses.tsv")" = "$wposts" ]
 check "nor builds the desktop commits" [ -z "$(ran pass)$(ran fail)" ]
 
+# --- files a stopped job still holds ----------------------------------------------
+
+# The checkout cannot clean at first (on Windows, a killed Gradle's open
+# files; a git that fails `clean` once stands in): the job waits, retries
+# once, and runs.
+: >"$FAKE/just.log"
+held=$(prefix=held/main/ qc 17 held src/lib.rs)
+echo "17 User false" >>"$FAKE/prs.tsv"
+hhome=$LOCAL_CI_HOME/queue-held
+git clone --quiet "$FAKE_ORIGIN" "$hhome/mdoc"
+mkdir -p "$hhome/mdoc/held" "$tmp/heldbin"
+echo lock >"$hhome/mdoc/held/file.lock"
+touch "$FAKE/held"
+cat >"$tmp/heldbin/git" <<GIT
+#!/usr/bin/env bash
+if [ "\${1:-}" = clean ] && [ -e "$FAKE/held" ]; then
+  rm -f "$FAKE/held"
+  echo "warning: failed to remove held/file.lock: Invalid argument" >&2
+  exit 1
+fi
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$tmp/heldbin/git"
+PATH="$tmp/heldbin:$PATH" QUEUE_CI_HOME=$hhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-held QUEUE_CI_PREFIXES=held/main/ \
+  QUEUE_CI_CLEAN_WAIT=1 run_once windows "$tmp/held.log"
+check "a checkout that cannot clean at first is retried once, logged" \
+  grep -q "^checkout: failed once; retried" "$LOCAL_CI_HOME/out/queue-held/${held:0:7}/summary.txt"
+check "and the job runs" has "$held" "$W" "success	Passed in *"
+check "with the folder gone" [ ! -e "$hhome/mdoc/held" ]
+
 # --- the disk floor ----------------------------------------------------------------
 
 : >"$FAKE/just.log"
@@ -485,7 +515,7 @@ check "which does not run the job again" [ "$(grep -c "^bump lint" "$FAKE/just.l
 ) || failures=$((failures + $?))
 
 if [ "$failures" -gt 0 ]; then
-  for f in windows android disk lone update; do
+  for f in windows android disk lone held update; do
     echo "--- $f runner log" >&2
     cat "$tmp/$f.log" >&2 2>/dev/null || true
   done
