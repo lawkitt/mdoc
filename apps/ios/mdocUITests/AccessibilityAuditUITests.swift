@@ -21,9 +21,10 @@ final class AccessibilityAuditExploreUITests: XCTestCase {
         let email = app.textViews.firstMatch.links[MdocUITest.email].firstMatch
         if email.waitForExistence(timeout: 5) {
             email.tap()
-            if app.buttons["candidate-done"].waitForExistence(timeout: 5) {
-                audit(app, "candidate-sheet")
-                app.buttons["candidate-done"].tap()
+            if app.buttons["review-replace"].waitForExistence(timeout: 5) {
+                audit(app, "review-bar")
+                app.buttons["review-replace"].tap()
+                if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
             }
         }
         if MdocUITest.showIdentities(app) {

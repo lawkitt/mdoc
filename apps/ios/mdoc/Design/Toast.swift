@@ -33,6 +33,7 @@ struct Toast: View {
                 .lineLimit(2)
             if let title = message.actionTitle, message.action != nil {
                 Button(title, action: perform)
+                    .accessibilityIdentifier("toast-action")
                 .font(Typography.chip.weight(.semibold))
                 .foregroundStyle(Palette.accent)
                 .frame(minHeight: Size.target)
@@ -48,7 +49,8 @@ struct Toast: View {
             }
         }
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-        .accessibilityElement(children: .combine)
+        // Its action stays a button of its own for VoiceOver and tests.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("toast")
     }
 }
@@ -67,7 +69,8 @@ struct ToastPresenter: ViewModifier {
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .task(id: message.id) {
                         UIAccessibility.post(notification: .announcement, argument: message.text)
-                        try? await Task.sleep(for: .seconds(seconds))
+                        // Longer with an action (Undo, Redo): time to reach it.
+                        try? await Task.sleep(for: .seconds(message.action == nil ? seconds : seconds + 2))
                         if self.message?.id == message.id {
                             self.message = nil
                         }

@@ -13,16 +13,31 @@ struct SettingsView: View {
     @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
     @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
     @AppStorage(Haptics.enabledKey) private var haptics = true
+    @State private var tipsReset = false
 
     var body: some View {
         NavigationStack {
             Form {
                 appearance
-                Section("Review") {
+                Section {
                     Toggle(isOn: $haptics) {
                         SettingsLabel("Haptics", systemImage: "hand.tap", color: .pink)
                     }
                     .accessibilityIdentifier("settings-haptics")
+                    Button {
+                        ReviewTips.resetOnNextLaunch()
+                        tipsReset = true
+                    } label: {
+                        SettingsLabel("Reset tips", systemImage: "lightbulb", color: .yellow)
+                    }
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("settings-reset-tips")
+                } header: {
+                    Text("Review")
+                } footer: {
+                    if tipsReset {
+                        Text("The tips show again the next time you open mdoc.")
+                    }
                 }
                 models
                 Section {

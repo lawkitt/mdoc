@@ -450,7 +450,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 original: mention.original, alias: mention.alias ?? "",
                 category: Category(mention.category), state: MentionState(mention.state))
         }
-        let identities = review.identities.map { row in
+        var identities = review.identities.map { row in
             let id = IdentityID(rawValue: String(row.id))
             let states = Set(candidates.filter { $0.identityID == id }.map(\.state))
             let state: MentionState = row.proposed > 0 ? .proposed : (states == [.kept] ? .kept : .replaced)
@@ -459,6 +459,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
                 mentionCount: max(Int(row.mentions), candidates.filter { $0.identityID == id }.count), state: state,
                 owner: row.owner.map { IdentityID(rawValue: String($0)) })
+        }
+        // A name kept everywhere is no active identity in the core; its
+        // kept mentions still name it, so it stays in the list under Kept
+        // (ADR 0098's Show filter).
+        let listed = Set(identities.map(\.id))
+        let kept = Dictionary(grouping: candidates.filter { $0.state == .kept && !listed.contains($0.identityID) && !$0.alias.isEmpty }, by: \.identityID)
+        for (id, mentions) in kept.sorted(by: { ($0.value.map(\.range.start).min() ?? 0) < ($1.value.map(\.range.start).min() ?? 0) }) {
+            guard let first = mentions.min(by: { $0.range.start < $1.range.start }) else { continue }
+            var wordings: [String] = []
+            for mention in mentions where !wordings.contains(mention.original) { wordings.append(mention.original) }
+            identities.append(Identity(
+                id: id, alias: first.alias, category: first.category, primaryWording: first.original,
+                variants: wordings, mentionCount: mentions.count, state: .kept, owner: nil))
         }
         let phase: DocumentPhase = if !scanned {
             .unscanned

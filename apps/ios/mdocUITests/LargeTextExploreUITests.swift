@@ -39,7 +39,7 @@ final class LargeTextExploreUITests: XCTestCase {
             save(app, "05-candidate")
             app.swipeUp()
             save(app, "06-candidate-end")
-            if app.buttons["candidate-done"].exists { app.buttons["candidate-done"].tap() }
+            if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
         }
         if MdocUITest.showIdentities(app) {
             save(app, "07-identities")

@@ -41,6 +41,15 @@ final class RealCoreTests: XCTestCase {
         return session
     }
 
+    /// A name kept everywhere stays in Identities, under Kept (ADR 0098).
+    func testAKeptNameStaysInTheList() throws {
+        let core = try core()
+        let session = try reviewed(core)
+        let email = try XCTUnwrap(session.snapshot().candidates.first { $0.category == .email })
+        let kept = try session.decide(email.id, .keep, scope: .allOccurrences)
+        XCTAssertEqual(kept.identities.first { $0.id == email.identityID }?.state, .kept)
+    }
+
     func testImportScanAndReviewThroughTheCore() throws {
         let core = try core()
         let session = try reviewed(core)

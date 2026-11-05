@@ -34,10 +34,26 @@ final class DocumentViewModel {
     private let onChange: () -> Void
 
     private(set) var snapshot: DocumentSnapshot
-    /// The candidate whose sheet is open.
+    /// The candidate on the review bar; nil when not reviewing (ADR 0098).
     var reviewing: CandidateID?
-    /// The selection Replace… was chosen for.
-    var manualSelection: SourceRange?
+    /// The bar's scope chip: All by default, held within an identity and
+    /// reset to All on the next one.
+    var reviewScope: Scope = .allOccurrences
+    /// The identity the scope was chosen for.
+    var scopeIdentity: IdentityID?
+    /// Swiped up: the identity's mentions and the bulk choices.
+    var barExpanded = false
+    /// Stepping limited to one identity or category.
+    var focus: ReviewFocus?
+    /// "Same as Maya Bennett · Undo" and the like.
+    var toast: ToastMessage?
+    /// Bumped to scroll the text back to the candidate under review, or to
+    /// `revealRange` (a Find match).
+    var revealRequest = 0
+    var revealRange: SourceRange?
+    /// The window's undo manager (ADR 0098's system undo).
+    weak var systemUndo: UndoManager?
+    var showsFind = false
     var showsIdentities = false
     var pane: Pane = .text
     var showsReplySheet = false
@@ -198,12 +214,12 @@ final class DocumentViewModel {
     private func finish(_ outcome: JobOutcome<DocumentSnapshot>) {
         switch outcome {
         case .finished(let snapshot):
-            apply(snapshot)
+            applyReview(snapshot)
         case .cancelled:
-            apply(session.snapshot())
+            applyReview(session.snapshot())
         case .failed(let error):
             errorMessage = error.localizedDescription
-            apply(session.snapshot())
+            applyReview(session.snapshot())
         case .busy:
             errorMessage = String(localized: "Another job is running. Try again when it finishes.")
         }
@@ -215,7 +231,7 @@ final class DocumentViewModel {
     /// changed meanwhile is thrown away at the end (the core's rule, as on
     /// desktop), so a Replace now would cost the whole Find names. Says so
     /// and returns true when it waits.
-    private func reviewWaits() -> Bool {
+    func reviewWaitsForJob() -> Bool {
         guard let job = runningJob else { return false }
         say(
             job.kind == .scan
@@ -225,31 +241,23 @@ final class DocumentViewModel {
         return true
     }
 
+    /// A tap on a candidate: the review bar opens on it, or retargets in
+    /// place when it is already up (ADR 0098).
     func open(_ candidate: CandidateID) {
-        guard !reviewWaits() else { return }
-        reviewing = candidate
+        guard !reviewWaitsForJob() else { return }
+        select(candidate)
     }
 
-    /// Whether a proposal is left once `candidate` is decided for `scope`:
-    /// All occurrences decides the identity's other mentions too.
-    func hasProposal(after candidate: CandidateID, scope: Scope) -> Bool {
-        guard let decided = snapshot.candidate(candidate) else { return false }
-        return snapshot.candidates.contains { other in
-            other.state == .proposed && other.id != decided.id
-                && (scope == .justThisOne || other.identityID != decided.identityID)
+    /// The first proposal after the one under review, wrapping around.
+    func reviewNext() {
+        let order = reviewOrder
+        if let next = order.nextUndecided(after: order.index(of: reviewing)) {
+            select(next.id)
         }
     }
 
-    /// Opens the first proposal after the one under review, wrapping around.
-    func reviewNext() {
-        let pending = snapshot.candidates.filter { $0.state == .proposed }
-        guard !pending.isEmpty else { return }
-        let start = reviewing.flatMap { id in snapshot.candidate(id)?.range.start } ?? -1
-        reviewing = (pending.first { $0.range.start > start } ?? pending[0]).id
-    }
-
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) {
-        guard !reviewWaits() else { return }
+        guard !reviewWaitsForJob() else { return }
         perform { try session.decide(candidate, decision, scope: scope) }
     }
 
@@ -259,33 +267,35 @@ final class DocumentViewModel {
     }
 
     func replaceAllPending() {
-        guard !reviewWaits() else { return }
+        guard !reviewWaitsForJob() else { return }
         let count = snapshot.candidates.filter { $0.state == .proposed }.count
+        let wasReviewing = isReviewing
         perform { try session.replaceAllPending() }
-        // One tap changed them all: says so, and that each can still be kept.
+        // One tap changed them all: says so, with Undo (ADR 0098).
         if errorMessage == nil && count > 0 {
-            say(String(localized: "\(count) replaced. Tap one to keep the original."))
+            if wasReviewing { endReview() }
+            toast = ToastMessage(
+                text: String(localized: "\(count) replaced"),
+                actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })
         }
     }
 
-    func beginReplace(_ selection: SourceRange) {
-        guard !reviewWaits() else { return }
-        manualSelection = selection
-    }
-
-    func addReplacement(category: Category) {
-        guard let selection = manualSelection else { return }
-        manualSelection = nil
-        guard !reviewWaits() else { return }
-        perform { try session.addReplacement(selection, category: category) }
-    }
-
-    /// The source text of the selection Replace… was chosen for.
-    var manualSelectionText: String {
-        guard let selection = manualSelection else { return "" }
-        let bytes = Array(snapshot.markdown.utf8)
-        guard selection.start >= 0, selection.end <= bytes.count, selection.start < selection.end else { return "" }
-        return String(decoding: bytes[selection.start..<selection.end], as: UTF8.self)
+    /// Hide name on a selection: a proposal in the core's guessed category,
+    /// with the bar open on it (ADR 0098). Undo removes the mark.
+    func markSelection(_ selection: SourceRange) {
+        guard !reviewWaitsForJob() else { return }
+        // A selection to the line's end takes its newline; the name is the
+        // words.
+        let selection = Self.trimmed(selection, in: snapshot.markdown)
+        guard selection.length > 0 else { return }
+        guard performReview({ try session.markSelection(selection) }) else { return }
+        let marked = snapshot.candidates.first { $0.range.start <= selection.start && $0.range.end >= selection.end }
+            ?? ReviewOrder(snapshot).candidate(near: selection.start)
+        if let marked {
+            focus = nil
+            select(marked.id)
+            Haptics.decision()
+        }
     }
 
     // MARK: Hand-off
@@ -330,6 +340,16 @@ final class DocumentViewModel {
         noticeSymbol = symbol
     }
 
+    /// `range` without the whitespace and newlines at its ends.
+    static func trimmed(_ range: SourceRange, in text: String) -> SourceRange {
+        let bytes = Array(text.utf8)
+        var start = max(0, range.start), end = min(bytes.count, range.end)
+        let space: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
+        while start < end, space.contains(bytes[start]) { start += 1 }
+        while end > start, space.contains(bytes[end - 1]) { end -= 1 }
+        return SourceRange(start: start, end: end)
+    }
+
     static func safeFileName(_ name: String) -> String {
         let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
         return cleaned.isEmpty ? "document.md" : cleaned
@@ -370,18 +390,20 @@ final class DocumentViewModel {
     // MARK: Helpers
 
     func refresh() {
-        apply(session.snapshot())
+        applyReview(session.snapshot())
     }
 
     private func perform(_ change: () throws -> DocumentSnapshot) {
         do {
-            apply(try change())
+            let before = snapshot.undoStep
+            applyReview(try change())
+            if snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func apply(_ new: DocumentSnapshot) {
+    func applyReview(_ new: DocumentSnapshot) {
         snapshot = new
         if let reviewing, new.candidate(reviewing) == nil {
             self.reviewing = nil

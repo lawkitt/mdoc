@@ -49,6 +49,11 @@ final class AppModel {
         let defaults = testing ? UserDefaults(suiteName: "mdoc-ui-testing") ?? .standard : .standard
         if testing {
             defaults.removePersistentDomain(forName: "mdoc-ui-testing")
+            // Appearance lives in the App Group: each UI test starts from
+            // the defaults, whatever an earlier test chose.
+            for key in [AppTheme.key, MarkdownDisplay.serifKey] {
+                MarkdownDisplay.store.removeObject(forKey: key)
+            }
         }
         do {
             let (storage, core) = try open()

@@ -103,7 +103,8 @@ document history ([ADR 0079](0079-decision-history.md)).
   error.
 - **Scope covers every chip,** as on desktop: All changes the whole
   identity; This one splits the mention off as a new identity. Menu rows
-  show the outcome ("Organization → ORG_3").
+  show the outcome ("Organization → ORG_3"). Belongs to… is the
+  exception: an owner belongs to the whole identity, as on desktop.
 - **Marking a missed name:** Hide name in the text's edit menu makes a
   proposal with the core's guessed category, and the bar opens on it.
 
