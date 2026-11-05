@@ -301,7 +301,18 @@ cat >"$tmp/bin/tailscale" <<'EOF'
 [ ! -e "$FAKE/serve-off" ] || { echo '{}'; exit 0; }
 echo '{"Web":{"pc.example.ts.net:443":{"Handlers":{"/ci":{"Proxy":"http://127.0.0.1:8787"}}}}}'
 EOF
-chmod +x "$tmp/bin/gh" "$tmp/bin/just" "$tmp/bin/tailscale"
+# The results page from the tailnet: the run's own output folder, unless
+# $FAKE/page-down exists (the web server stopped).
+cat >"$tmp/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+[ ! -e "$FAKE/page-down" ] || { echo "curl: (7) Failed to connect" >&2; exit 7; }
+for u; do :; done
+case "$u" in
+  https://ci.example/ci/*) cat "$LOCAL_CI_HOME/out/${u#https://ci.example/ci/}" ;;
+  *) exit 6 ;;
+esac
+EOF
+chmod +x "$tmp/bin/gh" "$tmp/bin/just" "$tmp/bin/tailscale" "$tmp/bin/curl"
 
 # --- origin with queue branches -------------------------------------------------
 
@@ -484,7 +495,17 @@ check "and nothing running or queued" eval 'grep -q "^running: nothing" "$wout/s
 check "the lock is released" [ ! -e "$LOCAL_CI_HOME/queue-windows/state/lock" ]
 check "status shows the runner's heartbeat" \
   grep -q "^heartbeat: " <<<"$(QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status)"
-check "and that /ci is served" grep -qx "tailnet: /ci served" <<<"$(QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status)"
+check "and that /ci is served and the page answers" \
+  grep -qx "tailnet: /ci served, and https://ci.example/ci/queue-windows/status.txt answers" <<<"$(QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status)"
+touch "$FAKE/page-down"
+check "status fails when /ci is served but the page does not answer" \
+  eval '! QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status >"$tmp/status.out" &&
+  grep -q "^unhealthy: tailscale serves /ci, but https://ci.example/ci/queue-windows/status.txt does not answer" "$tmp/status.out"'
+rm -f "$FAKE/page-down"
+mkdir -p "$LOCAL_CI_HOME/out/other" && echo "ci/android queue runner on pc" >"$LOCAL_CI_HOME/out/other/status.txt"
+check "or answers with another runner's status" \
+  eval '! QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 QUEUE_CI_URL=https://ci.example/ci/other bash scripts/queue-runner.sh status >"$tmp/status.out" &&
+  grep -q "^unhealthy: tailscale serves /ci, but" "$tmp/status.out"'
 touch "$FAKE/serve-off"
 check "status fails while the tailnet does not serve /ci" \
   eval '! QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status >"$tmp/status.out" &&

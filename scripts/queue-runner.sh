@@ -37,7 +37,8 @@
 # $LOCAL_CI_URL/queue-<job>/; status.txt there has the runner's heartbeat, job
 # and queue, an "offline:" line while it cannot read GitHub or origin (status
 # then fails), and a "tailnet: /ci not served" line while `tailscale serve`
-# does not list /ci (status then fails too).
+# does not list /ci. status checks that at once, and that status.txt answers
+# at its tailnet URL, and fails when either does not.
 #
 #   run     the runner loop (what the scheduled task runs)
 #   once    the loop until nothing is queued or running, then exit
@@ -673,6 +674,12 @@ ci_served() {
   bounded "$tailscale_cmd" serve status --json 2>/dev/null | grep -q '"/ci/\{0,1\}" *:'
 }
 
+# True when this runner's status.txt answers at its URL on the tailnet.
+page_answers() {
+  { bounded curl -fsS --max-time "$net_s" "$url/status.txt" 2>/dev/null || true; } |
+    tr -d '\r' | grep -q "^$context queue runner on "
+}
+
 # Sets tailnet to the status.txt line about /ci, checked at most every
 # tailnet_s seconds.
 check_tailnet() {
@@ -808,7 +815,19 @@ cmd_status() {
   [ -z "$url" ] || echo "results: $url/"
   ci_served || served=$?
   case "$served" in
-    0) echo "tailnet: /ci served" ;;
+    0)
+      # The page itself (ADR 0100): served is not enough if the web server
+      # is down or serves another folder.
+      if [ -z "$url" ]; then
+        echo "tailnet: /ci served; no results URL (QUEUE_CI_URL) to fetch"
+      elif page_answers; then
+        echo "tailnet: /ci served, and $url/status.txt answers"
+      else
+        echo "unhealthy: tailscale serves /ci, but $url/status.txt does not answer with this runner's status;" \
+          "check the 'mdoc queue CI web' task"
+        rc=1
+      fi
+      ;;
     2) echo "tailnet: no $tailscale_cmd here; /ci not checked" ;;
     *)
       echo "unhealthy: tailscale serve does not list /ci, so the results are not on the tailnet;" \

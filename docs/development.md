@@ -580,8 +580,10 @@ the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
 - **Check them** (the fleet preflight): `status.txt` in each home's output
   folder on the tailnet has a `heartbeat:` line from the last 5 minutes. A
   `tailnet: /ci not served` line there (checked every 10 minutes) means the
-  page is reachable only on the PC; `queue-runner.sh status` on the PC
-  checks `tailscale serve status` at once and fails then.
+  page is reachable only on the PC. `queue-runner.sh status` on the PC
+  checks at once that `tailscale serve status` lists `/ci` and that the
+  runner's `status.txt` answers at its tailnet URL, and fails when either
+  doesn't.
 - **Install:** on the PC, in PowerShell (not as admin), from a checkout of
   current `main`:
   `powershell -ExecutionPolicy Bypass -File scripts\queue-runner-setup.ps1`.
