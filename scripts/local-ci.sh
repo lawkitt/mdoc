@@ -33,7 +33,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 agent=com.lawkitt.mdoc.local-ci
 web_agent=com.lawkitt.mdoc.local-ci-web
-every_area='core desktop recognition ios android'
+every_area='core desktop recognition ios android ci'
 
 config() {
   local default_os=

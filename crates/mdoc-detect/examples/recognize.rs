@@ -305,6 +305,14 @@ fn run() -> Result<bool, String> {
                     elapsed.as_secs_f64(),
                     BUDGET.as_secs()
                 ));
+            } else if elapsed > BUDGET.mul_f64(0.8) {
+                // A GitHub Actions annotation, plain text elsewhere: the
+                // signal to add a shard before the budget fails (ADR 0100).
+                println!(
+                    "::warning::detection gate{part}: the model run took {:.0}s, over 80% of its {}s budget: add a shard (queue.yml, nightly.yml)",
+                    elapsed.as_secs_f64(),
+                    BUDGET.as_secs()
+                );
             }
             for failure in &failures {
                 println!("FAIL {failure}");

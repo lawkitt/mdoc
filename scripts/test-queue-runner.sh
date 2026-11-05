@@ -379,8 +379,10 @@ flake=$(qc 14 setupflake src/lib.rs)
 unread=$(qc 15 unread src/lib.rs)
 echo 2 >"$FAKE/pr-down-15"
 gradlefail=$(at=apps/android/ci-behavior qc 19 gradlefail apps/android/App.kt)
+# The CI machinery alone (ADR 0100): ci/scripts runs it, hosted.
+gate=$(at=scripts/merge-gate.sh qc 20 gate .github/workflows/ci.yml)
 {
-  for n in 1 2 3 7 8 9 10 11 12 14 15 19; do echo "$n User false"; done
+  for n in 1 2 3 7 8 9 10 11 12 14 15 19 20; do echo "$n User false"; done
   echo "4 User true"
   echo "5 Bot false"
 } >"$FAKE/prs.tsv"
@@ -450,6 +452,8 @@ check "a docs-only commit passes without a build" has "$docs" "$W" "success	Docs
 check "and is never pending" not eval 'posts "$docs" "$W" | grep -q pending'
 check "an Android-only commit leaves ci/windows not affected" has "$kotlin" "$W" "success	Not affected: no core or desktop change	"
 check "without a build" [ -z "$(ran kotlin)" ]
+check "a CI-only commit leaves ci/windows not affected" has "$gate" "$W" "success	Not affected: no core or desktop change	"
+check "without a build either" [ -z "$(ran gate)" ]
 for c in "$fork" "$bot" "$unknown"; do
   check "a group with a fork, bot or unknown PR gets no status (${c:0:7})" not grep -q "^$c" "$FAKE/statuses.tsv"
 done
@@ -541,6 +545,7 @@ check "and Gradle's last lines, plain, in the summary" \
 check "a target/ over its size is deleted before a job" grep -q "^kotlin android .* target=gone" "$FAKE/just.log"
 check "a desktop-only commit leaves ci/android not affected" has "$pass" "$A" "success	Not affected: no core or android change	"
 check "a docs-only one passes it" has "$docs" "$A" "success	Docs only	"
+check "as does a CI-only one" has "$gate" "$A" "success	Not affected: no core or android change	"
 check "a core change runs it" has "$toolchain" "$A" "success	Passed in *"
 check "the Android runner posts no ci/windows status" [ "$(grep -c "	$W	" "$FAKE/statuses.tsv")" = "$wposts" ]
 check "nor builds the desktop commits" [ -z "$(ran pass)$(ran fail)" ]

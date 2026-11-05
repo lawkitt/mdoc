@@ -90,6 +90,11 @@ if out=$(fetch_workflow_state ci-android.yml 2>&1); then fail "a 404 returned su
 eq "$out" "gh: Not Found (HTTP 404)"
 eq "$(ncalls)" 1
 eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
+# No such workflow when counting its manual runs (ci-android.yml does not
+# exist yet): 0 runs, not an error that skips the queue commit (the first
+# passes after #619 failed every queue commit that needed ci/android).
+eq "$(fetch_dispatched ci-android.yml abc 2>&1)" 0
+eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
 # A run that finished before its cancel (HTTP 409): no "cannot cancel" noise.
 reset
 gh() {
@@ -138,16 +143,24 @@ gh() {
 
 eq "$(printf 'docs/adr/0095-ci-on-a-merge-queue.md\nREADME.md\n' | areas_of)" ""
 eq "$(printf 'apps/ios/mdoc/App.swift\n' | areas_of)" "ios"
-eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | areas_of)" "core desktop recognition ios android"
+eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | areas_of)" "core desktop recognition ios android ci"
 # Recognition code is no core change: the app jobs skip it (#526).
 eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | areas_of)" "desktop recognition"
 eq "$(printf 'tests/fixtures/recognition/en/letter/x.md\n' | areas_of)" "recognition"
+# The CI machinery (ADR 0100): the script suites, not the desktop jobs.
+eq "$(printf 'scripts/merge-gate.sh\n.github/workflows/ci.yml\n' | areas_of)" "ci"
+eq "$(printf 'scripts/merge-gate.sh\nsrc/main.rs\n' | areas_of)" "desktop ci"
 echo "ok: areas from a file list"
 
-eq "$(needed_jobs "core desktop recognition ios android")" "macos windows ios android detection"
+eq "$(needed_jobs "core desktop recognition ios android ci")" "macos windows ios android detection"
 eq "$(needed_jobs "desktop")" "macos windows detection"
 eq "$(needed_jobs "ios")" "ios"
 eq "$(needed_jobs "recognition")" "detection"
+eq "$(needed_jobs "ci")" "scripts"
+# ci/macos runs the suites too.
+eq "$(needed_jobs "desktop ci")" "macos windows detection"
+eq "$(needed_jobs "ios ci")" "ios scripts"
+eq "$(needed_jobs "recognition ci")" "detection scripts"
 eq "$(needed_jobs "")" ""
 echo "ok: jobs from areas"
 
@@ -164,16 +177,23 @@ cp scripts/ci-areas.sh scripts/ci-areas.txt scripts/lib.sh "$repo_dir/scripts/"
   mkdir -p apps/ios && echo x >apps/ios/App.swift
   g add -A && g commit -qm "iOS (#1)"
   eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
-    "areas=ios jobs=ios macos=false ios=true detection=false "
+    "areas=ios jobs=ios macos=false ios=true detection=false scripts=false "
   mkdir -p crates/mdoc-pii && echo x >crates/mdoc-pii/lib.rs
   g add -A && g commit -qm "PII (#2)"
   eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
-    "areas=desktop recognition ios jobs=macos windows ios detection macos=true ios=true detection=true "
+    "areas=desktop recognition ios jobs=macos windows ios detection macos=true ios=true detection=true scripts=false "
+  # The CI machinery alone (ADR 0100): only the script suites.
+  g update-ref refs/remotes/origin/main HEAD
+  echo x >scripts/merge-gate.sh
+  mkdir -p .github/workflows && echo x >.github/workflows/merge-gate.yml
+  g add -A && g commit -qm "Gate (#3)"
+  eq "$(bash scripts/ci-areas.sh --queue | tr '\n' ' ')" \
+    "areas=ci jobs=scripts macos=false ios=false detection=false scripts=true "
   # No main to diff against: every job.
   g update-ref -d refs/remotes/origin/main
   eq "$(bash scripts/ci-areas.sh --queue | sed -n 2p)" "jobs=macos windows ios android detection"
 ) || exit 1
-for job in macos ios detection; do
+for job in macos ios detection scripts; do
   grep -q "if: needs.areas.outputs.$job == 'true'" .github/workflows/queue.yml || fail "queue.yml starts no $job job"
 done
 grep -q 'run: scripts/ci-areas.sh --queue' .github/workflows/queue.yml || fail "queue.yml's areas job reads no areas"
@@ -623,6 +643,51 @@ eq "$(cut -d' ' -f1-3 "$posted")" "qqqq failure Failed:"
 grep -qxF "qqqq: could not read its scripts/ci-areas.txt; using main's" "$logf" || fail "no log of main's table"
 fetch_file() { cat "$2"; }
 echo "ok: the queue commit's own area table, else main's"
+
+# The CI machinery alone (ADR 0100): only ci/scripts, the summary of the
+# suites on Linux and under bash 3.2; no desktop, PC or detection job, and
+# nothing dispatched for the silent PC.
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "scripts/merge-gate.sh"}, {"filename": ".github/workflows/ci.yml"}], "commits": [{"commit": {"message": "Gate (#514)"}}]}'
+}
+fetch_status() { echo '{"statuses": []}'; }
+scripts_runs() { # ci/scripts' conclusion
+  printf '{"check_runs": [
+    {"id": 951, "name": "scripts / ci/scripts (linux)", "status": "completed", "conclusion": "success", "html_url": "https://l", "completed_at": "2026-11-02T11:39:00Z"},
+    {"id": 952, "name": "scripts / ci/scripts", "status": "completed", "conclusion": "%s", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/950/job/952", "completed_at": "2026-11-02T11:40:00Z"}]}\n' "$1"
+}
+fetch_check_runs() { echo '{"check_runs": []}'; }
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(cat "$posted")|$(cat "$dispatched")" "qqqq pending Waiting: scripts|"
+fetch_check_runs() { scripts_runs success; }
+: >"$posted"
+queue_pass
+eq "$(cat "$posted")" "qqqq success Passed: scripts (hosted)"
+# A suite that ran and failed fails it at once.
+fetch_check_runs() { scripts_runs failure; }
+fetch_run_jobs() { jobs_json "$(job 950 "scripts / ci/scripts (bash 3.2)" "$ran")" "$(job 952 "scripts / ci/scripts" "$ran")"; }
+run_state="completed 1"
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: scripts (hosted)"
+# Its bash 3.2 part got no macOS runner: re-run, and wait.
+fetch_run_jobs() { jobs_json "$(job 950 "scripts / ci/scripts (bash 3.2)" "$never")" "$(job 952 "scripts / ci/scripts" "$ran")"; }
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "950|qqqq pending Waiting: scripts"
+# With a desktop change, ci/macos runs the suites: no ci/scripts.
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "scripts/merge-gate.sh"}, {"filename": "src/main.rs"}], "commits": [{"commit": {"message": "Gate (#514)"}}]}'
+}
+fetch_check_runs() { echo '{"check_runs": []}'; }
+fetch_workflow_state() { echo active; }
+: >"$posted"
+: >"$dispatched"
+queue_pass
+eq "$(cat "$posted")|$(cut -d' ' -f1 "$dispatched")" "qqqq pending Waiting: macos, windows, detection|ci-desktop.yml"
+echo "ok: a CI-only queue commit needs only ci/scripts"
 
 # Missed enqueue (#613): green, auto-merge on, not in the queue.
 t=1793620800

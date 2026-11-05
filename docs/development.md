@@ -237,9 +237,10 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-survey <out> [phone\|tablet]` | Windows: the Android UI survey, `SurveyTest` on the phone or tablet emulator: every screen light and dark, the review text and Settings at the largest font, copied into the folder (tablet ones prefixed `tablet-`). Not part of CI |
 | `just android-device-test [<serial> \| <model>:<api> ...]` | Windows: the app's instrumented tests and the long-job test (`apps/android/longjobs`: the model download, text recognition and Find names off screen and after a process kill, then no crash or ANR in mdoc's exit info), on a USB phone or emulator by its adb serial, or on Firebase Test Lab phones; with no argument, the app's tests on one phone per RAM class (Pixel 6a, Pixel 8, Pixel 10 Pro) and the long jobs on a Pixel 8 and a Galaxy A55, the Spark plan's five a day. JUnit results in `target/android-device-test/<time>/`. Test Lab needs `gcloud` signed in with the project. Not part of CI |
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
-| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted, which `ci/ios` runs with a 40-minute limit. Neither: both |
+| `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (tests)` runs those recipes after the core, with a 40-minute limit. Neither: both |
 | `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
-| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator |
+| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
+| `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios-release` runs it |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |
@@ -476,7 +477,13 @@ blocks its own revert. The maintainer then pushes the revert directly to
 `main` through the ruleset's bypass, its only use besides `just release`.
 A change to what decides merges (`merge-gate.sh`, `queue.yml`, the job
 workflows, `queue-runner.sh`, `ci-areas.txt`) first passes a shadow-branch
-run that includes one deliberately broken case it must fail.
+run that includes one deliberately broken case it must fail. A shadow
+commit brings its whole PR onto `main`, so a PR that is also core (the
+table, `lib.sh`) can stand for a ci-only change only if the trial commit
+marks those files `ci` in its own table (#622). `merge-gate.yml` runs
+`main`'s gate, so the gate's side of a change shows in `test-merge-gate.sh`
+and a dry run of the branch's script against the trial commits, not in the
+trial's own `merge-gate` status.
 
 **Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
 diffs the commit against `main`'s merge base and picks the jobs from its
@@ -489,21 +496,48 @@ wait for.
 |---|---|---|---|
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
-| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`): `just mobile --ios` on the pinned Xcode | 40 min |
+| `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 40 min (tests), 30 min (Release) |
 | `ci/android` | android | the PC: `just android` | 40 min |
-| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards | 20 min a shard (10 once `main` caches its build, item 7) |
+| `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
-A core change needs every job; docs only needs none.
+| `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
+
+A core change needs every job; docs only needs none. A change to only the
+CI machinery (the ci area) needs only `ci/scripts`, beside `lint (ubuntu)`
+([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)); with a desktop
+change, `ci/macos (checks)` runs the same suites instead.
+
+**The iOS jobs.** `ci/ios` is a summary job, green only when both of its
+parts ran and passed: `ci/ios (tests)` (job id `ios`) and `ci/ios-release`.
+Both build the core with `just ios-core` and restore one cargo cache
+(`cache-key: ios`), which `main-caches.yml`'s build-only run of the tests
+job saves. Xcode needs a Simulator runtime of the SDK's version for any
+app build, Release included, so each job runs `scripts/ios-toolchain.sh
+--start`: it uses an installed runtime whose major.minor is
+`IOS_SIM_RUNTIME`, or downloads it (about 8 GB) in the background while
+the core builds; `--finish` waits for it. The `macos-26` image of
+2026-10-26 has iOS 26.2, 26.4 and 26.5 but not 26.1, so both jobs download
+it. `MDOC_IOS_TEST_WORKERS` in `ci-ios.yml` switches parallel testing on
+(the number of Simulator clones); it is off, as 2 clones were slower and
+failed UI tests (#617).
 
 **Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
-area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, or two of
-them) and a glob; a file takes the first line that matches it, desktop when
+area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, `ci`, or
+two of them) and a glob; a file takes the first line that matches it, desktop when
 none does, and a core change runs every area. Its comment says which
 scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
 `crates/mdoc-pii` are `recognition,desktop`, so they skip the mobile jobs.
 `scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
 script outside `src/` and `tests/` that a mobile job runs needs a line
-there, or it counts as desktop. `ci.yml`'s `paths-ignore` repeats the `none`
+there, or it counts as desktop. The ci area is `merge-gate.sh`,
+`queue-runner.sh` and its setup, the CI scripts (`ci-*.sh` but the table's
+own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`, the
+retired local CI), their suites, and the workflows that build and test
+nothing themselves (`ci.yml`, `ci-scripts.yml`, `main-caches.yml`, the
+gate's two, `nightly.yml`). A workflow that builds or tests the app takes
+the area of what it runs: `ci-desktop.yml`, `ci-detection.yml`, `queue.yml`
+(which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
+unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
 lines word for word (`scripts/test-local-ci.sh` checks).
 
 **Test tiers.** `.config/nextest.toml` names them (`unit`, `app`, `renders`,
@@ -637,8 +671,8 @@ it is not the status itself.
   after that it fails, worded "no macOS runner, 3 attempts". A job that ran
   and failed still fails at once. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
-  for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `fast (unit)` for
-  `fast (ubuntu)`; name new parts that way, or their capacity cancels count
+  for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `ci/scripts (bash 3.2)`
+  for `ci/scripts`, `fast (unit)` for `fast (ubuntu)`; name new parts that way, or their capacity cancels count
   as failures.
 - **Missed enqueue.** A PR that is green, has auto-merge on and is still not
   in the queue 5 minutes later gets a warning in the gate's run (see "A
