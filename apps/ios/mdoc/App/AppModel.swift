@@ -187,13 +187,15 @@ final class AppModel {
 
     /// Imports into the chosen case, opens the document and starts
     /// recognition, which the user asked for by adding it.
-    func finishImport(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) {
+    @discardableResult
+    func finishImport(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) -> DocumentViewModel? {
         guard let session = home.importDocument(pending, title: title, into: caseChoice),
-              let model = documentModel(for: session.id) else { return }
+              let model = documentModel(for: session.id) else { return nil }
         selection = session.id
         if model.snapshot.phase == .recognizing {
             Task { await model.recognize() }
         }
+        return model
     }
 
     func deleteDocument(_ id: DocumentID) {
@@ -289,12 +291,11 @@ final class AppModel {
     /// language, in a case of its own, opened for review.
     func trySample() {
         let sample = SampleDocument.forLanguages()
-        addText(sample.text, title: sample.title, into: .newCase(name: sample.title))
         // Its names come in as proposals, so it reviews before the name
-        // finder is downloaded.
-        if let id = selection, let model = documentModel(for: id) {
-            model.proposeStored(sample.names)
-        }
+        // finder is downloaded; only into the sample itself, never the
+        // document open before when the import fails.
+        let pending = PendingImport(source: .text(sample.text), suggestedTitle: sample.title)
+        finishImport(pending, title: sample.title, into: .newCase(name: sample.title))?.proposeStored(sample.names)
     }
 
     /// The first line, without Markdown heading marks, up to 60 characters.

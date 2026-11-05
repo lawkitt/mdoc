@@ -661,9 +661,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             }
         }
         candidates.sort { $0.range.start < $1.range.start }
-        _ = try change { try ffi.addCandidates(candidates: candidates) }
-        // Stored proposals stand in for the scan: the document is in review.
-        lock.withLock { scanned = true }
+        // Stored proposals stand in for the scan, and save as its result
+        // does: when the phone locks first, once it unlocks.
+        let proposed = try core { try ffi.addCandidates(candidates: candidates) }
+        lock.withLock {
+            review = proposed
+            scanned = true
+        }
+        try saveAfterJob { [self] in try save() }
         return snapshot()
     }
 
