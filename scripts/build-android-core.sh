@@ -8,8 +8,10 @@
 #   target/android/host/           the core built for this computer, which the
 #                                  app's JVM tests load
 # for arm64-v8a (phones) and x86_64 (the emulator), with the NDK's clang for
-# API 31, the apps' minimum. ONNX Runtime 1.27.0 (Microsoft's Maven AAR) and
-# PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
+# API 31, the apps' minimum. MDOC_ANDROID_ABIS picks fewer: the Android CI
+# job (scripts/android-check.sh) builds x86_64 only, for its emulator;
+# aarch64 stays compile-checked by `just mobile --ffi` on macOS. ONNX
+# Runtime 1.27.0 (Microsoft's Maven AAR) and PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
 # downloaded at run time. Fails if any library is not aligned for 16 KB pages
 # or needs a shared library Android does not provide.
 # Windows x64 or Apple Silicon macOS.
@@ -32,6 +34,14 @@ slices=(
   "aarch64-linux-android arm64-v8a pdfium-android-arm64.tgz 0e36e095e592845c38267a0b2f0e73b13d60aa831b2959605e6a5b012edc330a"
   "x86_64-linux-android x86_64 pdfium-android-x64.tgz 922bb43dcc74d73c0fdf016a34128d9e042a09b604174ada2efa276a457ff30d"
 )
+abis=${MDOC_ANDROID_ABIS:-arm64-v8a x86_64}
+for abi in $abis; do
+  case "$abi" in
+    arm64-v8a | x86_64) ;;
+    *) die "MDOC_ANDROID_ABIS: unknown ABI '$abi' (arm64-v8a, x86_64)" ;;
+  esac
+done
+[ -n "${abis// /}" ] || die "MDOC_ANDROID_ABIS names no ABI"
 
 ndk=$(scripts/install-android-ndk.sh)
 bin=$ndk/toolchains/llvm/prebuilt/$host/bin
@@ -50,8 +60,12 @@ fetch_sha256 "$ort_license_url" "$ort_license_sha" "$out/licenses/onnxruntime-LI
 rm -rf "$deps/onnxruntime" && mkdir "$deps/onnxruntime"
 unzip -q "$deps/onnxruntime-android.aar" 'jni/*/libonnxruntime.so' -d "$deps/onnxruntime"
 
+# The first slice built: its PDFium licences and UniFFI metadata serve all.
+first_abi='' first_target=''
 for slice in "${slices[@]}"; do
   read -r target abi pdfium pdfium_sha <<<"$slice"
+  [[ " $abis " == *" $abi "* ]] || continue
+  [ -n "$first_abi" ] || first_abi=$abi first_target=$target
   rustup target add "$target" >/dev/null 2>&1 || rustup target add "$target"
   upper=$(tr 'a-z-' 'A-Z_' <<<"$target")
   under=${target//-/_}
@@ -75,8 +89,8 @@ for slice in "${slices[@]}"; do
   tar -xzf "$deps/$pdfium" -C "$deps/pdfium-$abi"
   cp "$deps/pdfium-$abi/lib/libpdfium.so" "$dir/"
 done
-cp "$deps/pdfium-arm64-v8a/LICENSE" "$out/licenses/pdfium/LICENSE"
-cp "$deps/pdfium-arm64-v8a/licenses/"* "$out/licenses/pdfium/"
+cp "$deps/pdfium-$first_abi/LICENSE" "$out/licenses/pdfium/LICENSE"
+cp "$deps/pdfium-$first_abi/licenses/"* "$out/licenses/pdfium/"
 
 # Every library: 16 KB-aligned LOAD segments (Play requires it for Android
 # 15+), and no shared library outside Android's public NDK ones and our own.
@@ -96,8 +110,9 @@ echo "build-android-core: mdoc-ffi for this computer" >&2
 cargo rustc --locked --profile mobile -p mdoc-ffi --lib --crate-type cdylib
 cp "$cargo_target/mobile/$host_lib" "$out/host/"
 
-# Kotlin bindings from the library's UniFFI metadata.
+# Kotlin bindings from the library's UniFFI metadata, the same in each ABI's
+# library: arm64-v8a's, or x86_64's when only that is built.
 cargo run --locked -p mdoc-ffi --features bindgen --bin uniffi-bindgen -- \
-  generate --library "$cargo_target/aarch64-linux-android/mobile/libmdoc_ffi.so" \
+  generate --library "$cargo_target/$first_target/mobile/libmdoc_ffi.so" \
   --language kotlin --no-format --out-dir "$out/kotlin"
 echo "$out"

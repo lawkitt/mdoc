@@ -35,6 +35,8 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
 # --- functions ------------------------------------------------------------------
 
 (
+  # Its own count, which the parent adds.
+  failures=0
   export QUEUE_RUNNER_SOURCED=1
   # shellcheck source=queue-runner.sh
   source scripts/queue-runner.sh
@@ -71,6 +73,40 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   check "the failing tests are named once each" \
     [ "$(failed_tests "$tmp/nextest.log" | LC_ALL=C sort | tr '\n' ,)" = "mdoc workspace::tests::flaky,mdoc workspace::tests::slow,mdoc-core tests::broken," ]
 
+  # Gradle's JUnit XML: <testcase> as `/>`, ` />` and `>`, a failure and an
+  # error inside the last kind, passing JVM tests elsewhere.
+  mkdir -p "$tmp/gradle/connected" "$tmp/gradle/unit"
+  cat >"$tmp/gradle/connected/TEST-mdoc-ci(AVD) - 16-_app-.xml" <<'XML'
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="io.github.lawkitt.mdoc.IdentitiesTest" tests="4" failures="1" errors="1">
+  <testcase name="aTapOpensAnIdentity" classname="io.github.lawkitt.mdoc.IdentitiesTest" time="1.2"/>
+  <testcase name="aLongPressKeepsAllOfAnIdentity" classname="io.github.lawkitt.mdoc.IdentitiesTest" time="10.1">
+    <failure>androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 10000 ms</failure>
+  </testcase>
+  <testcase name="aSwipeKeeps" classname="io.github.lawkitt.mdoc.IdentitiesTest" time="0.3" />
+  <testcase name="pasteFillsTheText" classname="io.github.lawkitt.mdoc.PasteSheetTest" time="0.4">
+    <error message="null">java.lang.NullPointerException</error>
+  </testcase>
+</testsuite>
+XML
+  printf '%s\n' '<testsuite tests="1" failures="0">' '  <testcase name="parity" classname="io.github.lawkitt.mdoc.CoreParityTest" time="0.1"/>' '</testsuite>' \
+    >"$tmp/gradle/unit/TEST-io.github.lawkitt.mdoc.CoreParityTest.xml"
+  check "Gradle's failing tests are named from its XML" \
+    [ "$(gradle_failed_tests "$tmp/gradle/connected" "$tmp/gradle/unit" "$tmp/gradle/none" | tr '\n' ,)" = \
+    "android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity,android:io.github.lawkitt.mdoc.PasteSheetTest#pasteFillsTheText," ]
+  check "and none from folders Gradle did not write" [ -z "$(gradle_failed_tests "$tmp/gradle/none")" ]
+
+  # A failed job's summary ends with its log's last 60 lines, plain.
+  mkdir -p "$tmp/excerpt"
+  {
+    seq 1 100
+    echo "${esc}[31mFAILURE${esc}[0m: Build failed with an exception.$(printf '\r')"
+  } >"$tmp/excerpt/log.txt"
+  log_excerpt "$tmp/excerpt" >"$tmp/excerpt.txt"
+  check "the log excerpt is its last 60 lines" \
+    eval '[ "$(wc -l <"$tmp/excerpt.txt" | tr -d " ")" = 61 ] && [ "$(sed -n 2p "$tmp/excerpt.txt")" = 42 ]'
+  check "without colours or carriage returns" [ "$(tail -n 1 "$tmp/excerpt.txt")" = "FAILURE: Build failed with an exception." ]
+
   # Output: older than 7 days goes, then the oldest while over the size.
   # shellcheck disable=SC2034 # read by prune_out
   out=$tmp/prune keep_days=7 out_max_kb=700
@@ -92,6 +128,9 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   # status.txt while the queue cannot be read, then once it can.
   # shellcheck disable=SC2034 # read by write_status
   out=$tmp/status context=ci/windows run_pid='' queued='' waiting='' update_failed='' unsettled=''
+  # Not checked yet: the tailnet checks are below.
+  # shellcheck disable=SC2034
+  tailnet="" tailnet_at=$(date +%s) tailnet_s=600
   mkdir -p "$out"
   # shellcheck disable=SC2034
   offline_since=1 offline_at=2026-11-04T02:29:00Z offline_why="could not list the queue on GitHub"
@@ -102,6 +141,31 @@ days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%
   offline_since=''
   write_status
   check "and stops once it can" eval 'grep -q "^queue: empty" "$out/status.txt" && ! grep -q "^offline:" "$out/status.txt"'
+
+  # The tailnet page: a fake tailscale whose serve config has /ci (beside
+  # another app's path), or not.
+  # shellcheck disable=SC2034 # read by check_tailnet
+  tailnet='' tailnet_at=0 tailnet_s=600 net_s=5 tailscale_cmd=$tmp/fake-tailscale
+  cat >"$tailscale_cmd" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >>"$tmp/tailscale.log"
+[ ! -e "$tmp/serve-off" ] || { echo '{}'; exit 0; }
+echo '{"Web":{"pc.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"},"/ci":{"Proxy":"http://127.0.0.1:8787"}}}}}'
+EOF
+  chmod +x "$tailscale_cmd"
+  touch "$tmp/serve-off"
+  write_status
+  check "status.txt says when the tailnet does not serve /ci" grep -qx "tailnet: /ci not served" "$out/status.txt"
+  rm -f "$tmp/serve-off"
+  write_status
+  check "and checks again at most every 10 minutes" \
+    eval 'grep -qx "tailnet: /ci not served" "$out/status.txt" && [ "$(wc -l <"$tmp/tailscale.log" | tr -d " ")" = 1 ]'
+  tailnet_at=$(($(date +%s) - 600))
+  write_status
+  check "then sees /ci served again" eval '! grep -q "^tailnet:" "$out/status.txt" && [ "$(sort -u "$tmp/tailscale.log")" = "serve status --json" ]'
+  tailscale_cmd=$tmp/no-tailscale tailnet_at=0
+  write_status
+  check "with no tailscale (macOS and Linux) it says nothing" not grep -q "^tailnet:" "$out/status.txt"
   exit "$failures"
 ) || failures=$((failures + $?))
 
@@ -179,6 +243,11 @@ drop_branch() {
     git --git-dir="$FAKE_ORIGIN" update-ref -d "$r"
   done
 }
+# Before a step fails: a failed job keeps its renders.
+case "$1" in
+  test) mkdir -p "$MDOC_HEADLESS_ARTIFACTS" && echo '{}' >"$MDOC_HEADLESS_ARTIFACTS/summary.json" ;;
+  android) mkdir -p apps/android/app/build/reports && echo report >apps/android/app/build/reports/index.html ;;
+esac
 case "$behavior $1" in
   "fail test")
     echo "        FAIL [   0.010s] mdoc-core tests::broken"
@@ -210,13 +279,29 @@ case "$behavior $1" in
     ;;
   # A new runner reaches main while this job runs.
   "bump lint") git --git-dir="$FAKE_ORIGIN" update-ref refs/heads/main "$(cat "$FAKE/next-main")" ;;
-esac
-case "$1" in
-  test) mkdir -p "$MDOC_HEADLESS_ARTIFACTS" && echo '{}' >"$MDOC_HEADLESS_ARTIFACTS/summary.json" ;;
-  android) mkdir -p apps/android/app/build/reports && echo report >apps/android/app/build/reports/index.html ;;
+  # An emulator test fails: Gradle's log names no test, its XML does.
+  "gradlefail android")
+    r=apps/android/app/build/outputs/androidTest-results/connected/debug
+    u=apps/android/app/build/test-results/testDebugUnitTest
+    mkdir -p "$r" "$u"
+    printf '%s\n' '<testsuite>' '  <testcase name="aLongPressKeepsAllOfAnIdentity" classname="io.github.lawkitt.mdoc.IdentitiesTest" time="10">' \
+      '    <failure>ComposeTimeoutException</failure>' '  </testcase>' '</testsuite>' >"$r/TEST-mdoc-ci.xml"
+    printf '%s\n' '<testsuite>' '  <testcase name="parity" classname="io.github.lawkitt.mdoc.CoreParityTest" time="0.1"/>' '</testsuite>' >"$u/TEST-parity.xml"
+    echo "> Task :app:connectedDebugAndroidTest FAILED"
+    printf '\033[31mFAILURE\033[0m: Build failed with an exception.\n'
+    echo "> There were failing tests. See the report at: file:///ci/index.html"
+    exit 1
+    ;;
 esac
 EOF
-chmod +x "$tmp/bin/gh" "$tmp/bin/just"
+# tailscale serve's config: /ci served unless $FAKE/serve-off exists.
+cat >"$tmp/bin/tailscale" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "serve status --json" ] || { echo "fake tailscale: unexpected $*" >&2; exit 9; }
+[ ! -e "$FAKE/serve-off" ] || { echo '{}'; exit 0; }
+echo '{"Web":{"pc.example.ts.net:443":{"Handlers":{"/ci":{"Proxy":"http://127.0.0.1:8787"}}}}}'
+EOF
+chmod +x "$tmp/bin/gh" "$tmp/bin/just" "$tmp/bin/tailscale"
 
 # --- origin with queue branches -------------------------------------------------
 
@@ -282,8 +367,9 @@ flake=$(qc 14 setupflake src/lib.rs)
 # Its PR cannot be read at first: GitHub is unreachable for two reads.
 unread=$(qc 15 unread src/lib.rs)
 echo 2 >"$FAKE/pr-down-15"
+gradlefail=$(at=apps/android/ci-behavior qc 19 gradlefail apps/android/App.kt)
 {
-  for n in 1 2 3 7 8 9 10 11 12 14 15; do echo "$n User false"; done
+  for n in 1 2 3 7 8 9 10 11 12 14 15 19; do echo "$n User false"; done
   echo "4 User true"
   echo "5 Bot false"
 } >"$FAKE/prs.tsv"
@@ -345,8 +431,10 @@ check "it was pending from the start" grep -q "^$pass	$W	pending	Running checkou
 check "setup, lint, then test" [ "$(ran pass)" = "setup lint test " ]
 check "lint gets no renders" grep -q "^pass lint renders= job=" "$FAKE/just.log"
 check "test writes its renders in the run folder" grep -q "^pass test renders=$wout/${pass:0:7}/renders job=" "$FAKE/just.log"
-check "which keeps them" [ -f "$wout/${pass:0:7}/renders/summary.json" ]
+check "which a passing job deletes" [ ! -e "$wout/${pass:0:7}/renders" ]
+check "saying so in the summary" grep -q "^upkeep: deleted renders/ (the job passed)" "$wout/${pass:0:7}/summary.txt"
 check "the log and summary are kept" eval '[ -s "$wout/${pass:0:7}/log.txt" ] && grep -q "^result: success" "$wout/${pass:0:7}/summary.txt"'
+check "a passing job's summary has no log excerpt" not grep -q "^--- log.txt" "$wout/${pass:0:7}/summary.txt"
 check "a docs-only commit passes without a build" has "$docs" "$W" "success	Docs only	"
 check "and is never pending" not eval 'posts "$docs" "$W" | grep -q pending'
 check "an Android-only commit leaves ci/windows not affected" has "$kotlin" "$W" "success	Not affected: no core or desktop change	"
@@ -363,6 +451,12 @@ check "and is built once it can be read" has "$unread" "$W" "success	Passed in *
 check "a failing test fails, naming the step and the tests" \
   has "$fail" "$W" "failure	Failed in just test: mdoc* and 1 more	https://ci.example/ci/queue-windows/${fail:0:7}/"
 check "which are listed in the run folder" [ "$(wc -l <"$wout/${fail:0:7}/failed-tests.txt" | tr -d ' ')" = 2 ]
+check "a failed job keeps its renders" [ -f "$wout/${fail:0:7}/renders/summary.json" ]
+check "its summary ends with the log's last lines, after the result" \
+  eval 'sed -n "/^result: failure/,\$p" "$wout/${fail:0:7}/summary.txt" | sed -n 2p | grep -q "^--- log.txt, last 60 lines" &&
+  grep -q "FAIL \[   0.010s\] mdoc-core tests::broken" "$wout/${fail:0:7}/summary.txt"'
+check "as does a timed-out job's" grep -q "^--- log.txt, last 60 lines" "$wout/${slow:0:7}/summary.txt"
+check "status.txt has no tailnet line while /ci is served" not grep -q "^tailnet:" "$wout/status.txt"
 check "a job refreshes its pending status while it runs (the heartbeat)" \
   [ "$(posts "$beat" "$W" | grep -c "pending	Running just test (")" -ge 2 ]
 check "a ci-shadow/main/ commit is tested too" has "$beat" "$W" "success	Passed in *"
@@ -390,6 +484,15 @@ check "and nothing running or queued" eval 'grep -q "^running: nothing" "$wout/s
 check "the lock is released" [ ! -e "$LOCAL_CI_HOME/queue-windows/state/lock" ]
 check "status shows the runner's heartbeat" \
   grep -q "^heartbeat: " <<<"$(QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status)"
+check "and that /ci is served" grep -qx "tailnet: /ci served" <<<"$(QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status)"
+touch "$FAKE/serve-off"
+check "status fails while the tailnet does not serve /ci" \
+  eval '! QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 bash scripts/queue-runner.sh status >"$tmp/status.out" &&
+  grep -q "^unhealthy: tailscale serve does not list /ci" "$tmp/status.out"'
+check "and passes where there is no tailscale, saying so" \
+  eval 'QUEUE_CI_JOB=windows QUEUE_CI_POLL=60 QUEUE_CI_TAILSCALE=$tmp/no-tailscale bash scripts/queue-runner.sh status >"$tmp/status.out" &&
+  grep -q "^tailnet: no .*no-tailscale here; /ci not checked" "$tmp/status.out"'
+rm -f "$FAKE/serve-off"
 check "the job's refs are cleaned up" [ -z "$(git -C "$LOCAL_CI_HOME/queue-windows/mdoc" for-each-ref refs/queue-ci/c/)" ]
 
 # --- the Android job, beside it ----------------------------------------------------
@@ -406,6 +509,14 @@ check "which the runner asks for" grep -q "^kotlin android renders= job=always" 
 check "and posts as ci/android in its own folder" \
   has "$kotlin" "$A" "success	Passed in *	https://ci.example/ci/queue-android/${kotlin:0:7}/"
 check "with the Gradle reports" [ -f "$aout/${kotlin:0:7}/android-reports/index.html" ]
+check "a failing emulator test is named from Gradle's XML" \
+  has "$gradlefail" "$A" "failure	Failed in just android: android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity	*"
+check "and listed in failed-tests.txt" \
+  [ "$(cat "$aout/${gradlefail:0:7}/failed-tests.txt")" = "android:io.github.lawkitt.mdoc.IdentitiesTest#aLongPressKeepsAllOfAnIdentity" ]
+check "with Gradle's XML copied to the job's folder" eval '[ -f "$aout/${gradlefail:0:7}/androidTest-results/connected/debug/TEST-mdoc-ci.xml" ] &&
+  [ -f "$aout/${gradlefail:0:7}/test-results/testDebugUnitTest/TEST-parity.xml" ]'
+check "and Gradle's last lines, plain, in the summary" \
+  grep -qx "FAILURE: Build failed with an exception." "$aout/${gradlefail:0:7}/summary.txt"
 check "a target/ over its size is deleted before a job" grep -q "^kotlin android .* target=gone" "$FAKE/just.log"
 check "a desktop-only commit leaves ci/android not affected" has "$pass" "$A" "success	Not affected: no core or android change	"
 check "a docs-only one passes it" has "$docs" "$A" "success	Docs only	"
@@ -445,11 +556,16 @@ check "with the folder gone" [ ! -e "$hhome/mdoc/held" ]
 
 # --- the disk floor ----------------------------------------------------------------
 
+# Its own prefix and commit, as the lone, held and update blocks have: a
+# fresh runner that settled every commit above first took minutes on hosted
+# Windows, past this block's wait (#614).
 : >"$FAKE/just.log"
+disk=$(prefix=disk/main/ qc 18 disk src/lib.rs)
+echo "18 User false" >>"$FAKE/prs.tsv"
 dhome=$LOCAL_CI_HOME/queue-disk
 git clone --quiet "$FAKE_ORIGIN" "$dhome/mdoc"
 QUEUE_CI_JOB=windows QUEUE_CI_HOME=$dhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-disk QUEUE_CI_MIN_FREE_GB=100000000 \
-  QUEUE_CI_FOREGROUND=1 bash scripts/queue-runner.sh run >"$tmp/disk.log" 2>&1 &
+  QUEUE_CI_PREFIXES=disk/main/ QUEUE_CI_FOREGROUND=1 bash scripts/queue-runner.sh run >"$tmp/disk.log" 2>&1 &
 runner=$!
 for _ in $(seq 1 60); do
   grep -q "Waiting for disk space" "$FAKE/statuses.tsv" && break
@@ -461,7 +577,7 @@ kill "$runner" 2>/dev/null || true
 wait "$runner" 2>/dev/null || true
 check "below the disk floor no job starts" [ ! -s "$FAKE/just.log" ]
 check "and the oldest commit's status says so, once" \
-  [ "$(grep -c "^$pass	$W	pending	Waiting for disk space: [0-9]* GB free; a job starts at 100000000 GB	https://ci.example/ci/queue-windows/status.txt" "$FAKE/statuses.tsv")" = 1 ]
+  [ "$(grep -c "^$disk	$W	pending	Waiting for disk space: [0-9]* GB free; a job starts at 100000000 GB	https://ci.example/ci/queue-windows/status.txt" "$FAKE/statuses.tsv")" = 1 ]
 check "as does status.txt" grep -q "^waiting: .* GB free; a job starts at 100000000 GB" "$LOCAL_CI_HOME/out/queue-disk/status.txt"
 check "a stopped runner releases its lock" [ ! -e "$dhome/state/lock" ]
 
@@ -509,6 +625,9 @@ check "and restarts as it" [ "$(grep -c "runner started" "$tmp/update.log")" = 2
 check "which does not run the job again" [ "$(grep -c "^bump lint" "$FAKE/just.log")" = 1 ]
 # Line endings aside, a copy that matches main's stays.
 (
+  # Its own count, which the parent adds: it once exited with the parent's,
+  # which was then counted twice.
+  failures=0
   export QUEUE_RUNNER_SOURCED=1
   # shellcheck source=queue-runner.sh
   source scripts/queue-runner.sh
