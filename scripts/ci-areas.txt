@@ -113,6 +113,7 @@ ci                    scripts/test-local-ci.sh
 ci                    scripts/test-local-ci-fallback.sh
 ci                    scripts/test-ci-cache-cleanup.sh
 ci                    scripts/test-nightly.sh
+ci                    scripts/test-ci-stats.sh
 ci                    .github/workflows/ci.yml
 ci                    .github/workflows/ci-scripts.yml
 ci                    .github/workflows/main-caches.yml

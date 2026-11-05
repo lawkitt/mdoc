@@ -700,6 +700,13 @@ matches its key exactly is never saved again, so new builds reach it only
 under a new key: a new job id, or the next change to `Cargo.lock` or the
 toolchain. A red `main` stops enqueueing.
 
+**CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>]` measures ADR 0100's targets from GitHub, read-only, and exits 1 when one fails:
+- a queue commit's time to a green `merge-gate`: median 13 minutes or less;
+- a PR head's time to `fast (ubuntu)`, from its CI run starting: median 4 minutes or less;
+- infrastructure failures ("no macOS runner"): at most 1 a week.
+
+`--since` measures only what ran after a change landed.
+
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
 and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
