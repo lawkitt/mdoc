@@ -154,12 +154,19 @@ glob_regex() {
 # area. Nothing
 # (an empty line) when every file is in no area (docs only); every area for
 # an empty list of files.
+#
+# An area name this reader does not know (a newer table, read by an older
+# gate or PC runner) makes its line core, so the file runs every job rather
+# than none.
 changed_areas() { # table-text
   local areas glob f i match seen=' ' a out=''
   local -a line_areas=() line_res=()
   while read -r areas glob _; do
     case "$areas" in '' | '#'*) continue ;; esac
     [ -n "$glob" ] || die "area table: no glob after '$areas'"
+    for a in ${areas//,/ }; do
+      case "$a" in none | core | desktop | recognition | ios | android | ci) ;; *) areas=core ;; esac
+    done
     line_areas+=("$areas")
     line_res+=("$(glob_regex "$glob")")
   done <<<"${1//$'\r'/}"

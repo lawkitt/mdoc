@@ -117,6 +117,14 @@ not() { ! "$@"; }
   check "a table with CRLF line endings routes the same" \
     [ "$(printf 'apps/ios/a.swift\0' | changed_areas "${table//$'\n'/$'\r\n'}")" = ios ]
   check "docs.rs is not under docs/" [ "$(areas_of docs.rs)" = desktop ]
+  # A newer table read by an older reader: an area name it does not know
+  # runs every job, never none (hub review on #622).
+  check "an unknown area name counts as core" \
+    [ "$(printf 'some/file\0' | changed_areas $'newarea  some/file\nnone  **')" = "core desktop recognition ios android ci" ]
+  check "also beside a known one" \
+    [ "$(printf 'some/file\0' | changed_areas $'ios,newarea  some/file')" = "core desktop recognition ios android ci" ]
+  check "known names still route as before" \
+    [ "$(printf 'some/file\0b.md\0' | changed_areas $'ios,android  some/file\nnone  **/*.md')" = "ios android" ]
   # shellcheck disable=SC2317,SC2329 # called through check
   matches() { [[ $1 =~ $(glob_regex "$2") ]]; }
   check "* does not cross directories" not matches scripts/x/ios-a.sh "scripts/ios-*.sh"
