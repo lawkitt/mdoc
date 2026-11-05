@@ -732,6 +732,16 @@ private final class FakeSession: DocumentSession {
         try mark(range, category: nil, state: .proposed)
     }
 
+    func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot {
+        for name in names.sorted(by: { $0.wording.count > $1.wording.count }) {
+            let text = snapshot().markdown
+            guard let range = text.range(of: name.wording) else { continue }
+            let start = text.utf8.distance(from: text.startIndex, to: range.lowerBound)
+            _ = try? mark(SourceRange(start: start, end: start + name.wording.utf8.count), category: name.category, state: .proposed)
+        }
+        return snapshot()
+    }
+
     /// A manual identity for the selection, in every exact repeat; without
     /// a category, a rough guess as the core's.
     private func mark(_ range: SourceRange, category: Category?, state mentionState: MentionState) throws -> DocumentSnapshot {

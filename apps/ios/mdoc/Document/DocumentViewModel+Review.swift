@@ -371,6 +371,19 @@ extension DocumentViewModel {
         }
     }
 
+    // MARK: Stored proposals
+
+    /// Proposals that come with the document (Try a sample), as a scan's.
+    /// Before the text is read they wait for recognition to finish.
+    func proposeStored(_ names: [SampleDocument.Name]) {
+        guard snapshot.phase != .recognizing else {
+            storedNames = names
+            return
+        }
+        storedNames = nil
+        performReview(isStep: false) { try session.propose(names) }
+    }
+
     // MARK: Find in document
 
     /// Every case-insensitive match of `query` in the text, as source

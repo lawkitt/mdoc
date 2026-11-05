@@ -290,6 +290,11 @@ final class AppModel {
     func trySample() {
         let sample = SampleDocument.forLanguages()
         addText(sample.text, title: sample.title, into: .newCase(name: sample.title))
+        // Its names come in as proposals, so it reviews before the name
+        // finder is downloaded.
+        if let id = selection, let model = documentModel(for: id) {
+            model.proposeStored(sample.names)
+        }
     }
 
     /// The first line, without Markdown heading marks, up to 60 characters.

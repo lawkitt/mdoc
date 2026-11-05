@@ -647,6 +647,38 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         try change { try ffi.redo() }
     }
 
+    func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot {
+        let text = snapshot().markdown
+        var candidates: [MdocFFI.Candidate] = []
+        var taken: [Range<Int>] = []
+        // Longest first, so "Maya Bennett" wins over a shorter wording inside it.
+        for name in names.sorted(by: { $0.wording.utf8.count > $1.wording.utf8.count }) {
+            for range in Self.byteRanges(of: name.wording, in: text) where !taken.contains(where: { $0.overlaps(range) }) {
+                taken.append(range)
+                candidates.append(MdocFFI.Candidate(
+                    range: TextRange(start: UInt64(range.lowerBound), end: UInt64(range.upperBound)),
+                    category: name.category.ffi, score: 1))
+            }
+        }
+        candidates.sort { $0.range.start < $1.range.start }
+        _ = try change { try ffi.addCandidates(candidates: candidates) }
+        // Stored proposals stand in for the scan: the document is in review.
+        lock.withLock { scanned = true }
+        return snapshot()
+    }
+
+    /// Every exact occurrence of `wording`, as UTF-8 byte ranges.
+    static func byteRanges(of wording: String, in text: String) -> [Range<Int>] {
+        var found: [Range<Int>] = []
+        var start = text.startIndex
+        while let range = text.range(of: wording, range: start..<text.endIndex) {
+            let lower = text.utf8.distance(from: text.startIndex, to: range.lowerBound)
+            found.append(lower..<lower + wording.utf8.count)
+            start = range.upperBound
+        }
+        return found
+    }
+
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
         guard range.length > 0 else { throw CoreError.emptySelection }
         let selection = TextRange(start: UInt64(range.start), end: UInt64(range.end))

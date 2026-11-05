@@ -48,6 +48,18 @@ final class RealCoreTests: XCTestCase {
         let email = try XCTUnwrap(session.snapshot().candidates.first { $0.category == .email })
         let kept = try session.decide(email.id, .keep, scope: .allOccurrences)
         XCTAssertEqual(kept.identities.first { $0.id == email.identityID }?.state, .kept)
+
+    /// Try a sample: its stored names become proposals with no model.
+    func testTheSampleProposesItsNamesWithoutAScan() throws {
+        let core = try core()
+        let sample = SampleDocument.english
+        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+        _ = try session.recognize(observer: TestObserver())
+        let proposed = try session.propose(sample.names)
+        XCTAssertEqual(proposed.phase, .reviewing)
+        XCTAssertTrue(proposed.candidates.contains { $0.original == "Maya Bennett" && $0.category == .person })
+        XCTAssertTrue(proposed.candidates.contains { $0.original == "maya.bennett@example.com" && $0.category == .email })
+        XCTAssertTrue(proposed.candidates.allSatisfy { $0.state == .proposed })
     }
 
     func testImportScanAndReviewThroughTheCore() throws {
