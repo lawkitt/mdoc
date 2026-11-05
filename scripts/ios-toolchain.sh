@@ -10,9 +10,9 @@
 # creates the iPhone 17 the job tests on when the runtime has none. On a Mac
 # already set up it changes nothing.
 #
-#   --no-simulator  Xcode only: a build of the core or of the app's Release
-#                   configuration (main-caches.yml, ci/ios-release) needs no
-#                   Simulator runtime.
+#   --no-simulator  Xcode only: a build of the core (main-caches.yml) needs
+#                   no Simulator runtime. An app build does, even for a
+#                   generic destination.
 #   --start         Xcode, then any download in the background, logged in
 #                   target/ios-toolchain/, so it overlaps the core's build.
 #   --finish        Waits for --start's download, then readies the runtime
