@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The review bar's tools on the Rust core (ADR 0098, ROADMAP iOS 0.2 items
@@ -78,6 +79,54 @@ final class ReviewToolsUITests: XCTestCase {
         XCTAssertTrue(show.waitForExistence(timeout: 5))
         show.buttons["Kept"].tap()
         XCTAssertTrue(show.buttons["Kept"].isSelected)
+    }
+
+    /// A hardware keyboard drives the bar as desktop's keys do (ADR 0098,
+    /// ROADMAP iOS 0.2 item 7): → and ← step, Return replaces, ⌘. ends.
+    @MainActor
+    func testHardwareKeysDriveTheBar() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        // Repeats to step through: Find and Hide name on the surname.
+        app.buttons["document-menu"].tap()
+        app.buttons["find-in-document"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Bennett")
+        let hide = app.buttons["find-hide-name"]
+        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        hide.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: 10))
+
+        let progress = app.buttons["review-progress"]
+        let first = progress.label
+        app.typeKey(.rightArrow, modifierFlags: [])
+        expectChange(of: progress, from: first)
+        sleep(1)
+        app.typeKey(.leftArrow, modifierFlags: [])
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            // lawkitt/mdoc#610: on iPad ← straight after → is dropped.
+            XCTExpectFailure("iPad drops ← after → (#610)", strict: false) {
+                expectLabel(of: progress, first)
+            }
+        } else {
+            expectLabel(of: progress, first)
+        }
+
+        app.typeKey(.return, modifierFlags: [])
+        expectEnabled(app.buttons["review-undo"])
+
+        app.typeKey(".", modifierFlags: .command)
+        let gone = NSPredicate(format: "exists == false")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: app.descendants(matching: .any)["review-bar"].firstMatch)], timeout: 5), .completed)
+    }
+
+    private func expectLabel(of element: XCUIElement, _ label: String) {
+        let same = NSPredicate(format: "label == %@", label)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: same, evaluatedWith: element)], timeout: 5), .completed)
     }
 
     private func expectChange(of element: XCUIElement, from label: String) {

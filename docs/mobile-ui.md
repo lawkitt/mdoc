@@ -102,7 +102,8 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   searchable sheet.
 - **Tips** (`ReviewTips`): swipe, details, long press and undo, once each;
   off in UI tests; Settings › Review › Reset tips.
-- **Keys:** Return Replace, K Keep, ← → step, Esc end, ⌘Z and ⇧⌘Z.
+- **Keys:** Return Replace, K Keep, ← → step, ⌘. end (Esc too where iOS
+  passes it to the app), ⌘Z and ⇧⌘Z.
 
 ## Gestures
 

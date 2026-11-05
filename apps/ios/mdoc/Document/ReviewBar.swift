@@ -48,7 +48,7 @@ struct ReviewBar: View {
     }
 
     /// A hardware keyboard gets desktop's keys (ADR 0098): Return Replace,
-    /// K Keep, ← → step, Esc ends review. ⌘Z and ⇧⌘Z come from the undo
+    /// K Keep, ← → step, ⌘. (or Esc) ends review. ⌘Z and ⇧⌘Z come from the undo
     /// manager.
     private func keyboardShortcuts(_ candidate: Candidate) -> some View {
         Group {
@@ -61,7 +61,10 @@ struct ReviewBar: View {
             Button("Next") { step(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
             Button("End review") { model.endReview() }
-                .keyboardShortcut(.escape, modifiers: [])
+                .keyboardShortcut(".", modifiers: .command)
+            // Esc too, where iOS passes it to the app.
+            Button("End review ") { model.endReview() }
+                .keyboardShortcut(.cancelAction)
         }
         .opacity(0)
         .frame(width: 0, height: 0)
