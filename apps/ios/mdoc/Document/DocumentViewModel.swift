@@ -284,6 +284,10 @@ final class DocumentViewModel {
     /// with the bar open on it (ADR 0098). Undo removes the mark.
     func markSelection(_ selection: SourceRange) {
         guard !reviewWaitsForJob() else { return }
+        // A selection to the line's end takes its newline; the name is the
+        // words.
+        let selection = Self.trimmed(selection, in: snapshot.markdown)
+        guard selection.length > 0 else { return }
         guard performReview({ try session.markSelection(selection) }) else { return }
         let marked = snapshot.candidates.first { $0.range.start <= selection.start && $0.range.end >= selection.end }
             ?? ReviewOrder(snapshot).candidate(near: selection.start)
@@ -334,6 +338,16 @@ final class DocumentViewModel {
     private func say(_ text: String, symbol: String = "checkmark.circle.fill") {
         notice = text
         noticeSymbol = symbol
+    }
+
+    /// `range` without the whitespace and newlines at its ends.
+    static func trimmed(_ range: SourceRange, in text: String) -> SourceRange {
+        let bytes = Array(text.utf8)
+        var start = max(0, range.start), end = min(bytes.count, range.end)
+        let space: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
+        while start < end, space.contains(bytes[start]) { start += 1 }
+        while end > start, space.contains(bytes[end - 1]) { end -= 1 }
+        return SourceRange(start: start, end: end)
     }
 
     static func safeFileName(_ name: String) -> String {

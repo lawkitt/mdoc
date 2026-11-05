@@ -68,6 +68,26 @@ struct IdentitiesView: View {
                     description: Text("Find names, or select words in the text and choose Hide name."))
             }
             if identities.count > 1 {
+                // In the list, not the navigation bar: beside the text on
+                // iPad the bar belongs to the document.
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField("Names and aliases", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("identities-search")
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityLabel(Text("Clear"))
+                    }
+                }
                 Picker("Show", selection: $show) {
                     ForEach(Show.allCases) { Text($0.title).tag($0) }
                 }
@@ -103,7 +123,6 @@ struct IdentitiesView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: Text("Names and aliases"))
         .confirmationDialog(
             Text("Same as…"),
             isPresented: Binding(get: { sameAsSource != nil }, set: { if !$0 { sameAsSource = nil } }),
