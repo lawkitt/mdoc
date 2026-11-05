@@ -221,3 +221,14 @@ the work, and the Windows lane is started by hand at the beginning.
       ruleset's existing bypass. ADR 0100 names this second use.
 
 The tree is closed: the maintainer confirmed the plan on 2026-11-06.
+
+### Rollout notes (hub, 2026-11-05)
+
+- Decision 15 (3 shards) did not hold: on 3 shards each model run took 84%
+  of its budget, and the 80% warning fired, so the gate keeps 4 (#616).
+- Decision 17's target (`ci/ios` about 10–12 min) is unmet: the image has
+  no iOS 26.1 runtime, and parallel testing was slower and flaky. `ci/ios`
+  is about 18 min. Pinning the image's runtime, or caching the iOS core, is
+  for the maintainer to decide.
+- Wave 0 to wave 1 merged in order: #615, #620, #619, #618, #621 (a fix for
+  #619's 404 regression), #617, #616.
