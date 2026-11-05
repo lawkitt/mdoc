@@ -69,12 +69,11 @@ jobs:
       - if: ${{ !inputs.build-only }}
         run: scripts/ios-toolchain.sh --finish >/dev/null
 
-      # The caller decided the area already. The core is built: its recipe
-      # re-packages it in a few seconds.
+      # `just mobile --ios` without its area check (the caller decided) and
+      # its Simulator shutdown (the runner is thrown away); --no-deps, as the
+      # core is built.
       - if: ${{ !inputs.build-only }}
-        run: just mobile --ios
-        env:
-          MDOC_IOS_JOB: always
+        run: just --no-deps ios-app ios-test
 
       - name: Test results
         if: failure()
@@ -102,7 +101,18 @@ jobs:
 
       - run: scripts/ios-toolchain.sh --no-simulator >>"$GITHUB_ENV"
 
-      - run: just ios-release
+      - run: just ios-core
+
+      # TRIAL: does a build with -sdk and no destination need the runtime?
+      - name: Probe
+        continue-on-error: true
+        run: |
+          xcrun simctl list runtimes
+          time xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -configuration Release -sdk iphonesimulator -arch arm64 -derivedDataPath target/ios/ProbeData -quiet build CODE_SIGNING_ALLOWED=NO
+
+      - run: scripts/ios-toolchain.sh >/dev/null
+
+      - run: just --no-deps ios-release
 
   # Green only when both jobs ran and passed, so a cancelled or skipped one
   # never looks green (as ci/detection, ADR 0095).
