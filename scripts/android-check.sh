@@ -27,6 +27,14 @@ if ! android_changed; then
   exit 0
 fi
 
+# The queue runner's job (and local CI) tests on the x86_64 emulator only:
+# no arm64-v8a core, which only phones load (#614: three Rust builds were
+# most of a 15-25 minute job). `just android-core` and device runs keep it.
+if [ "${MDOC_ANDROID_JOB:-}" = always ]; then
+  export MDOC_ANDROID_ABIS=${MDOC_ANDROID_ABIS:-x86_64}
+  echo "android-check: the Android core for ${MDOC_ANDROID_ABIS} only (CI)"
+fi
+
 home=$(android_home)
 sdk=$(scripts/install-android-sdk.sh)
 scripts/build-android-core.sh >/dev/null

@@ -22,17 +22,23 @@
 #     one sends the job to hosted CI), then success "Passed in <time>",
 #     failure "Failed in <step>" or "Timed out in <step>", or error for a
 #     runner error or a commit the queue dropped while it ran. Each links its
-#     log folder.
+#     log folder. A failure names the failing tests: nextest's from the log,
+#     Gradle's from its JUnit XML (android:<class>#<method>).
 # Whole-job limits: 30 minutes (windows), 40 (android); gh calls and fetches
 # end after a minute, so a stalled one cannot hold the limit or the heartbeat
 # up; setup and the checkout retry once, tests never. Upkeep: a job starts
 # only with 40 GB free (a pending status says so once, so the heartbeat goes
 # stale and merge-gate falls back), deletes target/ first when it is over
-# 60 GB or rust-toolchain.toml changed, and output older than 7 days or past
-# 20 GB goes, oldest first. Results are under $LOCAL_CI_HOME/out/queue-<job>/,
-# which the local CI web task serves at $LOCAL_CI_URL/queue-<job>/;
-# status.txt there has the runner's heartbeat, job and queue, and an
-# "offline:" line while it cannot read GitHub or origin (status then fails).
+# 60 GB or rust-toolchain.toml changed, keeps headless renders only from a
+# failed job, and output older than 7 days or past 20 GB goes, oldest first.
+# Results are under $LOCAL_CI_HOME/out/queue-<job>/<sha>/ (log.txt;
+# summary.txt with each step, the failing tests and, on a failure, the log's
+# last 60 lines), which the local CI web task serves at
+# $LOCAL_CI_URL/queue-<job>/; status.txt there has the runner's heartbeat, job
+# and queue, an "offline:" line while it cannot read GitHub or origin (status
+# then fails), and a "tailnet: /ci not served" line while `tailscale serve`
+# does not list /ci. status checks that at once, and that status.txt answers
+# at its tailnet URL, and fails when either does not.
 #
 #   run     the runner loop (what the scheduled task runs)
 #   once    the loop until nothing is queued or running, then exit
@@ -91,6 +97,10 @@ config() {
   target_max_gb=${QUEUE_CI_TARGET_MAX_GB:-60}
   out_max_kb=$((${QUEUE_CI_OUT_MAX_GB:-20} * 1048576))
   keep_days=${QUEUE_CI_KEEP_DAYS:-7}
+  # The tailnet page: `tailscale serve` must list /ci (the web task of
+  # scripts/queue-runner-setup.ps1 sets it); status.txt checks every 10 min.
+  tailscale_cmd=${QUEUE_CI_TAILSCALE:-tailscale}
+  tailnet_s=600
 }
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
@@ -352,10 +362,37 @@ toolchain_reason() { # sha
   [ -z "$was" ] || [ "$was" = "$now" ] || echo "rust-toolchain.toml changed"
 }
 
+# Standard input without colours, cursor moves or carriage returns at line ends.
+plain() { sed -e "s/$(printf '\033')\[[0-9;?]*[A-Za-z]//g" -e "s/$(printf '\r')\$//"; }
+
 # The failing tests nextest named in a log, one per line.
 failed_tests() { # log
-  sed "s/$(printf '\033')\[[0-9;]*m//g" "$1" |
+  plain <"$1" |
     sed -nE 's/^ *(FAIL|TIMEOUT|SIG[A-Z]+) +\[[^]]*\] +(\([0-9]+\/[0-9]+\) +)?//p' | sort -u
+}
+
+# The failing tests in Gradle's JUnit XML under the folders, as
+# android:<class>#<method> (the form of .config/quarantine.txt). Gradle's log
+# names none for emulator tests, only "There were failing tests" (#614). It
+# writes <testcase> as `/>`, ` />` or `>`; only the last holds a <failure>.
+gradle_failed_tests() { # folder...
+  # A folder Gradle did not write is no error (pipefail would make it one).
+  { find "$@" -type f -name 'TEST-*.xml' -exec sed -nE '/<testcase /{s/.*<testcase name="([^"]*)" classname="([^"]*)".*/android:\2#\1/;h;}
+    /<(failure|error)[ >]/{x;p;}' {} + 2>/dev/null || true; } | sort -u
+}
+
+# The Android job's Gradle reports and JUnit XML, into the job's folder.
+copy_android_outputs() { # dir
+  local build=apps/android/app/build
+  [ ! -d "$build/reports" ] || cp -R "$build/reports" "$1/android-reports" || true
+  [ ! -d "$build/outputs/androidTest-results" ] || cp -R "$build/outputs/androidTest-results" "$1/androidTest-results" || true
+  [ ! -d "$build/test-results" ] || cp -R "$build/test-results" "$1/test-results" || true
+}
+
+# The last lines of a failed job's log, for summary.txt.
+log_excerpt() { # dir
+  echo "--- log.txt, last 60 lines"
+  { tail -n 60 "$1/log.txt" 2>/dev/null || true; } | plain
 }
 
 # The commit checked out with no untracked files but target/.
@@ -413,10 +450,8 @@ job() { # sha dir clean-reason
       android) MDOC_ANDROID_JOB=always just android || rc=$? ;;
       *) just "$step" || rc=$? ;;
     esac
-    # The Android job's Gradle reports, passed or failed.
-    if [ "$step" = android ] && [ -d apps/android/app/build/reports ]; then
-      cp -R apps/android/app/build/reports "$dir/android-reports" || true
-    fi
+    # The Android job's Gradle reports and test results, passed or failed.
+    [ "$step" != android ] || copy_android_outputs "$dir"
     if [ "$rc" -eq 0 ]; then
       echo "$(label "$step"): passed in $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
     else
@@ -424,6 +459,12 @@ job() { # sha dir clean-reason
       exit 1
     fi
   done
+  # Headless renders are about 1.1 GB a Windows run: kept only from a failed
+  # one, so the output's 20 GB keep about 7 days of logs (#614).
+  if [ -d "$dir/renders" ]; then
+    rm -rf "${dir:?}/renders"
+    echo "upkeep: deleted renders/ (the job passed)" >>"$dir/summary.txt"
+  fi
   exit 0
 }
 
@@ -479,6 +520,8 @@ kill_job() {
 finish() { # state description
   post "$run_sha" "$1" "$2" "$run_url"
   echo "result: $1, $2" >>"$run_dir/summary.txt"
+  # A failed or timed-out step: where it ended, without opening log.txt.
+  [ "$1" != failure ] || log_excerpt "$run_dir" >>"$run_dir/summary.txt"
   rm -f "$state/job.pid" "$run_dir/.step"
   # Never run again, even when GitHub did not take the result: the heartbeat
   # stops, so merge-gate runs it hosted.
@@ -520,7 +563,11 @@ check_job() {
     0) finish success "Passed in $(duration "$elapsed")" ;;
     1)
       read -r step _ 2>/dev/null <"$run_dir/.step" || step='?'
-      tests=$(failed_tests "$run_dir/log.txt")
+      if [ "$step" = android ]; then
+        tests=$(gradle_failed_tests "$run_dir/androidTest-results" "$run_dir/test-results")
+      else
+        tests=$(failed_tests "$run_dir/log.txt")
+      fi
       if [ -n "$tests" ]; then
         printf '%s\n' "$tests" >"$run_dir/failed-tests.txt"
         printf 'failed: %s\n' "$tests" >>"$run_dir/summary.txt"
@@ -618,9 +665,37 @@ self_update() { # mode
 
 # --- the loop -------------------------------------------------------------------
 
+# Whether `tailscale serve` lists /ci, the way to the results from the
+# tailnet: 0 yes, 1 no (or it cannot say), 2 no tailscale here (macOS and
+# Linux test runs). /ci went once while status.txt stayed fresh (#614).
+ci_served() {
+  command -v "$tailscale_cmd" >/dev/null 2>&1 || return 2
+  # Its JSON names each served path, as "/ci": {...}.
+  bounded "$tailscale_cmd" serve status --json 2>/dev/null | grep -q '"/ci/\{0,1\}" *:'
+}
+
+# True when this runner's status.txt answers at its URL on the tailnet.
+page_answers() {
+  { bounded curl -fsS --max-time "$net_s" "$url/status.txt" 2>/dev/null || true; } |
+    tr -d '\r' | grep -q "^$context queue runner on "
+}
+
+# Sets tailnet to the status.txt line about /ci, checked at most every
+# tailnet_s seconds.
+check_tailnet() {
+  local now rc=0
+  now=$(date +%s)
+  [ $((now - tailnet_at)) -ge "$tailnet_s" ] || return 0
+  tailnet_at=$now
+  ci_served || rc=$?
+  tailnet=''
+  [ "$rc" -ne 1 ] || tailnet="tailnet: /ci not served"
+}
+
 write_status() {
   local next=$out/.status.txt q
   q=$(queue_sorted | awk '{ printf "%s%s %s", (NR > 1 ? ", " : ""), substr($3, 1, 7), $4 }')
+  check_tailnet
   {
     echo "$context queue runner on $(hostname)"
     echo "heartbeat: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -638,6 +713,7 @@ write_status() {
     [ -z "$waiting" ] || echo "waiting: $waiting"
     [ -z "$unsettled" ] || echo "retrying: $unsettled"
     [ -z "${update_failed:-}" ] || echo "outdated: could not update from main@$(short "$update_failed")"
+    [ -z "$tailnet" ] || echo "$tailnet"
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
 
@@ -698,6 +774,7 @@ cmd_run() { # run|once
   kill_stale_job
   queued='' listed='' polled=false run_pid='' run_sha='' run_branch='' run_step='' run_dir='' run_url=''
   waiting='' disk_noted='' next_poll=0 post_ok=true update_failed='' offline_since='' offline_at='' offline_why='' unsettled=''
+  tailnet='' tailnet_at=0
   prune_out
   while :; do
     [ -z "$run_pid" ] || check_job
@@ -724,7 +801,7 @@ cmd_run() { # run|once
 file_epoch() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 
 cmd_status() {
-  local age
+  local age served=0 rc=0
   if [ "$(platform)" = windows-x64 ] && command -v schtasks >/dev/null; then
     echo "mdoc queue CI $job: $(schtasks //query //tn "mdoc queue CI $job" //fo list 2>/dev/null |
       sed -n 's/^Status: *//p' | grep . || echo "not registered")"
@@ -733,8 +810,31 @@ cmd_status() {
     echo "no status file at $out/status.txt: the runner has not run"
     return 1
   fi
-  cat "$out/status.txt"
+  # Read now, not from status.txt's 10-minute check.
+  grep -v '^tailnet: ' "$out/status.txt"
   [ -z "$url" ] || echo "results: $url/"
+  ci_served || served=$?
+  case "$served" in
+    0)
+      # The page itself (ADR 0100): served is not enough if the web server
+      # is down or serves another folder.
+      if [ -z "$url" ]; then
+        echo "tailnet: /ci served; no results URL (QUEUE_CI_URL) to fetch"
+      elif page_answers; then
+        echo "tailnet: /ci served, and $url/status.txt answers"
+      else
+        echo "unhealthy: tailscale serves /ci, but $url/status.txt does not answer with this runner's status;" \
+          "check the 'mdoc queue CI web' task"
+        rc=1
+      fi
+      ;;
+    2) echo "tailnet: no $tailscale_cmd here; /ci not checked" ;;
+    *)
+      echo "unhealthy: tailscale serve does not list /ci, so the results are not on the tailnet;" \
+        "restart the 'mdoc queue CI web' task, or run: tailscale serve --bg --set-path /ci http://127.0.0.1:8787"
+      rc=1
+      ;;
+  esac
   if grep -q '^offline: ' "$out/status.txt"; then
     echo "unhealthy: the runner cannot read GitHub"
     return 1
@@ -748,6 +848,7 @@ cmd_status() {
     echo "--- $state/runner.log"
     tail -n 10 "$state/runner.log"
   fi
+  return "$rc"
 }
 
 main() {

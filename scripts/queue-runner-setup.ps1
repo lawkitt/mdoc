@@ -10,8 +10,9 @@
 # go to E:\ci\out\queue-<job>, which the local CI web task ("mdoc local CI
 # web", scripts/local-ci-setup.ps1) already serves at /ci on the tailnet;
 # without that task this script registers its own ("mdoc queue CI web",
-# the same server; re-run this after `local-ci-setup.ps1 -Uninstall`, which
-# removes the local one). The installed runner updates itself from main when idle;
+# the same server, which also sets /ci again each time it starts; re-run
+# this after `local-ci-setup.ps1 -Uninstall`, which removes the local one).
+# The installed runner updates itself from main when idle;
 # re-run this from an updated checkout to update it at once.
 # -Uninstall stops and removes the tasks (and this script's web task and
 # tailnet path) and keeps the homes. The CI checkouts start cold: the first
@@ -192,12 +193,20 @@ if (-not $localWeb) {
         Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
     if (-not $python) { throw 'python not found on PATH (the results server needs it)' }
     Stop-Web
-    # Localhost only; tailscale serve is the way in from the tailnet.
-    Register-CiTask $webTaskName `
-        "exec $(ConvertTo-BashWord (ConvertTo-BashPath $python.Source)) -m http.server --bind 127.0.0.1 $Port --directory $(ConvertTo-BashWord $outArg) >/dev/null 2>&1" `
-        "mdoc merge-queue results (ADR 0095): $out on 127.0.0.1:$Port"
     & tailscale serve --bg --set-path /ci "http://127.0.0.1:$Port" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'tailscale serve failed' }
+    # Localhost only; tailscale serve is the way in from the tailnet. The task
+    # sets /ci again each time it starts (at logon, after a restart): /ci went
+    # once and the log page stayed down unnoticed (#614). Setting it again is
+    # harmless and changes no other path (another app serves on 443). It
+    # tries for 5 minutes, as tailscaled may not be up yet at logon, then
+    # starts the server anyway. MSYS_NO_PATHCONV: Git Bash would turn /ci into
+    # a Windows path for tailscale.exe.
+    $tailscale = ConvertTo-BashWord (ConvertTo-BashPath (Get-Command tailscale).Source)
+    $serve = "MSYS_NO_PATHCONV=1 $tailscale serve --bg --set-path /ci http://127.0.0.1:$Port >/dev/null 2>&1"
+    Register-CiTask $webTaskName `
+        "for _ in `$(seq 30); do $serve && break; sleep 10; done; exec $(ConvertTo-BashWord (ConvertTo-BashPath $python.Source)) -m http.server --bind 127.0.0.1 $Port --directory $(ConvertTo-BashWord $outArg) >/dev/null 2>&1" `
+        "mdoc merge-queue results (ADR 0095): $out on 127.0.0.1:$Port, and /ci on the tailnet"
 }
 
 Write-Output "Queue CI installed for $($Jobs -join ', '): results https://$dns/ci/queue-<job>/"

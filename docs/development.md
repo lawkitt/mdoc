@@ -559,14 +559,31 @@ every 4 minutes: the heartbeat `merge-gate` reads.
 | Results, 7 days or 20 GB | `E:\ci\out\queue-windows\<sha>\` | `E:\ci\out\queue-android\<sha>\` |
 | On the tailnet | `https://windows.<tailnet>.ts.net/ci/queue-windows/` | `…/ci/queue-android/` |
 
-A job's folder holds `log.txt`, `summary.txt`, the failing tests and, for
-Android, the Gradle reports. A runner refuses a job below 40 GB free and
-says so in a `pending` status; it deletes its `target/` past 60 GB or when
-`rust-toolchain.toml` changes. Settings are the `QUEUE_CI_*` variables in
-`config()`, set in the home's `runner.env`.
+A job's folder holds `log.txt`, `summary.txt` and, for a failure,
+`failed-tests.txt`. A failed or timed-out job's `summary.txt` ends with the
+log's last 60 lines, without colours. Failing tests are named in the status
+("Failed in just test: mdoc-core tests::broken and 1 more"): nextest's from
+the log, the Android job's from Gradle's JUnit XML as
+`android:<class>#<method>`, the form `.config/quarantine.txt` takes, since
+Gradle's log names no emulator test. Android folders also hold the Gradle
+reports (`android-reports/`) and that XML (`androidTest-results/`,
+`test-results/`). Windows folders keep the headless renders (`renders/`,
+about 1.1 GB) only when the job failed, so the 20 GB keep about 7 days of
+logs. A runner refuses a job below 40 GB free and says so in a `pending`
+status; it deletes its `target/` past 60 GB or when `rust-toolchain.toml`
+changes. The Android job builds the core for x86_64 only, the emulator's
+(`MDOC_ANDROID_ABIS`, which `scripts/android-check.sh` sets when
+`MDOC_ANDROID_JOB=always`); `just android-core` and device runs still build
+arm64-v8a, and `just mobile --ffi` compile-checks it on macOS. Settings are
+the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
 
 - **Check them** (the fleet preflight): `status.txt` in each home's output
-  folder on the tailnet has a `heartbeat:` line from the last 5 minutes.
+  folder on the tailnet has a `heartbeat:` line from the last 5 minutes. A
+  `tailnet: /ci not served` line there (checked every 10 minutes) means the
+  page is reachable only on the PC. `queue-runner.sh status` on the PC
+  checks at once that `tailscale serve status` lists `/ci` and that the
+  runner's `status.txt` answers at its tailnet URL, and fails when either
+  doesn't.
 - **Install:** on the PC, in PowerShell (not as admin), from a checkout of
   current `main`:
   `powershell -ExecutionPolicy Bypass -File scripts\queue-runner-setup.ps1`.
@@ -579,8 +596,11 @@ says so in a `pending` status; it deletes its `target/` past 60 GB or when
 - **Stop and start:** `Stop-ScheduledTask 'mdoc queue CI windows'`,
   `Start-ScheduledTask …`; re-run the setup to also end a job's build
   processes.
-- **After a restart** of the PC, check that `tailscale serve status` still
-  lists `/ci`; if not: `tailscale serve --bg --set-path /ci http://127.0.0.1:8787`.
+- **After a restart** of the PC, the web task (`mdoc queue CI web`) sets
+  `/ci` again when it starts, trying for 5 minutes while Tailscale comes
+  up; other served paths are left alone. If `status.txt` still says
+  `tailnet: /ci not served`, restart that task, or run
+  `tailscale serve --bg --set-path /ci http://127.0.0.1:8787`.
 
 **Fallback.** `merge-gate` (`scripts/merge-gate.sh`, every 5 minutes and
 after each run) dispatches a PC job hosted when the PC has posted nothing
