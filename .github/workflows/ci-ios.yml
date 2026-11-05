@@ -1,11 +1,15 @@
 name: CI iOS
 
-# The iOS job on a hosted runner (ADR 0095, ADR 0091): the core, the app,
-# XCTest and XCUITest on the pinned Xcode and Simulator (scripts/tools.env).
+# The iOS job on hosted runners (ADR 0095, ADR 0091, ADR 0100): two jobs in
+# parallel, and `ci/ios`, which merge-gate reads, green only when both ran
+# and passed.
+#   ci/ios (tests)   the core, the app, XCTest and XCUITest on the pinned
+#                    Xcode and Simulator (scripts/tools.env).
+#   ci/ios-release   the core and the app in the Release configuration, as an
+#                    archive builds them, unsigned and without tests.
 # The merge queue calls it for a queue commit that touches the ios or core
-# area; `merge-gate` reads its `ci/ios` status. Every step is a recipe or a
-# script, so `scripts/ios-toolchain.sh` and `just mobile --ios` reproduce it
-# on a Mac.
+# area. Every step is a recipe or a script, so `scripts/ios-toolchain.sh`,
+# `just mobile --ios` and `just ios-release` reproduce it on a Mac.
 on:
   workflow_call:
     inputs:
@@ -31,9 +35,17 @@ on:
 permissions:
   contents: read
 
+env:
+  # The tests' switch for parallel testing (ROADMAP CI redesign item 10):
+  # the number of Simulator clones `just ios-test` runs them on; empty runs
+  # them on the one device.
+  MDOC_IOS_TEST_WORKERS: "2"
+
 jobs:
+  # The job id stays `ios`: main-caches.yml's build-only call saves the
+  # cargo cache under it, and both jobs restore it (`cache-key: ios`).
   ios:
-    name: ci/ios
+    name: ci/ios (tests)
     runs-on: macos-26
     # ADR 0095's iOS job limit.
     timeout-minutes: 40
@@ -44,20 +56,25 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup
+        with:
+          cache-key: ios
 
-      # The pinned Xcode for every later step, and the pinned Simulator
-      # runtime and device, downloaded when the image lacks them.
-      - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '' }} >>"$GITHUB_ENV"
+      # The pinned Xcode for every later step. The pinned Simulator runtime,
+      # when the image lacks it, downloads in the background while the core
+      # builds.
+      - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '--start' }} >>"$GITHUB_ENV"
 
-      # The caller decided the area already.
+      - run: just ios-core
+
+      - if: ${{ !inputs.build-only }}
+        run: scripts/ios-toolchain.sh --finish >/dev/null
+
+      # The caller decided the area already. The core is built: its recipe
+      # re-packages it in a few seconds.
       - if: ${{ !inputs.build-only }}
         run: just mobile --ios
         env:
           MDOC_IOS_JOB: always
-
-      # The job id stays `ios`, so queue commits restore what this saves.
-      - if: ${{ inputs.build-only }}
-        run: just ios-core
 
       - name: Test results
         if: failure()
@@ -67,3 +84,39 @@ jobs:
           path: target/ios/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  release:
+    name: ci/ios-release
+    if: ${{ !inputs.build-only }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: ios
+
+      - run: scripts/ios-toolchain.sh --no-simulator >>"$GITHUB_ENV"
+
+      - run: just ios-release
+
+  # Green only when both jobs ran and passed, so a cancelled or skipped one
+  # never looks green (as ci/detection, ADR 0095).
+  summary:
+    name: ci/ios
+    needs: [ios, release]
+    if: ${{ always() && !inputs.build-only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          TESTS: ${{ needs.ios.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          [ "$TESTS" = success ] || echo "::error::ci/ios (tests): $TESTS"
+          [ "$RELEASE" = success ] || echo "::error::ci/ios-release: $RELEASE"
+          [ "$TESTS" = success ] && [ "$RELEASE" = success ]
