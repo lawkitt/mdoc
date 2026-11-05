@@ -8,10 +8,13 @@ name: CI
 # On PRs (ADR 0095): `lint (ubuntu)` and the fast tier, `fast (ubuntu)`;
 # `merge-gate` (merge-gate.yml) reads them, and the merge queue runs the
 # full suite (queue.yml and the PC). Fork and bot (Dependabot) PRs also get
-# the full hosted matrix here, as do `main`, manual runs and release.yml's
-# call; the areas job skips clippy and test for a change outside the desktop
-# and core areas (scripts/ci-areas.txt). On a queue commit only `lint
-# (ubuntu)` runs, a required check.
+# the full hosted matrix here, as do manual runs and release.yml's call; the
+# areas job skips clippy and test for a change outside the desktop and core
+# areas (scripts/ci-areas.txt). On a queue commit only `lint (ubuntu)` runs,
+# a required check. On `main` (ADR 0100) clippy runs as everywhere, with the
+# mdoc-ffi check on macOS, and test only builds the tests: these jobs save
+# the caches ci-desktop.yml's jobs of the same ids (`checks`, `test`)
+# restore.
 on:
   push:
     branches: [main]
@@ -85,16 +88,24 @@ jobs:
           tools: just cargo-deny shfmt
 
       # gpui's compile-time pkg-config deps (xkbcommon, wayland, x11/xcb) and
-      # font-kit's fontconfig/freetype.
+      # font-kit's fontconfig/freetype. It takes about 15 s; a stalled mirror
+      # fails in minutes, after one retry (ADR 0100).
       - &linux-deps
         name: Install Linux build deps
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libx11-dev libxcb1-dev libxcb-randr0-dev libxcb-xkb-dev \
-            libxcb-cursor-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxcb-render0-dev libfontconfig1-dev libfreetype-dev pkg-config
+          for attempt in 1 2; do
+            if sudo timeout 60 apt-get update &&
+              sudo timeout 80 apt-get install -y -o DPkg::Lock::Timeout=20 \
+                libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+                libx11-dev libxcb1-dev libxcb-randr0-dev libxcb-xkb-dev \
+                libxcb-cursor-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+                libxcb-render0-dev libfontconfig1-dev libfreetype-dev pkg-config; then
+              exit 0
+            fi
+            echo "::warning::Linux build deps: attempt $attempt failed"
+          done
+          exit 1
 
       - run: just fmt-check
       # Advisories only when the dependencies change (scripts/deny-ci.sh);
@@ -107,12 +118,18 @@ jobs:
       - run: just lint-scripts
       - run: just lint
 
-  # The fast tier (ADR 0095): the crates' tests and the script suites on
-  # every PR head, in minutes on hosted Linux. Shown, not required; the full
-  # suite runs on the queue commit. The mdoc-ffi check needs macOS (iOS
-  # targets, the NDK's darwin toolchain), so it runs in ci/macos.
+  # The fast tier (ADR 0095, ADR 0100): the crates' tests and the script
+  # suites on every PR head, as two parallel jobs on hosted Linux, `fast
+  # (unit)` and `fast (scripts)`, summed up by `fast (ubuntu)`, the check
+  # merge-gate reads. Shown, not required; the full suite runs on the queue
+  # commit. The mdoc-ffi check needs macOS (iOS targets, the NDK's darwin
+  # toolchain), so it runs in ci/macos.
+  #
+  # The job id stays `fast-linux`: rust-cache keys its cache by job id, so
+  # the unit job keeps the cache main's runs have saved under it. On `main`
+  # it only builds the tests, for that cache (ADR 0100).
   fast-linux:
-    name: fast (ubuntu)
+    name: fast (unit)
     # lint (ubuntu)'s condition, and never on a queue commit.
     if: >-
       ${{ github.event_name != 'merge_group' && github.event.action != 'closed' &&
@@ -121,6 +138,8 @@ jobs:
     runs-on: ubuntu-latest
     # Job limits (ADR 0095).
     timeout-minutes: 15
+    env:
+      BUILD_ONLY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -132,8 +151,55 @@ jobs:
 
       - *linux-deps
 
-      - run: just test-tier unit
+      # The test job's build step (below), for the unit tier's cache.
+      - name: Build the tests
+        if: env.BUILD_ONLY == 'true'
+        run: cargo nextest run --locked --workspace --features headless-renders --no-run
+      - if: env.BUILD_ONLY != 'true'
+        run: just test-tier unit
+
+  # The script suites build nothing and fake cargo: just `just`, at its pin
+  # in scripts/tools.env, without the toolchain, cache or Linux packages.
+  fast-scripts:
+    name: fast (scripts)
+    # Not on a push to main, which runs no tests (ADR 0100).
+    if: >-
+      ${{ github.event_name != 'merge_group' && github.event.action != 'closed' &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Load the pinned just version
+        run: grep '^JUST_VERSION=' scripts/tools.env >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: just@${{ env.JUST_VERSION }}
+
       - run: just test-tier scripts
+
+  # Green only when both fast jobs ran and passed, so a missing, cancelled or
+  # skipped part never looks green (as ci/detection). Skipped where the tests
+  # are, on a queue commit and on main.
+  fast:
+    name: fast (ubuntu)
+    needs: [fast-linux, fast-scripts]
+    if: >-
+      ${{ always() && github.event_name != 'merge_group' && github.event.action != 'closed' &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          UNIT: ${{ needs.fast-linux.result }}
+          SCRIPTS: ${{ needs.fast-scripts.result }}
+        run: |
+          [ "$UNIT" = success ] || echo "::error::fast (unit): $UNIT"
+          [ "$SCRIPTS" = success ] || echo "::error::fast (scripts): $SCRIPTS"
+          [ "$UNIT" = success ] && [ "$SCRIPTS" = success ]
 
   # Which areas the change touches (scripts/ci-areas.txt, ADR 0091). Clippy
   # and test run only for the desktop and core areas: a change to only the
@@ -173,8 +239,13 @@ jobs:
 
   # The shipped targets: clippy and the full test suite, as parallel jobs so
   # the slow Windows test build doesn't wait for clippy (ADR 0070), when the
-  # areas job says the desktop area changed.
-  clippy:
+  # areas job says the desktop area changed. On `main` they fill the caches
+  # of ci-desktop.yml's `checks` and `test` jobs (ADR 0100).
+  #
+  # The id is `checks`, not `clippy`, since the job also runs mdoc-ffi: a
+  # cache that matches its key exactly is never saved again, so new builds
+  # in a job reach main's cache only under a new key (ADR 0100).
+  checks:
     name: clippy (${{ matrix.runner }})
     needs: areas
     if: &desktop ${{ needs.areas.outputs.desktop == 'true' }}
@@ -192,6 +263,10 @@ jobs:
       - uses: ./.github/actions/setup
 
       - run: just lint
+      # ci/macos (checks) runs it on the queue commit; here it also puts the
+      # iOS and Android targets' dependencies in main's `checks` cache.
+      - if: runner.os == 'macOS'
+        run: just mobile --ffi
 
   test:
     name: test (${{ matrix.runner }})
@@ -203,6 +278,10 @@ jobs:
         runner: *shipped
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      # A push to main builds the tests without running them (ADR 0100): it
+      # saves the cache, and the nightly runs the full hosted suite.
+      BUILD_ONLY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,11 +300,17 @@ jobs:
         with:
           tools: just cargo-nextest
 
-      - run: just test
+      # The build `just test`'s nextest runs make (scripts/test.sh), flag for
+      # flag, so its dependencies are the ones the test tiers restore.
+      - name: Build the tests
+        if: env.BUILD_ONLY == 'true'
+        run: cargo nextest run --locked --workspace --features headless-renders --no-run
+      - if: env.BUILD_ONLY != 'true'
+        run: just test
         env:
           MDOC_HEADLESS_ARTIFACTS: ${{ runner.temp }}/mdoc-headless-renders-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Headless screens and keyboard walks
-        if: ${{ !cancelled() && !inputs.release-call }}
+        if: ${{ !cancelled() && !inputs.release-call && env.BUILD_ONLY != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: headless-renders-${{ matrix.runner }}-${{ github.run_attempt }}
@@ -243,7 +328,7 @@ jobs:
   # (cache-on-failure), and never in a PR or a release call.
   cache-cleanup:
     name: cache cleanup
-    needs: [lint-linux, clippy, test]
+    needs: [lint-linux, fast-linux, checks, test]
     if: >-
       ${{ !cancelled() && !inputs.release-call &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' }}
