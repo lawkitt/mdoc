@@ -77,6 +77,33 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   filter from 2 cases, Scan and + in the bottom bar, and the empty state's
   three tiles with Try a sample.
 
+## Review bar
+
+[ADR 0098](adr/0098-mobile-review-bar.md); code in
+[`apps/ios/mdoc/Document/`](../apps/ios/mdoc/Document/) (`ReviewBar`,
+`ReviewCard`, `ReviewState`, `DocumentViewModel+Review`).
+
+- **Layout:** grabber, progress line ("3 of 15" and the decided track; ×
+  ends review), the card with peeking neighbors, then Undo, Keep and
+  Replace (Replace filled). Text stops growing at AX2.
+- **Card:** category icon and the name (tap to scroll back to it), the
+  mentions chip when the name repeats; then the category ▾, alias ▾ and
+  scope ▾ chips; a merge hint line while the core sees one.
+- **Moving on:** a decision steps to the next undecided candidate; the
+  last ends review with "All N reviewed · Undo". Candidate ids are source
+  ranges that move, so the bar keeps its place by position
+  (`ReviewOrder`).
+- **Undo:** every core step is also registered with the window's undo
+  manager, so shake, the three-finger swipe and ⌘Z share the bar's
+  history; Undo moves the bar back and the toast offers Redo.
+- **Menus:** the long press on a name and the chips' menus show the
+  outcome before the tap ("Organization → ORG_3"); Same as… lists hints
+  first, then the same category, then the rest, and a long list becomes a
+  searchable sheet.
+- **Tips** (`ReviewTips`): swipe, details, long press and undo, once each;
+  off in UI tests; Settings › Review › Reset tips.
+- **Keys:** Return Replace, K Keep, ← → step, Esc end, ⌘Z and ⇧⌘Z.
+
 ## Gestures
 
 Every gesture also has a visible control and a VoiceOver action; no action

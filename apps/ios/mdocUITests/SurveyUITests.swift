@@ -83,16 +83,19 @@ final class SurveyUITests: XCTestCase {
         shot("13-review-candidate")
 
         email.tap()
-        XCTAssertTrue(app.buttons["candidate-done"].waitForExistence(timeout: 5))
-        shot("14-candidate-sheet")
-        if !isPad {
-            let bar = app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
-            bar.press(forDuration: 0.2, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
-            sleep(1)
-            shot("15-candidate-sheet-large")
-        }
-        app.buttons["candidate-done"].tap()
+        let bar = app.descendants(matching: .any)["review-bar"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        shot("14-review-bar")
+        // Swipe up on the grabber: the identity's mentions (ADR 0098).
+        app.descendants(matching: .any)["review-grabber"].firstMatch.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any)["review-details"].firstMatch.waitForExistence(timeout: 5))
+        shot("15-review-bar-expanded")
+        app.descendants(matching: .any)["review-grabber"].firstMatch.swipeDown()
+        app.buttons["review-replace"].tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        // The only proposal: All reviewed, with Undo in the toast.
+        shot("15-review-bar-after-replace")
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // On iPad the list already sits beside the text.
         if !app.staticTexts["Identities"].waitForExistence(timeout: 2) {
@@ -110,8 +113,8 @@ final class SurveyUITests: XCTestCase {
         }
         let word = text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04))
         word.press(forDuration: 1.0)
-        let replace = app.menuItems["Replace…"].firstMatch
-        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
+        let replace = app.menuItems["Hide name"].firstMatch
+        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Hide name in the edit menu")
         shot("18-selection-edit-menu")
         // Switching to dark and back closes the edit menu: open it again.
         if !replace.waitForExistence(timeout: 1) {
@@ -119,9 +122,10 @@ final class SurveyUITests: XCTestCase {
             XCTAssertTrue(replace.waitForExistence(timeout: 5))
         }
         replace.tap()
-        XCTAssertTrue(app.navigationBars["Person"].waitForExistence(timeout: 5))
-        shot("19-manual-replace-sheet")
-        app.buttons["Cancel"].firstMatch.tap()
+        // The mark is a proposal, and the bar opens on it.
+        XCTAssertTrue(app.descendants(matching: .any)["review-bar"].firstMatch.waitForExistence(timeout: 5))
+        shot("19-marked-proposal")
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         let primary = app.buttons["primary-action"]
         if primary.label.hasPrefix("Replace") {

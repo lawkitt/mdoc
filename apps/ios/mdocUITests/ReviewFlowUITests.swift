@@ -24,13 +24,28 @@ final class ReviewFlowUITests: XCTestCase {
         let email = text.links[MdocUITest.email].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 30))
         MdocUITest.tapAboveBottomBar(email, in: text, app)
-        let done = app.buttons["candidate-done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["candidate-alias"].exists)
-        done.tap()
+        // The review bar opens on it (ADR 0098); Replace takes every mention.
+        let replace = app.buttons["review-replace"]
+        XCTAssertTrue(replace.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["review-alias"].firstMatch.exists)
+        replace.tap()
         // The text view rebuilds its elements after a change; ask the app.
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.links[MdocUITest.email].exists)
+
+        // The only proposal: All reviewed, with Undo in the toast; undo puts
+        // the bar back on it, and the next toast redoes.
+        let toastUndo = app.buttons["toast-action"]
+        XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
+        toastUndo.tap()
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["review-undo"].waitForExistence(timeout: 5))
+        let redo = app.buttons["toast-action"]
+        XCTAssertTrue(redo.waitForExistence(timeout: 5))
+        XCTAssertEqual(redo.label, "Redo")
+        redo.tap()
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // Replace any remaining proposals, as reviewed.
         let primary = app.buttons["primary-action"]

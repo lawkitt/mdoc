@@ -28,7 +28,7 @@ final class DeviceBelowFloorUITests: XCTestCase {
     /// Settings' note and no setup card on Home; then the scan waits for
     /// text recognition, Download & continue fetches it and recognizes the
     /// pages with mdoc in the background part of the time. Where Find names
-    /// would be, the note; selecting a word and Replace… marks it.
+    /// would be, the note; selecting a word and Hide name marks it.
     @MainActor
     private func scanRecognizeAndMark() throws {
         let app = launch(seed: MdocUITest.deviceScan)
@@ -77,15 +77,15 @@ final class DeviceBelowFloorUITests: XCTestCase {
             text.swipeDown(velocity: .fast)
         }
         text.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.04)).press(forDuration: 1.0)
-        let replace = app.menuItems["Replace…"].firstMatch
-        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Replace… in the edit menu")
+        let replace = app.menuItems["Hide name"].firstMatch
+        XCTAssertTrue(replace.waitForExistence(timeout: 5), "no Hide name in the edit menu")
         replace.tap()
-        // The sheet is titled with the category ("Person"); its Replace confirms.
-        let confirm = app.navigationBars.buttons["Replace"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no Replace sheet")
+        // The mark is a proposal and the review bar opens on it; Replace applies.
+        let confirm = app.buttons["review-replace"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no review bar on the mark")
         confirm.tap()
-        // The text view rebuilds its elements after a change; ask the app.
-        XCTAssertTrue(app.links["PERSON_1"].firstMatch.waitForExistence(timeout: 10), "the selection was not marked")
+        XCTAssertTrue(app.buttons["review-undo"].isEnabled, "the selection was not marked")
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // The marked text shares.
         let primary = app.buttons["primary-action"]
