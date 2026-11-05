@@ -1,6 +1,7 @@
 # iOS UI polish
 
-Status: Accepted, 2026-10-31.
+Status: Accepted, 2026-10-31. The hand-off bar at accessibility sizes
+amended 2026-11-04 (the [name-replacement journey survey](../design/ios-pii-journey-survey-2026-11-04.md)).
 
 ## Problem
 
@@ -32,7 +33,12 @@ Markdown.
   reads **Share, Copy, Paste** on both tabs, so it stays one row on a
   402 pt iPhone at default text size. VoiceOver keeps the full names:
   Paste reply on the Text tab; Share reply, Copy reply and Paste another
-  reply on the Reply tab.
+  reply on the Reply tab. The document's bar stops growing at the second
+  accessibility text size, as the system's own bars do, and a long press
+  shows a label in the large content viewer. Where its buttons do not fit
+  in one row, the primary button takes a row and the others share the
+  next, so at AX XXXL the bar takes about 150 pt rather than a third of
+  the screen (amended 2026-11-04).
 - **A portrait iPad gives the text the room.** In a regular-width window
   narrower than 1100 pt (every iPad in portrait, none in landscape) the
   sidebar hides once a document opens, and Identities show in the right

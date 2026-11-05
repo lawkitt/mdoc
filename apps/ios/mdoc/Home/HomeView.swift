@@ -306,7 +306,7 @@ struct ImportSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .reviewSheetDetents()
     }
 }
 
@@ -332,8 +332,10 @@ struct PasteTextSheet: View {
                         }
                     }
                     .labelStyle(.titleAndIcon)
+                    // A long paste scrolls inside the editor, so the title
+                    // and the case stay on the sheet.
                     TextEditor(text: $text)
-                        .frame(minHeight: 180)
+                        .frame(minHeight: 180, maxHeight: 260)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
                                 Text("Paste or type the text to check")

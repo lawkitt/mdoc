@@ -40,34 +40,9 @@ struct CandidateSheet: View {
                         UnhyphenatedText(candidate.original)
                     }
                     .accessibilityElement(children: .combine)
-                    // At accessibility sizes the value goes under the label;
-                    // beside it, "Category" broke over three lines.
-                    (dynamicTypeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-                        : AnyLayout(HStackLayout())) {
-                        Text("Category")
-                        if !dynamicTypeSize.isAccessibilitySize {
-                            Spacer()
-                        }
-                        HStack {
-                            Image(systemName: candidate.category.symbol)
-                                .foregroundStyle(candidate.category.color)
-                                .accessibilityHidden(true)
-                            // The icon carries the category's colour; the
-                            // words stay in the text colour, which reads (a
-                            // category colour as text fails contrast).
-                            Text(candidate.category.label)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
                 }
                 Section {
-                    Picker("Decision", selection: $replace) {
-                        Text("Replace").tag(true)
-                        Text("Keep").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("candidate-decision")
+                    decisionPicker
                     if replace && !candidate.alias.isEmpty {
                         LabeledContent("Alias") {
                             Text(candidate.alias)
@@ -82,13 +57,7 @@ struct CandidateSheet: View {
                 }
                 if mentionCount > 1 {
                     Section {
-                        Picker("Apply to", selection: $scope) {
-                            Text("All \(mentionCount) occurrences").tag(Scope.allOccurrences)
-                            Text("Just this one").tag(Scope.justThisOne)
-                        }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-                        .accessibilityIdentifier("candidate-scope")
+                        scopePicker
                     } header: {
                         Text("Apply to")
                     }
@@ -100,13 +69,30 @@ struct CandidateSheet: View {
                             onNext()
                         }
                         .accessibilityHint(Text("Applies this decision and opens the next proposal."))
+                        .accessibilityIdentifier("candidate-next")
                     }
                 }
             }
-            // The value is in Found; the title names what it is.
-            .navigationTitle(candidate.category.label)
+            // Close sections, so the first height holds the whole sheet.
+            .listSectionSpacing(.compact)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // The value is in Found; the title names what it is, with
+                // the category's icon (its colour on the icon only: as text
+                // it fails contrast).
+                ToolbarItem(placement: .principal) {
+                    Label {
+                        Text(candidate.category.label)
+                            .font(.headline)
+                    } icon: {
+                        Image(systemName: candidate.category.symbol)
+                            .foregroundStyle(candidate.category.color)
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(candidate.category.label))
+                    .accessibilityAddTraits(.isHeader)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -119,7 +105,47 @@ struct CandidateSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // Tall enough at first for Apply to and Next proposal, with the
+        // text above it scrolled to the candidate.
+        .reviewSheetDetents(first: mentionCount > 1 || hasNext(scope) ? .fraction(0.66) : .medium)
+    }
+
+    /// Replace or Keep: side by side, or a list at the accessibility sizes,
+    /// where a segmented control's text stays small.
+    @ViewBuilder
+    private var decisionPicker: some View {
+        let picker = Picker("Decision", selection: $replace) {
+            Text("Replace").tag(true)
+            Text("Keep").tag(false)
+        }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                picker.pickerStyle(.inline)
+            } else {
+                picker.pickerStyle(.segmented)
+            }
+        }
+        .labelsHidden()
+        .accessibilityIdentifier("candidate-decision")
+    }
+
+    /// Side by side, so the sheet's first height holds it; a list at the
+    /// accessibility sizes, where the labels would not fit beside each other.
+    @ViewBuilder
+    private var scopePicker: some View {
+        let picker = Picker("Apply to", selection: $scope) {
+            Text("All \(mentionCount) occurrences").tag(Scope.allOccurrences)
+            Text("Just this one").tag(Scope.justThisOne)
+        }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                picker.pickerStyle(.inline)
+            } else {
+                picker.pickerStyle(.segmented)
+            }
+        }
+        .labelsHidden()
+        .accessibilityIdentifier("candidate-scope")
     }
 }
 
@@ -166,6 +192,6 @@ struct ManualReplaceSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .reviewSheetDetents()
     }
 }

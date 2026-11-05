@@ -76,6 +76,15 @@ struct IdentitiesView: View {
                     // Secondary text, not the category's colour: as text that
                     // colour fails contrast (the header's symbol carries it).
                     UnhyphenatedText(identity.alias, style: .footnote, monospaced: true, color: .secondaryLabel)
+                    // How often it appears, when more than once; the chip
+                    // says only what happens to it.
+                    if identity.mentionCount > 1 {
+                        Text("\(identity.mentionCount) mentions")
+                            .font(.footnote)
+                            // A concrete colour: the row button's tint would
+                            // take over `.secondary`.
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    }
                 }
                 if !dynamicTypeSize.isAccessibilitySize {
                     Spacer()
@@ -122,7 +131,7 @@ struct IdentitiesView: View {
         return HStack(spacing: 4) {
             Image(systemName: symbol)
                 .imageScale(.small)
-            Text("\(text) · \(identity.mentionCount)")
+            Text(text)
         }
         .font(.caption.weight(.semibold))
         // Text colour for every state: secondary text on the fill fails
