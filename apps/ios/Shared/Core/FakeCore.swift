@@ -41,6 +41,8 @@ private struct FakeIdentity {
     var variants: [String]
     var alias: String
     var owner: IdentityID? = nil
+    /// Renamed by the user: a category change keeps it, as in the core.
+    var custom = false
 
     var primary: String { variants.max { $0.count < $1.count } ?? "" }
 }
@@ -341,7 +343,10 @@ private final class FakeState: @unchecked Sendable {
         let caseID = documents[index].caseID
         let current = FakeSaved(document: documents[index], identities: identities(of: caseID), step: history.step)
         if back { history.redo.append(current) } else { history.undo.append(current) }
+        // The reply is no review step: it stays as it is now.
+        let reply = documents[index].reply
         documents[index] = target.document
+        documents[index].reply = reply
         setIdentities(target.identities, of: caseID)
         history.step = target.step
         histories[id] = history
@@ -791,10 +796,15 @@ private final class FakeSession: DocumentSession {
             }
             try state.record(id, FakeStep(kind: .rename, subject: value, candidate: candidate)) { index in
                 if scope == .allOccurrences {
-                    try state.updateIdentity(current.id, of: document.caseID) { $0.alias = value }
+                    try state.updateIdentity(current.id, of: document.caseID) {
+                        $0.alias = value
+                        $0.custom = true
+                    }
                 } else {
-                    split(index, candidate, into: state.addIdentity(
-                        current.category, alias: value, variants: [mention.original], caseID: document.caseID))
+                    let split = state.addIdentity(
+                        current.category, alias: value, variants: [mention.original], caseID: document.caseID)
+                    try state.updateIdentity(split.id, of: document.caseID) { $0.custom = true }
+                    self.split(index, candidate, into: split)
                 }
             }
             return try state.snapshot(id)
@@ -804,10 +814,13 @@ private final class FakeSession: DocumentSession {
     func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice] {
         try state.locked {
             let (document, mention) = try located(candidate)
+            let custom = state.identities(of: document.caseID).first { $0.id == mention.identityID }?.custom ?? false
+            // As `category_choice_alias`: the whole identity keeps its alias
+            // in its category, or when the user chose it; a split gets one.
             return Category.allCases.map { category in
-                let same = category == mention.category && scope == .allOccurrences
+                let keeps = scope == .allOccurrences && (category == mention.category || custom)
                 return CategoryChoice(
-                    category: category, alias: same ? nil : state.nextAlias(category, caseID: document.caseID),
+                    category: category, alias: keeps ? nil : state.nextAlias(category, caseID: document.caseID),
                     isCurrent: category == mention.category)
             }
         }
@@ -822,7 +835,7 @@ private final class FakeSession: DocumentSession {
                     let alias = state.nextAlias(category, caseID: document.caseID)
                     try state.updateIdentity(mention.identityID, of: document.caseID) {
                         $0.category = category
-                        $0.alias = alias
+                        if !$0.custom { $0.alias = alias }
                         $0.owner = nil
                     }
                 } else {
@@ -840,6 +853,8 @@ private final class FakeSession: DocumentSession {
             guard let into = state.identities(of: document.caseID).first(where: { $0.id == target }) else {
                 throw CoreError.notFound
             }
+            // As the core: This one on a kept mention changes nothing.
+            if scope == .justThisOne && mention.state == .kept { return try state.snapshot(id) }
             try state.record(id, FakeStep(kind: .sameAs, subject: into.primary, candidate: candidate, identity: target)) { index in
                 if scope == .allOccurrences {
                     try merge(index, mention.identityID, into: target)
@@ -867,6 +882,7 @@ private final class FakeSession: DocumentSession {
     func newAlias(_ candidate: CandidateID) throws -> DocumentSnapshot {
         try state.locked {
             let (document, mention) = try located(candidate)
+            if mention.state == .kept { return try state.snapshot(id) }
             let alias = state.nextAlias(mention.category, caseID: document.caseID)
             try state.record(id, FakeStep(kind: .newAlias, subject: alias, candidate: candidate)) { index in
                 split(index, candidate, into: state.addIdentity(
@@ -890,6 +906,7 @@ private final class FakeSession: DocumentSession {
             if owner != nil && !(ownerIdentity.map { people.contains($0.category) } ?? false) {
                 throw CoreError.refused("Choose a person or organization as owner.")
             }
+            if owned.owner == owner { return try state.snapshot(id) }
             let subject = ownerIdentity?.primary ?? "none"
             try state.record(id, FakeStep(kind: .owner, subject: subject, identity: identity)) { _ in
                 try state.updateIdentity(identity, of: caseID) { $0.owner = owner }

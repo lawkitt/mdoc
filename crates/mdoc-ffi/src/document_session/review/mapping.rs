@@ -255,6 +255,15 @@ impl ReviewText {
     /// Belongs to…: a contact's or identifier's owner, a person or an
     /// organization, or none.
     pub fn set_owner(&mut self, id: u64, owner: Option<u64>) -> Result<(), CoreError> {
+        // The owner it has already: no step, and Redo stays. (`set_owner`
+        // makes a new policy either way, so `change_mapping` cannot tell.)
+        if self
+            .review
+            .identity(id)
+            .is_some_and(|identity| identity.owner == owner)
+        {
+            return Ok(());
+        }
         let subject = owner.map_or_else(|| "none".to_owned(), |o| self.wording(o));
         let focus = super::Focus {
             range: None,

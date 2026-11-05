@@ -165,6 +165,33 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertFalse(session.snapshot().canRedo)
     }
 
+    /// What the real core leaves alone, the fake does too: the reply across
+    /// Undo, a custom alias across a category change, a kept mention under
+    /// New alias, an owner set again; the last two keep Redo.
+    func testTheFakeKeepsWhatTheCoreKeeps() throws {
+        let session = try letter()
+        let maya = try mention(session, "Maya Ellison")
+        _ = try session.decide(maya.id, .replace, scope: .allOccurrences)
+        _ = try session.restoreReply("Thanks, PERSON_1.")
+        XCTAssertNotNil(try session.undo().reply, "Undo leaves the reply")
+        _ = try session.redo()
+
+        _ = try session.rename(maya.id, scope: .allOccurrences, to: "CLIENT")
+        let choices = try session.categoryChoices(for: maya.id, scope: .allOccurrences)
+        XCTAssertNil(choices.first { $0.category == .organization }?.alias, "a custom alias stays")
+        let recategorized = try session.setCategory(maya.id, scope: .allOccurrences, to: .organization)
+        XCTAssertEqual(recategorized.candidate(maya.id)?.alias, "CLIENT")
+
+        let daniel = try mention(session, "Mr Okafor")
+        _ = try session.decide(daniel.id, .keep, scope: .justThisOne)
+        _ = try session.undo()
+        _ = try session.redo()
+        XCTAssertEqual(try session.newAlias(daniel.id).candidate(daniel.id)?.identityID, daniel.identityID)
+        let email = try mention(session, "maya.ellison@example.com")
+        _ = try session.undo()
+        XCTAssertTrue(try session.setOwner(email.identityID, to: nil).canRedo)
+    }
+
     func testRenameRefusesAnAliasAnotherNameHas() throws {
         let session = try letter()
         let maya = try mention(session, "Maya Ellison")

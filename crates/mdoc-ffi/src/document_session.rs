@@ -998,6 +998,47 @@ mod tests {
         assert!(!redone.can_redo);
     }
 
+    /// Same as saved into the case, then undone and saved again: the
+    /// document has two people again and restores each to its own. The case
+    /// keeps the merge, as on desktop: a member's save never reverses a case
+    /// merge (ADR 0041, `unmerged_members_cannot_reverse_a_case_merge`).
+    #[test]
+    fn an_undone_merge_is_two_people_in_the_document_again() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Ann Lee wrote to Mia Fox.", "Letter");
+        select(&session, "Ann Lee");
+        select(&session, "Mia Fox");
+        let replaced = session.replace_all().unwrap();
+        assert_eq!(replaced.text, "PERSON_1 wrote to PERSON_2.");
+        session.save(library.clone()).unwrap();
+        let (ann, mia) = (
+            session
+                .identity_with_alias("PERSON_1".into())
+                .unwrap()
+                .unwrap(),
+            session
+                .identity_with_alias("PERSON_2".into())
+                .unwrap()
+                .unwrap(),
+        );
+        session.link(mia, ann).unwrap();
+        session.save(library.clone()).unwrap();
+        assert_eq!(session.undo().unwrap().text, "PERSON_1 wrote to PERSON_2.");
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(saved.review.text, "PERSON_1 wrote to PERSON_2.");
+        assert_eq!(saved.review.identities.len(), 2);
+        assert_eq!(
+            session
+                .restore_reply("PERSON_1 and PERSON_2.".into())
+                .unwrap()
+                .text,
+            "Ann Lee and Mia Fox."
+        );
+        let case = library.load(&saved.case.id).unwrap();
+        assert_eq!(case.identities.len(), 1, "the case keeps the merge");
+    }
+
     /// × on a merge hint is kept in the case: the document reopened, or
     /// another member, no longer shows it (ADR 0080).
     #[test]

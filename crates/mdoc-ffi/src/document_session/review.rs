@@ -1173,6 +1173,10 @@ mod tests {
         // A person belongs to nobody; the refusal is no step.
         assert!(document.set_owner(ann, Some(ann)).is_err());
         assert_eq!(undo_label(&document), "Belongs to · none");
+        // The owner it has already is no step either, and Redo stays.
+        document.undo();
+        document.set_owner(email, Some(ann)).unwrap();
+        assert!(document.can_redo());
     }
 
     #[test]
