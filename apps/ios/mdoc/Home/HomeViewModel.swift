@@ -30,6 +30,30 @@ final class HomeViewModel {
         snapshot.documents.sorted { $0.updated > $1.updated }
     }
 
+    /// Home's search, shown from `searchThreshold` documents (ADR 0099).
+    var query = ""
+    /// Home's case filter, offered from two cases.
+    var caseFilter: CaseID?
+    static let searchThreshold = 8
+
+    /// Search shows from the threshold, and stays while a query is typed,
+    /// so a query can always be cleared.
+    var offersSearch: Bool { snapshot.documents.count >= Self.searchThreshold || !query.isEmpty }
+    /// The filter shows from two cases, and stays while one is chosen.
+    var offersCaseFilter: Bool { snapshot.cases.count >= 2 || caseFilter != nil }
+
+    /// The documents Home lists: the case filter, then the search over
+    /// titles and case names.
+    var shownDocuments: [DocumentSummary] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        return documents.filter { document in
+            if let caseFilter, document.caseID != caseFilter { return false }
+            guard !needle.isEmpty else { return true }
+            return document.title.localizedStandardContains(needle)
+                || (caseSummary(of: document)?.name.localizedStandardContains(needle) ?? false)
+        }
+    }
+
     func caseSummary(of document: DocumentSummary) -> CaseSummary? {
         snapshot.cases.first { $0.id == document.caseID }
     }
@@ -40,6 +64,10 @@ final class HomeViewModel {
 
     func refresh() {
         snapshot = library.snapshot()
+        // A filtered case that is gone filters nothing.
+        if let caseFilter, !snapshot.cases.contains(where: { $0.id == caseFilter }) {
+            self.caseFilter = nil
+        }
     }
 
     /// Imports into the chosen case and returns the new document's session.
@@ -98,8 +126,17 @@ final class HomeViewModel {
         }
     }
 
-    /// The status's symbol: state is shown by symbol and words, never by a
-    /// colour, so the case colour stays the only colour on a row.
+    /// The status's color (ADR 0099): to review orange, ready green, the
+    /// rest neutral.
+    static func statusKind(of document: DocumentSummary) -> StatusPill.Kind {
+        switch document.phase {
+        case .reviewing: .toReview
+        case .ready where document.candidateCount > 0: .ready
+        default: .neutral
+        }
+    }
+
+    /// The status's symbol, beside its words and color.
     static func statusSymbol(of document: DocumentSummary, findsNames: Bool = true) -> String {
         switch document.phase {
         case .recognizing where !document.kind.needsRecognition: "doc.badge.clock"

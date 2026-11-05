@@ -54,9 +54,13 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["document-row"].firstMatch.waitForExistence(timeout: 10))
         shot("08-home-one-document")
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.buttons["About mdoc"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
         shot("09-settings")
-        app.buttons["About mdoc"].tap()
+        // About is the last row, below the fold on a phone.
+        let about = app.buttons["settings-about"]
+        for _ in 0..<4 where !about.isHittable { app.swipeUp() }
+        shot("09-settings-end")
+        about.tap()
         XCTAssertTrue(app.staticTexts["Version"].waitForExistence(timeout: 5))
         shot("10-about")
     }
@@ -235,6 +239,29 @@ final class SurveyUITests: XCTestCase {
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["below-floor-note"].firstMatch.waitForExistence(timeout: 5))
         shot("33-settings-below-floor")
+    }
+
+    /// Home and Settings at a large accessibility text size, and the
+    /// review in the Serif document font (ADR 0099).
+    @MainActor
+    func test6LargeTextAndSerif() throws {
+        let app = launch(seed: MdocUITest.defaultSeed, contentSize: "UICTContentSizeCategoryAccessibilityXL")
+        let row = MdocUITest.documentRow(app)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        shot("34-home-ax-text")
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
+        shot("35-settings-ax-text")
+        let font = app.descendants(matching: .any)["settings-document-font"].firstMatch
+        for _ in 0..<3 where !font.isHittable { app.swipeUp() }
+        font.tap()
+        let serif = app.buttons["Serif"].firstMatch
+        XCTAssertTrue(serif.waitForExistence(timeout: 5))
+        serif.tap()
+        app.buttons["Done"].firstMatch.tap()
+        row.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        shot("36-review-serif-ax-text")
     }
 
     // MARK: Steps

@@ -2,7 +2,8 @@ import PhotosUI
 import SwiftUI
 import VisionKit
 
-/// Documents grouped by case, the setup card and the add menu.
+/// Every document, newest first, with the setup card, search, the case
+/// filter and adding at the bottom (ADR 0099).
 struct HomeView: View {
     @Bindable var app: AppModel
 
@@ -11,6 +12,7 @@ struct HomeView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showsFiles = false
     @State private var showsPaste = false
+    @State private var shareItems: ShareItems?
 
     private var home: HomeViewModel { app.home }
 
@@ -33,13 +35,36 @@ struct HomeView: View {
             }
             // Its own section, so the setup card above reads apart from it.
             Section {
-                ForEach(home.documents) { document in
+                ForEach(home.shownDocuments) { document in
                     DocumentRow(document: document, caseSummary: home.caseSummary(of: document), findsNames: home.findsNames)
                         .tag(document.id)
                         .swipeActions {
                             Button("Delete", role: .destructive) {
                                 app.deleteDocument(document.id)
                             }
+                        }
+                        .contextMenu {
+                            Button {
+                                app.selection = document.id
+                            } label: {
+                                Label("Open", systemImage: "doc.text")
+                            }
+                            // Only a reviewed document leaves mdoc, through
+                            // Copy for AI's export path (ADR 0085).
+                            if document.phase == .ready {
+                                Button {
+                                    shareItems = app.shareItems(for: document.id)
+                                } label: {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+                            }
+                            Button(role: .destructive) {
+                                app.deleteDocument(document.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        } preview: {
+                            DocumentPreview(document: document, caseSummary: home.caseSummary(of: document), findsNames: home.findsNames)
                         }
                 }
             }
@@ -50,6 +75,7 @@ struct HomeView: View {
             }
         }
         .navigationTitle("mdoc")
+        .modifier(HomeSearch(home: home))
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -59,7 +85,25 @@ struct HomeView: View {
                 }
                 .accessibilityIdentifier("settings-button")
             }
-            ToolbarItem(placement: .primaryAction) {
+            if home.offersCaseFilter {
+                ToolbarItem(placement: .primaryAction) {
+                    caseFilterMenu
+                }
+            }
+            // Adding sits within thumb reach: Scan prominent, the rest in
+            // the + menu (ADR 0099).
+            ToolbarItemGroup(placement: .bottomBar) {
+                if VNDocumentCameraViewController.isSupported {
+                    Button {
+                        showsScanner = true
+                    } label: {
+                        Label("Scan", systemImage: "doc.viewfinder")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("scan-button")
+                }
+                Spacer()
                 addMenu
             }
         }
@@ -93,6 +137,9 @@ struct HomeView: View {
             case .failure(let error): home.errorMessage = error.localizedDescription
             }
         }
+        .sheet(item: $shareItems) { items in
+            ActivityView(items: items.items)
+        }
         .sheet(isPresented: $showsPaste) {
             PasteTextSheet(cases: home.cases) { text, title, caseChoice in
                 showsPaste = false
@@ -119,22 +166,69 @@ struct HomeView: View {
         app.setup.showsCard && !app.openDocumentShowsSetup
     }
 
+    /// No documents yet: three large tiles and the sample (ADR 0099).
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No documents yet", systemImage: "doc.text.magnifyingglass")
-        } description: {
-            // Below the floor mdoc finds no names: no promise it does
-            // not keep (ADR 0088).
-            if home.findsNames {
-                Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
-            } else {
-                Text("Scan a letter, or add a PDF, Word file, photo or text. Select the names in it to replace them, then share it with an AI.")
+        VStack(spacing: Space.l) {
+            VStack(spacing: Space.xs) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("No documents yet")
+                    .font(.title3.weight(.semibold))
+                // Below the floor mdoc finds no names: no promise it does
+                // not keep (ADR 0088).
+                Text(home.findsNames
+                    ? "Add a letter, contract or note. mdoc finds the names in it so you can share it with an AI without them."
+                    : "Add a letter, contract or note. Select the names in it to replace them, then share it with an AI.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-        } actions: {
-            // In a list row the menu would draw its icon alone.
-            addMenu
-                .labelStyle(.titleAndIcon)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Space.s) { addTiles }
+                VStack(spacing: Space.s) { addTiles }
+            }
+            Button("Try a sample") {
+                app.trySample()
+            }
+            .font(Typography.chip)
+            .frame(minHeight: Size.target)
+            .accessibilityIdentifier("try-sample")
         }
+        .padding(Space.m)
+        .frame(maxWidth: 520)
+    }
+
+    @ViewBuilder
+    private var addTiles: some View {
+        if VNDocumentCameraViewController.isSupported {
+            AddTile(title: "Scan", spoken: "Scan a document", id: "empty-scan", systemImage: "doc.viewfinder", color: .teal) { showsScanner = true }
+        }
+        AddTile(title: "Files", spoken: "Add from Files", id: "empty-files", systemImage: "folder", color: .blue) { showsFiles = true }
+        AddTile(title: "Paste", spoken: "Paste text", id: "empty-paste", systemImage: "doc.on.clipboard", color: .orange) { showsPaste = true }
+    }
+
+    /// From two cases: Home shows one case's documents, or all.
+    private var caseFilterMenu: some View {
+        Menu {
+            Picker("Case", selection: Bindable(home).caseFilter) {
+                Text("All cases").tag(CaseID?.none)
+                ForEach(home.cases) { summary in
+                    Label {
+                        Text(summary.name)
+                    } icon: {
+                        Image(systemName: "circle.fill")
+                    }
+                    .tint(summary.colour.color)
+                    .tag(CaseID?.some(summary.id))
+                }
+            }
+        } label: {
+            Label("Case", systemImage: home.caseFilter == nil
+                ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+        }
+        .accessibilityIdentifier("case-filter")
     }
 
     /// Paste, Files, Photos, Scan: the first item opens nearest the button,
@@ -172,7 +266,50 @@ struct HomeView: View {
     }
 }
 
-private struct DocumentRow: View {
+/// One of the empty state's large add tiles.
+private struct AddTile: View {
+    let title: LocalizedStringKey
+    /// Apart from the + menu's item of the same name.
+    let spoken: LocalizedStringKey
+    let id: String
+    let systemImage: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: Space.xs) {
+                IconTile(systemImage: systemImage, color: color, size: 44)
+                Text(title)
+                    .font(Typography.chip)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 96)
+            .card(padding: Space.s)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(spoken))
+        .accessibilityIdentifier(id)
+    }
+}
+
+/// Search over titles and case names, from `HomeViewModel.searchThreshold`
+/// documents.
+private struct HomeSearch: ViewModifier {
+    @Bindable var home: HomeViewModel
+
+    func body(content: Content) -> some View {
+        if home.offersSearch {
+            content.searchable(text: $home.query, prompt: Text("Documents and cases"))
+        } else {
+            content
+        }
+    }
+}
+
+/// A document on Home (ADR 0099): a source tile, the title, then the state
+/// in its color, when it last changed, and the case as a tag.
+struct DocumentRow: View {
     let document: DocumentSummary
     let caseSummary: CaseSummary?
     let findsNames: Bool
@@ -181,47 +318,77 @@ private struct DocumentRow: View {
     private var status: String { HomeViewModel.status(of: document, findsNames: findsNames) }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // At accessibility sizes the title takes the icon's room too.
+        HStack(spacing: Space.s) {
+            // At accessibility sizes the title takes the tile's room too.
             if !dynamicTypeSize.isAccessibilitySize {
-                Image(systemName: symbol)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
+                IconTile(systemImage: source.symbol, color: source.color, tinted: true, size: 40)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(document.title)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
-                // The case only when its name says something the title does not.
-                if let caseSummary, caseSummary.name != document.title {
-                    HStack(spacing: 6) {
-                        CaseDot(colour: caseSummary.colour)
-                        Text(caseSummary.name)
-                            .lineLimit(1)
+                    .font(Typography.body.weight(.medium))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+                // One line when it fits; else the case on its own line;
+                // else every part on its own line, so nothing truncates.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Space.xs) {
+                        statusAndTime(stacked: false)
+                        caseTag
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        statusAndTime(stacked: false)
+                        caseTag
+                    }
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        statusAndTime(stacked: true)
+                        caseTag
+                    }
                 }
-                HStack(spacing: 8) {
-                    // The case's dot, when its name line is left out.
-                    if let caseSummary, caseSummary.name == document.title {
-                        CaseDot(colour: caseSummary.colour)
-                    }
-                    Label {
-                        Text(status)
-                    } icon: {
-                        Image(systemName: HomeViewModel.statusSymbol(of: document, findsNames: findsNames))
-                    }
-                    .labelStyle(StatusLabelStyle())
-                    .fontWeight(document.phase == .reviewing ? .semibold : .regular)
-                    .foregroundStyle(document.phase == .reviewing ? .primary : .secondary)
-                }
-                .font(.footnote)
             }
         }
+        .padding(.vertical, Space.xxs)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(spoken))
         .accessibilityIdentifier("document-row")
+    }
+
+    /// Stacked (narrow or large text): the status, the time and the case
+    /// each on a line of their own, so nothing truncates.
+    @ViewBuilder
+    private func statusAndTime(stacked: Bool) -> some View {
+        let pill = StatusPill(
+            status, systemImage: HomeViewModel.statusSymbol(of: document, findsNames: findsNames),
+            kind: HomeViewModel.statusKind(of: document))
+        let time = Text(document.updated, format: Self.timeFormat(document.updated))
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+        if stacked {
+            pill.fixedSize(horizontal: false, vertical: true)
+            time
+        } else {
+            HStack(spacing: Space.xxs) {
+                pill
+                Text(verbatim: "·")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+                time
+            }
+            .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var caseTag: some View {
+        if let caseSummary {
+            CaseTag(summary: caseSummary, showsName: caseSummary.name != document.title)
+        }
+    }
+
+    /// Today the time, earlier the day.
+    static func timeFormat(_ date: Date) -> Date.FormatStyle {
+        Calendar.current.isDateInToday(date)
+            ? .dateTime.hour().minute()
+            : .dateTime.day().month(.abbreviated)
     }
 
     /// "Settlement agreement, 1 to review, case Settlement agreement".
@@ -233,25 +400,49 @@ private struct DocumentRow: View {
         return parts.joined(separator: ", ")
     }
 
-    private var symbol: String {
+    private var source: (symbol: String, color: Color) {
         switch document.kind {
-        case .pdf: "doc.richtext"
-        case .docx: "doc.text"
-        case .image: "photo"
-        case .scan: "doc.viewfinder"
-        case .text: "text.alignleft"
+        case .pdf: ("doc.richtext", .red)
+        case .docx: ("doc.text", .blue)
+        case .image: ("photo", .green)
+        case .scan: ("doc.viewfinder", .teal)
+        case .text: ("text.alignleft", .gray)
         }
     }
 }
 
-/// A status line: a small icon (or the case's dot) before the words.
-private struct StatusLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 6) {
-            configuration.icon
-                .imageScale(.small)
-            configuration.title
+/// The long-press preview of a document: its row, larger.
+private struct DocumentPreview: View {
+    let document: DocumentSummary
+    let caseSummary: CaseSummary?
+    let findsNames: Bool
+
+    var body: some View {
+        DocumentRow(document: document, caseSummary: caseSummary, findsNames: findsNames)
+            .padding(Space.m)
+            .frame(width: 320, alignment: .leading)
+    }
+}
+
+/// The case as a small tag: its colour dot, and its name when it says
+/// something the title does not.
+struct CaseTag: View {
+    let summary: CaseSummary
+    let showsName: Bool
+
+    var body: some View {
+        HStack(spacing: Space.xxs) {
+            CaseDot(colour: summary.colour)
+            if showsName {
+                Text(summary.name)
+                    .lineLimit(1)
+            }
         }
+        .font(Typography.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, showsName ? Space.xs : 0)
+        .padding(.vertical, 2)
+        .background(showsName ? summary.colour.color.opacity(0.12) : .clear, in: Capsule())
     }
 }
 
@@ -421,3 +612,15 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
     }
 }
+
+#if DEBUG
+#Preview("Home") {
+    NavigationStack { HomeView(app: PreviewFixtures.app()) }
+}
+
+#Preview("Home, dark, AX5") {
+    NavigationStack { HomeView(app: PreviewFixtures.app()) }
+        .preferredColorScheme(.dark)
+        .environment(\.dynamicTypeSize, .accessibility5)
+}
+#endif

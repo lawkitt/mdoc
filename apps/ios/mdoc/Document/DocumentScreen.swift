@@ -12,6 +12,7 @@ struct DocumentScreen: View {
     var isNarrow = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
+    @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
 
     private var isRegular: Bool { sizeClass == .regular }
 
@@ -182,6 +183,7 @@ struct DocumentScreen: View {
             snapshot: model.snapshot,
             selected: model.reviewing,
             rendered: !showsSource,
+            serif: serif,
             onCandidate: { model.open($0) },
             onReplace: { model.beginReplace($0) },
             onReviewNext: { model.reviewNext() })

@@ -11,6 +11,8 @@ struct MarkdownTextView: UIViewRepresentable {
     let selected: CandidateID?
     /// Markers hidden and blocks drawn; false shows the source.
     var rendered = true
+    /// Document font › Serif; the styler reads it, the key restyles on it.
+    var serif = false
     let onCandidate: (CandidateID) -> Void
     let onReplace: (SourceRange) -> Void
     let onReviewNext: () -> Void
@@ -51,7 +53,7 @@ struct MarkdownTextView: UIViewRepresentable {
         coordinator.parent = self
         view.onReviewNext = onReviewNext
         let key = StyleKey(
-            snapshot: snapshot, selected: selected, rendered: rendered,
+            snapshot: snapshot, selected: selected, rendered: rendered, serif: serif,
             dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
         guard key != coordinator.styled else {
@@ -73,6 +75,7 @@ struct MarkdownTextView: UIViewRepresentable {
         var snapshot: DocumentSnapshot
         var selected: CandidateID?
         var rendered: Bool
+        var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
     }

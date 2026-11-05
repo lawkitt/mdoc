@@ -61,6 +61,22 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
 
+## Screens
+
+- **Theme:** Settings › Appearance › Theme (Automatic, Light, Dark), stored
+  in the App Group (`AppTheme`, `Shared/UI/MarkdownDisplay.swift`); the app
+  sets it on every window and the Restore extension reads it.
+- **Accent:** teal green, `#336b5c` light and `#82b9a7` dark, in the asset
+  catalog's `AccentColor`.
+- **Document font:** System or Serif (New York) at the same sizes
+  (`MarkdownDisplay.serif`, read by `MarkdownStyler.font`).
+- **Settings:** inset grouped with `SettingsLabel` icon tiles; Appearance,
+  Review, Models (plain names, details one tap deeper), Privacy, About.
+- **Home:** `DocumentRow`, a tinted source tile, the title on one line, then
+  `StatusPill`, the time and the `CaseTag`. Search from 8 documents, a case
+  filter from 2 cases, Scan and + in the bottom bar, and the empty state's
+  three tiles with Try a sample.
+
 ## Gestures
 
 Every gesture also has a visible control and a VoiceOver action; no action
