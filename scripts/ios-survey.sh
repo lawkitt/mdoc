@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
 # The iOS UI survey (ADR 0087): run SurveyUITests on a Simulator and export
 # every screen, light and dark, downscaled to 1000 px high, into a folder.
-#   scripts/ios-survey.sh "iPhone 17" docs/evidence/ios-app/<date>-survey
-# Needs the core built (`just ios-core`). Shuts the Simulators down after,
-# since a booted one can push the Mac into swap.
+#   scripts/ios-survey.sh "iPhone 17 Pro" docs/evidence/ios-app/current
+# Needs the core built (`just ios-core`). Shuts its Simulator down after,
+# since a booted one can push the Mac into swap; other Simulators (another
+# agent's) are left alone.
 set -euo pipefail
 cd "$(dirname "$0")/.." # repo root
-DEVICE="${1:-iPhone 17}"
+DEVICE="${1:-iPhone 17 Pro}"
 OUT="${2:?usage: scripts/ios-survey.sh <device> <output folder>}"
 RUNTIME=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env)
 RESULT="target/ios/survey-$(date +%s).xcresult"
 EXPORT="$(mktemp -d)"
-trap 'rm -rf "$EXPORT"; xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
+UDID=$(xcrun simctl list devices available -j | python3 -c '
+import json, sys
+for runtime, devices in json.load(sys.stdin)["devices"].items():
+    if runtime.endswith(sys.argv[2]):
+        for device in devices:
+            if device["name"] == sys.argv[1]:
+                print(device["udid"])
+                sys.exit(0)
+' "$DEVICE" "iOS-${RUNTIME//./-}")
+trap 'rm -rf "$EXPORT"; [ -z "$UDID" ] || xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true' EXIT
 
 status=0
 TEST_RUNNER_MDOC_SURVEY=1 xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc \

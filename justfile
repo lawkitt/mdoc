@@ -177,7 +177,7 @@ ios-device-test udid tier="auto": ios-core
 
 # Take the iOS UI survey (every screen, light and dark) into a folder (ADR 0087)
 [macos]
-ios-survey out device="iPhone 17": ios-core
+ios-survey out device="iPhone 17 Pro": ios-core
     scripts/ios-survey.sh "{{device}}" "{{out}}"
 
 # Regenerate the icon set from build/appicon.svg (macOS)

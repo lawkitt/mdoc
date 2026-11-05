@@ -8,7 +8,7 @@ in light and dark, at the default text size and at AX XXXL, with the iPad
 Pro 13-inch (M5) where the layout differs.
 
 Before and after screenshots are in
-[`docs/evidence/ios-app/2026-11-04-pii-journey`](../evidence/ios-app/2026-11-04-pii-journey/README.md).
+[`docs/evidence/ios-app/2026-11-04-pii-journey`](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-11-04-pii-journey/README.md).
 The "before" set is the build 734 survey. Find names ran with the real name
 detector, cloned into the Simulator from the Mac's desktop install, on the
 demo settlement agreement (`docs/product-media`).
