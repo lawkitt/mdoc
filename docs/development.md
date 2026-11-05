@@ -446,7 +446,7 @@ bypass is for `just release` only. Never merge with `--admin`.
 
 | Commit | What runs | `merge-gate` is green when |
 |---|---|---|
-| PR head | `lint (ubuntu)` and `fast (ubuntu)` (`just test-tier unit`, `just test-tier scripts`) | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), or the PR is docs only |
+| PR head | `lint (ubuntu)` and `fast (ubuntu)`, the summary of `fast (unit)` (`just test-tier unit`) and `fast (scripts)` (`just test-tier scripts`), two parallel jobs | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), or the PR is docs only |
 | Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran. A hosted job that never ran is re-run first (see the gate's passes) |
 
 **Merging.** When a PR's checks are green and it is reviewed, enqueue it:
@@ -487,7 +487,7 @@ wait for.
 
 | Job (status) | Areas | Runs on | Limit |
 |---|---|---|---|
-| `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`): lint, the unit, recognition, app and renders tiers, the script suites under `/bin/bash` 3.2, `just mobile --ffi` | 30 min |
+| `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`): `just mobile --ios` on the pinned Xcode | 40 min |
 | `ci/android` | android | the PC: `just android` | 40 min |
@@ -608,8 +608,8 @@ the `QUEUE_CI_*` variables in `config()`, set in the home's `runner.env`.
 status, in follow-up passes, and every 5 minutes) dispatches a PC job hosted when the PC has posted nothing
 10 minutes after the queue commit appeared, when its heartbeat is 10
 minutes old, when it posts `error`, or at once for a group with a fork or
-bot PR: `ci-desktop.yml` with `os=windows` (job `ci/windows (hosted)`, 40
-minutes). The result that finished first counts. There is no hosted
+bot PR: `ci-desktop.yml` with `os=windows` (`ci/windows (hosted)`, the
+summary of lint and the four test tiers as two jobs, 20 and 40 minutes). The result that finished first counts. There is no hosted
 Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
 needs `ci/android` waits for it.
 
@@ -637,7 +637,8 @@ it is not the status itself.
   after that it fails, worded "no macOS runner, 3 attempts". A job that ran
   and failed still fails at once. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
-  for `ci/ios`; name new parts that way, or their capacity cancels count
+  for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `fast (unit)` for
+  `fast (ubuntu)`; name new parts that way, or their capacity cancels count
   as failures.
 - **Missed enqueue.** A PR that is green, has auto-merge on and is still not
   in the queue 5 minutes later gets a warning in the gate's run (see "A
@@ -649,12 +650,19 @@ it is not the status itself.
   call, and for `gh` itself under the wrapper) and by a shadow run with a
   deliberately broken job, which shows only that nothing regressed.
 
-**`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, and
+**`main`.** A push to `main` runs no tests
+([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)): `ci.yml` runs
+lint and `just mobile --ffi` (`clippy`, on macOS and Windows) and builds
+the tests without running them (`test`, and `fast-linux` on Linux), and
 `main-caches.yml` builds the iOS core and the detection gate (model set up,
 no check). Between them they save every cache the queue's hosted jobs
 restore: a branch can restore only its own caches and `main`'s, so only
-`main` saves (the setup action's `save-if`, and the model's save step). A
-red `main` stops enqueueing.
+`main` saves (the setup action's `save-if`, and the model's save step).
+rust-cache keys a cache by job id, so each hosted job restores the one
+`main`'s job of the same id saves: `ci-desktop.yml`'s `clippy` and `test`
+jobs are `ci.yml`'s. A job that builds something new needs `main` to build
+it under its id, or every queue commit compiles it cold. A red `main` stops
+enqueueing.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
