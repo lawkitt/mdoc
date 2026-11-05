@@ -204,3 +204,17 @@ diff_areas() { # from to
   table=$(cat scripts/ci-areas.txt)
   git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
 }
+
+# Whether a PR head runs the detection gate (ADR 0100): true when one of the
+# files on stdin (NUL-separated, as changed_areas reads them) takes the
+# recognition area from its own line of the table given as text, the
+# fixtures' or the recognition code's. Core lists every area, so a core or
+# desktop change alone runs it only in the queue: macOS runners are scarce.
+# ci.yml's areas job (scripts/ci-areas.sh --github) starts the head run and
+# merge-gate.sh waits for it.
+head_detection() { # table-text
+  local areas
+  # Without core's lines a core file is desktop; an empty list is still core.
+  areas=$(changed_areas "$(tr -d '\r' <<<"$1" | awk '$1 !~ /(^|,)core(,|$)/')")
+  affects recognition "$areas" && ! affects core "$areas"
+}

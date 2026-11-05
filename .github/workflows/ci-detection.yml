@@ -5,7 +5,8 @@ name: Detection gate
 # the recognition fixtures (`just recognize --check`). The fixtures split
 # over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
 # 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
-# queue and the nightly run 4 shards: 3 took 84% of the budget (ADR 0100). A
+# queue, the nightly and recognition-area PR heads (ci.yml's
+# `detection-head`) run 4 shards: 3 took 84% of the budget (ADR 0100). A
 # shard warns past 80% of it, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
 # reads. A failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
