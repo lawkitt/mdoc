@@ -396,16 +396,31 @@ impl Snapshot {
             match (self.entities.get(index), fresh.entities.get(index)) {
                 (Some(a), Some(b)) if same(a, b) => {}
                 (a, b) => {
+                    // Five decimals: the check's 1e-4 tolerance must show.
                     let show = |e: Option<&RawEntity>| {
                         e.map_or("nothing".to_owned(), |e| {
                             format!(
-                                "{} {:?} {}..{} ({:.3})",
+                                "{} {:?} {}..{} ({:.5})",
                                 e.label, e.text, e.start, e.end, e.score
                             )
                         })
                     };
+                    let delta = match (a, b) {
+                        (Some(a), Some(b))
+                            if a.start == b.start
+                                && a.end == b.end
+                                && a.label == b.label
+                                && a.text == b.text =>
+                        {
+                            format!(
+                                ": the score moved {:.5}, over the 0.0001 tolerance",
+                                (a.score - b.score).abs()
+                            )
+                        }
+                        _ => String::new(),
+                    };
                     return Some(format!(
-                        "entity {}: snapshot has {}, the model gives {}",
+                        "entity {}: snapshot has {}, the model gives {}{delta}",
                         index + 1,
                         show(a),
                         show(b)
@@ -1016,9 +1031,23 @@ mod tests {
         assert_eq!(read.stale(&snapshot), None);
         read.validate("Ann").unwrap();
         assert!(read.validate("Bob").is_err());
+        // A score that moved past the tolerance names both scores to five
+        // decimals and the difference, not two equal-looking rounded ones.
+        let mut nudged = snapshot.clone();
+        nudged.entities[0].score += 0.000_3;
+        let why = snapshot.stale(&nudged).unwrap();
+        assert!(
+            why.contains("(0.87654)") && why.contains("(0.87684)"),
+            "{why}"
+        );
+        assert!(why.contains("the score moved 0.00030"), "{why}");
         let mut moved = snapshot.clone();
         moved.entities[0].end = 2;
-        assert!(snapshot.stale(&moved).unwrap().contains("entity 1"));
+        let why = snapshot.stale(&moved).unwrap();
+        assert!(
+            why.contains("entity 1") && !why.contains("score moved"),
+            "{why}"
+        );
         moved.entities.clear();
         assert!(snapshot.stale(&moved).unwrap().contains("nothing"));
         let empty = Snapshot {
