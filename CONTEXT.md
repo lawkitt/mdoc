@@ -497,9 +497,10 @@ runs only on queue commits ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 snapshots) and `scripts` ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
 **`merge-gate`**: the one aggregate required status beside `lint (ubuntu)`:
-on a PR head, green when the fast tier passed; on a queue commit, when
+on a PR head, green when the fast tier passed, and on a recognition-area
+PR the detection gate on its head; on a queue commit, when
 every affected full job passed, each named with where it ran
-([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
 
 **Infrastructure failure**: a hosted CI job that ended without running,
 cancelled with no runner assigned or summarizing jobs that never ran.

@@ -13,7 +13,9 @@
 # BEFORE, RELEASE_CALL) it writes `areas=<list>` and `desktop=true|false`
 # for $GITHUB_OUTPUT on stdout. A PR's merge commit is diffed against its
 # base, a push against the commit before it; a manual run, a release call or
-# a push whose earlier commit is unknown lists every area.
+# a push whose earlier commit is unknown lists every area. On a PR it also
+# writes `detection-head=true|false`: whether the head runs the detection
+# gate (head_detection in lib.sh, ADR 0100).
 #
 # --queue is queue.yml's areas job (ADR 0095): what a queue commit brings
 # onto main, from main's merge base (origin/main, fetched), the same diff
@@ -25,10 +27,16 @@ source "$(dirname "$0")/lib.sh"
 every='core desktop recognition ios android ci'
 
 github() {
-  local areas=$every
+  local areas=$every head=''
   case "${EVENT:-}" in
     pull_request)
       areas=$(diff_areas HEAD^1 HEAD) || areas=$every
+      # Not when the diff fails: merge-gate takes a skipped head run as not
+      # needed, and the queue still runs the gate.
+      head=false
+      if git diff --no-renames --name-only -z HEAD^1 HEAD | head_detection "$(cat scripts/ci-areas.txt)"; then
+        head=true
+      fi
       ;;
     push)
       if [ "${RELEASE_CALL:-false}" != true ] && [[ ${BEFORE:-} =~ ^[0-9a-f]{40}$ ]] &&
@@ -43,6 +51,7 @@ github() {
   # Hosted clippy and test also run the recognition fixtures: on main they
   # are the hosted check of a fixture change (the Mac's runner tests it too).
   if affects desktop "$areas" || affects recognition "$areas"; then echo desktop=true; else echo desktop=false; fi
+  [ -z "$head" ] || echo "detection-head=$head"
 }
 
 queue() {

@@ -199,11 +199,54 @@ done
 grep -q 'run: scripts/ci-areas.sh --queue' .github/workflows/queue.yml || fail "queue.yml's areas job reads no areas"
 echo "ok: queue.yml's jobs are the ones merge-gate waits for"
 
+# Detection on PR heads (ADR 0100): only a file on a recognition line of the
+# table, never core's every area; ci.yml's areas job says the same.
+detects() { if tr '\n' '\0' | head_detection "$(cat scripts/ci-areas.txt)"; then echo yes; else echo no; fi; }
+eq "$(printf 'tests/fixtures/recognition/en/letter/x.model.json\n' | detects)" yes
+eq "$(printf 'crates/mdoc-pii/src/lib.rs\n' | detects)" yes
+eq "$(printf 'crates/mdoc-detect/src/lib.rs\nsrc/main.rs\n' | detects)" yes
+eq "$(printf 'crates/mdoc-core/src/lib.rs\ncrates/mdoc-detect/src/lib.rs\n' | detects)" yes
+eq "$(printf 'crates/mdoc-core/src/lib.rs\n' | detects)" no
+eq "$(printf 'Cargo.lock\nscripts/lib.sh\n' | detects)" no
+eq "$(printf 'src/main.rs\n' | detects)" no
+eq "$(printf 'docs/x.md\n' | detects)" no
+eq "$(printf '' | detects)" no
+eq "$(printf 'tests/fixtures/recognition/x.md\0' | head_detection "$(sed 's/$/\r/' scripts/ci-areas.txt)" && echo yes)" yes
+(
+  cd "$repo_dir" || exit 1
+  g() { git -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@" >/dev/null; }
+  mkdir -p tests/fixtures/recognition && echo x >tests/fixtures/recognition/x.model.json
+  g add -A && g commit -qm fixture
+  eq "$(EVENT=pull_request bash scripts/ci-areas.sh --github | tr '\n' ' ')" "areas=recognition desktop=true detection-head=true "
+  echo y >Cargo.toml
+  g add -A && g commit -qm core
+  eq "$(EVENT=pull_request bash scripts/ci-areas.sh --github | sed -n 3p)" "detection-head=false"
+  # Off a PR, no such output.
+  eq "$(EVENT=workflow_dispatch bash scripts/ci-areas.sh --github | grep -c detection-head)" 0
+) || exit 1
+grep -q "detection-head: \${{ steps.areas.outputs.detection-head }}" .github/workflows/ci.yml || fail "ci.yml's areas job has no detection-head output"
+grep -q "if: needs.areas.outputs.detection-head == 'true'" .github/workflows/ci.yml || fail "ci.yml starts no head detection"
+grep -qx "  $head_detection_job:" .github/workflows/ci.yml || fail "ci.yml's head detection is not $head_detection_job"
+echo "ok: recognition-area PR heads run the detection gate"
+
 eq "$(head_gate "" missing)" "success|Docs only: no job runs"
 eq "$(head_gate "desktop" "success 1")" "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue"
 eq "$(head_gate "desktop" "failure https://x")" "failure|Fast tier failed: fast (ubuntu)"
 eq "$(head_gate "desktop" missing)" "pending|Waiting for the fast tier: fast (ubuntu)"
 eq "$(head_gate "desktop" "infra no_Linux_runner,_3_attempts")" "failure|Fast tier did not run (no Linux runner, 3 attempts): fast (ubuntu)"
+# A recognition-area PR also waits for the detection gate on its head.
+eq "$(head_gate "recognition" "success 1" "success 2" 575)" "success|Fast tier and detection gate passed; the full suite runs in the merge queue"
+eq "$(head_gate "recognition" "success 1" "pending - 0" 575)" "pending|Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+eq "$(head_gate "recognition" "pending - 0" "missing - 0" 575)" "pending|Waiting for the fast tier and the detection gate: fast (ubuntu), detection-head / ci/detection"
+eq "$(head_gate "recognition" "missing - 0" "success 2" 575)" "pending|Detection gate passed; waiting for the fast tier: fast (ubuntu)"
+eq "$(head_gate "recognition" "success 1" "failure https://d 2" 575)" "failure|Detection gate failed: detection-head / ci/detection; regenerated snapshots: just snapshots-fetch 575"
+eq "$(head_gate "desktop recognition" "failure https://f 1" "failure https://d 2" 575)" "failure|Failed: fast (ubuntu); detection-head / ci/detection (just snapshots-fetch 575)"
+eq "$(head_gate "recognition" "success 1" "infra no_macOS_runner,_3_attempts" 575)" "failure|Detection gate did not run (no macOS runner, 3 attempts): detection-head / ci/detection"
+eq "$(head_gate "recognition" "pending - 0" "failure https://d 2" 575)" "failure|Detection gate failed: detection-head / ci/detection; regenerated snapshots: just snapshots-fetch 575"
+# Skipped on the head (the PR's own table said no): the fast tier alone.
+eq "$(head_gate "recognition" "success 1" "skipped - 0" 575)" "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue"
+long=$(head_gate "desktop recognition" "infra no_Linux_runner,_3_attempts" "infra no_macOS_runner,_3_attempts" 99999)
+[ "${#long}" -le 148 ] || fail "a head gate description over 140 characters: $long"
 echo "ok: a PR head's gate"
 
 runs='{"check_runs": [
@@ -623,6 +666,128 @@ heads_pass
 eq "$(cat "$reran")" ""
 eq "$(cat "$posted")" "bbbb failure Fast tier did not run (no Linux runner, 3 attempts): fast (ubuntu)"
 echo "ok: a fast tier that never ran is re-run, then fails as infrastructure"
+
+# Detection on PR heads (ADR 0100). #575 changes a fixture's snapshot, #2 the
+# app: its head has its fast tier alone, #575's head the checks of
+# ffff_checks.
+fetch_heads() { printf '2 false bbbb 0 false\n575 false ffff 0 false\n'; }
+fetch_pr_files() {
+  case "$1" in
+    575) echo tests/fixtures/recognition/en/letter/x.model.json ;;
+    *) echo src/main.rs ;;
+  esac
+}
+fast_run='{"id": 41, "name": "fast (ubuntu)", "status": "completed", "conclusion": "success", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/700/job/41", "completed_at": "2026-11-02T11:40:00Z"}'
+det_url=https://github.com/lawkitt/mdoc/actions/runs/700/job/51
+det_runs() { # status conclusion
+  printf '{"check_runs": [%s,
+    {"id": 51, "name": "detection-head / ci/detection", "status": "%s", "conclusion": %s, "html_url": "%s", "completed_at": "2026-11-02T11:45:00Z"},
+    {"id": 52, "name": "detection-head / ci/detection (1)", "status": "%s", "conclusion": %s, "html_url": "https://d1"}]}\n' \
+    "$fast_run" "$1" "$2" "$det_url" "$1" "$2"
+}
+heads_once() {
+  : >"$posted"
+  : >"$reran"
+  recheck=''
+  heads_pass
+}
+fetch_check_runs() {
+  if [ "$1" = bbbb ]; then printf '{"check_runs": [%s]}\n' "$fast_run"; else ffff_checks; fi
+}
+# Its head detection still running: pending, a follow-up pass; the app PR
+# is green on its fast tier alone.
+ffff_checks() { det_runs in_progress null; }
+heads_once
+eq "$(sort "$posted")" "bbbb success Fast tier passed (unit, scripts); the full suite runs in the merge queue
+ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+eq "$recheck" "#575 waits for its head checks"
+# Not started yet: no check runs of it at all while the CI run goes on.
+ffff_checks() { printf '{"check_runs": [%s]}\n' "$fast_run"; }
+run_event="in_progress pull_request"
+fetch_run_event() { echo "$run_event"; }
+heads_once
+eq "$(grep ffff "$posted")" "ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+# CI's own run starts the next pass, so no follow-up pass for a job that
+# never started (it would repeat every 3 minutes).
+eq "$recheck" ""
+# A PR's CI run that finished without it (a ci.yml from before the head
+# runs: #579, #599 and #600 on 2026-11-06) is not waited for: the queue runs
+# it. A finished manual run of ci.yml on the same commit is no such run
+# (Codex review on #625).
+run_event="completed pull_request"
+heads_once
+eq "$(grep ffff "$posted")" "ffff success Fast tier passed (unit, scripts); the full suite runs in the merge queue"
+run_event="completed workflow_dispatch"
+heads_once
+eq "$(grep ffff "$posted")" "ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+eq "$(run_of "success https://github.com/lawkitt/mdoc/actions/runs/700/job/41 1")$(run_of "pending - 0")" 700
+# Passed.
+ffff_checks() { det_runs completed '"success"'; }
+heads_once
+eq "$(grep ffff "$posted")" "ffff success Fast tier and detection gate passed; the full suite runs in the merge queue"
+eq "$recheck" ""
+# A stale snapshot: red on the head, linking the run with the snapshots.
+post() { echo "$1 $2 $3 $4" >>"$posted"; }
+ffff_checks() { det_runs completed '"failure"'; }
+ran52=$(job 52 "detection-head / ci/detection (1)" "$ran")
+fetch_run_jobs() { jobs_json "$(job 41 "fast (ubuntu)" "$ok")" "$ran52" "$(job 51 "detection-head / ci/detection" "$ran")"; }
+heads_once
+eq "$(grep ffff "$posted")" "ffff failure Detection gate failed: detection-head / ci/detection; regenerated snapshots: just snapshots-fetch 575 $det_url"
+eq "$(cat "$reran")" ""
+post() { echo "$1 $2 $3" >>"$posted"; }
+# Shards that never ran: re-run, pending; out of re-runs, infrastructure.
+never52=$(job 52 "detection-head / ci/detection (1)" "$never")
+ffff_checks() { det_runs completed '"cancelled"'; }
+fetch_run_jobs() { jobs_json "$(job 41 "fast (ubuntu)" "$ok")" "$never52" "$(job 51 "detection-head / ci/detection" "$ran")"; }
+run_state="completed 1"
+heads_once
+eq "$(cat "$reran")" 700
+eq "$(grep ffff "$posted")" "ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+run_state="completed 3"
+heads_once
+eq "$(cat "$reran")" ""
+eq "$(grep ffff "$posted")" "ffff failure Detection gate did not run (no macOS runner, 3 attempts): detection-head / ci/detection"
+# With the fast tier never run too: one re-run of their one run.
+fetch_heads() { echo "575 false ffff 0 false"; }
+ffff_checks() {
+  printf '{"check_runs": [{"id": 41, "name": "fast (ubuntu)", "status": "completed", "conclusion": "cancelled", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/700/job/41"},
+    {"id": 51, "name": "detection-head / ci/detection", "status": "completed", "conclusion": "failure", "html_url": "%s"}]}\n' "$det_url"
+}
+fetch_run_jobs() { jobs_json "$(job 41 "fast (ubuntu)" "${never/macos-26/ubuntu-latest}")" "$never52" "$(job 51 "detection-head / ci/detection" "$ran")"; }
+run_state="completed 1"
+heads_once
+eq "$(cat "$reran")" 700
+eq "$(grep ffff "$posted")" "ffff pending Waiting for the fast tier and the detection gate: fast (ubuntu), detection-head / ci/detection"
+# Skipped on the head (ci.yml's copy of the table said no): the fast tier
+# alone, as for the app PR; the queue runs the gate.
+fetch_heads() { printf '2 false bbbb 0 false\n575 false ffff 0 false\n'; }
+ffff_checks() {
+  printf '{"check_runs": [%s, {"id": 50, "name": "detection-head", "status": "completed", "conclusion": "skipped", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/800/job/50"}]}\n' "$fast_run"
+}
+# The skip in a PR's run, while another run on the commit goes on.
+run_event="in_progress pull_request"
+heads_once
+eq "$(sort "$posted")" "bbbb success Fast tier passed (unit, scripts); the full suite runs in the merge queue
+ffff success Fast tier passed (unit, scripts); the full suite runs in the merge queue"
+# A manual run of ci.yml skips it too, but waives nothing (Codex review on #625).
+run_event="in_progress workflow_dispatch"
+heads_once
+eq "$(grep ffff "$posted")" "ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
+# A head run that exists counts on any PR (Codex review on #625): main's
+# table may not know a recognition line the PR adds, and a PR of 3000 files
+# or more is not routed here.
+fetch_check_runs() { det_runs completed '"failure"'; }
+fetch_run_jobs() { jobs_json "$(job 41 "fast (ubuntu)" "$ok")" "$ran52" "$(job 51 "detection-head / ci/detection" "$ran")"; }
+fetch_pr_files() {
+  case "$1" in
+    575) seq 3000 | sed 's|^|tests/fixtures/recognition/f|' ;;
+    *) echo src/main.rs ;;
+  esac
+}
+heads_once
+eq "$(sort "$posted")" "bbbb failure Detection gate failed: detection-head / ci/detection; regenerated snapshots: just snapshots-fetch 2
+ffff failure Detection gate failed: detection-head / ci/detection; regenerated snapshots: just snapshots-fetch 575"
+echo "ok: heads: a recognition-area PR waits for its head detection (pending, passed, stale, never ran, skipped); a head run counts on any PR"
 
 # The queue commit's own area table: one that makes everything docs needs
 # no job; when GitHub cannot give it, main's.

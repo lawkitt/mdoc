@@ -71,7 +71,7 @@ not() { ! "$@"; }
   # The desktop jobs follow the table through ci.yml's areas job.
   check "ci.yml's areas job reads the table" grep -q 'run: scripts/ci-areas.sh --github' .github/workflows/ci.yml
   check "hosted clippy and test wait for it" \
-    [ "$(grep -cE '^    needs: areas$' .github/workflows/ci.yml)" = 2 ]
+    [ "$(grep -cE '^    needs: areas$' .github/workflows/ci.yml)" = 3 ] # and detection-head
   check "and run only for the desktop area" grep -q "if: &desktop \${{ needs.areas.outputs.desktop == 'true' }}" .github/workflows/ci.yml
 
   # Routing: a file takes the first matching line's areas, desktop by default.

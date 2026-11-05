@@ -6,7 +6,14 @@
 #
 #   A PR head: green when the fast tier (`fast (ubuntu)`) passed, and says
 #   that the full suite runs in the merge queue; "Docs only" when the PR
-#   touches no area (scripts/ci-areas.txt).
+#   touches no area (scripts/ci-areas.txt). A recognition-area PR (ADR 0100:
+#   a file on the table's recognition lines, head_detection in lib.sh) also
+#   waits for the detection gate on its head, `detection-head / ci/detection`
+#   (ci.yml); a failure names `just snapshots-fetch <PR>`. That job skipped
+#   by the PR's CI (its own copy of the table said no), or a finished PR CI
+#   run without it (one from before this rule), counts as not needed: the
+#   queue runs the gate anyway. A head run that exists counts on any PR, so
+#   the PR's table and full diff decide when they say more than main's.
 #   A queue commit (a branch under gh-readonly-queue/main/, or ci-shadow/main/
 #   for the shadow trial): green only when every job its areas need passed,
 #   each named with where it ran. Its areas come from its own
@@ -279,6 +286,9 @@ fetch_dispatched() { # workflow sha
 # A workflow run's `<status> <run_attempt>`.
 fetch_run() { gh_call text api "repos/$repo/actions/runs/$1" --jq '"\(.status) \(.run_attempt)"'; }
 
+# A workflow run's `<status> <event>`.
+fetch_run_event() { gh_call text api "repos/$repo/actions/runs/$1" --jq '"\(.status) \(.event)"'; }
+
 # A run's jobs, the latest attempt of each, as one {"jobs": [...]}.
 fetch_run_jobs() {
   gh_call text api --paginate "repos/$repo/actions/runs/$1/jobs?filter=latest&per_page=100" --jq '.jobs[]' | jq -s '{jobs: .}'
@@ -350,7 +360,8 @@ failure_kind() { # job-id
 
 # A job's verdict from check-runs JSON on stdin: the newest run of each
 # check named $1, alone or after a caller's "<job> / " (a called workflow's
-# job). Prints `<verdict> <url> <finished-epoch>`: success (every one
+# job); a name with its caller (`detection-head / ci/detection`) matches
+# only that caller's. Prints `<verdict> <url> <finished-epoch>`: success (every one
 # concluded success), failure (one concluded anything but success or
 # skipped: stale and neutral prove nothing), skipped (all skipped: not
 # affected), pending or missing; `-` and 0 when there is nothing to name.
@@ -358,7 +369,7 @@ check_verdict() { # name
   jq -r --arg n "$1" '
     def base: .name | sub("^.* / "; "");
     def t: if .completed_at then (.completed_at | fromdateiso8601) else 0 end;
-    [.check_runs[] | select(base == $n)] | group_by(.name) | map(max_by(.id)) as $runs
+    [.check_runs[] | select(base == $n or .name == $n)] | group_by(.name) | map(max_by(.id)) as $runs
     | ($runs | map(select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped"))) as $bad
     | if ($runs | length) == 0 then "missing - 0"
       elif ($bad | length) > 0 then ($bad | min_by(t) | "failure \(.html_url) \(t)")
@@ -375,19 +386,111 @@ status_of() { # context
     | if $s == null then "none 0 -" else "\($s.state) \($s.updated_at // $s.created_at | fromdateiso8601) \($s.target_url // "-")" end'
 }
 
-# The merge-gate state for a PR head: `<state>|<description>`.
-head_gate() { # areas fast-verdict
-  local areas=$1 verdict=$2
+# The detection gate on a recognition-area PR head (ci.yml's detection-head
+# job): its summary, and the caller job alone when it was skipped.
+head_detection_check='detection-head / ci/detection'
+head_detection_job=detection-head
+
+# The workflow run of a finished check's verdict line (`<verdict> <url> ...`,
+# a job URL), or nothing.
+run_of() { # verdict-line
+  local url
+  read -r _ url _ <<<"$1"
+  case "$url" in */actions/runs/*/job/*) ;; *) return 0 ;; esac
+  url=${url#*/actions/runs/}
+  echo "${url%%/*}"
+}
+
+# Whether a recognition-area head's missing detection run is not needed,
+# from its check-runs JSON and fast-tier verdict line: `yes` when the PR's
+# CI skipped the job (its copy of the table, the PR's, said no, or its areas
+# job failed), or finished without it (a ci.yml from before the head runs);
+# the queue runs the gate anyway. Only a pull_request run counts: a manual
+# run of ci.yml on the same commit never runs it (Codex review on #625).
+# Else `no`; fails when GitHub could not be read.
+detection_exempt() { # checks-json fast-verdict
+  local skip run info
+  skip=$(jq -r --arg n "$head_detection_job" '[.check_runs[] | select(.name == $n)] | max_by(.id) // empty | "\(.conclusion) \(.html_url)"' <<<"$1")
+  case "$skip" in
+    "skipped "*)
+      run=$(run_of "$skip")
+      if [ -n "$run" ]; then
+        info=$(fetch_run_event "$run") || return 1
+        if [ "${info#* }" = pull_request ]; then
+          echo yes
+          return 0
+        fi
+      fi
+      ;;
+  esac
+  run=$(run_of "$2")
+  if [ -n "$run" ]; then
+    info=$(fetch_run_event "$run") || return 1
+    if [ "$info" = "completed pull_request" ]; then
+      echo yes
+      return 0
+    fi
+  fi
+  echo no
+}
+
+# The merge-gate state for a PR head: `<state>|<description>`. A
+# recognition-area PR passes a detection verdict and its number; without
+# one, or with it skipped, only the fast tier counts.
+head_gate() { # areas fast-verdict [detection-verdict pr]
+  local areas=$1 verdict=$2 det=${3:-} pr=${4:-} why fast_bad='' fast_short det_bad='' det_short
   if [ -z "$areas" ]; then
     echo "success|Docs only: no job runs"
     return 0
   fi
+  case "$det" in
+    '' | skipped*)
+      case "$verdict" in
+        success*) echo "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue" ;;
+        failure*) echo "failure|Fast tier failed: fast (ubuntu)" ;;
+        # Never ran, out of re-runs: `infra <why>`, underscores for spaces.
+        infra*) echo "failure|Fast tier did not run (${verdict#infra }): fast (ubuntu)" | tr _ ' ' ;;
+        *) echo "pending|Waiting for the fast tier: fast (ubuntu)" ;;
+      esac
+      return 0
+      ;;
+  esac
+  # Each failure in full, and short for when both failed (140 characters).
   case "$verdict" in
-    success*) echo "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue" ;;
-    failure*) echo "failure|Fast tier failed: fast (ubuntu)" ;;
-    # Never ran, out of re-runs: `infra <why>`, underscores for spaces.
-    infra*) echo "failure|Fast tier did not run (${verdict#infra }): fast (ubuntu)" | tr _ ' ' ;;
-    *) echo "pending|Waiting for the fast tier: fast (ubuntu)" ;;
+    failure*)
+      fast_bad="Fast tier failed: fast (ubuntu)"
+      fast_short="fast (ubuntu)"
+      ;;
+    infra*)
+      why=${verdict#infra }
+      fast_bad="Fast tier did not run (${why//_/ }): fast (ubuntu)"
+      fast_short="fast (ubuntu): ${why//_/ }"
+      ;;
+  esac
+  case "$det" in
+    # The shards upload the stale fixtures' snapshots, regenerated.
+    failure*)
+      det_bad="Detection gate failed: $head_detection_check; regenerated snapshots: just snapshots-fetch $pr"
+      det_short="$head_detection_check (just snapshots-fetch $pr)"
+      ;;
+    infra*)
+      why=${det#infra }
+      det_bad="Detection gate did not run (${why//_/ }): $head_detection_check"
+      det_short="$head_detection_check: ${why//_/ }"
+      ;;
+  esac
+  if [ -n "$fast_bad" ] && [ -n "$det_bad" ]; then
+    echo "failure|Failed: $fast_short; $det_short"
+    return 0
+  elif [ -n "$fast_bad$det_bad" ]; then
+    echo "failure|$fast_bad$det_bad"
+    return 0
+  fi
+  case "${verdict%% *} ${det%% *}" in
+    "success success") echo "success|Fast tier and detection gate passed; the full suite runs in the merge queue" ;;
+    "success "*) echo "pending|Fast tier passed; waiting for the detection gate: $head_detection_check" ;;
+    *" success") echo "pending|Detection gate passed; waiting for the fast tier: fast (ubuntu)" ;;
+    *) echo "pending|Waiting for the fast tier and the detection gate: fast (ubuntu), $head_detection_check" ;;
   esac
 }
 
@@ -641,7 +744,7 @@ missed_enqueue() { # pr gate-state auto-merge-since in-queue lint-verdict status
 }
 
 heads_pass() {
-  local list n draft head auto queued files areas checks verdict lint line state desc status t v where rc=0
+  local list n draft head auto queued files areas checks verdict det detects exempt lines job lint line state desc status url t v where rc=0
   list=$(fetch_heads) || {
     log "could not list PRs"
     return 1
@@ -658,10 +761,14 @@ heads_pass() {
       rc=1
       continue
     }
+    # Too many files to tell: a head run is not waited for, but counts when
+    # it exists (below); the queue runs the gate anyway.
+    detects=false
     if [ "$(wc -l <<<"$files")" -ge 3000 ]; then
       areas='core desktop recognition ios android ci'
     else
       areas=$(areas_of <<<"$files")
+      if tr '\n' '\0' <<<"$files" | head_detection "$(cat scripts/ci-areas.txt)"; then detects=true; fi
     fi
     checks=$(fetch_check_runs "$head") || {
       skipped "#$n" "the check runs of ${head:0:7}"
@@ -673,23 +780,58 @@ heads_pass() {
       rc=1
       continue
     }
-    case "$verdict" in
-      infra*)
-        read -r _ v where _ <<<"$(printf 'fast %s\n' "$verdict" | resolve_infra "#$n")"
-        if [ "$v" = failure ]; then verdict="infra $where"; else verdict="pending - 0"; fi
+    # A head detection run that exists always counts, whatever main's table
+    # says: the PR's CI decided with the full diff and the PR's own table.
+    det=$(hosted_verdict "$head_detection_check" "$checks") || {
+      skipped "#$n" "the run behind $head_detection_check"
+      rc=1
+      continue
+    }
+    case "$det" in
+      missing*)
+        if ! $detects; then
+          det=''
+        else
+          exempt=$(detection_exempt "$checks" "$verdict") || {
+            skipped "#$n" "the CI run of ${head:0:7}"
+            rc=1
+            continue
+          }
+          [ "$exempt" != yes ] || det="skipped - 0"
+        fi
         ;;
     esac
-    # A running fast tier (or its re-run): look again even if its finish is missed.
-    case "$verdict" in pending*) [ -z "$areas" ] || recheck="#$n waits for its fast tier" ;; esac
-    line=$(head_gate "$areas" "$verdict")
+    # Jobs that never ran, decided together (both are in the PR's CI run):
+    # re-run, so pending, or out of re-runs, `infra <why>`.
+    if [[ $verdict == infra* || $det == infra* ]]; then
+      lines="fast $verdict"
+      [ -z "$det" ] || lines+=$'\n'"detection $det"
+      while read -r job v where _; do
+        if [ "$v" = failure ]; then v="infra $where"; else v="pending - 0"; fi
+        case "$job" in
+          fast) [[ $verdict != infra* ]] || verdict=$v ;;
+          detection) [[ $det != infra* ]] || det=$v ;;
+        esac
+      done <<<"$(printf '%s\n' "$lines" | resolve_infra "#$n")"
+    fi
+    # A running fast tier or head detection (or a re-run): look again even if
+    # its finish is missed. Not for one that never started: CI's own run
+    # starts the next pass.
+    case "${verdict%% *} ${det%% *}" in
+      pending* | *" pending") [ -z "$areas" ] || recheck="#$n waits for its head checks" ;;
+    esac
+    line=$(head_gate "$areas" "$verdict" "$det" "$n")
     state=${line%%|*}
     desc=${line#*|}
+    # A failing head detection links to its run, where the snapshots are.
+    url=$run_url
+    case "$det" in "failure https://"*) [ "$state" != failure ] || read -r _ url _ <<<"$det" ;; esac
     status=$(fetch_status "$head") || {
       skipped "#$n" "the statuses of ${head:0:7}"
       rc=1
       continue
     }
-    settle "$head" "$state" "$desc" "$run_url" "$status" || rc=1
+    settle "$head" "$state" "$desc" "$url" "$status" || rc=1
     lint=$(check_verdict "lint (ubuntu)" <<<"$checks")
     missed_enqueue "$n" "$state" "$auto" "$queued" "$lint" "$status" "$t"
   done <<<"$list"

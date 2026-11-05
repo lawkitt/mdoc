@@ -27,7 +27,8 @@ Before a PR is ready, run `just lint` and the tests of the crates it changes
 headless-renders`, a script's suite with `bash scripts/test-<suite>.sh`;
 `just test` for a change to `Cargo.lock`, the toolchain or
 `.config/nextest.toml`). A PR head needs `lint (ubuntu)` and `merge-gate`
-green (the fast tier); the full suite on both shipped OSes and the mobile
+green (the fast tier, and the detection gate for a recognition change);
+the full suite on both shipped OSes and the mobile
 jobs runs in the merge queue ([CI](#ci)).
 
 ## Project documentation
@@ -447,7 +448,7 @@ bypass is for `just release` only. Never merge with `--admin`.
 
 | Commit | What runs | `merge-gate` is green when |
 |---|---|---|
-| PR head | `lint (ubuntu)` and `fast (ubuntu)`, the summary of `fast (unit)` (`just test-tier unit`) and `fast (scripts)` (`just test-tier scripts`), two parallel jobs | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), or the PR is docs only |
+| PR head | `lint (ubuntu)` and `fast (ubuntu)`, the summary of `fast (unit)` (`just test-tier unit`) and `fast (scripts)` (`just test-tier scripts`), two parallel jobs; on a recognition-area PR also the detection gate, `detection-head / ci/detection` | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), and on a recognition-area PR the detection gate too; or the PR is docs only |
 | Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran. A hosted job that never ran is re-run first (see the gate's passes) |
 
 **Merging.** When a PR's checks are green and it is reviewed, enqueue it:
@@ -568,9 +569,22 @@ every file in `target/debug/deps` and took seconds per test process
 developer Mac, whose scores differ in the fourth decimal place. A failing shard uploads the
 fixtures it found stale, regenerated, as `detection-snapshots-<k>`.
 `just snapshots-fetch <PR|run>` writes them into the tree; review the
-diff, commit and push. A PR that adds or changes a fixture does this once
-its first hosted run fails. Scores in CI depend on ONNX Runtime's threads,
+diff, commit and push. Scores in CI depend on ONNX Runtime's threads,
 so the shards set `MDOC_DETECT_THREADS=4`.
+
+A recognition-area PR runs the gate on its head
+([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)), so a stale
+snapshot is red there, not in the queue: `ci.yml`'s `detection-head` job,
+4 shards, on every push (a newer push cancels it), drafts included. Its
+head `merge-gate` waits for `detection-head / ci/detection` beside the fast
+tier, and when it fails says `just snapshots-fetch <PR>`. A recognition-area
+PR is one with a file on a recognition line of `scripts/ci-areas.txt`
+(the fixtures, `crates/mdoc-detect`, `crates/mdoc-pii`;
+`head_detection` in `scripts/lib.sh`); a core or desktop change alone runs
+the gate only in the queue, since hosted macOS runners are scarce. The
+head run replaces a manual run of the Detection gate workflow, so lanes no
+longer dispatch it. The queue still runs `ci/detection` on the queue
+commit.
 
 **Renders.** `ci/macos` uploads the full headless render set as
 `renders-macos` (7 days). A UI lane dispatches the desktop job on its branch
