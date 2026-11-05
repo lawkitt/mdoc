@@ -1036,12 +1036,18 @@ mod tests {
         let mut nudged = snapshot.clone();
         nudged.entities[0].score += 0.000_3;
         let why = snapshot.stale(&nudged).unwrap();
-        assert!(why.contains("(0.87654)") && why.contains("(0.87684)"), "{why}");
+        assert!(
+            why.contains("(0.87654)") && why.contains("(0.87684)"),
+            "{why}"
+        );
         assert!(why.contains("the score moved 0.00030"), "{why}");
         let mut moved = snapshot.clone();
         moved.entities[0].end = 2;
         let why = snapshot.stale(&moved).unwrap();
-        assert!(why.contains("entity 1") && !why.contains("score moved"), "{why}");
+        assert!(
+            why.contains("entity 1") && !why.contains("score moved"),
+            "{why}"
+        );
         moved.entities.clear();
         assert!(snapshot.stale(&moved).unwrap().contains("nothing"));
         let empty = Snapshot {
