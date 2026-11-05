@@ -122,7 +122,8 @@ document history ([ADR 0079](0079-decision-history.md)).
 
 - Wider than about 700 pt: Identities as a standing sidebar, the bar a card
   about 560 pt wide, desktop's keys on a hardware keyboard (Return, K, ←/→,
-  ⌘Z, ⇧⌘Z, Esc), and drag a row onto another to merge. Narrower: the phone
+  ⌘Z, ⇧⌘Z, and ⌘. to end: iOS keeps Esc for itself in places), and drag a
+  row onto another to merge. Narrower: the phone
   layout.
 
 ### Scope of the run
