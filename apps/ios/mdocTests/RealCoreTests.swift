@@ -50,6 +50,19 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(kept.identities.first { $0.id == email.identityID }?.state, .kept)
     }
 
+    /// Try a sample: its stored names become proposals with no model.
+    func testTheSampleProposesItsNamesWithoutAScan() throws {
+        let core = try core()
+        let sample = SampleDocument.english
+        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+        _ = try session.recognize(observer: TestObserver())
+        let proposed = try session.propose(sample.names)
+        XCTAssertEqual(proposed.phase, .reviewing)
+        XCTAssertTrue(proposed.candidates.contains { $0.original == "Maya Bennett" && $0.category == .person })
+        XCTAssertTrue(proposed.candidates.contains { $0.original == "maya.bennett@example.com" && $0.category == .email })
+        XCTAssertTrue(proposed.candidates.allSatisfy { $0.state == .proposed })
+    }
+
     func testImportScanAndReviewThroughTheCore() throws {
         let core = try core()
         let session = try reviewed(core)
@@ -172,6 +185,28 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(try core.library.saveDeferred(), [session.id])
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
         XCTAssertEqual(try core.library.saveDeferred(), [], "saved once")
+    }
+
+    /// The sample's proposals, when the phone locks before they save: in
+    /// review at once, saved on unlock, as a scan's result.
+    func testSampleProposalsWhileLockedAreSavedOnUnlock() throws {
+        let core = try core()
+        let sample = SampleDocument.english
+        let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+        _ = try session.recognize(observer: TestObserver())
+        let documents = storage.url(.documents)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+            ProtectedData.isAvailable = true
+        }
+        ProtectedData.isAvailable = false
+        let proposed = try session.propose(sample.names)
+        XCTAssertEqual(proposed.phase, .reviewing)
+        ProtectedData.isAvailable = true
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path)
+        XCTAssertEqual(try core.library.saveDeferred(), [session.id])
+        XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
     }
 
     func testManualReplacementReplacesEveryRepeat() throws {

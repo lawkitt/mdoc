@@ -54,6 +54,8 @@ final class DocumentViewModel {
     /// The window's undo manager (ADR 0098's system undo).
     weak var systemUndo: UndoManager?
     var showsFind = false
+    /// Try a sample's names, proposed once recognition has read the text.
+    var storedNames: [SampleDocument.Name]?
     var showsIdentities = false
     var pane: Pane = .text
     var showsReplySheet = false
@@ -215,6 +217,9 @@ final class DocumentViewModel {
         switch outcome {
         case .finished(let snapshot):
             applyReview(snapshot)
+            if let names = storedNames, snapshot.phase != .recognizing {
+                proposeStored(names)
+            }
         case .cancelled:
             applyReview(session.snapshot())
         case .failed(let error):

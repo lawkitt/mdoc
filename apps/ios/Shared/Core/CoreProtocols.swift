@@ -74,6 +74,10 @@ protocol DocumentSession: AnyObject, Sendable {
     /// Hide name: the selection and its exact repeats become proposals in
     /// the core's guessed category, replacing nothing yet.
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot
+    /// Stored proposals, as a scan's: every occurrence of each wording, in
+    /// its category. Try a sample uses it, so the sample reviews before the
+    /// name finder is downloaded (ADR 0099).
+    func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot
     /// Rename…: the alias of this mention (`.justThisOne` splits it off
     /// under the alias) or of its identity. Throws `.aliasTaken` with the
     /// identity that has the alias already: Same as is the way to it.
