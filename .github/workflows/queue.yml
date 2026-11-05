@@ -58,11 +58,14 @@ jobs:
     if: needs.areas.outputs.ios == 'true'
     uses: ./.github/workflows/ci-ios.yml
 
-  # Four shards: with the desktop and iOS jobs that is six macOS jobs on the
-  # account's five runners, so one waits a few minutes for a shard.
+  # Three shards (ADR 0100): two would put a shard's model run over its
+  # 5-minute budget; each shard warns past 80% of it, the signal for a
+  # fourth. With the desktop and iOS jobs that can be more macOS jobs than the
+  # account's five runners, so one may wait a few minutes; detection ends
+  # well before ci/macos either way.
   detection:
     needs: areas
     if: needs.areas.outputs.detection == 'true'
     uses: ./.github/workflows/ci-detection.yml
     with:
-      shards: 4
+      shards: 3

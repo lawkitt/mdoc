@@ -4,8 +4,9 @@ name: Detection gate
 # downloaded from its pinned Hugging Face revision and cached, reruns over
 # the recognition fixtures (`just recognize --check`). The fixtures split
 # over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
-# 30 fixtures in 2 minutes, so raise `shards` once a shard's model run passes
-# 3 minutes. `ci/detection` sums the shards up and is the context merge-gate
+# 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
+# queue and the nightly run 3 shards (ADR 0100); a shard warns past 80% of
+# that budget, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
 # reads. A failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
 # the tree for review. No workflow writes to PR branches.
@@ -19,7 +20,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 4
+        default: 3
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
