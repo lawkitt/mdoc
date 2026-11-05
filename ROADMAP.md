@@ -215,39 +215,9 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
    opens an issue when red; cargo-deny advisories move to
    `Cargo.lock` PRs and a daily run that opens an issue; the local CI
    scripts (`local-ci.sh`, `local-ci-fallback.sh`, `local-ci-setup.ps1`)
-   go, their area checks kept; the PC's web task re-adds `/ci` to
-   `tailscale serve` at start (a restart drops it). *Done when:* a
+   go, their area checks kept. *Done when:* a
    nightly drill with a broken fallback job opens an issue.
 
-8. **[CI] Gate reliability.** `merge-gate.sh` calls GitHub through one
-   bounded, retried wrapper and fails loudly; a follow-up pass
-   (`merge-gate-recheck.yml`); infrastructure failures re-run up to twice;
-   the missed-enqueue warning; the queue commit's own area table; the job
-   renamed; no "cannot cancel" noise
-   ([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
-   *Done when:* `test-merge-gate.sh` covers an API error, a never-ran job
-   and the recheck, and a shadow run with a deliberately broken job fails.
-9. **[CI] Faster desktop jobs.** `main` runs lint and `--no-run` builds with
-   the mobile targets cached; `ci/macos` splits into two jobs under a
-   `ci/macos` summary; the fast tier splits into unit and scripts under
-   `fast (ubuntu)`; Linux package installs get a 5-minute limit and a retry.
-   *Done when:* a shadow run's `ci/macos` passes in about 11 minutes with no
-   crate compiled by `mobile --ffi` beyond the workspace, and a broken test
-   fails it.
-10. **[CI] Faster iOS job and the Release build.** The image's Simulator
-    runtime when it matches; `ci/ios-release` builds the Release
-    configuration in parallel, under a `ci/ios` summary; a parallel-testing
-    trial. *Done when:* a shadow run's `ci/ios` passes in about 12 minutes,
-    and a Release-only compile error fails `ci/ios-release`.
-11. **[CI] Detection shards.** 3 shards, the 80% budget warning, scores
-    printed to enough digits. *Done when:* a shadow run passes on 3 shards,
-    and a stale snapshot's message shows the differing digits.
-12. **[CI] The PC runner.** Android failing tests named from Gradle's JUnit
-    XML, a failure excerpt in `summary.txt`, renders kept only on failure,
-    `/ci` re-applied at start and checked, x86_64-only Android CI builds, the
-    disk-floor test fixed. *Done when:* a pc-test run names a failing Android
-    test in its status, and `test-queue-runner.sh` passes on hosted
-    Windows.
 13. **[CI] The `ci` area.** CI scripts, workflows and their suites run
     lint, the scripts tier and the bash 3.2 suites, not the desktop suite.
     *Done when:* a shadow run of a script-only change runs no `ci/macos`,

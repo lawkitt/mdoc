@@ -1,6 +1,6 @@
 # CI reliability after the cutover
 
-Status: Accepted, 2026-11-06. Amends [ADR 0095](0095-ci-on-a-merge-queue.md)
+Status: Accepted, 2026-11-06; amended 2026-11-05 at the rollout (below). Amends [ADR 0095](0095-ci-on-a-merge-queue.md)
 (what a status means, the gate's passes, `main`'s runs, the jobs and their
 shape, areas, logs, upkeep). Rolled out by ROADMAP's CI redesign items 8–15.
 
@@ -148,5 +148,30 @@ ADR 0095's invariants hold. Also:
   in the nightly, at most a day late.
 - Recognition PR heads take about 8 minutes longer, in exchange for not
   learning about stale snapshots in the queue.
+
+## Amendments at the rollout (2026-11-05)
+
+What implementing it settled (#616–#621):
+
+- **The detection gate keeps 4 shards.** On 3 shards each model run took
+  248–253 s of the 300 s budget (84%), so the 80% warning fired at once.
+  The decision above ("3 shards") was the plan; 4 is what holds. Manual runs
+  default to 4 too.
+- **`ci/ios` takes about 18 minutes, not 10–12.** The hosted image ships no
+  iOS 26.1 Simulator runtime (only 26.2, 26.4.1 and 26.5), so every run
+  still downloads it. Parallel testing on 2 Simulators was twice as slow
+  and failed on every trial, so it stays off. `ci/ios` (about 18 min) is
+  the longest job when it runs; `ci/macos` is about 8.5 min warm. The
+  ways down are a pin to the image's runtime (Xcode 26.2 and iOS 26.2) or
+  a cached iOS core on `main`. Both are the maintainer's decision.
+- **A summary's parts are named after it** (`ci/macos (checks)`,
+  `ci/ios-release`, `ci/detection (2)`, `fast (unit)`): the gate treats a
+  summary's parts as its caller's jobs whose names start with the summary's
+  name before ` (`, and re-runs those that never got a runner.
+- **A 404 is an answer.** Counting the manual runs of a workflow that does
+  not exist yet (`ci-android.yml`) is 0, not an error (#621, a regression
+  of #619).
+- **The PC's Android CI job builds x86_64 only**, and the hosted Windows
+  test-runner suite passes again (#620).
 
 Terms: [glossary](../../CONTEXT.md).
