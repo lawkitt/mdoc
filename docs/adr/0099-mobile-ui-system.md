@@ -32,7 +32,9 @@ choice, while desktop has System, Light and Dark.
 - **Previews instead of sketches.** Every component and screen state has a
   `#Preview` in light, dark, AX5 and iPad, fed by `PreviewFixtures.swift`.
 - **Snapshot tests** of components and key states (review bar, Home,
-  Settings) with swift-snapshot-testing, in the iOS job.
+  Settings), in the iOS job, through a small in-repo helper
+  (`apps/ios/mdocTests/Snapshot.swift`: `ImageRenderer` and a pixel
+  compare) rather than a dependency.
 - **Screenshots.** One `current/` UI survey per platform, replaced by each
   UI PR; before and after go in the PR description; dated sets leave the
   tree, linked by permalink. `just ios-survey` defaults to the iPhone 17 Pro.
@@ -96,8 +98,7 @@ choice, while desktop has System, Light and Dark.
 
 ## Consequences
 
-- One new test dependency, swift-snapshot-testing, and a few MB of
-  reference images.
+- A few MB of snapshot reference images, recorded on the pinned Xcode.
 - About 50 MB of dated screenshots leave the tree.
 - Android gets the same tokens, Settings, Home and theme in its own
   milestone.

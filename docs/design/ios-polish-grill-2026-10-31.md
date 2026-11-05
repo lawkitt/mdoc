@@ -2,7 +2,7 @@
 
 Interview record for the iOS app's UI polish pass, the next step after iOS
 0.1's code landed (ADR 0085). The survey of every screen, light and dark, is
-in [`docs/evidence/ios-app/2026-10-31-ui-survey`](../evidence/ios-app/2026-10-31-ui-survey/README.md);
+in [`docs/evidence/ios-app/2026-10-31-ui-survey`](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md);
 numbers in brackets below are its shot numbers. Decisions land in an ADR
 once confirmed; this file keeps the findings and the open design tree.
 

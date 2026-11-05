@@ -10,7 +10,7 @@ Home, Settings and the survey's device are amended by
 
 iOS 0.1's screens ([ADR 0085](0085-mobile-apps.md)) work, but a survey of
 every screen in light and dark
-([before set](../evidence/ios-app/2026-10-31-ui-survey/README.md)) found
+([before set](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md)) found
 layout defects (a gap in the candidate sheet, hyphens inside values, a
 wrapping button bar), faint dark-mode highlights, a Home list that repeats
 each title, two-step paste and share, and restored replies shown as raw

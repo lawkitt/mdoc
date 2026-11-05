@@ -611,8 +611,8 @@ safe to share.
 
 **UI survey**: light and dark screenshots of every mobile screen, taken by
 `ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
-under `docs/evidence/ios-app` and `docs/evidence/android-app` as before and
-after sets.
+under `docs/evidence/ios-app/current` and `docs/evidence/android-app/current`,
+replaced by each UI PR ([ADR 0099](docs/adr/0099-mobile-ui-system.md)).
 
 **Device UI tests**: the review flow and long jobs run on a real phone
 (`just ios-device-test`, `just android-device-test`), by hand before each
