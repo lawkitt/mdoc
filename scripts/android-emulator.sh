@@ -18,8 +18,9 @@ case "$(platform)" in
   macos-arm64) exe='' ;;
   Linux-x86_64)
     exe=''
-    [ -r /dev/kvm ] && [ -w /dev/kvm ] ||
+    if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
       die "the emulator needs KVM: no read and write access to /dev/kvm (join the kvm group, or on a hosted runner add a udev rule for it)"
+    fi
     ;;
   *) die "the Android emulator runs on Windows x64, Apple Silicon macOS or Linux x86_64" ;;
 esac
