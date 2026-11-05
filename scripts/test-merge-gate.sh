@@ -3,7 +3,7 @@
 # scripts/merge-gate.sh (ADR 0095, ADR 0100) against fake GitHub calls: its
 # GitHub wrapper, its decisions, then passes over PR heads and queue commits.
 # No network. Bash 3.2 compatible.
-# shellcheck disable=SC2329 # the fakes are called by the sourced gate
+# shellcheck disable=SC2317,SC2329 # the fakes are called by the sourced gate
 source "$(dirname "$0")/lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

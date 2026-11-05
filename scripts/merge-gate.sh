@@ -648,7 +648,8 @@ queue_pass() {
   local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
   local queue why ready no_hosted='' info disp pcline r rc=0 lines wf extra infra_where
   t=$(now)
-  main=$(fetch_main) && [ -n "$main" ] || {
+  main=$(fetch_main) || main=''
+  [ -n "$main" ] || {
     log "could not read main"
     return 1
   }
