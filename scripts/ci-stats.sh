@@ -22,10 +22,12 @@ repo=${GH_REPO:-lawkitt/mdoc}
 
 # --- GitHub (replaced by fakes in scripts/test-ci-stats.sh) -------------------
 
-# A workflow's runs created since $2 for event $3: `<id> <head_sha> <created>`
-# lines, the time in epoch seconds.
-fetch_runs() { # workflow since event
-  gh api --paginate "repos/$repo/actions/workflows/$1/runs?per_page=100&event=$3&created=>=$2" \
+# A workflow's runs created from $2 to $3 (UTC times, both inclusive) for
+# event $4: `<id> <head_sha> <created>` lines, the time in epoch seconds.
+# GitHub answers a filtered run list with at most 1,000 runs, so report asks
+# a day at a time.
+fetch_runs() { # workflow from to event
+  gh api --paginate "repos/$repo/actions/workflows/$1/runs?per_page=100&event=$4&created=$2..$3" \
     --jq '.workflow_runs[] | "\(.id) \(.head_sha) \(.created_at | fromdateiso8601)"'
 }
 
@@ -45,91 +47,111 @@ fetch_fast_done() { # run id
 
 # --- decisions (pure) ----------------------------------------------------------
 
-# `<n> <median> <p90>` of numbers on stdin (minutes, one decimal); `0 - -`
-# for none.
+# `<n> <median> <p90>` of numbers on stdin (seconds), unrounded; `0 - -` for
+# none. The p90 is the nearest rank: the smallest value with 90% of the
+# samples at or below it.
 summary() {
   sort -n | awk '{ v[NR] = $1 } END {
     if (NR == 0) { print "0 - -"; exit }
     m = (NR % 2) ? v[(NR + 1) / 2] : (v[NR / 2] + v[NR / 2 + 1]) / 2
-    # Nearest rank: the smallest value with 90% of the samples at or below it.
     r = int(0.9 * NR); if (r < 0.9 * NR) r++; if (r < 1) r = 1
-    p = v[r]
-    printf "%d %.1f %.1f\n", NR, m, p
+    print NR, m, v[r]
   }'
 }
 
-# Whether a median meets a limit: 0 yes (or no samples), 1 no.
-within() { # median limit
-  [ "$1" = - ] && return 0
-  awk -v m="$1" -v l="$2" 'BEGIN { exit !(m <= l) }'
+# Seconds as minutes for display, one decimal; `-` stays.
+minutes() {
+  if [ "$1" = - ]; then
+    echo -
+  else
+    awk -v s="$1" 'BEGIN { printf "%.1f", s / 60 }'
+  fi
 }
 
-# A queue commit's gate lines (stdin) and its Queue run's start: the minutes
-# to its first success, or nothing; and whether it failed as
+# Whether a median in seconds meets a limit in minutes, compared unrounded:
+# 0 yes (or no samples), 1 no.
+within() { # median-seconds limit-minutes
+  [ "$1" = - ] && return 0
+  awk -v m="$1" -v l="$2" 'BEGIN { exit !(m <= l * 60) }'
+}
+
+# A queue commit's seconds from its Queue run's start to its first green
+# merge-gate (gate lines on stdin), or nothing; and whether it failed as
 # infrastructure (the wording merge-gate uses: "no <OS> runner").
-queue_minutes() { # start
-  awk -v s="$1" '$1 == "success" { printf "%.1f\n", ($2 - s) / 60; exit }'
+queue_seconds() { # start
+  awk -v s="$1" '$1 == "success" { print $2 - s; exit }'
 }
 infra_failure() {
   grep -qE '^failure [0-9]+ .*no [A-Za-z]+ runner'
 }
 
+iso() { date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# A workflow's runs from $2 to $3 (epoch seconds), a day at a time, each run
+# once.
+runs_between() { # workflow from to event
+  local t=$2 next
+  while [ "$t" -lt "$3" ]; do
+    next=$((t + 86400))
+    [ "$next" -le "$3" ] || next=$3
+    fetch_runs "$1" "$(iso "$t")" "$(iso "$next")" "$4" || return 1
+    t=$next
+  done | sort -u -k1,1
+}
+
 # --- the report --------------------------------------------------------------
 
-report() { # days [since]
-  local days=$1 since=${2:-} now runs id sha start gate finished qmins='' fmins='' infra=0 rc=0
-  now=$(date -u +%s)
-  [ -n "$since" ] || since=$(date -u -r $((now - days * 86400)) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null ||
-    date -u -d "@$((now - days * 86400))" +%Y-%m-%dT%H:%M:%SZ)
-  runs=$(fetch_runs queue.yml "$since" merge_group) || die "could not list the Queue runs"
+report() { # from to (epoch seconds)
+  local from=$1 to=$2 runs id sha start gate finished qsecs='' fsecs='' infra=0 rc=0
+  runs=$(runs_between queue.yml "$from" "$to" merge_group) || die "could not list the Queue runs"
   while read -r id sha start; do
     [ -n "$sha" ] || continue
     gate=$(fetch_gate "$sha") || die "could not read merge-gate on $sha"
-    qmins+=$(queue_minutes "$start" <<<"$gate")$'\n'
+    qsecs+=$(queue_seconds "$start" <<<"$gate")$'\n'
     if infra_failure <<<"$gate"; then infra=$((infra + 1)); fi
   done < <(sort -u -k2,2 <<<"$runs")
-  runs=$(fetch_runs ci.yml "$since" pull_request) || die "could not list the CI runs"
+  runs=$(runs_between ci.yml "$from" "$to" pull_request) || die "could not list the CI runs"
   while read -r id sha start; do
     [ -n "$id" ] || continue
     finished=$(fetch_fast_done "$id") || die "could not read run $id's jobs"
-    [ -z "$finished" ] || fmins+=$(awk -v d="$finished" -v s="$start" 'BEGIN { printf "%.1f", (d - s) / 60 }')$'\n'
+    [ -z "$finished" ] || fsecs+=$((finished - start))$'\n'
   done <<<"$runs"
 
-  local n m p verdict
-  read -r n m p <<<"$(awk 'NF' <<<"$qmins" | summary)"
+  local n m p verdict days per_week
+  read -r n m p <<<"$(awk 'NF' <<<"$qsecs" | summary)"
   verdict=pass
   within "$m" 13 || verdict=FAIL rc=1
-  echo "queue  $verdict  queue commit to green gate: $n commits, median $m min, p90 $p min (target: median 13 or less)"
-  read -r n m p <<<"$(awk 'NF' <<<"$fmins" | summary)"
+  echo "queue  $verdict  queue commit to green gate: $n commits, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median 13 or less)"
+  read -r n m p <<<"$(awk 'NF' <<<"$fsecs" | summary)"
   verdict=pass
   within "$m" 4 || verdict=FAIL rc=1
-  echo "fast   $verdict  PR head to fast tier: $n runs, median $m min, p90 $p min (target: median 4 or less)"
-  local per_week
-  per_week=$(awk -v i="$infra" -v d="$days" 'BEGIN { printf "%.1f", i * 7 / d }')
+  echo "fast   $verdict  PR head to fast tier: $n runs, median $(minutes "$m") min, p90 $(minutes "$p") min (target: median 4 or less)"
+  # The rate over the window's real length, compared unrounded.
+  days=$(awk -v w=$((to - from)) 'BEGIN { printf "%.1f", w / 86400 }')
+  per_week=$(awk -v i="$infra" -v w=$((to - from)) 'BEGIN { printf "%.2f", i * 7 * 86400 / w }')
   verdict=pass
-  awk -v w="$per_week" 'BEGIN { exit !(w <= 1) }' || verdict=FAIL rc=1
+  awk -v i="$infra" -v w=$((to - from)) 'BEGIN { exit !(i * 7 * 86400 <= w) }' || verdict=FAIL rc=1
   echo "infra  $verdict  infrastructure failures: $infra in $days days, $per_week a week (target: 1 or fewer)"
   return "$rc"
 }
 
 if [ -z "${CI_STATS_SOURCED:-}" ]; then
-  days=3
-  since=''
   usage="usage: scripts/ci-stats.sh [--days N | --since <UTC time>]"
+  command -v jq >/dev/null || die "jq not found"
+  now=$(date -u +%s)
+  from=$((now - 3 * 86400))
   case "${1:-}" in
     '') ;;
     --days)
       [[ ${2:-} =~ ^[1-9][0-9]*$ ]] || die "$usage"
-      days=$2
+      from=$((now - $2 * 86400))
       ;;
     --since)
       [[ ${2:-} =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] || die "$usage"
-      since=$2
-      # The infrastructure rate is per week of the window, at least a day.
-      days=$(jq -rn --arg s "$since" '((now - ($s | fromdateiso8601)) / 86400 | ceil) | if . < 1 then 1 else . end')
+      from=$(jq -rn --arg s "$2" '$s | fromdateiso8601') || die "$usage"
+      [ "$from" -lt "$now" ] || die "--since is in the future"
       ;;
     *) die "$usage" ;;
   esac
-  command -v jq >/dev/null || die "jq not found"
-  report "$days" "$since"
+  report "$from" "$now"
 fi
