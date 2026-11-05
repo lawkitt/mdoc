@@ -642,10 +642,15 @@ the pinned Simulator, when a change touches the core or the ios area (`just
 mobile --ios`); `ci/ios` on a queue commit, on hosted `macos-26`
 ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md), [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
-**Area**: one of desktop, core, ios and android, from the one path table
-`scripts/ci-areas.txt`; a change runs the jobs of the areas it touches, a
-core change runs all of them, and files in no area (docs) run none
-([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+**Area**: one of desktop, core, recognition, ios, android and ci, from the
+one path table `scripts/ci-areas.txt`; a change runs the jobs of the areas
+it touches, a core change runs all of them, and files in no area (docs) run
+none ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). The ci area is
+the CI machinery (the merge gate, the queue runner, the CI scripts, the
+workflows that build and test nothing themselves, their suites): on a queue
+commit it runs only `ci/scripts`, the script suites on Linux and under bash
+3.2, beside `lint (ubuntu)`
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
 
 **Takeover**: the Mac's local CI running a `local/android` job the PC left
 stuck for 15 minutes, before the hosted fallback

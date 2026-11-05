@@ -476,7 +476,13 @@ blocks its own revert. The maintainer then pushes the revert directly to
 `main` through the ruleset's bypass, its only use besides `just release`.
 A change to what decides merges (`merge-gate.sh`, `queue.yml`, the job
 workflows, `queue-runner.sh`, `ci-areas.txt`) first passes a shadow-branch
-run that includes one deliberately broken case it must fail.
+run that includes one deliberately broken case it must fail. A shadow
+commit brings its whole PR onto `main`, so a PR that is also core (the
+table, `lib.sh`) can stand for a ci-only change only if the trial commit
+marks those files `ci` in its own table (#622). `merge-gate.yml` runs
+`main`'s gate, so the gate's side of a change shows in `test-merge-gate.sh`
+and a dry run of the branch's script against the trial commits, not in the
+trial's own `merge-gate` status.
 
 **Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
 diffs the commit against `main`'s merge base and picks the jobs from its
@@ -493,17 +499,30 @@ wait for.
 | `ci/android` | android | the PC: `just android` | 40 min |
 | `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards | 20 min a shard (10 once `main` caches its build, item 7) |
 
-A core change needs every job; docs only needs none.
+| `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
+
+A core change needs every job; docs only needs none. A change to only the
+CI machinery (the ci area) needs only `ci/scripts`, beside `lint (ubuntu)`
+([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)); with a desktop
+change, `ci/macos (checks)` runs the same suites instead.
 
 **Areas.** `scripts/ci-areas.txt` is the one path table: each line names an
-area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, or two of
-them) and a glob; a file takes the first line that matches it, desktop when
+area (`none`, `ios`, `android`, `core`, `desktop`, `recognition`, `ci`, or
+two of them) and a glob; a file takes the first line that matches it, desktop when
 none does, and a core change runs every area. Its comment says which
 scripts are desktop, shared (core) or mobile; `crates/mdoc-detect` and
 `crates/mdoc-pii` are `recognition,desktop`, so they skip the mobile jobs.
 `scripts/ci-areas.sh [<from> <to>]` prints the areas a change touches. A new
 script outside `src/` and `tests/` that a mobile job runs needs a line
-there, or it counts as desktop. `ci.yml`'s `paths-ignore` repeats the `none`
+there, or it counts as desktop. The ci area is `merge-gate.sh`,
+`queue-runner.sh` and its setup, the CI scripts (`ci-*.sh` but the table's
+own `ci-areas.sh`, which is core; `deny-ci.sh`, `nightly-issue.sh`, the
+retired local CI), their suites, and the workflows that build and test
+nothing themselves (`ci.yml`, `ci-scripts.yml`, `main-caches.yml`, the
+gate's two, `nightly.yml`). A workflow that builds or tests the app takes
+the area of what it runs: `ci-desktop.yml`, `ci-detection.yml`, `queue.yml`
+(which starts them) and `release.yml` are desktop, `ci-ios.yml` ios. When
+unsure, leave a file desktop. `ci.yml`'s `paths-ignore` repeats the `none`
 lines word for word (`scripts/test-local-ci.sh` checks).
 
 **Test tiers.** `.config/nextest.toml` names them (`unit`, `app`, `renders`,
@@ -637,8 +656,8 @@ it is not the status itself.
   after that it fails, worded "no macOS runner, 3 attempts". A job that ran
   and failed still fails at once. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
-  for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `fast (unit)` for
-  `fast (ubuntu)`; name new parts that way, or their capacity cancels count
+  for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `ci/scripts (bash 3.2)`
+  for `ci/scripts`, `fast (unit)` for `fast (ubuntu)`; name new parts that way, or their capacity cancels count
   as failures.
 - **Missed enqueue.** A PR that is green, has auto-merge on and is still not
   in the queue 5 minutes later gets a warning in the gate's run (see "A
