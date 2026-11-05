@@ -43,8 +43,23 @@ android {
 
     buildTypes {
         release {
-            // UniFFI's bindings reach the core through JNA reflection.
+            // Not minified until the release workflow tests the minified
+            // build first (ROADMAP Mobile CI/CD item 7); `minified` below is
+            // that build, and these rules are its.
             isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // Release as R8 would ship it, signed with the debug key so CI can
+        // install it beside the debug app: scripts/android-check.sh opens
+        // its library on the emulator, so a keep rule R8 needs for the
+        // core's UniFFI bindings and JNA fails the Android job (ADR 0091).
+        create("minified") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".minified"
+            matchingFallbacks += listOf("release")
         }
     }
 

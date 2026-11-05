@@ -9,18 +9,20 @@
 #                                  app's JVM tests load
 # for arm64-v8a (phones) and x86_64 (the emulator), with the NDK's clang for
 # API 31, the apps' minimum. MDOC_ANDROID_ABIS picks fewer: the Android CI
-# job (scripts/android-check.sh) builds x86_64 only, for its emulator;
-# aarch64 stays compile-checked by `just mobile --ffi` on macOS. ONNX
+# job (scripts/android-check.sh) builds only its emulator's ABI, x86_64 (or
+# arm64-v8a on the Mac); aarch64 stays compile-checked by `just mobile --ffi`
+# on macOS. ONNX
 # Runtime 1.27.0 (Microsoft's Maven AAR) and PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
 # downloaded at run time. Fails if any library is not aligned for 16 KB pages
 # or needs a shared library Android does not provide.
-# Windows x64 or Apple Silicon macOS.
+# Windows x64, Apple Silicon macOS or Linux x86_64.
 source "$(dirname "$0")/lib.sh"
 
 case "$(platform)" in
   windows-x64) host=windows-x86_64 exe=.exe host_lib=mdoc_ffi.dll ;;
   macos-arm64) host=darwin-x86_64 exe='' host_lib=libmdoc_ffi.dylib ;;
-  *) die "the Android core builds on Windows x64 or Apple Silicon macOS" ;;
+  Linux-x86_64) host=linux-x86_64 exe='' host_lib=libmdoc_ffi.so ;;
+  *) die "the Android core builds on Windows x64, Apple Silicon macOS or Linux x86_64" ;;
 esac
 
 api=31

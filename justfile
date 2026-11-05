@@ -115,16 +115,16 @@ check-all: check smoke-ocr smoke-models
 ios-core:
     scripts/build-ios-core.sh
 
-# Pinned Android SDK, emulator, JDK 21 and NDK under E:\Android; Windows (ADR 0089)
+# Pinned Android SDK, emulator, JDK 21 and NDK under E:\Android, ~/Library/Android (Mac) or ~/Android (Linux) (ADR 0089, 0091)
 android-setup:
     scripts/install-android-sdk.sh
     scripts/install-android-ndk.sh
 
-# Boot the API 36 emulator (16 KB pages) headless and print its adb serial; --window shows it (ADR 0089)
+# Boot the API 36 emulator (16 KB pages; arm64-v8a on the Mac, x86_64 elsewhere, Linux needs KVM) headless and print its adb serial; --window shows it (ADR 0089, 0091)
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
-# The Android job: core, JVM parity tests, app, emulator tests, when the android area changed; the PC's queue runner runs it as ci/android (ADR 0089, 0095)
+# The Android job: core, JVM parity tests, app, the minified app opening its library, emulator tests, when the android area changed; the PC's queue runner runs it as ci/android (ADR 0089, 0091, 0095)
 android:
     scripts/android-check.sh
 
