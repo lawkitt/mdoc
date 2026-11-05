@@ -54,7 +54,7 @@ runner_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-every_area='core desktop recognition ios android'
+every_area='core desktop recognition ios android ci'
 
 config() {
   job=${QUEUE_CI_JOB:-}

@@ -12,8 +12,9 @@
 #   each named with where it ran. Its areas come from its own
 #   scripts/ci-areas.txt, as queue.yml and the PC read them (main's when
 #   GitHub cannot give it). Hosted jobs (queue.yml) are check runs
-#   named ci/macos, ci/ios and ci/detection (the detection gate's summary of
-#   its shards); a check counts only when it concluded success, or skipped
+#   named ci/macos, ci/ios, ci/detection (the detection gate's summary of
+#   its shards) and ci/scripts (the CI machinery's script suites, ADR 0100);
+#   a check counts only when it concluded success, or skipped
 #   as not affected; anything else fails. The PC posts commit
 #   statuses ci/windows and ci/android, and refreshes a pending one at least
 #   every 5 minutes while it runs (its heartbeat).
@@ -658,7 +659,7 @@ heads_pass() {
       continue
     }
     if [ "$(wc -l <<<"$files")" -ge 3000 ]; then
-      areas='core desktop recognition ios android'
+      areas='core desktop recognition ios android ci'
     else
       areas=$(areas_of <<<"$files")
     fi
@@ -720,7 +721,7 @@ queue_pass() {
       continue
     }
     if [ "$(jq '.files | length' <<<"$cmp")" -ge 300 ]; then
-      areas='core desktop recognition ios android'
+      areas='core desktop recognition ios android ci'
     else
       areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of "$(commit_table "$sha")")
     fi
@@ -758,7 +759,7 @@ queue_pass() {
     lines=''
     for job in $jobs; do
       case "$job" in
-        macos | ios | detection)
+        macos | ios | detection | scripts)
           line=$(hosted_verdict "ci/$job" "$checks") || {
             skipped "${sha:0:7}" "the run behind ci/$job"
             rc=1

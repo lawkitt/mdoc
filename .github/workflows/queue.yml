@@ -1,9 +1,10 @@
 name: Queue
 
 # The full suite on a merge-queue commit (ADR 0095): the hosted macOS desktop
-# job, the iOS job and the detection gate, each when the commit's areas need
-# it. The PC posts ci/windows and ci/android itself (scripts/queue-runner.sh),
-# and merge-gate.sh dispatches their hosted fallbacks. merge-gate reads every
+# job, the iOS job, the detection gate and the CI machinery's script suites
+# (ADR 0100), each when the commit's areas need it. The PC posts ci/windows
+# and ci/android itself (scripts/queue-runner.sh), and merge-gate.sh
+# dispatches their hosted fallbacks. merge-gate reads every
 # result and posts the required `merge-gate` status; this workflow never
 # decides a merge.
 #
@@ -35,6 +36,7 @@ jobs:
       macos: ${{ steps.areas.outputs.macos }}
       ios: ${{ steps.areas.outputs.ios }}
       detection: ${{ steps.areas.outputs.detection }}
+      scripts: ${{ steps.areas.outputs.scripts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,3 +71,10 @@ jobs:
     uses: ./.github/workflows/ci-detection.yml
     with:
       shards: 4
+
+  # The ci area (ADR 0100): a change to only the CI machinery runs the script
+  # suites on Linux and under bash 3.2, not the desktop jobs.
+  scripts:
+    needs: areas
+    if: needs.areas.outputs.scripts == 'true'
+    uses: ./.github/workflows/ci-scripts.yml

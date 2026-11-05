@@ -26,14 +26,24 @@
 #            cargo check), the detection gate, and hosted clippy and test: src/, tests/,
 #            vendor/, build/, resources/, .github/ and every script not
 #            listed here (the desktop scripts: release, packaging, smoke
-#            tests, CI and its suites).
+#            tests and the suites of those).
+#   ci       the CI machinery (ADR 0100): the merge gate, the queue runner,
+#            the CI scripts, the workflows that build and test nothing
+#            themselves, and their suites. On a queue commit only ci/scripts
+#            runs (the script suites on Linux and under macOS /bin/bash 3.2)
+#            beside lint (ubuntu); the desktop suite does not. A workflow
+#            that builds or tests the app takes the area of what it runs:
+#            ci-desktop.yml, ci-detection.yml, queue.yml (which starts
+#            them) and release.yml are desktop, ci-ios.yml ios.
 #
 # A script two areas run belongs to both: mobile-check.sh is the Mac's
 # desktop cargo check (`--ffi`) and the iOS job; install-android-ndk.sh
 # serves that cargo check and the Android job.
 #
-# scripts/ci-areas.sh prints the areas a change touches; local-ci.sh,
-# mobile-check.sh, android-check.sh and ci.yml's areas job all read this file.
+# scripts/ci-areas.sh prints the areas a change touches (queue.yml's and
+# ci.yml's areas jobs run it); merge-gate.sh and the PC's queue-runner.sh
+# read a queue commit's own copy; local-ci.sh, mobile-check.sh and
+# android-check.sh read it too.
 
 recognition           tests/fixtures/recognition/**
 
@@ -50,6 +60,7 @@ ios                   tools/ios-spike/**
 ios                   scripts/build-ios-core.sh
 ios                   scripts/ios-*.sh
 ios                   scripts/ios-*.swift
+ios                   .github/workflows/ci-ios.yml
 
 android               apps/android/**
 android               tools/android-spike/**
@@ -82,3 +93,29 @@ core                  scripts/setup.sh
 core                  scripts/install-actionlint.sh
 core                  scripts/install-shfmt.sh
 core                  scripts/doctor.sh
+
+# The CI machinery (ADR 0100), after core so the table's own script stays
+# core. Their checks are lint (ubuntu), which runs on every commit, and the
+# script suites (ci/scripts); a workflow here runs on the PR or on main, not
+# in the queue. The retired local CI (ADR 0082) is here too.
+ci                    scripts/merge-gate.sh
+ci                    scripts/queue-runner.sh
+ci                    scripts/queue-runner-setup.ps1
+ci                    scripts/ci-*.sh
+ci                    scripts/deny-ci.sh
+ci                    scripts/nightly-issue.sh
+ci                    scripts/local-ci.sh
+ci                    scripts/local-ci-fallback.sh
+ci                    scripts/local-ci-setup.ps1
+ci                    scripts/test-merge-gate.sh
+ci                    scripts/test-queue-runner.sh
+ci                    scripts/test-local-ci.sh
+ci                    scripts/test-local-ci-fallback.sh
+ci                    scripts/test-ci-cache-cleanup.sh
+ci                    scripts/test-nightly.sh
+ci                    .github/workflows/ci.yml
+ci                    .github/workflows/ci-scripts.yml
+ci                    .github/workflows/main-caches.yml
+ci                    .github/workflows/merge-gate.yml
+ci                    .github/workflows/merge-gate-recheck.yml
+ci                    .github/workflows/nightly.yml
