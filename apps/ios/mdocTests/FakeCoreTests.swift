@@ -132,4 +132,125 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertEqual(large.tier, .detector)
         XCTAssertTrue(large.offers.contains { $0.purpose == .detector })
     }
+
+    // MARK: Review bar (ADR 0098)
+
+    private func letter() throws -> any DocumentSession {
+        try Fixture.core().library.session(for: Fixture.letter)
+    }
+
+    private func mention(_ session: any DocumentSession, _ original: String) throws -> Candidate {
+        try XCTUnwrap(session.snapshot().candidates.first { $0.original == original })
+    }
+
+    func testUndoAndRedoTravelOneDecisionAtATime() throws {
+        let session = try letter()
+        let start = session.snapshot()
+        XCTAssertFalse(start.canUndo)
+        let maya = try mention(session, "Maya Ellison")
+        let replaced = try session.decide(maya.id, .replace, scope: .allOccurrences)
+        XCTAssertTrue(replaced.canUndo)
+        XCTAssertEqual(replaced.undoStep?.label, "Replace · Maya Ellison")
+        let undone = try session.undo()
+        XCTAssertEqual(undone.markdown, start.markdown)
+        XCTAssertTrue(undone.canRedo)
+        XCTAssertEqual(undone.redoStep?.kind, .replace)
+        XCTAssertEqual(undone.redoStep?.candidateID, maya.id)
+        let redone = try session.redo()
+        XCTAssertEqual(redone.markdown, replaced.markdown)
+        XCTAssertFalse(redone.canRedo)
+        // A new step clears Redo.
+        _ = try session.undo()
+        _ = try session.decide(maya.id, .keep, scope: .justThisOne)
+        XCTAssertFalse(session.snapshot().canRedo)
+    }
+
+    /// What the real core leaves alone, the fake does too: the reply across
+    /// Undo, a custom alias across a category change, a kept mention under
+    /// New alias, an owner set again; the last two keep Redo.
+    func testTheFakeKeepsWhatTheCoreKeeps() throws {
+        let session = try letter()
+        let maya = try mention(session, "Maya Ellison")
+        _ = try session.decide(maya.id, .replace, scope: .allOccurrences)
+        _ = try session.restoreReply("Thanks, PERSON_1.")
+        XCTAssertNotNil(try session.undo().reply, "Undo leaves the reply")
+        _ = try session.redo()
+
+        _ = try session.rename(maya.id, scope: .allOccurrences, to: "CLIENT")
+        let choices = try session.categoryChoices(for: maya.id, scope: .allOccurrences)
+        XCTAssertNil(choices.first { $0.category == .organization }?.alias, "a custom alias stays")
+        let recategorized = try session.setCategory(maya.id, scope: .allOccurrences, to: .organization)
+        XCTAssertEqual(recategorized.candidate(maya.id)?.alias, "CLIENT")
+
+        let daniel = try mention(session, "Mr Okafor")
+        _ = try session.decide(daniel.id, .keep, scope: .justThisOne)
+        _ = try session.undo()
+        _ = try session.redo()
+        XCTAssertEqual(try session.newAlias(daniel.id).candidate(daniel.id)?.identityID, daniel.identityID)
+        let email = try mention(session, "maya.ellison@example.com")
+        _ = try session.undo()
+        XCTAssertTrue(try session.setOwner(email.identityID, to: nil).canRedo)
+    }
+
+    func testRenameRefusesAnAliasAnotherNameHas() throws {
+        let session = try letter()
+        let maya = try mention(session, "Maya Ellison")
+        let daniel = try mention(session, "Mr Okafor")
+        XCTAssertThrowsError(try session.rename(maya.id, scope: .allOccurrences, to: daniel.alias)) { error in
+            XCTAssertEqual(error as? CoreError, .aliasTaken(alias: daniel.alias, by: daniel.identityID))
+        }
+        let renamed = try session.rename(maya.id, scope: .allOccurrences, to: "CLIENT")
+        XCTAssertTrue(renamed.mentions(of: maya.identityID).allSatisfy { $0.alias == "CLIENT" })
+        XCTAssertEqual(renamed.undoStep?.label, "Rename · CLIENT")
+        XCTAssertFalse(try session.undo().candidates.contains { $0.alias == "CLIENT" })
+    }
+
+    func testSameAsLinksAndNewAliasSplitsWithAHint() throws {
+        let session = try letter()
+        let ms = try mention(session, "Ms Ellison")
+        let split = try session.newAlias(ms.id)
+        let alone = try XCTUnwrap(split.candidate(ms.id))
+        XCTAssertNotEqual(alone.identityID, ms.identityID)
+        XCTAssertEqual(split.undoStep?.kind, .newAlias)
+        let hint = try XCTUnwrap(split.mergeHints.first { $0.from == alone.identityID })
+        XCTAssertEqual(hint.into, ms.identityID)
+        XCTAssertEqual(hint.wording, "Maya Ellison")
+        let linked = try session.sameAs(ms.id, scope: .allOccurrences, target: hint.into)
+        XCTAssertEqual(linked.candidate(ms.id)?.identityID, ms.identityID)
+        XCTAssertEqual(linked.undoStep?.label, "Same as · Maya Ellison")
+        XCTAssertTrue(linked.mergeHints.isEmpty)
+        // Undone, the hint is back; × hides it without a step.
+        let undone = try session.undo()
+        XCTAssertEqual(undone.mergeHints, [hint])
+        let dismissed = try session.dismissHint(hint)
+        XCTAssertTrue(dismissed.mergeHints.isEmpty)
+        XCTAssertEqual(dismissed.redoStep?.kind, .sameAs)
+    }
+
+    func testCategoryChoicesOwnerAndAMarkedProposal() throws {
+        let session = try letter()
+        let email = try mention(session, "maya.ellison@example.com")
+        let maya = try mention(session, "Maya Ellison")
+        let choices = try session.categoryChoices(for: maya.id, scope: .allOccurrences)
+        XCTAssertNil(choices.first { $0.category == .person }?.alias)
+        XCTAssertTrue(choices.first { $0.category == .person }?.isCurrent ?? false)
+        let organization = try XCTUnwrap(choices.first { $0.category == .organization }?.alias)
+        XCTAssertTrue(organization.hasPrefix("ORG_"))
+        XCTAssertFalse(session.snapshot().candidates.contains { $0.alias == organization })
+        let owned = try session.setOwner(email.identityID, to: maya.identityID)
+        XCTAssertEqual(owned.identities.first { $0.id == email.identityID }?.owner, maya.identityID)
+        XCTAssertThrowsError(try session.setOwner(maya.identityID, to: email.identityID))
+        let recategorized = try session.setCategory(maya.id, scope: .justThisOne, to: .organization)
+        XCTAssertEqual(recategorized.candidate(maya.id)?.category, .organization)
+        XCTAssertEqual(recategorized.undoStep?.label, "Category · Organization")
+
+        let text = session.snapshot().markdown
+        let range = try XCTUnwrap(text.range(of: "staircase"))
+        let start = text.utf8.distance(from: text.utf8.startIndex, to: range.lowerBound)
+        let marked = try session.markSelection(SourceRange(start: start, end: start + "staircase".utf8.count))
+        XCTAssertTrue(marked.markdown.contains("staircase"), "a mark proposes, it does not replace")
+        XCTAssertTrue(marked.candidates.contains { $0.original == "staircase" && $0.state == .proposed })
+        XCTAssertEqual(marked.undoStep?.label, "Mark · staircase")
+        XCTAssertFalse(try session.undo().candidates.contains { $0.original == "staircase" })
+    }
 }
