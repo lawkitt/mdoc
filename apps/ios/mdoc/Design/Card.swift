@@ -37,3 +37,14 @@ extension View {
         .background(Palette.background)
         .preferredColorScheme(.dark)
 }
+
+#Preview("Card, matrix") {
+    PreviewMatrix {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text(PreviewFixtures.sample.names[0].wording).font(Typography.title)
+            Text(verbatim: "Organization · ORG_1").font(Typography.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+}

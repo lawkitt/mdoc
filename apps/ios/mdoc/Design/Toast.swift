@@ -15,17 +15,24 @@ struct ToastMessage: Equatable, Identifiable {
 struct Toast: View {
     let message: ToastMessage
     var dismiss: () -> Void = {}
+    /// A solid fill instead of the material: snapshots, whose offscreen
+    /// render draws materials unevenly.
+    var opaque = false
+
+    /// The action button: dismissed first, since the action may show a
+    /// toast of its own ("Undid … · Redo"), which must stay.
+    func perform() {
+        dismiss()
+        message.action?()
+    }
 
     var body: some View {
         HStack(spacing: Space.s) {
             Text(message.text)
                 .font(Typography.chip)
                 .lineLimit(2)
-            if let title = message.actionTitle, let action = message.action {
-                Button(title) {
-                    action()
-                    dismiss()
-                }
+            if let title = message.actionTitle, message.action != nil {
+                Button(title, action: perform)
                 .font(Typography.chip.weight(.semibold))
                 .foregroundStyle(Palette.accent)
                 .frame(minHeight: Size.target)
@@ -33,7 +40,13 @@ struct Toast: View {
         }
         .padding(.horizontal, Space.m)
         .frame(minHeight: Size.target)
-        .background(.regularMaterial, in: Capsule())
+        .background {
+            if opaque {
+                Capsule().fill(Palette.surface)
+            } else {
+                Capsule().fill(.regularMaterial)
+            }
+        }
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("toast")
@@ -80,8 +93,20 @@ extension View {
     .padding()
 }
 
+#Preview("Toast, AX5") {
+    Toast(message: ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {}))
+        .padding()
+        .environment(\.dynamicTypeSize, .accessibility5)
+}
+
 #Preview("Toast, dark") {
     Toast(message: ToastMessage(text: "Undid Replace · Riverside Holdings", actionTitle: "Redo", action: {}))
         .padding()
         .preferredColorScheme(.dark)
+}
+
+#Preview("Toast, matrix") {
+    PreviewMatrix {
+        Toast(message: ToastMessage(text: "Same as Maya Bennett", actionTitle: "Undo", action: {}))
+    }
 }

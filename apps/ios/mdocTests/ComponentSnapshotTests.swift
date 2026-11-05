@@ -56,19 +56,24 @@ final class ComponentSnapshotTests: XCTestCase {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .card()
-            // A solid fill stands in for the material, which an offscreen
-            // render draws unevenly.
-            Text(verbatim: "12 replaced")
-                .font(Typography.chip)
-                .padding(.horizontal, Space.m)
-                .frame(minHeight: Size.target)
-                .background(Palette.chipFill, in: Capsule())
+            Toast(message: ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {}), opaque: true)
+            Toast(message: ToastMessage(text: "All 15 reviewed"), opaque: true)
         }
         .padding()
         .background(Palette.background)
         for appearance in Snapshot.Appearance.allCases {
             Snapshot.assert(view, named: "card-toast", appearance: appearance)
         }
+    }
+
+    func testToastActionKeepsTheToastItShows() {
+        var shown: ToastMessage? = ToastMessage(text: "12 replaced")
+        let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo") {
+            shown = ToastMessage(text: "Undid Replace all", actionTitle: "Redo", action: {})
+        }
+        shown = undo
+        Toast(message: undo) { if shown?.id == undo.id { shown = nil } }.perform()
+        XCTAssertEqual(shown?.text, "Undid Replace all")
     }
 
     func testSampleChoosesItsLanguage() {

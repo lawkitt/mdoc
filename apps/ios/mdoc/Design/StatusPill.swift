@@ -60,3 +60,13 @@ struct StatusPill: View {
     .padding()
     .preferredColorScheme(.dark)
 }
+
+#Preview("Status pills, matrix") {
+    PreviewMatrix {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            StatusPill("11 to review", systemImage: "exclamationmark.circle", kind: .toReview)
+            StatusPill("Ready to share", systemImage: "checkmark.circle", kind: .ready)
+            StatusPill("Reply restored", systemImage: "arrow.uturn.backward.circle", kind: .restored)
+        }
+    }
+}

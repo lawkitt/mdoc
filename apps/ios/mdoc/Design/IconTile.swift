@@ -29,3 +29,13 @@ struct IconTile: View {
     }
     .padding()
 }
+
+#Preview("Icon tiles, matrix") {
+    PreviewMatrix {
+        HStack(spacing: Space.s) {
+            IconTile(systemImage: "paintbrush", color: .blue)
+            IconTile(systemImage: "lock", color: .green)
+            IconTile(systemImage: "doc.richtext", color: .red, tinted: true, size: 40)
+        }
+    }
+}

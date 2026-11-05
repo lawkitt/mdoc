@@ -76,3 +76,13 @@ struct Chip: View {
     .preferredColorScheme(.dark)
     .environment(\.dynamicTypeSize, .accessibility3)
 }
+
+#Preview("Chips, matrix") {
+    PreviewMatrix {
+        HStack {
+            Chip("Person", systemImage: "person", tint: .blue, opensMenu: true)
+            Chip("PERSON_1", opensMenu: true, monospaced: true)
+            Chip("All 6", opensMenu: true)
+        }
+    }
+}

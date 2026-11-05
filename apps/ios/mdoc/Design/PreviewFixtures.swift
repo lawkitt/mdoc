@@ -24,8 +24,30 @@ enum PreviewFixtures {
     }
 }
 
-/// The traits each screen preview is shown in.
-enum PreviewTraits {
-    static let sizes: [DynamicTypeSize] = [.large, .accessibility5]
+/// Shows `content` in the preview matrix ADR 0099 asks for: light, dark,
+/// AX5, and an iPad-wide frame.
+struct PreviewMatrix<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.l) {
+                variant("Light") { content() }
+                variant("Dark") { content().environment(\.colorScheme, .dark) }
+                variant("AX5") { content().environment(\.dynamicTypeSize, .accessibility5) }
+                variant("iPad width") { content().frame(width: 700) }
+            }
+            .padding()
+        }
+    }
+
+    private func variant(_ title: String, @ViewBuilder _ view: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text(verbatim: title).font(Typography.caption).foregroundStyle(.secondary)
+            view()
+                .padding(Space.s)
+                .background(Color(uiColor: .systemBackground))
+        }
+    }
 }
 #endif
