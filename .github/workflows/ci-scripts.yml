@@ -1,0 +1,75 @@
+name: CI scripts
+
+# The ci area's check on a queue commit (ADR 0100): a change to only the CI
+# machinery (the merge gate, the queue runner, the CI scripts and workflows,
+# their suites) runs the script suites, not the desktop suite. Two jobs in
+# parallel, the suites on hosted Linux and under Apple's /bin/bash 3.2 on
+# macOS (#468), and a summary, `ci/scripts`, the check merge-gate reads.
+# `lint (ubuntu)` (ci.yml) runs beside it on every queue commit. Neither job
+# builds anything: the suites fake cargo, gh and just, so they need no
+# toolchain or cache. A desktop change runs the same suites in ci/macos
+# (checks) instead. Each step is a script, so a failure reproduces locally
+# (ADR 0037).
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test; empty tests the triggering ref.
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The commit to test; empty tests the chosen branch.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: ci/scripts (linux)
+    runs-on: ubuntu-latest
+    # Job limits (ADR 0095): the suites take about 2 minutes.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - run: bash scripts/test.sh --tier scripts
+
+  bash32:
+    name: ci/scripts (bash 3.2)
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # The runner's `bash` is Apple's 3.2 too; named here so the suites run
+      # under it wherever PATH points.
+      - name: Script suites under /bin/bash 3.2
+        run: /bin/bash scripts/test.sh --tier scripts
+
+  # The check merge-gate reads. Green only when both jobs ran and passed, so
+  # a missing, cancelled or skipped part never looks green (as ci/detection).
+  # The parts are named after it, so the gate re-runs one that got no runner.
+  summary:
+    name: ci/scripts
+    needs: [linux, bash32]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          LINUX: ${{ needs.linux.result }}
+          BASH32: ${{ needs.bash32.result }}
+        run: |
+          [ "$LINUX" = success ] || echo "::error::ci/scripts (linux): $LINUX"
+          [ "$BASH32" = success ] || echo "::error::ci/scripts (bash 3.2): $BASH32"
+          [ "$LINUX" = success ] && [ "$BASH32" = success ]

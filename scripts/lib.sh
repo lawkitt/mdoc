@@ -150,7 +150,7 @@ glob_regex() {
 # no line), by the area table given as text (scripts/ci-areas.txt): each
 # file takes the areas of the table's first line that matches it, desktop
 # when none does. A table with CRLF line endings reads the same. Prints them on one line in
-# the order core, desktop, recognition, ios, android; core brings in every
+# the order core, desktop, recognition, ios, android, ci; core brings in every
 # area. Nothing
 # (an empty line) when every file is in no area (docs only); every area for
 # an empty list of files.
@@ -175,8 +175,8 @@ changed_areas() { # table-text
     seen+="${match//,/ } "
   done
   [ "$seen" != ' ' ] || seen=' core '
-  [[ $seen != *' core '* ]] || seen=' core desktop recognition ios android '
-  for a in core desktop recognition ios android; do
+  [[ $seen != *' core '* ]] || seen=' core desktop recognition ios android ci '
+  for a in core desktop recognition ios android ci; do
     [[ $seen != *" $a "* ]] || out+="${out:+ }$a"
   done
   echo "$out"
@@ -186,15 +186,18 @@ changed_areas() { # table-text
 affects() { [[ " $2 " == *" $1 "* ]]; }
 
 # The jobs a queue commit needs, from its areas: macos, windows, ios,
-# android, detection (ADR 0095). merge-gate.sh waits for these and
-# queue.yml (scripts/ci-areas.sh --queue) starts them, so the two agree. The fixtures alone need only the detection
-# gate; it decides itself whether recognition changed.
+# android, detection, scripts (ADR 0095, ADR 0100). merge-gate.sh waits for
+# these and queue.yml (scripts/ci-areas.sh --queue) starts them, so the two
+# agree. The fixtures alone need only the detection gate; it decides itself
+# whether recognition changed. The CI machinery needs only the script suites
+# (ci/scripts), which ci/macos runs too, so a desktop change does not add it.
 needed_jobs() { # areas
   local a=$1 out=''
   if affects desktop "$a"; then out+=' macos windows'; fi
   if affects ios "$a"; then out+=' ios'; fi
   if affects android "$a"; then out+=' android'; fi
   if affects desktop "$a" || affects recognition "$a"; then out+=' detection'; fi
+  if affects ci "$a" && ! affects desktop "$a"; then out+=' scripts'; fi
   echo "${out# }"
 }
 

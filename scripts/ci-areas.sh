@@ -4,8 +4,8 @@
 #        scripts/ci-areas.sh --queue
 #
 # The areas a change touches, by scripts/ci-areas.txt (ADR 0091): one line
-# of core, desktop, recognition, ios and android, in that order; empty for
-# docs only.
+# of core, desktop, recognition, ios, android and ci, in that order; empty
+# for docs only.
 # A core change lists every area. <from> and <to> default to HEAD^1 and
 # HEAD: on a merge ref, what the PR brings onto its base.
 #
@@ -18,11 +18,11 @@
 # --queue is queue.yml's areas job (ADR 0095): what a queue commit brings
 # onto main, from main's merge base (origin/main, fetched), the same diff
 # merge-gate reads. It writes `areas=<list>`, `jobs=<list>` (needed_jobs)
-# and `<job>=true|false` for macos, ios and detection, the hosted jobs
-# queue.yml starts. Windows and Android run on the PC.
+# and `<job>=true|false` for macos, ios, detection and scripts, the hosted
+# jobs queue.yml starts. Windows and Android run on the PC.
 source "$(dirname "$0")/lib.sh"
 
-every='core desktop recognition ios android'
+every='core desktop recognition ios android ci'
 
 github() {
   local areas=$every
@@ -56,7 +56,7 @@ queue() {
   jobs=$(needed_jobs "$areas")
   echo "areas=$areas"
   echo "jobs=$jobs"
-  for job in macos ios detection; do
+  for job in macos ios detection scripts; do
     if affects "$job" "$jobs"; then echo "$job=true"; else echo "$job=false"; fi
   done
 }
