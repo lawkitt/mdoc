@@ -70,6 +70,8 @@ minified_opens() {
   local pkg=io.github.lawkitt.mdoc.minified screen=target/android/minified-screen.xml started=false
   local apk=apps/android/app/build/outputs/apk/minified/app-minified.apk
   echo "android-check: the minified app opens its library on $serial"
+  # Git Bash would turn /sdcard/... into a Windows path for native adb.
+  export MSYS2_ARG_CONV_EXCL=/sdcard
   "${adb[@]}" uninstall "$pkg" >/dev/null 2>&1 || true
   # -g: the notification permission, whose dialog would cover Home.
   "${adb[@]}" install -g "$apk" >/dev/null
