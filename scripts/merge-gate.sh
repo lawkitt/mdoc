@@ -9,12 +9,29 @@
 #   touches no area (scripts/ci-areas.txt).
 #   A queue commit (a branch under gh-readonly-queue/main/, or ci-shadow/main/
 #   for the shadow trial): green only when every job its areas need passed,
-#   each named with where it ran. Hosted jobs (queue.yml) are check runs
+#   each named with where it ran. Its areas come from its own
+#   scripts/ci-areas.txt, as queue.yml and the PC read them (main's when
+#   GitHub cannot give it). Hosted jobs (queue.yml) are check runs
 #   named ci/macos, ci/ios and ci/detection (the detection gate's summary of
 #   its shards); a check counts only when it concluded success, or skipped
 #   as not affected; anything else fails. The PC posts commit
 #   statuses ci/windows and ci/android, and refreshes a pending one at least
 #   every 5 minutes while it runs (its heartbeat).
+#
+# A hosted job that never ran (ADR 0100) is no result: cancelled with no
+# runner and no step started, or a summary job whose failing parts (its
+# caller's jobs named after it, `ci/detection (2)` for `ci/detection`) never
+# ran. The gate re-runs the run's failed jobs, at most twice a run (by its
+# run_attempt), and waits; after that it fails, worded as infrastructure
+# ("no macOS runner, 3 attempts"). A job that ran and failed fails at once.
+#
+# Every GitHub call goes through gh_call: a time limit per try, 3 tries with
+# backoff, and the endpoint named when it fails. A PR head or queue commit
+# skipped because of an error is logged, and the run ends red. A pass that
+# hit an error or left a queue commit (or a running fast tier) pending
+# dispatches merge-gate-recheck.yml, which runs this again 3 minutes later.
+# A green PR with auto-merge on that is still not in the queue after 5
+# minutes gets a warning (#613).
 #
 # Fallback: a queue commit's Windows or Android job runs hosted (ci-desktop.yml
 # with os=windows, ci-android.yml) when the PC has posted nothing 10 minutes
@@ -31,103 +48,221 @@
 # (a PC busy with an earlier group is still there).
 #
 # .github/workflows/merge-gate.yml runs main's copy of this script every 5
-# minutes and after statuses and CI runs, with statuses: write and actions:
-# write; it never checks out PR code. Bash 3.2 compatible (the suite runs
-# under macOS /bin/bash).
+# minutes, after statuses and CI runs and when a recheck dispatches it, with
+# statuses: write and actions: write; it never checks out PR code. Bash 3.2
+# compatible (the suite runs under macOS /bin/bash).
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 repo=${MERGE_GATE_REPO:-${GITHUB_REPOSITORY:-lawkitt/mdoc}}
+default_branch=${MERGE_GATE_BRANCH:-main}
 context=merge-gate
 prefixes=${MERGE_GATE_PREFIXES:-gh-readonly-queue/main/ ci-shadow/main/}
 silent_min=${MERGE_GATE_SILENT_MIN:-10}
+# A green PR with auto-merge on is late for the queue after this.
+enqueue_min=${MERGE_GATE_ENQUEUE_MIN:-5}
+# Re-runs of a run whose jobs never ran: attempts 1 and 2 are re-run.
+reruns=${MERGE_GATE_RERUNS:-2}
+# gh_call: tries per call, the first backoff in seconds (doubled each time),
+# and each try's limit.
+tries=${MERGE_GATE_TRIES:-3}
+retry_delay=${MERGE_GATE_RETRY_DELAY:-2}
+call_timeout=${MERGE_GATE_CALL_TIMEOUT:-30}
 run_url=${GITHUB_SERVER_URL:-https://github.com}/$repo/actions/runs/${GITHUB_RUN_ID:-0}
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+# Scratch files: gh_call's stderr, and the calls that failed (subshells
+# write there, so the pass sees errors from inside $(...)).
+gate_tmp=${MERGE_GATE_TMP:-}
+if [ -z "$gate_tmp" ]; then
+  gate_tmp=$(mktemp -d)
+  [ -n "${MERGE_GATE_SOURCED:-}" ] || trap 'rm -rf "$gate_tmp"' EXIT
+fi
+mkdir -p "$gate_tmp"
+: >"$gate_tmp/errors"
+timeout_cmd=$(command -v timeout || command -v gtimeout || true)
+
+# The log goes to fd 3, the script's stderr, so `2>/dev/null` on a call
+# hides gh's message but never the log.
+exec 3>&2
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&3; }
 
 # jq for Windows ends lines with CRLF (the suite may run on the PC).
 jq() { command jq "$@" | tr -d '\r'; }
 
 # --- GitHub (replaced by fakes in scripts/test-merge-gate.sh) ----------------
 
+# What a gh command line calls, for messages: `GET repos/...`, `POST graphql`,
+# `workflow run x.yml`.
+gh_what() { # gh-args...
+  local method='' path='' prev='' a
+  if [ "$1" != api ]; then
+    echo "$1 $2 $3"
+    return 0
+  fi
+  shift
+  for a in "$@"; do
+    [ "$prev" != -X ] || method=$a
+    case "$a" in repos/* | graphql) [ -n "$path" ] || path=$a ;; esac
+    prev=$a
+  done
+  if [ -z "$method" ]; then
+    method=GET
+    [ "$path" != graphql ] || method=POST
+  fi
+  echo "$method $path"
+}
+
+gh_try() {
+  if [ -n "$timeout_cmd" ] && [ "$(type -t gh)" = file ]; then
+    "$timeout_cmd" "$call_timeout" gh "$@"
+  else
+    gh "$@"
+  fi
+}
+
+# Runs `gh <args>` and prints its output: each try time-limited, $tries tries
+# with backoff. With `json` the output must parse (a truncated body is
+# retried); `text` takes it as it is (a call with --jq: gh parses it). A
+# definitive answer (HTTP 404, 409 or 422) is not retried: it fails with
+# gh's message on stderr, for the caller to read. Any other failure, after
+# the last try, is logged with its endpoint and recorded: the pass ends red.
+gh_call() { # json|text gh-args...
+  local want=$1 try=1 delay=$retry_delay out rc err msg what
+  shift
+  err=$(mktemp "$gate_tmp/err.XXXXXX")
+  while :; do
+    rc=0
+    out=$(gh_try "$@" 2>"$err") || rc=$?
+    if [ "$rc" -eq 0 ] && [ "$want" = json ] && { [ -z "$out" ] || ! command jq empty <<<"$out" 2>/dev/null; }; then
+      rc=1
+      echo "the response is not complete JSON" >"$err"
+    fi
+    if [ "$rc" -eq 0 ]; then
+      rm -f "$err"
+      printf '%s\n' "$out"
+      return 0
+    fi
+    if grep -qE 'HTTP (404|409|422)' "$err"; then
+      tr -d '\r' <"$err" >&2
+      rm -f "$err"
+      return "$rc"
+    fi
+    msg=$(tr -d '\r' <"$err" | awk 'NF { last = $0 } END { print last }')
+    [ "$rc" -ne 124 ] || msg="no answer in ${call_timeout}s"
+    [ "$try" -lt "$tries" ] || break
+    sleep "$delay"
+    delay=$((delay * 2))
+    try=$((try + 1))
+  done
+  rm -f "$err"
+  what=$(gh_what "$@")
+  log "GitHub call failed ($try tries): $what: ${msg:-exit $rc}"
+  echo "$what" >>"$gate_tmp/errors"
+  return 1
+}
+
 # shellcheck disable=SC2016 # GraphQL variables, not shell ones
 heads_query='query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 50, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number isDraft headRefOid }
+      nodes { number isDraft headRefOid isInMergeQueue autoMergeRequest { enabledAt } }
     }
   }
 }'
 
-# Every open PR: `<number> <draft> <head>` lines, all pages.
+# Every open PR, all pages: `<number> <draft> <head> <auto-merge-since> <in-queue>`
+# lines, the time in epoch seconds (0 when auto-merge is off).
 fetch_heads() {
-  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query="$heads_query" |
-    jq -r '.data.repository.pullRequests.nodes[] | "\(.number) \(.isDraft) \(.headRefOid)"'
+  gh_call json api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query="$heads_query" |
+    jq -r '.data.repository.pullRequests.nodes[]
+      | "\(.number) \(.isDraft) \(.headRefOid) \(.autoMergeRequest.enabledAt // null | if . then fromdateiso8601 else 0 end) \(.isInMergeQueue)"'
 }
 
 # A PR's changed paths, a rename's old path too, one per line (GitHub lists
 # at most 3000 files).
 fetch_pr_files() {
-  gh api --paginate "repos/$repo/pulls/$1/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'
+  gh_call text api --paginate "repos/$repo/pulls/$1/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'
 }
 
 # The queue commits: `<branch> <sha>` lines.
 fetch_queue() {
   local p
   for p in $prefixes; do
-    gh api "repos/$repo/git/matching-refs/heads/$p" \
-      --jq '.[] | "\(.ref | sub("^refs/heads/"; "")) \(.object.sha)"'
+    gh_call text api "repos/$repo/git/matching-refs/heads/$p" \
+      --jq '.[] | "\(.ref | sub("^refs/heads/"; "")) \(.object.sha)"' || return 1
   done
 }
 
-fetch_main() { gh api "repos/$repo/commits/main" --jq .sha; }
+fetch_main() { gh_call text api "repos/$repo/commits/$default_branch" --jq .sha; }
 
 # Runs not yet finished: `<id> <branch>` lines, queued and in progress.
 fetch_active_runs() {
   local s
   for s in queued in_progress; do
-    gh api "repos/$repo/actions/runs?status=$s&per_page=100" --jq '.workflow_runs[] | "\(.id) \(.head_branch)"'
+    gh_call text api "repos/$repo/actions/runs?status=$s&per_page=100" --jq '.workflow_runs[] | "\(.id) \(.head_branch)"' || return 1
   done
 }
 
-cancel_run() { gh api -X POST "repos/$repo/actions/runs/$1/cancel" >/dev/null; }
+# A run that finished meanwhile answers HTTP 409: nothing to cancel, and
+# nothing to say.
+cancel_run() { gh_call text api -X POST "repos/$repo/actions/runs/$1/cancel" >/dev/null 2>&1; }
 
 # What a queue commit brings onto main: changed files and commit subjects.
-fetch_compare() { gh api "repos/$repo/compare/$1...$2"; }
+fetch_compare() { gh_call json api "repos/$repo/compare/$1...$2"; }
+
+# A file at a commit, raw; fails with "HTTP 404" when the commit has none.
+fetch_file() { # sha path
+  gh_call text api -H 'Accept: application/vnd.github.raw' "repos/$repo/contents/$2?ref=$1"
+}
 
 # When a commit was made, in epoch seconds.
-fetch_commit_time() { gh api "repos/$repo/commits/$1" --jq '.commit.committer.date | fromdateiso8601'; }
+fetch_commit_time() { gh_call text api "repos/$repo/commits/$1" --jq '.commit.committer.date | fromdateiso8601'; }
 
 # Every check run on a commit, all pages, as one {"check_runs": [...]}.
 fetch_check_runs() {
-  gh api --paginate "repos/$repo/commits/$1/check-runs?per_page=100" --jq '.check_runs[]' | jq -s '{check_runs: .}'
+  gh_call text api --paginate "repos/$repo/commits/$1/check-runs?per_page=100" --jq '.check_runs[]' | jq -s '{check_runs: .}'
 }
 
-fetch_status() { gh api "repos/$repo/commits/$1/status?per_page=100"; }
+fetch_status() { gh_call json api "repos/$repo/commits/$1/status?per_page=100"; }
 
 # `<author type> <cross-repository>` of PR $1.
-fetch_pr() { gh api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
+fetch_pr() { gh_call text api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.head.repo.full_name != .base.repo.full_name)"'; }
 
 # A workflow's state on GitHub (active, disabled_manually, ...); fails with
 # "HTTP 404" in its error when the repository has no such workflow.
-fetch_workflow_state() { gh api "repos/$repo/actions/workflows/$1" --jq .state; }
+fetch_workflow_state() { gh_call text api "repos/$repo/actions/workflows/$1" --jq .state; }
 
 # How many manual runs of a workflow exist for a commit.
 fetch_dispatched() { # workflow sha
-  gh api "repos/$repo/actions/workflows/$1/runs?event=workflow_dispatch&head_sha=$2&per_page=1" --jq .total_count
+  gh_call text api "repos/$repo/actions/workflows/$1/runs?event=workflow_dispatch&head_sha=$2&per_page=1" --jq .total_count
 }
+
+# A workflow run's `<status> <run_attempt>`.
+fetch_run() { gh_call text api "repos/$repo/actions/runs/$1" --jq '"\(.status) \(.run_attempt)"'; }
+
+# A run's jobs, the latest attempt of each, as one {"jobs": [...]}.
+fetch_run_jobs() {
+  gh_call text api --paginate "repos/$repo/actions/runs/$1/jobs?filter=latest&per_page=100" --jq '.jobs[]' | jq -s '{jobs: .}'
+}
+
+# Re-runs a run's failed and cancelled jobs and those that need them (what
+# `gh run rerun --failed` asks for).
+rerun_failed() { gh_call text api -X POST "repos/$repo/actions/runs/$1/rerun-failed-jobs" >/dev/null; }
 
 dispatch() { # workflow branch sha [key=value...]
   local wf=$1 branch=$2 sha=$3 args=()
   shift 3
   local kv
   for kv in "$@"; do args+=(-f "$kv"); done
-  gh workflow run "$wf" --repo "$repo" --ref "$branch" -f "ref=$sha" "${args[@]}"
+  gh_call text workflow run "$wf" --repo "$repo" --ref "$branch" -f "ref=$sha" "${args[@]}" >/dev/null
 }
 
+# The follow-up pass: merge-gate-recheck.yml runs merge-gate.yml in 3 minutes.
+dispatch_recheck() { gh_call text workflow run merge-gate-recheck.yml --repo "$repo" --ref "$default_branch" >/dev/null; }
+
 post() { # sha state description url
-  gh api -X POST "repos/$repo/statuses/$1" -f "context=$context" -f "state=$2" \
+  gh_call text api -X POST "repos/$repo/statuses/$1" -f "context=$context" -f "state=$2" \
     -f "description=${3:0:140}" -f "target_url=$4" >/dev/null
 }
 
@@ -135,9 +270,39 @@ now() { date -u +%s; }
 
 # --- decisions (pure: JSON or text in, one line out) ----------------------------
 
-# The areas of a file list (one path per line on stdin), by main's table.
-areas_of() {
-  tr '\n' '\0' | changed_areas "$(cat scripts/ci-areas.txt)"
+# The areas of a file list (one path per line on stdin), by the table given
+# as text, or main's.
+areas_of() { # [table-text]
+  local table=${1:-}
+  [ -n "$table" ] || table=$(cat scripts/ci-areas.txt)
+  tr '\n' '\0' | changed_areas "$table"
+}
+
+# Whether the failing job $1 of a run never produced a result, from the
+# run's jobs JSON on stdin (fetch_run_jobs): `infra <runner OS>` when the job
+# got no runner and started no step, or it is a summary whose failing parts
+# (its caller's jobs named after it: `detection / ci/detection (2)` for
+# `detection / ci/detection`, `ci/ios-release` for `ci/ios`) all got none;
+# else `result`. Runner names and steps decide, never annotation text.
+failure_kind() { # job-id
+  jq -r --argjson j "$1" '
+    def caller: (capture("^(?<p>.* / )") // {p: ""}).p;
+    def base: sub("^.* / "; "");
+    def bad: .conclusion != null and .conclusion != "success" and .conclusion != "skipped";
+    def never: bad and ((.runner_name // "") == "")
+      and ([.steps[]? | select(.status != "queued" and .conclusion != "skipped")] | length == 0);
+    def os: [(.labels // [])[] | ascii_downcase]
+      | if any(.[]; test("macos")) then "macOS"
+        elif any(.[]; test("windows")) then "Windows"
+        elif any(.[]; test("ubuntu|linux")) then "Linux"
+        else "hosted" end;
+    ([.jobs[] | select(.id == $j)] | first) as $job
+    | if $job == null then "result"
+      elif ($job | never) then "infra \($job | os)"
+      else ($job.name | caller) as $c | ($job.name | base | sub(" \\(.*$"; "")) as $stem
+        | [.jobs[] | select(.id != $j and (.name | caller) == $c and (.name | base | startswith($stem)) and bad)] as $parts
+        | if ($parts | length) > 0 and all($parts[]; never) then "infra \($parts[0] | os)" else "result" end
+      end'
 }
 
 # A job's verdict from check-runs JSON on stdin: the newest run of each
@@ -177,6 +342,8 @@ head_gate() { # areas fast-verdict
   case "$verdict" in
     success*) echo "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue" ;;
     failure*) echo "failure|Fast tier failed: fast (ubuntu)" ;;
+    # Never ran, out of re-runs: `infra <why>`, underscores for spaces.
+    infra*) echo "failure|Fast tier did not run (${verdict#infra }): fast (ubuntu)" | tr _ ' ' ;;
     *) echo "pending|Waiting for the fast tier: fast (ubuntu)" ;;
   esac
 }
@@ -287,6 +454,7 @@ nowhere() { # fallback-reason job main queue-lines now
 # (`<job> <verdict> <where> <url>`): `<state>|<description>|<url>`.
 queue_gate() {
   awk -v run="$1" '
+    NF == 0 { next }
     {
       job = $1; v = $2; where = $3; url = $4
       gsub(/_/, " ", where)
@@ -305,6 +473,9 @@ queue_gate() {
 
 # --- one pass -------------------------------------------------------------------
 
+# Set when this pass wants a follow-up pass (why), besides an error.
+recheck=''
+
 # Posts merge-gate on $1 unless it already says the same.
 settle() { # sha state description url current-status-json
   local cur
@@ -313,15 +484,125 @@ settle() { # sha state description url current-status-json
   post "$1" "$2" "$3" "$4" && log "${1:0:7}: $2: $3"
 }
 
+# A commit or PR left undecided this pass; the caller ends red.
+skipped() { log "$1: skipped: could not read $2"; }
+
+# A hosted check's verdict from check-runs JSON ($2): check_verdict's line,
+# with a failure looked into. When the jobs behind it never ran:
+# `infra <run> <attempt> <runner OS> <url>` (resolve_infra decides), or
+# pending while that run is still going (a re-run, or other jobs; a re-run
+# needs it finished). Fails when GitHub could not be read.
+hosted_verdict() { # name checks-json
+  local line v url run job jobs kind info state attempt
+  line=$(check_verdict "$1" <<<"$2")
+  read -r v url _ <<<"$line"
+  case "$v $url" in
+    "failure "*/actions/runs/*/job/*) ;;
+    *)
+      echo "$line"
+      return 0
+      ;;
+  esac
+  run=${url#*/actions/runs/}
+  job=${run#*/job/}
+  run=${run%%/*}
+  job=${job%%[!0-9]*}
+  jobs=$(fetch_run_jobs "$run") || return 1
+  kind=$(failure_kind "$job" <<<"$jobs") || return 1
+  case "$kind" in
+    infra*) ;;
+    *)
+      echo "$line"
+      return 0
+      ;;
+  esac
+  info=$(fetch_run "$run") || return 1
+  read -r state attempt <<<"$info"
+  if [ "$state" != completed ]; then
+    echo "pending - 0"
+  else
+    echo "infra $run ${attempt:-1} ${kind#infra } $url"
+  fi
+}
+
+# Job lines on stdin (`<job> <verdict> <where> <url>`, and
+# `<job> infra <run> <attempt> <os> <url>` from hosted_verdict) with the
+# infra ones decided: a run with re-runs left is re-run (once a pass) and
+# its jobs wait; a run without fails them as infrastructure. Beside a job
+# that failed for real they only wait: the commit fails anyway.
+resolve_infra() { # what (for the log)
+  local lines job v run attempt os url real=false done_runs=' '
+  lines=$(cat)
+  if grep -q '^[^ ]* failure ' <<<"$lines"; then real=true; fi
+  while read -r job v run attempt os url; do
+    [ -n "$job" ] || continue
+    if [ "$v" != infra ]; then
+      echo "$job $v $run $attempt"
+    elif $real; then
+      echo "$job pending - -"
+    elif [ "$attempt" -le "$reruns" ]; then
+      if [[ $done_runs != *" $run "* ]]; then
+        done_runs+="$run "
+        if rerun_failed "$run"; then
+          log "$1 $job: no $os runner (attempt $attempt); re-running run $run's failed jobs"
+        else
+          log "$1 $job: could not re-run run $run"
+        fi
+      fi
+      echo "$job pending - -"
+    else
+      log "$1 $job: no $os runner in $attempt attempts"
+      echo "$job failure no_${os}_runner,_${attempt}_attempts $url"
+    fi
+  done <<<"$lines"
+}
+
+# The area table a queue commit brings, read from the commit as queue.yml
+# and the PC read it; main's when GitHub cannot give it.
+commit_table() { # sha
+  local table
+  if table=$(fetch_file "$1" scripts/ci-areas.txt 2>/dev/null) && [ -n "$table" ]; then
+    printf '%s\n' "$table"
+  else
+    log "${1:0:7}: could not read its scripts/ci-areas.txt; using main's"
+    cat scripts/ci-areas.txt
+  fi
+}
+
+# Warns, in the log and as an annotation, when PR $1 is green with auto-merge
+# on but not in the merge queue $enqueue_min minutes later: GitHub missed it
+# (#613). No repair; until then it asks for a follow-up pass to look again.
+missed_enqueue() { # pr gate-state auto-merge-since in-queue lint-verdict status-json now
+  local lv lint_t gs gate_t since min
+  [ "$2" = success ] && [ "${3:-0}" -gt 0 ] && [ "$4" = false ] || return 0
+  read -r lv _ lint_t <<<"$5"
+  [ "$lv" = success ] || return 0
+  read -r gs gate_t _ <<<"$(status_of "$context" <<<"$6")"
+  # Green from this pass on.
+  [ "$gs" = success ] || gate_t=$7
+  since=$3
+  [ "${lint_t:-0}" -le "$since" ] || since=$lint_t
+  [ "${gate_t:-0}" -le "$since" ] || since=$gate_t
+  min=$((($7 - since) / 60))
+  if [ "$min" -ge "$enqueue_min" ]; then
+    log "#$1: green with auto-merge on for $min min, but not in the merge queue"
+    echo "::warning title=Missed enqueue::#$1 is green with auto-merge on but not in the merge queue after $min min. Turn auto-merge off and on: gh pr merge $1 --disable-auto, then gh pr merge $1 --auto."
+  else
+    recheck="#$1 waits for the merge queue"
+  fi
+}
+
 heads_pass() {
-  local list n draft head files areas checks verdict line state desc status rc=0
+  local list n draft head auto queued files areas checks verdict lint line state desc status t v where rc=0
   list=$(fetch_heads) || {
     log "could not list PRs"
     return 1
   }
-  while read -r n draft head; do
+  t=$(now)
+  while read -r n draft head auto queued; do
     if [ -z "$head" ] || [ "$draft" != false ]; then continue; fi
     files=$(fetch_pr_files "$n") || {
+      skipped "#$n" "its files"
       rc=1
       continue
     }
@@ -330,22 +611,44 @@ heads_pass() {
     else
       areas=$(areas_of <<<"$files")
     fi
-    checks=$(fetch_check_runs "$head") || continue
-    verdict=$(check_verdict "fast (ubuntu)" <<<"$checks")
+    checks=$(fetch_check_runs "$head") || {
+      skipped "#$n" "the check runs of ${head:0:7}"
+      rc=1
+      continue
+    }
+    verdict=$(hosted_verdict "fast (ubuntu)" "$checks") || {
+      skipped "#$n" "the run behind fast (ubuntu)"
+      rc=1
+      continue
+    }
+    case "$verdict" in
+      infra*)
+        read -r _ v where _ <<<"$(printf 'fast %s\n' "$verdict" | resolve_infra "#$n")"
+        if [ "$v" = failure ]; then verdict="infra $where"; else verdict="pending - 0"; fi
+        ;;
+    esac
+    # A running fast tier (or its re-run): look again even if its finish is missed.
+    case "$verdict" in pending*) [ -z "$areas" ] || recheck="#$n waits for its fast tier" ;; esac
     line=$(head_gate "$areas" "$verdict")
     state=${line%%|*}
     desc=${line#*|}
-    status=$(fetch_status "$head") || continue
-    settle "$head" "$state" "$desc" "$run_url" "$status"
+    status=$(fetch_status "$head") || {
+      skipped "#$n" "the statuses of ${head:0:7}"
+      rc=1
+      continue
+    }
+    settle "$head" "$state" "$desc" "$run_url" "$status" || rc=1
+    lint=$(check_verdict "lint (ubuntu)" <<<"$checks")
+    missed_enqueue "$n" "$state" "$auto" "$queued" "$lint" "$status" "$t"
   done <<<"$list"
   return "$rc"
 }
 
 queue_pass() {
-  local t main branch sha cmp areas jobs checks status age third prs pr kind cross job hv line state desc url v where u
-  local queue why ready no_hosted=''
+  local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
+  local queue why ready no_hosted='' info disp pcline r rc=0 lines wf extra infra_where
   t=$(now)
-  main=$(fetch_main) || {
+  main=$(fetch_main) && [ -n "$main" ] || {
     log "could not read main"
     return 1
   }
@@ -355,42 +658,101 @@ queue_pass() {
   }
   while read -r branch sha; do
     [ -n "$sha" ] || continue
-    cmp=$(fetch_compare "$main" "$sha") || continue
+    cmp=$(fetch_compare "$main" "$sha") || {
+      skipped "${sha:0:7}" "what it brings onto main"
+      rc=1
+      continue
+    }
     if [ "$(jq '.files | length' <<<"$cmp")" -ge 300 ]; then
       areas='core desktop recognition ios android'
     else
-      areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of)
+      areas=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$cmp" | areas_of "$(commit_table "$sha")")
     fi
     jobs=$(needed_jobs "$areas")
-    checks=$(fetch_check_runs "$sha") || continue
-    status=$(fetch_status "$sha") || continue
-    age=$(((t - $(fetch_commit_time "$sha")) / 60))
+    checks=$(fetch_check_runs "$sha") || {
+      skipped "${sha:0:7}" "its check runs"
+      rc=1
+      continue
+    }
+    status=$(fetch_status "$sha") || {
+      skipped "${sha:0:7}" "its statuses"
+      rc=1
+      continue
+    }
+    made=$(fetch_commit_time "$sha") || made=''
+    case "$made" in '' | *[!0-9]*)
+      skipped "${sha:0:7}" "its commit time"
+      rc=1
+      continue
+      ;;
+    esac
+    age=$(((t - made) / 60))
     third=false
     prs=$(jq -r '.commits[].commit.message | split("\n")[0]' <<<"$cmp" | group_prs)
     [ -n "$prs" ] || third=true
     for pr in $prs; do
-      read -r kind cross <<<"$(fetch_pr "$pr" || echo unknown true)"
+      info=$(fetch_pr "$pr") || {
+        skipped "${sha:0:7}" "PR #$pr"
+        rc=1
+        continue 2
+      }
+      read -r kind cross <<<"$info"
       if [ "$kind" != User ] || [ "$cross" != false ]; then third=true; fi
     done
-    local lines=''
+    lines=''
     for job in $jobs; do
       case "$job" in
         macos | ios | detection)
-          read -r v u _ <<<"$(check_verdict "ci/$job" <<<"$checks")"
+          line=$(hosted_verdict "ci/$job" "$checks") || {
+            skipped "${sha:0:7}" "the run behind ci/$job"
+            rc=1
+            continue 2
+          }
+          read -r v u _ <<<"$line"
           case "$v" in
             success) where=hosted u=- ;;
             failure) where=hosted ;;
+            infra) where='' ;;
             missing) v=pending where=- u=- ;;
             *) where=- u=- ;;
           esac
-          lines+="$job $v $where $u"$'\n'
+          if [ "$v" = infra ]; then lines+="$job $line"$'\n'; else lines+="$job $v $where $u"$'\n'; fi
           ;;
         windows | android)
-          local wf=ci-desktop.yml extra=os=windows
+          wf=ci-desktop.yml extra=os=windows
           [ "$job" = windows ] || wf=ci-android.yml extra=
-          line=$(pc_job "$(status_of "ci/$job" <<<"$status")" "$(check_verdict "ci/$job (hosted)" <<<"$checks")" \
-            "$(fetch_dispatched "$wf" "$sha" 2>/dev/null || echo 0)" "$third" "$age" "$t")
+          pcline=$(status_of "ci/$job" <<<"$status")
+          hv=$(hosted_verdict "ci/$job (hosted)" "$checks") || {
+            skipped "${sha:0:7}" "the run behind ci/$job (hosted)"
+            rc=1
+            continue 2
+          }
+          infra_where=''
+          case "$hv" in
+            infra*)
+              case "${pcline%% *}" in
+                # The PC's result counts; the hosted run is moot.
+                success | failure) hv="pending - 0" ;;
+                *)
+                  r=$(printf '%s %s\n' "$job" "$hv" | resolve_infra "${sha:0:7}")
+                  read -r _ v where u <<<"$r"
+                  if [ "$v" = failure ]; then
+                    hv="failure $u $t" infra_where=$where
+                  else
+                    hv="pending - 0"
+                  fi
+                  ;;
+              esac
+              ;;
+          esac
+          disp=$(fetch_dispatched "$wf" "$sha") || {
+            skipped "${sha:0:7}" "the hosted $job runs"
+            rc=1
+            continue 2
+          }
+          line=$(pc_job "$pcline" "$hv" "$disp" "$third" "$age" "$t")
           read -r v where u <<<"$line"
+          if [ "$v $where" = "failure hosted" ] && [ -n "$infra_where" ]; then where=$infra_where; fi
           if [ "$v" = fallback ]; then
             ready=0
             hosted_ready "$wf" || ready=$?
@@ -401,6 +763,7 @@ queue_pass() {
                   log "${sha:0:7} $job: hosted fallback dispatched ($u)"
                 else
                   log "${sha:0:7} $job: could not dispatch $wf"
+                  rc=1
                 fi
                 v=pending u=-
                 ;;
@@ -415,6 +778,7 @@ queue_pass() {
                 ;;
               *)
                 log "${sha:0:7} $job: could not read $wf; deciding at the next pass"
+                rc=1
                 v=pending u=-
                 ;;
             esac
@@ -423,25 +787,35 @@ queue_pass() {
           ;;
       esac
     done
-    line=$(printf '%s' "$lines" | queue_gate "$run_url")
+    lines=$(printf '%s' "$lines" | resolve_infra "${sha:0:7}")
+    line=$(printf '%s\n' "$lines" | queue_gate "$run_url")
     state=${line%%|*}
     desc=${line#*|}
     url=${desc##*|}
     desc=${desc%|*}
-    settle "$sha" "$state" "$desc" "$url" "$status"
+    [ "$state" != pending ] || recheck="${sha:0:7} is pending"
+    settle "$sha" "$state" "$desc" "$url" "$status" || rc=1
   done <<<"$queue"
+  return "$rc"
 }
 
 # Runs for queue commits the queue no longer has: GitHub deletes a branch
 # under gh-readonly-queue/ when it drops or rebuilds a group, but the runs
 # for it go on and hold the account's five macOS runners (2026-11-03). A
-# trial branch under ci-shadow/ is left alone until it is deleted too.
+# trial branch under ci-shadow/ is left alone until it is deleted too. A run
+# that finished meanwhile is not cancelled, silently.
 stale_pass() {
   local current runs id branch n=0
   # Runs first: a branch exists before its runs start, so a group created
   # between the two reads is in the queue list, never taken for stale.
-  runs=$(fetch_active_runs) || return 1
-  current=$(fetch_queue | awk '{ print $1 }') || return 1
+  runs=$(fetch_active_runs) || {
+    log "could not list the active runs"
+    return 1
+  }
+  current=$(fetch_queue | awk '{ print $1 }') || {
+    log "could not list the queue"
+    return 1
+  }
   while read -r id branch; do
     [ -n "$id" ] || continue
     case "$branch" in gh-readonly-queue/main/* | ci-shadow/main/*) ;; *) continue ;; esac
@@ -455,11 +829,35 @@ stale_pass() {
   [ "$n" -eq 0 ] || log "cancelled $n run(s) of queue commits that left the queue"
 }
 
-if [ -z "${MERGE_GATE_SOURCED:-}" ]; then
-  command -v jq >/dev/null || die "jq not found"
-  rc=0
+# One pass: PR heads, queue commits, stale runs. Red when anything could not
+# be read; then, or when something waits, a follow-up pass in 3 minutes.
+gate_main() {
+  local rc=0 failed
+  : >"$gate_tmp/errors"
+  recheck=''
   heads_pass || rc=1
   queue_pass || rc=1
   stale_pass || rc=1
+  if [ -s "$gate_tmp/errors" ]; then
+    failed=$(sort -u "$gate_tmp/errors" | awk '{ printf "%s%s", (NR > 1 ? "; " : ""), $0 }')
+    echo "::error title=GitHub calls failed::$failed"
+    rc=1
+  fi
+  [ "$rc" -eq 0 ] || recheck="this pass hit an error"
+  if [ -n "$recheck" ]; then
+    if dispatch_recheck; then
+      log "follow-up pass in 3 minutes: $recheck"
+    else
+      log "could not dispatch merge-gate-recheck.yml"
+      rc=1
+    fi
+  fi
+  return "$rc"
+}
+
+if [ -z "${MERGE_GATE_SOURCED:-}" ]; then
+  command -v jq >/dev/null || die "jq not found"
+  rc=0
+  gate_main || rc=1
   exit "$rc"
 fi

@@ -447,7 +447,7 @@ bypass is for `just release` only. Never merge with `--admin`.
 | Commit | What runs | `merge-gate` is green when |
 |---|---|---|
 | PR head | `lint (ubuntu)` and `fast (ubuntu)` (`just test-tier unit`, `just test-tier scripts`) | `fast (ubuntu)` passed ("the full suite runs in the merge queue"), or the PR is docs only |
-| Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran |
+| Queue commit (`gh-readonly-queue/main/*`) | `queue.yml`'s hosted jobs and the PC's two jobs, each when the commit's areas need it | every job it needs passed; the description names each and where it ran. A hosted job that never ran is re-run first (see the gate's passes) |
 
 **Merging.** When a PR's checks are green and it is reviewed, enqueue it:
 `gh pr merge <N> --auto` (the queue sets the method: squash). The queue builds groups of 1 to 4 PRs
@@ -480,7 +480,9 @@ run that includes one deliberately broken case it must fail.
 
 **Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
 diffs the commit against `main`'s merge base and picks the jobs from its
-areas; `merge-gate` reads the same diff, so a skipped job is one it does not
+areas; `merge-gate` reads the same diff by the commit's own
+`scripts/ci-areas.txt` (`main`'s when GitHub cannot give it), as the PC
+does, so a skipped job is one it does not
 wait for.
 
 | Job (status) | Areas | Runs on | Limit |
@@ -582,14 +584,47 @@ says so in a `pending` status; it deletes its `target/` past 60 GB or when
 - **After a restart** of the PC, check that `tailscale serve status` still
   lists `/ci`; if not: `tailscale serve --bg --set-path /ci http://127.0.0.1:8787`.
 
-**Fallback.** `merge-gate` (`scripts/merge-gate.sh`, every 5 minutes and
-after each run) dispatches a PC job hosted when the PC has posted nothing
+**Fallback.** `merge-gate` (`scripts/merge-gate.sh`, after each run and
+status, in follow-up passes, and every 5 minutes) dispatches a PC job hosted when the PC has posted nothing
 10 minutes after the queue commit appeared, when its heartbeat is 10
 minutes old, when it posts `error`, or at once for a group with a fork or
 bot PR: `ci-desktop.yml` with `os=windows` (job `ci/windows (hosted)`, 40
 minutes). The result that finished first counts. There is no hosted
 Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
 needs `ci/android` waits for it.
+
+**The gate's passes** ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)).
+`merge-gate.yml`'s job, `merge-gate pass`, posts the `merge-gate` status;
+it is not the status itself.
+
+- **GitHub calls.** Each goes through one wrapper (`gh_call`): 30 seconds
+  a try, 3 tries with backoff, and a log line naming the endpoint when it
+  still fails. HTTP 404, 409 and 422 are answers, not retried. A PR head or
+  queue commit skipped because of an error is logged ("skipped: could not
+  read …"), and the run ends red with an annotation listing the calls.
+- **Follow-up pass.** A pass that hit an error, or left a queue commit or a
+  running fast tier pending, dispatches `merge-gate-recheck.yml`. It waits
+  3 minutes in its own concurrency group (a newer one replaces it) and runs
+  `merge-gate.yml` again. The 5-minute schedule stays, but GitHub runs it
+  rarely, so nothing relies on it.
+- **A job that never ran.** A hosted job cancelled with no runner and no
+  step started (GitHub's "not acquired" capacity cancels) is no result, nor
+  is a summary job whose failing parts never ran. The gate re-runs the
+  run's failed jobs, at most twice a run (by its run attempt), and waits;
+  after that it fails, worded "no macOS runner, 3 attempts". A job that ran
+  and failed still fails at once. A summary's parts are its caller's jobs
+  named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
+  for `ci/ios`; name new parts that way, or their capacity cancels count
+  as failures.
+- **Missed enqueue.** A PR that is green, has auto-merge on and is still not
+  in the queue 5 minutes later gets a warning in the gate's run (see "A
+  stale gate or a missed enqueue" above). The gate repairs nothing.
+- **Stale runs.** Runs of queue commits the queue dropped are cancelled; a
+  run that finished meanwhile is skipped without a message.
+- **Testing.** `merge-gate.yml` always runs `main`'s script, so a change
+  to it is proven by `scripts/test-merge-gate.sh` (fakes for every GitHub
+  call, and for `gh` itself under the wrapper) and by a shadow run with a
+  deliberately broken job, which shows only that nothing regressed.
 
 **`main`.** `ci.yml` runs the full hosted matrix on each push to `main`, and
 `main-caches.yml` builds the iOS core and the detection gate (model set up,

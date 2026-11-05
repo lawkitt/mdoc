@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Usage: scripts/test-merge-gate.sh
-# scripts/merge-gate.sh (ADR 0095) against fake GitHub calls: its decisions,
-# then one pass over PR heads and queue commits. No network. Bash 3.2
-# compatible.
+# scripts/merge-gate.sh (ADR 0095, ADR 0100) against fake GitHub calls: its
+# GitHub wrapper, its decisions, then passes over PR heads and queue commits.
+# No network. Bash 3.2 compatible.
+# shellcheck disable=SC2329 # the fakes are called by the sourced gate
 source "$(dirname "$0")/lib.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 MERGE_GATE_SOURCED=1
+MERGE_GATE_TMP="$tmp/gate"
 # shellcheck source=merge-gate.sh
 source scripts/merge-gate.sh
-log() { :; }
+logf="$tmp/log"
+log() { echo "$*" >>"$logf"; }
+retry_delay=0
 
 fail() {
   echo "FAIL: $*" >&2
@@ -24,6 +28,111 @@ check() { # name command...
 }
 
 eq() { [ "$1" = "$2" ] || fail "expected '$2', got '$1'"; }
+
+# --- the GitHub wrapper (a fake gh) ------------------------------------------
+
+calls="$tmp/calls"
+reset() {
+  : >"$calls"
+  : >"$logf"
+  : >"$gate_tmp/errors"
+}
+ncalls() { wc -l <"$calls" | tr -d ' '; }
+
+eq "$(gh_what api graphql --paginate -f owner=o)" "POST graphql"
+eq "$(gh_what api -X POST repos/o/r/statuses/abc -f state=success)" "POST repos/o/r/statuses/abc"
+eq "$(gh_what api --paginate "repos/o/r/commits/abc/check-runs?per_page=100" --jq .x)" "GET repos/o/r/commits/abc/check-runs?per_page=100"
+eq "$(gh_what workflow run merge-gate-recheck.yml --repo o/r --ref main)" "workflow run merge-gate-recheck.yml"
+echo "ok: a call names its endpoint"
+
+# A truncated body once, then a whole one: retried, and no error.
+reset
+gh() {
+  echo "$*" >>"$calls"
+  if [ "$(ncalls)" -lt 2 ]; then printf '{"statuses": ['; else echo '{"statuses": []}'; fi
+}
+eq "$(fetch_status abc)" '{"statuses": []}'
+eq "$(ncalls)" 2
+eq "$(cat "$gate_tmp/errors")" ""
+# gh's own "unexpected end of JSON input" (a truncated page under --jq, run
+# 42060750092) every time: 3 tries, then the call fails, naming its endpoint,
+# and the pass's error list has it.
+reset
+gh() {
+  echo "$*" >>"$calls"
+  echo "unexpected end of JSON input" >&2
+  return 1
+}
+if fetch_check_runs abc >/dev/null; then fail "a failed call returned success"; fi
+eq "$(ncalls)" 3
+eq "$(cat "$logf")" "GitHub call failed (3 tries): GET repos/$repo/commits/abc/check-runs?per_page=100: unexpected end of JSON input"
+eq "$(cat "$gate_tmp/errors")" "GET repos/$repo/commits/abc/check-runs?per_page=100"
+# HTTP 500 and then a good answer.
+reset
+gh() {
+  echo "$*" >>"$calls"
+  if [ "$(ncalls)" -lt 3 ]; then
+    echo "gh: Server Error (HTTP 502)" >&2
+    return 1
+  fi
+  echo abc123
+}
+eq "$(fetch_main)" abc123
+eq "$(cat "$gate_tmp/errors")" ""
+# HTTP 404 is an answer: one try, gh's message for the caller, no error.
+reset
+gh() {
+  echo "$*" >>"$calls"
+  echo "gh: Not Found (HTTP 404)" >&2
+  return 1
+}
+if out=$(fetch_workflow_state ci-android.yml 2>&1); then fail "a 404 returned success"; fi
+eq "$out" "gh: Not Found (HTTP 404)"
+eq "$(ncalls)" 1
+eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
+# A run that finished before its cancel (HTTP 409): no "cannot cancel" noise.
+reset
+gh() {
+  echo "gh: Cannot cancel a workflow run that is completed. (HTTP 409)" >&2
+  return 1
+}
+if cancel_run 5 2>"$tmp/stderr"; then fail "a 409 cancel returned success"; fi
+eq "$(cat "$tmp/stderr")$(cat "$logf")$(cat "$gate_tmp/errors")" ""
+echo "ok: GitHub calls retry with backoff, fail naming the endpoint, take 404 and 409 as answers"
+
+# A call that hangs is cut off at its limit (needs timeout(1), as on ubuntu).
+if [ -n "$timeout_cmd" ]; then
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\nsleep 5\n' >"$tmp/bin/gh"
+  chmod +x "$tmp/bin/gh"
+  unset -f gh
+  reset
+  saved_path=$PATH
+  PATH="$tmp/bin:$PATH" tries=1 call_timeout=1
+  if fetch_main >/dev/null; then fail "a hung call returned success"; fi
+  PATH=$saved_path tries=3 call_timeout=30
+  eq "$(cat "$logf")" "GitHub call failed (1 tries): GET repos/$repo/commits/main: no answer in 1s"
+  echo "ok: a hung call is cut off"
+else
+  echo "skip: a hung call is cut off (no timeout command)"
+fi
+
+# The PR list: auto-merge and the queue read from GraphQL.
+reset
+gh() {
+  echo '{"data": {"repository": {"pullRequests": {"nodes": [
+    {"number": 7, "isDraft": false, "headRefOid": "h7", "isInMergeQueue": false, "autoMergeRequest": {"enabledAt": "2026-11-02T11:50:00Z"}},
+    {"number": 8, "isDraft": true, "headRefOid": "h8", "isInMergeQueue": true, "autoMergeRequest": null}]}}}}'
+}
+eq "$(fetch_heads)" "7 false h7 1793620200 false
+8 true h8 0 true"
+echo "ok: PR lines with auto-merge and queue state"
+
+# From here on every GitHub call is faked one level up; a real one is a bug.
+gh() {
+  echo "gh $*" >>"$tmp/unexpected-gh"
+  return 1
+}
 
 # --- decisions -------------------------------------------------------------------
 
@@ -74,6 +183,7 @@ eq "$(head_gate "" missing)" "success|Docs only: no job runs"
 eq "$(head_gate "desktop" "success 1")" "success|Fast tier passed (unit, scripts); the full suite runs in the merge queue"
 eq "$(head_gate "desktop" "failure https://x")" "failure|Fast tier failed: fast (ubuntu)"
 eq "$(head_gate "desktop" missing)" "pending|Waiting for the fast tier: fast (ubuntu)"
+eq "$(head_gate "desktop" "infra no_Linux_runner,_3_attempts")" "failure|Fast tier did not run (no Linux runner, 3 attempts): fast (ubuntu)"
 echo "ok: a PR head's gate"
 
 runs='{"check_runs": [
@@ -98,6 +208,42 @@ done
 # A shard alone is not the gate: only the summary job counts.
 eq "$(check_verdict ci/detection <<<'{"check_runs": [{"id": 2, "name": "ci/detection (1)", "status": "completed", "conclusion": "success", "html_url": "https://d1"}]}')" "missing - 0"
 echo "ok: check-run verdicts (newest run, called jobs, only success passes)"
+
+# Jobs that never ran: run 41857275799 (2026-11-04), its macOS jobs not
+# acquired by a runner, and the detection summary failing over its shards.
+never='{"id": 0, "conclusion": "cancelled", "runner_name": "", "steps": [], "labels": ["macos-26"]}'
+ran='{"id": 0, "conclusion": "failure", "runner_name": "GitHub Actions 7", "steps": [{"status": "completed", "conclusion": "failure"}], "labels": ["ubuntu-latest"]}'
+ok='{"id": 0, "conclusion": "success", "runner_name": "GitHub Actions 8", "steps": [{"status": "completed", "conclusion": "success"}], "labels": ["macos-26"]}'
+job() { jq -c --argjson i "$1" --arg n "$2" '.id = $i | .name = $n' <<<"$3"; }
+jobs_json() { printf '{"jobs": [%s]}' "$(
+  IFS=,
+  echo "$*"
+)"; }
+run41857275799=$(jobs_json "$(job 10 areas "$ok")" "$(job 11 "macos / ci/macos" "$never")" \
+  "$(job 12 ios '{"conclusion": "skipped", "runner_name": null, "steps": [], "labels": []}')" \
+  "$(job 13 "detection / ci/detection (1)" "$never")" "$(job 14 "detection / ci/detection (2)" "$never")" \
+  "$(job 15 "detection / ci/detection" "$ran")" "$(job 16 "detection / detection shards" "$ok")")
+eq "$(failure_kind 11 <<<"$run41857275799")" "infra macOS"
+eq "$(failure_kind 15 <<<"$run41857275799")" "infra macOS"
+# A shard that ran and failed: the summary's failure is a result.
+eq "$(failure_kind 15 <<<"$(jobs_json "$(job 13 "detection / ci/detection (1)" "$ran")" \
+  "$(job 14 "detection / ci/detection (2)" "$never")" "$(job 15 "detection / ci/detection" "$ran")")")" "result"
+# A job cancelled while it ran had a runner: a result.
+eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" \
+  '{"conclusion": "cancelled", "runner_name": "GitHub Actions 9", "steps": [{"status": "completed", "conclusion": "cancelled"}]}')")")" "result"
+# Summaries over parts named after them (ci/macos's two jobs, ci/ios with
+# ci/ios-release): infra only when every failing part never ran; another
+# caller's jobs, and jobs not named after it, are not its parts.
+eq "$(failure_kind 20 <<<"$(jobs_json "$(job 21 "macos / ci/macos (lint)" "$never")" \
+  "$(job 22 "macos / ci/macos (tests)" "$ok")" "$(job 20 "macos / ci/macos" "$ran")")")" "infra macOS"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ran")" \
+  "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "infra macOS"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "lint (ubuntu)" "$never")" "$(job 40 "fast (ubuntu)" "$ran")")")" "result"
+eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "fast (unit)" "${never/macos-26/ubuntu-latest}")" "$(job 40 "fast (ubuntu)" "$ran")")")" "infra Linux"
+eq "$(failure_kind 99 <<<"$run41857275799")" "result"
+echo "ok: a job that never ran, by runner and steps"
 
 statuses='{"statuses": [
   {"context": "ci/windows", "state": "pending", "updated_at": "2026-11-02T12:00:00Z", "target_url": "https://pc/w"},
@@ -136,6 +282,7 @@ eq "$(printf 'macos success hosted -\nwindows failure PC https://pc\nios pending
 eq "$(printf 'macos success hosted -\nandroid pending hosted -\n' | queue_gate https://run)" \
   "pending|Waiting: android; passed: macos (hosted)|https://run"
 eq "$(printf '' | queue_gate https://run)" "success|Docs only: no job runs|https://run"
+eq "$(printf '\n' | queue_gate https://run)" "success|Docs only: no job runs|https://run"
 echo "ok: a queue commit's gate"
 
 # --- one pass against fakes --------------------------------------------------
@@ -144,7 +291,7 @@ posted="$tmp/posted" dispatched="$tmp/dispatched"
 : >"$posted"
 : >"$dispatched"
 now() { echo 1793620800; }
-fetch_heads() { printf '1 false aaaa\n2 false bbbb\n3 true cccc\n4 false dddd\n5 false eeee\n'; }
+fetch_heads() { printf '1 false aaaa 0 false\n2 false bbbb 0 false\n3 true cccc 0 false\n4 false dddd 0 false\n5 false eeee 0 false\n'; }
 fetch_pr_files() {
   case "$1" in
     1) echo docs/x.md ;;
@@ -180,6 +327,7 @@ fetch_pr() { echo "User false"; }
 fetch_dispatched() { echo 0; }
 dispatch() { echo "$*" >>"$dispatched"; }
 fetch_workflow_state() { echo active; }
+fetch_file() { cat "$2"; }
 
 heads_pass
 eq "$(sort "$posted")" "aaaa success Docs only: no job runs
@@ -261,7 +409,9 @@ for down in pppp mmmm; do
     esac
   }
   : >"$posted"
-  queue_pass
+  # The earlier queue commit is skipped: red. Main is read only for the PC's
+  # last post, and gh_call's error list turns that pass red (gate_main).
+  if queue_pass; then [ "$down" = mmmm ] || fail "a pass that could not read $down ended green"; fi
   eq "$(grep '^qqqq' "$posted")" "qqqq pending Waiting: ios, android; passed: macos (hosted), windows (PC), detection (hosted)"
 done
 # Its runner erred, or its heartbeat stopped: nowhere to run.
@@ -280,7 +430,7 @@ fetch_workflow_state() {
 fetch_status() { echo '{"statuses": []}'; }
 : >"$posted"
 : >"$dispatched"
-queue_pass
+if queue_pass; then fail "a pass that could not read a workflow ended green"; fi
 eq "$(grep -c failure "$posted")" 0
 # A disabled workflow is no fallback either.
 fetch_workflow_state() { echo disabled_manually; }
@@ -302,5 +452,229 @@ cancel_run() { echo "$1" >>"$cancelled"; }
 stale_pass
 eq "$(tr '\n' ' ' <"$cancelled")" "12 15 16 "
 echo "ok: runs of queue commits that left the queue are cancelled"
+
+# --- ADR 0100: errors, jobs that never ran, the area table, the follow-up ----
+
+# An error on one PR: the others are decided, the skip is logged, the pass is red.
+: >"$posted"
+: >"$logf"
+fetch_check_runs() {
+  case "$1" in
+    dddd) return 1 ;;
+    bbbb) echo '{"check_runs": [{"id": 1, "name": "fast (ubuntu)", "status": "completed", "conclusion": "success", "html_url": "https://f"}]}' ;;
+    *) echo '{"check_runs": []}' ;;
+  esac
+}
+fetch_status() { echo '{"statuses": []}'; }
+if heads_pass >/dev/null; then fail "a pass that skipped a PR ended green"; fi
+grep -qxF "#4: skipped: could not read the check runs of dddd" "$logf" || fail "the skipped PR is not logged"
+eq "$(cut -d' ' -f1 "$posted" | sort | tr '\n' ' ')" "aaaa bbbb eeee "
+# The same on a queue commit: nothing posted for it, logged, red.
+for broken in fetch_compare fetch_check_runs fetch_status fetch_commit_time fetch_pr fetch_dispatched; do
+  saved_fn=$(declare -f "$broken")
+  eval "$broken() { return 1; }"
+  : >"$posted"
+  : >"$logf"
+  if queue_pass; then fail "a queue pass with a failing $broken ended green"; fi
+  grep -q '^qqqq: skipped: could not read ' "$logf" || fail "$broken: the skipped commit is not logged"
+  eq "$(cat "$posted")" ""
+  eval "$saved_fn"
+done
+echo "ok: a PR head or queue commit skipped by an error is logged, and the pass is red"
+
+# A hosted job that never ran (no runner, no step): re-run, and wait.
+url901=https://github.com/lawkitt/mdoc/actions/runs/900/job/901
+fetch_check_runs() {
+  printf '{"check_runs": [
+    {"id": 5, "name": "macos / ci/macos", "status": "completed", "conclusion": "success", "html_url": "https://mac", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 3, "name": "detection / ci/detection", "status": "completed", "conclusion": "success", "html_url": "https://d", "completed_at": "2026-11-02T11:21:00Z"},
+    {"id": 901, "name": "ios / ci/ios", "status": "completed", "conclusion": "%s", "html_url": "%s", "completed_at": "2026-11-02T11:40:00Z"}]}\n' \
+    "${ios_conclusion:-cancelled}" "$url901"
+}
+fetch_status() { echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z"}, {"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:51:00Z"}]}'; }
+ios901=$never
+fetch_run_jobs() { jobs_json "$(job 900 "areas" "$ok")" "$(job 901 "ios / ci/ios" "$ios901")"; }
+run_state="completed 1"
+fetch_run() { echo "$run_state"; }
+reran="$tmp/reran"
+rerun_failed() { echo "$1" >>"$reran"; }
+queue_once() {
+  : >"$posted"
+  : >"$reran"
+  queue_pass
+}
+queue_once
+eq "$(cat "$reran")" 900
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# Its re-run still going: wait, no second re-run.
+run_state="in_progress 2"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# A second time: one re-run left.
+run_state="completed 2"
+queue_once
+eq "$(cat "$reran")" 900
+# A third time: it fails, worded as infrastructure, linking the job.
+run_state="completed 3"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: ios (no macOS runner, 3 attempts); passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# A job that ran and failed fails at once, never re-run.
+ios_conclusion=failure ios901=$ran run_state="completed 1"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: ios (hosted); passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# Beside a real failure, a job that never ran is not re-run: the commit fails anyway.
+ios_conclusion=cancelled ios901=$never
+fetch_status() { echo '{"statuses": [{"context": "ci/windows", "state": "failure", "updated_at": "2026-11-02T11:50:00Z", "target_url": "https://pc/w"}, {"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:51:00Z"}]}'; }
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: windows (PC); passed: macos (hosted), android (PC), detection (hosted)"
+echo "ok: a hosted job that never ran is re-run twice, then fails as infrastructure; a result fails at once"
+
+# A summary over shards that never ran (ci/detection, run 41857275799).
+ios_conclusion=success
+fetch_status() { echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z"}, {"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:51:00Z"}]}'; }
+fetch_check_runs() {
+  echo '{"check_runs": [
+    {"id": 5, "name": "macos / ci/macos", "status": "completed", "conclusion": "success", "html_url": "https://mac", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 6, "name": "ios / ci/ios", "status": "completed", "conclusion": "success", "html_url": "https://ios", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 15, "name": "detection / ci/detection", "status": "completed", "conclusion": "failure", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/41857275799/job/15", "completed_at": "2026-11-02T11:21:00Z"}]}'
+}
+fetch_run_jobs() { echo "$run41857275799"; }
+run_state="completed 1"
+queue_once
+eq "$(cat "$reran")" 41857275799
+eq "$(cat "$posted")" "qqqq pending Waiting: detection; passed: macos (hosted), windows (PC), ios (hosted), android (PC)"
+echo "ok: a detection summary over shards that never ran is re-run"
+
+# A fast tier that never ran on a PR head: re-run; out of re-runs, it fails
+# as infrastructure.
+fetch_heads() { echo "2 false bbbb 0 false"; }
+fetch_pr_files() { echo src/main.rs; }
+fetch_check_runs() { echo '{"check_runs": [{"id": 41, "name": "fast (ubuntu)", "status": "completed", "conclusion": "cancelled", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/700/job/41"}]}'; }
+fetch_run_jobs() { jobs_json "$(job 41 "fast (ubuntu)" "${never/macos-26/ubuntu-latest}")"; }
+fetch_status() { echo '{"statuses": []}'; }
+: >"$posted"
+: >"$reran"
+heads_pass
+eq "$(cat "$reran")" 700
+eq "$(cat "$posted")" "bbbb pending Waiting for the fast tier: fast (ubuntu)"
+run_state="completed 3"
+: >"$posted"
+: >"$reran"
+heads_pass
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "bbbb failure Fast tier did not run (no Linux runner, 3 attempts): fast (ubuntu)"
+echo "ok: a fast tier that never ran is re-run, then fails as infrastructure"
+
+# The queue commit's own area table: one that makes everything docs needs
+# no job; when GitHub cannot give it, main's.
+fetch_check_runs() { echo '{"check_runs": []}'; }
+fetch_file() { printf 'none  **\n'; }
+: >"$posted"
+queue_pass
+eq "$(cat "$posted")" "qqqq success Docs only: no job runs"
+fetch_file() {
+  echo "gh: Not Found (HTTP 404)" >&2
+  return 1
+}
+: >"$posted"
+: >"$logf"
+queue_pass 2>/dev/null
+# Main's table: Cargo.lock (renamed away) is core, every job.
+eq "$(cut -d' ' -f1-3 "$posted")" "qqqq failure Failed:"
+grep -qxF "qqqq: could not read its scripts/ci-areas.txt; using main's" "$logf" || fail "no log of main's table"
+fetch_file() { cat "$2"; }
+echo "ok: the queue commit's own area table, else main's"
+
+# Missed enqueue (#613): green, auto-merge on, not in the queue.
+t=1793620800
+fetch_heads() { echo "2 false bbbb $m_since $m_queued"; }
+fetch_check_runs() {
+  echo '{"check_runs": [
+    {"id": 1, "name": "fast (ubuntu)", "status": "completed", "conclusion": "success", "html_url": "https://f", "completed_at": "2026-11-02T11:40:00Z"},
+    {"id": 2, "name": "lint (ubuntu)", "status": "completed", "conclusion": "success", "html_url": "https://l", "completed_at": "2026-11-02T11:41:00Z"}]}'
+}
+fetch_status() { printf '{"statuses": [{"context": "merge-gate", "state": "success", "updated_at": "%s", "description": "Fast tier passed (unit, scripts); the full suite runs in the merge queue"}]}\n' "$m_gate"; }
+for case in "$((t - 900)) false 2026-11-02T11:50:00Z warn" "$((t - 900)) false 2026-11-02T11:57:00Z wait" \
+  "$((t - 900)) true 2026-11-02T11:50:00Z none" "0 false 2026-11-02T11:50:00Z none"; do
+  read -r m_since m_queued m_gate want <<<"$case"
+  : >"$posted"
+  : >"$logf"
+  recheck=''
+  heads_pass >"$tmp/out"
+  eq "$(cat "$posted")" ""
+  case "$want" in
+    warn)
+      eq "$(cat "$tmp/out")" "::warning title=Missed enqueue::#2 is green with auto-merge on but not in the merge queue after 10 min. Turn auto-merge off and on: gh pr merge 2 --disable-auto, then gh pr merge 2 --auto."
+      eq "$recheck" ""
+      ;;
+    wait) eq "$(cat "$tmp/out")|$recheck" "|#2 waits for the merge queue" ;;
+    none) eq "$(cat "$tmp/out")|$recheck" "|" ;;
+  esac
+done
+echo "ok: a green PR with auto-merge on, out of the queue for 5 minutes, gets a warning"
+
+# The follow-up pass: dispatched after an error or with a queue commit
+# pending, not when all is settled.
+rechecks="$tmp/rechecks"
+dispatch_recheck() { echo recheck >>"$rechecks"; }
+fetch_active_runs() { :; }
+fetch_heads() { echo "1 false aaaa 0 false"; }
+fetch_pr_files() { echo docs/x.md; }
+fetch_status() { echo '{"statuses": []}'; }
+fetch_check_runs() { echo '{"check_runs": []}'; }
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "docs/x.md"}], "commits": [{"commit": {"message": "Docs (#514)"}}]}'
+}
+main_once() {
+  : >"$rechecks"
+  : >"$logf"
+  rc=0
+  gate_main >"$tmp/out" || rc=$?
+}
+main_once
+eq "$rc|$(cat "$rechecks")" "0|"
+# A queue commit waits for a job.
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "apps/ios/App.swift"}], "commits": [{"commit": {"message": "iOS (#514)"}}]}'
+}
+main_once
+eq "$rc|$(cat "$rechecks")" "0|recheck"
+grep -qxF "follow-up pass in 3 minutes: qqqq is pending" "$logf" || fail "the follow-up pass is not logged"
+# A GitHub call that keeps failing: red, an error annotation, a follow-up.
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "docs/x.md"}], "commits": [{"commit": {"message": "Docs (#514)"}}]}'
+}
+gh() {
+  echo "gh: Bad Gateway (HTTP 502)" >&2
+  return 1
+}
+fetch_pr() { gh_call text api "repos/$repo/pulls/$1" --jq .user.type; }
+main_once
+eq "$rc|$(cat "$rechecks")" "1|recheck"
+eq "$(cat "$tmp/out")" "::error title=GitHub calls failed::GET repos/$repo/pulls/514"
+grep -qxF "qqqq: skipped: could not read PR #514" "$logf" || fail "the skipped commit is not logged"
+# The follow-up cannot be dispatched: red too.
+fetch_pr() { echo "User false"; }
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "apps/ios/App.swift"}], "commits": [{"commit": {"message": "iOS (#514)"}}]}'
+}
+dispatch_recheck() { return 1; }
+main_once
+eq "$rc" 1
+echo "ok: a pass with an error or a pending queue commit dispatches merge-gate-recheck.yml"
+
+gh() {
+  echo "gh $*" >>"$tmp/unexpected-gh"
+  return 1
+}
+[ ! -s "$tmp/unexpected-gh" ] || fail "real GitHub calls: $(cat "$tmp/unexpected-gh")"
 
 echo "merge gate: all checks passed"
