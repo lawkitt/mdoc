@@ -682,13 +682,20 @@ heads_once
 eq "$(sort "$posted")" "bbbb success Fast tier passed (unit, scripts); the full suite runs in the merge queue
 ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
 eq "$recheck" "#575 waits for its head checks"
-# Not started yet: no check runs of it at all.
+# Not started yet: no check runs of it at all while the CI run goes on.
 fetch_check_runs() { printf '{"check_runs": [%s]}\n' "$fast_run"; }
+run_state="in_progress 1"
 heads_once
 eq "$(grep ffff "$posted")" "ffff pending Fast tier passed; waiting for the detection gate: detection-head / ci/detection"
 # CI's own run starts the next pass, so no follow-up pass for a job that
 # never started (it would repeat every 3 minutes).
 eq "$recheck" ""
+# A CI run that finished without it (a ci.yml from before the head runs:
+# #579, #599 and #600 on 2026-11-06) is not waited for: the queue runs it.
+run_state="completed 1"
+heads_once
+eq "$(grep ffff "$posted")" "ffff success Fast tier passed (unit, scripts); the full suite runs in the merge queue"
+eq "$(run_of "success https://github.com/lawkitt/mdoc/actions/runs/700/job/41 1")$(run_of "pending - 0")" 700
 # Passed.
 fetch_check_runs() { det_runs completed '"success"'; }
 heads_once

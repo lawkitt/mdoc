@@ -10,8 +10,9 @@
 #   a file on the table's recognition lines, head_detection in lib.sh) also
 #   waits for the detection gate on its head, `detection-head / ci/detection`
 #   (ci.yml); a failure names `just snapshots-fetch <PR>`. That job skipped
-#   (ci.yml's own copy of the table said no) counts as not needed: the queue
-#   runs the gate anyway.
+#   (ci.yml's own copy of the table said no), or a finished CI run without
+#   it (one from before this rule), counts as not needed: the queue runs the
+#   gate anyway.
 #   A queue commit (a branch under gh-readonly-queue/main/, or ci-shadow/main/
 #   for the shadow trial): green only when every job its areas need passed,
 #   each named with where it ran. Its areas come from its own
@@ -385,6 +386,16 @@ status_of() { # context
 head_detection_check='detection-head / ci/detection'
 head_detection_job=detection-head
 
+# The workflow run of a finished check's verdict line (`<verdict> <url> ...`,
+# a job URL), or nothing.
+run_of() { # verdict-line
+  local url
+  read -r _ url _ <<<"$1"
+  case "$url" in */actions/runs/*/job/*) ;; *) return 0 ;; esac
+  url=${url#*/actions/runs/}
+  echo "${url%%/*}"
+}
+
 # The merge-gate state for a PR head: `<state>|<description>`. A
 # recognition-area PR passes a detection verdict and its number; without
 # one, or with it skipped, only the fast tier counts.
@@ -695,7 +706,7 @@ missed_enqueue() { # pr gate-state auto-merge-since in-queue lint-verdict status
 }
 
 heads_pass() {
-  local list n draft head auto queued files areas checks verdict det detects lines job lint line state desc status url t v where rc=0
+  local list n draft head auto queued files areas checks verdict det detects head_run info lines job lint line state desc status url t v where rc=0
   list=$(fetch_heads) || {
     log "could not list PRs"
     return 1
@@ -737,10 +748,26 @@ heads_pass() {
         rc=1
         continue
       }
-      # ci.yml skipped it: its copy of the table (the PR's) said no, or its
-      # areas job failed. Not needed here; the queue runs the gate.
+      # Not needed here, the queue runs the gate: ci.yml skipped it (its copy
+      # of the table, the PR's, said no, or its areas job failed), or the
+      # head's CI run finished without it (a ci.yml from before ADR 0100's
+      # head runs).
       case "$det" in
-        missing*) [ "$(check_verdict "$head_detection_job" <<<"$checks")" != "skipped - 0" ] || det="skipped - 0" ;;
+        missing*)
+          if [ "$(check_verdict "$head_detection_job" <<<"$checks")" = "skipped - 0" ]; then
+            det="skipped - 0"
+          else
+            head_run=$(run_of "$verdict")
+            if [ -n "$head_run" ]; then
+              info=$(fetch_run "$head_run") || {
+                skipped "#$n" "run $head_run"
+                rc=1
+                continue
+              }
+              [ "${info%% *}" != completed ] || det="skipped - 0"
+            fi
+          fi
+          ;;
       esac
     fi
     # Jobs that never ran, decided together (both are in the PR's CI run):
