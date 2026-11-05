@@ -2,7 +2,7 @@
   "model": "gliner2-pii-fp16-e5948986",
   "threshold": 0.5,
   "entities": [
-    {"start":50,"end":63,"label":"person","score":0.97622,"text":"Wren Calloway"},
+    {"start":50,"end":63,"label":"person","score":0.91622,"text":"Wren Calloway"},
     {"start":135,"end":152,"label":"organization","score":0.98687875,"text":"Halden Crate Ltd."},
     {"start":391,"end":411,"label":"organization","score":0.8079157,"text":"halden-crate.invalid"},
     {"start":1159,"end":1174,"label":"full_name","score":0.98347044,"text":"Ansel Pellbrook"},
