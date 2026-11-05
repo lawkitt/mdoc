@@ -174,6 +174,71 @@ final class RealCoreTests: XCTestCase {
         XCTAssertFalse(after.markdown.contains("Ms Ellison's"))
     }
 
+    /// ADR 0098 through the real core: a mark proposes in the guessed
+    /// category, decisions and identity changes undo one step at a time,
+    /// and each saves into the case without taking an undone step back.
+    func testReviewBarCallsUndoAndSaveThroughTheCore() throws {
+        let core = try core()
+        let session = try reviewed(core)
+        let text = session.snapshot().markdown
+        let range = try XCTUnwrap(text.range(of: "Ms Ellison"))
+        let start = text.utf8.distance(from: text.utf8.startIndex, to: range.lowerBound)
+        let marked = try session.markSelection(SourceRange(start: start, end: start + "Ms Ellison".utf8.count))
+        XCTAssertTrue(marked.markdown.contains("Ms Ellison"), "a mark proposes, it does not replace")
+        let ellison = try XCTUnwrap(marked.candidates.first { $0.original == "Ms Ellison" })
+        XCTAssertEqual(ellison.state, .proposed)
+        XCTAssertEqual(marked.undoStep?.kind, .mark)
+        XCTAssertEqual(marked.undoStep?.candidateID, ellison.id)
+
+        let email = try XCTUnwrap(marked.candidates.first { $0.category == .email })
+        let replaced = try session.decide(email.id, .replace, scope: .allOccurrences)
+        XCTAssertEqual(replaced.undoStep?.label, "Replace · maya.ellison@example.com")
+        let alias = try XCTUnwrap(replaced.candidates.first { $0.identityID == email.identityID })
+        let renamed = try session.rename(alias.id, scope: .allOccurrences, to: "CONTACT")
+        XCTAssertTrue(renamed.markdown.contains("CONTACT"))
+        XCTAssertEqual(renamed.undoStep?.label, "Rename · CONTACT")
+        let contact = try XCTUnwrap(renamed.candidates.first { $0.alias == "CONTACT" })
+        XCTAssertEqual(renamed.undoStep?.candidateID, contact.id)
+        let name = try XCTUnwrap(renamed.candidates.first { $0.original == "Ms Ellison" })
+        XCTAssertThrowsError(try session.rename(name.id, scope: .allOccurrences, to: "CONTACT")) { error in
+            XCTAssertEqual(error as? CoreError, .aliasTaken(alias: "CONTACT", by: email.identityID))
+        }
+        XCTAssertThrowsError(try session.rename(name.id, scope: .allOccurrences, to: "no spaces")) { error in
+            guard case .refused = error as? CoreError else { return XCTFail("\(error)") }
+        }
+
+        let undone = try session.undo()
+        XCTAssertFalse(undone.markdown.contains("CONTACT"))
+        XCTAssertEqual(undone.redoStep?.kind, .rename)
+        // Saved after the undo, reopened: still undone.
+        let reopened = try core.library.session(for: session.id).snapshot()
+        XCTAssertFalse(reopened.markdown.contains("CONTACT"))
+        XCTAssertTrue(try session.redo().markdown.contains("CONTACT"))
+
+        let choices = try session.categoryChoices(for: name.id, scope: .allOccurrences)
+        XCTAssertEqual(choices.count, Category.allCases.count)
+        XCTAssertEqual(choices.filter(\.isCurrent).map(\.category), [name.category])
+        var person = name
+        if person.category != .person {
+            let recategorized = try session.setCategory(person.id, scope: .allOccurrences, to: .person)
+            XCTAssertEqual(recategorized.undoStep?.label, "Category · Person")
+            person = try XCTUnwrap(recategorized.candidates.first { $0.original == "Ms Ellison" })
+        }
+        // The address belongs to Ms Ellison.
+        let owned = try session.setOwner(email.identityID, to: person.identityID)
+        XCTAssertEqual(owned.identities.first { $0.id == email.identityID }?.owner, person.identityID)
+        XCTAssertEqual(owned.undoStep?.kind, .owner)
+
+        let split = try session.newAlias(contact.id)
+        XCTAssertEqual(split.undoStep?.kind, .newAlias)
+        let moved = try XCTUnwrap(split.undoStep?.candidateID)
+        XCTAssertNotEqual(split.candidate(moved)?.identityID, email.identityID)
+        XCTAssertFalse(split.markdown.contains("CONTACT"))
+        let linked = try session.sameAs(moved, scope: .justThisOne, target: email.identityID)
+        XCTAssertEqual(linked.undoStep?.kind, .sameAs)
+        XCTAssertTrue(linked.markdown.contains("CONTACT"))
+    }
+
     func testAScanNeedsOCRToReadAPhoto() throws {
         let core = try core()
         let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).jpegData(withCompressionQuality: 0.9) { _ in }

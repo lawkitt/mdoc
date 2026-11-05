@@ -4,6 +4,7 @@
     "%@ (%lld)": {
       "shouldTranslate": false
     },
+    "%@ is another name's alias.": {},
     "%@, kept": {},
     "%@, proposed as %@": {},
     "%@, replaced; was %@": {},

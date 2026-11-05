@@ -40,8 +40,47 @@ private struct FakeIdentity {
     var category: Category
     var variants: [String]
     var alias: String
+    var owner: IdentityID? = nil
 
     var primary: String { variants.max { $0.count < $1.count } ?? "" }
+}
+
+/// One undo step of the fake's history (ADR 0098).
+private struct FakeStep {
+    var kind: HistoryStepKind
+    var subject: String
+    var candidate: CandidateID?
+    var identity: IdentityID?
+
+    var label: String {
+        let kind = switch kind {
+        case .replace: "Replace"
+        case .keep: "Keep"
+        case .replaceAll: "Replace all"
+        case .mark: "Mark"
+        case .rename: "Rename"
+        case .category: "Category"
+        case .sameAs: "Same as"
+        case .newAlias: "New alias"
+        case .owner: "Belongs to"
+        case .joinCase: "Join case"
+        }
+        return subject.isEmpty ? kind : "\(kind) · \(subject)"
+    }
+}
+
+/// A state Undo or Redo reaches: the document and its case's identities.
+private struct FakeSaved {
+    var document: FakeDocument
+    var identities: [FakeIdentity]
+    /// The step that made this state.
+    var step: FakeStep?
+}
+
+private struct FakeHistory {
+    var undo: [FakeSaved] = []
+    var redo: [FakeSaved] = []
+    var step: FakeStep?
 }
 
 private struct FakeCase {
@@ -238,6 +277,102 @@ private final class FakeState: @unchecked Sendable {
     /// Identities of documents without a case (none in the fixtures).
     var orphanIdentities: [FakeIdentity] = []
 
+    // MARK: Review bar (ADR 0098)
+
+    var histories: [DocumentID: FakeHistory] = [:]
+    /// Dismissed merge hints, as (from, into) identity ids.
+    var dismissedHints: Set<[String]> = []
+
+    func identities(of caseID: CaseID?) -> [FakeIdentity] {
+        caseIndex(of: caseID).map { cases[$0].identities } ?? orphanIdentities
+    }
+
+    func setIdentities(_ identities: [FakeIdentity], of caseID: CaseID?) {
+        if let index = caseIndex(of: caseID) {
+            cases[index].identities = identities
+        } else {
+            orphanIdentities = identities
+        }
+    }
+
+    func updateIdentity(_ id: IdentityID, of caseID: CaseID?, _ body: (inout FakeIdentity) throws -> Void) throws {
+        var identities = identities(of: caseID)
+        guard let index = identities.firstIndex(where: { $0.id == id }) else { throw CoreError.notFound }
+        try body(&identities[index])
+        setIdentities(identities, of: caseID)
+    }
+
+    /// The next free `TOKEN_n` in the case.
+    func nextAlias(_ category: Category, caseID: CaseID?) -> String {
+        let taken = Set(identities(of: caseID).map(\.alias))
+        var number = 1
+        while taken.contains("\(category.token)_\(number)") { number += 1 }
+        return "\(category.token)_\(number)"
+    }
+
+    func addIdentity(_ category: Category, alias: String? = nil, variants: [String], caseID: CaseID?) -> FakeIdentity {
+        let identity = FakeIdentity(
+            id: IdentityID(rawValue: nextID("i")), category: category, variants: variants,
+            alias: alias ?? nextAlias(category, caseID: caseID))
+        setIdentities(identities(of: caseID) + [identity], of: caseID)
+        return identity
+    }
+
+    /// Run `change` on document `id` as one undo step; it clears Redo.
+    func record(_ id: DocumentID, _ step: FakeStep, _ change: (Int) throws -> Void) throws {
+        guard let index = index(of: id) else { throw CoreError.notFound }
+        let caseID = documents[index].caseID
+        let saved = FakeSaved(document: documents[index], identities: identities(of: caseID), step: histories[id]?.step)
+        try change(index)
+        documents[index].updated = Date()
+        var history = histories[id] ?? FakeHistory()
+        history.undo.append(saved)
+        if history.undo.count > 256 { history.undo.removeFirst() }
+        history.redo = []
+        history.step = step
+        histories[id] = history
+    }
+
+    /// Undo (`back`) or Redo; nothing to travel to changes nothing.
+    func travel(_ id: DocumentID, back: Bool) throws {
+        guard let index = index(of: id) else { throw CoreError.notFound }
+        var history = histories[id] ?? FakeHistory()
+        guard let target = back ? history.undo.popLast() : history.redo.popLast() else { return }
+        let caseID = documents[index].caseID
+        let current = FakeSaved(document: documents[index], identities: identities(of: caseID), step: history.step)
+        if back { history.redo.append(current) } else { history.undo.append(current) }
+        documents[index] = target.document
+        setIdentities(target.identities, of: caseID)
+        history.step = target.step
+        histories[id] = history
+    }
+
+    /// Two people or organizations whose wordings end alike look like one
+    /// subject: the shorter hints at the fuller (ADR 0080, roughly).
+    func mergeHints(_ identities: [Identity]) -> [MergeHint] {
+        let last = { (wording: String) in wording.split(separator: " ").last.map { $0.lowercased() } }
+        var hints: [MergeHint] = []
+        for from in identities where [.person, .organization].contains(from.category) {
+            let into = identities.first { other in
+                other.id != from.id && other.category == from.category
+                    && other.primaryWording.count > from.primaryWording.count
+                    && last(other.primaryWording) == last(from.primaryWording)
+            }
+            if let into, !dismissedHints.contains([from.id.rawValue, into.id.rawValue]) {
+                hints.append(MergeHint(from: from.id, into: into.id, wording: into.primaryWording))
+            }
+        }
+        return hints
+    }
+
+    func historyStep(_ step: FakeStep?, rendering: Rendering) -> HistoryStep? {
+        guard let step else { return nil }
+        let candidate = step.candidate.flatMap { id in rendering.candidates.first { $0.id == id } }
+        return HistoryStep(
+            kind: step.kind, label: step.label, subject: step.subject, range: candidate?.range,
+            candidateID: candidate?.id, identityID: candidate?.identityID ?? step.identity)
+    }
+
     static func occurrences(of needle: String, in haystack: String) -> [SourceRange] {
         var result: [SourceRange] = []
         var searchStart = haystack.startIndex
@@ -291,8 +426,9 @@ private final class FakeState: @unchecked Sendable {
             return Identity(
                 id: identity.id, alias: identity.alias, category: identity.category,
                 primaryWording: identity.primary, variants: identity.variants,
-                mentionCount: mentions.count, state: state)
+                mentionCount: mentions.count, state: state, owner: identity.owner)
         }
+        let history = histories[id] ?? FakeHistory()
         let phase: DocumentPhase
         if !document.recognized {
             phase = .recognizing
@@ -313,7 +449,11 @@ private final class FakeState: @unchecked Sendable {
             styling: MarkdownStyling(markdown: rendering.markdown), candidates: rendering.candidates,
             identities: identities, original: document.original,
             pagesDone: document.pagesDone, pageCount: document.pages.count, reply: reply,
-            warning: document.recognized ? document.warning : nil)
+            warning: document.recognized ? document.warning : nil,
+            mergeHints: mergeHints(identities),
+            canUndo: !history.undo.isEmpty, canRedo: !history.redo.isEmpty,
+            undoStep: history.undo.isEmpty ? nil : historyStep(history.step, rendering: rendering),
+            redoStep: historyStep(history.redo.last?.step, rendering: rendering))
     }
 
     func summary(_ document: FakeDocument) -> DocumentSummary {
@@ -548,39 +688,48 @@ private final class FakeSession: DocumentSession {
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {
         try state.locked {
-            guard let index = state.index(of: id),
-                  let mention = state.documents[index].mentions.firstIndex(where: { $0.id == candidate }) else {
-                throw CoreError.notFound
-            }
-            let document = state.documents[index]
-            let identityID = document.mentions[mention].identityID
-            let targets = scope == .justThisOne
-                ? [mention]
-                : document.mentions.indices.filter { document.mentions[$0].identityID == identityID }
-            switch decision {
-            case .keep:
-                for target in targets {
-                    state.documents[index].mentions[target].state = .kept
-                }
-            case .replace:
-                for target in targets {
-                    state.documents[index].mentions[target].state = .replaced
+            let (_, mention) = try located(candidate)
+            let step = FakeStep(
+                kind: decision == .replace ? .replace : .keep, subject: mention.original, candidate: candidate,
+                identity: mention.identityID)
+            try state.record(id, step) { index in
+                let document = state.documents[index]
+                for target in document.mentions.indices
+                where scope == .justThisOne
+                    ? document.mentions[target].id == candidate
+                    : document.mentions[target].identityID == mention.identityID {
+                    state.documents[index].mentions[target].state = decision == .replace ? .replaced : .kept
                 }
             }
-            state.documents[index].updated = Date()
             return try state.snapshot(id)
         }
     }
 
     func replaceAllPending() throws -> DocumentSnapshot {
-        try mutate { document in
-            for index in document.mentions.indices where document.mentions[index].state == .proposed {
-                document.mentions[index].state = .replaced
+        try state.locked {
+            let pending = try state.snapshot(id).pendingCount
+            guard pending > 0 else { return try state.snapshot(id) }
+            try state.record(id, FakeStep(kind: .replaceAll, subject: String(pending))) { index in
+                for mention in state.documents[index].mentions.indices
+                where state.documents[index].mentions[mention].state == .proposed {
+                    state.documents[index].mentions[mention].state = .replaced
+                }
             }
+            return try state.snapshot(id)
         }
     }
 
     func addReplacement(_ range: SourceRange, category: Category) throws -> DocumentSnapshot {
+        try mark(range, category: category, state: .replaced)
+    }
+
+    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
+        try mark(range, category: nil, state: .proposed)
+    }
+
+    /// A manual identity for the selection, in every exact repeat; without
+    /// a category, a rough guess as the core's.
+    private func mark(_ range: SourceRange, category: Category?, state mentionState: MentionState) throws -> DocumentSnapshot {
         try state.locked {
             guard let index = state.index(of: id) else { throw CoreError.notFound }
             let document = state.documents[index]
@@ -593,25 +742,193 @@ private final class FakeSession: DocumentSession {
             let wording = String(decoding: utf8[sourceRange.start..<sourceRange.end], as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !wording.isEmpty else { throw CoreError.emptySelection }
-            let used = state.caseIndex(of: document.caseID).map { state.cases[$0].identities } ?? state.orphanIdentities
-            let number = used.filter { $0.category == category }.count + 1
-            let identity = FakeIdentity(
-                id: IdentityID(rawValue: state.nextID("i")), category: category,
-                variants: [wording], alias: "\(category.token)_\(number)")
-            if let caseIndex = state.caseIndex(of: document.caseID) {
-                state.cases[caseIndex].identities.append(identity)
-            } else {
-                state.orphanIdentities.append(identity)
+            let category = category ?? (wording.contains("@") ? .email : .person)
+            let first = CandidateID(rawValue: state.nextID("m"))
+            try state.record(id, FakeStep(kind: .mark, subject: wording, candidate: first)) { index in
+                let identity = state.addIdentity(category, variants: [wording], caseID: document.caseID)
+                var mentionID: CandidateID? = first
+                for repeatRange in FakeState.occurrences(of: wording, in: source)
+                where !document.mentions.contains(where: { $0.range.overlaps(repeatRange) }) {
+                    state.documents[index].mentions.append(FakeMention(
+                        id: mentionID ?? CandidateID(rawValue: state.nextID("m")), identityID: identity.id,
+                        range: repeatRange, state: mentionState))
+                    mentionID = nil
+                }
+                state.documents[index].mentions.sort { $0.range.start < $1.range.start }
+                state.documents[index].scanned = true
             }
-            for repeatRange in FakeState.occurrences(of: wording, in: source)
-            where !document.mentions.contains(where: { $0.range.overlaps(repeatRange) }) {
-                state.documents[index].mentions.append(FakeMention(
-                    id: CandidateID(rawValue: state.nextID("m")), identityID: identity.id,
-                    range: repeatRange, state: .replaced))
-            }
-            state.documents[index].mentions.sort { $0.range.start < $1.range.start }
-            state.documents[index].scanned = true
             return try state.snapshot(id)
+        }
+    }
+
+    func undo() throws -> DocumentSnapshot {
+        try state.locked {
+            try state.travel(id, back: true)
+            return try state.snapshot(id)
+        }
+    }
+
+    func redo() throws -> DocumentSnapshot {
+        try state.locked {
+            try state.travel(id, back: false)
+            return try state.snapshot(id)
+        }
+    }
+
+    func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
+        try state.locked {
+            let (document, mention) = try located(candidate)
+            let value = alias.trimmingCharacters(in: .whitespaces)
+            let identities = state.identities(of: document.caseID)
+            guard let current = identities.first(where: { $0.id == mention.identityID }) else { throw CoreError.notFound }
+            if current.alias == value { return try state.snapshot(id) }
+            if let other = identities.first(where: { $0.alias == value && $0.id != current.id }) {
+                throw CoreError.aliasTaken(alias: value, by: other.id)
+            }
+            let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+            guard !value.isEmpty, value.count <= 128, value.unicodeScalars.allSatisfy(allowed.contains) else {
+                throw CoreError.refused("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).")
+            }
+            try state.record(id, FakeStep(kind: .rename, subject: value, candidate: candidate)) { index in
+                if scope == .allOccurrences {
+                    try state.updateIdentity(current.id, of: document.caseID) { $0.alias = value }
+                } else {
+                    split(index, candidate, into: state.addIdentity(
+                        current.category, alias: value, variants: [mention.original], caseID: document.caseID))
+                }
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice] {
+        try state.locked {
+            let (document, mention) = try located(candidate)
+            return Category.allCases.map { category in
+                let same = category == mention.category && scope == .allOccurrences
+                return CategoryChoice(
+                    category: category, alias: same ? nil : state.nextAlias(category, caseID: document.caseID),
+                    isCurrent: category == mention.category)
+            }
+        }
+    }
+
+    func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot {
+        try state.locked {
+            let (document, mention) = try located(candidate)
+            if scope == .allOccurrences && category == mention.category { return try state.snapshot(id) }
+            try state.record(id, FakeStep(kind: .category, subject: category.label, candidate: candidate)) { index in
+                if scope == .allOccurrences {
+                    let alias = state.nextAlias(category, caseID: document.caseID)
+                    try state.updateIdentity(mention.identityID, of: document.caseID) {
+                        $0.category = category
+                        $0.alias = alias
+                        $0.owner = nil
+                    }
+                } else {
+                    split(index, candidate, into: state.addIdentity(
+                        category, variants: [mention.original], caseID: document.caseID))
+                }
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot {
+        try state.locked {
+            let (document, mention) = try located(candidate)
+            guard let into = state.identities(of: document.caseID).first(where: { $0.id == target }) else {
+                throw CoreError.notFound
+            }
+            try state.record(id, FakeStep(kind: .sameAs, subject: into.primary, candidate: candidate, identity: target)) { index in
+                if scope == .allOccurrences {
+                    try merge(index, mention.identityID, into: target)
+                } else {
+                    split(index, candidate, into: into)
+                }
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot {
+        try state.locked {
+            guard let index = state.index(of: id),
+                  let into = state.identities(of: state.documents[index].caseID).first(where: { $0.id == target }) else {
+                throw CoreError.notFound
+            }
+            try state.record(id, FakeStep(kind: .sameAs, subject: into.primary, identity: target)) { index in
+                try merge(index, identity, into: target)
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func newAlias(_ candidate: CandidateID) throws -> DocumentSnapshot {
+        try state.locked {
+            let (document, mention) = try located(candidate)
+            let alias = state.nextAlias(mention.category, caseID: document.caseID)
+            try state.record(id, FakeStep(kind: .newAlias, subject: alias, candidate: candidate)) { index in
+                split(index, candidate, into: state.addIdentity(
+                    mention.category, alias: alias, variants: [mention.original], caseID: document.caseID))
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot {
+        try state.locked {
+            guard let index = state.index(of: id) else { throw CoreError.notFound }
+            let caseID = state.documents[index].caseID
+            let identities = state.identities(of: caseID)
+            guard let owned = identities.first(where: { $0.id == identity }) else { throw CoreError.notFound }
+            let people: Set<Category> = [.person, .organization]
+            if people.contains(owned.category) {
+                throw CoreError.refused("Assign ownership to a contact, address or identifier.")
+            }
+            let ownerIdentity = owner.flatMap { owner in identities.first { $0.id == owner } }
+            if owner != nil && !(ownerIdentity.map { people.contains($0.category) } ?? false) {
+                throw CoreError.refused("Choose a person or organization as owner.")
+            }
+            let subject = ownerIdentity?.primary ?? "none"
+            try state.record(id, FakeStep(kind: .owner, subject: subject, identity: identity)) { _ in
+                try state.updateIdentity(identity, of: caseID) { $0.owner = owner }
+            }
+            return try state.snapshot(id)
+        }
+    }
+
+    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot {
+        try state.locked {
+            state.dismissedHints.insert([hint.from.rawValue, hint.into.rawValue])
+            return try state.snapshot(id)
+        }
+    }
+
+    /// The document and its candidate, as the snapshot shows it.
+    private func located(_ candidate: CandidateID) throws -> (FakeDocument, Candidate) {
+        guard let index = state.index(of: id),
+              let mention = try state.snapshot(id).candidate(candidate) else { throw CoreError.notFound }
+        return (state.documents[index], mention)
+    }
+
+    /// Moves one mention to `identity`.
+    private func split(_ index: Int, _ candidate: CandidateID, into identity: FakeIdentity) {
+        guard let mention = state.documents[index].mentions.firstIndex(where: { $0.id == candidate }) else { return }
+        state.documents[index].mentions[mention].identityID = identity.id
+    }
+
+    /// Moves every mention of `from` to `target`, which takes its wordings.
+    private func merge(_ index: Int, _ from: IdentityID, into target: IdentityID) throws {
+        guard from != target else { return }
+        let caseID = state.documents[index].caseID
+        let variants = state.identities(of: caseID).first { $0.id == from }?.variants ?? []
+        try state.updateIdentity(target, of: caseID) { identity in
+            identity.variants += variants.filter { !identity.variants.contains($0) }
+        }
+        for mention in state.documents[index].mentions.indices
+        where state.documents[index].mentions[mention].identityID == from {
+            state.documents[index].mentions[mention].identityID = target
         }
     }
 
