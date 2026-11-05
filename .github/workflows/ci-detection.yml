@@ -5,8 +5,8 @@ name: Detection gate
 # the recognition fixtures (`just recognize --check`). The fixtures split
 # over `shards` parallel jobs, `ci/detection (<k>)`: the 3-core M1 runs about
 # 50 fixtures in 3 minutes, and a model run over 5 minutes fails, so the
-# queue and the nightly run 3 shards (ADR 0100); a shard warns past 80% of
-# that budget, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
+# queue and the nightly run 4 shards: 3 took 84% of the budget (ADR 0100). A
+# shard warns past 80% of it, the signal to add one. `ci/detection` sums the shards up and is the context merge-gate
 # reads. A failing shard uploads its stale snapshots, regenerated, as
 # `detection-snapshots-<k>`; `just snapshots-fetch <pr|run>` writes them into
 # the tree for review. No workflow writes to PR branches.
@@ -20,7 +20,7 @@ on:
       shards:
         description: Parallel jobs the fixtures split over.
         type: number
-        default: 3
+        default: 4
       build-only:
         description: Set up the model and build only, which saves both caches on main (main-caches.yml).
         type: boolean
@@ -32,9 +32,9 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (3, the fewest that fit the 5-minute model budget). A manual run takes 3 of the account's 5 macOS runners.
+        description: Parallel jobs the fixtures split over (4: 3 take 84% of the 5-minute model budget). A manual run takes 4 of the account's 5 macOS runners.
         type: number
-        default: 3
+        default: 4
       build-only:
         description: Set up the model and build only.
         type: boolean
@@ -55,7 +55,7 @@ jobs:
     steps:
       - id: list
         env:
-          SHARDS: ${{ inputs.shards || 3 }}
+          SHARDS: ${{ inputs.shards || 4 }}
         run: printf 'count=%s\nlist=[%s]\n' "$SHARDS" "$(seq -s, 1 "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   detection:
