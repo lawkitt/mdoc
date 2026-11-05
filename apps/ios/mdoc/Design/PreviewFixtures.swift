@@ -1,9 +1,9 @@
-#if DEBUG
 import SwiftUI
 
 /// Data for `#Preview`s (ADR 0099): the fake core with models installed and
 /// no delays, and the sample document. Previews show every component and
-/// screen state without walking the journey in the Simulator.
+/// screen state without walking the journey in the Simulator. Not behind
+/// `#if DEBUG`: previews compile in Release too, so an archive needs these.
 @MainActor
 enum PreviewFixtures {
     static let sample = SampleDocument.english
@@ -50,4 +50,3 @@ struct PreviewMatrix<Content: View>: View {
         }
     }
 }
-#endif
