@@ -90,6 +90,11 @@ if out=$(fetch_workflow_state ci-android.yml 2>&1); then fail "a 404 returned su
 eq "$out" "gh: Not Found (HTTP 404)"
 eq "$(ncalls)" 1
 eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
+# No such workflow when counting its manual runs (ci-android.yml does not
+# exist yet): 0 runs, not an error that skips the queue commit (the first
+# passes after #619 failed every queue commit that needed ci/android).
+eq "$(fetch_dispatched ci-android.yml abc 2>&1)" 0
+eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
 # A run that finished before its cancel (HTTP 409): no "cannot cancel" noise.
 reset
 gh() {
