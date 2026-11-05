@@ -9,6 +9,8 @@ import UIKit
 struct MarkdownTextView: UIViewRepresentable {
     let snapshot: DocumentSnapshot
     let selected: CandidateID?
+    /// The mentions the bar's scope reaches besides `selected`.
+    var scoped: Set<CandidateID> = []
     /// Bumped by the review bar to scroll back to `selected`.
     var revealRequest = 0
     /// A Find match to scroll to when `revealRequest` changes.
@@ -59,7 +61,7 @@ struct MarkdownTextView: UIViewRepresentable {
         coordinator.parent = self
         view.onReviewNext = onReviewNext
         let key = StyleKey(
-            snapshot: snapshot, selected: selected, rendered: rendered, serif: serif,
+            snapshot: snapshot, selected: selected, scoped: scoped, rendered: rendered, serif: serif,
             dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
         if revealRequest != coordinator.revealRequest {
@@ -91,6 +93,7 @@ struct MarkdownTextView: UIViewRepresentable {
     struct StyleKey: Equatable {
         var snapshot: DocumentSnapshot
         var selected: CandidateID?
+        var scoped: Set<CandidateID>
         var rendered: Bool
         var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
@@ -225,7 +228,7 @@ struct MarkdownTextView: UIViewRepresentable {
             let snapshot = parent.snapshot
             let offset = view.contentOffset
             let styler = MarkdownStyler(
-                traits: view.traitCollection, selected: parent.selected, rendered: parent.rendered,
+                traits: view.traitCollection, selected: parent.selected, scoped: parent.scoped, rendered: parent.rendered,
                 width: width > 0 ? width : nil)
             view.show(styler.document(for: snapshot), width: width)
             var items: [CandidateTextView.RotorItem] = []

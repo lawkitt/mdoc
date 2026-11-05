@@ -14,6 +14,9 @@ struct MarkdownStyler {
 
     var traits: UITraitCollection
     var selected: CandidateID?
+    /// The other mentions the review bar's scope reaches: outlined, so All
+    /// N shows what it will change (ADR 0098).
+    var scoped: Set<CandidateID> = []
     /// Markers hidden and blocks drawn; false shows the source, markers dimmed.
     var rendered = true
     /// The text column's width, which tables are laid out for; nil leaves
@@ -206,6 +209,10 @@ struct MarkdownStyler {
             }
             if candidate.id == selected {
                 attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected)
+            } else if scoped.contains(candidate.id) {
+                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected * 0.45)
+                attributes[.underlineStyle] = NSUnderlineStyle.thick.rawValue
+                attributes[.underlineColor] = colour
             }
             text.addAttributes(attributes, range: range)
         }

@@ -14,6 +14,22 @@ struct FindSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                // In the list, not the toolbar: iOS hides toolbar buttons
+                // while the search field is active.
+                if let unmarked = model.firstUnmarked(of: query) {
+                    Section {
+                        Button {
+                            dismiss()
+                            model.markSelection(unmarked)
+                        } label: {
+                            Label("Hide name", systemImage: "eye.slash")
+                                .fontWeight(.semibold)
+                        }
+                        .accessibilityIdentifier("find-hide-name")
+                    } footer: {
+                        Text("Marks the first unmarked match, and every exact repeat, as one name to review.")
+                    }
+                }
                 if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                     Section {
                         ForEach(matches.prefix(200), id: \.start) { match in
@@ -29,10 +45,6 @@ struct FindSheet: View {
                         }
                     } header: {
                         Text(matches.count == 1 ? "1 match" : "\(matches.count) matches")
-                    } footer: {
-                        if let first = matches.first, model.candidate(covering: first) == nil {
-                            Text("Hide name marks it, and every exact repeat, as one name to review.")
-                        }
                     }
                 }
             }
@@ -43,15 +55,6 @@ struct FindSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Hide name") {
-                        guard let first = matches.first else { return }
-                        dismiss()
-                        model.markSelection(first)
-                    }
-                    .disabled(matches.isEmpty || matches.first.flatMap { model.candidate(covering: $0) } != nil)
-                    .accessibilityIdentifier("find-hide-name")
                 }
             }
             .onAppear { focused = true }

@@ -38,11 +38,10 @@ final class ReviewFlowUITests: XCTestCase {
         let toastUndo = app.buttons["toast-action"]
         XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
         toastUndo.tap()
-        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["review-undo"].waitForExistence(timeout: 5))
-        let redo = app.buttons["toast-action"]
-        XCTAssertTrue(redo.waitForExistence(timeout: 5))
-        XCTAssertEqual(redo.label, "Redo")
+        let redo = app.buttons["toast-action"].firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == 'toast-action' AND label == 'Redo'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.exists)
+        XCTAssertTrue(app.buttons["review-undo"].exists)
         redo.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }

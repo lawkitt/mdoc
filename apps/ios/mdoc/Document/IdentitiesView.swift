@@ -31,6 +31,8 @@ struct IdentitiesView: View {
     var onFocus: (ReviewFocus) -> Void = { _ in }
     /// Same as, for a whole identity.
     var onSameAs: (IdentityID, IdentityID) -> Void = { _, _ in }
+    /// Same as… from a row: the shared picker, hints first.
+    var onPickSameAs: (IdentityID) -> Void = { _ in }
     /// Each identity's mentions with their context, for its mention rows.
     var mentions: (IdentityID) -> [(id: CandidateID, context: String, state: MentionState)] = { _ in [] }
     var onOpenMention: (CandidateID) -> Void = { _ in }
@@ -123,16 +125,11 @@ struct IdentitiesView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .confirmationDialog(
-            Text("Same as…"),
-            isPresented: Binding(get: { sameAsSource != nil }, set: { if !$0 { sameAsSource = nil } }),
-            presenting: sameAsSource
-        ) { source in
-            ForEach(sameAsTargets(for: source)) { target in
-                Button("\(target.primaryWording) · \(target.alias)") { onSameAs(source.id, target.id) }
+        .onChange(of: sameAsSource) { _, source in
+            if let source {
+                onPickSameAs(source.id)
+                sameAsSource = nil
             }
-        } message: { source in
-            Text("Which name is \(source.primaryWording)?")
         }
         // Its own title row: a navigation title here would replace the
         // document's in the bar on iPhone, where the inspector is a sheet.
@@ -274,12 +271,6 @@ struct IdentitiesView: View {
             .padding(.leading, 12)
         }
         .accessibilityIdentifier("identities-mention")
-    }
-
-    /// The same category first, then the rest.
-    private func sameAsTargets(for source: Identity) -> [Identity] {
-        let others = identities.filter { $0.id != source.id }
-        return others.filter { $0.category == source.category } + others.filter { $0.category != source.category }
     }
 
     private func stateBadge(_ identity: Identity) -> some View {

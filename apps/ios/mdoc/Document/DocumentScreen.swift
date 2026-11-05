@@ -18,6 +18,10 @@ struct DocumentScreen: View {
 
     private var isRegular: Bool { sizeClass == .regular }
     @State private var screenHeight: CGFloat = 800
+    /// The long press's Same as… with a long list: the searchable picker.
+    @State private var sameAsCandidate: CandidateID?
+    /// Identities' Same as…: the identity it starts from.
+    @State private var sameAsIdentity: IdentityID?
 
     /// iPad's right column: the original or the reply beside the text.
     private var hasRightPane: Bool { model.hasOriginal || model.snapshot.reply != nil }
@@ -41,6 +45,10 @@ struct DocumentScreen: View {
             }
             .sheet(isPresented: $model.showsFind) {
                 FindSheet(model: model)
+            }
+            .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.candidate) ?? sameAsIdentity.map(PickerSource.identity) },
+                                 set: { if $0 == nil { sameAsCandidate = nil; sameAsIdentity = nil } })) { source in
+                sameAsPicker(source)
             }
             .sheet(isPresented: $model.showsReplySheet) {
                 ReplySheet(caseName: model.snapshot.caseName) { reply in
@@ -98,6 +106,7 @@ struct DocumentScreen: View {
                 model.beginReview(focus: focus)
             },
             onSameAs: { identity, target in model.link(identity, into: target) },
+            onPickSameAs: { identity in sameAsIdentity = identity },
             mentions: { identity in
                 model.snapshot.mentions(of: identity).sorted { $0.range.start < $1.range.start }
                     .map { (id: $0.id, context: model.context(of: $0), state: $0.state) }
@@ -204,6 +213,7 @@ struct DocumentScreen: View {
         MarkdownTextView(
             snapshot: model.snapshot,
             selected: model.reviewing,
+            scoped: model.scopedMentions,
             revealRequest: model.revealRequest,
             revealRange: model.revealRange,
             rendered: !showsSource,
@@ -213,6 +223,35 @@ struct DocumentScreen: View {
             onReviewNext: { model.reviewNext() },
             menu: { id in candidateMenu(id) })
         .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private enum PickerSource: Identifiable, Hashable {
+        case candidate(CandidateID), identity(IdentityID)
+        var id: Self { self }
+    }
+
+    @ViewBuilder
+    private func sameAsPicker(_ source: PickerSource) -> some View {
+        switch source {
+        case .candidate(let id):
+            if let candidate = model.snapshot.candidate(id) {
+                SameAsPicker(
+                    source: candidate.original, targets: model.sameAsTargets(for: candidate),
+                    categoryLabel: candidate.category.label) { target in
+                    model.select(id)
+                    model.sameAs(target)
+                }
+            }
+        case .identity(let id):
+            if let identity = model.snapshot.identities.first(where: { $0.id == id }) {
+                SameAsPicker(
+                    source: identity.primaryWording,
+                    targets: model.sameAsTargets(forIdentity: id, category: identity.category),
+                    categoryLabel: identity.category.label) { target in
+                    model.link(id, into: target)
+                }
+            }
+        }
     }
 
     /// A long press on a name (ADR 0098): what its state allows, under a
@@ -230,12 +269,21 @@ struct DocumentScreen: View {
             children: Category.allCases.filter { $0 != candidate.category }.map { category in
                 action(category.label, category.symbol, act { model.setCategory(category) })
             })
-        let targets = model.sameAsTargets(for: candidate).all.prefix(12)
-        let sameAs = UIMenu(
-            title: String(localized: "Same as…"), image: UIImage(systemName: "link"),
-            children: targets.map { target in
+        let found = model.sameAsTargets(for: candidate)
+        let targets = found.all
+        func targetActions(_ identities: [Identity]) -> [UIMenuElement] {
+            identities.map { target in
                 action("\(target.primaryWording) · \(target.alias)", target.category.symbol, act { model.sameAs(target.id) })
-            })
+            }
+        }
+        // The same order as the card's picker; past 8, its searchable sheet.
+        let sameAs: UIMenuElement = targets.count > 8
+            ? action(String(localized: "Same as…"), "link", act { sameAsCandidate = id })
+            : UIMenu(title: String(localized: "Same as…"), image: UIImage(systemName: "link"), children: [
+                UIMenu(title: String(localized: "Looks like"), options: .displayInline, children: targetActions(found.hinted)),
+                UIMenu(options: .displayInline, children: targetActions(found.sameCategory)),
+                UIMenu(title: String(localized: "Other categories"), children: targetActions(found.otherCategories)),
+            ].filter { !$0.children.isEmpty })
         var children: [UIMenuElement] = []
         switch candidate.state {
         case .proposed:

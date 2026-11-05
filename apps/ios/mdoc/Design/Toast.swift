@@ -69,7 +69,8 @@ struct ToastPresenter: ViewModifier {
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .task(id: message.id) {
                         UIAccessibility.post(notification: .announcement, argument: message.text)
-                        try? await Task.sleep(for: .seconds(seconds))
+                        // Longer with an action (Undo, Redo): time to reach it.
+                        try? await Task.sleep(for: .seconds(message.action == nil ? seconds : seconds + 2))
                         if self.message?.id == message.id {
                             self.message = nil
                         }

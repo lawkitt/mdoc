@@ -31,7 +31,9 @@ struct ReviewCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(padding: Space.s)
         .sheet(isPresented: $showsSameAsList) {
-            SameAsList(model: model, candidate: candidate)
+            SameAsPicker(
+                source: candidate.original, targets: model.sameAsTargets(for: candidate),
+                categoryLabel: candidate.category.label) { model.sameAs($0) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("review-card")
@@ -330,19 +332,21 @@ struct ReviewCard: View {
     }
 }
 
-/// Same as… with a long list of identities: a searchable list (ADR 0098).
-struct SameAsList: View {
-    @Bindable var model: DocumentViewModel
-    let candidate: Candidate
+/// Same as… with a long list of identities: a searchable list, hints
+/// first (ADR 0098). The card, the long press and Identities share it.
+struct SameAsPicker: View {
+    let source: String
+    let targets: DocumentViewModel.SameAsTargets
+    let categoryLabel: String
+    let onPick: (IdentityID) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
     var body: some View {
-        let targets = model.sameAsTargets(for: candidate)
         NavigationStack {
             List {
-                section("Looks like", targets.hinted)
-                section(candidate.category.label, targets.sameCategory)
+                section(String(localized: "Looks like"), targets.hinted)
+                section(categoryLabel, targets.sameCategory)
                 section(String(localized: "Other categories"), targets.otherCategories)
             }
             .searchable(text: $query)
@@ -352,9 +356,16 @@ struct SameAsList: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text("Same as…").font(.headline)
+                        Text(source).font(Typography.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
             }
         }
         .presentationDetents([.medium, .large])
+        .accessibilityIdentifier("same-as-picker")
     }
 
     @ViewBuilder
@@ -368,7 +379,7 @@ struct SameAsList: View {
                 ForEach(shown) { target in
                     Button {
                         dismiss()
-                        model.sameAs(target.id)
+                        onPick(target.id)
                     } label: {
                         LabeledContent {
                             Text("\(target.mentionCount)")

@@ -55,6 +55,8 @@ extension DocumentViewModel {
     /// Puts the bar on `id`, resetting the scope when the identity changes.
     func select(_ id: CandidateID) {
         guard let candidate = snapshot.candidate(id) else { return }
+        // A name outside the focused group ends the focus.
+        if let focus, !focus.contains(candidate) { self.focus = nil }
         if candidate.identityID != scopeIdentity {
             reviewScope = .allOccurrences
             scopeIdentity = candidate.identityID
@@ -64,7 +66,14 @@ extension DocumentViewModel {
 
     /// Scrolls the text back to the candidate under review.
     func revealReviewed() {
+        revealRange = nil
         revealRequest += 1
+    }
+
+    /// The other mentions All N reaches, outlined in the text.
+    var scopedMentions: Set<CandidateID> {
+        guard reviewScope == .allOccurrences, let candidate = reviewedCandidate else { return [] }
+        return Set(snapshot.mentions(of: candidate.identityID).map(\.id)).subtracting([candidate.id])
     }
 
     // MARK: Stepping
@@ -242,7 +251,9 @@ extension DocumentViewModel {
         guard !alias.isEmpty, alias != candidate.alias else { return .done }
         let index = reviewOrder.index(of: candidate.id)
         do {
+            let before = snapshot.undoStep
             applyReview(try session.rename(candidate.id, scope: reviewScope, to: alias))
+            if snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
         } catch CoreError.aliasTaken(_, let other) {
             if let identity = snapshot.identities.first(where: { $0.id == other }) {
                 return .taken(identity)
@@ -283,10 +294,12 @@ extension DocumentViewModel {
     /// Same as for a whole identity, from Identities (a swipe or a drag).
     func link(_ identity: IdentityID, into target: IdentityID) {
         guard !reviewWaitsForJob() else { return }
+        let reviewed = reviewedCandidate
         let reviewedIndex = reviewOrder.index(of: reviewing)
         guard performReview({ try session.link(identity, into: target) }) else { return }
         Haptics.decision()
-        if let reviewedIndex, let same = reviewOrder.candidate(at: reviewedIndex), isReviewing { select(same.id) }
+        // The bar stays on the same mention, whose range may have moved.
+        if let reviewed { reselect(near: reviewed, index: reviewedIndex) }
         let name = snapshot.identities.first { $0.id == target }?.primaryWording ?? ""
         toast = undoToast(String(localized: "Same as \(name)"))
     }
@@ -302,16 +315,22 @@ extension DocumentViewModel {
     /// Same as… targets: the core's hints first, then the same category in
     /// order of first mention, then the other categories.
     func sameAsTargets(for candidate: Candidate) -> SameAsTargets {
-        let others = snapshot.identities.filter { $0.id != candidate.identityID }
-        let hinted = mergeHints(for: candidate.identityID).compactMap { hint in
-            others.first { $0.id == (hint.from == candidate.identityID ? hint.into : hint.from) }
+        sameAsTargets(forIdentity: candidate.identityID, category: candidate.category)
+    }
+
+    /// The same, for an identity: one picker order everywhere (the card,
+    /// the long press and Identities).
+    func sameAsTargets(forIdentity id: IdentityID, category: Category) -> SameAsTargets {
+        let others = snapshot.identities.filter { $0.id != id }
+        let hinted = mergeHints(for: id).compactMap { hint in
+            others.first { $0.id == (hint.from == id ? hint.into : hint.from) }
         }
         let rest = others.filter { identity in !hinted.contains { $0.id == identity.id } }
             .sorted { firstMention(of: $0.id) < firstMention(of: $1.id) }
         return SameAsTargets(
             hinted: hinted,
-            sameCategory: rest.filter { $0.category == candidate.category },
-            otherCategories: rest.filter { $0.category != candidate.category })
+            sameCategory: rest.filter { $0.category == category },
+            otherCategories: rest.filter { $0.category != category })
     }
 
     /// The merge hint the card shows for this mention's identity, if any.
@@ -369,6 +388,11 @@ extension DocumentViewModel {
             searchStart = range.upperBound
         }
         return found
+    }
+
+    /// The first match no candidate covers: what Find's Hide name marks.
+    func firstUnmarked(of query: String) -> SourceRange? {
+        matches(of: query).first { candidate(covering: $0) == nil }
     }
 
     func candidate(covering range: SourceRange) -> Candidate? {
