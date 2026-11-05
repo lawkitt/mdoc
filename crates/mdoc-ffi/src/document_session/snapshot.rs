@@ -226,19 +226,8 @@ pub(super) fn of(
         }
         first
     });
-    // Active identities, and those only kept mentions still name, so a
-    // name the user kept stays in the list under Kept (ADR 0098).
-    let mut listed = review.active_identities();
-    for id in mentions
-        .iter()
-        .filter(|m| m.state == MentionState::Kept)
-        .filter_map(|m| m.identity)
-    {
-        if !listed.contains(&id) {
-            listed.push(id);
-        }
-    }
-    let mut identities: Vec<_> = listed
+    let mut identities: Vec<_> = review
+        .active_identities()
         .into_iter()
         .filter_map(|id| {
             let identity = review.identity(id)?;
