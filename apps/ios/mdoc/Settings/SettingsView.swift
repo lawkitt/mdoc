@@ -29,7 +29,7 @@ struct SettingsView: View {
                     NavigationLink {
                         PrivacyView()
                     } label: {
-                        SettingsLabel(Self.privacyTitle, systemImage: "lock.fill", color: .green)
+                        SettingsLabel(localized: Self.privacyTitle, systemImage: "lock.fill", color: .green)
                     }
                     .accessibilityIdentifier("settings-privacy")
                 }
@@ -169,7 +169,8 @@ struct SettingsLabel: View {
         self.color = color
     }
 
-    init(_ title: String, systemImage: String, color: Color) {
+    /// A title already localized (a model's plain name).
+    init(localized title: String, systemImage: String, color: Color) {
         self.title = Text(verbatim: title)
         self.systemImage = systemImage
         self.color = color
@@ -195,7 +196,7 @@ struct ModelSummaryRow: View {
                 .monospacedDigit()
         } label: {
             SettingsLabel(
-                ModelRow.plainName(offer.purpose),
+                localized: ModelRow.plainName(offer.purpose),
                 systemImage: offer.purpose == .detector ? "person.text.rectangle" : "text.viewfinder",
                 color: offer.purpose == .detector ? .purple : .teal)
         }
@@ -386,3 +387,15 @@ struct AboutView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+#if DEBUG
+#Preview("Settings") {
+    SettingsView(setup: PreviewFixtures.app().setup)
+}
+
+#Preview("Settings, dark, AX5") {
+    SettingsView(setup: PreviewFixtures.app().setup)
+        .preferredColorScheme(.dark)
+        .environment(\.dynamicTypeSize, .accessibility5)
+}
+#endif

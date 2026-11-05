@@ -59,6 +59,40 @@ final class ScreenSnapshotTests: XCTestCase {
         for appearance in Snapshot.Appearance.allCases {
             Snapshot.assert(rows, named: "settings-rows", appearance: appearance)
         }
+        Snapshot.assert(rows, named: "settings-rows-ax3", size: .accessibility3)
+    }
+
+    /// Search stays while a query is typed, so it can be cleared even when
+    /// the list shrinks below the threshold.
+    func testSearchStaysWhileAQueryIsTyped() throws {
+        let home = HomeViewModel(library: Fixture.core().library)
+        XCTAssertLessThan(home.documents.count, HomeViewModel.searchThreshold)
+        XCTAssertFalse(home.offersSearch)
+        home.query = "x"
+        XCTAssertTrue(home.offersSearch)
+        home.query = ""
+        XCTAssertFalse(home.offersSearch)
+    }
+
+    func testThemeMapsToTheSystemStyles() {
+        XCTAssertNil(AppTheme.automatic.colorScheme)
+        XCTAssertEqual(AppTheme.light.colorScheme, .light)
+        XCTAssertEqual(AppTheme.dark.colorScheme, .dark)
+        XCTAssertEqual(AppTheme.dark.interfaceStyle, .dark)
+        XCTAssertEqual(AppTheme(rawValue: "dark"), .dark)
+    }
+
+    func testSerifSwitchesTheDocumentFont() {
+        let store = MarkdownDisplay.store
+        let before = store.bool(forKey: MarkdownDisplay.serifKey)
+        defer { store.set(before, forKey: MarkdownDisplay.serifKey) }
+        let traits = UITraitCollection(preferredContentSizeCategory: .large)
+        store.set(false, forKey: MarkdownDisplay.serifKey)
+        let system = MarkdownStyler.font(.body, traits: traits)
+        store.set(true, forKey: MarkdownDisplay.serifKey)
+        let serif = MarkdownStyler.font(.body, traits: traits)
+        XCTAssertEqual(system.pointSize, serif.pointSize)
+        XCTAssertNotEqual(system.fontName, serif.fontName)
     }
 
     func testMemoryReadsAsSold() {

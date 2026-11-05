@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showsFiles = false
     @State private var showsPaste = false
+    @State private var shareItems: ShareItems?
 
     private var home: HomeViewModel { app.home }
 
@@ -48,11 +49,22 @@ struct HomeView: View {
                             } label: {
                                 Label("Open", systemImage: "doc.text")
                             }
+                            // Only a reviewed document leaves mdoc, through
+                            // Copy for AI's export path (ADR 0085).
+                            if document.phase == .ready {
+                                Button {
+                                    shareItems = app.shareItems(for: document.id)
+                                } label: {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+                            }
                             Button(role: .destructive) {
                                 app.deleteDocument(document.id)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                        } preview: {
+                            DocumentPreview(document: document, caseSummary: home.caseSummary(of: document), findsNames: home.findsNames)
                         }
                 }
             }
@@ -124,6 +136,9 @@ struct HomeView: View {
             case .success(let url): app.receiveFile(url)
             case .failure(let error): home.errorMessage = error.localizedDescription
             }
+        }
+        .sheet(item: $shareItems) { items in
+            ActivityView(items: items.items)
         }
         .sheet(isPresented: $showsPaste) {
             PasteTextSheet(cases: home.cases) { text, title, caseChoice in
@@ -312,9 +327,22 @@ struct DocumentRow: View {
                 Text(document.title)
                     .font(Typography.body.weight(.medium))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+                // One line when it fits; else the case on its own line;
+                // else every part on its own line, so nothing truncates.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Space.xs) { details }
-                    VStack(alignment: .leading, spacing: Space.xxs) { details }
+                    HStack(spacing: Space.xs) {
+                        statusAndTime(stacked: false)
+                        caseTag
+                    }
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        statusAndTime(stacked: false)
+                        caseTag
+                    }
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        statusAndTime(stacked: true)
+                        caseTag
+                    }
                 }
             }
         }
@@ -324,19 +352,33 @@ struct DocumentRow: View {
         .accessibilityIdentifier("document-row")
     }
 
+    /// Stacked (narrow or large text): the status, the time and the case
+    /// each on a line of their own, so nothing truncates.
     @ViewBuilder
-    private var details: some View {
-        HStack(spacing: Space.xxs) {
-            StatusPill(
-                status, systemImage: HomeViewModel.statusSymbol(of: document, findsNames: findsNames),
-                kind: HomeViewModel.statusKind(of: document))
-            Text(verbatim: "·")
-                .font(Typography.caption)
-                .foregroundStyle(.tertiary)
-            Text(document.updated, format: Self.timeFormat(document.updated))
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
+    private func statusAndTime(stacked: Bool) -> some View {
+        let pill = StatusPill(
+            status, systemImage: HomeViewModel.statusSymbol(of: document, findsNames: findsNames),
+            kind: HomeViewModel.statusKind(of: document))
+        let time = Text(document.updated, format: Self.timeFormat(document.updated))
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+        if stacked {
+            pill.fixedSize(horizontal: false, vertical: true)
+            time
+        } else {
+            HStack(spacing: Space.xxs) {
+                pill
+                Text(verbatim: "·")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+                time
+            }
+            .lineLimit(1)
         }
+    }
+
+    @ViewBuilder
+    private var caseTag: some View {
         if let caseSummary {
             CaseTag(summary: caseSummary, showsName: caseSummary.name != document.title)
         }
@@ -366,6 +408,19 @@ struct DocumentRow: View {
         case .scan: ("doc.viewfinder", .teal)
         case .text: ("text.alignleft", .gray)
         }
+    }
+}
+
+/// The long-press preview of a document: its row, larger.
+private struct DocumentPreview: View {
+    let document: DocumentSummary
+    let caseSummary: CaseSummary?
+    let findsNames: Bool
+
+    var body: some View {
+        DocumentRow(document: document, caseSummary: caseSummary, findsNames: findsNames)
+            .padding(Space.m)
+            .frame(width: 320, alignment: .leading)
     }
 }
 
@@ -557,3 +612,15 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
     }
 }
+
+#if DEBUG
+#Preview("Home") {
+    NavigationStack { HomeView(app: PreviewFixtures.app()) }
+}
+
+#Preview("Home, dark, AX5") {
+    NavigationStack { HomeView(app: PreviewFixtures.app()) }
+        .preferredColorScheme(.dark)
+        .environment(\.dynamicTypeSize, .accessibility5)
+}
+#endif

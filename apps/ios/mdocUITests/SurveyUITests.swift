@@ -241,6 +241,29 @@ final class SurveyUITests: XCTestCase {
         shot("33-settings-below-floor")
     }
 
+    /// Home and Settings at a large accessibility text size, and the
+    /// review in the Serif document font (ADR 0099).
+    @MainActor
+    func test6LargeTextAndSerif() throws {
+        let app = launch(seed: MdocUITest.defaultSeed, contentSize: "UICTContentSizeCategoryAccessibilityXL")
+        let row = MdocUITest.documentRow(app)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        shot("34-home-ax-text")
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
+        shot("35-settings-ax-text")
+        let font = app.descendants(matching: .any)["settings-document-font"].firstMatch
+        for _ in 0..<3 where !font.isHittable { app.swipeUp() }
+        font.tap()
+        let serif = app.buttons["Serif"].firstMatch
+        XCTAssertTrue(serif.waitForExistence(timeout: 5))
+        serif.tap()
+        app.buttons["Done"].firstMatch.tap()
+        row.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        shot("36-review-serif-ax-text")
+    }
+
     // MARK: Steps
 
     private static let pastedText = """

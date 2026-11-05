@@ -36,8 +36,11 @@ final class HomeViewModel {
     var caseFilter: CaseID?
     static let searchThreshold = 8
 
-    var offersSearch: Bool { snapshot.documents.count >= Self.searchThreshold }
-    var offersCaseFilter: Bool { snapshot.cases.count >= 2 }
+    /// Search shows from the threshold, and stays while a query is typed,
+    /// so a query can always be cleared.
+    var offersSearch: Bool { snapshot.documents.count >= Self.searchThreshold || !query.isEmpty }
+    /// The filter shows from two cases, and stays while one is chosen.
+    var offersCaseFilter: Bool { snapshot.cases.count >= 2 || caseFilter != nil }
 
     /// The documents Home lists: the case filter, then the search over
     /// titles and case names.
@@ -61,6 +64,10 @@ final class HomeViewModel {
 
     func refresh() {
         snapshot = library.snapshot()
+        // A filtered case that is gone filters nothing.
+        if let caseFilter, !snapshot.cases.contains(where: { $0.id == caseFilter }) {
+            self.caseFilter = nil
+        }
     }
 
     /// Imports into the chosen case and returns the new document's session.

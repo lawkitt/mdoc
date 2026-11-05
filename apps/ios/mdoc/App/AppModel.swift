@@ -267,6 +267,19 @@ final class AppModel {
         finishImport(PendingImport(source: .text(text), suggestedTitle: Self.suggestedTitle(for: text)), title: title, into: caseChoice)
     }
 
+    /// Home's Share: Copy for AI's text of a reviewed document, as the
+    /// document's own Share gives it.
+    func shareItems(for id: DocumentID) -> ShareItems? {
+        guard let model = documentModel(for: id) else { return nil }
+        model.share(asFile: false)
+        defer { model.share = nil }
+        if let message = model.errorMessage {
+            home.errorMessage = message
+            model.errorMessage = nil
+        }
+        return model.share
+    }
+
     /// Try a sample (ADR 0099): the made-up agreement in the phone's
     /// language, in a case of its own, opened for review.
     func trySample() {
