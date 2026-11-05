@@ -32,7 +32,7 @@ on:
         type: string
         default: ""
       shards:
-        description: Parallel jobs the fixtures split over (4: 3 take 84% of the 5-minute model budget). A manual run takes 4 of the account's 5 macOS runners.
+        description: Parallel jobs the fixtures split over (4; 3 take 84% of the 5-minute model budget). A manual run takes 4 of the account's 5 macOS runners.
         type: number
         default: 4
       build-only:
