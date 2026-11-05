@@ -98,6 +98,46 @@ green and leave desktop unchanged. Record:
    on the TestFlight build.
    *Done when:* section 13 passes on a TestFlight build.
 
+## iOS 0.2
+
+A phone review as good as desktop's: a docked review bar in place of the
+candidate sheet, undo, and desktop's identity tools
+([ADR 0098](docs/adr/0098-mobile-review-bar.md)); a UI system that keeps
+the look consistent and easy to iterate on, with a theme, Settings and Home
+redone ([ADR 0099](docs/adr/0099-mobile-ui-system.md)). Record:
+[review grill](docs/design/ios-review-grill-2026-11-05.md). Item 1 comes
+first; items 2 to 5 and item 6 then run as two lanes; item 7 is last.
+Android takes the same decisions in its own milestone.
+
+1. **[Mobile] UI foundation.** `docs/mobile-ui.md`, tokens and components
+   under `apps/ios/mdoc/Design/`, fixture-fed previews, snapshot tests, the
+   sample document (English and Russian), one `current/` survey per
+   platform, and the survey's device set to the iPhone 17 Pro.
+   *Done when:* a component change shows in its previews and fails its
+   snapshot until re-recorded.
+2. **[Mobile] Core review calls.** Undo and redo (256 steps), rename,
+   category change, the single-mention move, owner and the merge hints in
+   `crates/mdoc-ffi`, with parity tests against desktop. *Done when:* the
+   parity tests pass for each call and its undo.
+3. **[Mobile] The review bar.** The bar in place of the candidate sheet:
+   stepping by swipe and peeks, progress line, Undo with redo, haptics,
+   outlines, the chips (category, alias, scope) and long-press menus.
+   *Done when:* a review from first to last proposal never closes the bar
+   and every step undoes.
+4. **[Mobile] Review depth.** Mentions chip, focus on an identity or
+   category, the expanded view, the merge hint, marking a missed name as a
+   proposal, and the tips. *Done when:* each has a UI test through its
+   VoiceOver action.
+5. **[Mobile] Tier 2 review tools.** Find in document and mark every match;
+   search, Show filter and mention rows in Identities; New alias; Belongs
+   to…. *Done when:* each has a UI test.
+6. **[Mobile] Theme, Settings and Home.** Theme, accent, document font, the
+   new Settings and Home. *Done when:* the `current/` survey shows them in
+   light, dark and AX sizes.
+7. **[Mobile] iPad.** Identities as a sidebar, the bar as a centered card,
+   desktop's keys, and drag a row onto another to merge. *Done when:* the
+   iPad survey and a keyboard UI test pass.
+
 ## Android 0.1
 
 The review-first Android app on the shared Rust core, built beside iOS 0.1
@@ -424,19 +464,7 @@ Android takes what applies. Its clipboard finding is
   scene leaves the foreground, and an opt-in lock for the app and Restore
   with mdoc (Android: `FLAG_SECURE`, biometric lock). *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: one proposal at a time.** A full-screen review card
-  (the proposal in its sentence, category, alias), Replace and Keep at
-  thumb height or by swipe, "3 of 12", haptics, undo the last; today the
-  candidate sheet covers half the text. *From the 2026-10-31 mobile UX
-  ideas.*
-- **[Mobile] To grill: undo.** Replace, Keep, Replace all, Keep all,
-  Remove reply and Delete document have no undo on iOS; an Undo toast plus
-  `UndoManager` (shake, three-finger swipe). *From the 2026-10-31 mobile UX
-  ideas.*
-- **[Mobile] To grill: merge hint and Same as… on mobile.** ADR 0080's hint
-  on Identities rows and Same as… in the candidate sheet; without them
-  "Ms Bennett", "Maya" and "Mia" reach the AI as three people. *From the
-  2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: "As the AI sees it".** A read-only view of the Copy
   for AI text with any original still in it highlighted, so the user sees
   what leaves before sharing; it could also be the default while the screen
@@ -447,18 +475,13 @@ Android takes what applies. Its clipboard finding is
   hands over; the app does the work); Android's `ACTION_PROCESS_TEXT` puts
   mdoc in every app's selection menu. Today only files arrive by share.
   *From the 2026-10-31 mobile UX ideas.*
-- **[Mobile] To grill: a demo document before the download.** "Try a
-  sample" on the empty Home: the settlement letter with stored proposals,
-  so review, share and restore work before the 649.5 MB download. *From
-  the 2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: Shortcuts and Siri.** App Intents for Restore text
   with a case, Get a reviewed document's text for AI, and Add text to mdoc
   (opens for review), so iOS 26's Use Model action can chain share, ask and
   restore; no intent hides names without review. *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: find, and mark every match.** `UIFindInteraction`
-  (⌘F on iPad) and Replace all matches as one identity, for a surname the
-  detector missed. *From the 2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: share a selection.** "Share for AI" in the selection
   menu sends one clause through Copy for AI's export path. *From the
   2026-10-31 mobile UX ideas.*
@@ -466,16 +489,15 @@ Android takes what applies. Its clipboard finding is
   30 or 90 days; documents and replies go, cases stay so replies still
   restore; storage per kind shown. *From the 2026-10-31 mobile UX ideas.*
 - **[Mobile] To grill: iPad as a work surface.** Drop files in, drag the
-  text for AI out to an AI app in Split View and the reply back in, keyboard
-  shortcuts (⌘F, R/K, arrows), two windows. *From the 2026-10-31 mobile UX
+  text for AI out to an AI app in Split View and the reply back in, two
+  windows (review keys are iOS 0.2). *From the 2026-10-31 mobile UX
   ideas.*
 - **[Mobile] To grill: highlights on the original page.** Found names boxed
   on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: hints, haptics and quick actions.** TipKit for
-  select-to-mark, long-press Share and the Restore extension; haptics on
-  decisions; Home Screen quick actions Scan, Paste, Paste reply. *From the
-  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: quick actions.** Home Screen quick actions Scan,
+  Paste, Paste reply (tips and haptics are iOS 0.2). *From the 2026-10-31
+  mobile UX ideas.*
 
 ## Ongoing tracks
 

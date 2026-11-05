@@ -2,6 +2,9 @@
 
 Status: Accepted, 2026-10-31. The hand-off bar at accessibility sizes
 amended 2026-11-04 (the [name-replacement journey survey](../design/ios-pii-journey-survey-2026-11-04.md)).
+Home, Settings and the survey's device are amended by
+[ADR 0099](0099-mobile-ui-system.md); the candidate sheet is replaced by
+[ADR 0098](0098-mobile-review-bar.md)'s review bar.
 
 ## Problem
 
@@ -15,11 +18,8 @@ Markdown.
 
 ## Decision
 
-- **Home is a flat list, newest first.** Each row shows the title, the
-  case's dot, the case's name when it differs from the title, and the
-  status as a symbol with secondary text.
-  Status never has a colour of its own, so the case colour is the only
-  colour on a row.
+- **Home** follows [ADR 0099](0099-mobile-ui-system.md): rows with a
+  source tile, state colored by kind and the case as a tag.
 - **Review text keeps its source and styles it closer to reading.** Blank
   lines draw at about a third of a line, Markdown escapes dim as markers
   (in `mdoc-markdown`, so desktop gets them too), table rows use a smaller
@@ -56,7 +56,7 @@ Markdown.
   colours, restored values highlighted, in the app and in Restore with mdoc.
 - **An empty scan says so**: a notice and the Home status "Nothing found".
 - **The UI survey is a test.** `ScreenshotUITests` takes every screen,
-  light and dark, on iPhone 17 and iPad Pro 13-inch, when run with
+  light and dark, on iPhone 17 Pro and iPad Pro 13-inch, when run with
   `TEST_RUNNER_MDOC_SCREENSHOTS=1`; it is not part of local CI.
 
 ## Invariants

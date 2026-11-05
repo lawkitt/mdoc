@@ -577,6 +577,38 @@ memory, scan time, heat, OCR output) that come before mobile UI work.
 Copy and Paste reply; it replaces the review actions once nothing is left
 to decide.
 
+**Review bar**: the docked bar a phone reviews in, in place of the
+hand-off bar: progress line, review card, then Undo, Keep and Replace. The
+text stays scrollable under it; it replaces the candidate sheet
+([ADR 0098](docs/adr/0098-mobile-review-bar.md)). Desktop's counterpart is
+the mention bar.
+
+**Review card**: the swipeable part of the review bar: the name under
+review and its category, alias and scope chips. Swiping it steps to the
+previous or next candidate.
+
+**Peek**: the sliver of the previous or next review card at the bar's
+edges; it shows there is more to swipe to, and tapping it steps.
+
+**Progress line**: "3 of 15" and a thin track under the review bar's
+grabber; the track fills with the decided share. Tapping it opens
+Identities.
+
+**Mentions chip**: "1 of 3 ›" on the review card when an identity has more
+than one mention; each tap scrolls the text to the next.
+
+**Focus** (mobile review): stepping limited to one identity or one
+category, started from Identities, shown on the progress line with ×.
+
+**Mobile UI guide**: `docs/mobile-ui.md`, the current rules for both mobile
+apps' look and feel (tokens, components, gestures, haptics, motion,
+wording), each pointing at its code; agents read it before UI work and
+every UI PR updates it.
+
+**Sample document**: the short contract with made-up names behind "Try a
+sample"; also the UI tests' and previews' fixture, so screenshots of it are
+safe to share.
+
 **UI survey**: light and dark screenshots of every mobile screen, taken by
 `ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
 under `docs/evidence/ios-app` and `docs/evidence/android-app` as before and

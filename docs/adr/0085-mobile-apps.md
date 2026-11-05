@@ -6,6 +6,8 @@ app bundle, statically linked or as an embedded framework, the minimum is
 iOS 26, and the detector floor is 8 GB, measured. Android's start, minimum,
 scanner and testing are replaced by [ADR 0089](0089-android-app.md). Its CI
 and version rules are extended by [ADR 0091](0091-mobile-ci-and-releases.md).
+The review screen is amended by [ADR 0098](0098-mobile-review-bar.md) and
+the look by [ADR 0099](0099-mobile-ui-system.md).
 
 ## Problem
 
@@ -124,9 +126,9 @@ already lives in GUI-free Rust crates (ADR 0069).
   desktop's encrypted format; the case key lives in the iOS Keychain or the
   Android Keystore. No sync and no transfer between devices.
 - **Review screen.** Read-only rendered text with candidates underlined.
-  Tapping one opens a sheet: alias, Keep or Replace, all occurrences or
-  just this one. An Identities sheet lists identities by category. Missing
-  text is added by selecting it and choosing Replace…. No text editing. On
+  Tapping one opens [ADR 0098](0098-mobile-review-bar.md)'s review bar,
+  which also covers undo, identity tools and marking missed text. An
+  Identities sheet lists identities by category. No text editing. On
   tablets the identities list sits beside the text.
 - **Parity tests.** Rust core tests run as today. A Swift XCTest suite
   calls the core through `mdoc-ffi` on the shared fixtures and checks
