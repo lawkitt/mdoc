@@ -652,17 +652,19 @@ it is not the status itself.
 
 **`main`.** A push to `main` runs no tests
 ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)): `ci.yml` runs
-lint and `just mobile --ffi` (`clippy`, on macOS and Windows) and builds
+lint and `just mobile --ffi` (`checks`, on macOS and Windows) and builds
 the tests without running them (`test`, and `fast-linux` on Linux), and
 `main-caches.yml` builds the iOS core and the detection gate (model set up,
 no check). Between them they save every cache the queue's hosted jobs
 restore: a branch can restore only its own caches and `main`'s, so only
 `main` saves (the setup action's `save-if`, and the model's save step).
 rust-cache keys a cache by job id, so each hosted job restores the one
-`main`'s job of the same id saves: `ci-desktop.yml`'s `clippy` and `test`
+`main`'s job of the same id saves: `ci-desktop.yml`'s `checks` and `test`
 jobs are `ci.yml`'s. A job that builds something new needs `main` to build
-it under its id, or every queue commit compiles it cold. A red `main` stops
-enqueueing.
+it under its id, or every queue commit compiles it cold. A cache that
+matches its key exactly is never saved again, so new builds reach it only
+under a new key: a new job id, or the next change to `Cargo.lock` or the
+toolchain. A red `main` stops enqueueing.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
 desktop jobs on both OSes, iOS, the detection gate, the quarantined tests

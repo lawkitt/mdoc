@@ -13,7 +13,8 @@ name: CI
 # areas (scripts/ci-areas.txt). On a queue commit only `lint (ubuntu)` runs,
 # a required check. On `main` (ADR 0100) clippy runs as everywhere, with the
 # mdoc-ffi check on macOS, and test only builds the tests: these jobs save
-# the caches ci-desktop.yml's jobs of the same ids restore.
+# the caches ci-desktop.yml's jobs of the same ids (`checks`, `test`)
+# restore.
 on:
   push:
     branches: [main]
@@ -239,8 +240,12 @@ jobs:
   # The shipped targets: clippy and the full test suite, as parallel jobs so
   # the slow Windows test build doesn't wait for clippy (ADR 0070), when the
   # areas job says the desktop area changed. On `main` they fill the caches
-  # of ci-desktop.yml's `clippy` and `test` jobs (ADR 0100).
-  clippy:
+  # of ci-desktop.yml's `checks` and `test` jobs (ADR 0100).
+  #
+  # The id is `checks`, not `clippy`, since the job also runs mdoc-ffi: a
+  # cache that matches its key exactly is never saved again, so new builds
+  # in a job reach main's cache only under a new key (ADR 0100).
+  checks:
     name: clippy (${{ matrix.runner }})
     needs: areas
     if: &desktop ${{ needs.areas.outputs.desktop == 'true' }}
@@ -259,7 +264,7 @@ jobs:
 
       - run: just lint
       # ci/macos (checks) runs it on the queue commit; here it also puts the
-      # iOS and Android targets' dependencies in main's `clippy` cache.
+      # iOS and Android targets' dependencies in main's `checks` cache.
       - if: runner.os == 'macOS'
         run: just mobile --ffi
 
@@ -323,7 +328,7 @@ jobs:
   # (cache-on-failure), and never in a PR or a release call.
   cache-cleanup:
     name: cache cleanup
-    needs: [lint-linux, fast-linux, clippy, test]
+    needs: [lint-linux, fast-linux, checks, test]
     if: >-
       ${{ !cancelled() && !inputs.release-call &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' }}

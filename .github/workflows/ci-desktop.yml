@@ -45,9 +45,9 @@ permissions:
 jobs:
   # The job ids are ci.yml's: rust-cache keys its cache by job id, so each job
   # restores the cache main's job of the same id saves (ADR 0070, ADR 0100):
-  # `clippy` holds the lint build and the iOS and Android checks, `test` the
+  # `checks` holds the lint build and the iOS and Android checks, `test` the
   # test build.
-  clippy:
+  checks:
     name: ${{ fromJSON('{"macos":"ci/macos (checks)","windows":"ci/windows (hosted, checks)"}')[inputs.os] }}
     # An unknown os has no runner, so the run fails instead of guessing.
     runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
@@ -129,13 +129,13 @@ jobs:
   # a missing, cancelled or skipped part never looks green (as ci/detection).
   summary:
     name: ${{ fromJSON('{"macos":"ci/macos","windows":"ci/windows (hosted)"}')[inputs.os] || 'ci/desktop' }}
-    needs: [clippy, test]
+    needs: [checks, test]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - env:
-          CHECKS: ${{ needs.clippy.result }}
+          CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.test.result }}
         run: |
           [ "$CHECKS" = success ] || echo "::error::checks (lint, script suites, mdoc-ffi): $CHECKS"
