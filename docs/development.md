@@ -601,7 +601,9 @@ it is not the status itself.
   a try, 3 tries with backoff, and a log line naming the endpoint when it
   still fails. HTTP 404, 409 and 422 are answers, not retried. A PR head or
   queue commit skipped because of an error is logged ("skipped: could not
-  read …"), and the run ends red with an annotation listing the calls.
+  read …"), and the run ends red with an annotation listing the calls. A
+  pass stops reading after 6 minutes (the job has 10), so slow failures
+  still leave time to dispatch the follow-up pass.
 - **Follow-up pass.** A pass that hit an error, or left a queue commit or a
   running fast tier pending, dispatches `merge-gate-recheck.yml`. It waits
   3 minutes in its own concurrency group (a newer one replaces it) and runs
@@ -610,7 +612,8 @@ it is not the status itself.
 - **A job that never ran.** A hosted job cancelled with no runner and no
   step started (GitHub's "not acquired" capacity cancels) is no result, nor
   is a summary job whose failing parts never ran. The gate re-runs the
-  run's failed jobs, at most twice a run (by its run attempt), and waits;
+  run's failed jobs, at most twice a run (by its run attempt), and waits
+  (also while a re-run's new job has replaced the failed one);
   after that it fails, worded "no macOS runner, 3 attempts". A job that ran
   and failed still fails at once. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`

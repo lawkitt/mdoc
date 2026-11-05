@@ -68,6 +68,11 @@ reruns=${MERGE_GATE_RERUNS:-2}
 tries=${MERGE_GATE_TRIES:-3}
 retry_delay=${MERGE_GATE_RETRY_DELAY:-2}
 call_timeout=${MERGE_GATE_CALL_TIMEOUT:-30}
+# A pass stops reading after this many seconds (merge-gate.yml allows 10
+# minutes), so slow GitHub errors still leave time to dispatch the
+# follow-up pass. gate_main sets the deadline; 0 means none.
+budget=${MERGE_GATE_BUDGET:-360}
+deadline=0
 run_url=${GITHUB_SERVER_URL:-https://github.com}/$repo/actions/runs/${GITHUB_RUN_ID:-0}
 
 # Scratch files: gh_call's stderr, and the calls that failed (subshells
@@ -112,6 +117,15 @@ gh_what() { # gh-args...
   echo "$method $path"
 }
 
+# Whether this pass is past its deadline. Says so once a pass.
+out_of_time() {
+  if [ "$deadline" -eq 0 ] || [ "$(date -u +%s)" -lt "$deadline" ]; then return 1; fi
+  if [ ! -e "$gate_tmp/late" ]; then
+    : >"$gate_tmp/late"
+    log "out of time (${budget}s): the follow-up pass reads the rest"
+  fi
+}
+
 gh_try() {
   if [ -n "$timeout_cmd" ] && [ "$(type -t gh)" = file ]; then
     "$timeout_cmd" "$call_timeout" gh "$@"
@@ -126,9 +140,15 @@ gh_try() {
 # definitive answer (HTTP 404, 409 or 422) is not retried: it fails with
 # gh's message on stderr, for the caller to read. Any other failure, after
 # the last try, is logged with its endpoint and recorded: the pass ends red.
+# Past the pass's deadline a call fails at once, and a failing one is not
+# retried.
 gh_call() { # json|text gh-args...
   local want=$1 try=1 delay=$retry_delay out rc err msg what
   shift
+  if out_of_time; then
+    echo "out of time: $(gh_what "$@")" >>"$gate_tmp/errors"
+    return 1
+  fi
   err=$(mktemp "$gate_tmp/err.XXXXXX")
   while :; do
     rc=0
@@ -149,7 +169,7 @@ gh_call() { # json|text gh-args...
     fi
     msg=$(tr -d '\r' <"$err" | awk 'NF { last = $0 } END { print last }')
     [ "$rc" -ne 124 ] || msg="no answer in ${call_timeout}s"
-    [ "$try" -lt "$tries" ] || break
+    if [ "$try" -ge "$tries" ] || out_of_time; then break; fi
     sleep "$delay"
     delay=$((delay * 2))
     try=$((try + 1))
@@ -259,7 +279,11 @@ dispatch() { # workflow branch sha [key=value...]
 }
 
 # The follow-up pass: merge-gate-recheck.yml runs merge-gate.yml in 3 minutes.
-dispatch_recheck() { gh_call text workflow run merge-gate-recheck.yml --repo "$repo" --ref "$default_branch" >/dev/null; }
+# The pass's last call, so past the deadline too.
+dispatch_recheck() {
+  deadline=0
+  gh_call text workflow run merge-gate-recheck.yml --repo "$repo" --ref "$default_branch" >/dev/null
+}
 
 post() { # sha state description url
   gh_call text api -X POST "repos/$repo/statuses/$1" -f "context=$context" -f "state=$2" \
@@ -283,7 +307,8 @@ areas_of() { # [table-text]
 # got no runner and started no step, or it is a summary whose failing parts
 # (its caller's jobs named after it: `detection / ci/detection (2)` for
 # `detection / ci/detection`, `ci/ios-release` for `ci/ios`) all got none;
-# else `result`. Runner names and steps decide, never annotation text.
+# `superseded` when the job is no longer among the latest (a re-run replaced
+# it); else `result`. Runner names and steps decide, never annotation text.
 failure_kind() { # job-id
   jq -r --argjson j "$1" '
     def caller: (capture("^(?<p>.* / )") // {p: ""}).p;
@@ -297,7 +322,7 @@ failure_kind() { # job-id
         elif any(.[]; test("ubuntu|linux")) then "Linux"
         else "hosted" end;
     ([.jobs[] | select(.id == $j)] | first) as $job
-    | if $job == null then "result"
+    | if $job == null then "superseded"
       elif ($job | never) then "infra \($job | os)"
       else ($job.name | caller) as $c | ($job.name | base | sub(" \\(.*$"; "")) as $stem
         | [.jobs[] | select(.id != $j and (.name | caller) == $c and (.name | base | startswith($stem)) and bad)] as $parts
@@ -511,6 +536,11 @@ hosted_verdict() { # name checks-json
   kind=$(failure_kind "$job" <<<"$jobs") || return 1
   case "$kind" in
     infra*) ;;
+    # The check runs predate a re-run that replaced the job: wait for it.
+    superseded)
+      echo "pending - 0"
+      return 0
+      ;;
     *)
       echo "$line"
       return 0
@@ -600,6 +630,10 @@ heads_pass() {
   }
   t=$(now)
   while read -r n draft head auto queued; do
+    if out_of_time; then
+      rc=1
+      break
+    fi
     if [ -z "$head" ] || [ "$draft" != false ]; then continue; fi
     files=$(fetch_pr_files "$n") || {
       skipped "#$n" "its files"
@@ -646,7 +680,7 @@ heads_pass() {
 
 queue_pass() {
   local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
-  local queue why ready no_hosted='' info disp pcline r rc=0 lines wf extra infra_where
+  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra
   t=$(now)
   main=$(fetch_main) || main=''
   [ -n "$main" ] || {
@@ -658,6 +692,10 @@ queue_pass() {
     return 1
   }
   while read -r branch sha; do
+    if out_of_time; then
+      rc=1
+      break
+    fi
     [ -n "$sha" ] || continue
     cmp=$(fetch_compare "$main" "$sha") || {
       skipped "${sha:0:7}" "what it brings onto main"
@@ -728,22 +766,13 @@ queue_pass() {
             rc=1
             continue 2
           }
-          infra_where=''
+          # A hosted run that never ran is no result: pc_job waits on it,
+          # and resolve_infra decides it with the commit's other jobs.
+          hinfra=''
           case "$hv" in
             infra*)
-              case "${pcline%% *}" in
-                # The PC's result counts; the hosted run is moot.
-                success | failure) hv="pending - 0" ;;
-                *)
-                  r=$(printf '%s %s\n' "$job" "$hv" | resolve_infra "${sha:0:7}")
-                  read -r _ v where u <<<"$r"
-                  if [ "$v" = failure ]; then
-                    hv="failure $u $t" infra_where=$where
-                  else
-                    hv="pending - 0"
-                  fi
-                  ;;
-              esac
+              hinfra=$hv
+              hv="pending - 0"
               ;;
           esac
           disp=$(fetch_dispatched "$wf" "$sha") || {
@@ -753,7 +782,10 @@ queue_pass() {
           }
           line=$(pc_job "$pcline" "$hv" "$disp" "$third" "$age" "$t")
           read -r v where u <<<"$line"
-          if [ "$v $where" = "failure hosted" ] && [ -n "$infra_where" ]; then where=$infra_where; fi
+          if [ -n "$hinfra" ] && [ "$v $where" = "pending hosted" ]; then
+            lines+="$job $hinfra"$'\n'
+            continue
+          fi
           if [ "$v" = fallback ]; then
             ready=0
             hosted_ready "$wf" || ready=$?
@@ -807,6 +839,7 @@ queue_pass() {
 # that finished meanwhile is not cancelled, silently.
 stale_pass() {
   local current runs id branch n=0
+  ! out_of_time || return 1
   # Runs first: a branch exists before its runs start, so a group created
   # between the two reads is in the queue list, never taken for stale.
   runs=$(fetch_active_runs) || {
@@ -835,7 +868,9 @@ stale_pass() {
 gate_main() {
   local rc=0 failed
   : >"$gate_tmp/errors"
+  rm -f "$gate_tmp/late"
   recheck=''
+  deadline=$(($(date -u +%s) + budget))
   heads_pass || rc=1
   queue_pass || rc=1
   stale_pass || rc=1

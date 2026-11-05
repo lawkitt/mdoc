@@ -242,7 +242,8 @@ eq "$(failure_kind 30 <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "lint (ubuntu)" "$never")" "$(job 40 "fast (ubuntu)" "$ran")")")" "result"
 eq "$(failure_kind 40 <<<"$(jobs_json "$(job 41 "fast (unit)" "${never/macos-26/ubuntu-latest}")" "$(job 40 "fast (ubuntu)" "$ran")")")" "infra Linux"
-eq "$(failure_kind 99 <<<"$run41857275799")" "result"
+# Not among the latest jobs: a re-run replaced it (Codex review on #619).
+eq "$(failure_kind 99 <<<"$run41857275799")" "superseded"
 echo "ok: a job that never ran, by runner and steps"
 
 statuses='{"statuses": [
@@ -532,6 +533,40 @@ queue_once
 eq "$(cat "$reran")" ""
 eq "$(cat "$posted")" "qqqq failure Failed: windows (PC); passed: macos (hosted), android (PC), detection (hosted)"
 echo "ok: a hosted job that never ran is re-run twice, then fails as infrastructure; a result fails at once"
+# The check runs predate a re-run: job 901 is no longer among the latest
+# jobs (902 replaced it). Wait, never a result (Codex review on #619).
+fetch_status() { echo '{"statuses": [{"context": "ci/windows", "state": "success", "updated_at": "2026-11-02T11:50:00Z"}, {"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:51:00Z"}]}'; }
+fetch_run_jobs() { jobs_json "$(job 902 "ios / ci/ios" '{"conclusion": null, "runner_name": "", "steps": []}')"; }
+run_state="queued 2"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# A hosted Windows fallback that never ran is decided with the other jobs:
+# re-run while nothing failed; beside a real failure, not (Codex review on #619).
+fetch_check_runs() {
+  printf '{"check_runs": [
+    {"id": 5, "name": "macos / ci/macos", "status": "completed", "conclusion": "%s", "html_url": "https://mac", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 6, "name": "ios / ci/ios", "status": "completed", "conclusion": "success", "html_url": "https://ios", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 3, "name": "detection / ci/detection", "status": "completed", "conclusion": "success", "html_url": "https://d", "completed_at": "2026-11-02T11:21:00Z"},
+    {"id": 801, "name": "ci/windows (hosted)", "status": "completed", "conclusion": "cancelled", "html_url": "https://github.com/lawkitt/mdoc/actions/runs/800/job/801", "completed_at": "2026-11-02T11:40:00Z"}]}\n' "$mac"
+}
+fetch_run_jobs() { jobs_json "$(job 801 "ci/windows (hosted)" "${never/macos-26/windows-2025}")"; }
+fetch_status() { echo '{"statuses": [{"context": "ci/android", "state": "success", "updated_at": "2026-11-02T11:51:00Z"}]}'; }
+fetch_dispatched() { echo 1; }
+run_state="completed 1" mac=success
+queue_once
+eq "$(cat "$reran")" 800
+eq "$(cat "$posted")" "qqqq pending Waiting: windows; passed: macos (hosted), ios (hosted), android (PC), detection (hosted)"
+run_state="completed 3"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: windows (no Windows runner, 3 attempts); passed: macos (hosted), ios (hosted), android (PC), detection (hosted)"
+run_state="completed 1" mac=failure
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cut -d' ' -f1-4 "$posted")" "qqqq failure Failed: macos"
+fetch_dispatched() { echo 0; }
+echo "ok: a re-run's replaced job waits; a hosted fallback that never ran is re-run with the commit's other jobs"
 
 # A summary over shards that never ran (ci/detection, run 41857275799).
 ios_conclusion=success
@@ -670,6 +705,29 @@ dispatch_recheck() { return 1; }
 main_once
 eq "$rc" 1
 echo "ok: a pass with an error or a pending queue commit dispatches merge-gate-recheck.yml"
+
+# Out of time (slow GitHub errors, Codex review on #619): the pass stops
+# reading, ends red, and still dispatches the follow-up pass.
+dispatch_recheck() { echo recheck >>"$rechecks"; }
+: >"$posted"
+saved_budget=$budget
+budget=0
+main_once
+budget=$saved_budget
+eq "$rc|$(cat "$rechecks")|$(cat "$posted")" "1|recheck|"
+grep -qxF "out of time (0s): the follow-up pass reads the rest" "$logf" || fail "no out-of-time log"
+eq "$(grep -c "out of time" "$logf")" 1
+# A call past the deadline fails at once, without asking GitHub.
+gh() {
+  echo "$*" >>"$calls"
+  echo '{}'
+}
+reset
+deadline=1
+if gh_call json api "repos/$repo/commits/abc/status" >/dev/null; then fail "a call past the deadline ran"; fi
+deadline=0
+eq "$(ncalls)" 0
+echo "ok: a pass out of time stops reading and dispatches the follow-up pass"
 
 gh() {
   echo "gh $*" >>"$tmp/unexpected-gh"
