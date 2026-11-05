@@ -305,6 +305,12 @@ final class RenderedMarkdownTests: XCTestCase {
         XCTAssertFalse(visible.contains("|"))
         XCTAssertFalse(visible.contains("Maya"), "the folded table is read from its grid")
         XCTAssertEqual(view.accessibilityValue, spoken)
+        // The folded table's line breaks stay: UIKit splits the text into
+        // paragraphs by the text and labels them by this, so the two must
+        // have the same paragraphs, or the candidates after the table lose
+        // their link elements.
+        XCTAssertEqual(spoken.components(separatedBy: "\n").map { ($0 as NSString).length },
+                       text.components(separatedBy: "\n").map { ($0 as NSString).length })
         // A part of the text keeps its own offsets.
         let start = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: 5))
         let end = try XCTUnwrap(view.position(from: start, offset: 8))

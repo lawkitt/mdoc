@@ -203,12 +203,18 @@ enum MdocUITest {
 
     @MainActor
     static func closeShareSheet(_ app: XCUIApplication) {
+        let sheet = app.otherElements["ActivityListView"].firstMatch
         let close = app.buttons["Close"].firstMatch
         if close.waitForExistence(timeout: 2) {
             close.tap()
         } else {
-            app.otherElements["ActivityListView"].firstMatch.swipeDown(velocity: .fast)
+            sheet.swipeDown(velocity: .fast)
         }
-        _ = app.buttons["paste-reply"].waitForExistence(timeout: 5)
+        // A tap while the sheet still slides away goes nowhere (#542): wait
+        // until it is gone and Paste reply takes taps.
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "the share sheet stayed open")
+        let paste = app.buttons["paste-reply"]
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: paste)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 10), .completed, "Paste reply never took taps")
     }
 }
