@@ -457,6 +457,27 @@ re-tests the rest without it. The dropped PR gets a red `merge-gate` on its
 queue commit, which names the failing job and links to it. Fix it on the
 branch and enqueue it again.
 
+**Independent PRs, not stacks** ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)).
+The queue takes only PRs based on `main`, so a stacked PR waits for its
+parent's merge, a rebase, its fast tier and then its own queue run, one at
+a time. Make independent PRs off `main` where you can, and enqueue them
+together so they share a group. Keep stacks for changes that truly depend
+on each other.
+
+**A stale gate or a missed enqueue.** If `merge-gate` on a PR head still
+says "Waiting" after its checks finished, or auto-merge is on and the gate
+is green but the PR isn't in the queue after 5 minutes, re-check with
+`gh workflow run merge-gate.yml --repo lawkitt/mdoc`. Never re-run the
+PR's own `pull_request_target` gate run. If the PR still doesn't enter the
+queue, turn auto-merge off and on again.
+
+**Break-glass.** If a merged change to the gate blocks the queue, it also
+blocks its own revert. The maintainer then pushes the revert directly to
+`main` through the ruleset's bypass, its only use besides `just release`.
+A change to what decides merges (`merge-gate.sh`, `queue.yml`, the job
+workflows, `queue-runner.sh`, `ci-areas.txt`) first passes a shadow-branch
+run that includes one deliberately broken case it must fail.
+
 **Jobs on a queue commit.** `scripts/ci-areas.sh --queue` (in `queue.yml`)
 diffs the commit against `main`'s merge base and picks the jobs from its
 areas; `merge-gate` reads the same diff, so a skipped job is one it does not

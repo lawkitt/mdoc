@@ -501,6 +501,17 @@ on a PR head, green when the fast tier passed; on a queue commit, when
 every affected full job passed, each named with where it ran
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
+**Infrastructure failure**: a hosted CI job that ended without running,
+cancelled with no runner assigned or summarizing jobs that never ran.
+`merge-gate` re-runs it up to twice before failing, worded as
+infrastructure, never as a test failure
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+
+**Follow-up pass**: a `merge-gate` pass started by `merge-gate-recheck.yml`
+3 minutes after a pass that left something pending or hit an API error,
+so a missed event never leaves a status stale
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+
 **Quarantine list**: `.config/quarantine.txt`, tests CI excludes for a
 while: a nextest filter, its issue and an expiry date past which the fast
 tier fails ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
