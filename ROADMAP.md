@@ -201,7 +201,9 @@ touch separate files and run as parallel lanes; 5 builds on both.
 `main` merges through GitHub's merge queue; PR heads run a fast tier, and
 the full suite runs once per queue group on hosted runners and the PC
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
-Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
+Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md);
+items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
+[CI fixes grill](docs/design/ci-fixes-grill-2026-11-06.md).
 
 2. **[CI] The hosted Android job.** `ci-android.yml` on Ubuntu with KVM
    (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
@@ -216,6 +218,47 @@ Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
    go, their area checks kept; the PC's web task re-adds `/ci` to
    `tailscale serve` at start (a restart drops it). *Done when:* a
    nightly drill with a broken fallback job opens an issue.
+
+8. **[CI] Gate reliability.** `merge-gate.sh` calls GitHub through one
+   bounded, retried wrapper and fails loudly; a follow-up pass
+   (`merge-gate-recheck.yml`); infrastructure failures re-run up to twice;
+   the missed-enqueue warning; the queue commit's own area table; the job
+   renamed; no "cannot cancel" noise
+   ([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+   *Done when:* `test-merge-gate.sh` covers an API error, a never-ran job
+   and the recheck, and a shadow run with a deliberately broken job fails.
+9. **[CI] Faster desktop jobs.** `main` runs lint and `--no-run` builds with
+   the mobile targets cached; `ci/macos` splits into two jobs under a
+   `ci/macos` summary; the fast tier splits into unit and scripts under
+   `fast (ubuntu)`; Linux package installs get a 5-minute limit and a retry.
+   *Done when:* a shadow run's `ci/macos` passes in about 11 minutes with no
+   crate compiled by `mobile --ffi` beyond the workspace, and a broken test
+   fails it.
+10. **[CI] Faster iOS job and the Release build.** The image's Simulator
+    runtime when it matches; `ci/ios-release` builds the Release
+    configuration in parallel, under a `ci/ios` summary; a parallel-testing
+    trial. *Done when:* a shadow run's `ci/ios` passes in about 12 minutes,
+    and a Release-only compile error fails `ci/ios-release`.
+11. **[CI] Detection shards.** 3 shards, the 80% budget warning, scores
+    printed to enough digits. *Done when:* a shadow run passes on 3 shards,
+    and a stale snapshot's message shows the differing digits.
+12. **[CI] The PC runner.** Android failing tests named from Gradle's JUnit
+    XML, a failure excerpt in `summary.txt`, renders kept only on failure,
+    `/ci` re-applied at start and checked, x86_64-only Android CI builds, the
+    disk-floor test fixed. *Done when:* a pc-test run names a failing Android
+    test in its status, and `test-queue-runner.sh` passes on hosted
+    Windows.
+13. **[CI] The `ci` area.** CI scripts, workflows and their suites run
+    lint, the scripts tier and the bash 3.2 suites, not the desktop suite.
+    *Done when:* a shadow run of a script-only change runs no `ci/macos`,
+    Windows or detection job.
+14. **[CI] Detection on PR heads.** Recognition-area PR heads run the
+    detection gate (3 shards), and the head `merge-gate` waits for it.
+    *Done when:* a PR with a stale snapshot is red on its head, not in the
+    queue.
+15. **[CI] CI targets.** `scripts/ci-stats.sh` measures ADR 0100's targets
+    from `gh api`, and a measurement a day after items 8–14 land, with the
+    parallel-testing verdict. *Done when:* the measurement is recorded.
 
 ## Later
 
