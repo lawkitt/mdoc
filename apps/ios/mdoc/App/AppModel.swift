@@ -267,6 +267,13 @@ final class AppModel {
         finishImport(PendingImport(source: .text(text), suggestedTitle: Self.suggestedTitle(for: text)), title: title, into: caseChoice)
     }
 
+    /// Try a sample (ADR 0099): the made-up agreement in the phone's
+    /// language, in a case of its own, opened for review.
+    func trySample() {
+        let sample = SampleDocument.forLanguages()
+        addText(sample.text, title: sample.title, into: .newCase(name: sample.title))
+    }
+
     /// The first line, without Markdown heading marks, up to 60 characters.
     static func suggestedTitle(for text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

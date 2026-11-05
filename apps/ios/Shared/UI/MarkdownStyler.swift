@@ -243,8 +243,11 @@ struct MarkdownStyler {
     /// The text style's size for the reader's text size, as a plain system
     /// font: a text-style font makes iOS 26 hyphenate a word too long for
     /// its line, such as an email at large sizes (ADR 0087).
+    /// With Document font › Serif it is New York at the same size (ADR 0099).
     static func font(_ style: UIFont.TextStyle, traits: UITraitCollection, weight: UIFont.Weight = .regular) -> UIFont {
-        UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
+        let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
+        guard MarkdownDisplay.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
+        return UIFont(descriptor: serif, size: 0)
     }
 
     /// The body paragraph: no hyphenation, since a hyphen inside a name or an

@@ -54,9 +54,13 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["document-row"].firstMatch.waitForExistence(timeout: 10))
         shot("08-home-one-document")
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.buttons["About mdoc"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
         shot("09-settings")
-        app.buttons["About mdoc"].tap()
+        // About is the last row, below the fold on a phone.
+        let about = app.buttons["settings-about"]
+        for _ in 0..<4 where !about.isHittable { app.swipeUp() }
+        shot("09-settings-end")
+        about.tap()
         XCTAssertTrue(app.staticTexts["Version"].waitForExistence(timeout: 5))
         shot("10-about")
     }
