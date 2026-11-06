@@ -14,12 +14,23 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 unset "${!QUEUE_CI_@}" "${!LOCAL_CI_@}"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-failures=0
+failures=0 skipped=0
+# How long a fake runner, or an output it is waited for, may take before it
+# counts as hung: every wait ends as soon as its condition holds, so this
+# only bounds a hang. A loaded PC (two runners beside a full `just test`)
+# took a runner past the 5 minutes once allowed (#661).
+wait_s=${QUEUE_TEST_WAIT_S:-900}
+# Set while the runner the next checks read has missed its limit: they are
+# skipped, not failed, so one hang reads as one failure.
+skip_why=''
 
 check() { # description command...
   local what=$1
   shift
-  if "$@"; then
+  if [ -n "$skip_why" ]; then
+    echo "skip: $what ($skip_why)"
+    skipped=$((skipped + 1))
+  elif "$@"; then
     echo "ok: $what"
   else
     echo "FAIL: $what" >&2
@@ -28,6 +39,40 @@ check() { # description command...
 }
 
 not() { ! "$@"; }
+
+# Waits until the command holds, for at most wait_s. False if it never did.
+wait_for() { # command...
+  local end=$(($(date +%s) + wait_s))
+  until "$@"; do
+    [ "$(date +%s)" -lt "$end" ] || return 1
+    sleep 0.5
+  done
+}
+
+exited() { ! kill -0 "$1" 2>/dev/null; }
+
+# Stops a runner that missed its limit; a stopped one ignores TERM.
+stop_runner() { # pid
+  kill -TERM "$1" 2>/dev/null || true
+  kill -CONT "$1" 2>/dev/null || true
+  for _ in $(seq 1 30); do
+    exited "$1" && break
+    sleep 0.5
+  done
+  kill -KILL "$1" 2>/dev/null || true
+  wait "$1" 2>/dev/null || true
+}
+
+# One failure for a runner that missed its limit, with its log's last
+# lines; the checks after it skip until the next runner starts.
+missed() { # runner what-it-did-not-do log
+  {
+    echo "FAIL: $1 did not $2 within ${wait_s}s (QUEUE_TEST_WAIT_S); the last 40 lines of its log:"
+    tail -n 40 "$3" | sed 's/^/    /'
+  } >&2
+  failures=$((failures + 1))
+  skip_why="$1 missed its limit"
+}
 
 # A time $1 days ago, as touch -t takes it.
 days_ago() { date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "$1 days ago" +%Y%m%d%H%M; }
@@ -184,6 +229,8 @@ cat >"$tmp/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 [ "$1" = api ] || { echo "fake gh: unexpected $*" >&2; exit 9; }
+# Each call, so a check can wait for a runner's polls.
+echo "$*" >>"$FAKE/gh.log"
 shift
 [ "$1" != --paginate ] || shift
 if [ "$1" = -X ]; then
@@ -313,13 +360,20 @@ case "$u" in
 esac
 EOF
 chmod +x "$tmp/bin/gh" "$tmp/bin/just" "$tmp/bin/tailscale" "$tmp/bin/curl"
+# macOS checks a new executable on its first run, which took 0.1-0.5 s on an
+# idle M4; under load that passed the runner's 3 s bound on tailscale, whose
+# "not served" then stood for 10 minutes (#658). A first run here keeps it
+# out of the runner's calls.
+"$tmp/bin/tailscale" serve status --json >/dev/null
+"$tmp/bin/curl" >/dev/null 2>&1 || true
+"$tmp/bin/gh" >/dev/null 2>&1 || true
 
 # --- origin with queue branches -------------------------------------------------
 
 git_() { git -C "$tmp/work" -c user.name=ci -c user.email=ci@example.com "$@"; }
 git init --quiet --bare -b main "$FAKE_ORIGIN"
 git init --quiet -b main "$tmp/work"
-mkdir -p "$tmp/work/src" "$tmp/work/docs" "$tmp/work/scripts" "$tmp/work/apps/android"
+mkdir -p "$tmp/work/src" "$tmp/work/docs" "$tmp/work/scripts" "$tmp/work/apps/android" "$tmp/work/.github/workflows"
 tr -d '\r' <scripts/ci-areas.txt >"$tmp/work/scripts/ci-areas.txt"
 # main's runner scripts, which an installed copy updates itself from.
 cp scripts/queue-runner.sh scripts/lib.sh "$tmp/work/scripts/"
@@ -401,6 +455,8 @@ export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
 export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
 export PATH="$tmp/bin:$PATH"
+# By its path too: a developer Mac has a real one (#658).
+export QUEUE_CI_TAILSCALE=$tmp/bin/tailscale
 
 W=ci/windows A=ci/android
 wout=$LOCAL_CI_HOME/out/queue-windows
@@ -413,17 +469,16 @@ echo stray >"$LOCAL_CI_HOME/queue-windows/mdoc/stray.txt"
 mkdir -p "$wout/0ld0000" "$wout/recent0"
 touch -t "$(days_ago 8)" "$wout/0ld0000"
 
+# Runs a runner until the queue is empty. The checks after it read what it
+# did, so they skip if it misses its limit.
 run_once() { # job log [script]
   QUEUE_CI_JOB=$1 bash "${3:-scripts/queue-runner.sh}" once >"$2" 2>&1 &
   local runner=$! rc=0
-  for _ in $(seq 1 300); do
-    kill -0 "$runner" 2>/dev/null || break
-    sleep 1
-  done
-  if kill -0 "$runner" 2>/dev/null; then
-    kill "$runner"
-    echo "FAIL: the $1 runner did not finish within 5 minutes" >&2
-    failures=$((failures + 1))
+  skip_why=''
+  if ! wait_for exited "$runner"; then
+    stop_runner "$runner"
+    missed "the $1 runner ($(basename "$2"))" finish "$2"
+    return 0
   fi
   wait "$runner" || rc=$?
   check "the $1 runner exits once nothing is queued" [ "$rc" -eq 0 ]
@@ -524,7 +579,8 @@ check "the job's refs are cleaned up" [ -z "$(git -C "$LOCAL_CI_HOME/queue-windo
 
 aout=$LOCAL_CI_HOME/out/queue-android
 : >"$FAKE/just.log"
-wposts=$(grep -c "	$W	" "$FAKE/statuses.tsv")
+# None if the Windows runner hung before its first post: grep -c then fails.
+wposts=$(grep -c "	$W	" "$FAKE/statuses.tsv" || true)
 git clone --quiet "$FAKE_ORIGIN" "$LOCAL_CI_HOME/queue-android/mdoc"
 mkdir -p "$LOCAL_CI_HOME/queue-android/mdoc/target"
 echo cache >"$LOCAL_CI_HOME/queue-android/mdoc/target/kept"
@@ -593,14 +649,18 @@ git clone --quiet "$FAKE_ORIGIN" "$dhome/mdoc"
 QUEUE_CI_JOB=windows QUEUE_CI_HOME=$dhome QUEUE_CI_OUT=$LOCAL_CI_HOME/out/queue-disk QUEUE_CI_MIN_FREE_GB=100000000 \
   QUEUE_CI_PREFIXES=disk/main/ QUEUE_CI_FOREGROUND=1 bash scripts/queue-runner.sh run >"$tmp/disk.log" 2>&1 &
 runner=$!
-for _ in $(seq 1 60); do
-  grep -q "Waiting for disk space" "$FAKE/statuses.tsv" && break
-  sleep 1
-done
-# A few more polls: the status is posted once, not refreshed.
-sleep 4
-kill "$runner" 2>/dev/null || true
-wait "$runner" 2>/dev/null || true
+skip_why=''
+disk_polls() { grep -c "matching-refs/heads/disk/main/" "$FAKE/gh.log" 2>/dev/null || true; }
+# The status, then three more polls: it is posted once, not refreshed.
+if ! wait_for eval 'grep -q "Waiting for disk space" "$FAKE/statuses.tsv" || exited "$runner"'; then
+  missed "the disk-floor runner (disk.log)" "post that it waits for disk space" "$tmp/disk.log"
+else
+  # shellcheck disable=SC2034 # read in the eval
+  polls=$(disk_polls)
+  wait_for eval '[ "$(disk_polls)" -ge $((polls + 3)) ] || exited "$runner"' ||
+    missed "the disk-floor runner (disk.log)" "poll three more times" "$tmp/disk.log"
+fi
+stop_runner "$runner"
 check "below the disk floor no job starts" [ ! -s "$FAKE/just.log" ]
 check "and the oldest commit's status says so, once" \
   [ "$(grep -c "^$disk	$W	pending	Waiting for disk space: [0-9]* GB free; a job starts at 100000000 GB	https://ci.example/ci/queue-windows/status.txt" "$FAKE/statuses.tsv")" = 1 ]
@@ -649,7 +709,9 @@ check "after the result" [ "$(line_of "success $W on ${bump:0:7}")" -lt "$(line_
 check "to main's copy" cmp -s "$uhome/runner/scripts/queue-runner.sh" <(git_ show next-main:scripts/queue-runner.sh)
 check "and restarts as it" [ "$(grep -c "runner started" "$tmp/update.log")" = 2 ]
 check "which does not run the job again" [ "$(grep -c "^bump lint" "$FAKE/just.log")" = 1 ]
-# Line endings aside, a copy that matches main's stays.
+# Line endings aside, a copy that matches main's stays. No runner: these
+# run whatever the update runner did.
+skip_why=''
 (
   # Its own count, which the parent adds: it once exited with the parent's,
   # which was then counted twice.
@@ -678,6 +740,7 @@ if [ "$failures" -gt 0 ]; then
   cat "$FAKE/statuses.tsv" >&2
   echo "--- just" >&2
   cat "$FAKE/just.log" >&2
+  [ "$skipped" -eq 0 ] || echo "($skipped check(s) skipped after a runner missed its limit)" >&2
   die "$failures queue runner check(s) failed"
 fi
 echo "queue runner: all checks passed"
