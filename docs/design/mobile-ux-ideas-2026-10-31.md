@@ -3,7 +3,7 @@
 Ideas for the iOS app (and Android where noted) after iOS 0.1's code and
 polish landed. These are ideas to grill, not decisions. Sources:
 
-- the after set of the [iOS UI survey](../evidence/ios-app/2026-10-31-ui-survey/README.md);
+- the after set of the [iOS UI survey](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md);
 - the app's code on `main` at d95d0ba;
 - a desk scan of mobile redaction apps and of what iOS 26 offers.
 

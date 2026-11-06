@@ -62,6 +62,29 @@ extension Category {
     }
 }
 
+extension Scope {
+    var ffi: MdocFFI.Scope {
+        self == .allOccurrences ? .all : .this
+    }
+}
+
+extension HistoryStepKind {
+    init(_ kind: MdocFFI.StepKind) {
+        self = switch kind {
+        case .replace: .replace
+        case .keep: .keep
+        case .replaceAll: .replaceAll
+        case .mark: .mark
+        case .rename: .rename
+        case .category: .category
+        case .sameAs: .sameAs
+        case .newAlias: .newAlias
+        case .owner: .owner
+        case .joinCase: .joinCase
+        }
+    }
+}
+
 extension MentionState {
     init(_ state: MdocFFI.MentionState) {
         self = switch state {
@@ -427,14 +450,28 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                 original: mention.original, alias: mention.alias ?? "",
                 category: Category(mention.category), state: MentionState(mention.state))
         }
-        let identities = review.identities.map { row in
+        var identities = review.identities.map { row in
             let id = IdentityID(rawValue: String(row.id))
             let states = Set(candidates.filter { $0.identityID == id }.map(\.state))
             let state: MentionState = row.proposed > 0 ? .proposed : (states == [.kept] ? .kept : .replaced)
             return Identity(
                 id: id, alias: row.alias, category: Category(row.category),
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
-                mentionCount: max(Int(row.mentions), candidates.filter { $0.identityID == id }.count), state: state)
+                mentionCount: max(Int(row.mentions), candidates.filter { $0.identityID == id }.count), state: state,
+                owner: row.owner.map { IdentityID(rawValue: String($0)) })
+        }
+        // A name kept everywhere is no active identity in the core; its
+        // kept mentions still name it, so it stays in the list under Kept
+        // (ADR 0098's Show filter).
+        let listed = Set(identities.map(\.id))
+        let kept = Dictionary(grouping: candidates.filter { $0.state == .kept && !listed.contains($0.identityID) && !$0.alias.isEmpty }, by: \.identityID)
+        for (id, mentions) in kept.sorted(by: { ($0.value.map(\.range.start).min() ?? 0) < ($1.value.map(\.range.start).min() ?? 0) }) {
+            guard let first = mentions.min(by: { $0.range.start < $1.range.start }) else { continue }
+            var wordings: [String] = []
+            for mention in mentions where !wordings.contains(mention.original) { wordings.append(mention.original) }
+            identities.append(Identity(
+                id: id, alias: first.alias, category: first.category, primaryWording: first.original,
+                variants: wordings, mentionCount: mentions.count, state: .kept, owner: nil))
         }
         let phase: DocumentPhase = if !scanned {
             .unscanned
@@ -443,12 +480,26 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         } else {
             .ready
         }
+        let step = { (step: MdocFFI.HistoryStep) -> HistoryStep in
+            let range = step.range.map { SourceRange(start: Int($0.start), end: Int($0.end)) }
+            return HistoryStep(
+                kind: HistoryStepKind(step.kind), label: step.label, subject: step.subject, range: range,
+                candidateID: range.flatMap { range in candidates.first { $0.range == range }?.id },
+                identityID: step.identity.map { IdentityID(rawValue: String($0)) })
+        }
         return DocumentSnapshot(
             id: id, title: review.title, caseID: (review.caseId ?? caseID).map(CaseID.init),
             caseName: library.caseName(review.caseId ?? caseID), kind: kind, phase: phase,
             markdown: review.text, styling: MarkdownStyling(markdown: review.text),
             candidates: candidates, identities: identities, original: original,
-            pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning)
+            pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning,
+            mergeHints: review.linkHints.map { hint in
+                MergeHint(
+                    from: IdentityID(rawValue: String(hint.from)), into: IdentityID(rawValue: String(hint.into)),
+                    wording: hint.wording)
+            },
+            canUndo: review.canUndo, canRedo: review.canRedo,
+            undoStep: review.undoStep.map(step), redoStep: review.redoStep.map(step))
     }
 
     func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
@@ -584,6 +635,136 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         guard let caseID, let path else { throw CoreError.noCase }
         try core { try library.ffi.saveReply(caseId: caseID, document: path, reply: "") }
         return snapshot()
+    }
+
+    // MARK: Review bar (ADR 0098)
+
+    func undo() throws -> DocumentSnapshot {
+        try change { try ffi.undo() }
+    }
+
+    func redo() throws -> DocumentSnapshot {
+        try change { try ffi.redo() }
+    }
+
+    func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot {
+        let text = snapshot().markdown
+        var candidates: [MdocFFI.Candidate] = []
+        var taken: [Range<Int>] = []
+        // Longest first, so "Maya Bennett" wins over a shorter wording inside it.
+        for name in names.sorted(by: { $0.wording.utf8.count > $1.wording.utf8.count }) {
+            for range in Self.byteRanges(of: name.wording, in: text) where !taken.contains(where: { $0.overlaps(range) }) {
+                taken.append(range)
+                candidates.append(MdocFFI.Candidate(
+                    range: TextRange(start: UInt64(range.lowerBound), end: UInt64(range.upperBound)),
+                    category: name.category.ffi, score: 1))
+            }
+        }
+        candidates.sort { $0.range.start < $1.range.start }
+        // Stored proposals stand in for the scan, and save as its result
+        // does: when the phone locks first, once it unlocks.
+        let proposed = try core { try ffi.addCandidates(candidates: candidates) }
+        lock.withLock {
+            review = proposed
+            scanned = true
+        }
+        try saveAfterJob { [self] in try save() }
+        return snapshot()
+    }
+
+    /// Every exact occurrence of `wording`, as UTF-8 byte ranges.
+    static func byteRanges(of wording: String, in text: String) -> [Range<Int>] {
+        var found: [Range<Int>] = []
+        var start = text.startIndex
+        while let range = text.range(of: wording, range: start..<text.endIndex) {
+            let lower = text.utf8.distance(from: text.startIndex, to: range.lowerBound)
+            found.append(lower..<lower + wording.utf8.count)
+            start = range.upperBound
+        }
+        return found
+    }
+
+    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
+        guard range.length > 0 else { throw CoreError.emptySelection }
+        let selection = TextRange(start: UInt64(range.start), end: UInt64(range.end))
+        // No category: the core's guess, as desktop's Replace on a selection.
+        return try refusable { try ffi.addSelection(range: selection, category: nil) }
+    }
+
+    func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
+        let mention = try mention(candidate)
+        let value = alias.trimmingCharacters(in: .whitespaces)
+        if let other = try core({ try ffi.identityWithAlias(alias: value) }),
+           IdentityID(rawValue: String(other)) != mention.identityID {
+            throw CoreError.aliasTaken(alias: value, by: IdentityID(rawValue: String(other)))
+        }
+        return try refusable { try ffi.rename(range: Self.range(mention), scope: scope.ffi, alias: value) }
+    }
+
+    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice] {
+        let mention = try mention(candidate)
+        return try core { try ffi.categoryChoices(range: Self.range(mention), scope: scope.ffi) }.map { choice in
+            CategoryChoice(category: Category(choice.category), alias: choice.alias, isCurrent: choice.current)
+        }
+    }
+
+    func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot {
+        let mention = try mention(candidate)
+        return try refusable {
+            try ffi.setCategory(range: Self.range(mention), scope: scope.ffi, category: category.ffi)
+        }
+    }
+
+    func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot {
+        let mention = try mention(candidate)
+        let target = try Self.identity(target)
+        return try refusable { try ffi.sameAs(range: Self.range(mention), scope: scope.ffi, target: target) }
+    }
+
+    func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot {
+        let (from, into) = (try Self.identity(identity), try Self.identity(target))
+        return try refusable { try ffi.link(from: from, into: into) }
+    }
+
+    func newAlias(_ candidate: CandidateID) throws -> DocumentSnapshot {
+        let mention = try mention(candidate)
+        return try refusable { try ffi.newAlias(range: Self.range(mention)) }
+    }
+
+    func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot {
+        let id = try Self.identity(identity)
+        let owner = try owner.map(Self.identity)
+        return try refusable { try ffi.setOwner(identity: id, owner: owner) }
+    }
+
+    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot {
+        let (from, into) = (try Self.identity(hint.from), try Self.identity(hint.into))
+        return try refusable { try ffi.dismissHint(from: from, into: into) }
+    }
+
+    private func mention(_ candidate: CandidateID) throws -> Candidate {
+        guard let mention = snapshot().candidate(candidate) else { throw CoreError.notFound }
+        return mention
+    }
+
+    private static func range(_ mention: Candidate) -> TextRange {
+        TextRange(start: UInt64(mention.range.start), end: UInt64(mention.range.end))
+    }
+
+    /// The core's id of an identity; a mention without one has none.
+    private static func identity(_ id: IdentityID) throws -> UInt64 {
+        guard let value = UInt64(id.rawValue) else { throw CoreError.notFound }
+        return value
+    }
+
+    /// `change`, with the core's refusal (a taken or retired alias, a
+    /// mention that moved) in its own words.
+    private func refusable(_ transition: () throws -> ReviewSnapshot) throws -> DocumentSnapshot {
+        do {
+            return try change(transition)
+        } catch CoreError.importFailed(let message) {
+            throw CoreError.refused(message)
+        }
     }
 
     /// A review transition, then the document and its mapping saved into

@@ -8,13 +8,22 @@
 # While a new runner image rolls out, two env hashes alternate and a run on
 # the other image restores nothing; main runs have no time target, and the
 # alternative is a second full cache set for every toolchain change, over
-# the 10 GB repository limit. Needs GH_TOKEN with actions: write and GH_REPO.
+# the 10 GB repository limit. The built iOS core's keys (main-caches.yml,
+# scripts/ios-core-cache.sh) are `ios-core-<version>-<input hash>`, so all
+# of them are one job's generations. Needs GH_TOKEN with actions: write and
+# GH_REPO.
 source "$(dirname "$0")/lib.sh"
 
-entries=$(gh cache list --ref refs/heads/main --key v0-rust- --sort created_at \
-  --order desc --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"')
+# list <key prefix>: main's caches under it, newest first.
+list() {
+  gh cache list --ref refs/heads/main --key "$1" --sort created_at \
+    --order desc --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"'
+}
+rust=$(list v0-rust-)
+core=$(list ios-core-)
+entries=$(printf '%s\n%s\n' "$rust" "$core")
 # Newest first, so every entry after the first of its job's key is older.
-older=$(awk '{
+older=$(awk 'NF {
   job = $2
   sub(/-[^-]*-[^-]*$/, "", job)
   if (job in newest) print $1, $2, newest[job]

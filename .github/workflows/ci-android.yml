@@ -1,0 +1,82 @@
+name: CI Android
+
+# The Android job on a hosted runner (ADR 0091, ADR 0095, ADR 0100):
+# `MDOC_ANDROID_JOB=always just android` on ubuntu-latest with KVM, the same
+# job the PC's queue runner posts as ci/android. merge-gate.sh dispatches it
+# on a queue commit as the fallback (`-f ref=<sha>` on the queue branch)
+# when the PC is silent, its heartbeat is stale, its runner errs, or the
+# group holds a fork or bot PR, and reads the check `ci/android (hosted)`:
+# one job, so no summary; a job that never got a runner is re-run by the
+# gate. nightly.yml calls it on main. Every step is a recipe or a script,
+# so `just android` on the PC, the Mac or Linux with KVM reproduces it.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test; empty tests the triggering ref.
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The commit to test; empty tests the chosen branch.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: ci/android (hosted)
+    runs-on: ubuntu-latest
+    # Job limits (ADR 0095); a cold run takes about 25 minutes.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # The job needs about 25 GB: the pinned SDK, NDK and emulator under
+      # ~/Android, two core builds and Gradle. The image's own Android SDK
+      # and other toolchains go only when the disk is short.
+      - name: Disk
+        run: |
+          df -h /
+          free=$(df --output=avail -BG / | tail -n 1 | tr -dc 0-9)
+          if [ "$free" -lt 40 ]; then
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+            df -h /
+          fi
+
+      # The emulator needs read and write access to /dev/kvm, which the
+      # runner's user lacks until a udev rule opens it.
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - run: just android
+        env:
+          MDOC_ANDROID_JOB: always
+
+      - name: Gradle reports, JUnit XML and the emulator's log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-reports
+          path: |
+            apps/android/app/build/reports
+            apps/android/app/build/outputs/androidTest-results
+            apps/android/app/build/test-results
+            target/android/*.log
+            target/android/minified-screen.xml
+          # A step before Gradle failed; its own log says why.
+          if-no-files-found: warn
+          retention-days: 7
+          overwrite: true

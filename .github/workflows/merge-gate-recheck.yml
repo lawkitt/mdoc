@@ -1,0 +1,38 @@
+name: Merge gate recheck
+
+# The follow-up merge-gate pass (ADR 0100): scripts/merge-gate.sh dispatches
+# this when a pass hit a GitHub error or left something pending. It waits 3
+# minutes, then runs merge-gate.yml, so a lost pass or a time-based decision
+# (the PC silent for 10 minutes) never waits for GitHub's best-effort
+# schedule. A newer recheck replaces a waiting one.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: merge-gate-recheck
+  cancel-in-progress: true
+
+jobs:
+  recheck:
+    name: merge-gate recheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      # Dispatch merge-gate.yml.
+      actions: write
+    steps:
+      - name: Run merge-gate.yml in 3 minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          sleep 180
+          for try in 1 2 3; do
+            gh workflow run merge-gate.yml --repo "$REPO" --ref "$BRANCH" && exit 0
+            echo "dispatch failed (try $try)" >&2
+            sleep $((try * 10))
+          done
+          exit 1

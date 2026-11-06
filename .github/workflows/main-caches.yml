@@ -3,9 +3,11 @@ name: Main caches
 # Builds on each push to main that save the caches the merge queue's hosted
 # jobs restore (ADR 0095, ROADMAP CI redesign item 7): GitHub lets a branch
 # restore only its own caches and main's, so a cache saved on a queue
-# commit helps nothing. ci.yml's main run saves the desktop jobs' (`test`);
-# this saves the iOS core's (`ios`), the detection build's (`detection`) and
-# the detection model. Same job ids as the queue's jobs, so the keys match.
+# commit helps nothing. ci.yml's main run saves the desktop jobs' (`checks`
+# and `test`, ADR 0100); this saves the iOS core's (`ios`), the detection
+# build's (`detection`) and the detection model, and the built iOS core
+# itself (target/ios, scripts/ios-core-cache.sh), which ci/ios restores to
+# skip that build. Same job ids as the queue's jobs, so the keys match.
 on:
   push:
     branches: [main]

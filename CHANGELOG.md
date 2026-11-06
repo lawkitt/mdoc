@@ -225,7 +225,7 @@ All notable changes to **mdoc** are documented here.
 - **Android UI survey.** `just android-survey` takes every screen of the
   Android app in light and dark, and at the largest font, on the phone and
   tablet emulators; the first set is in
-  [docs/evidence/android-app](docs/evidence/android-app/2026-10-31-ui-survey/README.md).
+  [docs/evidence/android-app](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/android-app/2026-10-31-ui-survey/README.md).
   It found an unlabelled + button and a tablet crash, both fixed
   ([ADR 0089](docs/adr/0089-android-app.md)).
 
@@ -318,7 +318,7 @@ All notable changes to **mdoc** are documented here.
   restored reply is styled like the review text, in the app and in Restore
   with mdoc, and on the Reply tab the bar shares and copies the reply. A scan
   that finds nothing says so ([ADR 0087](docs/adr/0087-ios-ui-polish.md),
-  [UI survey](docs/evidence/ios-app/2026-10-31-ui-survey/README.md)).
+  [UI survey](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md)).
 
 - **iOS: long jobs no longer crash the app on a device.** Downloading a
   model, importing a document or finding names starts a background task,

@@ -177,6 +177,49 @@ struct Identity: Identifiable, Hashable, Sendable {
     var mentionCount: Int
     /// Proposed while any mention is; replaced or kept once all agree.
     var state: MentionState
+    /// Belongs to…: the person or organization a contact or identifier
+    /// belongs to.
+    var owner: IdentityID? = nil
+}
+
+/// Two identities that look like one subject (ADR 0080): "Looks like
+/// `wording`". Linking them is the user's choice; × hides the hint.
+struct MergeHint: Hashable, Sendable {
+    /// The shorter or later identity, which Same as links…
+    var from: IdentityID
+    /// …into this one, which keeps its alias and restore wording.
+    var into: IdentityID
+    var wording: String
+}
+
+/// One row of the category menu: choosing `category` gives `alias`, or
+/// keeps the alias as it is when nil ("Organization → ORG_3").
+struct CategoryChoice: Hashable, Sendable {
+    var category: Category
+    var alias: String?
+    /// The mention's identity is in this category already.
+    var isCurrent: Bool
+}
+
+/// What an undo step did (ADR 0098).
+enum HistoryStepKind: Hashable, Sendable {
+    case replace, keep, replaceAll, mark, rename, category, sameAs, newAlias, owner, joinCase
+}
+
+/// A step Undo reverts or Redo makes again: the toast names it ("Undid " +
+/// `label`), and the bar moves back to where it acted.
+struct HistoryStep: Hashable, Sendable {
+    var kind: HistoryStepKind
+    /// "Replace · Riverside Holdings", "Same as · Maya Bennett".
+    var label: String
+    /// What the label names after the kind; empty for none.
+    var subject: String
+    /// The mention it acted on in this snapshot's Markdown: for the undo
+    /// step where it is now, for the redo step where it is before redoing.
+    var range: SourceRange?
+    /// The candidate at `range`, when one is there.
+    var candidateID: CandidateID?
+    var identityID: IdentityID?
 }
 
 /// The candidate sheet's choice. Aliases come from the core and are not
@@ -201,8 +244,8 @@ enum RestoredSegment: Hashable, Sendable {
 
 struct RestoreResult: Hashable, Sendable {
     var segments: [RestoredSegment]
-    /// Distinct identities restored and distinct unrecognised tokens, as
-    /// "N values restored · M unrecognised" counts them (ADR 0078).
+    /// Distinct identities restored and distinct unrecognized tokens, as
+    /// "N values restored · M unrecognized" counts them (ADR 0078).
     var restoredCount: Int
     var unresolvedCount: Int
 
@@ -273,6 +316,14 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// OCR stopped part-way (a cancel, or mdoc stopping): its finished pages
     /// are kept and recognition resumes with the rest.
     var resumesOCR = false
+    /// Merge hints, without the dismissed ones.
+    var mergeHints: [MergeHint] = []
+    var canUndo = false
+    var canRedo = false
+    /// What Undo would revert; after a redo, what it made again.
+    var undoStep: HistoryStep? = nil
+    /// What Redo would make again; after an undo, what it undid.
+    var redoStep: HistoryStep? = nil
 
     var pendingCount: Int {
         candidates.filter { $0.state == .proposed }.count
@@ -376,6 +427,10 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     /// installed.
     case modelMissing
     case importFailed(String)
+    /// Rename: another identity has this alias. Same as is the way to it.
+    case aliasTaken(alias: String, by: IdentityID)
+    /// A review change the core refused, in its words.
+    case refused(String)
 
     var errorDescription: String? {
         switch self {
@@ -393,6 +448,10 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "Download the models first.")
         case .importFailed(let reason):
             String(localized: "mdoc could not open this file: \(reason)")
+        case .aliasTaken(let alias, _):
+            String(localized: "\(alias) is another name's alias.")
+        case .refused(let reason):
+            reason
         }
     }
 }

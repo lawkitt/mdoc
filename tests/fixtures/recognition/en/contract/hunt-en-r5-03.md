@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: role-as-name
 issue: 385
 kind: contract
 source: hunt-r5
-expect: false hit: PERSON "Discloser"
-expect: false hit: PERSON "Recipient"
 ---
 # Confidentiality undertaking: blank circulation form
 

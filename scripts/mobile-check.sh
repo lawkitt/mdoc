@@ -6,9 +6,8 @@
 # scripts/ci-areas.txt (on a merge ref, against its main): the core, the app
 # and its tests on a Simulator of the pinned Xcode and runtime
 # (scripts/tools.env), shut down afterwards if this run booted it; ci/ios
-# runs it (ADR 0095). Neither: both, as `just mobile`.
-# MDOC_IOS_JOB=always or never overrides the area check (ci/ios sets
-# always: the queue has already decided).
+# (tests) runs its recipes (ADR 0095, ci-ios.yml). Neither: both, as `just
+# mobile`. MDOC_IOS_JOB=always or never overrides the area check.
 source "$(dirname "$0")/lib.sh"
 
 [ "$(uname -s)" = Darwin ] || die "the mobile check runs on macOS"
