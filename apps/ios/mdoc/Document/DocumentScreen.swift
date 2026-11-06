@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import UIKit
 
 /// One document: Text and Original switch on iPhone and sit side by side on
@@ -11,9 +12,16 @@ struct DocumentScreen: View {
     /// The window is too narrow for a third column (iPad portrait).
     var isNarrow = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.undoManager) private var undoManager
     @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
+    @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
 
     private var isRegular: Bool { sizeClass == .regular }
+    @State private var screenHeight: CGFloat = 800
+    /// The long press's Same as… with a long list: the searchable picker.
+    @State private var sameAsCandidate: CandidateID?
+    /// Identities' Same as…: the identity it starts from.
+    @State private var sameAsIdentity: IdentityID?
 
     /// iPad's right column: the original or the reply beside the text.
     private var hasRightPane: Bool { model.hasOriginal || model.snapshot.reply != nil }
@@ -26,26 +34,21 @@ struct DocumentScreen: View {
             .navigationTitle(model.snapshot.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
+            // Above the bottom bar, never over its buttons.
+            .toast($model.toast)
             .safeAreaInset(edge: .bottom) { bottomBar }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
             .inspector(isPresented: inspectorBinding) {
                 identities
                     .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
-                    .presentationDetents([.medium, .large])
+                    .reviewSheetDetents()
             }
-            .sheet(item: reviewingBinding) { item in
-                if let candidate = model.snapshot.candidate(item.id) {
-                    CandidateSheet(
-                        candidate: candidate,
-                        identity: model.snapshot.identities.first { $0.id == candidate.identityID },
-                        hasNext: { scope in model.hasProposal(after: candidate.id, scope: scope) },
-                        onDone: { decision, scope in model.decide(candidate.id, decision, scope: scope) },
-                        onNext: { model.reviewNext() })
-                }
+            .sheet(isPresented: $model.showsFind) {
+                FindSheet(model: model)
             }
-            .sheet(item: manualBinding) { _ in
-                ManualReplaceSheet(text: model.manualSelectionText) { category in
-                    model.addReplacement(category: category)
-                }
+            .sheet(item: Binding(get: { sameAsCandidate.map(PickerSource.candidate) ?? sameAsIdentity.map(PickerSource.identity) },
+                                 set: { if $0 == nil { sameAsCandidate = nil; sameAsIdentity = nil } })) { source in
+                sameAsPicker(source)
             }
             .sheet(isPresented: $model.showsReplySheet) {
                 ReplySheet(caseName: model.snapshot.caseName) { reply in
@@ -67,6 +70,8 @@ struct DocumentScreen: View {
                 Text(message)
             }
             .onAppear {
+                model.systemUndo = undoManager
+                undoManager?.levelsOfUndo = 256
                 model.refresh()
                 // In a narrow window the original shows first.
                 if isRegular && !identitiesInPane && model.snapshot.phase != .recognizing {
@@ -87,12 +92,29 @@ struct DocumentScreen: View {
         IdentitiesView(
             identities: model.snapshot.identities,
             onOpen: { identity in
-                if let first = model.snapshot.mentions(of: identity).first {
+                // The bar on the identity's first undecided mention, or its
+                // first (ADR 0098's map).
+                let mentions = model.snapshot.mentions(of: identity).sorted { $0.range.start < $1.range.start }
+                if let first = mentions.first(where: { $0.state == .proposed }) ?? mentions.first {
                     if !isRegular { model.showsIdentities = false }
                     model.open(first.id)
                 }
             },
             onDecide: { identity, decision in model.decide(identity: identity, decision) },
+            onFocus: { focus in
+                if !isRegular { model.showsIdentities = false }
+                model.beginReview(focus: focus)
+            },
+            onSameAs: { identity, target in model.link(identity, into: target) },
+            onPickSameAs: { identity in sameAsIdentity = identity },
+            mentions: { identity in
+                model.snapshot.mentions(of: identity).sorted { $0.range.start < $1.range.start }
+                    .map { (id: $0.id, context: model.context(of: $0), state: $0.state) }
+            },
+            onOpenMention: { id in
+                if !isRegular { model.showsIdentities = false }
+                model.open(id)
+            },
             onClose: isRegular ? nil : { model.showsIdentities = false })
     }
 
@@ -178,14 +200,116 @@ struct DocumentScreen: View {
     }
 
     private var markdownText: some View {
+        VStack(spacing: 0) {
+            if model.snapshot.pendingCount > 0 && !model.isReviewing {
+                TipView(LongPressTip())
+                    .padding(.horizontal)
+            }
+            markdownTextView
+        }
+    }
+
+    private var markdownTextView: some View {
         MarkdownTextView(
             snapshot: model.snapshot,
             selected: model.reviewing,
+            scoped: model.scopedMentions,
+            revealRequest: model.revealRequest,
+            revealRange: model.revealRange,
             rendered: !showsSource,
+            serif: serif,
             onCandidate: { model.open($0) },
-            onReplace: { model.beginReplace($0) },
-            onReviewNext: { model.reviewNext() })
+            onReplace: { model.markSelection($0) },
+            onReviewNext: { model.reviewNext() },
+            menu: { id in candidateMenu(id) })
         .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private enum PickerSource: Identifiable, Hashable {
+        case candidate(CandidateID), identity(IdentityID)
+        var id: Self { self }
+    }
+
+    @ViewBuilder
+    private func sameAsPicker(_ source: PickerSource) -> some View {
+        switch source {
+        case .candidate(let id):
+            if let candidate = model.snapshot.candidate(id) {
+                SameAsPicker(
+                    source: candidate.original, targets: model.sameAsTargets(for: candidate),
+                    categoryLabel: candidate.category.label) { target in
+                    model.select(id)
+                    model.sameAs(target)
+                }
+            }
+        case .identity(let id):
+            if let identity = model.snapshot.identities.first(where: { $0.id == id }) {
+                SameAsPicker(
+                    source: identity.primaryWording,
+                    targets: model.sameAsTargets(forIdentity: id, category: identity.category),
+                    categoryLabel: identity.category.label) { target in
+                    model.link(id, into: target)
+                }
+            }
+        }
+    }
+
+    /// A long press on a name (ADR 0098): what its state allows, under a
+    /// header with the name and its alias. Each action puts the bar on it.
+    private func candidateMenu(_ id: CandidateID) -> UIMenu? {
+        guard let candidate = model.snapshot.candidate(id) else { return nil }
+        func act(_ scope: Scope = .allOccurrences, _ body: @escaping () -> Void) -> () -> Void {
+            { model.select(id); model.reviewScope = scope; body() }
+        }
+        func action(_ title: String, _ image: String, attributes: UIMenuElement.Attributes = [], _ run: @escaping () -> Void) -> UIAction {
+            UIAction(title: title, image: UIImage(systemName: image), attributes: attributes) { _ in run() }
+        }
+        let categories = UIMenu(
+            title: String(localized: "Change category"), image: UIImage(systemName: "tag"),
+            children: Category.allCases.filter { $0 != candidate.category }.map { category in
+                action(category.label, category.symbol, act { model.setCategory(category) })
+            })
+        let found = model.sameAsTargets(for: candidate)
+        let targets = found.all
+        func targetActions(_ identities: [Identity]) -> [UIMenuElement] {
+            identities.map { target in
+                action("\(target.primaryWording) · \(target.alias)", target.category.symbol, act { model.sameAs(target.id) })
+            }
+        }
+        // The same order as the card's picker; past 8, its searchable sheet.
+        let sameAs: UIMenuElement = targets.count > 8
+            ? action(String(localized: "Same as…"), "link", act { sameAsCandidate = id })
+            : UIMenu(title: String(localized: "Same as…"), image: UIImage(systemName: "link"), children: [
+                UIMenu(title: String(localized: "Looks like"), options: .displayInline, children: targetActions(found.hinted)),
+                UIMenu(options: .displayInline, children: targetActions(found.sameCategory)),
+                UIMenu(title: String(localized: "Other categories"), children: targetActions(found.otherCategories)),
+            ].filter { !$0.children.isEmpty })
+        var children: [UIMenuElement] = []
+        switch candidate.state {
+        case .proposed:
+            children = [
+                action(String(localized: "Replace"), "eye.slash", act { model.decideCurrent(.replace) }),
+                action(String(localized: "Keep"), "eye", act { model.decideCurrent(.keep) }),
+                action(String(localized: "Just this one"), "1.circle", act(.justThisOne) { model.decideCurrent(.replace) }),
+            ]
+            if !targets.isEmpty { children.append(sameAs) }
+            children.append(categories)
+        case .replaced:
+            children = [
+                action(String(localized: "Show original"), "text.quote") {
+                    model.toast = ToastMessage(text: String(localized: "Original: \(candidate.original)"))
+                },
+                action(String(localized: "Keep instead"), "eye", act { model.decideCurrent(.keep) }),
+            ]
+            if !targets.isEmpty { children.append(sameAs) }
+            children.append(categories)
+        case .kept:
+            children = [
+                action(String(localized: "Replace instead"), "eye.slash", act { model.decideCurrent(.replace) }),
+                categories,
+            ]
+        }
+        return UIMenu(title: "\(candidate.original) → \(candidate.alias)", children: children)
     }
 
     /// What the picker switches between: a pane, or Identities in iPad's
@@ -235,6 +359,13 @@ struct DocumentScreen: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
+                Button {
+                    model.showsFind = true
+                } label: {
+                    Label("Find in document", systemImage: "magnifyingglass")
+                }
+                .disabled(model.snapshot.markdown.isEmpty)
+                .accessibilityIdentifier("find-in-document")
                 // The source as Copy for AI sends it, markers dimmed (ADR 0096).
                 Toggle(isOn: $showsSource) {
                     Label("Show Markdown", systemImage: "number")
@@ -266,19 +397,35 @@ struct DocumentScreen: View {
 
     // MARK: Bottom bar
 
+    @ViewBuilder
     private var bottomBar: some View {
+        if model.isReviewing && model.runningJob == nil {
+            ReviewBar(model: model, detailsHeight: max(120, screenHeight * 0.45 - 170))
+        } else {
+            actionBottomBar
+        }
+    }
+
+    private var actionBottomBar: some View {
         VStack(spacing: 8) {
             if let notice = model.notice {
                 Label(notice, systemImage: model.noticeSymbol)
                     .font(.subheadline)
+                    // Grows with the bar's text, no further (see `layout`).
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.thinMaterial, in: Capsule())
                     .accessibilityIdentifier("notice")
                     .task(id: notice) {
                         UIAccessibility.post(notification: .announcement, argument: notice)
-                        try? await Task.sleep(for: .seconds(2))
-                        model.clearNotice()
+                        // Long enough to read: two seconds, more for a sentence.
+                        // A newer notice cancels this wait and must stay.
+                        do {
+                            try await Task.sleep(for: .seconds(min(4, max(2, Double(notice.count) / 12))))
+                            model.clearNotice()
+                        } catch {}
                     }
             }
             if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
@@ -303,27 +450,6 @@ struct DocumentScreen: View {
         .padding(.vertical, 8)
         .background(.bar)
     }
-
-    private var reviewingBinding: Binding<IdentifiedCandidate?> {
-        Binding(
-            get: { model.reviewing.map(IdentifiedCandidate.init) },
-            set: { model.reviewing = $0?.id })
-    }
-
-    private var manualBinding: Binding<IdentifiedSelection?> {
-        Binding(
-            get: { model.manualSelection.map(IdentifiedSelection.init) },
-            set: { model.manualSelection = $0?.range })
-    }
-}
-
-private struct IdentifiedCandidate: Identifiable {
-    let id: CandidateID
-}
-
-private struct IdentifiedSelection: Identifiable {
-    let range: SourceRange
-    var id: SourceRange { range }
 }
 
 /// "Recognition stopped when mdoc left the screen."
@@ -379,7 +505,6 @@ private struct BelowFloorNote: View {
 /// Cancel, Replace N, then Share, Copy and Paste (a reply).
 private struct ActionBar: View {
     @Bindable var model: DocumentViewModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         switch model.primaryAction {
@@ -392,7 +517,7 @@ private struct ActionBar: View {
                 Task { await model.recognize() }
             }
         case .findNames:
-            primary("Find names", systemImage: "person.text.rectangle") {
+            primary("Find names", systemImage: "text.magnifyingglass") {
                 Task { await model.findNames() }
             }
         case .running(let kind, let progress):
@@ -428,7 +553,7 @@ private struct ActionBar: View {
         case .replaceAll(let count):
             layout {
                 Button {
-                    model.reviewNext()
+                    model.beginReview()
                 } label: {
                     Label("Review", systemImage: "list.bullet.rectangle")
                         .frame(maxWidth: .infinity)
@@ -437,6 +562,8 @@ private struct ActionBar: View {
                 primary("Replace \(count)", systemImage: "eye.slash") {
                     model.replaceAllPending()
                 }
+                .accessibilityLabel(Text("Replace all \(count) proposals"))
+                .accessibilityHint(Text("Each gets its alias. You can still keep any of them."))
             }
         case .handOff where model.pane == .reply && model.snapshot.reply != nil:
             // On the Reply tab the bar acts on the reply (ADR 0087). Short
@@ -512,12 +639,18 @@ private struct ActionBar: View {
     }
 
     /// The buttons side by side when every label fits on one line, stacked
-    /// otherwise: a label never wraps inside its button (ADR 0087).
+    /// otherwise: a label never wraps inside its button (ADR 0087). Like the
+    /// system's own bars, the bar's text stops growing at the second
+    /// accessibility size, where the primary button keeps a row and the
+    /// others share one, so the text keeps most of the screen; a long press
+    /// shows a label in the large content viewer.
     private func layout<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ButtonRow(forceColumn: dynamicTypeSize.isAccessibilitySize) {
-            content()
+        ButtonRow {
+            Group { content() }
+                .accessibilityShowsLargeContentViewer()
         }
         .lineLimit(1)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     private func primary(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -549,47 +682,68 @@ private struct ActionBar: View {
     }
 }
 
-/// Buttons of equal width in a row when the widest label fits its share, a
-/// column otherwise, so a label never wraps or truncates (ADR 0087).
+/// Buttons of equal width in a row when the widest label fits its share.
+/// Otherwise the first button (the primary one) takes a row of its own and
+/// the rest share the next when they fit, else every button takes a row: a
+/// label never wraps or truncates (ADR 0087).
 struct ButtonRow: Layout {
     var spacing: CGFloat = 8
+    /// One button a row, always.
     var forceColumn = false
 
-    private func rowShare(_ width: CGFloat?, _ subviews: Subviews) -> CGFloat? {
-        guard !forceColumn, !subviews.isEmpty else { return nil }
-        let count = CGFloat(subviews.count)
-        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        guard let width else { return widest }
-        let share = (width - spacing * (count - 1)) / count
-        return widest <= share ? share : nil
+    /// The rows: how many buttons each holds, first row first.
+    private func rows(_ width: CGFloat?, _ subviews: Subviews) -> [Int] {
+        let count = subviews.count
+        guard count > 1 else { return count == 1 ? [1] : [] }
+        if forceColumn { return Array(repeating: 1, count: count) }
+        let widths = subviews.map { $0.sizeThatFits(.unspecified).width }
+        guard let width else { return [count] }
+        if fits(widths, in: width) { return [count] }
+        if count > 2, fits(Array(widths.dropFirst()), in: width) { return [1, count - 1] }
+        return Array(repeating: 1, count: count)
+    }
+
+    private func fits(_ widths: [CGFloat], in width: CGFloat) -> Bool {
+        let share = (width - spacing * CGFloat(widths.count - 1)) / CGFloat(widths.count)
+        return (widths.max() ?? 0) <= share
+    }
+
+    /// Each row's buttons with their frames' width.
+    private func arranged(_ width: CGFloat, _ subviews: Subviews) -> [(Subviews, CGFloat)] {
+        var start = subviews.startIndex
+        return rows(width, subviews).map { count in
+            let row = subviews[start..<start + count]
+            start += count
+            return (row, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
+        }
+    }
+
+    private func height(of row: Subviews, share: CGFloat) -> CGFloat {
+        row.map { $0.sizeThatFits(ProposedViewSize(width: share, height: nil)).height }.max() ?? 0
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        if let share = rowShare(proposal.width, subviews) {
-            let count = CGFloat(subviews.count)
-            let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: share, height: nil)).height }.max() ?? 0
-            return CGSize(width: proposal.width ?? share * count + spacing * (count - 1), height: height)
+        let widest: CGFloat = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        let gaps = CGFloat(max(subviews.count - 1, 0))
+        let width: CGFloat = proposal.width ?? widest * CGFloat(subviews.count) + spacing * gaps
+        let rows = arranged(width, subviews)
+        var total: CGFloat = spacing * CGFloat(max(rows.count - 1, 0))
+        for (row, share) in rows {
+            total += height(of: row, share: share)
         }
-        let width = proposal.width ?? ideal
-        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
-        return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(subviews.count - 1, 0)))
+        return CGSize(width: width, height: total)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        if let share = rowShare(bounds.width, subviews) {
+        var y = bounds.minY
+        for (row, share) in arranged(bounds.width, subviews) {
+            let rowHeight = height(of: row, share: share)
             var x = bounds.minX
-            for subview in subviews {
-                subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: share, height: bounds.height))
+            for subview in row {
+                subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: share, height: rowHeight))
                 x += share + spacing
             }
-            return
-        }
-        var y = bounds.minY
-        for subview in subviews {
-            let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
-            subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
-            y += height + spacing
+            y += rowHeight + spacing
         }
     }
 }

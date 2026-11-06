@@ -122,14 +122,15 @@ final class ScreenshotUITests: XCTestCase {
         let email = text.links[MdocUITest.email].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 30))
         MdocUITest.tapAboveBottomBar(email, in: text, app)
-        XCTAssertTrue(app.buttons["candidate-done"].waitForExistence(timeout: 5))
-        keep("candidate-sheet-\(name)")
+        XCTAssertTrue(app.buttons["review-replace"].waitForExistence(timeout: 5))
+        keep("review-bar-\(name)")
 
         // Finish the review so the text can be shared, then share it to the
         // Restore with mdoc extension from the share sheet's app row.
-        app.buttons["candidate-done"].tap()
+        app.buttons["review-replace"].tap()
         let primary = app.buttons["primary-action"]
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
         if primary.label.hasPrefix("Replace") {
             primary.tap()
         }

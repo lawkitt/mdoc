@@ -19,18 +19,32 @@ extension NSAttributedString {
     /// `text`, which starts at UTF-16 `start` of this string, as VoiceOver
     /// should read it: each hidden unit a word joiner (U+2060), which keeps
     /// the length and every offset, says nothing and breaks no word, so
-    /// `12**34**` stays one number (ADR 0096).
+    /// `12**34**` stays one number (ADR 0096). A hidden line break stays a
+    /// line break: UIKit splits a long text view into paragraphs by the
+    /// text and labels them by this, and one paragraph fewer here (a folded
+    /// table's lines) shifted every later label off its range, so the
+    /// candidates after it lost their link elements.
     func spoken(_ text: String, at start: Int) -> String {
         let spoken = NSMutableString(string: text)
         let range = NSIntersectionRange(NSRange(location: start, length: spoken.length), NSRange(location: 0, length: length))
         enumerateAttribute(.mdocHidden, in: range) { value, run, _ in
             guard value != nil else { return }
+            var units = Array(repeating: unichar(0x2060), count: run.length)
+            for index in 0..<run.length {
+                let unit = spoken.character(at: run.location - start + index)
+                if Self.lineBreaks.contains(unit) {
+                    units[index] = unit
+                }
+            }
             spoken.replaceCharacters(
                 in: NSRange(location: run.location - start, length: run.length),
-                with: String(repeating: "\u{2060}", count: run.length))
+                with: String(utf16CodeUnits: units, count: units.count))
         }
         return spoken as String
     }
+
+    /// What ends a paragraph for `NSString`: LF, CR, NEL, LS, PS.
+    private static let lineBreaks: Set<unichar> = [0x0A, 0x0D, 0x85, 0x2028, 0x2029]
 }
 
 /// The styled text and the tables laid over it.

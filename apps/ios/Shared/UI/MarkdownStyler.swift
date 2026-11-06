@@ -14,6 +14,9 @@ struct MarkdownStyler {
 
     var traits: UITraitCollection
     var selected: CandidateID?
+    /// The other mentions the review bar's scope reaches: outlined, so All
+    /// N shows what it will change (ADR 0098).
+    var scoped: Set<CandidateID> = []
     /// Markers hidden and blocks drawn; false shows the source, markers dimmed.
     var rendered = true
     /// The text column's width, which tables are laid out for; nil leaves
@@ -206,6 +209,10 @@ struct MarkdownStyler {
             }
             if candidate.id == selected {
                 attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected)
+            } else if scoped.contains(candidate.id) {
+                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected * 0.45)
+                attributes[.underlineStyle] = NSUnderlineStyle.thick.rawValue
+                attributes[.underlineColor] = colour
             }
             text.addAttributes(attributes, range: range)
         }
@@ -243,8 +250,11 @@ struct MarkdownStyler {
     /// The text style's size for the reader's text size, as a plain system
     /// font: a text-style font makes iOS 26 hyphenate a word too long for
     /// its line, such as an email at large sizes (ADR 0087).
+    /// With Document font › Serif it is New York at the same size (ADR 0099).
     static func font(_ style: UIFont.TextStyle, traits: UITraitCollection, weight: UIFont.Weight = .regular) -> UIFont {
-        UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
+        let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
+        guard MarkdownDisplay.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
+        return UIFont(descriptor: serif, size: 0)
     }
 
     /// The body paragraph: no hyphenation, since a hyphen inside a name or an

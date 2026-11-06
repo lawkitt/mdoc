@@ -68,25 +68,7 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(model.primaryAction, .handOff)
     }
 
-    /// Next proposal counts what the chosen scope leaves undecided (#285).
-    func testNextProposalFollowsTheScope() throws {
-        let model = try model()
-        let candidates = model.snapshot.candidates
-        let repeated = try XCTUnwrap(candidates.first { candidate in
-            candidates.filter { $0.identityID == candidate.identityID }.count > 1
-        }, "the fixture needs a name mentioned twice")
-        let others = candidates.filter { $0.state == .proposed && $0.identityID != repeated.identityID }
-        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
-        XCTAssertEqual(model.hasProposal(after: repeated.id, scope: .allOccurrences), !others.isEmpty)
-        // Deciding every other identity leaves only the repeat's mentions.
-        for other in others {
-            model.decide(other.id, .keep, scope: .allOccurrences)
-        }
-        XCTAssertFalse(model.hasProposal(after: repeated.id, scope: .allOccurrences))
-        XCTAssertTrue(model.hasProposal(after: repeated.id, scope: .justThisOne))
-    }
-
-    func testCandidateSheetDecisionUpdatesTheSnapshot() throws {
+    func testReviewBarDecisionUpdatesTheSnapshot() throws {
         let model = try model()
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.open(maya.id)
@@ -98,7 +80,7 @@ final class DocumentViewModelTests: XCTestCase {
 
     func testReviewNextWrapsToTheFirstProposal() throws {
         let model = try model()
-        let pending = model.snapshot.candidates.filter { $0.state == .proposed }
+        let pending = model.snapshot.candidates.filter { $0.state == .proposed }.sorted { $0.range.start < $1.range.start }
         model.reviewNext()
         XCTAssertEqual(model.reviewing, pending.first?.id)
         model.reviewing = pending.last?.id
@@ -267,8 +249,9 @@ final class DocumentViewModelTests: XCTestCase {
         model.decide(candidate.id, .replace, scope: .allOccurrences)
         model.replaceAllPending()
         XCTAssertEqual(model.snapshot.pendingCount, pending)
-        model.beginReplace(candidate.range)
-        XCTAssertNil(model.manualSelection)
+        model.markSelection(candidate.range)
+        XCTAssertEqual(model.snapshot.pendingCount, pending)
+        XCTAssertNil(model.reviewing)
         model.cancelJob()
         await run.value
         model.open(candidate.id)
@@ -311,6 +294,23 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(home.cases.count, 3)
         let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
         XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
+    }
+
+    /// A new case never takes a name a case already has: the case pickers
+    /// could not tell the two apart.
+    func testANewCaseOfATakenNameIsNumbered() throws {
+        let home = HomeViewModel(library: Fixture.core().library)
+        let taken = try XCTUnwrap(home.cases.first?.name)
+        let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
+        _ = home.importDocument(pending, title: "Note", into: .newCase(name: taken))
+        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
+        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 2" })
+        // Spaces around a name count for nothing, as the core trims them.
+        _ = home.importDocument(pending, title: "Note", into: .newCase(name: " \(taken) "))
+        XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
+        XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 3" })
+        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
+        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Other"]), "Lease")
     }
 
     /// A scan that found nothing says so on Home (ADR 0087).

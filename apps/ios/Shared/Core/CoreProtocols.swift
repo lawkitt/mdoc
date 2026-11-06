@@ -59,6 +59,46 @@ protocol DocumentSession: AnyObject, Sendable {
     /// document's reply.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot
     func clearReply() throws -> DocumentSnapshot
+
+    // MARK: Review bar (ADR 0098)
+    //
+    // Each change below, and `decide`, `replaceAllPending` and the marks, is
+    // one undo step, held in memory while the session lives (256 steps).
+    // Copy for AI, Restore reply and Clear reply are not steps.
+
+    /// Undoes the last step. The snapshot's `redoStep` names what it undid
+    /// and where, for the toast and to move the bar back.
+    func undo() throws -> DocumentSnapshot
+    /// Makes the last undone step again; the snapshot's `undoStep` names it.
+    func redo() throws -> DocumentSnapshot
+    /// Hide name: the selection and its exact repeats become proposals in
+    /// the core's guessed category, replacing nothing yet.
+    func markSelection(_ range: SourceRange) throws -> DocumentSnapshot
+    /// Stored proposals, as a scan's: every occurrence of each wording, in
+    /// its category. Try a sample uses it, so the sample reviews before the
+    /// name finder is downloaded (ADR 0099).
+    func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot
+    /// Rename…: the alias of this mention (`.justThisOne` splits it off
+    /// under the alias) or of its identity. Throws `.aliasTaken` with the
+    /// identity that has the alias already: Same as is the way to it.
+    func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot
+    /// The category menu: each category with the alias choosing it gives.
+    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice]
+    /// The category of this mention (split off in it) or of its identity.
+    func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot
+    /// Same as…: `.allOccurrences` links the mention's identity into
+    /// `target`, which keeps its alias and restore wording; `.justThisOne`
+    /// moves only this mention. Replaces nothing by itself.
+    func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot
+    /// Same as… for a whole identity: an Identities row, or a merge hint.
+    func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot
+    /// New alias: this mention split off as an identity of its own.
+    func newAlias(_ candidate: CandidateID) throws -> DocumentSnapshot
+    /// Belongs to…: a contact's or identifier's owner, a person or an
+    /// organization; nil clears it.
+    func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot
+    /// × on a merge hint: hidden from now on, in the case too. Not a step.
+    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot
 }
 
 /// Models that fit the device, and verifying and installing downloads.

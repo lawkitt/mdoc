@@ -34,6 +34,8 @@ struct RestoreExtensionView: View {
         .sheet(item: $share) { items in
             ActivityView(items: items.items)
         }
+        // The app's theme, from the App Group (ADR 0099).
+        .preferredColorScheme(AppTheme.current.colorScheme)
     }
 
     @ViewBuilder
