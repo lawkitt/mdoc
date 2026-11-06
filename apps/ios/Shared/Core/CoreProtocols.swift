@@ -43,9 +43,16 @@ protocol Library: AnyObject, Sendable {
     /// joins `target`, its names taking that case's aliases (a name the case
     /// knows takes its alias, a clashing alias the next free number). The
     /// case it left keeps its names and the document's reply, so replies to
-    /// what was sent still restore with it; emptied, unshared and without a
-    /// reply, it is deleted. Refused for the case it is in already.
+    /// what was sent still restore with it, and it stays even with no
+    /// documents left. Refused for the case it is in already, and for an
+    /// import not read yet.
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove
+    /// Undo of Move to case: the document moves back into the case it
+    /// left and its names take their old aliases again; the reply kept there
+    /// is the document's again. The case it leaves loses the names the move
+    /// added, unless another of its documents or a reply kept there uses
+    /// them, or it is the current case.
+    func undoMove(_ move: CaseMove) throws -> CaseMove
 }
 
 extension Library {
@@ -53,14 +60,7 @@ extension Library {
     func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
     func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
-
-    /// Undo of Move to case: the document moves back into the case it
-    /// left, recreated if the move deleted it, and its names take their old
-    /// aliases again; the reply kept there is the document's again.
-    func undoMove(_ move: CaseMove) throws -> CaseMove {
-        guard let from = move.from else { throw CoreError.noCase }
-        return try moveDocument(move.document, to: .existing(from))
-    }
+    func undoMove(_ move: CaseMove) throws -> CaseMove { throw CoreError.noCase }
 }
 
 /// One document's import, OCR, review and hand-off.

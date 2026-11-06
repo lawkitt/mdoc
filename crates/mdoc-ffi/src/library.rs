@@ -32,20 +32,17 @@ pub struct Library {
     store: Store,
     /// One load, change and save at a time in this process.
     writes: Mutex<()>,
-    /// Cases a move emptied and deleted, newest last, kept in memory only:
-    /// moving a document back into one recreates it (`move_document`).
-    deleted: Mutex<Vec<Case>>,
 }
-
-/// How many cases `Library::deleted` keeps for moving back.
-const DELETED_KEPT: usize = 8;
 
 /// The longest file stem a title makes, in bytes: room for " 99.md" in a
 /// 255-byte file name.
 const MAX_STEM: usize = 240;
 
 /// Characters a file name cannot hold everywhere, and the look-alikes that
-/// stand for them, so a title reads back from its file as it was typed.
+/// stand for them, so a title reads back from its file as it was typed. A
+/// title that really holds one of the look-alikes (a fullwidth ？＂＜＞, or
+/// ∕ ⧵ ꞉ ∗ ∣) reads back with the ASCII character instead; accepted, as
+/// those are rare in titles.
 const FILE_NAME_STAND_INS: [(char, char); 9] = [
     ('/', '\u{2215}'),  // ∕ DIVISION SLASH
     ('\\', '\u{29F5}'), // ⧵ REVERSE SOLIDUS OPERATOR
@@ -118,14 +115,13 @@ pub struct MovedDocument {
     pub path: String,
     /// The case it is in now.
     pub case: CaseInfo,
-    /// The case it left, as saved after it left, if it was in one. Undo
-    /// moves it back with `move_document(path, left.id)`.
+    /// The case it left, as saved after it left, if it was in one. It
+    /// stays, even with no documents left. Undo is `move_back(path,
+    /// left.id, added)`.
     pub left: Option<CaseInfo>,
-    /// The case it left had no other document, was never shared (it is not
-    /// the current case) and held no reply, so it was deleted. Moving a
-    /// document back into it recreates it, under a new id, until mdoc
-    /// stops.
-    pub left_deleted: bool,
+    /// Aliases of the identities this move added to `case`: the names it
+    /// did not know. `move_back` takes them out again.
+    pub added: Vec<String>,
 }
 
 /// A byte range in UTF-8 text.
@@ -198,7 +194,6 @@ impl Library {
             store: Store::with_key(root.join(CASES), &key),
             root,
             writes: Mutex::new(()),
-            deleted: Mutex::new(Vec::new()),
         }))
     }
 
@@ -396,23 +391,35 @@ impl Library {
     /// other names are proposed, and the file is rewritten with the new
     /// aliases. The case it left keeps its identities and the reply kept
     /// for the document, so replies to text already sent still restore with
-    /// it; left with no document, never shared (not the current case) and
-    /// holding no reply, it is deleted.
+    /// it, and it stays even with no documents left, as on desktop (a case
+    /// is deleted only on its own, confirmed: ADR 0041).
     ///
-    /// Undo is the same call back into the case it left: the names line up
-    /// with that case's identities again and take their old aliases (a name
-    /// added meanwhile takes a fresh number), and its kept reply is the
-    /// document's again. A case deleted by a move comes back, under a new
-    /// id, when a document moves into it before mdoc stops.
-    ///
-    /// Refused for a document already in that case. The case is saved
-    /// first, then the file, then the case left; a step that fails puts the
-    /// earlier ones back. A document open in a `DocumentSession` is opened
-    /// again afterwards (`DocumentSession::open_document`): its file and
-    /// case changed.
+    /// Undo is `move_back`. Refused for a document already in that case.
+    /// The case is saved first, then the file, then the case left; a step
+    /// that fails puts the earlier ones back. A document open in a
+    /// `DocumentSession` is opened again afterwards
+    /// (`DocumentSession::open_document`): its file and case changed.
     pub fn move_document(&self, path: String, case_id: String) -> Result<MovedDocument, CoreError> {
         let lock = self.lock()?;
-        self.move_locked(&lock, Path::new(&path), Target::Case(case_id))
+        self.move_locked(&lock, Path::new(&path), Target::Case(case_id), &[])
+    }
+
+    /// Undo of Move to case: `path` moves back into `case_id`, the case it
+    /// left (`MovedDocument::left`), as `move_document` moves it. Its names
+    /// line up with that case's identities again and take their old aliases
+    /// (a name added meanwhile takes a fresh number), and the reply kept
+    /// there is the document's again. From the case it leaves now, the
+    /// identities the move added (`added`) go again, unless a document still
+    /// in that case or a reply kept there uses their alias, or that case is
+    /// the current case (a reply to text shared from it may name them).
+    pub fn move_back(
+        &self,
+        path: String,
+        case_id: String,
+        added: Vec<String>,
+    ) -> Result<MovedDocument, CoreError> {
+        let lock = self.lock()?;
+        self.move_locked(&lock, Path::new(&path), Target::Case(case_id), &added)
     }
 
     /// Move to case › New case…: `move_document` into a new case named
@@ -424,7 +431,7 @@ impl Library {
     ) -> Result<MovedDocument, CoreError> {
         let name = case_name(&name)?;
         let lock = self.lock()?;
-        self.move_locked(&lock, Path::new(&path), Target::New(name))
+        self.move_locked(&lock, Path::new(&path), Target::New(name), &[])
     }
 
     /// Remove the OCR pages kept for an import of `source` that has not
@@ -575,23 +582,59 @@ impl Library {
         Some(value.get("case")?.as_str()?.to_owned())
     }
 
-    /// Keep `case`, which a move deleted, for moving back.
-    fn keep_deleted(&self, case: Case) {
-        let mut deleted = self.deleted.lock().unwrap_or_else(|e| e.into_inner());
-        deleted.retain(|kept| kept.id != case.id);
-        deleted.push(case);
-        let over = deleted.len().saturating_sub(DELETED_KEPT);
-        deleted.drain(..over);
+    /// Take out of `case` the identities named by `aliases` (a move added
+    /// them) that nothing there uses: no member's text and no kept reply
+    /// holds their alias. A member that cannot be read counts as using
+    /// them. Returns whether any went.
+    fn drop_unused(&self, case: &mut Case, aliases: &[String]) -> bool {
+        let candidates: Vec<(usize, mdoc_pii::restore::ExportedIdentity)> =
+            (0..case.identities.len())
+                .filter(|&i| aliases.contains(&case.identities[i].alias))
+                .filter_map(|i| Some((i, case.exported_one(i)?)))
+                .collect();
+        if candidates.is_empty() {
+            return false;
+        }
+        let map = RestoreMap::new(candidates.iter().map(|(_, e)| e.clone()).collect());
+        let mut used = vec![false; candidates.len()];
+        let mut mark = |text: &str| {
+            for token in map.tokens(text) {
+                if let Some(index) = token.identity {
+                    used[index] = true;
+                }
+            }
+        };
+        for member in &case.members {
+            match std::fs::read_to_string(self.root.join(member)) {
+                Ok(text) => mark(&text),
+                Err(_) => return false,
+            }
+        }
+        for reply in &case.replies {
+            mark(&reply.text);
+        }
+        let unused: Vec<usize> = candidates
+            .iter()
+            .zip(&used)
+            .filter(|(_, used)| !**used)
+            .map(|((i, _), _)| *i)
+            .collect();
+        let mut at = 0;
+        case.identities.retain(|_| {
+            at += 1;
+            !unused.contains(&(at - 1))
+        });
+        !unused.is_empty()
     }
 
-    /// The case a move deleted under `id`, no longer kept.
-    fn take_deleted(&self, id: &str) -> Option<Case> {
-        let mut deleted = self.deleted.lock().unwrap_or_else(|e| e.into_inner());
-        let at = deleted.iter().position(|case| case.id == id)?;
-        Some(deleted.remove(at))
-    }
-
-    /// [`Self::rename_document`] under a lock the caller holds.
+    /// [`Self::rename_document`] under a lock the caller holds. The file is
+    /// renamed first, then each case keeping something of it; a failure puts
+    /// the file and the cases already saved back. mdoc stopping between the
+    /// file and the cases leaves the document in no case under its new name
+    /// (and its case naming a file that is gone). Saving the cases first
+    /// would only swap that for the reverse (the cases naming the new file,
+    /// the document still under its old name in no case), so neither order
+    /// closes the window.
     pub(crate) fn rename_locked(
         &self,
         lock: &WriteLock,
@@ -719,45 +762,43 @@ impl Library {
         unreachable!("a free name")
     }
 
-    /// [`Self::move_document`] under a lock the caller holds.
+    /// [`Self::move_document`] under a lock the caller holds; `take_back`
+    /// is [`Self::move_back`]'s `added`.
     fn move_locked(
         &self,
         lock: &WriteLock,
         path: &Path,
         target: Target,
+        take_back: &[String],
     ) -> Result<MovedDocument, CoreError> {
         let path = self.library_document(path, "moved")?;
         let mut stored = mdoc_store::document::Document::open(path.clone())?;
         let cases = self.readable_cases("moved")?;
         // A case made for this move goes again when the move fails.
-        let (target, made, revived) = match target {
-            Target::Case(id) => match self.take_deleted(&id) {
-                Some(deleted) => {
-                    let case = revive(&deleted);
-                    if let Err(error) = self.create_locked(lock, case.clone()) {
-                        self.keep_deleted(deleted);
-                        return Err(error);
-                    }
-                    (case, true, Some(deleted))
-                }
-                None => (self.load(&id)?, false, None),
-            },
+        let (target, made) = match target {
+            Target::Case(id) => (self.load(&id)?, false),
             Target::New(name) => {
                 let case = Case::new(name, &[], None);
                 self.create_locked(lock, case.clone())?;
-                (case, true, None)
+                (case, true)
             }
         };
-        let moved = self.move_into(lock, &path, &mut stored, &cases, &target);
+        let moved = self.move_into(lock, &path, &mut stored, &cases, &target, take_back);
         if moved.is_err() && made {
             let _ = self.store.delete(&target.id);
-            if let Some(deleted) = revived {
-                self.keep_deleted(deleted);
-            }
         }
         moved
     }
 
+    /// The move's three writes, each putting the earlier ones back when it
+    /// fails. The case files and the document cannot change together, so
+    /// mdoc stopping between writes leaves the document a member of both
+    /// cases: after the case joined is saved, with its text still in the old
+    /// aliases (moving it into the case joined again finishes the move);
+    /// after the file is written, in the new ones (moving it into the case
+    /// it left undoes it). No order of the writes avoids a moment where the
+    /// text and its membership disagree, so none is tried; this one never
+    /// leaves the document in no case.
     fn move_into(
         &self,
         lock: &WriteLock,
@@ -765,6 +806,7 @@ impl Library {
         stored: &mut mdoc_store::document::Document,
         cases: &[Case],
         target: &Case,
+        take_back: &[String],
     ) -> Result<MovedDocument, CoreError> {
         let member = self.member(path);
         let from = cases
@@ -775,8 +817,16 @@ impl Library {
         }
         let old = stored.saved.clone();
         let (text, exported) = crate::document_session::realias(&old, from, target)?;
+        let mut added = Vec::new();
         let case = self.edit_locked(lock, &target.id, |case| {
+            let before = case.identities.clone();
             case.merge(&exported);
+            added = case
+                .identities
+                .iter()
+                .filter(|i| !before.iter().any(|b| b.names(&i.alias)))
+                .map(|i| i.alias.clone())
+                .collect();
             if !case.members.contains(&member) {
                 case.members.push(member.clone());
             }
@@ -793,14 +843,14 @@ impl Library {
                 path: path.display().to_string(),
                 case,
                 left: None,
-                left_deleted: false,
+                added,
             });
         };
-        let mut after = None;
+        let shared = self.current_case_id().as_deref() == Some(from.id.as_str());
         let left = match self.edit_locked(lock, &from.id, |case| {
             let changed = case.remove_member(&member);
-            after = Some(case.clone());
-            Ok(changed)
+            let dropped = !shared && self.drop_unused(case, take_back);
+            Ok(changed || dropped)
         }) {
             Ok(left) => left,
             Err(error) => {
@@ -811,22 +861,11 @@ impl Library {
                 return Err(error);
             }
         };
-        // Emptied: deleted, unless it was shared or holds a reply.
-        let mut left_deleted = false;
-        if let Some(after) = after
-            && after.members.is_empty()
-            && after.replies.is_empty()
-            && self.current_case_id().as_deref() != Some(after.id.as_str())
-            && self.store.delete(&after.id).is_ok()
-        {
-            self.keep_deleted(after);
-            left_deleted = true;
-        }
         Ok(MovedDocument {
             path: path.display().to_string(),
             case,
             left: Some(left),
-            left_deleted,
+            added,
         })
     }
 
@@ -1025,24 +1064,6 @@ fn document_title(title: &str) -> Result<String, CoreError> {
         return Err(CoreError::invalid("A document needs a title."));
     }
     Ok(title.into())
-}
-
-/// `deleted`, a case a move deleted, as a new case to move back into: its
-/// name, colour, identities and settings, no members or replies. A new id,
-/// since the store refuses writes to a deleted one.
-fn revive(deleted: &Case) -> Case {
-    let mut case = Case::new(deleted.name.clone(), &[], None);
-    case.color = Some(
-        deleted
-            .color
-            .unwrap_or_else(|| mdoc_store::cases::CaseColor::for_id(&deleted.id)),
-    );
-    case.created = deleted.created;
-    case.identities = deleted.identities.clone();
-    case.skip = deleted.skip.clone();
-    case.dismissed_hints = deleted.dismissed_hints.clone();
-    case.lists = deleted.lists.clone();
-    case
 }
 
 #[cfg(test)]

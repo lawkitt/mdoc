@@ -1195,7 +1195,9 @@ mod tests {
     /// Moving re-aliases the document for the case it joins (`plan_join`):
     /// a shared name takes the case's alias, a clashing one the next free
     /// number, and the case's other names are proposed. The case it left
-    /// keeps its names and the reply kept for it, so it is not deleted.
+    /// keeps its names and the reply kept for it. Moving back gives the
+    /// names their old aliases and takes out of the case it leaves the
+    /// names the move added there.
     #[test]
     fn a_moved_document_takes_the_cases_aliases() {
         let scratch = Scratch::new();
@@ -1229,7 +1231,7 @@ mod tests {
             moved.case.documents,
             [memo.path.clone(), letter.path.clone()]
         );
-        assert!(!moved.left_deleted);
+        assert_eq!(moved.added, ["PERSON_3"], "Ann; Bob and Carl were known");
         let left = moved.left.unwrap();
         assert_eq!(left.id, letter.case.id);
         assert!(left.documents.is_empty());
@@ -1277,10 +1279,14 @@ mod tests {
                 .case_id,
             Some(memo.case.id.clone())
         );
-        // Undo: the same call back gives the names their old aliases, and
-        // the reply is the document's again.
+        // Undo: moving back gives the names their old aliases, the reply is
+        // the document's again, and Memo's case forgets Ann.
         let back = library
-            .move_document(letter.path.clone(), letter.case.id.clone())
+            .move_back(
+                letter.path.clone(),
+                letter.case.id.clone(),
+                moved.added.clone(),
+            )
             .unwrap();
         assert_eq!(back.case.id, letter.case.id);
         assert_eq!(
@@ -1301,13 +1307,26 @@ mod tests {
             restored(&library, &letter.case.id, "PERSON_1, PERSON_2."),
             "Ann Lee, Bob Hart."
         );
+        let memo_case = library.load(&memo.case.id).unwrap();
+        assert!(memo_case.identities.iter().all(|i| i.alias != "PERSON_3"));
+        assert_eq!(memo_case.identities.len(), 2);
+        let memo_reopened = DocumentSession::new()
+            .open_document(library.clone(), memo.path.clone())
+            .unwrap();
+        assert!(
+            memo_reopened
+                .identities
+                .iter()
+                .all(|i| i.alias != "PERSON_3")
+        );
     }
 
-    /// A case left with no document, never shared and with no reply is
-    /// deleted; moving back recreates it with its names, so the aliases come
-    /// back. A shared case stays.
+    /// The case a document leaves stays, even empty (ADR 0041: a case is
+    /// deleted only on its own). Moving back keeps the names the move added
+    /// where something still uses them: another document of that case, or
+    /// a reply to text shared from it (the current case).
     #[test]
-    fn an_emptied_case_is_deleted_unless_shared_and_moving_back_recreates_it() {
+    fn a_case_left_stays_and_moving_back_keeps_names_in_use() {
         let scratch = Scratch::new();
         let library = library(&scratch);
         let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
@@ -1315,46 +1334,50 @@ mod tests {
         let moved = library
             .move_document(letter.path.clone(), memo.case.id.clone())
             .unwrap();
-        assert!(moved.left_deleted);
-        assert_eq!(moved.left.as_ref().unwrap().id, letter.case.id);
-        assert!(library.case_info(letter.case.id.clone()).is_err());
-        assert_eq!(library.cases().cases.len(), 1);
+        assert_eq!(moved.added, ["PERSON_2"]);
+        assert!(moved.left.unwrap().documents.is_empty());
+        assert_eq!(library.cases().cases.len(), 2);
+        assert_eq!(restored(&library, &letter.case.id, "PERSON_1"), "Ann Lee");
         assert_eq!(
             std::fs::read_to_string(&letter.path).unwrap(),
             "PERSON_2 wrote."
         );
-        let back = library
-            .move_document(letter.path.clone(), letter.case.id.clone())
+        // Another document of Memo's case names Ann now.
+        let note = self::session("Ann Lee called.", "Note");
+        note.join_case(library.clone(), memo.case.id.clone())
             .unwrap();
-        assert_ne!(back.case.id, letter.case.id, "recreated under a new id");
-        assert_eq!(back.case.name, "Letter");
-        assert_eq!(back.case.hue, letter.case.hue);
-        assert_eq!(back.case.documents, std::slice::from_ref(&letter.path));
+        select(&note, "Ann Lee");
+        note.replace_all().unwrap();
+        let note = note.save(library.clone()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&note.path).unwrap(),
+            "PERSON_2 called."
+        );
+        let back = library
+            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
+            .unwrap();
+        assert_eq!(back.case.id, letter.case.id);
         assert_eq!(
             std::fs::read_to_string(&letter.path).unwrap(),
             "PERSON_1 wrote."
         );
-        assert_eq!(restored(&library, &back.case.id, "PERSON_1"), "Ann Lee");
-        // The case it left has its own document still, so it stays.
-        assert!(!back.left_deleted);
-        assert_eq!(
-            back.left.unwrap().documents,
-            std::slice::from_ref(&memo.path)
-        );
-        // Shared (the current case), an emptied case stays.
-        library.note_shared(back.case.id.clone()).unwrap();
-        let shared = library
-            .move_document(letter.path.clone(), memo.case.id.clone())
+        assert_eq!(restored(&library, &memo.case.id, "PERSON_2"), "Ann Lee");
+        // Moved into a case shared since: a reply may name Ann there.
+        let other = saved(&library, "Dan Roe wrote.", &["Dan Roe"], "Other");
+        let moved = library
+            .move_document(letter.path.clone(), other.case.id.clone())
             .unwrap();
-        assert!(!shared.left_deleted);
-        assert!(
-            library
-                .case_info(back.case.id.clone())
-                .unwrap()
-                .documents
-                .is_empty()
-        );
-        assert_eq!(restored(&library, &back.case.id, "PERSON_1"), "Ann Lee");
+        assert_eq!(moved.added, ["PERSON_2"]);
+        library.note_shared(other.case.id.clone()).unwrap();
+        library
+            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
+            .unwrap();
+        assert_eq!(restored(&library, &other.case.id, "PERSON_2"), "Ann Lee");
+        // Moving back into the case it is in is refused, as a move is.
+        assert!(matches!(
+            library.move_back(letter.path.clone(), letter.case.id.clone(), Vec::new()),
+            Err(CoreError::Case { .. })
+        ));
     }
 
     #[test]
@@ -1393,7 +1416,7 @@ mod tests {
     }
 
     /// New case…: the document's names keep their aliases in a case of
-    /// their own; the case it left, emptied, goes.
+    /// their own; the case it left stays.
     #[test]
     fn a_document_moves_into_a_new_case() {
         let scratch = Scratch::new();
@@ -1404,13 +1427,20 @@ mod tests {
             .unwrap();
         assert_eq!(moved.case.name, "Ivanov");
         assert_eq!(moved.case.names, 1);
-        assert!(moved.left_deleted);
+        assert_eq!(moved.added, ["PERSON_1"]);
         assert_eq!(
             std::fs::read_to_string(&letter.path).unwrap(),
             "PERSON_1 wrote."
         );
         assert_eq!(restored(&library, &moved.case.id, "PERSON_1"), "Ann Lee");
-        assert_eq!(library.cases().cases.len(), 1);
+        assert_eq!(library.cases().cases.len(), 2);
+        assert!(
+            library
+                .case_info(letter.case.id)
+                .unwrap()
+                .documents
+                .is_empty()
+        );
     }
 
     /// A file that cannot be rewritten leaves the document in the case it

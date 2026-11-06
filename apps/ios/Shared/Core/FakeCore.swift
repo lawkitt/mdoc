@@ -149,9 +149,6 @@ private final class FakeState: @unchecked Sendable {
     /// The case of the document shared last, as it was then: a move does
     /// not change it, as in the core's `current-case.json`.
     var sharedCase: CaseID?
-    /// Cases a move emptied and deleted, newest last: moving back into one
-    /// recreates it under a new id.
-    var deletedCases: [FakeCase] = []
     var models: [String: ModelState] = [:]
     private var counter = 0
 
@@ -335,11 +332,15 @@ private final class FakeState: @unchecked Sendable {
     /// Move to case, as the core does it: a name the target case knows
     /// takes its identity and alias, another keeps its alias unless the case
     /// uses it (then the case's next free one). The case left keeps its
-    /// names and the document's reply; emptied, unshared and with no reply,
-    /// it is deleted, and moving back recreates it under a new id. The
-    /// document's history goes, as the real session opens it again.
-    func move(_ id: DocumentID, to target: CaseChoice) throws -> CaseMove {
+    /// names and the document's reply, and stays even empty. `takingBack`
+    /// (Undo's `added`) leaves the case left where nothing there uses it
+    /// and it is not the current case. The document's history goes, as the
+    /// real session opens it again.
+    func move(_ id: DocumentID, to target: CaseChoice, takingBack: [String] = []) throws -> CaseMove {
         guard let index = index(of: id) else { throw CoreError.notFound }
+        guard documents[index].recognized else {
+            throw CoreError.refused("Move the document once it is read.")
+        }
         let from = documents[index].caseID
         let targetID: CaseID
         switch target {
@@ -350,18 +351,13 @@ private final class FakeState: @unchecked Sendable {
             let colour = CaseColour.allCases[cases.count % CaseColour.allCases.count]
             cases.append(FakeCase(id: targetID, name: name, colour: colour, identities: []))
         case .existing(let existing):
-            if let deleted = deletedCases.firstIndex(where: { $0.id == existing }) {
-                let old = deletedCases.remove(at: deleted)
-                targetID = CaseID(rawValue: nextID("case-"))
-                cases.append(FakeCase(id: targetID, name: old.name, colour: old.colour, identities: old.identities))
-            } else {
-                guard caseIndex(of: existing) != nil else { throw CoreError.notFound }
-                guard existing != from else {
-                    throw CoreError.refused("This document is in that case already.")
-                }
-                targetID = existing
+            guard caseIndex(of: existing) != nil else { throw CoreError.notFound }
+            guard existing != from else {
+                throw CoreError.refused("This document is in that case already.")
             }
+            targetID = existing
         }
+        var added: [String] = []
         guard let targetIndex = caseIndex(of: targetID) else { throw CoreError.notFound }
         let fromIdentities = identities(of: from)
         var mapped: [IdentityID: IdentityID] = [:]
@@ -376,6 +372,7 @@ private final class FakeState: @unchecked Sendable {
                     alias: taken ? nextAlias(identity.category, caseID: targetID) : identity.alias,
                     custom: identity.custom)
                 cases[targetIndex].identities.append(joined)
+                added.append(joined.alias)
                 mapped[identity.id] = joined.id
             }
         }
@@ -390,16 +387,18 @@ private final class FakeState: @unchecked Sendable {
         }
         documents[index].reply = cases[targetIndex].leftReplies.removeValue(forKey: id)
         histories[id] = nil
-        let to = cases[targetIndex]
-        var fromDeleted = false
-        if let from, let fromIndex = caseIndex(of: from), !documents.contains(where: { $0.caseID == from }),
-           cases[fromIndex].leftReplies.isEmpty, sharedCase != from {
-            deletedCases.append(cases.remove(at: fromIndex))
-            fromDeleted = true
+        if let from, let fromIndex = caseIndex(of: from), sharedCase != from {
+            let members = documents.filter { $0.caseID == from }
+            let replies = Array(cases[fromIndex].leftReplies.values)
+            cases[fromIndex].identities.removeAll { identity in
+                takingBack.contains(identity.alias)
+                    && !members.contains { $0.mentions.contains { $0.identityID == identity.id } }
+                    && !replies.contains { $0.contains(identity.alias) }
+            }
         }
+        let to = cases[targetIndex]
         return CaseMove(
-            document: id, to: CaseSummary(id: to.id, name: to.name, colour: to.colour), from: from,
-            fromDeleted: fromDeleted)
+            document: id, to: CaseSummary(id: to.id, name: to.name, colour: to.colour), from: from, added: added)
     }
 
     /// Run `change` on document `id` as one undo step; it clears Redo.
@@ -697,22 +696,38 @@ private final class FakeLibrary: Library {
             guard let index = state.index(of: document) else { throw CoreError.notFound }
             let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { throw CoreError.refused("A document needs a title.") }
+            guard state.documents[index].recognized else {
+                throw CoreError.refused("Rename the document once it is read.")
+            }
             let old = state.documents[index].title
             let caseID = state.documents[index].caseID
-            // Numbered when another document has the title, as its file is.
-            let taken = Set(state.documents.filter { $0.id != document }.map(\.title))
+            // Numbered when another document has the title, ignoring letter
+            // case as the file system does for its file.
+            let taken = Set(state.documents.filter { $0.id != document }.map { $0.title.lowercased() })
             var renamed = title
             var number = 2
-            while taken.contains(renamed) {
+            while taken.contains(renamed.lowercased()) {
                 renamed = "\(title) \(number)"
                 number += 1
             }
             state.documents[index].title = renamed
             state.documents[index].updated = Date()
-            if let caseIndex = state.caseIndex(of: caseID), state.cases[caseIndex].name == old,
+            if let caseIndex = state.caseIndex(of: caseID), Self.isNamed(after: old, state.cases[caseIndex].name),
                state.documents.allSatisfy({ $0.caseID != caseID || $0.id == document }) {
                 state.cases[caseIndex].name = title
             }
+        }
+    }
+
+    /// Whether a case called `name` is named after a document titled
+    /// `title`, as the core decides it: the title is the name, also as
+    /// documents were saved before (`/\:*?"<>|` as `-`), numbered or not.
+    private static func isNamed(after title: String, _ name: String) -> Bool {
+        let legacy = String(name.map { "/\\:*?\"<>|".contains($0) ? "-" : $0 })
+        return [name, legacy].contains { base in
+            guard title.hasPrefix(base) else { return false }
+            let rest = title.dropFirst(base.count)
+            return rest.isEmpty || (rest.hasPrefix(" ") && (Int(rest.dropFirst()) ?? 0) >= 2)
         }
     }
 
@@ -727,6 +742,11 @@ private final class FakeLibrary: Library {
 
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
         try state.locked { try state.move(document, to: target) }
+    }
+
+    func undoMove(_ move: CaseMove) throws -> CaseMove {
+        guard let from = move.from else { throw CoreError.noCase }
+        return try state.locked { try state.move(move.document, to: .existing(from), takingBack: move.added) }
     }
 
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {

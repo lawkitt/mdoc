@@ -326,8 +326,9 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
     }
 
-    /// Move to case re-aliases the document for the case it joins; the
-    /// emptied case is deleted, and Undo recreates it with the old aliases.
+    /// Move to case re-aliases the document for the case it joins; the case
+    /// it left stays, and Undo moves it back with the old aliases and takes
+    /// its names out of the case it joined.
     func testMoveToCaseAndUndoThroughTheCore() throws {
         let core = try core()
         let letter = try reviewed(core)
@@ -343,22 +344,23 @@ final class RealCoreTests: XCTestCase {
         let move = try core.library.moveDocument(letter.id, to: .existing(other))
         XCTAssertEqual(move.to.id, other)
         XCTAssertEqual(move.to.name, "Other")
-        XCTAssertTrue(move.fromDeleted)
+        XCTAssertTrue(move.added.contains("EMAIL_2"))
         let moved = letter.snapshot()
         XCTAssertEqual(moved.caseID, other)
         XCTAssertFalse(moved.markdown.contains("EMAIL_1"))
         XCTAssertTrue(moved.markdown.contains("EMAIL_2"))
         XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).text, "maya.ellison@example.com")
-        XCTAssertEqual(core.library.snapshot().cases.map(\.name), ["Other"])
+        let ellison = try XCTUnwrap(move.from)
+        XCTAssertEqual(Set(core.library.snapshot().cases.map(\.name)), ["Ellison", "Other"])
+        XCTAssertTrue(core.library.snapshot().documents(in: ellison).isEmpty)
         XCTAssertThrowsError(try core.library.moveDocument(letter.id, to: .existing(other)))
 
         let undone = try core.library.undoMove(move)
-        XCTAssertNotEqual(undone.to.id, move.from)
-        XCTAssertEqual(undone.to.name, "Ellison")
-        XCTAssertFalse(undone.fromDeleted, "Other keeps its own document")
+        XCTAssertEqual(undone.to.id, ellison)
         XCTAssertEqual(letter.snapshot().markdown, before)
-        XCTAssertEqual(letter.snapshot().caseID, undone.to.id)
-        XCTAssertEqual(Set(core.library.snapshot().cases.map(\.name)), ["Ellison", "Other"])
+        XCTAssertEqual(letter.snapshot().caseID, ellison)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).unresolvedCount, 1)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_1", in: other).text, "someone@example.org")
 
         let fresh = try core.library.moveDocument(letter.id, to: .newCase(name: "Fresh"))
         XCTAssertEqual(fresh.to.name, "Fresh")

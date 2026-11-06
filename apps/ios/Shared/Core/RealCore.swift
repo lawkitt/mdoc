@@ -332,21 +332,40 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
-        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
-        guard let path = session.path else {
-            throw CoreError.refused(String(localized: "Move the document once it is read."))
-        }
-        let moved = try refused {
+        try move(document) { path in
             switch target {
             case .existing(let id): try ffi.moveDocument(path: path, caseId: id.rawValue)
             case .newCase(let name): try ffi.moveDocumentToNewCase(path: path, name: name)
             }
         }
+    }
+
+    func undoMove(_ move: CaseMove) throws -> CaseMove {
+        guard let from = move.from else { throw CoreError.noCase }
+        return try self.move(move.document) { path in
+            try ffi.moveBack(path: path, caseId: from.rawValue, added: move.added)
+        }
+    }
+
+    /// A saved document's move through the core. The move has happened once
+    /// the core returns, so the result stands even if the session cannot
+    /// open the changed file at once: it opens it on its next use.
+    private func move(_ document: DocumentID, _ call: (String) throws -> MovedDocument) throws -> CaseMove {
+        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
+        guard let path = session.path else {
+            throw CoreError.refused(String(localized: "Move the document once it is read."))
+        }
+        let moved = try refused { try call(path) }
         // Its text and case changed on disk: the session opens it again.
-        try session.reopen(path: path, original: originals.original(for: path))
+        let original = originals.original(for: path)
+        do {
+            try session.reopen(path: path, original: original)
+        } catch {
+            session.reopenLater(original: original)
+        }
         return CaseMove(
             document: document, to: CaseSummary(moved.case), from: moved.left.map { CaseID(rawValue: $0.id) },
-            fromDeleted: moved.leftDeleted)
+            added: moved.added)
     }
 
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {
@@ -431,6 +450,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// OCR began on this import and has not finished: the core keeps its
     /// finished pages, so recognition resumes with the rest.
     private var ocrStarted: Bool
+    /// A move changed the saved file and opening it again failed: the next
+    /// use opens it, with this original.
+    private var reopenPending: (OriginalSource, SourceKind)?
 
     fileprivate init(
         id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
@@ -498,7 +520,25 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             candidateCount: snapshot.candidates.count)
     }
 
+    fileprivate func reopenLater(original: (OriginalSource, SourceKind)) {
+        lock.withLock { reopenPending = original }
+    }
+
+    /// Opens the file again when a move left that for later; a failure
+    /// leaves it pending for the next try.
+    private func reopenIfPending() {
+        let due = lock.withLock { () -> (original: (OriginalSource, SourceKind), path: String)? in
+            guard let pending = reopenPending, let path else { return nil }
+            return (pending, path)
+        }
+        guard let due else { return }
+        if (try? reopen(path: due.path, original: due.original)) != nil {
+            lock.withLock { reopenPending = nil }
+        }
+    }
+
     func snapshot() -> DocumentSnapshot {
+        reopenIfPending()
         let (review, scanned, caseID, path, title, kind, original, ocrStarted) = lock.withLock {
             (self.review, self.scanned, self.caseID, self.path, self.title, self.kind, self.original, self.ocrStarted)
         }
@@ -842,6 +882,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// A review transition, then the document and its mapping saved into
     /// its case, as a case member autosaves on desktop.
     private func change(_ transition: () throws -> ReviewSnapshot) throws -> DocumentSnapshot {
+        reopenIfPending()
         let changed = try core(transition)
         lock.withLock { review = changed }
         try save()

@@ -148,12 +148,12 @@ struct CaseMove: Hashable, Sendable {
     var document: DocumentID
     /// The case it is in now.
     var to: CaseSummary
-    /// The case it left, if it was in one: Undo moves it back there.
+    /// The case it left, if it was in one; it stays, even empty. Undo moves
+    /// the document back there.
     var from: CaseID?
-    /// The case it left had nothing else (no document, never shared, no
-    /// reply) and was deleted. Undo recreates it, under a new id, until mdoc
-    /// stops.
-    var fromDeleted: Bool
+    /// Aliases of the names the move added to `to`; Undo takes them out
+    /// again where nothing else uses them.
+    var added: [String]
 }
 
 /// The page the text came from.
