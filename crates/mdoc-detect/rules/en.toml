@@ -1678,8 +1678,21 @@ unless_in = ['(?i:\b(?:bank account|account number|account no|account|sort code|
 
 # A labelled PHONE value stays beside money; only contextual amount
 # guards are bypassed, never the category's ordinary shape checks.
-# Mobile and cell labels identify phone values too, with an optional "number".
+# Mobile and cell labels identify phone values too, with an optional "number",
+# and so do extension labels ("ext. 207"). A value may open with a bracket
+# ("Tel. (020) 7946 0958") and hold dots ("Tel. 202.555.0199"); an
+# extension written "x207" after the labelled number is part of it.
 # A tab or two spaces ends the labelled value at the next column.
 [[shape]]
 category = "PHONE"
-unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell)(?:\p{Zs}number)?\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']
+unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell|ext|extension)(?:\p{Zs}number)?\b[\p{Zs}\t:*_№.#]{1,8}\+?\(?\d[\d().–-]*(?:\p{Zs}[\d().–-]+)*(?:\p{Zs}?x\d{1,6}\b)?']
+
+# A file number in a Windows document's name is no phone (#375): the code
+# in "W:\Penrow\09-F-0999 final.doc". Only one path is read, from its drive
+# through its folders (no spaces) to the first document extension, and
+# only a code token with both a letter and a digit in its file name goes.
+# A phone elsewhere on the line, or a whole phone in a file name
+# ("contacts 020 7946 0958.txt"), stays. Labelled phones still win.
+[[shape]]
+category = "PHONE"
+forbid_in = ['(?i)(?P<lead>\b[a-z]:\\(?:[^\\\s<>"|?*;]+\\)*(?:[^\\<>"|?*;\r\n]{0,80}?[\p{Zs}_])?)[\p{L}\d-]*(?:\p{L}[\p{L}\d-]*\d|\d[\p{L}\d-]*\p{L})[\p{L}\d-]*(?P<tail>[^\\<>"|?*;\r\n]{0,80}?\.(?:docx?|pdf|txt|xlsx?)\b)']
