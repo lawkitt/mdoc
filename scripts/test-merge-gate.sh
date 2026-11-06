@@ -1030,6 +1030,53 @@ queue_pass
 eq "$(cat "$posted")|$(cut -d' ' -f1 "$dispatched")" "qqqq pending Waiting: macos, windows, detection|ci-desktop.yml"
 echo "ok: a CI-only queue commit needs only ci/scripts"
 
+# A group member merged first (#665: db601c3, Queue run 42261854020): the
+# Queue run saw desktop and ci, so ran ci/macos and no ci/scripts; against
+# the new main only ci is left, so the gate needs scripts. ci/macos (checks)
+# ran the same suites: its verdict stands in.
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "scripts/merge-gate.sh"}], "commits": [{"commit": {"message": "Gate (#663)"}}]}'
+}
+run665=https://github.com/lawkitt/mdoc/actions/runs/42261854020
+checks665() { # ci/macos' status and conclusion, extra check-run JSON
+  printf '{"check_runs": [
+    {"id": 961, "name": "scripts", "status": "completed", "conclusion": "skipped", "html_url": "%s/job/961", "completed_at": "2026-11-06T20:00:00Z"},
+    {"id": 962, "name": "macos / ci/macos (checks)", "status": "completed", "conclusion": "success", "html_url": "%s/job/962", "completed_at": "2026-11-06T20:20:00Z"},
+    {"id": 963, "name": "macos / ci/macos", "status": "%s", "conclusion": %s, "html_url": "%s/job/963", "completed_at": "2026-11-06T20:30:00Z"}%s]}\n' \
+    "$run665" "$run665" "$1" "$2" "$run665" "${3:-}"
+}
+queue_run="completed 42261854020 1 success $run665"
+fetch_check_runs() { checks665 completed '"success"'; }
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq success Passed: scripts (via ci/macos)"
+fetch_check_runs() { checks665 in_progress null; }
+queue_run="in_progress 42261854020 1 null $run665"
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq pending Waiting: scripts"
+# ci/macos failed: the failure is its own, linked.
+fetch_check_runs() { checks665 completed '"failure"'; }
+fetch_run_jobs() { jobs_json "$(job 962 "macos / ci/macos (checks)" "$ran")" "$(job 963 "macos / ci/macos" "$ran")"; }
+queue_run="completed 42261854020 1 failure $run665"
+post() { echo "$1 $2 $3 $4" >>"$posted"; }
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: scripts (via ci/macos) $run665/job/963"
+# A ci/scripts that exists keeps its own verdict.
+fetch_check_runs() {
+  checks665 completed '"success"' ', {"id": 964, "name": "scripts / ci/scripts", "status": "completed", "conclusion": "failure", "html_url": "'"$run665"'/job/964", "completed_at": "2026-11-06T20:31:00Z"}'
+}
+fetch_run_jobs() { jobs_json "$(job 964 "scripts / ci/scripts" "$ran")"; }
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: scripts (hosted) $run665/job/964"
+post() { echo "$1 $2 $3" >>"$posted"; }
+# Neither check: the Queue run decides, as before (#636).
+fetch_check_runs() { echo '{"check_runs": []}'; }
+queue_run="completed 42261854020 1 success $run665"
+queue_once
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: scripts (did not run)"
+queue_run="in_progress 42 1 null https://github.com/lawkitt/mdoc/actions/runs/42"
+echo "ok: a missing ci/scripts takes ci/macos's verdict when a group member shrank the areas"
+
 # Missed enqueue (#613): green, auto-merge on, not in the queue.
 t=1793620800
 fetch_heads() { echo "2 false bbbb $m_since $m_queued"; }

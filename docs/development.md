@@ -701,6 +701,10 @@ it is not the status itself.
   after that it fails, worded "no macOS runner, 3 attempts", "cancelled on
   macOS, 3 attempts" or "did not run, 3 attempts". A Queue run that
   succeeded without the check has nothing to re-run: "did not run" at once.
+  A needed `ci/scripts` with no check run at all takes `ci/macos`'s verdict
+  on the commit instead ("scripts (via ci/macos)"; pending while it runs),
+  since `ci/macos (checks)` runs the same suites and a group member that
+  merged first can take the desktop area off the gate's diff (#665).
   A job that ran and failed, or timed out, still fails at once, and beside
   it nothing is re-run on that commit. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
