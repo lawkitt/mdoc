@@ -721,7 +721,7 @@ build-only `ios` job also saves `target/ios` (the xcframeworks, the Swift
 bindings and the licences; #631). `scripts/ios-core-cache.sh key` keys it
 on the committed tree of everything the build reads (`crates/`,
 `resources/`, the Cargo manifests and lock, the toolchain, `.cargo/`, the
-build script with `lib.sh`, and `XCODE_VERSION`). Both iOS jobs restore it
+`justfile`, the build script with `lib.sh`, and `XCODE_VERSION`). Both iOS jobs restore it
 and on an exact hit skip `just ios-core`, as `just --no-deps` already
 skips it for the app recipes; `scripts/ios-build-info.sh` still writes this
 commit's `Build.xcconfig`. A miss builds the core as before, then

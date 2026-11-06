@@ -16,13 +16,15 @@
 #          Registry and git crates are pinned by Cargo.lock; target/ holds
 #          only what the build itself wrote.
 #
-# Besides the crates, build-ios-core.sh reads only itself, lib.sh and its
-# checksum-pinned downloads. A new file it reads goes in `inputs`.
+# Besides the crates, the build reads only the `ios-core` recipe (justfile),
+# build-ios-core.sh, lib.sh and the script's checksum-pinned downloads; dep-info
+# cannot see those, so a new file the recipe or the script reads goes in
+# `inputs` by hand.
 # Build.xcconfig (scripts/ios-build-info.sh) names the commit, so it is not
 # cached: ci-ios.yml writes it after a restore.
 source "$(dirname "$0")/lib.sh"
 
-inputs=(crates resources Cargo.toml Cargo.lock rust-toolchain.toml .cargo
+inputs=(crates resources Cargo.toml Cargo.lock rust-toolchain.toml .cargo justfile
   scripts/build-ios-core.sh scripts/lib.sh scripts/ios-core-cache.sh)
 # What the app's build reads from target/ios, and the licences beside it.
 outputs=(target/ios/MdocCore.xcframework target/ios/pdfium.xcframework target/ios/swift target/ios/licenses)
