@@ -50,19 +50,50 @@ confirm() {
   [[ $answer =~ ^[Yy]$ ]]
 }
 
-# Where the Android toolchain lives (ADR 0089): ~/Library/Android on the Mac;
-# on Windows the E: Dev Drive's E:\Android when there is one, else
-# %LOCALAPPDATA%\Android. MDOC_ANDROID_HOME overrides both.
+# Where the Android toolchain lives (ADR 0089, 0091): ~/Library/Android on
+# the Mac, ~/Android on Linux; on Windows the E: Dev Drive's E:\Android when
+# there is one, else %LOCALAPPDATA%\Android. MDOC_ANDROID_HOME overrides them.
 android_home() {
   if [ -n "${MDOC_ANDROID_HOME:-}" ]; then
     echo "$MDOC_ANDROID_HOME"
   elif [ "$(platform)" = macos-arm64 ]; then
     echo "$HOME/Library/Android"
+  elif [ "$(platform)" = Linux-x86_64 ]; then
+    echo "$HOME/Android"
   elif [ -d /e ]; then
     echo /e/Android
   else
     echo "$(cygpath -u "$LOCALAPPDATA")/Android"
   fi
+}
+
+# The pinned SDK under android_home (scripts/install-android-sdk.sh): Sdk on
+# Windows, mdoc-sdk on macOS and Linux, where Android Studio's own SDK is
+# ~/Library/Android/sdk (the same folder as Sdk on a case-insensitive disk)
+# or ~/Android/Sdk.
+android_sdk() {
+  if [ "$(platform)" = windows-x64 ]; then
+    echo "$(android_home)/Sdk"
+  else
+    echo "$(android_home)/mdoc-sdk"
+  fi
+}
+
+# The pinned JDK under android_home (scripts/install-android-sdk.sh): a macOS
+# JDK keeps its home inside the bundle.
+android_jdk() {
+  if [ "$(platform)" = macos-arm64 ]; then
+    echo "$(android_home)/jdk-21/Contents/Home"
+  else
+    echo "$(android_home)/jdk-21"
+  fi
+}
+
+# The ABI an Android emulator on this computer runs: arm64-v8a on Apple
+# Silicon, whose emulator runs no x86_64 image,
+# x86_64 elsewhere (ADR 0091).
+android_emulator_abi() {
+  if [ "$(platform)" = macos-arm64 ]; then echo arm64-v8a; else echo x86_64; fi
 }
 
 # A path native Windows programs (cargo, clang, Gradle) read: E:/Android/...

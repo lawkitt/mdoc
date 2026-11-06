@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 # Usage: scripts/android-emulator.sh [--window] [phone|tablet|ci]
-# Boots an Android emulator from the pinned API 36 x86_64 image with 16 KB
-# pages (scripts/install-android-sdk.sh), headless unless --window, waits
-# until Android has booted and prints its adb serial (ADR 0089). The virtual
+# Boots an Android emulator from the pinned API 36 image with 16 KB pages
+# (scripts/install-android-sdk.sh), x86_64, or arm64-v8a on the Mac
+# (android_emulator_abi), headless unless --window, waits until Android has
+# booted and prints its adb serial (ADR 0089, 0091). The virtual
 # devices live in $(android_home)/avd and are written here on first use: a
 # Pixel 8-sized phone (emulator-5554), a Pixel Tablet-sized tablet
 # (emulator-5556) and CI's own phone (emulator-5560), so a CI run
 # never tests on an emulator someone is using. Already running, it checks
 # the device is that AVD with 16 KB pages and prints the serial.
-# `adb -s <serial> emu kill` stops it. Windows x64.
+# `adb -s <serial> emu kill` stops it. Windows x64, Apple Silicon macOS, or
+# Linux x86_64 with KVM (read and write access to /dev/kvm).
 source "$(dirname "$0")/lib.sh"
 
-[ "$(platform)" = windows-x64 ] || die "the Android emulator runs on Windows x64"
+case "$(platform)" in
+  windows-x64) exe=.exe ;;
+  macos-arm64) exe='' ;;
+  Linux-x86_64)
+    exe=''
+    if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+      die "the emulator needs KVM: no read and write access to /dev/kvm (join the kvm group, or on a hosted runner add a udev rule for it)"
+    fi
+    ;;
+  *) die "the Android emulator runs on Windows x64, Apple Silicon macOS or Linux x86_64" ;;
+esac
 window=no
 if [ "${1:-}" = --window ]; then
   window=yes
@@ -26,8 +38,13 @@ case "$kind" in
 esac
 
 home=$(android_home)
-sdk=$home/Sdk
-image=system-images/android-36/google_apis_ps16k/x86_64
+sdk=$(android_sdk)
+abi=$(android_emulator_abi)
+case "$abi" in
+  x86_64) arch=x86_64 ;;
+  arm64-v8a) arch=arm64 ;;
+esac
+image=system-images/android-36/google_apis_ps16k/$abi
 [ -f "$sdk/$image/system.img" ] || die "no emulator image: run just android-setup"
 name=mdoc-$kind
 avd=$home/avd/$name.avd
@@ -59,25 +76,31 @@ if booted; then
 fi
 
 # The device, written here rather than by avdmanager, which needs the JDK
-# and asks questions. The emulator itself needs only this.
+# and asks questions. The emulator itself needs only this. Windows paths
+# take backslashes.
 if [ ! -f "$avd/config.ini" ]; then
   mkdir -p "$avd"
+  if [ "$(platform)" = windows-x64 ]; then
+    avd_path=$(cygpath -w "$avd") avd_rel="avd\\$name.avd" sysdir="${image//\//\\}\\"
+  else
+    avd_path=$avd avd_rel=avd/$name.avd sysdir=$image/
+  fi
   cat >"$home/avd/$name.ini" <<INI
 avd.ini.encoding=UTF-8
-path=$(cygpath -w "$avd")
-path.rel=avd\\$name.avd
+path=$avd_path
+path.rel=$avd_rel
 target=android-36
 INI
   cat >"$avd/config.ini" <<INI
 AvdId=$name
 avd.ini.displayname=mdoc $kind (API 36, 16 KB pages)
-abi.type=x86_64
-hw.cpu.arch=x86_64
+abi.type=$abi
+hw.cpu.arch=$arch
 hw.cpu.ncore=4
 hw.ramSize=$ram
 vm.heapSize=512
 disk.dataPartition.size=12G
-image.sysdir.1=${image//\//\\}\\
+image.sysdir.1=$sysdir
 tag.id=google_apis_ps16k
 tag.display=Google APIs, 16 KB Page Size
 target=android-36
@@ -100,7 +123,7 @@ flags=(-avd "$name" -port "$port" -no-snapshot -no-boot-anim -no-audio -gpu swif
 mkdir -p target/android
 log=target/android/emulator-$kind.log
 echo "android-emulator: booting $name ($serial); log in $log" >&2
-"$sdk/emulator/emulator.exe" "${flags[@]}" >"$log" 2>&1 &
+"$sdk/emulator/emulator$exe" "${flags[@]}" >"$log" 2>&1 &
 "$sdk/platform-tools/adb" start-server >/dev/null 2>&1
 for _ in $(seq 1 180); do
   if booted; then
