@@ -50,19 +50,50 @@ confirm() {
   [[ $answer =~ ^[Yy]$ ]]
 }
 
-# Where the Android toolchain lives (ADR 0089): ~/Library/Android on the Mac;
-# on Windows the E: Dev Drive's E:\Android when there is one, else
-# %LOCALAPPDATA%\Android. MDOC_ANDROID_HOME overrides both.
+# Where the Android toolchain lives (ADR 0089, 0091): ~/Library/Android on
+# the Mac, ~/Android on Linux; on Windows the E: Dev Drive's E:\Android when
+# there is one, else %LOCALAPPDATA%\Android. MDOC_ANDROID_HOME overrides them.
 android_home() {
   if [ -n "${MDOC_ANDROID_HOME:-}" ]; then
     echo "$MDOC_ANDROID_HOME"
   elif [ "$(platform)" = macos-arm64 ]; then
     echo "$HOME/Library/Android"
+  elif [ "$(platform)" = Linux-x86_64 ]; then
+    echo "$HOME/Android"
   elif [ -d /e ]; then
     echo /e/Android
   else
     echo "$(cygpath -u "$LOCALAPPDATA")/Android"
   fi
+}
+
+# The pinned SDK under android_home (scripts/install-android-sdk.sh): Sdk on
+# Windows, mdoc-sdk on macOS and Linux, where Android Studio's own SDK is
+# ~/Library/Android/sdk (the same folder as Sdk on a case-insensitive disk)
+# or ~/Android/Sdk.
+android_sdk() {
+  if [ "$(platform)" = windows-x64 ]; then
+    echo "$(android_home)/Sdk"
+  else
+    echo "$(android_home)/mdoc-sdk"
+  fi
+}
+
+# The pinned JDK under android_home (scripts/install-android-sdk.sh): a macOS
+# JDK keeps its home inside the bundle.
+android_jdk() {
+  if [ "$(platform)" = macos-arm64 ]; then
+    echo "$(android_home)/jdk-21/Contents/Home"
+  else
+    echo "$(android_home)/jdk-21"
+  fi
+}
+
+# The ABI an Android emulator on this computer runs: arm64-v8a on Apple
+# Silicon, whose emulator runs no x86_64 image,
+# x86_64 elsewhere (ADR 0091).
+android_emulator_abi() {
+  if [ "$(platform)" = macos-arm64 ]; then echo arm64-v8a; else echo x86_64; fi
 }
 
 # A path native Windows programs (cargo, clang, Gradle) read: E:/Android/...
@@ -150,16 +181,23 @@ glob_regex() {
 # no line), by the area table given as text (scripts/ci-areas.txt): each
 # file takes the areas of the table's first line that matches it, desktop
 # when none does. A table with CRLF line endings reads the same. Prints them on one line in
-# the order core, desktop, recognition, ios, android; core brings in every
+# the order core, desktop, recognition, ios, android, ci; core brings in every
 # area. Nothing
 # (an empty line) when every file is in no area (docs only); every area for
 # an empty list of files.
+#
+# An area name this reader does not know (a newer table, read by an older
+# gate or PC runner) makes its line core, so the file runs every job rather
+# than none.
 changed_areas() { # table-text
   local areas glob f i match seen=' ' a out=''
   local -a line_areas=() line_res=()
   while read -r areas glob _; do
     case "$areas" in '' | '#'*) continue ;; esac
     [ -n "$glob" ] || die "area table: no glob after '$areas'"
+    for a in ${areas//,/ }; do
+      case "$a" in none | core | desktop | recognition | ios | android | ci) ;; *) areas=core ;; esac
+    done
     line_areas+=("$areas")
     line_res+=("$(glob_regex "$glob")")
   done <<<"${1//$'\r'/}"
@@ -175,8 +213,8 @@ changed_areas() { # table-text
     seen+="${match//,/ } "
   done
   [ "$seen" != ' ' ] || seen=' core '
-  [[ $seen != *' core '* ]] || seen=' core desktop recognition ios android '
-  for a in core desktop recognition ios android; do
+  [[ $seen != *' core '* ]] || seen=' core desktop recognition ios android ci '
+  for a in core desktop recognition ios android ci; do
     [[ $seen != *" $a "* ]] || out+="${out:+ }$a"
   done
   echo "$out"
@@ -186,15 +224,18 @@ changed_areas() { # table-text
 affects() { [[ " $2 " == *" $1 "* ]]; }
 
 # The jobs a queue commit needs, from its areas: macos, windows, ios,
-# android, detection (ADR 0095). merge-gate.sh waits for these and
-# queue.yml (scripts/ci-areas.sh --queue) starts them, so the two agree. The fixtures alone need only the detection
-# gate; it decides itself whether recognition changed.
+# android, detection, scripts (ADR 0095, ADR 0100). merge-gate.sh waits for
+# these and queue.yml (scripts/ci-areas.sh --queue) starts them, so the two
+# agree. The fixtures alone need only the detection gate; it decides itself
+# whether recognition changed. The CI machinery needs only the script suites
+# (ci/scripts), which ci/macos runs too, so a desktop change does not add it.
 needed_jobs() { # areas
   local a=$1 out=''
   if affects desktop "$a"; then out+=' macos windows'; fi
   if affects ios "$a"; then out+=' ios'; fi
   if affects android "$a"; then out+=' android'; fi
   if affects desktop "$a" || affects recognition "$a"; then out+=' detection'; fi
+  if affects ci "$a" && ! affects desktop "$a"; then out+=' scripts'; fi
   echo "${out# }"
 }
 
@@ -203,4 +244,18 @@ diff_areas() { # from to
   local table
   table=$(cat scripts/ci-areas.txt)
   git diff --no-renames --name-only -z "$1" "$2" | changed_areas "$table"
+}
+
+# Whether a PR head runs the detection gate (ADR 0100): true when one of the
+# files on stdin (NUL-separated, as changed_areas reads them) takes the
+# recognition area from its own line of the table given as text, the
+# fixtures' or the recognition code's. Core lists every area, so a core or
+# desktop change alone runs it only in the queue: macOS runners are scarce.
+# ci.yml's areas job (scripts/ci-areas.sh --github) starts the head run and
+# merge-gate.sh waits for it.
+head_detection() { # table-text
+  local areas
+  # Without core's lines a core file is desktop; an empty list is still core.
+  areas=$(changed_areas "$(tr -d '\r' <<<"$1" | awk '$1 !~ /(^|,)core(,|$)/')")
+  affects recognition "$areas" && ! affects core "$areas"
 }

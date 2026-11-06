@@ -4,7 +4,7 @@ import UIKit
 /// A restored reply, styled as the review screen styles Markdown (the core's
 /// spans, rendered unless Show Markdown is on, ADR 0096), with the values put
 /// back marked and alias-shaped tokens no identity owns highlighted as
-/// unrecognised (ADR 0087). Read-only and selectable.
+/// unrecognized (ADR 0087). Read-only and selectable.
 struct RestoredTextView: UIViewRepresentable {
     let result: RestoreResult
     @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
@@ -102,7 +102,7 @@ struct RestoredTextView: UIViewRepresentable {
     }
 }
 
-/// "7 values restored · 1 unrecognised".
+/// "7 values restored · 1 unrecognized".
 struct RestoreSummary: View {
     let result: RestoreResult
 
@@ -116,7 +116,7 @@ struct RestoreSummary: View {
     static func text(_ result: RestoreResult) -> String {
         let restored = String(localized: "\(result.restoredCount) values restored")
         guard result.unresolvedCount > 0 else { return restored }
-        let unresolved = String(localized: "\(result.unresolvedCount) unrecognised")
+        let unresolved = String(localized: "\(result.unresolvedCount) unrecognized")
         return "\(restored) · \(unresolved)"
     }
 }

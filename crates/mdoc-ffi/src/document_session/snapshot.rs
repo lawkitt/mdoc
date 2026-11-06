@@ -1,7 +1,8 @@
 //! What the review screen draws, rebuilt after every transition: the text,
-//! its mentions with their source byte ranges, and identities by category.
-//! Swift and Kotlin keep only view state beside it (ADR 0085).
-use super::review::ReviewText;
+//! its mentions with their source byte ranges, identities by category, merge
+//! hints and the undo history's ends. Swift and Kotlin keep only view state
+//! beside it (ADR 0085, ADR 0098).
+use super::review::{Focus, ReviewText, Step, StepKind};
 use crate::library::TextRange;
 use std::collections::HashMap;
 
@@ -96,6 +97,36 @@ pub struct IdentityRow {
     /// Proposed and replaced mentions.
     pub mentions: u64,
     pub proposed: u64,
+    /// Belongs to…: the person or organization a contact or identifier
+    /// belongs to.
+    pub owner: Option<u64>,
+}
+
+/// One row of the category menu: choosing `category` gives `alias`, or
+/// keeps the alias as it is when `None` (desktop's #179).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct CategoryChoice {
+    pub category: Category,
+    pub alias: Option<String>,
+    /// The mention's identity is in this category already.
+    pub current: bool,
+}
+
+/// An undo step Undo or Redo reaches (ADR 0098): the toast names it, and
+/// the bar moves to where it acted.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct HistoryStep {
+    pub kind: StepKind,
+    /// "Replace · Riverside Holdings", "Same as · Maya Bennett".
+    pub label: String,
+    /// What the label names after the kind: a wording, an alias, a
+    /// category, a count; empty for none.
+    pub subject: String,
+    /// The mention it acted on, in this snapshot's text: for the step Undo
+    /// reverts, where it is now; for the one Redo makes, where it is before.
+    pub range: Option<TextRange>,
+    /// The identity it acted on, in this snapshot.
+    pub identity: Option<u64>,
 }
 
 /// Two identities that look like one subject (ADR 0080); linking them is
@@ -118,11 +149,18 @@ pub struct ReviewSnapshot {
     pub mentions: Vec<Mention>,
     /// In category order (Person, Organization, …), then by first mention.
     pub identities: Vec<IdentityRow>,
+    /// Merge hints, without the ones dismissed here or in the case.
     pub link_hints: Vec<LinkHint>,
     pub proposed: u64,
     pub replaced: u64,
     pub kept: u64,
     pub case_id: Option<String>,
+    pub can_undo: bool,
+    pub can_redo: bool,
+    /// The step Undo reverts; after a redo, the step it made again.
+    pub undo_step: Option<HistoryStep>,
+    /// The step Redo makes again; after an undo, the step it undid.
+    pub redo_step: Option<HistoryStep>,
 }
 
 pub(super) fn of(
@@ -214,6 +252,7 @@ pub(super) fn of(
                 originals,
                 mentions: review.identity_count(id) as u64,
                 proposed,
+                owner: identity.owner,
             })
         })
         .collect();
@@ -230,11 +269,30 @@ pub(super) fn of(
         )
     });
     let count = |state| mentions.iter().filter(|m| m.state == state).count() as u64;
+    let step = |(step, focus): (&Step, &Focus)| {
+        let mention = focus
+            .range
+            .as_ref()
+            .and_then(|r| mentions.iter().find(|m| m.range == TextRange::of(r)));
+        HistoryStep {
+            kind: step.kind,
+            label: step.label(),
+            subject: step.subject.clone(),
+            range: focus.range.as_ref().map(TextRange::of),
+            identity: mention.and_then(|m| m.identity).or(focus.identity),
+        }
+    };
+    let undo_step = document.undo_step().map(step);
+    let redo_step = document.redo_step().map(step);
     ReviewSnapshot {
+        can_undo: document.can_undo(),
+        can_redo: document.can_redo(),
+        undo_step,
+        redo_step,
         title: title.to_owned(),
         warning: warning.map(str::to_owned),
         text: document.text.clone(),
-        link_hints: review
+        link_hints: document
             .merge_hints()
             .into_iter()
             .map(|hint| LinkHint {

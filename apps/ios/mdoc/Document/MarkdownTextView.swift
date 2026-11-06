@@ -9,11 +9,21 @@ import UIKit
 struct MarkdownTextView: UIViewRepresentable {
     let snapshot: DocumentSnapshot
     let selected: CandidateID?
+    /// The mentions the bar's scope reaches besides `selected`.
+    var scoped: Set<CandidateID> = []
+    /// Bumped by the review bar to scroll back to `selected`.
+    var revealRequest = 0
+    /// A Find match to scroll to when `revealRequest` changes.
+    var revealRange: SourceRange?
     /// Markers hidden and blocks drawn; false shows the source.
     var rendered = true
+    /// Document font › Serif; the styler reads it, the key restyles on it.
+    var serif = false
     let onCandidate: (CandidateID) -> Void
     let onReplace: (SourceRange) -> Void
     let onReviewNext: () -> Void
+    /// A candidate's long-press menu (ADR 0098); nil leaves none.
+    var menu: (CandidateID) -> UIMenu? = { _ in nil }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -51,9 +61,20 @@ struct MarkdownTextView: UIViewRepresentable {
         coordinator.parent = self
         view.onReviewNext = onReviewNext
         let key = StyleKey(
-            snapshot: snapshot, selected: selected, rendered: rendered,
+            snapshot: snapshot, selected: selected, scoped: scoped, rendered: rendered, serif: serif,
             dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
+        if revealRequest != coordinator.revealRequest {
+            coordinator.revealRequest = revealRequest
+            if let range = revealRange, selected.flatMap({ snapshot.candidate($0) }).map({ $0.range.start > range.start || $0.range.end < range.end }) ?? true {
+                coordinator.reveal(range: range, in: view)
+                // The match selected, so the reader sees which words.
+                let found = coordinator.offsets.nsRange(range)
+                if found.location + found.length <= view.attributedText.length { view.selectedRange = found }
+            } else if let selected, key == coordinator.styled {
+                coordinator.reveal(selected, in: view, always: true)
+            }
+        }
         guard key != coordinator.styled else {
             coordinator.pending = nil
             return
@@ -72,7 +93,9 @@ struct MarkdownTextView: UIViewRepresentable {
     struct StyleKey: Equatable {
         var snapshot: DocumentSnapshot
         var selected: CandidateID?
+        var scoped: Set<CandidateID>
         var rendered: Bool
+        var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
     }
@@ -80,6 +103,7 @@ struct MarkdownTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextView
         var styled: StyleKey?
+        var revealRequest = 0
         var offsets = TextOffsets("")
         /// False until the first text is shown, so a new document starts at the top.
         var keepsScroll = false
@@ -100,10 +124,89 @@ struct MarkdownTextView: UIViewRepresentable {
         func restyle(_ key: StyleKey, _ view: CandidateTextView) {
             pending = nil
             let textChanged = styled?.snapshot.markdown != key.snapshot.markdown
+            let newlySelected = key.selected != styled?.selected ? key.selected : nil
             styled = key
             offsets = TextOffsets(key.snapshot.markdown)
             render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
             keepsScroll = true
+            if let newlySelected {
+                // After the tables are placed, which follows the layout.
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.reveal(newlySelected, in: view)
+                }
+            } else if key.selected == nil {
+                dropRevealRoom(in: view)
+            }
+        }
+
+        /// Scrolls the candidate under review into the top third of the
+        /// text, the part the candidate sheet leaves in view, so Next
+        /// proposal never opens one hidden under the sheet. In a table the
+        /// grid scrolls sideways to it too. Near the end of the document the
+        /// text gets room below its end while the sheet is up.
+        func reveal(_ id: CandidateID, in view: CandidateTextView, always: Bool = false) {
+            guard let candidate = parent.snapshot.candidate(id) else { return }
+            reveal(range: candidate.range, in: view, always: always)
+        }
+
+        /// Scrolls a source range into the text's top third, briefly
+        /// selecting it when it is no candidate (a Find match).
+        func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true) {
+            let range = offsets.nsRange(source)
+            let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
+                NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+            }
+            let rect: CGRect
+            if let cell {
+                guard let local = Self.firstRect(in: cell, location: range.location - cell.location, length: range.length) else { return }
+                if let table = cell.superview as? MarkdownTableView {
+                    table.scrollRectToVisible(cell.convert(local, to: table).insetBy(dx: -12, dy: 0), animated: false)
+                }
+                rect = cell.convert(local, to: view)
+            } else {
+                guard let found = Self.firstRect(in: view, location: range.location, length: range.length) else { return }
+                rect = found
+            }
+            let insets = view.adjustedContentInset
+            let top = view.contentOffset.y + insets.top
+            let band = (view.bounds.height - insets.top - insets.bottom) / 3
+            guard always || rect.minY < top + 8 || rect.maxY > top + band else { return }
+            let highest = -insets.top
+            let target = max(rect.minY - insets.top - band / 3, highest)
+            // Room below the end, so a candidate there can rise above the sheet.
+            let lowest = view.contentSize.height + insets.bottom - view.bounds.height
+            if target > lowest {
+                let more = target - lowest
+                view.contentInset.bottom += more
+                revealRoom += more
+            }
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
+        }
+
+        /// The room `reveal` added below the text, taken away once no
+        /// candidate is under review.
+        var revealRoom: CGFloat = 0
+
+        func dropRevealRoom(in view: CandidateTextView) {
+            guard revealRoom > 0 else { return }
+            view.contentInset.bottom -= revealRoom
+            revealRoom = 0
+            let insets = view.adjustedContentInset
+            let lowest = max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height)
+            if view.contentOffset.y > lowest {
+                view.setContentOffset(CGPoint(x: view.contentOffset.x, y: lowest), animated: !UIAccessibility.isReduceMotionEnabled)
+            }
+        }
+
+        private static func firstRect(in view: UITextView, location: Int, length: Int) -> CGRect? {
+            guard
+                let start = view.position(from: view.beginningOfDocument, offset: location),
+                let end = view.position(from: start, offset: length),
+                let textRange = view.textRange(from: start, to: end)
+            else { return nil }
+            let rect = view.firstRect(for: textRange)
+            return rect.isNull || rect.isInfinite ? nil : rect
         }
 
         func restyleOnReturn(_ key: StyleKey, _ view: CandidateTextView) {
@@ -125,7 +228,7 @@ struct MarkdownTextView: UIViewRepresentable {
             let snapshot = parent.snapshot
             let offset = view.contentOffset
             let styler = MarkdownStyler(
-                traits: view.traitCollection, selected: parent.selected, rendered: parent.rendered,
+                traits: view.traitCollection, selected: parent.selected, scoped: parent.scoped, rendered: parent.rendered,
                 width: width > 0 ? width : nil)
             view.show(styler.document(for: snapshot), width: width)
             var items: [CandidateTextView.RotorItem] = []
@@ -157,9 +260,9 @@ struct MarkdownTextView: UIViewRepresentable {
         }
 
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
-            // A candidate's tap is its action; no link preview menu.
-            if case .link(let url) = textItem.content, MarkdownStyler.candidateID(from: url) != nil {
-                return nil
+            // A candidate's tap opens the bar; its long press, its menu.
+            if case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
+                return parent.menu(id).map { UITextItem.MenuConfiguration(menu: $0) }
             }
             return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
@@ -179,7 +282,7 @@ struct MarkdownTextView: UIViewRepresentable {
             // A table cell's selection, in document offsets.
             let base = (textView as? CellTextView)?.location ?? 0
             let source = offsets.sourceRange(NSRange(location: base + range.location, length: range.length))
-            let replace = UIAction(title: String(localized: "Replace…"), image: UIImage(systemName: "eye.slash")) { [weak self, weak textView] _ in
+            let replace = UIAction(title: String(localized: "Hide name"), image: UIImage(systemName: "eye.slash")) { [weak self, weak textView] _ in
                 textView?.selectedRange = NSRange(location: range.location, length: 0)
                 self?.parent.onReplace(source)
             }

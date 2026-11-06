@@ -7,31 +7,42 @@ compiled against API 37, targeting API 36.
 
 ## Build and run
 
-On the Windows PC, in Git Bash:
+On the Windows PC in Git Bash, an Apple Silicon Mac, or Linux x86_64 with
+KVM (read and write access to `/dev/kvm`):
 
 ```sh
-just android-setup          # once: pinned SDK, emulator, JDK 21, NDK under E:\Android
+just android-setup          # once: pinned SDK, emulator, JDK 21, NDK
 just android-core           # the core for arm64-v8a and x86_64, its Kotlin bindings, a desktop build for the JVM tests
 just android-emulator       # boots the API 36 phone emulator (16 KB pages); prints emulator-5554
+just android                # the Android job (MDOC_ANDROID_JOB=always runs it whatever changed)
+```
+
+`just android-setup` puts everything under `E:\Android` on the PC,
+`~/Library/Android` on the Mac and `~/Android` on Linux; the SDK is in
+`Sdk` there on Windows and in `mdoc-sdk` on the Mac and Linux, apart from
+Android Studio's. The Mac's emulator runs the arm64-v8a image, the others
+x86_64 (ADR 0091). To build and install by hand (Windows paths shown):
+
+```sh
 cd apps/android
 export JAVA_HOME=E:/Android/jdk-21 ANDROID_HOME=E:/Android/Sdk
 ./gradlew installDebug      # then open mdoc on the emulator
 ```
 
-`just android-emulator --window` shows the emulator instead of running it
-headless.
+On the Mac `JAVA_HOME` is `~/Library/Android/jdk-21/Contents/Home` and
+`ANDROID_HOME` `~/Library/Android/mdoc-sdk`. `just android-emulator --window`
+shows the emulator instead of running it headless.
 
-### On an Apple Silicon Mac
+### With Android Studio on the Mac
 
-`just android-setup` and `just android-emulator` are Windows-only; on the Mac
-Android Studio supplies the SDK, the emulator and the JDK instead:
+Android Studio can supply the SDK, the emulator and the JDK instead:
 
 1. `brew install --cask android-studio`, run its setup wizard, and in
    Settings → Languages & Frameworks → Android SDK install the API 37
    platform.
 2. In Device Manager, create a phone on an **arm64-v8a** image (an x86_64
    one barely runs on Apple Silicon) and start it. The 16 KB page images
-   ("Google APIs … 16 KB page size") match the Windows emulator; any
+   ("Google APIs … 16 KB page size") match `just android-emulator`'s; any
    API 31+ arm64 image runs the app. Give it 8 GB of RAM: below about
    7 GiB mdoc offers only text recognition, not Find names' detector.
 3. From the repo root, `just android-core` (installs the pinned NDK under
@@ -46,6 +57,13 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" A
 
 Or open `apps/android` in Android Studio and press Run, after step 3.
 `testDebugUnitTest` runs on the Mac too, against the Mac build of the core.
+
+### The minified build
+
+`./gradlew assembleMinified` builds the app as R8 would ship it
+(`proguard-rules.pro`), debug-signed as `io.github.lawkitt.mdoc.minified` so
+it installs beside the debug app. `just android` opens its library on the
+emulator: a keep rule R8 needs and the rules lack fails the job (ADR 0091).
 
 ## Tests
 

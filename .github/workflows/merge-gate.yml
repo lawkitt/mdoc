@@ -6,6 +6,11 @@ name: Merge gate
 # is silent. The rules are in scripts/merge-gate.sh. Runs main's copy of the
 # script with this workflow's token and never checks out or runs PR code;
 # pull_request_target runs this file as it is on main.
+#
+# Re-check the gate with `gh workflow run merge-gate.yml`, never by re-running
+# a PR's pull_request_target run (ADR 0100). A pass that hit an error or left
+# something pending dispatches merge-gate-recheck.yml, which runs this again
+# 3 minutes later; the schedule stays, but nothing relies on it.
 on:
   schedule:
     # GitHub may start a scheduled run late; the PC's 10-minute limits allow
@@ -19,6 +24,7 @@ on:
     types: [requested, completed]
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+  # By hand, and by merge-gate-recheck.yml.
   workflow_dispatch:
 
 permissions: {}
@@ -30,13 +36,18 @@ concurrency:
 
 jobs:
   merge-gate:
-    name: merge gate
+    # Not "merge-gate": that is the status this job posts.
+    name: merge-gate pass
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A pass takes seconds; retried GitHub calls (3 tries of up to 30 s each)
+    # can stretch one while GitHub is failing.
+    timeout-minutes: 10
     permissions:
-      # Dispatch the hosted fallbacks; read runs and check runs.
+      # Dispatch the hosted fallbacks and the recheck, re-run jobs that never
+      # ran; read runs, jobs and check runs.
       actions: write
       checks: read
+      # A queue commit's own scripts/ci-areas.txt.
       contents: read
       pull-requests: read
       # Post merge-gate.

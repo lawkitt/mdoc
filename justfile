@@ -115,16 +115,16 @@ check-all: check smoke-ocr smoke-models
 ios-core:
     scripts/build-ios-core.sh
 
-# Pinned Android SDK, emulator, JDK 21 and NDK under E:\Android; Windows (ADR 0089)
+# Pinned Android SDK, emulator, JDK 21 and NDK under E:\Android, ~/Library/Android (Mac) or ~/Android (Linux) (ADR 0089, 0091)
 android-setup:
     scripts/install-android-sdk.sh
     scripts/install-android-ndk.sh
 
-# Boot the API 36 emulator (16 KB pages) headless and print its adb serial; --window shows it (ADR 0089)
+# Boot the API 36 emulator (16 KB pages; arm64-v8a on the Mac, x86_64 elsewhere, Linux needs KVM) headless and print its adb serial; --window shows it (ADR 0089, 0091)
 android-emulator *args:
     scripts/android-emulator.sh {{args}}
 
-# The Android job: core, JVM parity tests, app, emulator tests, when the android area changed; the PC's queue runner runs it as ci/android (ADR 0089, 0095)
+# The Android job: core, JVM parity tests, app, the minified app opening its library, emulator tests, when the android area changed; the PC's queue runner runs it as ci/android (ADR 0089, 0091, 0095)
 android:
     scripts/android-check.sh
 
@@ -165,10 +165,15 @@ release version *flags:
 ios-app: ios-core
     xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
 
-# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env), without the quarantined ones (.config/quarantine.txt)
+# Build the iOS app and its extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles (ci/ios-release)
+[macos]
+ios-release: ios-core
+    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/ReleaseData -quiet build CODE_SIGNING_ALLOWED=NO
+
+# Run the iOS unit, parity and UI tests on a Simulator device of the pinned runtime (scripts/tools.env), without the quarantined ones (.config/quarantine.txt); MDOC_IOS_TEST_WORKERS=<n> runs them on n clones of it
 [macos]
 ios-test device="iPhone 17": ios-core
-    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); skip=$(bash scripts/quarantine.sh ios) || exit 1; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet test $skip
+    os=$(sed -n 's/^IOS_SIM_RUNTIME=//p' scripts/tools.env); skip=$(bash scripts/quarantine.sh ios) || exit 1; workers=${MDOC_IOS_TEST_WORKERS:-}; xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination "platform=iOS Simulator,OS=$os,name={{device}}" -derivedDataPath target/ios/DerivedData -quiet ${workers:+-parallel-testing-enabled YES -parallel-testing-worker-count "$workers"} test $skip
 
 # The device UI tests on a connected iPhone: the review flow, then the long jobs or, below the floor, the below-floor test (ADR 0088)
 [macos]
@@ -177,7 +182,7 @@ ios-device-test udid tier="auto": ios-core
 
 # Take the iOS UI survey (every screen, light and dark) into a folder (ADR 0087)
 [macos]
-ios-survey out device="iPhone 17": ios-core
+ios-survey out device="iPhone 17 Pro": ios-core
     scripts/ios-survey.sh "{{device}}" "{{out}}"
 
 # Regenerate the icon set from build/appicon.svg (macOS)

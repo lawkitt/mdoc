@@ -1,11 +1,15 @@
 name: CI iOS
 
-# The iOS job on a hosted runner (ADR 0095, ADR 0091): the core, the app,
-# XCTest and XCUITest on the pinned Xcode and Simulator (scripts/tools.env).
+# The iOS job on hosted runners (ADR 0095, ADR 0091, ADR 0100): two jobs in
+# parallel, and `ci/ios`, which merge-gate reads, green only when both ran
+# and passed.
+#   ci/ios (tests)   the core, the app, XCTest and XCUITest on the pinned
+#                    Xcode and Simulator (scripts/tools.env).
+#   ci/ios-release   the core and the app in the Release configuration, as an
+#                    archive builds them, unsigned and without tests.
 # The merge queue calls it for a queue commit that touches the ios or core
-# area; `merge-gate` reads its `ci/ios` status. Every step is a recipe or a
-# script, so `scripts/ios-toolchain.sh` and `just mobile --ios` reproduce it
-# on a Mac.
+# area. Every step is a recipe or a script, so `scripts/ios-toolchain.sh`,
+# `just mobile --ios` and `just ios-release` reproduce it on a Mac.
 on:
   workflow_call:
     inputs:
@@ -14,7 +18,7 @@ on:
         type: string
         default: ""
       build-only:
-        description: Build the iOS core only, which saves its cargo cache on main (main-caches.yml).
+        description: Build the iOS core only, which saves it and its cargo cache on main (main-caches.yml).
         type: boolean
         default: false
   workflow_dispatch:
@@ -31,9 +35,19 @@ on:
 permissions:
   contents: read
 
+env:
+  # The tests' switch for parallel testing: the number of Simulator clones
+  # `just ios-test` runs them on; empty runs them on the one device. Off:
+  # on 2 clones (PR #617's trial, 3 runs) testing took 16-17 minutes, not
+  # 6.6, and the review-flow UI tests failed on every run.
+  MDOC_IOS_TEST_WORKERS: ""
+
 jobs:
+  # The job id stays `ios`: main-caches.yml's build-only call saves the
+  # cargo cache under it, and both jobs restore it (`cache-key: ios`). That
+  # call also saves the built core, which both jobs restore too.
   ios:
-    name: ci/ios
+    name: ci/ios (tests)
     runs-on: macos-26
     # ADR 0095's iOS job limit.
     timeout-minutes: 40
@@ -44,20 +58,48 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup
+        with:
+          cache-key: ios
 
-      # The pinned Xcode for every later step, and the pinned Simulator
-      # runtime and device, downloaded when the image lacks them.
-      - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '' }} >>"$GITHUB_ENV"
+      # The pinned Xcode for every later step. The pinned Simulator runtime,
+      # when the image lacks it, downloads in the background while the core
+      # builds.
+      - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '--start' }} >>"$GITHUB_ENV"
 
-      # The caller decided the area already.
+      # The built core from main (#631): an exact hit on the hash of its
+      # inputs (scripts/ios-core-cache.sh) skips its build, and the app
+      # links the restored xcframeworks; Build.xcconfig names this commit.
+      # A miss builds it and checks that the key hashes every file the build
+      # read.
+      - id: core-key
+        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios-core-cache.sh check
+      - if: steps.core.outputs.cache-hit == 'true'
+        run: scripts/ios-build-info.sh
+
+      # Only main saves (main-caches.yml's build-only run), as for the cargo
+      # cache: a branch restores only its own caches and main's, so a queue
+      # commit's or a PR's copy would only fill the 10 GB.
+      - if: steps.core.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+
       - if: ${{ !inputs.build-only }}
-        run: just mobile --ios
-        env:
-          MDOC_IOS_JOB: always
+        run: scripts/ios-toolchain.sh --finish >/dev/null
 
-      # The job id stays `ios`, so queue commits restore what this saves.
-      - if: ${{ inputs.build-only }}
-        run: just ios-core
+      # `just mobile --ios` without its area check (the caller decided) and
+      # its Simulator shutdown (the runner is thrown away); --no-deps, as the
+      # core is built.
+      - if: ${{ !inputs.build-only }}
+        run: just --no-deps ios-app ios-test
 
       - name: Test results
         if: failure()
@@ -67,3 +109,56 @@ jobs:
           path: target/ios/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  release:
+    name: ci/ios-release
+    if: ${{ !inputs.build-only }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: ios
+
+      # Xcode 26.1.1 finds no destination, generic or not, without an iOS
+      # 26.1 runtime, so this job readies one too, during the core's build.
+      - run: scripts/ios-toolchain.sh --start >>"$GITHUB_ENV"
+
+      # main's built core, as in the tests job; this job never saves it.
+      - id: core-key
+        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios-core-cache.sh check
+      - if: steps.core.outputs.cache-hit == 'true'
+        run: scripts/ios-build-info.sh
+
+      - run: scripts/ios-toolchain.sh --finish >/dev/null
+
+      - run: just --no-deps ios-release
+
+  # Green only when both jobs ran and passed, so a cancelled or skipped one
+  # never looks green (as ci/detection, ADR 0095).
+  summary:
+    name: ci/ios
+    needs: [ios, release]
+    if: ${{ always() && !inputs.build-only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          TESTS: ${{ needs.ios.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          [ "$TESTS" = success ] || echo "::error::ci/ios (tests): $TESTS"
+          [ "$RELEASE" = success ] || echo "::error::ci/ios-release: $RELEASE"
+          [ "$TESTS" = success ] && [ "$RELEASE" = success ]

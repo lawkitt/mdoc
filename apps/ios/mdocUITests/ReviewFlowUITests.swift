@@ -24,13 +24,27 @@ final class ReviewFlowUITests: XCTestCase {
         let email = text.links[MdocUITest.email].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 30))
         MdocUITest.tapAboveBottomBar(email, in: text, app)
-        let done = app.buttons["candidate-done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["candidate-alias"].exists)
-        done.tap()
+        // The review bar opens on it (ADR 0098); Replace takes every mention.
+        let replace = app.buttons["review-replace"]
+        XCTAssertTrue(replace.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["review-alias"].firstMatch.exists)
+        replace.tap()
         // The text view rebuilds its elements after a change; ask the app.
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.links[MdocUITest.email].exists)
+
+        // The only proposal: All reviewed, with Undo in the toast; undo puts
+        // the bar back on it, and the next toast redoes.
+        let toastUndo = app.buttons["toast-action"]
+        XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
+        toastUndo.tap()
+        let redo = app.buttons["toast-action"].firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == 'toast-action' AND label == 'Redo'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.exists)
+        XCTAssertTrue(app.buttons["review-undo"].exists)
+        redo.tap()
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // Replace any remaining proposals, as reviewed.
         let primary = app.buttons["primary-action"]
@@ -59,7 +73,7 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertTrue((restored.value as? String)?.contains("Write to \(MdocUITest.email) today.") ?? false)
         let summary = app.staticTexts["restore-summary"]
         XCTAssertTrue(summary.label.contains("1 value restored"))
-        XCTAssertTrue(summary.label.contains("1 unrecognised"))
+        XCTAssertTrue(summary.label.contains("1 unrecognized"))
     }
 }
 
@@ -203,12 +217,18 @@ enum MdocUITest {
 
     @MainActor
     static func closeShareSheet(_ app: XCUIApplication) {
+        let sheet = app.otherElements["ActivityListView"].firstMatch
         let close = app.buttons["Close"].firstMatch
         if close.waitForExistence(timeout: 2) {
             close.tap()
         } else {
-            app.otherElements["ActivityListView"].firstMatch.swipeDown(velocity: .fast)
+            sheet.swipeDown(velocity: .fast)
         }
-        _ = app.buttons["paste-reply"].waitForExistence(timeout: 5)
+        // A tap while the sheet still slides away goes nowhere (#542): wait
+        // until it is gone and Paste reply takes taps.
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "the share sheet stayed open")
+        let paste = app.buttons["paste-reply"]
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: paste)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 10), .completed, "Paste reply never took taps")
     }
 }
