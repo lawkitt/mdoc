@@ -7,9 +7,15 @@ name: CI Android
 # when the PC is silent, its heartbeat is stale, its runner errs, or the
 # group holds a fork or bot PR, and reads the check `ci/android (hosted)`:
 # one job, so no summary; a job that never got a runner is re-run by the
-# gate. Every step is a recipe or a script, so `just android` on the PC,
-# the Mac or Linux with KVM reproduces it.
+# gate. nightly.yml calls it on main. Every step is a recipe or a script,
+# so `just android` on the PC, the Mac or Linux with KVM reproduces it.
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test; empty tests the triggering ref.
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       ref:

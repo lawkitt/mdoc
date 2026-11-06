@@ -728,8 +728,8 @@ toolchain. A red `main` stops enqueueing.
 `--since` measures only what ran after a change landed.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
-desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
-and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
+desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection
+gate, the quarantined tests and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
 red", or comments on the open one; a green night closes it
 (`scripts/nightly-issue.sh`). Run it by hand with `gh workflow run
 nightly.yml --repo lawkitt/mdoc`.
