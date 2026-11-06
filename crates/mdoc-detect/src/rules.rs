@@ -230,6 +230,10 @@ struct ContextEntry {
     /// must look like a date).
     #[serde(default)]
     only_guessed: Vec<String>,
+    /// The label opens its line: only whitespace and Markdown marks before
+    /// it (a caption's "No." on a line of its own).
+    #[serde(default)]
+    line_start: bool,
 }
 
 #[derive(Deserialize)]
@@ -827,6 +831,7 @@ struct Context {
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
     only_guessed: Vec<Category>,
+    line_start: bool,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1299,6 +1304,7 @@ impl Pack {
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
                     only_guessed,
+                    line_start: entry.line_start,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -2981,14 +2987,25 @@ impl Pack {
                         .chars()
                         .next()
                         .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                    let before = source[..found.get(0)?.start()]
+                    let start = found.get(0)?.start();
+                    let before = source[..start]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
+                    // Only whitespace and Markdown marks before a line's label.
+                    let opens = || {
+                        source[..start]
+                            .rsplit('\n')
+                            .next()
+                            .unwrap_or_default()
+                            .chars()
+                            .all(|c| c.is_whitespace() || "#>*_|".contains(c))
+                    };
                     if !ends
                         || context.unless_after.contains(&before)
+                        || (context.line_start && !opens())
                         || !self.takes(context, value.as_str())
                     {
                         return None;
@@ -4052,6 +4069,162 @@ mod tests {
         assert_eq!(
             shown("Claim No 6001842/2026. The claim 6001842/2026 is settled under article 309."),
             ["6001842/2026", "6001842/2026"]
+        );
+    }
+
+    /// The case numbers the review shows for `source` without a model.
+    fn cases(source: &str) -> Vec<String> {
+        crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "CASE")
+            .map(|span| source[span.range].to_owned())
+            .collect()
+    }
+
+    /// Issue #364: US caption labels give the document's own case number,
+    /// the label and a judge's initials outside.
+    #[test]
+    fn us_caption_labels_propose_their_case_number() {
+        for (source, number) in [
+            ("§ CIVIL ACTION NO. 5:31-cv-999 §", "5:31-cv-999"),
+            ("CIVIL ACTION NO.: 4:31-cv-2999", "4:31-cv-2999"),
+            ("Civil Action No. § 4:31-cv-2999", "4:31-cv-2999"),
+            ("Civil Action No. 31-2999 (ZZ)", "31-2999"),
+            ("C.A. No. 2031-0999-ZZ", "2031-0999-ZZ"),
+            ("under Civil Docket No. 1:31-cv-00999.", "1:31-cv-00999"),
+            ("**Docket No.:** 1:31-cv-04731-QL", "1:31-cv-04731-QL"),
+            ("INDEX NO. 31 CV99999", "31 CV99999"),
+            ("Index No. 652134/2031", "652134/2031"),
+            ("Trial Court No. Q2031999", "Q2031999"),
+            ("Trial Court No. 352-364031-31", "352-364031-31"),
+            ("Cause No. 2031-12345", "2031-12345"),
+            ("in cause number 09-31-00999-CV.", "09-31-00999-CV"),
+            ("No. 09-31-00999-CV\n", "09-31-00999-CV"),
+            ("___\n**NO. 09-31-00999-CV**\n___", "09-31-00999-CV"),
+            ("| No. 09-31-00999-CV |", "09-31-00999-CV"),
+            ("Adv. Pro. No. 31-01992", "31-01992"),
+            ("Adversary Proceeding No. 31-01992 (ZZ)", "31-01992"),
+            (
+                "a Charge of Discrimination (#460-2031-01234) with the EEOC",
+                "460-2031-01234",
+            ),
+            ("EEOC Charge No. 460-2031-01234", "460-2031-01234"),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+    }
+
+    /// The new labels never take a statute's, an article's, a docket
+    /// entry's, a page's or a date's number, nor a precedent's docket in its
+    /// citation (#506 item 3) or a Texas number away from a caption line.
+    #[test]
+    fn us_case_labels_leave_statutes_entries_pages_dates_and_precedents() {
+        for source in [
+            "Civil Action No. 12 under 42 U.S.C. § 1983 and Article 12.",
+            "a civil action no later than 2031-03-01",
+            "See Docket No. 45 and Docket No. 1234 at page 2031.",
+            "Docket No. 2031-03-01",
+            "Index No. 12, page 2031",
+            "a service charge of $1234 and a charge no. 2031",
+            "for good cause no 1234 days",
+            "In No. 02-23-00310-CV the court held, as in No. 02-23-00311-CV.",
+            "Proof of Claim No. 5",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+        // A precedent's docket is part of its citation; the same label for
+        // the case at hand, or an earlier case of its parties, is CASE.
+        let caption = "Maren Quill v. Branwick Freight LLC\n\nIndex No. 652134/2031\n\n";
+        for citation in [
+            "Grant v. Finecy, Docket No. 2031-0099 (N.J. Super. 2031)",
+            "Grant v. Finecy, Index No. 31 CV99999 (Sup. Ct. N.Y. 2031)",
+            "Grant v. Finecy, Index No. 650001/2030 (Sup. Ct. N.Y. 2031)",
+            "Grant v. Finecy, Cause No. 2031-12345 (Tex. Dist. Ct. 2031)",
+            "Grant v. Finecy, Civil Docket No. 1:30-cv-00977, 2031 WL 1234567",
+            "Grant v. Finecy, Civil Action No. 1:30-cv-00977 (D. Del. 2031)",
+            "Grant v. Finecy, No. 02-23-00310-CV (Tex. App. 2031)",
+        ] {
+            let source = format!("{caption}The court relied on {citation}.");
+            assert_eq!(cases(&source), ["652134/2031"], "{source}");
+        }
+        let source = format!(
+            "{caption}It denied a motion in Quill v. Branwick Freight LLC, Index No. 650001/2030 (Sup. Ct. N.Y. 2030)."
+        );
+        assert_eq!(cases(&source), ["652134/2031", "650001/2030"]);
+    }
+
+    /// The Russian labels of #484 item 7 and an act's header (issue #364):
+    /// a case's УИД, an appellate proceeding's number and an administrative
+    /// protocol's number are CASE, the label and a date outside.
+    #[test]
+    fn russian_case_labels_take_uid_appeal_and_protocol_numbers() {
+        for (source, number) in [
+            (
+                "г. Энск Дело № А99-9999-99/2031 01 марта 2031 г.",
+                "А99-9999-99/2031",
+            ),
+            (
+                "УИД 77RS0001-02-2031-009999-99",
+                "77RS0001-02-2031-009999-99",
+            ),
+            (
+                "**УИД:** 25RS0010-01-2031-001234-56",
+                "25RS0010-01-2031-001234-56",
+            ),
+            (
+                "апелляционное производство № 05АП-1234/2031",
+                "05АП-1234/2031",
+            ),
+            (
+                "по апелляционному производству №05АП-1234/2031",
+                "05АП-1234/2031",
+            ),
+            (
+                "протокол об административном правонарушении № 99 АБ 123456 составлен",
+                "99 АБ 123456",
+            ),
+            (
+                "протоколом об административном правонарушении от 01.03.2031 № 18810099310001234567",
+                "18810099310001234567",
+            ),
+            (
+                "протоколом № 77 МР 0123456 об административном правонарушении",
+                "77 МР 0123456",
+            ),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+        for source in [
+            "протокол № 3 общего собрания участников от 01.03.2031",
+            "протоколом № 12/2031 заседания совета",
+            "по статье 12.8 КоАП РФ, часть 1 статьи 1234",
+            "протокол об административном правонарушении № 12",
+            "УИД документа не указан, страница 2031",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+    }
+
+    /// #553 item 7 and issue #364: the document's own labelled case number
+    /// is CASE wherever it repeats, in any letter case, label or not; a page
+    /// or entry number beside it stays outside.
+    #[test]
+    fn a_labelled_case_number_reaches_its_repeats_in_any_letter_case() {
+        assert_eq!(
+            cases("АПЕЛЛЯЦИОННОЕ ОПРЕДЕЛЕНИЕ № 33А-2090/2031\n\nпо делу № 33а-2090/2031"),
+            ["33А-2090/2031", "33а-2090/2031"]
+        );
+        assert_eq!(
+            cases(
+                "CIVIL ACTION NO.: 4:31-cv-2999\n\n4:31-cv-2999 12\n\nCase 4:31-CV-2999 Document 5 Page 3 of 9"
+            ),
+            ["4:31-cv-2999", "4:31-cv-2999", "4:31-CV-2999"]
+        );
+        // Not inside a longer number, nor where a precedent cites it.
+        assert_eq!(
+            cases("Civil Action No. 31-2999\n\nexhibit 31-2999-7 and 131-2999"),
+            ["31-2999"]
         );
     }
 

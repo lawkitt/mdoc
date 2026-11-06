@@ -29,6 +29,9 @@
 #                                ("in case")
 #   unless_guessed = [category…] no value these categories' guesses take
 #   only_guessed   = [category…] only a value one of them takes
+#   line_start     = true        the label opens its line: only whitespace
+#                                and Markdown marks (#, >, *, _, |) before
+#                                it (a caption's "No.")
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an

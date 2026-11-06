@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: case-number
 issue: 364
 kind: claim
 source: hunt-r5
-expect: miss: CASE "1:26-cv-04731-QL"
 ---
 # Complaint for return of a repair deposit
 

@@ -691,6 +691,13 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                     .any(|case| case.start <= rule.range.start && rule.range.end <= case.end)
         })
         .collect();
+    // A case number repeated in another letter case is the same number
+    // ("33А-2090/2026" in an act's title after "по делу № 33а-2090/2026",
+    // issue #364); the review finds each wording's exact repeats.
+    let rules: Vec<Detection> = case_repeats(source, &rules, &precedents)
+        .into_iter()
+        .chain(rules)
+        .collect();
     // A web address inside a labelled case number is part of it (guide rule
     // 8), and a domain inside an email is the email's
     // ("ismay&#64;crane-pith.invalid"); any other address wins over what is
@@ -735,6 +742,42 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     detections.extend(spans);
     detections
+}
+
+/// Each labelled case number's mentions in `source` in another letter case,
+/// as whole words and outside a precedent's citation.
+fn case_repeats(source: &str, rules: &[Detection], precedents: &[Range<usize>]) -> Vec<Detection> {
+    let mut seen = std::collections::HashSet::new();
+    let mut found = Vec::new();
+    for rule in rules {
+        let text = &source[rule.range.clone()];
+        if rule.category != Category::CaseNumber || !seen.insert(text.to_lowercase()) {
+            continue;
+        }
+        let Ok(pattern) = regex::RegexBuilder::new(&regex::escape(text))
+            .case_insensitive(true)
+            .build()
+        else {
+            continue;
+        };
+        for mention in pattern.find_iter(source) {
+            let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+            if mention.as_str() == text
+                || word(source[..mention.start()].chars().next_back())
+                || word(source[mention.end()..].chars().next())
+                || precedents
+                    .iter()
+                    .any(|case| case.start <= mention.start() && mention.end() <= case.end)
+            {
+                continue;
+            }
+            found.push(Detection {
+                range: mention.range(),
+                ..rule.clone()
+            });
+        }
+    }
+    found
 }
 
 /// The model's wordings where the source spells them otherwise and the view

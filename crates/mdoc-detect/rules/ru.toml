@@ -728,6 +728,62 @@ unless_after = [
     "личному", "кадровое", "кадрового", "учётное", "учетное", "номенклатурное",
 ]
 
+# A case's unique identifier is CASE (guide rule 5, the maintainer's decision
+# on #484, item 7): "УИД 77RS0001-02-2031-009999-99", "УИД: 25RS0010-…". A
+# document's GUID has no such label and stays unmarked.
+[[context]]
+category = "CASE"
+labels = ["уид", "уникальный идентификатор дела"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# An appellate proceeding's number (#484 item 7): "апелляционное производство
+# № 05АП-1234/2031", in each case form.
+[[context]]
+category = "CASE"
+labels = [
+    "апелляционное производство", "апелляционного производства",
+    "апелляционному производству", "апелляционным производством",
+    "апелляционном производстве",
+]
+between = '[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# An administrative-offence protocol's number is CASE, not a phone (#484
+# item 7, #375): "протокол об административном правонарушении № 99 АБ
+# 123456", "протоколом об административном правонарушении от 01.03.2031 №
+# 18810099310001234567" (a date between, which stays unmarked). The series
+# and number keep their spaces.
+[[context]]
+category = "CASE"
+labels = [
+    "протокол об административном правонарушении",
+    "протокола об административном правонарушении",
+    "протоколу об административном правонарушении",
+    "протоколом об административном правонарушении",
+    "протоколе об административном правонарушении",
+]
+between = '(?:[\p{Zs}\t]+от[\p{Zs}\t]+\d{1,2}\.\d{1,2}\.\d{2,4}(?:[\p{Zs}\t]*г\.?)?)?[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
+value = '\d{2}[\p{Zs}\t]?\p{Uppercase}{2}[\p{Zs}\t]?\d{6,7}|(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# The same protocol by "протокол №" alone, before its series and number
+# ("протоколом № 99 АБ 123456 об административном правонарушении"). A
+# meeting's minutes are a "протокол №" too ("протокол № 3 общего
+# собрания"), so only the form's shape: two digits, two capitals, six or
+# seven digits.
+[[context]]
+category = "CASE"
+labels = ["протокол", "протокола", "протоколу", "протоколом", "протоколе"]
+between = '[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
+value = '\d{2}[\p{Zs}\t]?\p{Uppercase}{2}[\p{Zs}\t]?\d{6,7}'
+min_digits = 8
+
 # Russian identifiers after their label (ADR 0092), whatever their checksum:
 # the guide marks invalid and damaged ones too. The structured rules propose
 # only valid ones; these give the label's category over the model's guess.
