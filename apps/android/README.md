@@ -109,3 +109,7 @@ dependency, regenerate it with the emulator running:
 ```sh
 ANDROID_SERIAL=emulator-5554 ./gradlew --write-verification-metadata sha256 help testDebugUnitTest assembleDebug assembleDebugAndroidTest :app:connectedDebugAndroidTest
 ```
+
+aapt2 has one jar per OS (`-linux`, `-osx`, `-windows`) and a run records only
+its own OS's: after an AGP bump, add the other two by hand, hashing them from
+`https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/<version>/`.
