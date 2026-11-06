@@ -373,8 +373,14 @@ pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
     let joined = |separator: Option<char>, next: Option<char>| {
         separator.is_some_and(|c| r"-/.:_\@".contains(c)) && next.is_some_and(char::is_alphanumeric)
     };
+    // Only a bare number joins a digit group: "А99-9999-99/2031 01 марта"
+    // is a case number and a date after it (issue #364).
+    let number = value
+        .chars()
+        .all(|c| c.is_ascii_digit() || matches!(c, ' ' | '\u{a0}' | '\u{202f}'));
     let grouped = |space: Option<char>, digit: Option<char>| {
-        space.is_some_and(|c| matches!(c, ' ' | '\u{a0}' | '\u{202f}'))
+        number
+            && space.is_some_and(|c| matches!(c, ' ' | '\u{a0}' | '\u{202f}'))
             && digit.is_some_and(|c| c.is_ascii_digit())
     };
     if joined(b1, b2)
@@ -448,6 +454,8 @@ mod tests {
             ("Номер дела: 7316.", "7316"),
             ("see case 7316, filed", "7316"),
             ("| 7316 |", "7316"),
+            ("Дело № А99-9999-99/2031 01 марта", "А99-9999-99/2031"),
+            ("Case 4:31-cv-2999 12", "4:31-cv-2999"),
         ] {
             assert!(at(source, value), "{source}");
         }

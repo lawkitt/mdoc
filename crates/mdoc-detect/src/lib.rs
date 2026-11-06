@@ -732,6 +732,18 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                     .any(|case| case.start <= rule.range.start && rule.range.end <= case.end)
         })
         .collect();
+    // A case number repeated in another letter case is the same number
+    // ("33А-2090/2026" in an act's title after "по делу № 33а-2090/2026",
+    // issue #364); the review finds each wording's exact repeats.
+    let rules: Vec<Detection> = case_repeats(
+        source,
+        &rules,
+        &precedents,
+        detections.iter().chain(&rules).chain(&spans),
+    )
+    .into_iter()
+    .chain(rules)
+    .collect();
     // A web address inside a labelled case number is part of it (guide rule
     // 8), and a domain inside an email is the email's
     // ("ismay&#64;crane-pith.invalid"); any other address wins over what is
@@ -776,6 +788,76 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     detections.extend(spans);
     detections
+}
+
+/// Each labelled case number's mentions in `source` in another letter case,
+/// as whole values, outside a precedent's citation and outside any value
+/// of another category in `others`.
+fn case_repeats<'a>(
+    source: &str,
+    rules: &[Detection],
+    precedents: &[Range<usize>],
+    others: impl Iterator<Item = &'a Detection>,
+) -> Vec<Detection> {
+    // An email, an account, an address or a web address may hold the
+    // number ("claims+cl-2026-000123@insurer.example", "account
+    // gb-2031-4471-0098", "Suite 2a-1234, 12 Harbour Road"): it is theirs,
+    // whoever found them.
+    let others: Vec<Range<usize>> = others
+        .filter(|other| other.category != Category::CaseNumber)
+        .map(|other| other.range.clone())
+        .chain(urls::scan(source).into_iter().map(|url| url.range))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut found = Vec::new();
+    for rule in rules {
+        let text = &source[rule.range.clone()];
+        if rule.category != Category::CaseNumber || !seen.insert(text.to_lowercase()) {
+            continue;
+        }
+        let Ok(pattern) = regex::RegexBuilder::new(&regex::escape(text))
+            .case_insensitive(true)
+            .build()
+        else {
+            continue;
+        };
+        for mention in pattern.find_iter(source) {
+            let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+            // A separator and a letter or digit beyond it join a longer
+            // value, as the review's whole values have it ("+cl-…@", "…-0098").
+            let joined = |separator: Option<char>, next: Option<char>| {
+                separator.is_some_and(|c| r"-/.:_\@+".contains(c)) && word(next)
+            };
+            let mut back = source[..mention.start()].chars().rev();
+            let mut ahead = source[mention.end()..].chars();
+            let (b1, b2) = (back.next(), back.next());
+            let (a1, a2) = (ahead.next(), ahead.next());
+            if mention.as_str() == text
+                || word(b1)
+                || word(a1)
+                || joined(b1, b2)
+                || joined(a1, a2)
+                // A value of another category on exactly the repeat's span
+                // is the number itself, which the model read as TAX or
+                // the like: the repeat makes it CASE.
+                || others.iter().any(|other| {
+                    other.start < mention.end()
+                        && mention.start() < other.end
+                        && (other.start, other.end) != (mention.start(), mention.end())
+                })
+                || precedents
+                    .iter()
+                    .any(|case| case.start <= mention.start() && mention.end() <= case.end)
+            {
+                continue;
+            }
+            found.push(Detection {
+                range: mention.range(),
+                ..rule.clone()
+            });
+        }
+    }
+    found
 }
 
 /// The model's wordings where the source spells them otherwise and the view

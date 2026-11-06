@@ -1104,18 +1104,112 @@ min_digits = 4
 unless_after = ["in", "just", "any", "each", "every", "worst", "best", "upper", "lower", "test", "use"]
 unless_guessed = ["DATE"]
 
-# A court's docket number after "No." alone is a case number when it has a
-# docket's own shape (guide rule 5, #480): a Texas appeal's "No.
-# 01-24-00779-CV", a federal "Docket No.: 1:26-cv-04731-QL", a New York
-# "Index No. 06 CV 15490" (with its spaces, which the rules above stop
-# at), a bankruptcy case's "Bankruptcy No. 15-49008-wsd". A cited case's
-# goes (#506 item 3); any other number after "No." ("Proof of Claim No.
-# 5", "Release No. 34-98765") is none.
+# US caption labels for the document's own case number (guide rule 5, issue
+# #364), in any letter case: "CIVIL ACTION NO.: 4:31-cv-2999", "§ CIVIL
+# ACTION NO. 5:31-cv-999" (a Texas caption's column of "§", which may also
+# stand between the label and the number), "Civil Action No. 31-2999 (ZZ)"
+# (the judge's initials in brackets stay outside), "Civil Docket No.
+# 1:31-cv-00999", "C.A. No. 2031-0999", "Trial Court No. Q2031999", "Cause
+# No. 2031-12345", "cause number 09-31-00999-CV". A related proceeding of
+# the same parties is CASE too: "Adv. Pro. No. 31-01992" (#506 item 3). Four
+# digits, as above; a precedent's docket number goes with its citation
+# (#506 item 3, `correct`). "good cause" and the like are no label, and
+# "C.A." inside "U.S.C.A." is none either (code). A period stays inside
+# the value only before a digit: "31-2999.The" (OCR) is "31-2999". The
+# number may stand on the label's next line ("CIVIL ACTION NO.:", then
+# "§ 4:31-cv-2999"), never after a blank one.
 [[context]]
 category = "CASE"
-labels = ["no", "nos"]
+labels = [
+    "civil action no", "civil action number", "civ. action no", "civ. a. no",
+    "civ. no", "c.a. no", "civil docket no", "civil docket number",
+    "trial court no", "trial court number", "cause no", "cause number",
+    "adv. pro. no", "adv. proc. no", "adversary proceeding no",
+    "adversary proceeding number", "adversary no",
+]
+between = '[\p{Zs}\t:*_№#.§]{1,8}|[\p{Zs}\t:*_№#.§]{0,8}\r?\n[\p{Zs}\t*_§]{0,8}'
+value = '(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:][\p{Alphabetic}\p{N}]+|\.\d[\p{Alphabetic}\p{N}]*)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+unless_after = ["good", "probable", "reasonable", "sufficient", "just", "without"]
+
+# "Docket No." (issue #364): "Docket No.: 1:31-cv-04731-QL", "Docket No.
+# A-1234-30", "Docket No. 2031-0099". A docket's entries are numbered too,
+# with their attachments ("Docket No. 45", "(Docket No. 112-15)", "Docket
+# No. 1045-3, at 4", "(Docket No. 10452)"), so only a case number's shape:
+# a year and a space before "CV"; a letter or a colon in it; or two to
+# four digits, a hyphen and four digits or more. A date has none of them
+# ("Docket No. 03-01-2031").
+[[context]]
+category = "CASE"
+labels = ["docket no", "docket number"]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
-value = '\d{2}-\d{2}-\d{5}-C[VR]|\d:\d{2}-[a-z]{2,3}-\d{3,6}(?:-[A-Za-z]{1,4})*|\d{2}[\p{Zs}\t-](?:CV|Civ\.|CIV|cv)[\p{Zs}\t-]\d{3,6}|\d{2}-\d{5}-[a-z]{2,4}'
+value = '\d{2}[\p{Zs}\t]?(?:CV|cv|Cv|CIV|Civ|civ)[\p{Zs}\t]?\d{3,}|(?:\p{Alphabetic}+[-/:]?)+\d[\p{Alphabetic}\p{N}]*(?:[-/:][\p{Alphabetic}\p{N}]+)*|\d\p{N}*(?:[-/]\p{N}+)*(?::|[-/]?\p{Alphabetic})[\p{Alphabetic}\p{N}]*(?:[-/:][\p{Alphabetic}\p{N}]+)*|\d{2,4}-\d{4,}(?:-[\p{Alphabetic}\p{N}]+)*'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# New York's "Index No." (issue #364; an earlier index number of the same
+# parties too, #506 item 3): "INDEX NO. 31 CV99999" (a year, a space and
+# "CV"), "Index No. 652134/2031" (the number and its year), "Index No.
+# EF2031-001234", or a bare number of five digits or more. An index of
+# prices or statistics has none of these shapes ("Consumer Price Index No.
+# 2031-03").
+[[context]]
+category = "CASE"
+labels = ["index no", "index number"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}[\p{Zs}\t]?(?:CV|cv|Cv|CIV|Civ|civ)[\p{Zs}\t]?\d{3,}|\d{3,}/\d{2,4}|\p{Alphabetic}{1,4}-?\d\p{N}*(?:[-/][\p{Alphabetic}\p{N}]+)*|\d{2,4}-\d{4,}|\d{5,}'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# A Texas appeal's own caption (issue #364): "No. 02-31-00999-CV" on a line
+# of its own at the top. "No." is a common word, so only as a line's first
+# word, never right after a line ending in a comma (a wrapped citation,
+# "Grant v. Finecy,\nNo. 02-23-00310-CV, 2031 Tex. App. LEXIS 1234"; code),
+# and only before the appellate shape: the court, the year, five digits
+# and "CV" or "CR". The same number in a precedent's citation is unmarked
+# (#506 item 3).
+[[context]]
+category = "CASE"
+labels = ["no"]
+between = '\.?[\p{Zs}\t]{1,4}'
+value = '\d{2}-\d{2}-\d{5}-C[VR]'
+line_start = true
+
+# An agency's charge number after "#" or "No." (#553 item 5): "Charge of
+# Discrimination (#460-2031-01234)", "EEOC Charge No. 460-2031-01234".
+# These labels name the agency's charge, so any number with a separator,
+# never a date.
+[[context]]
+category = "CASE"
+labels = ["charge of discrimination", "eeoc charge"]
+between = '[\p{Zs}\t]*\(?[\p{Zs}\t]*(?:#|[Nn]o\.?|NO\.?|[Nn]umber|NUMBER)[\p{Zs}\t:.#]{0,3}'
+value = '(?:\p{Alphabetic}+[-/:]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:][\p{Alphabetic}\p{N}]+|\.\d[\p{Alphabetic}\p{N}]*)+'
+min_digits = 4
+unless_guessed = ["DATE"]
+
+# "charge" alone is a card's, a bill's or a phone line's word too ("billed
+# for charge #4532-0151-1283-0366", "this charge No. 555-201-4477", a
+# "| Charge |" column of amounts), so after it only the EEOC's own shape:
+# the office's two or three digits (a state agency's letter after them),
+# the year and five digits ("Charge No. 460-2031-01234").
+[[context]]
+category = "CASE"
+labels = ["charge"]
+between = '[\p{Zs}\t]*\(?[\p{Zs}\t]*(?:#|[Nn]o\.?|NO\.?|[Nn]umber|NUMBER)[\p{Zs}\t:.#]{0,3}'
+value = '\d{2,3}[A-Z]?-(?:19|20)\d{2}-\d{5}'
+min_digits = 4
+
+# A bankruptcy case's own number after its label (guide rule 5, #480):
+# "Bankruptcy No. 15-49008-wsd", "Bankr. Case No. 15-49008". The labels
+# above (#364) cover the other captions; a bare "No." in running text is a
+# cited case's (#506 item 3). A model span in a docket shape becomes CASE
+# anyway (the shapes' `case` patterns).
+[[context]]
+category = "CASE"
+labels = ["bankruptcy no", "bankruptcy case no", "bankr. no", "bankr. case no"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}-\d{5}(?:-[a-z]{2,4})?'
 min_digits = 4
 
 # A bank account after its label, whatever the model guessed: "**Bank
@@ -1539,7 +1633,13 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # "News Group Newspapers Ltd v Brindle [2031] EWHC 12 (Ch)", "In re Estate
 # of Bramblett, 77 B.R. 310", "Ex parte Quill, 12 So. 3d 4", and a docket
 # number with its court and year or its reporter after it ("Grant v.
-# Finecy, No. 02-23-00310-CV (Tex. App. 2031)", #506 item 3). The citation
+# Finecy, No. 02-23-00310-CV (Tex. App. 2031)", "Index No." and "Docket
+# No." ones, and a spaced "No. 15 C 1538", too, #506 item 3). A docket
+# may say "C.A. No." or "Civ. A. No.", keep its judge's initials ("No.
+# 21-2873 (ABJ)") and a docket entry's pin ("No. 1:30-cv-00977, ECF No. 45
+# at 3") before its court; its reporter may be Westlaw, any LEXIS ("Tex.
+# App. LEXIS 1234") or the New York Slip Opinions ("2031 N.Y. Slip Op.
+# 31234(U)"). The citation
 # must follow the name: a caption ("Ivo Harrow v. Quillon Ltd", its own
 # "Case No." after it or not) is the case at hand's and stays.
 #
@@ -1570,8 +1670,8 @@ parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-
 # A trailing docket belongs to the cited Texas appeal, not this case (#499).
 parts.tex_docket = '[\p{Zs}\t]*\(Tex\.[\p{Zs}\t]+App\.[^()\n]{0,60}?(?:19|20)\d{2}(?:,[\p{Zs}\t]*pet\.[\p{Zs}\t]+filed)?\),[\p{Zs}\t]+No\.[\p{Zs}\t]+\d{2}-\d{2}-\d{5}-CV\b'
 parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
-parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
-parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+'
+parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:(?:Action|A\.|Docket)[\p{Zs}\t]+)?|(?:C\.[\p{Zs}\t]?A\.|Docket|Index|Cause|Adv\.[\p{Zs}\t]+Proc?\.)[\p{Zs}\t]+)?Nos?\.[\p{Zs}\t]*(?:\d{2}[\p{Zs}\t](?:CV|Civ\.?|C)[\p{Zs}\t]?\d{3,}|[\dA-Z][\w:./\-–]*\d[\w/\-–]*)(?:[\p{Zs}\t]*\([A-Z]{2,4}\))?(?:,[\p{Zs}\t]*(?:ECF|Dkt\.?)[\p{Zs}\t]+No\.[\p{Zs}\t]*\d+(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
+parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:(?:Action|A\.|Docket)[\p{Zs}\t]+)?|(?:C\.[\p{Zs}\t]?A\.|Docket|Index|Cause|Adv\.[\p{Zs}\t]+Proc?\.)[\p{Zs}\t]+)?Nos?\.[\p{Zs}\t]*(?:\d{2}[\p{Zs}\t](?:CV|Civ\.?|C)[\p{Zs}\t]?\d{3,}|[\dA-Z][\w:./\-–]*\d[\w/\-–]*)(?:[\p{Zs}\t]*\([A-Z]{2,4}\))?,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|(?:\p{Uppercase}[\w.]*[\p{Zs}\t]+)*LEXIS|N\.Y\.[\p{Zs}\t]+Slip[\p{Zs}\t]+Op\.)[\p{Zs}\t]+\d+'
 roles = [
     "plaintiff", "defendant", "claimant", "respondent", "appellant", "appellee",
     "petitioner", "applicant", "debtor", "creditor", "movant", "intervenor",

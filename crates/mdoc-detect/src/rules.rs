@@ -230,6 +230,10 @@ struct ContextEntry {
     /// must look like a date).
     #[serde(default)]
     only_guessed: Vec<String>,
+    /// The label opens its line: only whitespace and Markdown marks before
+    /// it (a caption's "No." on a line of its own).
+    #[serde(default)]
+    line_start: bool,
 }
 
 #[derive(Deserialize)]
@@ -847,6 +851,7 @@ struct Context {
     unless_after: Vec<String>,
     unless_guessed: Vec<Category>,
     only_guessed: Vec<Category>,
+    line_start: bool,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1352,6 +1357,7 @@ impl Pack {
                     unless_after: entry.unless_after.clone(),
                     unless_guessed,
                     only_guessed,
+                    line_start: entry.line_start,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -2821,16 +2827,23 @@ impl Pack {
         static CAPTION: OnceLock<Regex> = OnceLock::new();
         let mut own: Vec<Vec<String>> = CAPTION
             .get_or_init(|| {
+                // New York's "-against-" too, on a line of its own.
                 Regex::new(
-                    r"(?:^|[\s|*_])(?P<caption>(?:v|vs)\.?|[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)(?:[\s|*_]|$)",
+                    r"(?:^|[\s|*_])(?P<caption>(?:v|vs)\.?|[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)(?:[\s|*_]|$)|(?m:^)[\p{Zs}\t|*_]*(?P<against>-?(?:against|AGAINST)-?)[\p{Zs}\t|*_]*(?m:$)",
                 )
                 .expect("a pattern")
             })
             .captures_iter(text)
-            .filter_map(|found| found.name("caption"))
+            .filter_map(|found| found.name("caption").or_else(|| found.name("against")))
+            // A docket citation is a caption only where it opens its line
+            // ("Maren Quill v. Branwick Freight LLC, Index No. …"), never
+            // one cited in a sentence ("relies on Grant v. Finecy, Index
+            // No. 650001/2030 (Sup. Ct. N.Y. 2030)") or after a signal.
             .find(|found| {
-                holder(&found.range())
-                    .is_none_or(|case| cited[case].docket || cited_caption(text, &cited[case]))
+                holder(&found.range()).is_none_or(|case| {
+                    cited[case].docket && opens_line(text, cited[case].range.start)
+                        || cited_caption(text, &cited[case])
+                })
             })
             .map(|found| {
                 let mut start = text[..found.start()].rfind('\n').map_or(0, |i| i + 1);
@@ -2914,14 +2927,21 @@ impl Pack {
             .iter()
             .map(|case| case.parties.iter().any(|party| ours(&words(party.clone()))))
             .collect();
+        // A related proceeding of the parties cited by its docket alone
+        // keeps every name it holds, its other party's too ("Brendt
+        // Holloway v. Harrow, Adv. Proc. No. 31-01992 (Bankr. S.D.N.Y.
+        // 2031)"): it is no precedent. A reported decision's other party
+        // is a reference, as in any precedent.
         let mut i = 0;
         detections.retain(|d| {
             let range = &ranges[i];
+            let related = holder(range).is_some_and(|case| earlier[case]);
             let keep = !doubtful[i]
                 || if named(d) {
                     ours(&words(range.clone()))
+                        || related && holder(range).is_some_and(|case| cited[case].docket)
                 } else {
-                    holder(range).is_some_and(|case| earlier[case])
+                    related
                 };
             i += 1;
             keep
@@ -3432,14 +3452,40 @@ impl Pack {
                         .chars()
                         .next()
                         .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                    let before = source[..found.get(0)?.start()]
+                    let start = found.get(0)?.start();
+                    let before = source[..start]
                         .trim_end()
                         .rsplit(|c: char| !c.is_alphanumeric())
                         .next()
                         .unwrap_or_default()
                         .to_lowercase();
+                    // Only whitespace and Markdown marks before a line's
+                    // label, and no line just above it that ends in a comma:
+                    // there a wrapped sentence or citation goes on ("Grant
+                    // v. Finecy,\nNo. 02-23-00310-CV, 2031 Tex. App. LEXIS").
+                    let opens = || {
+                        let mut lines = source[..start].rsplit('\n');
+                        lines
+                            .next()
+                            .unwrap_or_default()
+                            .chars()
+                            .all(|c| c.is_whitespace() || "#>*_|".contains(c))
+                            && !lines
+                                .next()
+                                .is_some_and(|line| line.trim_end().ends_with(','))
+                    };
+                    // An initialism's label never continues another one:
+                    // "C.A. No." inside "18 U.S.C.A. No. 1234-5".
+                    let mut label = source[start..].chars();
+                    let mut back = source[..start].chars().rev();
+                    let inside = label.next().is_some_and(char::is_alphabetic)
+                        && label.next() == Some('.')
+                        && back.next() == Some('.')
+                        && back.next().is_some_and(char::is_alphabetic);
                     if !ends
+                        || inside
                         || context.unless_after.contains(&before)
+                        || (context.line_start && !opens())
                         || !self.takes(context, value.as_str())
                     {
                         return None;
@@ -3918,6 +3964,24 @@ fn party_connector(word: &str) -> bool {
         word,
         "of" | "the" | "and" | "de" | "du" | "van" | "von" | "der" | "la" | "le" | "ex" | "rel"
     )
+}
+
+/// Whether a citation at `at` opens its line in `text`: only whitespace
+/// and Markdown marks before it, and no citation signal first ("See Grant
+/// v. Finecy, …": a sentence's first word joins the party).
+fn opens_line(text: &str, at: usize) -> bool {
+    let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+    let first = text[at..]
+        .split(|c: char| !c.is_alphabetic())
+        .next()
+        .unwrap_or_default();
+    text[start..at]
+        .chars()
+        .all(|c| c.is_whitespace() || "#>*_|".contains(c))
+        && !matches!(
+            first,
+            "See" | "see" | "Cf" | "cf" | "Accord" | "Compare" | "Contra" | "But" | "Also"
+        )
 }
 
 /// A citation may be the document's own caption. Require its own line
@@ -4644,6 +4708,393 @@ mod tests {
             shown("Claim No 6001842/2026. The claim 6001842/2026 is settled under article 309."),
             ["6001842/2026", "6001842/2026"]
         );
+    }
+
+    /// The case numbers the review shows for `source` without a model.
+    fn cases(source: &str) -> Vec<String> {
+        crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "CASE")
+            .map(|span| source[span.range].to_owned())
+            .collect()
+    }
+
+    /// Issue #364: US caption labels give the document's own case number,
+    /// the label and a judge's initials outside.
+    #[test]
+    fn us_caption_labels_propose_their_case_number() {
+        for (source, number) in [
+            ("§ CIVIL ACTION NO. 5:31-cv-999 §", "5:31-cv-999"),
+            ("CIVIL ACTION NO.: 4:31-cv-2999", "4:31-cv-2999"),
+            ("Civil Action No. § 4:31-cv-2999", "4:31-cv-2999"),
+            ("Civil Action No. 31-2999 (ZZ)", "31-2999"),
+            ("C.A. No. 2031-0999-ZZ", "2031-0999-ZZ"),
+            ("under Civil Docket No. 1:31-cv-00999.", "1:31-cv-00999"),
+            ("**Docket No.:** 1:31-cv-04731-QL", "1:31-cv-04731-QL"),
+            ("INDEX NO. 31 CV99999", "31 CV99999"),
+            ("Index No. 652134/2031", "652134/2031"),
+            ("Trial Court No. Q2031999", "Q2031999"),
+            ("Trial Court No. 352-364031-31", "352-364031-31"),
+            ("Cause No. 2031-12345", "2031-12345"),
+            ("in cause number 09-31-00999-CV.", "09-31-00999-CV"),
+            ("No. 09-31-00999-CV\n", "09-31-00999-CV"),
+            ("___\n**NO. 09-31-00999-CV**\n___", "09-31-00999-CV"),
+            ("| No. 09-31-00999-CV |", "09-31-00999-CV"),
+            ("Adv. Pro. No. 31-01992", "31-01992"),
+            ("Adversary Proceeding No. 31-01992 (ZZ)", "31-01992"),
+            (
+                "a Charge of Discrimination (#460-2031-01234) with the EEOC",
+                "460-2031-01234",
+            ),
+            ("EEOC Charge No. 460-2031-01234", "460-2031-01234"),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+    }
+
+    /// The new labels never take a statute's, an article's, a docket
+    /// entry's, a page's or a date's number, nor a precedent's docket in its
+    /// citation (#506 item 3) or a Texas number away from a caption line.
+    #[test]
+    fn us_case_labels_leave_statutes_entries_pages_dates_and_precedents() {
+        for source in [
+            "Civil Action No. 12 under 42 U.S.C. § 1983 and Article 12.",
+            "a civil action no later than 2031-03-01",
+            "See Docket No. 45 and Docket No. 1234 at page 2031.",
+            "Docket No. 2031-03-01",
+            "Index No. 12, page 2031",
+            "a service charge of $1234 and a charge no. 2031",
+            "for good cause no 1234 days",
+            "In No. 02-23-00310-CV the court held, as in No. 02-23-00311-CV.",
+            "Proof of Claim No. 5",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+        // A precedent's docket is part of its citation; the same label for
+        // the case at hand, or an earlier case of its parties, is CASE.
+        let caption = "Maren Quill v. Branwick Freight LLC\n\nIndex No. 652134/2031\n\n";
+        for citation in [
+            "Grant v. Finecy, Docket No. 2031-0099 (N.J. Super. 2031)",
+            "Grant v. Finecy, Index No. 31 CV99999 (Sup. Ct. N.Y. 2031)",
+            "Grant v. Finecy, Index No. 650001/2030 (Sup. Ct. N.Y. 2031)",
+            "Grant v. Finecy, Cause No. 2031-12345 (Tex. Dist. Ct. 2031)",
+            "Grant v. Finecy, Civil Docket No. 1:30-cv-00977, 2031 WL 1234567",
+            "Grant v. Finecy, Civil Action No. 1:30-cv-00977 (D. Del. 2031)",
+            "Grant v. Finecy, No. 02-23-00310-CV (Tex. App. 2031)",
+        ] {
+            let source = format!("{caption}The court relied on {citation}.");
+            assert_eq!(cases(&source), ["652134/2031"], "{source}");
+        }
+        let source = format!(
+            "{caption}It denied a motion in Quill v. Branwick Freight LLC, Index No. 650001/2030 (Sup. Ct. N.Y. 2030)."
+        );
+        assert_eq!(cases(&source), ["652134/2031", "650001/2030"]);
+    }
+
+    /// The Russian labels of #484 item 7 and an act's header (issue #364):
+    /// a case's УИД, an appellate proceeding's number and an administrative
+    /// protocol's number are CASE, the label and a date outside.
+    #[test]
+    fn russian_case_labels_take_uid_appeal_and_protocol_numbers() {
+        for (source, number) in [
+            (
+                "г. Энск Дело № А99-9999-99/2031 01 марта 2031 г.",
+                "А99-9999-99/2031",
+            ),
+            (
+                "УИД 77RS0001-02-2031-009999-99",
+                "77RS0001-02-2031-009999-99",
+            ),
+            (
+                "**УИД:** 25RS0010-01-2031-001234-56",
+                "25RS0010-01-2031-001234-56",
+            ),
+            (
+                "апелляционное производство № 05АП-1234/2031",
+                "05АП-1234/2031",
+            ),
+            (
+                "по апелляционному производству №05АП-1234/2031",
+                "05АП-1234/2031",
+            ),
+            (
+                "протокол об административном правонарушении № 99 АБ 123456 составлен",
+                "99 АБ 123456",
+            ),
+            (
+                "протоколом об административном правонарушении от 01.03.2031 № 18810099310001234567",
+                "18810099310001234567",
+            ),
+            (
+                "протоколом № 77 МР 0123456 об административном правонарушении",
+                "77 МР 0123456",
+            ),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+        for source in [
+            "протокол № 3 общего собрания участников от 01.03.2031",
+            "протоколом № 12/2031 заседания совета",
+            "по статье 12.8 КоАП РФ, часть 1 статьи 1234",
+            "протокол об административном правонарушении № 12",
+            "УИД документа не указан, страница 2031",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+    }
+
+    /// #553 item 7 and issue #364: the document's own labelled case number
+    /// is CASE wherever it repeats, in any letter case, label or not; a page
+    /// or entry number beside it stays outside.
+    #[test]
+    fn a_labelled_case_number_reaches_its_repeats_in_any_letter_case() {
+        assert_eq!(
+            cases("АПЕЛЛЯЦИОННОЕ ОПРЕДЕЛЕНИЕ № 33А-2090/2031\n\nпо делу № 33а-2090/2031"),
+            ["33А-2090/2031", "33а-2090/2031"]
+        );
+        assert_eq!(
+            cases(
+                "CIVIL ACTION NO.: 4:31-cv-2999\n\n4:31-cv-2999 12\n\nCase 4:31-CV-2999 Document 5 Page 3 of 9"
+            ),
+            ["4:31-cv-2999", "4:31-cv-2999", "4:31-CV-2999"]
+        );
+        // Not inside a longer number, nor where a precedent cites it.
+        assert_eq!(
+            cases("Civil Action No. 31-2999\n\nexhibit 31-2999-7 and 131-2999"),
+            ["31-2999"]
+        );
+    }
+
+    /// A case number's repeat in another letter case never takes a part of
+    /// an email, an account or an address, which keep their values, the
+    /// model's or the rules' (the #364 review, P1-1).
+    #[test]
+    fn a_case_repeat_leaves_emails_accounts_and_addresses_whole() {
+        let email = "Claim No. CL-2026-000123\n\nWrite to claims+cl-2026-000123@insurer.example for updates.";
+        let expected = pairs(&[
+            ("CL-2026-000123", "CASE"),
+            ("claims+cl-2026-000123@insurer.example", "EMAIL"),
+        ]);
+        assert_eq!(shown(email, &[]), expected);
+        assert_eq!(
+            shown(email, &[("claims+cl-2026-000123@insurer.example", "email")]),
+            expected
+        );
+        for (source, raw, expected) in [
+            (
+                "Case No. KL-31-0042\n\nContact kl-31-0042@harrow-law.example.",
+                ("kl-31-0042@harrow-law.example", "email"),
+                [
+                    ("KL-31-0042", "CASE"),
+                    ("kl-31-0042@harrow-law.example", "EMAIL"),
+                ],
+            ),
+            (
+                "Claim No. GB-2031-4471\n\nPay to account gb-2031-4471-0098 at Brindle Bank.",
+                ("gb-2031-4471-0098", "bank_account"),
+                [("GB-2031-4471", "CASE"), ("gb-2031-4471-0098", "BANK")],
+            ),
+            (
+                "Case No. 2A-1234\n\nThe office is at Suite 2a-1234, 12 Harbour Road, Brindle, BR1 4QQ.",
+                (
+                    "Suite 2a-1234, 12 Harbour Road, Brindle, BR1 4QQ",
+                    "address",
+                ),
+                [
+                    ("2A-1234", "CASE"),
+                    (
+                        "Suite 2a-1234, 12 Harbour Road, Brindle, BR1 4QQ",
+                        "ADDRESS",
+                    ),
+                ],
+            ),
+        ] {
+            assert_eq!(shown(source, &[raw]), pairs(&expected), "{source}");
+        }
+        // Nor a web address's path or an email's local part.
+        for source in [
+            "Claim No. CL-2026-000123\n\nSee https://portal.insurer.example/claims/cl-2026-000123/status for updates.",
+            "по делу № 33а-2090/2031\n\nE-mail: 33А-2090/2031@sud.example",
+        ] {
+            assert_eq!(cases(source).len(), 1, "{source}");
+        }
+        // The model reading the repeat itself as TAX makes it no other
+        // value: the repeat on exactly that span is CASE.
+        let source = "по делу № 33а-9999/2031\n\nДело № 33А-9999/2031 рассмотрено.";
+        assert_eq!(
+            shown(source, &[("33А-9999/2031", "tax_id")]),
+            pairs(&[("33а-9999/2031", "CASE"), ("33А-9999/2031", "CASE")])
+        );
+    }
+
+    /// A precedent's docket in the standard federal, Delaware and New York
+    /// forms stays in its citation: "C.A. No.", "Civ. A. No.", a judge's
+    /// initials, a docket entry's pin, a LEXIS or Slip Opinion reporter,
+    /// and a table of authorities' wrapped "No." line (the #364 review,
+    /// P1-2).
+    #[test]
+    fn a_precedents_docket_in_its_usual_forms_stays_unmarked() {
+        let caption =
+            "IVO HARROW, Plaintiff,\n\nv.\n\nQUILLON LTD, Defendant.\n\nCase No. 1:31-cv-00999\n\n";
+        for citation in [
+            "See Grant v. Finecy, Civil Action No. 21-2873 (ABJ), 2031 WL 1234567, at *3 (D.D.C. Mar. 1, 2031).",
+            "See Grant v. Finecy, Index No. 650001/2030, 2031 N.Y. Slip Op. 31234(U) (Sup. Ct. N.Y. Cnty. 2031).",
+            "The court relied on Grant v. Finecy, C.A. No. 2019-0123-JRS (Del. Ch. 2031).",
+            "See Grant v. Finecy, Civ. A. No. 30-0977 (E.D. Pa. 2031).",
+            "See Grant v. Finecy, Civil Action No. 1:30-cv-00977, ECF No. 45 at 3 (D. Del. Mar. 1, 2031).",
+            "See Grant v. Finecy, Cause No. 2031-12345, 2031 Tex. App. LEXIS 1234 (Tex. App. 2031).",
+            "Grant v. Finecy,\nNo. 02-23-00310-CV, 2031 Tex. App. LEXIS 1234 (Tex. App.—Fort Worth 2031)",
+            "See Grant v. Finecy, Civil Action No. 21-2873 (ABJ) (D.D.C. 2031).",
+        ] {
+            let source = format!("{caption}{citation}");
+            assert_eq!(cases(&source), ["1:31-cv-00999"], "{source}");
+        }
+        // A wrapped sentence's "No." is no caption either, cited or not.
+        assert!(cases("as held in the appeal,\nNo. 02-23-00310-CV, the court").is_empty());
+    }
+
+    /// A docket's entries and their attachments are no case numbers, nor
+    /// is a date, in prose or in a "Docket No" column (the #364 review,
+    /// P2-1, P3 item 4); a case number's shapes after "Docket No." are.
+    #[test]
+    fn docket_entries_and_dates_are_no_docket_numbers() {
+        for source in [
+            "See the declaration (Docket No. 112-15) and the exhibit (Docket No. 1234-5).",
+            "See Declaration of Ivo Harrow, Docket No. 1045-3, at 4.",
+            "The motion (Docket Number 45-12) was denied.",
+            "(Docket No. 10452)",
+            "| Docket No | Filed |\n|---|---|\n| 112-15 | 01/03/2031 |\n| 1234 | 02/03/2031 |",
+            "Docket No. 03-01-2031",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+        for (source, number) in [
+            ("Docket No. A-1234-30", "A-1234-30"),
+            ("Docket No. 2031-0099", "2031-0099"),
+            ("Docket No. MER-L-001234-31", "MER-L-001234-31"),
+            ("Docket No. 09-31-00999-CV", "09-31-00999-CV"),
+            ("Docket No. 31 CV 1234", "31 CV 1234"),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+    }
+
+    /// New York's "-against-" caption is the case at hand's, so a precedent
+    /// cited in a sentence with its "Index No." is none (the #364 review,
+    /// P2-2); a one-line caption with its index number still is.
+    #[test]
+    fn an_against_caption_leaves_a_cited_index_number_unmarked() {
+        let source = "MAREN QUILL,\n\nPlaintiff,\n\n-against-\n\nBRANWICK FREIGHT LLC,\n\nDefendant.\n\nIndex No. 652134/2031\n\nPlaintiff relies on Grant v. Finecy, Index No. 650001/2030 (Sup. Ct. N.Y. 2030).";
+        let raw = [
+            ("MAREN QUILL", "person"),
+            ("BRANWICK FREIGHT LLC", "organization"),
+            ("Grant", "person"),
+            ("Finecy", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("MAREN QUILL", "PERSON"),
+                ("BRANWICK FREIGHT LLC", "ORG"),
+                ("652134/2031", "CASE"),
+            ])
+        );
+        // Without "-against-", a docket citation in a sentence is still no
+        // caption.
+        let source = source.replace("-against-", "");
+        assert_eq!(cases(&source), ["652134/2031"]);
+        let source = "Maren Quill v. Branwick Freight LLC, Index No. 652134/2031 (Sup. Ct. N.Y. Cnty. 2031)\n\nThe defendant moves to dismiss.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Maren Quill", "person"),
+                    ("Branwick Freight LLC", "organization")
+                ]
+            ),
+            pairs(&[
+                ("Maren Quill", "PERSON"),
+                ("Branwick Freight LLC", "ORG"),
+                ("652134/2031", "CASE"),
+            ])
+        );
+    }
+
+    /// A related proceeding of the parties cited by its docket keeps every
+    /// name it holds, its other party's too, with its number (the #364
+    /// review, P2-3).
+    #[test]
+    fn an_earlier_case_keeps_its_other_party() {
+        let source = "In re Ivo Harrow\n\nChapter 7\n\nThe trustee sued in Brendt Holloway v. Harrow, Adv. Proc. No. 31-01992 (Bankr. S.D.N.Y. 2031).";
+        let shown_here = shown(
+            source,
+            &[("Ivo Harrow", "person"), ("Brendt Holloway", "person")],
+        );
+        for expected in pairs(&[("Brendt Holloway", "PERSON"), ("31-01992", "CASE")]) {
+            assert!(
+                shown_here.contains(&expected),
+                "{expected:?} in {shown_here:?}"
+            );
+        }
+        let source = "IVO HARROW, Plaintiff,\n\nv.\n\nQUILLON LTD, Defendant.\n\nIndex No. 652134/2031\n\nHarrow had earlier sued in Harrow v. Pellam Corp., Index No. 650001/2030 (Sup. Ct. N.Y. 2030).";
+        let shown_here = shown(
+            source,
+            &[
+                ("IVO HARROW", "person"),
+                ("QUILLON LTD", "organization"),
+                ("Pellam Corp.", "organization"),
+            ],
+        );
+        for expected in pairs(&[("Pellam Corp", "ORG"), ("650001/2030", "CASE")]) {
+            assert!(
+                shown_here.contains(&expected),
+                "{expected:?} in {shown_here:?}"
+            );
+        }
+    }
+
+    /// The review's other wrong case numbers (#364, P3 items 1-4): a card's
+    /// or a phone line's "charge", a "Charge" column of amounts, an OCR
+    /// period glued to the value, "C.A." inside "U.S.C.A." and a price
+    /// index; and the misses it found that are now proposed.
+    #[test]
+    fn charges_amounts_statutes_and_price_indexes_are_no_case_numbers() {
+        assert_eq!(
+            shown(
+                "Your card was billed for charge #4532-0151-1283-0366 on 1 March.",
+                &[("4532-0151-1283-0366", "bank_account")]
+            ),
+            pairs(&[("4532-0151-1283-0366", "BANK")])
+        );
+        assert_eq!(
+            shown(
+                "For questions about this charge No. 555-201-4477 is open daily.",
+                &[("555-201-4477", "phone_number")]
+            ),
+            pairs(&[("555-201-4477", "PHONE")])
+        );
+        for source in [
+            "| Date | Charge | Payment |\n|---|---|---|\n| 01/03/2031 | 1234.50 | 0 |\n\nTotal due 1234.50.",
+            "under 18 U.S.C.A. No. 1234-5 of the code",
+            "Consumer Price Index No. 2031-03 for March",
+            // The period ends the value, and the review then reads the
+            // number as part of "31-2999.The": no wrong "31-2999.The".
+            "Civil Action No. 31-2999.The plaintiff filed.",
+        ] {
+            assert!(cases(source).is_empty(), "{source}");
+        }
+        for (source, number) in [
+            ("Charge No. 460-2031-01234 was dismissed.", "460-2031-01234"),
+            ("CIVIL ACTION NO.:\n§ 4:31-cv-2999", "4:31-cv-2999"),
+            (
+                "протоколом об административном правонарушении от 01 марта 2031 г. № 99 АБ 123456",
+                "99 АБ 123456",
+            ),
+        ] {
+            assert_eq!(cases(source), [number], "{source}");
+        }
+        assert!(cases("CIVIL ACTION NO.\n\n4:31-cv-2999").is_empty());
     }
 
     fn fixed(source: &str, spans: &[(&str, Category)]) -> Vec<String> {
