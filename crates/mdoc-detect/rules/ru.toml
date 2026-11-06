@@ -937,6 +937,52 @@ pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]{2,}\d{4}(?:[\p{Zs}\t]*(?m:$)|(?P<tai
 [[reference]]
 pattern = '\b(?:ТН|ТТН|ТрН|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*)[\p{Zs}\t]*№[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
 
+# An amount repeated in words after its digits is no TAX value (#547).
+# Groups contain three digits; only a short group plus six digits allows
+# the misplaced OCR space ("1 199999"). The bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify. The
+# contextual guard preserves digit groups in a neighbouring numeric field.
+[[shape]]
+category = "TAX"
+# A value after its identifier label (including passport) wins over amount
+# cues. INN/KPP may share slash-joined labels and values, with spaces
+# around either slash; the slash spacing cannot cross a column gap.
+# A tab or two spaces ends the labelled value at the next column.
+unless_in = ['(?i)\b(?:инн(?:\p{Zs}?/\p{Zs}?кпп)?|огрнип|огрн|кпп|окпо|паспорт)\b[\p{Zs}\t:*_№.]{1,8}[0-9OОoIlІ]+(?:\p{Zs}[0-9OОoIlІ]+)*(?:\p{Zs}?/\p{Zs}?[0-9OОoIlІ]+)?']
+forbid_in = [
+    '(?i)\b(?:(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)|\d{1,3}\p{Zs}\d{6})\p{Zs}?\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)\p{Zs}?руб(?:л[а-яё]*)?\b\.?',
+]
+
+# An amount repeated in words after its digits is no BANK value (#547).
+# Groups contain three digits; only a short group plus six digits allows
+# the misplaced OCR space ("1 199999"). The bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify. The
+# contextual guard preserves digit groups in a neighbouring numeric field.
+[[shape]]
+category = "BANK"
+# A value after its identifier label (including passport) wins over amount
+# cues.
+# A tab or two spaces ends the labelled value at the next column.
+unless_in = ['(?i)(?:\bбик\b|\b[ркл]/с(?:ч)?\b|\b(?:расч[её]тный|корреспондентский|лицевой)[\p{Zs}\t]+сч[её]т\b|\b(?:сч[её]т|паспорт)\b)[\p{Zs}\t:*_№.]{1,8}\d+(?:\p{Zs}\d+)*(?:[,.]\d+)?']
+forbid_in = [
+    '(?i)\b(?:(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)|\d{1,3}\p{Zs}\d{6})\p{Zs}?\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)\p{Zs}?руб(?:л[а-яё]*)?\b\.?',
+]
+
+# An amount repeated in words after its digits is no PHONE value (#547).
+# Groups contain three digits; only a short group plus six digits allows
+# the misplaced OCR space ("1 199999"). The bracket must start with a number word and end beside a currency word;
+# arbitrary parentheses beside a real identifier do not qualify. The
+# contextual guard preserves digit groups in a neighbouring numeric field.
+[[shape]]
+category = "PHONE"
+# A value after its identifier label (including passport) wins over amount
+# cues. Mobile labels count too.
+# A tab or two spaces ends the labelled value at the next column.
+unless_in = ['(?i)\b(?:телефон|тел|факс|моб|сот|мобильный|паспорт)\b[\p{Zs}\t:*_№.]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']
+forbid_in = [
+    '(?i)\b(?:(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)|\d{1,3}\p{Zs}\d{6})\p{Zs}?\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)\p{Zs}?руб(?:л[а-яё]*)?\b\.?',
+]
+
 # The uppercase status alone is no one, as a person or an organization (#385,
 # #562); the surname «Ип» is written otherwise and stays.
 [[shape]]
