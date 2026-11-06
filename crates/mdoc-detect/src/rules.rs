@@ -246,6 +246,15 @@ struct ShapeEntry {
     forbid_unless: Vec<String>,
     #[serde(default)]
     forbid_unless_after: Vec<String>,
+    /// A model span inside one of these matches in its surrounding line
+    /// is not this category (an amount's decimals or currency may be outside
+    /// the model's span). Labelled values are proposed separately.
+    #[serde(default)]
+    forbid_in: Vec<String>,
+    /// Matches that exempt a model span from `forbid_in` only: a labelled
+    /// identifier stays even beside an amount. Other shape checks still apply.
+    #[serde(default)]
+    unless_in: Vec<String>,
     word: Option<String>,
     #[serde(default)]
     guess: Vec<String>,
@@ -302,6 +311,9 @@ struct SpanEntry {
     strip_end: String,
     #[serde(default)]
     person_before: Vec<String>,
+    /// A lowercase list marker at a line or list break is no initial.
+    #[serde(default)]
+    list_letter: bool,
 }
 
 /// A legal reference or other marker no model span inside is (guide rule 8):
@@ -326,6 +338,13 @@ struct ReferenceEntry {
     /// identify it as the case at hand's decision.
     #[serde(default)]
     own_before: Vec<String>,
+    /// Document evidence for a defined code series. Both this pattern and
+    /// each evidence pattern capture `series`; a range may use `series2`.
+    #[serde(default)]
+    when: Vec<String>,
+    /// Conditional references filter only these categories after fixes.
+    #[serde(default)]
+    categories: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -352,6 +371,7 @@ pub(crate) struct Pack {
     public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
     references: Vec<Regex>,
+    conditional_references: Vec<ConditionalReference>,
     /// Cited cases, references naming their parties: a model span inside
     /// a match goes unless it names a party of the case at hand.
     cases: Vec<Regex>,
@@ -372,6 +392,13 @@ struct Cited {
     range: std::ops::Range<usize>,
     parties: Vec<std::ops::Range<usize>>,
     docket: bool,
+}
+
+/// A defined label is not a name, but its shape alone proves nothing.
+struct ConditionalReference {
+    pattern: Regex,
+    when: Vec<Regex>,
+    categories: Vec<Category>,
 }
 
 /// Where `at` in `text` starts once the emphasis just before it is left
@@ -415,6 +442,7 @@ struct SpanFix {
     /// person's document: "Ostrand Decl." is the declaration of a person
     /// named Ostrand.
     person_before: Vec<String>,
+    list_letter: bool,
 }
 
 impl SpanFix {
@@ -436,6 +464,28 @@ impl SpanFix {
             let tail = text.len() - text.trim_end().len();
             range = range.start + lead..range.end - tail;
             let text = &source[range.clone()];
+            if self.list_letter
+                && let Some((marker, rest)) = text.split_once(char::is_whitespace)
+                && let Some(letter) = marker
+                    .strip_prefix('(')
+                    .and_then(|s| s.strip_suffix(')'))
+                    .or_else(|| marker.strip_suffix(['.', ')']))
+                && (letter.len() == 1 && letter.as_bytes()[0].is_ascii_lowercase()
+                    || matches!(
+                        letter,
+                        "ii" | "iii" | "iv" | "vi" | "vii" | "viii" | "ix" | "xi" | "xii"
+                    ))
+            {
+                let line = source[..range.start]
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or_default();
+                let before = line.trim_matches(|c: char| c.is_whitespace() || "#>*_|-".contains(c));
+                if before.is_empty() || before.ends_with([':', ';']) {
+                    range.start = range.end - rest.len();
+                    continue;
+                }
+            }
             if let Some(prefix) = self
                 .trim_start
                 .iter()
@@ -856,6 +906,8 @@ struct Shape {
     category: Category,
     require: Vec<Regex>,
     forbid: Vec<Veto>,
+    forbid_in: Vec<Regex>,
+    unless_in: Vec<Regex>,
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
@@ -895,6 +947,7 @@ impl Pack {
             zones: std::collections::HashSet::new(),
             public: std::collections::HashSet::new(),
             references: Vec::new(),
+            conditional_references: Vec::new(),
             cases: Vec::new(),
             party_roles: std::collections::HashSet::new(),
             own_before: Vec::new(),
@@ -1091,6 +1144,8 @@ impl Pack {
                 };
                 if entry.require.is_empty()
                     && entry.forbid.is_empty()
+                    && entry.forbid_in.is_empty()
+                    && entry.unless_in.is_empty()
                     && entry.word.is_none()
                     && entry.guess.is_empty()
                     && entry.guess_words.is_empty()
@@ -1153,6 +1208,16 @@ impl Pack {
                     unless: compile_all(&entry.forbid_unless, false)?,
                     unless_after: compile_all(&entry.forbid_unless_after, false)?,
                 };
+                let forbid_in = entry
+                    .forbid_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let unless_in = entry
+                    .unless_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let word = entry
                     .word
                     .as_deref()
@@ -1166,6 +1231,8 @@ impl Pack {
                             category,
                             require: Vec::new(),
                             forbid: Vec::new(),
+                            forbid_in: Vec::new(),
+                            unless_in: Vec::new(),
                             word: None,
                             guess: Vec::new(),
                             guess_words: Vec::new(),
@@ -1181,6 +1248,8 @@ impl Pack {
                 }
                 shape.require.extend(require);
                 shape.forbid.push(forbid);
+                shape.forbid_in.extend(forbid_in);
+                shape.unless_in.extend(unless_in);
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
@@ -1282,11 +1351,12 @@ impl Pack {
                     || !entry.trim_start.is_empty()
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
-                    || !entry.person_before.is_empty();
+                    || !entry.person_before.is_empty()
+                    || entry.list_letter;
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, extend, strip_end or person_before".into(),
+                            "a pattern takes no trim, trim_start, extend, strip_end, person_before or list_letter".into(),
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
@@ -1357,6 +1427,11 @@ impl Pack {
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
                 }
+                if entry.list_letter
+                    && !matches!(category, Category::Person | Category::Organization)
+                {
+                    return Err(at("only PERSON or ORG takes list_letter".into()));
+                }
                 if entry.role_trim && (category != Category::Organization || entry.trim.is_empty())
                 {
                     return Err(at("role_trim needs ORG and trim words".into()));
@@ -1410,6 +1485,7 @@ impl Pack {
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
+                    list_letter: entry.list_letter,
                 }));
             }
             for (index, entry) in file.url.iter().enumerate() {
@@ -1455,6 +1531,53 @@ impl Pack {
             }
             for (index, entry) in file.reference.iter().enumerate() {
                 let at = |problem: String| format!("{name}: reference #{}: {problem}", index + 1);
+                if !entry.when.is_empty() {
+                    if entry.categories.is_empty()
+                        || !entry.roles.is_empty()
+                        || !entry.own_before.is_empty()
+                    {
+                        return Err(at(
+                            "when needs categories and takes no cited-case fields".into()
+                        ));
+                    }
+                    let pattern = with_groups(
+                        &entry.pattern,
+                        &entry.parts,
+                        &["lead", "tail", "series", "series2"],
+                        false,
+                    )
+                    .map_err(at)?;
+                    let when = entry
+                        .when
+                        .iter()
+                        .map(|pattern| {
+                            with_groups(pattern, &entry.parts, &["lead", "tail", "series"], false)
+                                .map_err(at)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if std::iter::once(&pattern).chain(&when).any(|pattern| {
+                        !pattern
+                            .capture_names()
+                            .flatten()
+                            .any(|group| group == "series")
+                    }) {
+                        return Err(at("when and pattern need a series group".into()));
+                    }
+                    let categories = entry
+                        .categories
+                        .iter()
+                        .map(|token| self::category(token).map_err(at))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    pack.conditional_references.push(ConditionalReference {
+                        pattern,
+                        when,
+                        categories,
+                    });
+                    continue;
+                }
+                if !entry.categories.is_empty() {
+                    return Err(at("categories needs when".into()));
+                }
                 let pattern = with_groups(
                     &entry.pattern,
                     &entry.parts,
@@ -2233,6 +2356,139 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        // Before citations, common-name evidence and propagation: a party
+        // code must never become evidence that a real name was mentioned.
+        for reference in &self.conditional_references {
+            let code = |series: regex::Match<'_>| {
+                let end = series.end()
+                    + view.text[series.end()..]
+                        .bytes()
+                        .take_while(u8::is_ascii_digit)
+                        .count();
+                &view.text[series.start()..end]
+            };
+            let defined: std::collections::HashSet<&str> = reference
+                .when
+                .iter()
+                .flat_map(|pattern| pattern.captures_iter(&view.text))
+                .filter(|captures| {
+                    let whole = captures.get(0).expect("group 0 is the match");
+                    if !whole.as_str().ends_with(|c: char| c.is_ascii_digit()) {
+                        return true;
+                    }
+                    // A role followed by a code may instead open a company
+                    // name: "Claimant C1 Holdings Ltd, trading as C1". The
+                    // whole continuation is checked, not just the next
+                    // word; an uncertain name keeps its marks.
+                    !self.company_continuation(&view.text[whole.end()..])
+                })
+                .filter_map(|captures| captures.name("series").map(code))
+                .collect();
+            let series: std::collections::HashSet<_> =
+                defined.iter().map(|name| &name[..1]).collect();
+            if series.is_empty() {
+                continue;
+            }
+            struct Code<'a> {
+                range: std::ops::Range<usize>,
+                name: &'a str,
+                established: bool,
+                compound: bool,
+            }
+            let codes: Vec<_> = reference
+                .pattern
+                .captures_iter(&view.text)
+                .map(|captures| {
+                    let whole = captures.get(0).expect("group 0 is the match");
+                    let start = captures.name("lead").map_or(whole.start(), |m| m.end());
+                    let end = captures.name("tail").map_or(whole.end(), |m| m.start());
+                    Code {
+                        range: start..end.max(start),
+                        name: code(captures.name("series").expect("checked at load")),
+                        established: ["series", "series2"].into_iter().all(|group| {
+                            captures
+                                .name(group)
+                                .is_none_or(|m| series.contains(m.as_str()))
+                        }),
+                        compound: captures.name("series2").is_some(),
+                    }
+                })
+                .collect();
+            // Join only code enumerations. Every member must have an
+            // established series; an unknown series or real name keeps
+            // the whole model span. Do this before looking for names so
+            // "C1 and C2" is not evidence of a company's short form.
+            let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+            for (index, current) in codes.iter().enumerate() {
+                if let Some(group) = groups.last_mut()
+                    && let previous = &codes[group.end - 1]
+                    && matches!(
+                        view.text[previous.range.end..current.range.start].trim(),
+                        "," | "and" | ", and" | ",and"
+                    )
+                {
+                    group.end = index + 1;
+                } else {
+                    groups.push(index..index + 1);
+                }
+            }
+            // A code that opens a kept name protects its short mentions
+            // too (GUIDE rule 2), even if another party defines that code.
+            let protected: std::collections::HashSet<_> = codes
+                .iter()
+                .enumerate()
+                .filter(|(index, current)| {
+                    let group = groups.iter().find(|g| g.contains(index)).unwrap();
+                    self.company_continuation(&view.text[current.range.end..])
+                        || detections.iter().any(|d| {
+                            if !reference.categories.contains(&d.category) {
+                                return false;
+                            }
+                            let range = view.view_range(d.range.clone());
+                            current.range.start <= range.start
+                                && range.start < current.range.end
+                                && codes[group.end - 1].range.end < range.end
+                        })
+                })
+                .map(|(_, current)| current.name)
+                .collect();
+            let ranges: Vec<_> = groups
+                .into_iter()
+                .filter(|group| {
+                    codes[group.clone()]
+                        .iter()
+                        .all(|current| current.established && !protected.contains(current.name))
+                        && (group.len() > 1
+                            || codes[group.start].compound
+                            || defined.contains(codes[group.start].name))
+                })
+                .map(|group| codes[group.start].range.start..codes[group.end - 1].range.end)
+                .collect();
+            detections.retain_mut(|d| {
+                if !reference.categories.contains(&d.category) {
+                    return true;
+                }
+                let range = view.view_range(d.range.clone());
+                if ranges
+                    .iter()
+                    .any(|found| found.start <= range.start && range.end <= found.end)
+                {
+                    return false;
+                }
+                // A model may include the defining label with its real
+                // name: "Mrs Penrow (C1)" must keep "Penrow" alone.
+                if let Some(found) = ranges.iter().find(|found| {
+                    range.start < found.start
+                        && found.end == range.end
+                        && view.text[(*found).clone()].starts_with('(')
+                        && view.text[(*found).clone()].ends_with(')')
+                }) {
+                    let end = range.start + view.text[range.start..found.start].trim_end().len();
+                    d.range.end = view.source_range(range.start..end).end;
+                }
+                !d.range.is_empty()
+            });
+        }
         let precedents = self.cited_cases(view, detections);
         let abbreviations = self.unnamed_abbreviations(&view.text);
         let defined = self.defined_terms(&view.text);
@@ -2600,6 +2856,42 @@ impl Pack {
         if self.in_reference(source, range.clone()) {
             return false;
         }
+        if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
+            && !shape.forbid_in.is_empty()
+        {
+            // OCR can put an entire document on one line. Bound both the
+            // newline search and the decoded context per span; if an amount
+            // needs more distant evidence, keep the possible identifier.
+            let mut start = range.start.saturating_sub(300);
+            while !source.is_char_boundary(start) {
+                start += 1;
+            }
+            let mut end = range.end.saturating_add(300).min(source.len());
+            while !source.is_char_boundary(end) {
+                end -= 1;
+            }
+            start += source[start..range.start].rfind('\n').map_or(0, |i| i + 1);
+            end = source[range.end..end]
+                .find('\n')
+                .map_or(end, |i| range.end + i);
+            let view = mdoc_pii::view::View::new(&source[start..end]);
+            let span = view.view_range(range.start - start..range.end - start);
+            let inside = |pattern: &Regex| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            };
+            let forbidden = |pattern: &Regex| {
+                span_ranges(pattern, &view.text).into_iter().any(|found| {
+                    found.start <= span.start
+                        && span.end <= found.end
+                        && !joins_numeric_fields(&view.text, found, span.clone())
+                })
+            };
+            if shape.forbid_in.iter().any(forbidden) && !shape.unless_in.iter().any(inside) {
+                return false;
+            }
+        }
         let quoted = self
             .shapes
             .iter()
@@ -2903,6 +3195,96 @@ impl Pack {
                         .any(|form| form.eq_ignore_ascii_case(word))
                 })
             })
+    }
+
+    /// Whether `rest`, the text after a role and its code, carries on a
+    /// company or other name, so the code opens a name rather than
+    /// defining a party code: more capitalized words ("C1 Holdings"), a
+    /// place ("C1 of North Quay"), a legal form within a few words ("C1
+    /// international holdings ltd") or a trading name ("C1 trading as").
+    fn company_continuation(&self, rest: &str) -> bool {
+        // A comma before a legal form belongs to the company, unlike a
+        // comma before the next person or clause ("C1, Mrs Penrow"); OCR
+        // may leave a space before it ("C1 , Inc").
+        if rest
+            .trim_start_matches([' ', '\t'])
+            .strip_prefix(',')
+            .is_some_and(|tail| {
+                tail.split_whitespace()
+                    .next()
+                    .is_some_and(|word| self.legal_form(bare(word)))
+            })
+        {
+            return true;
+        }
+        let clause = rest
+            .split(['.', ',', ';', ':', '!', '?', '\n', '\r'])
+            .next()
+            .unwrap_or_default();
+        let words: Vec<_> = clause
+            .split_whitespace()
+            .map(bare)
+            .filter(|word| !word.is_empty())
+            .take(5)
+            .collect();
+        let code = |word: &str| {
+            (2..=3).contains(&word.len())
+                && word.starts_with(['C', 'D', 'P', 'R'])
+                && word.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+        };
+        let role = |word: &str| {
+            self.party_roles.iter().any(|role| {
+                role.eq_ignore_ascii_case(word)
+                    || word
+                        .strip_suffix('s')
+                        .is_some_and(|single| role.eq_ignore_ascii_case(single))
+            })
+        };
+        let trading = |words: &[&str]| {
+            words.windows(2).take(3).any(|pair| {
+                pair[0].eq_ignore_ascii_case("trading") && pair[1].eq_ignore_ascii_case("as")
+            }) || words
+                .iter()
+                .take(3)
+                .any(|word| word.eq_ignore_ascii_case("t/a"))
+        };
+        // A company's name may wrap onto the next line ("Claimant C1\n
+        // Holdings Ltd"): a legal form or trading name there continues it.
+        // A role or another code ends the look ("First Claimant\nC1\nSecond
+        // Claimant\nC2" is a heading layout).
+        let wrapped: Vec<_> = rest
+            .split(['.', ',', ';', ':', '!', '?'])
+            .next()
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(bare)
+            .filter(|word| !word.is_empty())
+            .take_while(|word| !role(word) && !code(word))
+            .take(5)
+            .collect();
+        if wrapped[..wrapped.len().min(4)]
+            .iter()
+            .any(|word| self.legal_form(word))
+            || trading(&wrapped)
+        {
+            return true;
+        }
+        let capitalized = |word: &&str| {
+            word.starts_with(char::is_uppercase)
+                && !code(word)
+                && !role(word)
+                && !self.spans.iter().any(|span| {
+                    matches!(span, Span::Fix(fix)
+                        if fix.category == Category::Person
+                            && fix.trim.iter().any(|title| title.eq_ignore_ascii_case(word)))
+                })
+        };
+        words.first().is_some_and(capitalized)
+            || (words.first() == Some(&"of") && words.get(1).is_some_and(capitalized))
+            || words[..words.len().min(4)]
+                .iter()
+                .any(|word| self.legal_form(word))
+            || trading(&words)
     }
 
     /// Whether `text`'s words are all legal forms ("АО", "LLC").
@@ -3237,6 +3619,42 @@ fn unquoted(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A contextual rejection must not join a candidate's digit groups to a
+/// neighbouring numeric field through whitespace alone. A decimal touching
+/// the candidate still connects an amount's fragments, including OCR-joined
+/// decimals ("762,0323 058"), but "770 901 001 500,00" does not make the
+/// first three groups money. Ambiguous columns keep the possible identifier.
+fn joins_numeric_fields(
+    source: &str,
+    found: std::ops::Range<usize>,
+    span: std::ops::Range<usize>,
+) -> bool {
+    let value = &source[span.clone()];
+    let before = &source[found.start..span.start];
+    let after = &source[span.end..found.end];
+    // Include two characters on either side so a decimal separator just
+    // outside the model span counts, without reading beyond this match.
+    let start = span.start
+        - before
+            .chars()
+            .rev()
+            .take(2)
+            .map(char::len_utf8)
+            .sum::<usize>();
+    let end = span.end + after.chars().take(2).map(char::len_utf8).sum::<usize>();
+    if source.as_bytes()[start..end].windows(3).any(|part| {
+        part[0].is_ascii_digit() && matches!(part[1], b',' | b'.') && part[2].is_ascii_digit()
+    }) {
+        return false;
+    }
+    (value.starts_with(|c: char| c.is_ascii_digit())
+        && before.ends_with(char::is_whitespace)
+        && before.trim_end().ends_with(|c: char| c.is_ascii_digit()))
+        || (value.ends_with(|c: char| c.is_ascii_digit())
+            && after.starts_with(char::is_whitespace)
+            && after.trim_start().starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the
@@ -6782,6 +7200,563 @@ Privacy Act (“BIPA”). BIPA applies.",
             .collect()
     }
 
+    /// #546: defined party labels disappear before the review propagates
+    /// names, whether the model calls them people or organizations.
+    #[test]
+    fn defined_party_codes_are_not_names() {
+        let source = "The claimants are Ivo Penrow (“C1”) and Edda Brannock (“C2”); \
+            the defendants are Pellam Rooke Ltd (“D1”) and Harrow Ostrand (“D2”).\n\
+            a. C1 sued D1; C1's trustees and D2 replied; D3 – D5 took no part.";
+        for label in ["person", "organization"] {
+            assert_eq!(
+                shown(
+                    source,
+                    &[
+                        ("Ivo Penrow", "person"),
+                        ("Edda Brannock", "person"),
+                        ("Pellam Rooke Ltd", "organization"),
+                        ("Harrow Ostrand", "person"),
+                        ("C1", label),
+                        ("C2", label),
+                        ("D1", label),
+                        ("D2", label),
+                        ("a. C1", label),
+                        ("C1's trustees", label),
+                        ("D3 – D5", label),
+                    ]
+                ),
+                pairs(&[
+                    ("Ivo Penrow", "PERSON"),
+                    ("Edda Brannock", "PERSON"),
+                    ("Pellam Rooke Ltd", "ORG"),
+                    ("Harrow Ostrand", "PERSON")
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn party_code_definitions_keep_the_real_name_and_cover_each_series() {
+        for (role, code, next) in [
+            ("Claimant", "C1", "C12"),
+            ("Defendant", "D1", "D12"),
+            ("Plaintiff", "P1", "P12"),
+            ("Respondent", "R1", "R12"),
+        ] {
+            for definition in [
+                format!("Mrs Penrow ({code})"),
+                format!("Pellam Ltd (\"{code}\", as appropriate)"),
+                format!("{role}: {code}"),
+                format!("{code} – {role}"),
+            ] {
+                let source = format!("{definition}. {role}: {next}; {next}’s trustees.\nc. {next}");
+                assert_eq!(
+                    shown(
+                        &source,
+                        &[
+                            (code, "person"),
+                            (next, "organization"),
+                            (&format!("{next}’s trustees"), "organization"),
+                            (&format!("c. {next}"), "person")
+                        ]
+                    ),
+                    [],
+                    "{source}"
+                );
+            }
+        }
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) called C1.",
+                &[("Mrs Penrow", "person"), ("C1", "person")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) called C1.",
+                &[("Mrs Penrow (C1)", "person")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Pellam Ltd (“D1”) sued D1.",
+                &[("Pellam Ltd (“D1”)", "organization")]
+            ),
+            pairs(&[("Pellam Ltd", "ORG")])
+        );
+    }
+
+    /// A role before a company name must not suppress its trading name.
+    #[test]
+    fn party_code_company_continuations_do_not_establish_a_series() {
+        for (source, company) in [
+            (
+                "Claimant C1 Holdings Ltd, trading as C1, paid the invoice.",
+                "C1 Holdings Ltd",
+            ),
+            ("Claimant C1 Holdings paid C1.", "C1 Holdings"),
+            ("Claimant C1 Holdings2 paid C1.", "C1 Holdings2"),
+            ("Claimant C1 trading as C1 paid the invoice.", "C1"),
+            (
+                "Claimant C1 international holdings ltd paid C1.",
+                "C1 international holdings ltd",
+            ),
+            ("Claimant C1 of North Quay paid C1.", "C1 of North Quay"),
+            ("Claimant C1 t/a C1 paid the invoice.", "C1"),
+            (
+                "Claimant C1 (international holdings) Ltd, trading as C1, paid the invoice.",
+                "C1 (international holdings) Ltd",
+            ),
+        ] {
+            // Use the later occurrence for the trading/short name: the
+            // first C1 is inside the company's full name.
+            let raw: Vec<_> = [
+                (source.find(company).unwrap(), company),
+                (source.rfind("C1").unwrap(), "C1"),
+            ]
+            .into_iter()
+            .map(|(start, text)| crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: "organization".into(),
+                score: 0.8,
+                text: text.into(),
+            })
+            .collect();
+            let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect();
+            assert_eq!(
+                actual,
+                pairs(&[(company, "ORG"), ("C1", "ORG")]),
+                "{source}"
+            );
+        }
+        // A company wrapped onto the next line, or with a space before its
+        // legal-form comma, still opens with its code: the code marks stay
+        // with only the code or short name marked by the model.
+        for source in [
+            "Claimant C1\nHoldings Ltd, trading as C1, paid.",
+            "Claimant C1\r\nHoldings Ltd, trading as C1, paid.",
+            "Claimant C1\nLogistics Ltd, trading as C1, paid.",
+            "Claimant C1\nInternational Holdings Ltd, trading as C1, paid.",
+            "Claimant C1\nholdings ltd paid C1.",
+            "Claimant C1\nLtd, trading as C1, paid.",
+            "Claimant C1 , Inc, trading as C1, paid.",
+            "Claimant C1 , LLC, trading as C1, paid.",
+            "Claimant C1, Inc, trading as C1, paid.",
+        ] {
+            for at in [source.find("C1").unwrap(), source.rfind("C1").unwrap()] {
+                let raw = [crate::RawEntity {
+                    start: at,
+                    end: at + 2,
+                    label: "organization".into(),
+                    score: 0.8,
+                    text: "C1".into(),
+                }];
+                let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+                    .unwrap()
+                    .into_iter()
+                    .map(|span| source[span.range].to_owned())
+                    .collect();
+                assert!(actual.iter().any(|text| text == "C1"), "{source} at {at}");
+            }
+        }
+        // A heading layout still defines its codes.
+        assert_eq!(
+            shown(
+                "First Claimant\nC1\nSecond Claimant\nC2\nC1 lost.",
+                &[("C1", "organization")]
+            ),
+            []
+        );
+        // A role and code before a lowercase clause still define a code.
+        assert_eq!(
+            shown(
+                "Claimant C1 and Defendant D1 called C1.",
+                &[("C1", "organization")]
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn party_code_definition_removal_consumes_quotes_and_inner_spaces() {
+        for bracket in [
+            "('C1')",
+            "( C1 )",
+            "( 'C1' )",
+            "(‘C1’)",
+            "( ‘C1’ )",
+            "(\"C1\")",
+            "( \"C1\" )",
+            "(“C1”)",
+            "( “C1” )",
+            "('C1', as appropriate)",
+            "( ‘C1’, as appropriate )",
+            "(C1, as appropriate)",
+            "( C1, as appropriate )",
+            "(\t'C1'\t)",
+            "(\u{a0}“C1”\u{a0})",
+        ] {
+            let definition = format!("Mrs Penrow {bracket}");
+            let source = format!("{definition} called C1.");
+            let expected = pairs(&[("Penrow", "PERSON")]);
+            assert_eq!(
+                shown(&source, &[(&definition, "person")]),
+                expected,
+                "{source}"
+            );
+            for label in ["person", "organization"] {
+                assert_eq!(
+                    shown(&source, &[("Mrs Penrow", "person"), (bracket, label)]),
+                    expected,
+                    "{source}: {label}"
+                );
+            }
+            let company = format!("Pellam Ltd {bracket}");
+            let source = format!("{company} called C1.");
+            assert_eq!(
+                shown(&source, &[(&company, "organization")]),
+                pairs(&[("Pellam Ltd", "ORG")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Uncertain labels, short real names, other code series and real
+    /// identifiers stay: the cost of losing a real value is higher.
+    #[test]
+    fn unexplained_codes_and_names_beside_party_codes_stay() {
+        for source in [
+            "C1 met D12 and R2.",
+            "The claimant is C1 Ltd.",
+            "Penrow (C100) called C1.",
+            "The product C1 arrived.",
+            "Claimant C1 Ltd called C1.",
+            "Defendant C1, Inc called C1.",
+        ] {
+            assert!(
+                shown(source, &[("C1", "organization")])
+                    .iter()
+                    .any(|(text, _)| text == "C1" || text == "C1 Ltd"),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown("Claimant C1 called C1.", &[("C1", "organization")]),
+            []
+        );
+        let source = "Mrs Penrow (C1). D1 met R2; C100 and C1A attended with C1 Penrow. \
+            Staff ID: C123. C1's trustee Ivo Penrow replied.\nМ1. О1.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("D1", "person"),
+                    ("R2", "organization"),
+                    ("C100", "organization"),
+                    ("C1A", "organization"),
+                    ("C1 Penrow", "person"),
+                    ("C1's trustee Ivo Penrow", "person"),
+                    ("М1", "person"),
+                    ("О1", "person")
+                ]
+            ),
+            pairs(&[
+                ("D1", "PERSON"),
+                ("R2", "ORG"),
+                ("C100", "ORG"),
+                ("C1A", "ORG"),
+                ("C1 Penrow", "PERSON"),
+                ("C123", "IDENTITY"),
+                ("C1's trustee Ivo Penrow", "PERSON"),
+                ("М1", "PERSON"),
+                ("О1", "PERSON")
+            ])
+        );
+        // A range with a series that was never established is uncertain.
+        assert_eq!(
+            shown("Claimant C1: C3 – R5.", &[("C3 – R5", "organization")]),
+            pairs(&[("C3 – R5", "ORG")])
+        );
+    }
+
+    #[test]
+    fn list_letters_come_off_names_only_at_list_breaks() {
+        let source = "a. Penrow represents and warrants; b. Brannock will attend; \
+            d. Quillon Media Inc agrees to defend.\n(c) Ostrand replied.\ni. Larkfield replied.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("a. Penrow", "person"),
+                    ("b. Brannock", "person"),
+                    ("d. Quillon Media Inc", "organization"),
+                    ("(c) Ostrand", "person"),
+                    ("i. Larkfield", "person")
+                ]
+            ),
+            pairs(&[
+                ("Penrow", "PERSON"),
+                ("Brannock", "PERSON"),
+                ("Quillon Media Inc", "ORG"),
+                ("Ostrand", "PERSON"),
+                ("Larkfield", "PERSON")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "A. Penrow met J. R. Ostrand and van Hoorn.",
+                &[
+                    ("A. Penrow", "person"),
+                    ("J. R. Ostrand", "person"),
+                    ("van Hoorn", "person")
+                ]
+            ),
+            pairs(&[
+                ("A. Penrow", "PERSON"),
+                ("J. R. Ostrand", "PERSON"),
+                ("van Hoorn", "PERSON")
+            ])
+        );
+        assert_eq!(
+            fixed(
+                "Met a. Penrow yesterday.",
+                &[("a. Penrow", Category::Person)]
+            ),
+            ["a. Penrow"]
+        );
+        assert_eq!(
+            fixed("  a. Penrow  ", &[("  a. Penrow  ", Category::Person)]),
+            ["Penrow"]
+        );
+        for ending in [".", "!", "?", "…"] {
+            let source = format!("The deed was signed{ending} j. Penrow witnessed it.");
+            assert_eq!(
+                shown(&source, &[("j. Penrow", "person")]),
+                pairs(&[("j. Penrow", "PERSON")]),
+                "{source}"
+            );
+        }
+        for marker in ["ii.", "(iv)", "a)", "viii."] {
+            for before in ["", "Attending: ", "First; ", "Signed.\n"] {
+                for (name, label, category) in [
+                    ("Penrow", "person", "PERSON"),
+                    ("Quillon Media Inc", "organization", "ORG"),
+                ] {
+                    let span = format!("{marker} {name}");
+                    let source = format!("{before}{span} replied.");
+                    assert_eq!(
+                        shown(&source, &[(&span, label)]),
+                        pairs(&[(name, category)])
+                    );
+                }
+            }
+        }
+    }
+
+    /// Review #599: a defined series must not hide a real name or an
+    /// unexplained standalone code that may itself name an organization.
+    #[test]
+    fn established_series_keep_names_and_unexplained_members() {
+        assert_eq!(
+            shown(
+                "Pellam Rooke Ltd (D1). The goods went to D3 Logistics Ltd.",
+                &[("Pellam Rooke Ltd", "organization"), ("D3", "organization")]
+            ),
+            pairs(&[("Pellam Rooke Ltd", "ORG"), ("D3", "ORG")])
+        );
+        let source = "Mrs Penrow (C2). Claimant C1 Holdings Ltd, trading as C1.";
+        let raw: Vec<_> = [
+            (source.find("Penrow").unwrap(), "Penrow", "person"),
+            (
+                source.find("C1 Holdings Ltd").unwrap(),
+                "C1 Holdings Ltd",
+                "organization",
+            ),
+            (source.rfind("C1").unwrap(), "C1", "organization"),
+        ]
+        .into_iter()
+        .map(|(start, text, label)| crate::RawEntity {
+            start,
+            end: start + text.len(),
+            label: label.into(),
+            score: 0.8,
+            text: text.into(),
+        })
+        .collect();
+        let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            actual,
+            pairs(&[
+                ("Penrow", "PERSON"),
+                ("C1 Holdings Ltd", "ORG"),
+                ("C1", "ORG")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "Mrs Penrow (C1) watched C4.",
+                &[("Mrs Penrow", "person"), ("C4", "organization")]
+            ),
+            pairs(&[("Penrow", "PERSON"), ("C4", "ORG")])
+        );
+        // Even the very same code can also open a name. Keep both its
+        // full form and later short mentions when their meanings collide.
+        for (source, name, label) in [
+            (
+                "Mrs Penrow (C1). C1 Holdings Ltd, trading as C1.",
+                "C1 Holdings Ltd",
+                "organization",
+            ),
+            (
+                "Mrs Brannock (C1). C1 Penrow replied for C1.",
+                "C1 Penrow",
+                "person",
+            ),
+        ] {
+            let raw: Vec<_> = [
+                (source.find(name).unwrap(), name),
+                (source.rfind("C1").unwrap(), "C1"),
+            ]
+            .into_iter()
+            .map(|(start, text)| crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            })
+            .collect();
+            let actual = crate::recognition::proposals(source, &raw).unwrap();
+            for entity in raw {
+                assert!(
+                    actual
+                        .iter()
+                        .any(|span| span.range == (entity.start..entity.end)),
+                    "{source}: {}",
+                    entity.text
+                );
+            }
+        }
+        // The model may mark only the code at the start of a company,
+        // even when that exact code has been defined for another party.
+        for name in ["D3 Logistics Ltd", "D3 – Logistics Ltd"] {
+            let source = format!("Pellam Rooke Ltd (D3). {name} received the goods.");
+            let start = source.rfind("D3").unwrap();
+            let raw = [crate::RawEntity {
+                start,
+                end: start + 2,
+                label: "organization".into(),
+                score: 0.8,
+                text: "D3".into(),
+            }];
+            assert!(
+                crate::recognition::proposals(&source, &raw)
+                    .unwrap()
+                    .iter()
+                    .any(|span| span.range == (start..start + 2)),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn party_code_evidence_stops_at_clauses_and_ignores_titles() {
+        for source in [
+            "Claimant C1, Mrs Penrow, sued. C1 lost.",
+            "First Claimant\nC1\nSecond Claimant\nC2",
+            "Claimant C1 Mrs Penrow sued. C1 lost.",
+        ] {
+            assert!(
+                shown(source, &[("C1", "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Claimant C1, Mrs Penrow, sued. C1 lost.",
+                &[("Mrs Penrow", "person"), ("C1", "organization")]
+            ),
+            pairs(&[("Penrow", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "Pellam Rooke plc (D1). D1 lost.",
+                &[("Pellam Rooke plc", "organization"), ("D1", "organization")]
+            ),
+            pairs(&[("Pellam Rooke plc", "ORG")])
+        );
+    }
+
+    #[test]
+    fn established_code_pairs_and_lists_go_only_as_whole_codes() {
+        for list in ["C1 and C2", "D1, D2 and D3", "D1, D2, and D3", "C1 and D2"] {
+            let source = format!("Mrs Penrow (C1). Pellam Ltd (D1). {list} replied.");
+            for label in ["person", "organization"] {
+                assert_eq!(
+                    shown(
+                        &source,
+                        &[
+                            ("Mrs Penrow", "person"),
+                            ("Pellam Ltd", "organization"),
+                            (list, label)
+                        ]
+                    ),
+                    pairs(&[("Penrow", "PERSON"), ("Pellam Ltd", "ORG")]),
+                    "{source}: {label}"
+                );
+            }
+        }
+        for list in [
+            "C1 and R2",
+            "C1 and C2 Penrow",
+            "D1, D2 and D3 Logistics Ltd",
+            "C1 and Ivo Penrow",
+        ] {
+            let source = format!("Mrs Penrow (C1). Pellam Ltd (D1). {list} replied.");
+            assert!(
+                shown(&source, &[(list, "organization")])
+                    .iter()
+                    .any(|(text, _)| text == list),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn party_codes_use_the_decoded_document_and_keep_other_categories() {
+        let source = "Mrs Penrow (&ldquo;C1&rdquo;).\n(a) C1’s trustees; C3—C5; staff C1.";
+        assert_eq!(
+            shown(
+                source,
+                &[("(a) C1’s trustees", "organization"), ("C3—C5", "person")]
+            ),
+            []
+        );
+        let raw = [crate::RawEntity {
+            start: source.rfind("C1").unwrap(),
+            end: source.rfind("C1").unwrap() + 2,
+            label: "national_id_number".into(),
+            score: 0.8,
+            text: "C1".into(),
+        }];
+        assert!(
+            crate::correct(source, &raw)
+                .iter()
+                .any(|d| d.category == Category::Identity)
+        );
+    }
+
     /// US and UK citations are no identifiers, addresses or names: reporter,
     /// Westlaw and law-report citations, codes and their abbreviations,
     /// sections, the record and a form's outline letter (guide rule 8,
@@ -9514,6 +10489,694 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         }
     }
 
+    /// Money, including OCR-joined balance-sheet cells and fragments cut
+    /// at their decimal comma, is never TAX, BANK or PHONE (#547).
+    #[test]
+    fn money_and_its_fragments_are_no_identifiers() {
+        for (source, fragment) in [
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "0323 058 712"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "762,0323 058"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "4 588 762"),
+            ("Итого 12 345,67942838 306,12.", "942838 306"),
+            ("Итого 12 345,670321 448 312,74.", "0321 448 312"),
+            ("Бюджет: 164 353 783 тыс. руб.", "164 353 783"),
+            ("Бюджет: 12 345,05 8 443 789 778,00.", "05 8 443 789 778"),
+            ("Выплачено 135 130 руб. 86 коп.", "86"),
+            ("Выплачено 135 130 руб. 86 коп.", "135 130"),
+            ("Итого 714157,31.", "714157"),
+            ("Итого 23 707 750,02.", "23 707 750"),
+            ("Итого 2903,02.", "2903"),
+            ("Итого 714157.31.", "714157"),
+            ("Итого 23\u{a0}707\u{202f}750,02.", "23\u{a0}707\u{202f}750"),
+            ("Итого 23&nbsp;707&#32;750,02.", "23&nbsp;707&#32;750"),
+            ("Итого 164 353 783 млн рублей.", "164 353 783"),
+            ("Итого 164 353 783 €.", "164 353 783"),
+            ("Сумма, руб.: 164 353 783.", "164 353 783"),
+            ("The fund lost $350 billion.", "$350 billion"),
+            ("The fund lost $350 billion.", "350"),
+            ("The fund lost $11.2 billion a year.", "$11.2 billion"),
+            ("The fund lost $11.2 billion a year.", "11.2"),
+            ("The fund lost £350 million.", "350 million"),
+            ("The fund lost €350 million.", "350"),
+            ("The fund lost 350 billion dollars.", "350 billion"),
+            ("Tax ID: 999991111 received 350 billion.", "350 billion"),
+            ("Пени: ((0,06x159548,05) х2).", "06x159548"),
+            ("Пени: (0,05х199999,05) ×2.", "05х199999"),
+            ("Пени: (0,05*199999,05) *2.", "05*199999"),
+            (
+                "Взыскать 1 199999 (один миллион сто девяносто девять тысяч девятьсот девяносто девять) рублей.",
+                "1 199999",
+            ),
+            (
+                "Взыскать 1 129731 (один миллион сто двадцать девять тысяч семьсот тридцать один) рубль.",
+                "1 129731",
+            ),
+        ] {
+            for label in ["tax_id", "bank_account", "phone_number"] {
+                assert_eq!(
+                    shown(source, &[(fragment, label)]),
+                    [],
+                    "{source}: {label} {fragment}"
+                );
+            }
+        }
+        // A labelled identifier earlier in the sentence must not exempt
+        // a later amount; the context rule still proposes the account.
+        assert_eq!(
+            shown(
+                "Bank account: 12345678 funded 350 million.",
+                &[("350 million", "bank_account")]
+            ),
+            [("12345678".into(), "BANK".into())]
+        );
+    }
+
+    /// A column gap ends the amount's token group, even without a label (#547).
+    #[test]
+    fn amount_guards_keep_neighbouring_columns() {
+        assert_eq!(
+            shown(
+                "Account     Balance\n12345678    1000.00",
+                &[("12345678", "bank_account"), ("1000.00", "bank_account")]
+            ),
+            pairs(&[("12345678", "BANK")])
+        );
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (value, label, category) in [
+                ("12345678", "bank_account", "BANK"),
+                ("7709999999", "tax_id", "TAX"),
+                ("2025550199", "phone_number", "PHONE"),
+            ] {
+                for amount in [
+                    "1000.00",
+                    "714157,31",
+                    "350 dollars.",
+                    "$350",
+                    "350 (триста пятьдесят) рублей.",
+                ] {
+                    let source = format!("{value}{gap}{amount}");
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+                // A currency in the previous column is not this value's cue.
+                let source = format!("350 dollars{gap}{value}");
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    /// An identifier label exempts its own value, not the next column (#547).
+    #[test]
+    fn amount_label_exemptions_end_at_column_gaps() {
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (prefix, value, amount, fragment, label, category) in [
+                (
+                    "Bank account: ",
+                    "12345678",
+                    "350 dollars.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "ИНН ",
+                    "7709999999",
+                    "714157,31 руб.",
+                    "714157",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Tax ID: ",
+                    "999991111",
+                    "350 dollars.",
+                    "350",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Счёт: ",
+                    "12345678",
+                    "350 руб.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "Phone: ",
+                    "2025550199",
+                    "350 dollars.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+                (
+                    "Телефон: ",
+                    "79990000123",
+                    "350 руб.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+            ] {
+                let source = format!("{prefix}{value}{gap}{amount}");
+                assert_eq!(
+                    shown(&source, &[(value, label), (fragment, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+            // Twenty digits in separate columns do not make one bank account.
+            let source = format!("12345678{gap}123456789012 dollars.");
+            assert_eq!(
+                shown(
+                    &source,
+                    &[
+                        ("12345678", "bank_account"),
+                        ("123456789012", "bank_account")
+                    ]
+                ),
+                pairs(&[("12345678", "BANK")]),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// No amount cue means no reason to discard an identifier. Labels and
+    /// twenty-digit accounts win even with monetary context beside them.
+    #[test]
+    fn amount_guards_keep_identifiers_and_names() {
+        for (source, value, label, category) in [
+            // Single-space OCR columns must not join identifiers to money.
+            (
+                "Иванов И.И. 770912345678 15 000 руб.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ООО «Ромашка» 7709999999 1 000,00",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            ("Сумма 1 000,00 7709999999", "7709999999", "tax_id", "TAX"),
+            (
+                "Петров П.П. 8 916 123 45 67 1 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Карта 4276 3801 2345 6789 500 руб.",
+                "4276 3801 2345 6789",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Сумма 1 000,00 4081781009991000431",
+                "4081781009991000431",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Паспорт 4506 123456 01.02.2020",
+                "4506 123456",
+                "tax_id",
+                "TAX",
+            ),
+            ("770912345678 01.02.2020", "770912345678", "tax_id", "TAX"),
+            (
+                "Взыскать 500 руб. 7709999999",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Оплачено 500 руб. 8 916 123 45 67",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 0199 $500",
+                "202 555 0199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Call 020 7946 0958 £0.10",
+                "020 7946 0958",
+                "phone_number",
+                "PHONE",
+            ),
+            ("SSN 123 45 6789 $500", "123 45 6789", "tax_id", "TAX"),
+            ("UTR 12345 67890 £500", "12345 67890", "tax_id", "TAX"),
+            (
+                "IBAN DE89 3704 0044 0532 0130 00 € 500",
+                "3704 0044 0532 0130 00",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 8 916 123 45 67 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 $500",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            // Working labels in the review remain working beside money.
+            (
+                "тел. 8 (495) 123-45-67 500 руб.",
+                "8 (495) 123-45-67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Account No. 12 345 678 $500",
+                "12 345 678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "р/с 40702810900000004711 500 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone 202.555.0199 $500",
+                "202.555.0199",
+                "phone_number",
+                "PHONE",
+            ),
+            // Dates with a decimal-looking prefix are not amount evidence.
+            ("770912345678 01.02,2020", "770912345678", "tax_id", "TAX"),
+            // Written-out amounts have the same integer boundaries.
+            (
+                "770912345678 500 (пятьсот) рублей.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
+            ("Номер: 164 353 783.", "164 353 783", "tax_id", "TAX"),
+            ("Номер: 942838 306.", "942838 306", "bank_account", "BANK"),
+            (
+                "Номер: 0321 448 312.",
+                "0321 448 312",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Номер: 1 199999 (основной) рублей не содержит.",
+                "1 199999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Счёт: 40702810900000004711 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "40702 810 9 0000 0004711 руб.",
+                "40702 810 9 0000 0004711",
+                "bank_account",
+                "BANK",
+            ),
+            ("ИНН 7709999999,02 руб.", "7709999999", "tax_id", "TAX"),
+            ("ОГРН 1199900000011 руб.", "1199900000011", "tax_id", "TAX"),
+            ("КПП 779901001 руб.", "779901001", "tax_id", "TAX"),
+            ("БИК 049999999 руб.", "049999999", "bank_account", "BANK"),
+            ("account: 12345.67.", "12345.67", "bank_account", "BANK"),
+            ("Счёт: 12345.67 руб.", "12345.67", "bank_account", "BANK"),
+            (
+                "Телефон: 79990000123 руб.",
+                "79990000123",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Phone: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Bank account: 12345678 dollars.",
+                "12345678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Tax ID: 999991111,02 dollars.",
+                "999991111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Tax ID: 999 991 111 dollars.",
+                "999 991 111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Bank account: 1234 5678 dollars.",
+                "1234 5678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone: +1 (202) 555-0199 dollars.",
+                "+1 (202) 555-0199",
+                "phone_number",
+                "PHONE",
+            ),
+            ("ИНН 770 999 9999 руб.", "770 999 9999", "tax_id", "TAX"),
+            ("Счёт: 1234 5678 руб.", "1234 5678", "bank_account", "BANK"),
+            (
+                "Телефон: +7 (999) 555-01-23 руб.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "ИНН 7709999999; остаток 714157,31 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Остаток 714157,31 руб.; БИК 049999999.",
+                "049999999",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Остаток 714157,31 руб.; телефон +7 (999) 555-01-23.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "1 199999 рублей перечислены ООО «Кедровый бор».",
+                "ООО «Кедровый бор»",
+                "organization",
+                "ORG",
+            ),
+            (
+                "£350 million paid to Maren Quill.",
+                "Maren Quill",
+                "person",
+                "PERSON",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                [(value.into(), category.into())],
+                "{source}"
+            );
+        }
+    }
+
+    /// A total label cannot establish where an OCR column ends (#547, round 2 P1).
+    #[test]
+    fn amount_totals_keep_the_next_columns_identifiers() {
+        for gap in [" ", "  ", "\t"] {
+            for (header, value, label, category) in [
+                ("Сумма  КПП", "770 901 001", "tax_id", "TAX"),
+                ("Сумма  Routing", "021 000 021", "bank_account", "BANK"),
+            ] {
+                for source in [
+                    format!("{header}\nИтого 500{gap}{value}"),
+                    format!("Итого 500{gap}{value}"),
+                ] {
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Grouped identifiers cannot borrow a neighbour's amount cue (#547, round 2 P1).
+    #[test]
+    fn amount_guards_keep_grouped_identifiers_beside_money() {
+        for (value, label, category) in [
+            ("770 901 001", "tax_id", "TAX"),
+            ("1 199 900 000 011", "tax_id", "TAX"),
+            ("021 000 021", "bank_account", "BANK"),
+            ("202 555 019", "phone_number", "PHONE"),
+        ] {
+            for source in [
+                format!("{value} 500 руб."),
+                format!("500 руб. {value}"),
+                format!("$500 {value}"),
+                format!("{value} 500,00"),
+                format!("{value} 500.00"),
+                format!("{value} 500 (пятьсот) рублей."),
+                format!("{value} 500 €"),
+            ] {
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+        // The review's literal OCR rows have header labels on another line.
+        for (source, value) in [
+            (
+                "Организация  КПП  Сумма\nООО «Ромашка» 770 901 001 500 руб.",
+                "770 901 001",
+            ),
+            (
+                "Организация  ОГРН  Сумма\nООО «Ромашка» 1 199 900 000 011 500 руб.",
+                "1 199 900 000 011",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, "tax_id")]),
+                pairs(&[(value, "TAX")])
+            );
+        }
+    }
+
+    /// Multiword and slash-spaced labels protect only their values (#547, round 2 P2).
+    #[test]
+    fn amount_guards_keep_multiword_and_paired_labels() {
+        for (source, value, label, category) in [
+            (
+                "Routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Mobile number: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+            // Neither a later amount in prose nor another table column is exempt.
+            for separator in ["; paid ", "  ", "\t"] {
+                let source = format!("{source}{separator}714157,31");
+                assert_eq!(
+                    shown(&source, &[(value, label), ("714157", label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    /// Labels win even when the identifier itself has an amount's shape.
+    #[test]
+    fn amount_guards_keep_additional_labelled_values() {
+        for (source, value, label, category) in [
+            // Existing conservative account-label exception, acknowledged in review.
+            ("на счёт 500 руб.", "500", "bank_account", "BANK"),
+            (
+                "ИНН/КПП 7709999999/770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "сот. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "мобильный: 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Cell: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            ("SSN 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("UTR 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("Паспорт 4506 123456 руб.", "4506 123456", "tax_id", "TAX"),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Context searches stay local and preserve UTF-8 boundaries on long OCR lines.
+    #[test]
+    fn amount_guards_use_bounded_context() {
+        for (value, label, category) in [
+            ("7709999999", "tax_id", "TAX"),
+            ("12345678", "bank_account", "BANK"),
+            ("2025550199", "phone_number", "PHONE"),
+        ] {
+            let source = format!(
+                "{} {value} 500 руб. {}",
+                "ё ".repeat(1000),
+                "ё ".repeat(1000)
+            );
+            assert_eq!(
+                shown(&source, &[(value, label), ("500", label)]),
+                pairs(&[(value, category)])
+            );
+        }
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            # Distant context is insufficient to discard a possible identifier.
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['price: .*\d+ units']
+        "#,
+        )])
+        .unwrap();
+        let source = format!("price: {} 123 units", "ё ".repeat(1000));
+        let at = source.find("123").unwrap();
+        assert!(pack.identifying_at(&source, at..at + 3, "123", Category::Tax));
+    }
+
+    /// The contextual shape extension uses the pack's existing match
+    /// boundaries and validates its regexes just like span patterns.
+    #[test]
+    fn contextual_shapes_have_bounded_ranges_and_checked_patterns() {
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['(?P<lead>price: )\d+(?P<tail> units)']
+        "#,
+        )])
+        .unwrap();
+        let source = "price: 123 units; 456";
+        assert!(!pack.identifying_at(source, 7..10, "123", Category::Tax));
+        assert!(pack.identifying_at(source, 18..21, "456", Category::Tax));
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid = ['^666$']
+            forbid_in = ['\d+ units']
+            unless_in = ['ID: \d+ units']
+        "#,
+        )])
+        .unwrap();
+        assert!(pack.identifying_at("ID: 123 units", 4..7, "123", Category::Tax));
+        assert!(!pack.identifying_at("ID: 666 units", 4..7, "666", Category::Tax));
+        for field in ["forbid_in", "unless_in"] {
+            for pattern in ["x*", "(", "(?P<unknown>x)"] {
+                let toml = format!("[[shape]]\ncategory = 'TAX'\n{field} = ['{pattern}']");
+                assert!(Pack::load(&[("test", &toml)]).is_err(), "{toml}");
+            }
+        }
+    }
+
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
@@ -9594,6 +11257,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "punctuation only",
             ),
             ("[[span]]\ncategory = \"ORG\"\nextend = ['(']", "span #1"),
+            (
+                "[[span]]\ncategory = \"BANK\"\nlist_letter = true",
+                "only PERSON or ORG",
+            ),
             ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
             (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nparts = { street = 'x' }",
@@ -9642,6 +11309,22 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[reference]]\npattern = 'x*'",
                 "reference #1: the pattern matches an empty span",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\ncategories = ['PERSON']",
+                "categories needs when",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\nwhen = ['x']",
+                "when needs categories",
+            ),
+            (
+                "[[reference]]\npattern = 'x'\nwhen = ['x']\ncategories = ['PERSON']",
+                "need a series group",
+            ),
+            (
+                "[[reference]]\npattern = '(?P<series>C)'\nwhen = ['(?P<series>C)']\ncategories = ['NAME']",
+                "unknown category",
             ),
             (
                 "[[reference]]\npattern = '\\d+'\nparts = { code = 'x' }",
