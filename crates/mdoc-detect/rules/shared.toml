@@ -34,9 +34,18 @@
 #                                it (a caption's "No.")
 #   after          = true        the labels follow the value instead ("a
 #                                March 9, 1984 birth date"): `between` is
-#                                what sits after the value, the value starts
-#                                a word, and a table column never takes
-#                                such a label; no line_start or unless_after
+#                                what sits after the value; the labels are
+#                                lowercase and match as written, a space in
+#                                one only spaces on its line; the value
+#                                starts after a space, a quote or a bracket;
+#                                a table column never takes such a label; no
+#                                line_start or unless_after. The review
+#                                counts a date's repeats before the same
+#                                label (mdoc-pii `Cue::After`). With it:
+#   only_after     = [word…]     one of these words just before the value
+#                                ("a", "his"); "'s" is any possessive
+#   follow         = regex       what must follow the label ("." after
+#                                "г.р"; punctuation, not a noun)
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an

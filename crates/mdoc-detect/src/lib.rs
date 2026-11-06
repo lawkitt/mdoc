@@ -747,6 +747,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             })
         })
         .collect();
+    trim_at_birth_dates(source, &view, &mut detections, &rules);
     detections.extend(rules);
     detections.extend(addresses);
     // A model span a match holds as its own part ("Harrow House" of an
@@ -778,6 +779,60 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     detections.extend(spans);
     detections
+}
+
+/// A model span running into a date of birth a label proposed keeps its
+/// part on the side away from the label (#363): "Иванов Иван Иванович" of
+/// "Иванов Иван Иванович, 01.01.1980" before "года рождения", "IVANOV,
+/// Ivan" of "61 IVANOV, Ivan" after "DOB 3 Jun". The review takes the date
+/// over any span it overlaps, which would drop the whole name. The part
+/// stays when it is still of its category's shape; else, or when the label
+/// side's part is all there is ("Иванов, дата рождения" of a span to the
+/// date), the span stays as it was, for the review to drop.
+fn trim_at_birth_dates(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    detections: &mut [Detection],
+    rules: &[Detection],
+) {
+    let dates: Vec<(&Range<usize>, bool)> = rules
+        .iter()
+        .filter(|rule| rule.category == Category::Date)
+        .filter_map(|rule| match rule.recognizer {
+            mdoc_pii::Recognizer::Context => Some((&rule.range, false)),
+            mdoc_pii::Recognizer::ContextAfter => Some((&rule.range, true)),
+            _ => None,
+        })
+        .collect();
+    // Spaces and the punctuation that joins a name to a date: "Иванов,
+    // 01.01.1980", "ФИО2 (14 марта"; an initial's dot stays ("П. П.").
+    let joint = |c: char| c.is_whitespace() || ",;:(–—-".contains(c);
+    for detection in detections
+        .iter_mut()
+        .filter(|d| d.recognizer == mdoc_pii::Recognizer::Model && d.category != Category::Date)
+    {
+        let range = detection.range.clone();
+        let Some((date, label_after)) = dates.iter().find(|(date, _)| {
+            date.start < range.end
+                && range.start < date.end
+                && (range.start < date.start || date.end < range.end)
+        }) else {
+            continue;
+        };
+        let part = if *label_after {
+            let before = &source[range.start..date.start.max(range.start)];
+            range.start..range.start + before.trim_end_matches(joint).len()
+        } else {
+            let after = &source[date.end.min(range.end)..range.end];
+            range.end - after.trim_start_matches(joint).len()..range.end
+        };
+        let text = &view.text[view.view_range(part.clone())];
+        if !part.is_empty()
+            && rules::pack().identifying_at(source, part.clone(), text, detection.category)
+        {
+            detection.range = part;
+        }
+    }
 }
 
 /// Each labelled case number's mentions in `source` in another letter case,

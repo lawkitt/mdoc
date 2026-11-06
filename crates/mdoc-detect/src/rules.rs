@@ -238,6 +238,15 @@ struct ContextEntry {
     /// `between` after the value; the value starts a word.
     #[serde(default)]
     after: bool,
+    /// With `after`: words one of which must sit just before the value ("a
+    /// March 9, 1984 birth date"); `'s` stands for any possessive ("the
+    /// claimant's"). Empty, and any word may.
+    #[serde(default)]
+    only_after: Vec<String>,
+    /// With `after`: what must follow the label ("." after "г.р"; the end of
+    /// a phrase, not a noun of a longer one: "birth date records").
+    #[serde(default)]
+    follow: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -852,6 +861,10 @@ struct Context {
     line_start: bool,
     /// The labels follow the value; the pattern starts with it.
     after: bool,
+    /// Words one of which sits just before a value its `after` label takes.
+    only_after: Vec<String>,
+    /// What follows an `after` label, anchored at its end.
+    follow: Option<Regex>,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1285,7 +1298,9 @@ impl Pack {
                         "{label:?} must start and end with a letter or digit"
                     )));
                 }
-                // Spaces in a label match any run of whitespace.
+                // Spaces in a label match any run of whitespace; after its
+                // value, only spaces on its line ("г. р", not "г.\nР").
+                let space = if entry.after { r"[\p{Zs}\t]+" } else { r"\s+" };
                 let labels: Vec<String> = entry
                     .labels
                     .iter()
@@ -1294,7 +1309,7 @@ impl Pack {
                             .split_whitespace()
                             .map(regex::escape)
                             .collect::<Vec<_>>()
-                            .join(r"\s+")
+                            .join(space)
                     })
                     .collect();
                 if entry.after && (entry.line_start || !entry.unless_after.is_empty()) {
@@ -1302,12 +1317,27 @@ impl Pack {
                         "a label after its value takes no line_start or unless_after".into(),
                     ));
                 }
+                if !entry.after && (!entry.only_after.is_empty() || entry.follow.is_some()) {
+                    return Err(at(
+                        "only a label after its value takes only_after or follow".into(),
+                    ));
+                }
+                if let Some(label) = entry
+                    .labels
+                    .iter()
+                    .find(|label| entry.after && **label != label.to_lowercase())
+                {
+                    return Err(at(format!("{label:?} after its value must be lowercase")));
+                }
                 let pattern = if entry.after {
-                    // The value, what sits after it, then a whole label;
-                    // case is ignored in the label only. Where the value
-                    // starts and ends is checked after matching.
+                    // The value, what sits after it, then a label, its case
+                    // as written: a capitalised one opens a field of its own
+                    // ("Signed 12 March 2026 Date of birth: …", "12.03.2026
+                    // г. Р.А. Иванов"). Where the value starts and ends,
+                    // and what is before it and after the label, is checked
+                    // after matching.
                     format!(
-                        r"((?:{}))(?:{})(?i:\b(?:{})\b)",
+                        r"((?:{}))(?:{})\b(?:{})\b",
                         rust_classes(&entry.value),
                         rust_classes(&entry.between),
                         labels.join("|"),
@@ -1338,6 +1368,20 @@ impl Pack {
                 }) {
                     return Err(at(format!("{word:?} is not one lowercase word")));
                 }
+                if let Some(word) = entry.only_after.iter().find(|word| {
+                    *word != "'s"
+                        && (word.is_empty()
+                            || *word != &word.to_lowercase()
+                            || !word.chars().all(char::is_alphanumeric))
+                }) {
+                    return Err(at(format!("{word:?} is not one lowercase word or 's")));
+                }
+                let follow = entry
+                    .follow
+                    .as_ref()
+                    .map(|follow| Regex::new(&format!("^(?:{})", rust_classes(follow))))
+                    .transpose()
+                    .map_err(|e| at(e.to_string()))?;
                 let unless_guessed = entry
                     .unless_guessed
                     .iter()
@@ -1371,6 +1415,8 @@ impl Pack {
                     only_guessed,
                     line_start: entry.line_start,
                     after: entry.after,
+                    only_after: entry.only_after.clone(),
+                    follow,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -3445,13 +3491,51 @@ impl Pack {
                         .chars()
                         .next()
                         .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                    // A value before its label starts a word ("23 March",
-                    // not "123 March").
+                    // A value before its label starts after a space, a
+                    // quote or a bracket: "23 March", not "123 March", nor
+                    // a number's tail ("AB-12/04/1979", "No.12/04/1979").
                     let starts = !context.after
-                        || !source[..value.start()]
+                        || source[..value.start()]
                             .chars()
                             .next_back()
-                            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                            .is_none_or(|c| c.is_whitespace() || "([«\"'“‘„".contains(c));
+                    // A word `only_after` lists just before it, on its line
+                    // or the one above ("a March 9, 1984 birth date"; a
+                    // possessive for "'s": "the claimant's").
+                    let led = context.only_after.is_empty() || {
+                        let text = &source[..value.start()];
+                        let text = text.trim_end_matches([' ', '\t', '\u{a0}']);
+                        let text = text.strip_suffix('\n').unwrap_or(text);
+                        let text = text.strip_suffix('\r').unwrap_or(text);
+                        let text = text.trim_end_matches([' ', '\t', '\u{a0}']);
+                        let word = &text[text
+                            .trim_end_matches(|c: char| c.is_alphanumeric() || "'’".contains(c))
+                            .len()..];
+                        let word = word.to_lowercase();
+                        context.only_after.contains(&word)
+                            || (context.only_after.iter().any(|w| w == "'s")
+                                && word.chars().count() > 2
+                                && (word.ends_with("'s") || word.ends_with("’s")))
+                    };
+                    // What follows an `after` label: "г.р." closes with a
+                    // dot, "birth date" ends its phrase.
+                    let followed = context.follow.as_ref().is_none_or(|follow| {
+                        found
+                            .get(0)
+                            .is_some_and(|whole| follow.is_match(&source[whole.end()..]))
+                    });
+                    // A date wrapped at a line break before its label ends
+                    // its line, or punctuation follows it: "born March
+                    // 9,\n1984, in Zenda", never the next line's number
+                    // ("4 July\n1600 Pennsylvania Avenue") or words ("14
+                    // March\n2026 hearing listed").
+                    let wrapped = context.after
+                        || !value.as_str().contains('\n')
+                        || source[value.end()..]
+                            .trim_start_matches([' ', '\t', '\u{a0}'])
+                            .chars()
+                            .next()
+                            .is_none_or(|c| "\r\n.,;:)]»\"'”’".contains(c));
                     let start = found.get(0)?.start();
                     let before = source[..start]
                         .trim_end()
@@ -3485,6 +3569,9 @@ impl Pack {
                         && back.next().is_some_and(char::is_alphabetic);
                     if !ends
                         || !starts
+                        || !led
+                        || !followed
+                        || !wrapped
                         || inside
                         || context.unless_after.contains(&before)
                         || (context.line_start && !opens())
@@ -3496,7 +3583,13 @@ impl Pack {
                         range: value.range(),
                         category: context.category,
                         score: CONTEXT_SCORE,
-                        recognizer: Recognizer::Context,
+                        // The review limits a date of birth's repeats by the
+                        // label on the same side (#466, #363).
+                        recognizer: if context.after {
+                            Recognizer::ContextAfter
+                        } else {
+                            Recognizer::Context
+                        },
                     })
                 })
             })
@@ -8679,6 +8772,38 @@ Privacy Act (“BIPA”). BIPA applies.",
             ("Петров П. П., 14 марта 1988 г.р., паспорт", "14 марта 1988"),
             ("Сидоров С. С. (01.02.1990 г. р.)", "01.02.1990"),
             ("Орлова О. О., 01.02.1990 г.р.", "01.02.1990"),
+            ("Иванов И. И., 01.01.1980 г.р., проживает", "01.01.1980"),
+            ("Иванов И. И., 1 января 1980 г. рождения", "1 января 1980"),
+            ("He gave a March 9, 1984 date of birth.", "March 9, 1984"),
+            ("He gave a 9 March 1984 date-of-birth.", "9 March 1984"),
+            ("He gave a March 9, 1984 birthdate.", "March 9, 1984"),
+            ("the claimant's 12/04/1979 date of birth", "12/04/1979"),
+            (
+                "the visa form records a 12/04/1979 date of birth for his brother",
+                "12/04/1979",
+            ),
+            ("DOB 03-Jun-61; POB Zenda.", "03-Jun-61"),
+            ("DOB 03-Jun-1961; POB Zenda.", "03-Jun-1961"),
+            ("Birthdate: 03/04/1980", "03/04/1980"),
+            // A capitalised label opens the next field, and only its own
+            // value is a date of birth (#363 review P1-2).
+            (
+                "Date of issue 01/02/2020 Date of birth 03/04/1980",
+                "03/04/1980",
+            ),
+            (
+                "Date of death: 12 March 2020 Date of birth: 1 January 1950",
+                "1 January 1950",
+            ),
+            (
+                "Passport issued 14 March 2015  date of birth  3 June 1961",
+                "3 June 1961",
+            ),
+            ("Hearing date 3 Jun 26 Date of birth 3 Jun 61", "3 Jun 61"),
+            (
+                "| Issued | 01/02/2020 Date of birth 03/04/1980 |",
+                "03/04/1980",
+            ),
         ] {
             assert_eq!(dates(source), [date], "{source:?}");
         }
@@ -8697,8 +8822,146 @@ Privacy Act (“BIPA”). BIPA applies.",
             "Иванов И. И., 1980 года рождения",
             "свидетельство о рождении от 01.01.1980 выдано",
             "решение от 01.01.2026 г. вступило в силу",
+            // A label after a date: lowercase, an article or a possessive
+            // before the date, and the phrase ends with it (review P1-2).
+            "Signed 12 March 2026 Date of birth: unknown",
+            "On 12 March 2026 date of birth evidence was filed.",
+            "By 1 March 2026 birth date records must be corrected.",
+            "the court's 12 March 2026 birth date correction order",
+            "He gave a 12 March 2026 date of birth: unknown",
+            "3 June 1961 date of birth",
+            // «г.р.» lowercase, its dots written, on the date's line: no
+            // initial after «г.» and no account (review P2-1).
+            "Решением суда от 12.03.2026 г. Р.А. Иванову отказано.",
+            "Дата: 12.03.2026 г.\nР. А. Иванов",
+            "12.03.2026 г.                Р.А. Иванов",
+            "договор от 01.02.2020 Г.Р. Петровой подписан",
+            "оплачено 01.02.2020 г. р/с 40702810000000000001",
+            // A wrapped year ends its line or punctuation follows (review
+            // P2-3).
+            "Date of birth: 14 March\n2026 hearing listed.",
+            "born on March 9,\n2019 the claimant moved.",
+            // A number's tail is no date of its own (review P3).
+            "Passport AB-12/04/1979 date of birth unknown",
+            "Passport No. 12/04/1979 date of birth",
         ] {
             assert!(dates(source).is_empty(), "{source:?}: {:?}", dates(source));
+        }
+    }
+
+    /// #363 review P1-1: a date before its label marks its repeats only
+    /// before the same label; the date of a hearing, a decision or a
+    /// contract that repeats it stays, and so does one at a paragraph's
+    /// start. Each source's DATE spans, by where they start.
+    #[test]
+    fn a_date_before_its_label_repeats_only_before_that_label() {
+        let dates = |source: &str| -> Vec<usize> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "DATE")
+                .map(|span| span.range.start)
+                .collect()
+        };
+        let nth = |source: &str, value: &str, n: usize| -> usize {
+            source.match_indices(value).nth(n).unwrap().0
+        };
+        for source in [
+            "Решение от 12.03.2026 вынесено. Заседание 12.03.2026 окончено.\n\n12.03.2026 г.     Р.А. Иванов",
+            "The hearing of 3 June 1961 was adjourned to 3 June 1961 at noon.\n\n3 June 1961 date of birth",
+            "по договору от 12.03.2026 г. Р.А. Иванов передал. Иск подан по договору от 12.03.2026 и принят.",
+        ] {
+            assert!(dates(source).is_empty(), "{source:?}: {:?}", dates(source));
+        }
+        let source = "He gave a 12 March 1984 birth date. He gave a 12 March 1984 address too.";
+        assert_eq!(dates(source), [nth(source, "12 March 1984", 0)]);
+        let source = "Иванов И. И., 01.01.1980 года рождения. Договор займа от 01.01.1980 подписан.\n\n01.01.1980 г. Иванов";
+        assert_eq!(dates(source), [nth(source, "01.01.1980", 0)]);
+        // The same label after a repeat: the same date of birth, even where
+        // the rule itself would not take it (no article before it).
+        let source = "He gave a 12 March 1984 birth date. 12 March 1984 birth date, he said.";
+        let both = [
+            nth(source, "12 March 1984", 0),
+            nth(source, "12 March 1984", 1),
+        ];
+        assert_eq!(dates(source), both);
+        let source = "Иванов И. И., 01.01.1980 г.р. Иск Иванова (01.01.1980 г. р.) удовлетворён.";
+        let both = [nth(source, "01.01.1980", 0), nth(source, "01.01.1980", 1)];
+        assert_eq!(dates(source), both);
+    }
+
+    /// #363 review P2-2, P2-3 and P3: a model's name or address beside a
+    /// labelled date keeps its own words, its part away from the label; a
+    /// wrapped year never takes the next line's house number; a passport
+    /// number stays whole.
+    #[test]
+    fn names_and_addresses_beside_a_date_of_birth_stay() {
+        for (source, raw, expected) in [
+            (
+                "Иванов Иван Иванович, 01.01.1980 года рождения",
+                &[("Иванов Иван Иванович, 01.01.1980", "person")][..],
+                &[("Иванов Иван Иванович", "PERSON"), ("01.01.1980", "DATE")][..],
+            ),
+            (
+                "Ответчик Петров П. П., 14 марта 1988 г.р.",
+                &[("Петров П. П., 14", "person")],
+                &[("Петров П. П.", "PERSON"), ("14 марта 1988", "DATE")],
+            ),
+            (
+                "DOB 3 Jun 61 IVANOV, Ivan",
+                &[("61 IVANOV, Ivan", "person")],
+                &[("3 Jun 61", "DATE"), ("IVANOV, Ivan", "PERSON")],
+            ),
+            (
+                "DOB 3 Jun 1961 Ivo Harrow",
+                &[("1961 Ivo Harrow", "person")],
+                &[("3 Jun 1961", "DATE"), ("Ivo Harrow", "PERSON")],
+            ),
+            // No article before the date: no date of birth, the name as
+            // the model gave it.
+            (
+                "Ivanov Ivan 3 Jun 61 birth date",
+                &[("Ivanov Ivan 3", "person")],
+                &[("Ivanov Ivan 3", "PERSON")],
+            ),
+            (
+                "He gave a March 9,\n1984 birth date. Ivo Harrow signed.",
+                &[("Ivo Harrow", "person")],
+                &[("March 9,\n1984", "DATE"), ("Ivo Harrow", "PERSON")],
+            ),
+            (
+                "Date of birth: 4 July\n1600 Pennsylvania Avenue NW, Washington",
+                &[("1600 Pennsylvania Avenue NW, Washington", "address")],
+                &[("1600 Pennsylvania Avenue NW, Washington", "ADDRESS")],
+            ),
+            (
+                "Date of birth: March 9,\n1984 Harrow Road, Zenda",
+                &[("1984 Harrow Road, Zenda", "address")],
+                &[("1984 Harrow Road, Zenda", "ADDRESS")],
+            ),
+            (
+                "Ivo Harrow, born March 9,\n1984 Harrow Road, Zenda",
+                &[
+                    ("Ivo Harrow", "person"),
+                    ("1984 Harrow Road, Zenda", "address"),
+                ],
+                &[
+                    ("Ivo Harrow", "PERSON"),
+                    ("1984 Harrow Road, Zenda", "ADDRESS"),
+                ],
+            ),
+            (
+                "Passport AB-12/04/1979 date of birth unknown",
+                &[("AB-12/04/1979", "passport_number")],
+                &[("AB-12/04/1979", "IDENTITY")],
+            ),
+            (
+                "Passport No. 12/04/1979 date of birth",
+                &[("12/04/1979", "passport_number")],
+                &[("12/04/1979", "IDENTITY")],
+            ),
+        ] {
+            assert_eq!(shown(source, raw), pairs(expected), "{source:?}");
         }
     }
 
@@ -13446,6 +13709,18 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nline_start = true\nbetween = ' '\nvalue = '\\d{4}'",
                 "no line_start or unless_after",
+            ),
+            (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"dob\"]\nfollow = '\\.'\nbetween = ' '\nvalue = '\\d{4}'",
+                "only a label after its value takes only_after or follow",
+            ),
+            (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"Birth date\"]\nafter = true\nbetween = ' '\nvalue = '\\d{4}'",
+                "after its value must be lowercase",
+            ),
+            (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nonly_after = [\"The\"]\nbetween = ' '\nvalue = '\\d{4}'",
+                "is not one lowercase word or 's",
             ),
             (
                 "[[never]]\nmatch = \"plural\"\nwords = [\"Ms\"]",

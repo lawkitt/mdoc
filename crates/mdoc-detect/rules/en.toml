@@ -1021,13 +1021,15 @@ forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
 # Dates with an English month name: "12 March 2026" (a Russian "г." after
 # the year still counts) and "March 12, 2026"; and a day, a month or its
 # short form and a two- or four-digit year, as a sanctions list gives a
-# date of birth ("3 Jun 61", "3 Sept. 1961"; #363).
+# date of birth ("3 Jun 61", "3 Sept. 1961"; #363), its parts joined by
+# hyphens too ("03-Jun-61", "03-Jun-1961").
 [[shape]]
 category = "DATE"
 guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
     '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
     '(?i)\s*\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(?:\d{2}|\d{4})\s*',
+    '(?i)\s*\d{1,2}-(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)-(?:\d{2}|\d{4})\s*',
 ]
 
 # Claim and case numbers after their label (ADR 0092): "Claim No.
@@ -1378,27 +1380,44 @@ last_word_of = ["ORG"]
 # DATE guesses take. The label may be in the cell before or on the line
 # before ("| DOB | 14/03/1988 |", "DOB:" then the date on its own line).
 # A sanctions list's year may have two digits ("DOB 3 Jun 61", "DOB:
-# 03/06/61"; #363), only after a space. A date with a month name may wrap
-# at one line break between its words ("March 9,\n1984"); never over a
-# blank line, which the review keeps as two paragraphs.
+# 03/06/61"; #363), only after a space, and its parts may be joined by
+# hyphens ("DOB 03-Jun-61"). A date with a month name may wrap at one line
+# break between its words ("March 9,\n1984") when its line ends there or
+# punctuation follows ("born March 9,\n1984, in Zenda"), so the next line's
+# house number or words are not its year ("4 July\n1600 Pennsylvania
+# Avenue"); never over a blank line, which the review keeps as two
+# paragraphs.
 [[context]]
 category = "DATE"
-labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
+labels = ["born", "dob", "d.o.b", "date of birth", "date-of-birth", "birth date", "birthdate"]
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
-value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}-\p{Alphabetic}+-(?:\d{4}|\d{2})|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
 only_guessed = ["DATE"]
 
-# The same dates before "birth date" or "date of birth" (#363): "He gave a
-# March 9, 1984 birth date", "03/06/1961 date of birth", the date wrapped
-# as above. Only spaces sit between the date and the label, so a date that
-# ends a sentence or a cell ("Signed 12 March 2026. Date of birth: …") is
-# no birth date, and a bare "birth" ("birth certificate") is no label.
+# The same dates before a lowercase "birth date" or "date of birth" in a
+# sentence (#363): "He gave a March 9, 1984 birth date", "records a
+# 12/04/1979 date of birth for his brother", the date wrapped as above.
+# - Only spaces sit between the date and the label, so a date that ends a
+#   sentence or a cell ("Signed 12 March 2026. Date of birth: …") is no
+#   birth date, and a bare "birth" ("birth certificate") is no label.
+# - The label is lowercase: a capitalised one opens the next field
+#   ("Date of issue 01/02/2020 Date of birth 03/04/1980").
+# - An article or a possessive stands just before the date, as before a
+#   noun's description ("a", "his", "the claimant's"); after "issued",
+#   "On", "By" or "No." the date is another's ("On 12 March 2026 date of
+#   birth evidence was filed").
+# - The phrase ends with the label: punctuation, the end of the line or a
+#   joining word follows, never a value ("date of birth 3 June 1961"), a
+#   colon or a cell's bar ("date of birth: …") or a noun the label
+#   describes ("birth date correction order", "birth date records").
 [[context]]
 category = "DATE"
-labels = ["date of birth", "birth date"]
+labels = ["date of birth", "date-of-birth", "birth date", "birthdate"]
 after = true
 between = '[\p{Zs}\t]+'
-value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+only_after = ["a", "an", "the", "his", "her", "their", "its", "my", "your", "our", "'s"]
+follow = '[\p{Zs}\t]*(?:$|[\r\n.,;)\]»"”’]|(?:and|or|but|for|of|in|on|at|to|as|by|from|with|which|that|is|was|too|also|when|while)\b)'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}-\p{Alphabetic}+-(?:\d{4}|\d{2})|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
 only_guessed = ["DATE"]
 
 # English-speaking courts, public bodies, laws and legal databases are never

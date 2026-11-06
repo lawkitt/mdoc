@@ -31,9 +31,9 @@ pub struct DiscoveryInput {
     pub(super) url: Vec<bool>,
     /// URLs and emails match exact source bytes only, never decoded text.
     pub(super) raw_only: Vec<bool>,
-    /// Dates of birth: a mention counts only after one of its cue words
-    /// ([`cue_before`]); `None` counts every mention.
-    pub(super) cues: Vec<Option<Vec<String>>>,
+    /// Dates of birth: a mention counts only beside one of its cue words
+    /// ([`Cue`]); `None` counts every mention.
+    pub(super) cues: Vec<Option<Vec<Cue>>>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -178,7 +178,7 @@ impl DiscoveryInput {
                 && !(self.whole[*index] && !whole_value(source, range))
                 && self.cues[*index]
                     .as_ref()
-                    .is_none_or(|cues| cues.contains(&cue_before(source, range.start)))
+                    .is_none_or(|cues| cues.iter().any(|cue| cue.labels(source, range)))
         });
         // A hit inside a longer one never splits it, whatever its priority: a
         // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
@@ -227,6 +227,57 @@ impl DiscoveryInput {
             tokens,
         })
     }
+}
+
+/// What labels a date of birth: the label before it, as [`cue_before`]
+/// reads it (#466), or the one after it, as [`cue_after`] does, for a date
+/// a rule found before its label (#363).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Cue {
+    Before(String),
+    After(String),
+}
+
+impl Cue {
+    /// Whether the mention at `range` has this label on its side.
+    fn labels(&self, source: &str, range: &Range<usize>) -> bool {
+        match self {
+            Self::Before(cue) => *cue == cue_before(source, range.start),
+            Self::After(cue) => *cue == cue_after(source, range.end),
+        }
+    }
+}
+
+/// The label after a date that ends at `end` (#363), its case as written:
+/// past spaces on its line, two words ("birth date", "года рождения"), a
+/// third after "of" ("date of birth"). One letter and a dot join the next
+/// word ("г.р." and "г. р." are "г р"), and so does a hyphen
+/// ("date-of-birth"). Empty when a word does not follow on its line.
+pub(crate) fn cue_after(source: &str, end: usize) -> String {
+    let mut rest = source[end..].trim_start_matches([' ', '\t', '\u{a0}']);
+    let mut words: Vec<&str> = Vec::new();
+    loop {
+        let word = &rest[..rest.len() - rest.trim_start_matches(char::is_alphabetic).len()];
+        if word.is_empty() {
+            break;
+        }
+        words.push(word);
+        rest = &rest[word.len()..];
+        if words.len() == 3 || (words.len() == 2 && words[1] != "of") {
+            break;
+        }
+        let spaced = rest.trim_start_matches([' ', '\t', '\u{a0}']);
+        rest = if let Some(after) = rest.strip_prefix('-') {
+            after
+        } else if let Some(after) = rest.strip_prefix('.').filter(|_| word.chars().count() == 1) {
+            after.trim_start_matches([' ', '\t', '\u{a0}'])
+        } else if spaced.len() < rest.len() {
+            spaced
+        } else {
+            break;
+        };
+    }
+    words.join(" ")
 }
 
 /// What labels a date of birth at `start`, lowercase (#466): the header of
@@ -406,7 +457,32 @@ pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{cue_before, whole_value};
+    use super::{cue_after, cue_before, whole_value};
+
+    /// #363: the label after a date, its case kept, so "Date of birth:"
+    /// opening the next field is no "date of birth".
+    #[test]
+    fn a_cue_after_is_the_label_words_after_a_date() {
+        for (after, cue) in [
+            (" birth date.", "birth date"),
+            (" birth date records", "birth date"),
+            (" date of birth for", "date of birth"),
+            (" date-of-birth.", "date of birth"),
+            (" Date of birth: x", "Date of birth"),
+            (" birthdate and", "birthdate and"),
+            (" года рождения,", "года рождения"),
+            (" г.р., проживает", "г р"),
+            (" г. р.)", "г р"),
+            (" г.рождения", "г рождения"),
+            (" г.     Р.А. Иванов", "г Р"),
+            ("\nг.р.", ""),
+            (". Next", ""),
+            ("", ""),
+        ] {
+            let source = format!("01.01.1980{after}");
+            assert_eq!(cue_after(&source, "01.01.1980".len()), cue, "{source:?}");
+        }
+    }
 
     #[test]
     fn a_cue_is_a_dates_column_header_or_label() {
