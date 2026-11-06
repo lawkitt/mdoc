@@ -690,7 +690,8 @@ it is not the status itself.
   hit its own `timeout-minutes`, nor a summary job whose failing parts are
   all such jobs. Nor is a queue commit's hosted check that is missing once
   the commit's Queue run (found by its head SHA) has completed: its summary
-  job was never created (#635). The gate re-runs the run's failed jobs, at
+  job was never created (#635), unless one of its parts failed outright or
+  timed out, which fails it at once. The gate re-runs the run's failed jobs, at
   most twice a run (by its run attempt), and waits (also while a re-run's
   new job has replaced the failed one, and while the Queue run goes on);
   after that it fails, worded "no macOS runner, 3 attempts", "cancelled on

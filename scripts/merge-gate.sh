@@ -356,9 +356,10 @@ areas_of() { # [table-text]
 # `detection / ci/detection (2)` for `detection / ci/detection`,
 # `ci/ios-release` for `ci/ios`) are all such jobs; `superseded` when the
 # job is no longer among the latest (a re-run replaced it); else `result`.
-# A part that failed outright makes it a result.
-failure_kind() { # job-id
-  jq -r --argjson j "$1" '
+# A job that timed out itself, or a part that failed outright, makes it a
+# result.
+# shellcheck disable=SC2016 # jq variables, not shell ones
+jobs_defs='
     def caller: (capture("^(?<p>.* / )") // {p: ""}).p;
     def base: sub("^.* / "; "");
     def bad: .conclusion != null and .conclusion != "success" and .conclusion != "skipped";
@@ -372,9 +373,12 @@ failure_kind() { # job-id
         else "hosted" end;
     def kind: [.[] | select(cut)] as $cut
       | if ($cut | length) == 0 then "infra \(.[0] | os)"
-        else "cancelled \($cut[0] | os) \($cut | map(.id | tostring) | join(" "))" end;
+        else "cancelled \($cut[0] | os) \($cut | map(.id | tostring) | join(" "))" end;'
+failure_kind() { # job-id
+  jq -r --argjson j "$1" "$jobs_defs"'
     ([.jobs[] | select(.id == $j)] | first) as $job
     | if $job == null then "superseded"
+      elif $job.conclusion == "timed_out" then "result"
       else ($job.name | caller) as $c | ($job.name | base | sub(" \\(.*$"; "")) as $stem
         | [.jobs[] | select(.id != $j and (.name | caller) == $c and (.name | base | startswith($stem)) and bad)] as $parts
         | if ($job | never or cut) then
@@ -382,6 +386,18 @@ failure_kind() { # job-id
           elif ($parts | length) > 0 and all($parts[]; never or cut) then $parts | kind
           else "result" end
       end'
+}
+
+# The failing parts of a missing check $1 (`ci/ios`: `ios / ci/ios (tests)`,
+# `ios / ci/ios-release`) from a run's jobs JSON on stdin: `result <url>`
+# when one failed outright or timed out, else `cut <job-id>...`, those
+# cancelled after they started (none, when every part never ran or passed).
+missing_parts() { # name
+  jq -r --arg n "$1" "$jobs_defs"'
+    [.jobs[] | select((.name | base | startswith($n)) and bad)] as $parts
+    | ([$parts[] | select((never or cut) | not)] | first) as $real
+    | if $real then "result \($real.html_url)"
+      else "cut \([$parts[] | select(cut) | .id | tostring] | join(" "))" end'
 }
 
 # Whether a job that was cancelled after it started hit its own
@@ -739,6 +755,28 @@ missing_verdict() { # queue-run-line
   fi
 }
 
+# Whether a missing check's parts in its completed run $2 hold a result (a
+# part that failed outright, or hit its own timeout-minutes): `failure <url>
+# 0`, a real failure, or nothing. Fails when GitHub could not be read.
+missing_result() { # name run
+  local jobs out id notes
+  jobs=$(fetch_run_jobs "$2") || return 1
+  out=$(missing_parts "$1" <<<"$jobs") || return 1
+  case "$out" in
+    result*)
+      echo "failure ${out#result } 0"
+      return 0
+      ;;
+  esac
+  for id in ${out#cut}; do
+    notes=$(fetch_annotations "$id") || return 1
+    if timed_out <<<"$notes"; then
+      jq -r --argjson i "$id" '.jobs[] | select(.id == $i) | "failure \(.html_url) 0"' <<<"$jobs"
+      return 0
+    fi
+  done
+}
+
 # Job lines on stdin (`<job> <verdict> <where> <url>`, and
 # `<job> infra <run> <attempt> <why> <url>` from hosted_verdict or
 # missing_verdict) with the infra ones decided: a run with re-runs left is
@@ -991,9 +1029,21 @@ queue_pass() {
               read -r v u _ <<<"$line"
             fi
           fi
+          # A completed run without it: infrastructure, unless one of its
+          # parts failed outright or timed out.
           if [ "$v" = missing ]; then
             line=$(missing_verdict "$qrun")
             read -r v u _ <<<"$line"
+            if [ "$v" = infra ]; then
+              read -r _ u _ <<<"$line"
+              u=$(missing_result "ci/$job" "$u") || {
+                skipped "${sha:0:7}" "the run behind ci/$job"
+                rc=1
+                continue 2
+              }
+              [ -z "$u" ] || line=$u
+              read -r v u _ <<<"$line"
+            fi
           fi
           case "$v" in
             success) where=hosted u=- ;;

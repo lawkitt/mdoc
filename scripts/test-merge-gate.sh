@@ -306,6 +306,13 @@ eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" 
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ok")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "cancelled Linux 30"
 eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ran")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "result"
 eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$(jq -c '.conclusion = "timed_out"' <<<"$cut")")")")" "result"
+# A summary that timed out itself, over cancelled parts: a result (Codex
+# review on #636).
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 30 "ios / ci/ios" "$(jq -c '.conclusion = "timed_out"' <<<"$ran")")")")" "result"
+# A missing summary's parts: the first real failure, else those cut.
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$never")" "$(job 11 "macos / ci/macos" "$ran")")")" "cut 31"
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")")")" "cut "
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$(jq -c '.html_url = "https://r"' <<<"$ran")")")")" "result https://r"
 printf 'The job running on runner GitHub Actions 3 has exceeded the maximum execution time of 40 minutes.\n' | timed_out || fail "a timeout not seen"
 if printf 'GitHub Actions has encountered an internal error when running your job.\n' | timed_out; then fail "an internal error taken for a timeout"; fi
 # Summaries over parts named after them (ci/macos's two jobs, ci/ios with
@@ -731,6 +738,19 @@ queue635() {
   : >"$check_reads"
   queue_once
 }
+# Its jobs: the tests part as $tests635 (cancelled after it started).
+jobs635() {
+  jobs_json "$(job 127686035978 "ios / ci/ios-release" "$ok")" \
+    "$(job 127686036018 "ios / ci/ios (tests)" "$(jq -c --arg u "$run635/job/127686036018" '.html_url = $u' <<<"$tests635")")" \
+    "$(job 127686787415 "scripts / ci/scripts" "$ok")"
+}
+tests635=$cut
+fetch_run_jobs() { jobs635; }
+ios_notes="GitHub Actions has encountered an internal error when running your job."
+fetch_annotations() {
+  echo "$1" >>"$notes_read"
+  printf '%s\n' "$ios_notes"
+}
 queue_run="in_progress 42154709474 1 null $run635"
 queue635
 eq "$(cat "$reran")|$(wc -l <"$check_reads" | tr -d ' ')" "|1"
@@ -749,6 +769,26 @@ queue635
 post() { echo "$1 $2 $3" >>"$posted"; }
 eq "$(cat "$reran")" ""
 eq "$(cat "$posted")" "qqqq failure Failed: ios (did not run, 3 attempts); passed: scripts (hosted) $run635"
+# Its tests part hit its own timeout-minutes, or failed outright: a result,
+# never re-run, linking that part (Codex review on #636).
+ios_notes="The job running on runner GitHub Actions 1000010371 has exceeded the maximum execution time of 40 minutes."
+queue_run="completed 42154709474 1 failure $run635"
+post() { echo "$1 $2 $3 $4" >>"$posted"; }
+: >"$notes_read"
+queue635
+eq "$(cat "$reran")|$(cat "$notes_read")|$(cat "$posted")" "|127686036018|qqqq failure Failed: ios (hosted); passed: scripts (hosted) $run635/job/127686036018"
+ios_notes="GitHub Actions has encountered an internal error when running your job."
+tests635=$ran
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: ios (hosted); passed: scripts (hosted) $run635/job/127686036018"
+post() { echo "$1 $2 $3" >>"$posted"; }
+# Its jobs cannot be read: the commit is skipped.
+fetch_run_jobs() { return 1; }
+: >"$logf"
+if queue635; then fail "a pass that could not read the Queue run's jobs ended green"; fi
+grep -qxF "qqqq: skipped: could not read the run behind ci/ios" "$logf" || fail "the skip is not logged"
+tests635=$cut
+fetch_run_jobs() { jobs635; }
 # The summary ended between the two reads: its result counts.
 fetch_check_runs() {
   echo "$1" >>"$check_reads"
