@@ -986,6 +986,199 @@ mod tests {
         );
     }
 
+    // Inject only the first mention. Exact ranges below also verify that
+    // the review discovers every later mention with its own category.
+    fn assert_address_proposals(source: &str, model: &[(&str, &str)], expected: &[(&str, &str)]) {
+        let raw: Vec<_> = model
+            .iter()
+            .map(|(text, label)| {
+                let start = source.find(text).unwrap();
+                RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.8,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        let mut expected: Vec<_> = expected
+            .iter()
+            .flat_map(|(text, category)| {
+                source
+                    .match_indices(text)
+                    .map(|(start, _)| span(start..start + text.len(), category))
+            })
+            .collect();
+        expected.sort();
+        assert_eq!(proposals(source, &raw).unwrap(), expected, "{source}");
+    }
+
+    /// #498 gate review P1: a recipient inside a guessed address tail is
+    /// independent evidence, including when only its first mention is modelled.
+    #[test]
+    fn address_continuations_preserve_recipients_and_their_repeats() {
+        for (label, category, name) in [
+            ("person", "PERSON", "Jane Quenby"),
+            ("organization", "ORG", "Larkfield Supply"),
+        ] {
+            for (layout, address, model_address) in [
+                (
+                    "P.O. Box 4410, Attn NAME, Slocombe, NY 10999.",
+                    "P.O. Box 4410",
+                    Some("P.O. Box 4410"),
+                ),
+                (
+                    "P.O. Box 4410, NAME, Slocombe, NY 10999.",
+                    "P.O. Box 4410",
+                    Some("P.O. Box 4410"),
+                ),
+                (
+                    "12 Main Street Suite 2, NAME, NY 10999.",
+                    "12 Main Street Suite 2",
+                    Some("12 Main Street"),
+                ),
+                ("P.O. Box 4410, NAME, NY 10999.", "P.O. Box 4410", None),
+                ("P.O. Box 4410, Attn NAME, NY 10999.", "P.O. Box 4410", None),
+                (
+                    "P.O. Box 4410, Attention NAME, NY 10999.",
+                    "P.O. Box 4410",
+                    None,
+                ),
+                (
+                    "12 Main Street #16, NAME, NY 10999.",
+                    "12 Main Street #16",
+                    None,
+                ),
+                (
+                    "12 Main Street #16, Leeds NAME LS1 4AB.",
+                    "12 Main Street #16, Leeds",
+                    None,
+                ),
+                (
+                    "24, Pellin Court, Harrow Place, Worcester NAME.",
+                    "24, Pellin Court, Harrow Place, Worcester",
+                    None,
+                ),
+            ] {
+                let source = format!("{}\n{name} signed.", layout.replace("NAME", name));
+                let mut model = vec![(name, label)];
+                if let Some(address) = model_address {
+                    model.push((address, "address"));
+                }
+                assert_address_proposals(
+                    &source,
+                    &model,
+                    &[(address, "ADDRESS"), (name, category)],
+                );
+            }
+            // Truncating to a bare street does not turn it into an address.
+            let source = format!("Broadway {name}, NY 10999.\n{name} signed.");
+            assert_address_proposals(&source, &[(name, label)], &[(name, category)]);
+        }
+        for (label, category, name) in [
+            ("person", "PERSON", "Лидия Брюн"),
+            ("organization", "ORG", "Ларков Снабжение"),
+        ] {
+            for index in ["", ", 199999"] {
+                let source = format!("а/я 4410, Ольховск {name}{index}.\n{name} подписала.");
+                assert_address_proposals(
+                    &source,
+                    &[(name, label)],
+                    &[("а/я 4410, Ольховск", "ADDRESS"), (name, category)],
+                );
+            }
+        }
+        // A company starting with a street name is still a company.
+        assert_address_proposals(
+            "The Broadway Show, NY 10999, is sold out.\nBroadway Show hired Jane Quenby.",
+            &[("Broadway Show", "organization"), ("Jane Quenby", "person")],
+            &[("Broadway Show", "ORG"), ("Jane Quenby", "PERSON")],
+        );
+    }
+
+    /// Contact labels end a continuation even without model name evidence;
+    /// with evidence both the recipient and its repeated mention survive.
+    #[test]
+    fn address_continuations_stop_at_contact_fields() {
+        for field in [
+            "Attn",
+            "Attention",
+            "c/o",
+            "ATTN",
+            "Contact",
+            "Phone",
+            "Email",
+        ] {
+            for colon in ["", ":"] {
+                for (label, category, name) in [
+                    ("person", "PERSON", "Jane Quenby"),
+                    ("organization", "ORG", "Larkfield Supply"),
+                ] {
+                    for (prefix, model_address) in [
+                        ("P.O. Box 4410", "P.O. Box 4410"),
+                        ("12 Main Street Suite 2", "12 Main Street"),
+                    ] {
+                        let source = format!(
+                            "{prefix}, {field}{colon} {name}, Slocombe, NY 10999.\n{name} signed."
+                        );
+                        assert_address_proposals(
+                            &source,
+                            &[(model_address, "address"), (name, label)],
+                            &[(prefix, "ADDRESS"), (name, category)],
+                        );
+                        let proposed = proposals(&source, &[]).unwrap();
+                        assert!(
+                            proposed
+                                .iter()
+                                .all(|span| span.category != "ADDRESS"
+                                    || span.range.end <= prefix.len()),
+                            "{source}: {proposed:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// #498 gate review P2: the bare-street veto requires absence of house
+    /// numbering and explicit private-home context (GUIDE #553 item 2).
+    #[test]
+    fn word_number_addresses_and_named_homes_survive_the_bare_street_veto() {
+        for (source, address) in [
+            ("Deliver to One Main Street.", "One Main Street"),
+            ("Delivery address: Two Oak Road", "Two Oak Road"),
+            ("Delivery address: ONE MAIN STREET", "ONE MAIN STREET"),
+            (
+                "Delivery address: One Main Street, London",
+                "One Main Street, London",
+            ),
+            (
+                "Our home is called Orchard Court.\nThe parcel is for Orchard Court.",
+                "Orchard Court",
+            ),
+            (
+                "Our house was named Cedar Court.\nSend it to Cedar Court.",
+                "Cedar Court",
+            ),
+        ] {
+            assert_address_proposals(source, &[(address, "address")], &[(address, "ADDRESS")]);
+        }
+        for street in [
+            "Cedar Court",
+            "Larch Rd",
+            "Sunset Boulevard",
+            "Mulholland Dr",
+            "Cherry Ln",
+            "Summerhill Rd. and Richmond Rd.",
+            "20th Street and Quillon Avenue",
+            "Strand",
+        ] {
+            let source = format!("The route follows {street}.\nWe discussed {street}.");
+            assert_address_proposals(&source, &[(street, "address")], &[]);
+        }
+    }
+
     #[test]
     fn the_scoreboard_counts_a_repeated_wording_once() {
         let fixture = Fixture::parse(

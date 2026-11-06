@@ -246,6 +246,12 @@ struct ShapeEntry {
     /// "А28-3207/2026"). A reference or a cited case still removes it.
     #[serde(default)]
     case: Vec<String>,
+    /// Evidence that this entry's veto does not describe the value: a
+    /// house number, or an explicit private-home naming cue before it.
+    #[serde(default)]
+    forbid_unless: Vec<String>,
+    #[serde(default)]
+    forbid_unless_after: Vec<String>,
     /// A model span inside one of these matches in its surrounding line
     /// is not this category (an amount's decimals or currency may be outside
     /// the model's span). Labelled values are proposed separately.
@@ -291,6 +297,12 @@ struct SpanEntry {
     /// part of the match, not a span of its own. The parts work here too.
     #[serde(default)]
     absorbs: std::collections::BTreeMap<String, String>,
+    /// The last definite address component before a guessed town/recipient
+    /// tail. Names and contact fields after this component end the match.
+    #[serde(default)]
+    continuation_after: Option<String>,
+    #[serde(default)]
+    continuation_stop: Option<String>,
     #[serde(default)]
     trim: Vec<String>,
     /// ORG role trims need an explicit separator and an identifying remainder.
@@ -413,6 +425,8 @@ enum Span {
         /// where the match holds it: a building's name in an address is no
         /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
         absorbs: Vec<(Category, Regex)>,
+        continuation_after: Option<Regex>,
+        continuation_stop: Option<Regex>,
     },
     Fix(SpanFix),
 }
@@ -897,7 +911,7 @@ impl Never {
 struct Shape {
     category: Category,
     require: Vec<Regex>,
-    forbid: Vec<Regex>,
+    forbid: Vec<Veto>,
     case: Vec<Regex>,
     forbid_in: Vec<Regex>,
     unless_in: Vec<Regex>,
@@ -907,6 +921,23 @@ struct Shape {
     quotes: Vec<(char, char)>,
     quotes_after: Vec<String>,
     quotes_after_words: Vec<String>,
+}
+
+struct Veto {
+    patterns: Vec<Regex>,
+    unless: Vec<Regex>,
+    unless_after: Vec<Regex>,
+}
+
+impl Veto {
+    fn matches(&self, text: &str, before: &str) -> bool {
+        self.patterns.iter().any(|pattern| pattern.is_match(text))
+            && !self.unless.iter().any(|pattern| pattern.is_match(text))
+            && !self
+                .unless_after
+                .iter()
+                .any(|pattern| pattern.is_match(before))
+    }
 }
 
 impl Pack {
@@ -1173,7 +1204,18 @@ impl Pack {
                     return Err(at(format!("{word:?} is not one word")));
                 }
                 let require = compile_all(&entry.require, false)?;
-                let forbid = compile_all(&entry.forbid, false)?;
+                if entry.forbid.is_empty()
+                    && (!entry.forbid_unless.is_empty() || !entry.forbid_unless_after.is_empty())
+                {
+                    return Err(at(
+                        "forbid_unless and forbid_unless_after need forbid".into()
+                    ));
+                }
+                let forbid = Veto {
+                    patterns: compile_all(&entry.forbid, false)?,
+                    unless: compile_all(&entry.forbid_unless, false)?,
+                    unless_after: compile_all(&entry.forbid_unless_after, false)?,
+                };
                 let case = compile_all(&entry.case, false)?;
                 let forbid_in = entry
                     .forbid_in
@@ -1215,7 +1257,7 @@ impl Pack {
                     return Err(at(format!("a second word rule for {}", entry.category)));
                 }
                 shape.require.extend(require);
-                shape.forbid.extend(forbid);
+                shape.forbid.push(forbid);
                 shape.case.extend(case);
                 shape.forbid_in.extend(forbid_in);
                 shape.unless_in.extend(unless_in);
@@ -1329,6 +1371,31 @@ impl Pack {
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
+                    let continuation_after = entry
+                        .continuation_after
+                        .as_ref()
+                        .map(|pattern| {
+                            let pattern = entry.parts.iter().fold(
+                                pattern.clone(),
+                                |pattern, (name, part)| {
+                                    pattern.replace(&format!("{{{name}}}"), &format!("(?:{part})"))
+                                },
+                            );
+                            Regex::new(&rust_classes(&pattern)).map_err(|e| e.to_string())
+                        })
+                        .transpose()
+                        .map_err(at)?;
+                    let continuation_stop = entry
+                        .continuation_stop
+                        .as_ref()
+                        .map(|pattern| {
+                            Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string())
+                        })
+                        .transpose()
+                        .map_err(at)?;
+                    if continuation_stop.is_some() && continuation_after.is_none() {
+                        return Err(at("continuation_stop needs continuation_after".into()));
+                    }
                     let mut absorbs = Vec::new();
                     for (name, regex) in &entry.absorbs {
                         let absorbed = self::category(name).map_err(at)?;
@@ -1350,11 +1417,17 @@ impl Pack {
                         category,
                         pattern,
                         absorbs,
+                        continuation_after,
+                        continuation_stop,
                     });
                     continue;
                 }
-                if !entry.parts.is_empty() || !entry.absorbs.is_empty() {
-                    return Err(at("parts and absorbs need a pattern".into()));
+                if !entry.parts.is_empty()
+                    || !entry.absorbs.is_empty()
+                    || entry.continuation_after.is_some()
+                    || entry.continuation_stop.is_some()
+                {
+                    return Err(at("parts, absorbs and continuations need a pattern".into()));
                 }
                 if !fixes {
                     return Err(at(
@@ -1666,7 +1739,18 @@ impl Pack {
         named: &dyn Fn(&str) -> bool,
         titled: bool,
     ) -> bool {
-        self.shaped_named(text, category, named)
+        self.identifying_named_after(text, category, named, titled, "")
+    }
+
+    fn identifying_named_after(
+        &self,
+        text: &str,
+        category: Category,
+        named: &dyn Fn(&str) -> bool,
+        titled: bool,
+        before: &str,
+    ) -> bool {
+        self.shaped_named_after(text, category, named, before)
             && (category == Category::Person && self.role_person_name(text)
                 || !self.public_body(text, category, titled))
     }
@@ -2257,6 +2341,16 @@ impl Pack {
     /// `named` says which common words (lowercase) context makes a person's
     /// name.
     fn shaped_named(&self, text: &str, category: Category, named: &dyn Fn(&str) -> bool) -> bool {
+        self.shaped_named_after(text, category, named, "")
+    }
+
+    fn shaped_named_after(
+        &self,
+        text: &str,
+        category: Category,
+        named: &dyn Fn(&str) -> bool,
+        before: &str,
+    ) -> bool {
         let words = || {
             text.split_whitespace()
                 .map(bare)
@@ -2278,7 +2372,7 @@ impl Pack {
             return true;
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
-            && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
+            && !shape.forbid.iter().any(|veto| veto.matches(text, before))
             && !shape.case.iter().any(|pattern| pattern.is_match(text))
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
@@ -2661,7 +2755,7 @@ impl Pack {
                         d.category,
                         titled,
                     ))
-                && self.identifying_named(
+                && self.identifying_named_after(
                     text,
                     d.category,
                     &|word| {
@@ -2669,6 +2763,7 @@ impl Pack {
                             && (titled || name_cells.contains(&d.range) || named.contains(word))
                     },
                     titled,
+                    &view.text[..view.view_range(d.range.clone()).start],
                 )
                 && !field_code(source, d)
                 && !(d.category == Category::Organization
@@ -3146,7 +3241,14 @@ impl Pack {
         // "ООО «Судак»" grows to its legal form before a court's stem in it
         // could drop it. So do a person's common words, whose context the
         // fixes and the other spans settle ("Mr He", "Dawn French").
-        self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
+        let before = mdoc_pii::view::decoded(
+            source[..range.start]
+                .rsplit('\n')
+                .next()
+                .unwrap_or_default(),
+        );
+        self.shaped_named_after(text, category, &|_| category == Category::Person, &before)
+            && !quoted
     }
 
     /// An explicit personal-ID label immediately before the value takes
@@ -3677,35 +3779,106 @@ impl Pack {
 
     /// Whole spans the `span` patterns find in `source`: an address from
     /// its first element to its postcode or city (ADR 0092).
+    #[cfg(test)]
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans_beside(source, &[])
+    }
+
+    /// Matches beside existing evidence, all in view coordinates. Definite
+    /// street/building components may contain names; a guessed town tail
+    /// never consumes an independent PERSON/ORG or a contact field.
+    pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<Detection> {
         self.spans
             .iter()
             .filter_map(|span| match span {
                 Span::Pattern {
-                    category, pattern, ..
-                } => Some((*category, pattern)),
+                    category,
+                    pattern,
+                    continuation_after,
+                    continuation_stop,
+                    ..
+                } => Some((*category, pattern, continuation_after, continuation_stop)),
                 Span::Fix(_) => None,
             })
-            .flat_map(|(category, pattern)| {
-                span_ranges(pattern, source)
-                    .into_iter()
-                    // An address match before a colon ends in a field's
-                    // label ("12 Oak Road, Email: …"), not the address's
-                    // last part; a name before one is a speaker's ("ФИО1
-                    // А. Б.: …").
-                    .filter(move |range| {
-                        category != Category::Address
-                            || !source[range.end..]
-                                .trim_start_matches([' ', '\t'])
-                                .starts_with(':')
-                    })
-                    .map(move |range| Detection {
-                        range,
-                        category,
-                        score: CONTEXT_SCORE,
-                        recognizer: Recognizer::Span,
-                    })
-            })
+            .flat_map(
+                |(category, pattern, continuation_after, continuation_stop)| {
+                    span_ranges(pattern, source)
+                        .into_iter()
+                        .map(move |mut range| {
+                            if let Some(core) = continuation_after
+                                .as_ref()
+                                .and_then(|pattern| pattern.find(&source[range.clone()]))
+                            {
+                                let tail = range.start + core.end();
+                                // A name crossing the definite component's
+                                // edge ("Broadway Show") invalidates the
+                                // guessed street; never cut it to a fragment.
+                                if names.iter().any(|name| {
+                                    matches!(
+                                        name.category,
+                                        Category::Person | Category::Organization
+                                    ) && name.range.start < tail
+                                        && tail < name.range.end
+                                        && range.start < name.range.end
+                                }) {
+                                    range.end = range.start;
+                                    return range;
+                                }
+                                let name = names
+                                    .iter()
+                                    .filter(|name| {
+                                        matches!(
+                                            name.category,
+                                            Category::Person | Category::Organization
+                                        ) && tail <= name.range.start
+                                            && name.range.start < range.end
+                                    })
+                                    .map(|name| name.range.start)
+                                    .min();
+                                let field = continuation_stop
+                                    .as_ref()
+                                    .and_then(|pattern| pattern.find(&source[tail..range.end]))
+                                    .map(|field| tail + field.start());
+                                if let Some(end) = name.into_iter().chain(field).min() {
+                                    range.end = range.start
+                                        + source[range.start..end]
+                                            .trim_end_matches(|c: char| {
+                                                c.is_whitespace() || [',', ';', ':'].contains(&c)
+                                            })
+                                            .len();
+                                    // Cutting before a recipient must not
+                                    // promote a bare street ("Broadway").
+                                    if !self.shaped_named_after(
+                                        &source[range.clone()],
+                                        category,
+                                        &|_| false,
+                                        &source[..range.start],
+                                    ) {
+                                        range.end = range.start;
+                                    }
+                                }
+                            }
+                            range
+                        })
+                        // An address match before a colon ends in a field's
+                        // label ("12 Oak Road, Email: …"), not the address's
+                        // last part; a name before one is a speaker's ("ФИО1
+                        // А. Б.: …").
+                        .filter(move |range| {
+                            !range.is_empty()
+                                && (category != Category::Address
+                                    || !source[range.end..]
+                                        .trim_start_matches([' ', '\t'])
+                                        .starts_with(':'))
+                        })
+                        .map(move |range| Detection {
+                            range,
+                            category,
+                            score: CONTEXT_SCORE,
+                            recognizer: Recognizer::Span,
+                        })
+                },
+            )
             .collect()
     }
 
@@ -7244,11 +7417,6 @@ Privacy Act (“BIPA”). BIPA applies.",
             "пер. Кленовый",
             "наб. Лесная",
             "б-р Цветной",
-            "Cedar Court",
-            "Larch Rd",
-            "Sunset Boulevard",
-            "Mulholland Dr",
-            "Cherry Ln",
             "Сиреневая аллея, Москва",
             "9-я линия В.О.",
             "The Old Rectory, Nether Compton",
@@ -7398,12 +7566,11 @@ Privacy Act (“BIPA”). BIPA applies.",
             "12 Oak Road\nLeeds",
             "12 Oak Road\nJohn Smith AB will call",
             // No street: a building and a town, a court, a town and its
-            // postcode alone (#506), a P.O. box (#506).
+            // postcode alone (#506 item 6).
             "Brindle House, Leeds",
             "High Court, Slocombe WC2A 9ZZ",
             "BRANWICK, CO 81999",
             "Brindlecombe, OH 45999",
-            "P.O. Box 36060, Brindlecombe, CA 94999",
             // A street without a number needs its postcode.
             "Brindle Road, Leeds",
             "Strand, Leeds",
@@ -7513,6 +7680,117 @@ Privacy Act (“BIPA”). BIPA applies.",
             .map(|span| source[span.range].to_owned())
             .collect();
         assert_eq!(shown, [source.trim_end()]);
+    }
+
+    /// #498 round two: each separator and street shape ends at its own
+    /// city/postcode, with adjacent model names and the next field intact.
+    #[test]
+    fn round_two_address_shapes_keep_names_and_fields_outside() {
+        for address in [
+            "103 Pellin Parkway, Suite 305 Slocombe, New Jersey 07999",
+            "21495 Quarry Circle, Suite 304A Brindlecombe, Virginia 20999",
+            "200 East Long Quarry Road Suite 300 Brindle Hills, Michigan 48999",
+            "63 Pellam Street Suite 202 Slocombe, NJ 08999",
+            "242A West Harrow Road Ostrand,NJ 07999",
+            "1600 Pellin Hill Road, Slocombe, Georgia 30999",
+            "500 Pellin Avenue, Unit 16C, New York",
+            "500 Pellin Avenue, Unit 16C, New York, New York 10999",
+            "224 W 299 St., Bronx, NY 10999",
+            "224 W. 299 St., Bronx, NY 10999",
+            "One Pellin Plaza, Suite 3335 New York, New York 10999",
+            "One Pellin Plaza New York, New York 10999",
+            "Two Pellin Plaza, Suite 4, Slocombe, NY 10999",
+            "225 Broadmoor, Suite 2700 New York, N.Y. 10999",
+            "225 Broadmoor-Suite 2700 New York, N.Y. 10999",
+            "1565N. Harrow Expressway, Suite 200, Slocombe, TX 75999",
+            "100 N State Line Ave #16, Slocombe, TX 75999",
+            "2121 Quillon Ave. N.W., Wexford, DC 20999",
+            "2121 N.W. Quillon Ave., Wexford, DC 20999",
+            "10th Floor, 42 Pellin Pl., Bldg. 4, Slocombe, TX 75999",
+            "42 Pellin Fwy., Floor 3, Slocombe, TX 75999",
+            "7528 Rooke Road Penrow Township",
+            "24, Pellin Court, Harrow Place, Worcester",
+            "20th Street and Quillon Avenue, NW Wexford, DC 20999",
+            "P.O. Box 4410, Brindle Falls, OH 45999",
+            "P.O. Box 4410 Brindle Falls, OH 45999",
+            "P.O. Box 4410, Slocombe",
+            "190 South Pellin Street: P.O. Box 351 Slocombe, NY 10999",
+            "24 North Street\nP.O. Box 1308\nSlocombe, MA 02999",
+            "а/я 4410, Ольховск, 199999",
+            "а/я 4410, 199999, Ольховск",
+            "а/я 4410, Ольховск",
+        ] {
+            let source = format!(
+                "Larkfield Supply LLC, Jane Quenby, {address}; Email: post@quillon.invalid\nUK\naddress"
+            );
+            let found: Vec<_> = pack()
+                .spans(&source)
+                .into_iter()
+                .filter(|span| span.category == Category::Address)
+                .map(|span| source[span.range].to_owned())
+                .collect();
+            assert_eq!(found, [address], "{source}");
+            assert_eq!(
+                shown(
+                    &source,
+                    &[
+                        ("Larkfield Supply LLC", "organization"),
+                        ("Jane Quenby", "person"),
+                    ]
+                ),
+                pairs(&[
+                    ("Larkfield Supply LLC", "ORG"),
+                    ("Jane Quenby", "PERSON"),
+                    (address, "ADDRESS"),
+                    ("post@quillon.invalid", "EMAIL"),
+                ]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Decisions #506 item 7 and #553 items 1/3: a body's street is an
+    /// address, a bare street or corner is not, even from the model.
+    #[test]
+    fn address_decisions_keep_bodies_and_bare_streets_outside() {
+        for (body, address) in [
+            ("Royal Courts of Justice", "Strand, Slocombe, WC2A 9ZZ"),
+            (
+                "Securities and Exchange Commission",
+                "100 F Street, NE, Wexford, DC 20999",
+            ),
+        ] {
+            let source = format!("{body}\n{address}\nUK");
+            assert_eq!(
+                shown(&source, &[(body, "organization")]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        for street in [
+            "Cedar Court",
+            "Larch Rd",
+            "Sunset Boulevard",
+            "Mulholland Dr",
+            "Cherry Ln",
+            "Summerhill Rd. and Richmond Rd.",
+            "20th Street and Quillon Avenue",
+            "Strand",
+        ] {
+            assert!(shown(street, &[(street, "address")]).is_empty(), "{street}");
+        }
+        for source in [
+            "The Suite 300 Road plan follows One Long Street discussion.",
+            "There are 224 W 299 St. references in the index.",
+            "One Pellin Plaza was mentioned in the report.",
+            "225 Broadmoor agreed to the Suite 2700 proposal.",
+            "P.O. Box 4410 is a label without a destination.",
+            "а/я 4410 содержит письма.",
+            "The Floor and Bldg. labels describe the Fwy. and Pl. columns.",
+            "Summerhill Rd. and Richmond Rd. meet near the park.",
+        ] {
+            assert!(pack().spans(source).is_empty(), "{source}");
+        }
     }
 
     /// #498: the review keeps an address the pattern found over its own
@@ -7659,11 +7937,11 @@ Privacy Act (“BIPA”). BIPA applies.",
                 &[("Harrow House", "ORG")],
             ),
             // A number after the match is none of it (review of #508): the
-            // pattern's "12 Oak Road, Chatham House" gives way as before.
+            // pattern ends before Chatham House and keeps the street.
             (
                 "Lives at 12 Oak Road, Chatham House, 12 March 2026.\n",
                 &[("Chatham House", "organization")],
-                &[("Chatham House", "ORG")],
+                &[("12 Oak Road", "ADDRESS"), ("Chatham House", "ORG")],
             ),
             // An address the review turns down (text after its town on its
             // last line) leaves the company standing (review of #508).
@@ -7717,7 +7995,10 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "Deliver to 12 Oak Road, John Smith will collect it.",
                 &[("John Smith", "person")]
             ),
-            [("John Smith".to_owned(), "PERSON".to_owned())]
+            [
+                ("12 Oak Road".to_owned(), "ADDRESS".to_owned()),
+                ("John Smith".to_owned(), "PERSON".to_owned())
+            ]
         );
         // Nor is a match cut down to its house number by a span over its
         // street, which would propose the number and its repeats.
@@ -7777,7 +8058,7 @@ Privacy Act (“BIPA”). BIPA applies.",
             .into_iter()
             .filter(|(_, category)| category == "ADDRESS")
             .count(),
-            0
+            1
         );
         // A model name inside the address is the street's: the address stays.
         assert_eq!(
