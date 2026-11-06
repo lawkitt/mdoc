@@ -291,9 +291,30 @@ eq "$(failure_kind 15 <<<"$run41857275799")" "infra macOS"
 # A shard that ran and failed: the summary's failure is a result.
 eq "$(failure_kind 15 <<<"$(jobs_json "$(job 13 "detection / ci/detection (1)" "$ran")" \
   "$(job 14 "detection / ci/detection (2)" "$never")" "$(job 15 "detection / ci/detection" "$ran")")")" "result"
-# A job cancelled while it ran had a runner: a result.
-eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" \
-  '{"conclusion": "cancelled", "runner_name": "GitHub Actions 9", "steps": [{"status": "completed", "conclusion": "cancelled"}]}')")")" "result"
+# A job cancelled after it started (#635: run 42154709474's ci/ios (tests),
+# "GitHub Actions has encountered an internal error"): no result either;
+# its annotations decide (a timeout is one). A summary over such a part,
+# with or without one that never ran, the same; a part that failed outright,
+# or a job that timed out (conclusion timed_out), is a result.
+cut='{"id": 0, "conclusion": "cancelled", "runner_name": "GitHub Actions 1000010371", "steps": [{"status": "completed", "conclusion": "success"}, {"status": "completed", "conclusion": "cancelled"}], "labels": ["macos-26"]}'
+eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$cut")")")" "cancelled macOS 11"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$ok")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$never")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$cut")" "$(job 30 "ios / ci/ios" "$ran")")")" "cancelled macOS 31 32"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$ran")" "$(job 30 "ios / ci/ios" "$ran")")")" "result"
+# A summary cancelled itself: its parts are looked at too.
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ok")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "cancelled Linux 30"
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$ran")" "$(job 30 "ios / ci/ios" "${cut/macos-26/ubuntu-latest}")")")" "result"
+eq "$(failure_kind 11 <<<"$(jobs_json "$(job 11 "macos / ci/macos" "$(jq -c '.conclusion = "timed_out"' <<<"$cut")")")")" "result"
+# A summary that timed out itself, over cancelled parts: a result (Codex
+# review on #636).
+eq "$(failure_kind 30 <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 30 "ios / ci/ios" "$(jq -c '.conclusion = "timed_out"' <<<"$ran")")")")" "result"
+# A missing summary's parts: the first real failure, else those cut.
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$never")" "$(job 11 "macos / ci/macos" "$ran")")")" "cut 31"
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 32 "ios / ci/ios-release" "$never")")")" "cut "
+eq "$(missing_parts ci/ios <<<"$(jobs_json "$(job 31 "ios / ci/ios (tests)" "$cut")" "$(job 32 "ios / ci/ios-release" "$(jq -c '.html_url = "https://r"' <<<"$ran")")")")" "result https://r"
+printf 'The job running on runner GitHub Actions 3 has exceeded the maximum execution time of 40 minutes.\n' | timed_out || fail "a timeout not seen"
+if printf 'GitHub Actions has encountered an internal error when running your job.\n' | timed_out; then fail "an internal error taken for a timeout"; fi
 # Summaries over parts named after them (ci/macos's two jobs, ci/ios with
 # ci/ios-release): infra only when every failing part never ran; another
 # caller's jobs, and jobs not named after it, are not its parts.
@@ -392,6 +413,10 @@ fetch_dispatched() { echo 0; }
 dispatch() { echo "$*" >>"$dispatched"; }
 fetch_workflow_state() { echo active; }
 fetch_file() { cat "$2"; }
+# The commit's Queue run, still going; a job's annotations, none.
+queue_run="in_progress 42 1 null https://github.com/lawkitt/mdoc/actions/runs/42"
+fetch_queue_run() { echo "$queue_run"; }
+fetch_annotations() { :; }
 
 heads_pass
 eq "$(sort "$posted")" "aaaa success Docs only: no job runs
@@ -646,6 +671,157 @@ queue_once
 eq "$(cat "$reran")" 41857275799
 eq "$(cat "$posted")" "qqqq pending Waiting: detection; passed: macos (hosted), windows (PC), ios (hosted), android (PC)"
 echo "ok: a detection summary over shards that never ran is re-run"
+
+# A part cancelled after it started (#635: an internal error): re-run, then
+# infrastructure; one that hit its own timeout-minutes fails at once.
+fetch_check_runs() {
+  printf '{"check_runs": [
+    {"id": 5, "name": "macos / ci/macos", "status": "completed", "conclusion": "success", "html_url": "https://mac", "completed_at": "2026-11-02T11:30:00Z"},
+    {"id": 3, "name": "detection / ci/detection", "status": "completed", "conclusion": "success", "html_url": "https://d", "completed_at": "2026-11-02T11:21:00Z"},
+    {"id": 901, "name": "ios / ci/ios", "status": "completed", "conclusion": "failure", "html_url": "%s", "completed_at": "2026-11-02T11:40:00Z"}]}\n' "$url901"
+}
+fetch_run_jobs() { jobs_json "$(job 902 "ios / ci/ios (tests)" "$cut")" "$(job 903 "ios / ci/ios-release" "$ok")" "$(job 901 "ios / ci/ios" "$ran")"; }
+notes_read="$tmp/notes-read"
+fetch_annotations() {
+  echo "$1" >>"$notes_read"
+  printf '%s\n' "$ios_notes"
+}
+ios_notes="GitHub Actions has encountered an internal error when running your job."
+run_state="completed 1"
+: >"$notes_read"
+queue_once
+eq "$(cat "$reran")|$(cat "$notes_read")" "900|902"
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+run_state="completed 3"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: ios (cancelled on macOS, 3 attempts); passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+ios_notes="The job running on runner GitHub Actions 1000010371 has exceeded the maximum execution time of 40 minutes."
+run_state="completed 1"
+queue_once
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: ios (hosted); passed: macos (hosted), windows (PC), android (PC), detection (hosted)"
+# Annotations that cannot be read: the commit is skipped, the pass red.
+fetch_annotations() { return 1; }
+: >"$logf"
+if queue_once; then fail "a pass that could not read annotations ended green"; fi
+grep -qxF "qqqq: skipped: could not read the run behind ci/ios" "$logf" || fail "the skip is not logged"
+fetch_annotations() { :; }
+echo "ok: a job cancelled after it started is re-run, then fails as infrastructure; a timeout fails at once"
+
+# A queue commit whose summary job was never created (#635: Queue run
+# 42154709474, attempt 1, on #633's queue commit): ci/ios (tests) cancelled
+# by an internal error, ci/ios-release passed, no ci/ios. Missing while the
+# run goes on is pending; once it has completed, its failed jobs are re-run
+# twice, then the job fails as "did not run".
+saved_compare=$(declare -f fetch_compare)
+fetch_compare() {
+  # shellcheck disable=SC2028
+  echo '{"files": [{"filename": "apps/ios/mdoc/FindSheet.swift"}, {"filename": "scripts/merge-gate.sh"}], "commits": [{"commit": {"message": "iOS Find (#633)"}}]}'
+}
+run635=https://github.com/lawkitt/mdoc/actions/runs/42154709474
+checks635() { # extra check-run JSON
+  printf '{"check_runs": [
+    {"id": 127686035886, "name": "scripts / ci/scripts (bash 3.2)", "status": "completed", "conclusion": "success", "html_url": "%s/job/127686035886", "completed_at": "2026-11-06T03:11:03Z"},
+    {"id": 127686036095, "name": "scripts / ci/scripts (linux)", "status": "completed", "conclusion": "success", "html_url": "%s/job/127686036095", "completed_at": "2026-11-06T03:10:41Z"},
+    {"id": 127686787415, "name": "scripts / ci/scripts", "status": "completed", "conclusion": "%s", "html_url": "%s/job/127686787415", "completed_at": "2026-11-06T03:11:09Z"},
+    {"id": 127686035978, "name": "ios / ci/ios-release", "status": "completed", "conclusion": "success", "html_url": "%s/job/127686035978", "completed_at": "2026-11-06T03:18:51Z"},
+    {"id": 127686036018, "name": "ios / ci/ios (tests)", "status": "completed", "conclusion": "cancelled", "html_url": "%s/job/127686036018", "completed_at": "2026-11-06T03:19:26Z"}%s]}\n' \
+    "$run635" "$run635" "${scripts635:-success}" "$run635" "$run635" "$run635" "${1:-}"
+}
+check_reads="$tmp/check-reads"
+fetch_check_runs() {
+  echo "$1" >>"$check_reads"
+  checks635
+}
+queue635() {
+  : >"$check_reads"
+  queue_once
+}
+# Its jobs: the tests part as $tests635 (cancelled after it started).
+jobs635() {
+  jobs_json "$(job 127686035978 "ios / ci/ios-release" "$ok")" \
+    "$(job 127686036018 "ios / ci/ios (tests)" "$(jq -c --arg u "$run635/job/127686036018" '.html_url = $u' <<<"$tests635")")" \
+    "$(job 127686787415 "scripts / ci/scripts" "$ok")"
+}
+tests635=$cut
+fetch_run_jobs() { jobs635; }
+ios_notes="GitHub Actions has encountered an internal error when running your job."
+fetch_annotations() {
+  echo "$1" >>"$notes_read"
+  printf '%s\n' "$ios_notes"
+}
+queue_run="in_progress 42154709474 1 null $run635"
+queue635
+eq "$(cat "$reran")|$(wc -l <"$check_reads" | tr -d ' ')" "|1"
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: scripts (hosted)"
+# Completed: the check runs are read again, then the run is re-run.
+queue_run="completed 42154709474 1 failure $run635"
+queue635
+eq "$(cat "$reran")|$(wc -l <"$check_reads" | tr -d ' ')" "42154709474|2"
+eq "$(cat "$posted")" "qqqq pending Waiting: ios; passed: scripts (hosted)"
+queue_run="completed 42154709474 2 failure $run635"
+queue635
+eq "$(cat "$reran")" 42154709474
+queue_run="completed 42154709474 3 failure $run635"
+post() { echo "$1 $2 $3 $4" >>"$posted"; }
+queue635
+post() { echo "$1 $2 $3" >>"$posted"; }
+eq "$(cat "$reran")" ""
+eq "$(cat "$posted")" "qqqq failure Failed: ios (did not run, 3 attempts); passed: scripts (hosted) $run635"
+# Its tests part hit its own timeout-minutes, or failed outright: a result,
+# never re-run, linking that part (Codex review on #636).
+ios_notes="The job running on runner GitHub Actions 1000010371 has exceeded the maximum execution time of 40 minutes."
+queue_run="completed 42154709474 1 failure $run635"
+post() { echo "$1 $2 $3 $4" >>"$posted"; }
+: >"$notes_read"
+queue635
+eq "$(cat "$reran")|$(cat "$notes_read")|$(cat "$posted")" "|127686036018|qqqq failure Failed: ios (hosted); passed: scripts (hosted) $run635/job/127686036018"
+ios_notes="GitHub Actions has encountered an internal error when running your job."
+tests635=$ran
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: ios (hosted); passed: scripts (hosted) $run635/job/127686036018"
+post() { echo "$1 $2 $3" >>"$posted"; }
+# Its jobs cannot be read: the commit is skipped.
+fetch_run_jobs() { return 1; }
+: >"$logf"
+if queue635; then fail "a pass that could not read the Queue run's jobs ended green"; fi
+grep -qxF "qqqq: skipped: could not read the run behind ci/ios" "$logf" || fail "the skip is not logged"
+tests635=$cut
+fetch_run_jobs() { jobs635; }
+# The summary ended between the two reads: its result counts.
+fetch_check_runs() {
+  echo "$1" >>"$check_reads"
+  if [ "$(wc -l <"$check_reads")" -lt 2 ]; then checks635; else
+    checks635 ', {"id": 127686990000, "name": "ios / ci/ios", "status": "completed", "conclusion": "success", "html_url": "https://ios", "completed_at": "2026-11-06T03:20:00Z"}'
+  fi
+}
+queue_run="completed 42154709474 1 success $run635"
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq success Passed: ios (hosted), scripts (hosted)"
+# A run that succeeded without it has nothing to re-run: it fails at once.
+fetch_check_runs() { checks635; }
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: ios (did not run); passed: scripts (hosted)"
+# Beside a real failure (ci/scripts failed in the same run) it is not re-run.
+scripts635=failure
+fetch_run_jobs() { jobs_json "$(job 127686035886 "scripts / ci/scripts (bash 3.2)" "$ran")" "$(job 127686787415 "scripts / ci/scripts" "$ran")"; }
+queue_run="completed 42154709474 1 failure $run635"
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq failure Failed: scripts (hosted)"
+# No Queue run yet: pending; one that cannot be read skips the commit.
+scripts635=success queue_run=''
+queue635
+eq "$(cat "$reran")|$(cat "$posted")" "|qqqq pending Waiting: ios; passed: scripts (hosted)"
+fetch_queue_run() { return 1; }
+: >"$logf"
+if queue635; then fail "a pass that could not read the Queue run ended green"; fi
+grep -qxF "qqqq: skipped: could not read its Queue run" "$logf" || fail "the skip is not logged"
+fetch_queue_run() { echo "$queue_run"; }
+queue_run="in_progress 42 1 null https://github.com/lawkitt/mdoc/actions/runs/42"
+eval "$saved_compare"
+eq "$(missing_verdict "")|$(missing_verdict "queued 7 1 null https://r")" "pending - 0|pending - 0"
+echo "ok: a hosted check missing once its Queue run completed is re-run, then fails as did not run"
 
 # A fast tier that never ran on a PR head: re-run; out of re-runs, it fails
 # as infrastructure.

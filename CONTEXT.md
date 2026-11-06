@@ -502,8 +502,11 @@ PR the detection gate on its head; on a queue commit, when
 every affected full job passed, each named with where it ran
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
 
-**Infrastructure failure**: a hosted CI job that ended without running,
-cancelled with no runner assigned or summarizing jobs that never ran.
+**Infrastructure failure**: a hosted CI job that ended without a result:
+cancelled with no runner assigned, cancelled after it started (an internal
+error, a lost runner; a job that hit its own timeout is a real failure),
+summarizing such jobs, or never created in a queue commit's completed Queue
+run.
 `merge-gate` re-runs it up to twice before failing, worded as
 infrastructure, never as a test failure
 ([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
