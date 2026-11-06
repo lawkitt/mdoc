@@ -27,11 +27,16 @@
 #   every 5 minutes while it runs (its heartbeat).
 #
 # A hosted job that never ran (ADR 0100) is no result: cancelled with no
-# runner and no step started, or a summary job whose failing parts (its
-# caller's jobs named after it, `ci/detection (2)` for `ci/detection`) never
-# ran. The gate re-runs the run's failed jobs, at most twice a run (by its
+# runner and no step started, cancelled after it started (an internal error,
+# a lost runner: GitHub reports a test failure as `failure`) unless it hit
+# its own timeout-minutes, or a summary job whose failing parts (its
+# caller's jobs named after it, `ci/detection (2)` for `ci/detection`) are
+# all such jobs. Nor is a queue commit's hosted check that is missing once
+# the commit's Queue run has completed (its summary job never created,
+# #635). The gate re-runs the run's failed jobs, at most twice a run (by its
 # run_attempt), and waits; after that it fails, worded as infrastructure
-# ("no macOS runner, 3 attempts"). A job that ran and failed fails at once.
+# ("no macOS runner, 3 attempts", "did not run, 3 attempts"). A job that ran
+# and failed, or timed out, fails at once.
 #
 # Every GitHub call goes through gh_call: a time limit per try, 3 tries with
 # backoff, and the endpoint named when it fails. A PR head or queue commit
@@ -286,6 +291,18 @@ fetch_dispatched() { # workflow sha
 # A workflow run's `<status> <run_attempt>`.
 fetch_run() { gh_call text api "repos/$repo/actions/runs/$1" --jq '"\(.status) \(.run_attempt)"'; }
 
+# A commit's newest Queue run (queue.yml), found by head_sha as the hosted
+# fallbacks' runs are: `<status> <id> <run_attempt> <conclusion> <url>`, or
+# nothing when it has none yet.
+fetch_queue_run() {
+  gh_call text api "repos/$repo/actions/workflows/queue.yml/runs?head_sha=$1&per_page=1" \
+    --jq '.workflow_runs[0] // empty | "\(.status) \(.id) \(.run_attempt) \(.conclusion) \(.html_url)"'
+}
+
+# A job's annotation messages, one per line (a job is a check run of the
+# same id).
+fetch_annotations() { gh_call text api "repos/$repo/check-runs/$1/annotations?per_page=100" --jq '.[].message'; }
+
 # A workflow run's `<status> <event>`.
 fetch_run_event() { gh_call text api "repos/$repo/actions/runs/$1" --jq '"\(.status) \(.event)"'; }
 
@@ -332,11 +349,14 @@ areas_of() { # [table-text]
 
 # Whether the failing job $1 of a run never produced a result, from the
 # run's jobs JSON on stdin (fetch_run_jobs): `infra <runner OS>` when the job
-# got no runner and started no step, or it is a summary whose failing parts
-# (its caller's jobs named after it: `detection / ci/detection (2)` for
-# `detection / ci/detection`, `ci/ios-release` for `ci/ios`) all got none;
-# `superseded` when the job is no longer among the latest (a re-run replaced
-# it); else `result`. Runner names and steps decide, never annotation text.
+# got no runner and started no step; `cancelled <runner OS> <job-id>...`
+# when it, or some of the jobs below, was cancelled after it started (the
+# caller reads their annotations: a timeout is a result); the same for a
+# summary whose failing parts (its caller's jobs named after it:
+# `detection / ci/detection (2)` for `detection / ci/detection`,
+# `ci/ios-release` for `ci/ios`) are all such jobs; `superseded` when the
+# job is no longer among the latest (a re-run replaced it); else `result`.
+# A part that failed outright makes it a result.
 failure_kind() { # job-id
   jq -r --argjson j "$1" '
     def caller: (capture("^(?<p>.* / )") // {p: ""}).p;
@@ -344,19 +364,30 @@ failure_kind() { # job-id
     def bad: .conclusion != null and .conclusion != "success" and .conclusion != "skipped";
     def never: bad and ((.runner_name // "") == "")
       and ([.steps[]? | select(.status != "queued" and .conclusion != "skipped")] | length == 0);
+    def cut: .conclusion == "cancelled" and (never | not);
     def os: [(.labels // [])[] | ascii_downcase]
       | if any(.[]; test("macos")) then "macOS"
         elif any(.[]; test("windows")) then "Windows"
         elif any(.[]; test("ubuntu|linux")) then "Linux"
         else "hosted" end;
+    def kind: [.[] | select(cut)] as $cut
+      | if ($cut | length) == 0 then "infra \(.[0] | os)"
+        else "cancelled \($cut[0] | os) \($cut | map(.id | tostring) | join(" "))" end;
     ([.jobs[] | select(.id == $j)] | first) as $job
     | if $job == null then "superseded"
-      elif ($job | never) then "infra \($job | os)"
       else ($job.name | caller) as $c | ($job.name | base | sub(" \\(.*$"; "")) as $stem
         | [.jobs[] | select(.id != $j and (.name | caller) == $c and (.name | base | startswith($stem)) and bad)] as $parts
-        | if ($parts | length) > 0 and all($parts[]; never) then "infra \($parts[0] | os)" else "result" end
+        | if ($job | never or cut) then
+            if all($parts[]; never or cut) then [$job] + $parts | kind else "result" end
+          elif ($parts | length) > 0 and all($parts[]; never or cut) then $parts | kind
+          else "result" end
       end'
 }
+
+# Whether a job that was cancelled after it started hit its own
+# timeout-minutes, by its annotations on stdin: a re-run would most likely
+# time out again.
+timed_out() { grep -q 'has exceeded the maximum execution time'; }
 
 # A job's verdict from check-runs JSON on stdin: the newest run of each
 # check named $1, alone or after a caller's "<job> / " (a called workflow's
@@ -635,11 +666,12 @@ skipped() { log "$1: skipped: could not read $2"; }
 
 # A hosted check's verdict from check-runs JSON ($2): check_verdict's line,
 # with a failure looked into. When the jobs behind it never ran:
-# `infra <run> <attempt> <runner OS> <url>` (resolve_infra decides), or
-# pending while that run is still going (a re-run, or other jobs; a re-run
-# needs it finished). Fails when GitHub could not be read.
+# `infra <run> <attempt> <why> <url>` (resolve_infra decides; why is
+# `no_macOS_runner` or `cancelled_on_macOS`), or pending while that run is
+# still going (a re-run, or other jobs; a re-run needs it finished). Fails
+# when GitHub could not be read.
 hosted_verdict() { # name checks-json
-  local line v url run job jobs kind info state attempt
+  local line v url run job jobs kind info state attempt why os ids id notes
   line=$(check_verdict "$1" <<<"$2")
   read -r v url _ <<<"$line"
   case "$v $url" in
@@ -656,7 +688,20 @@ hosted_verdict() { # name checks-json
   jobs=$(fetch_run_jobs "$run") || return 1
   kind=$(failure_kind "$job" <<<"$jobs") || return 1
   case "$kind" in
-    infra*) ;;
+    infra*) why="no_${kind#infra }_runner" ;;
+    # Cancelled after it started: infrastructure, unless one hit its own
+    # timeout-minutes.
+    cancelled*)
+      read -r _ os ids <<<"$kind"
+      for id in $ids; do
+        notes=$(fetch_annotations "$id") || return 1
+        if timed_out <<<"$notes"; then
+          echo "$line"
+          return 0
+        fi
+      done
+      why="cancelled_on_$os"
+      ;;
     # The check runs predate a re-run that replaced the job: wait for it.
     superseded)
       echo "pending - 0"
@@ -672,20 +717,39 @@ hosted_verdict() { # name checks-json
   if [ "$state" != completed ]; then
     echo "pending - 0"
   else
-    echo "infra $run ${attempt:-1} ${kind#infra } $url"
+    echo "infra $run ${attempt:-1} $why $url"
+  fi
+}
+
+# A queue commit's hosted check that is missing, from the commit's Queue run
+# line (fetch_queue_run, or nothing): pending while the run has not
+# completed (its summary job is created once its parts end); then the run's
+# jobs never all ran (#635: a part cancelled by an internal error, its
+# summary never created), so `infra <run> <attempt> did_not_run <url>`; and
+# `missed <url>` when the run succeeded without it, with nothing to re-run.
+missing_verdict() { # queue-run-line
+  local state id attempt conclusion url
+  read -r state id attempt conclusion url <<<"$1"
+  if [ "$state" != completed ]; then
+    echo "pending - 0"
+  elif [ "$conclusion" = success ]; then
+    echo "missed $url"
+  else
+    echo "infra $id ${attempt:-1} did_not_run $url"
   fi
 }
 
 # Job lines on stdin (`<job> <verdict> <where> <url>`, and
-# `<job> infra <run> <attempt> <os> <url>` from hosted_verdict) with the
-# infra ones decided: a run with re-runs left is re-run (once a pass) and
-# its jobs wait; a run without fails them as infrastructure. Beside a job
-# that failed for real they only wait: the commit fails anyway.
+# `<job> infra <run> <attempt> <why> <url>` from hosted_verdict or
+# missing_verdict) with the infra ones decided: a run with re-runs left is
+# re-run (once a pass) and its jobs wait; a run without fails them as
+# infrastructure. Beside a job that failed for real they only wait: the
+# commit fails anyway.
 resolve_infra() { # what (for the log)
-  local lines job v run attempt os url real=false done_runs=' '
+  local lines job v run attempt why url real=false done_runs=' '
   lines=$(cat)
   if grep -q '^[^ ]* failure ' <<<"$lines"; then real=true; fi
-  while read -r job v run attempt os url; do
+  while read -r job v run attempt why url; do
     [ -n "$job" ] || continue
     if [ "$v" != infra ]; then
       echo "$job $v $run $attempt"
@@ -695,15 +759,15 @@ resolve_infra() { # what (for the log)
       if [[ $done_runs != *" $run "* ]]; then
         done_runs+="$run "
         if rerun_failed "$run"; then
-          log "$1 $job: no $os runner (attempt $attempt); re-running run $run's failed jobs"
+          log "$1 $job: ${why//_/ } (attempt $attempt); re-running run $run's failed jobs"
         else
           log "$1 $job: could not re-run run $run"
         fi
       fi
       echo "$job pending - -"
     else
-      log "$1 $job: no $os runner in $attempt attempts"
-      echo "$job failure no_${os}_runner,_${attempt}_attempts $url"
+      log "$1 $job: ${why//_/ } in $attempt attempts"
+      echo "$job failure ${why},_${attempt}_attempts $url"
     fi
   done <<<"$lines"
 }
@@ -840,7 +904,7 @@ heads_pass() {
 
 queue_pass() {
   local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
-  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra
+  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra qrun
   t=$(now)
   main=$(fetch_main) || main=''
   [ -n "$main" ] || {
@@ -898,7 +962,7 @@ queue_pass() {
       read -r kind cross <<<"$info"
       if [ "$kind" != User ] || [ "$cross" != false ]; then third=true; fi
     done
-    lines=''
+    lines='' qrun=''
     for job in $jobs; do
       case "$job" in
         macos | ios | detection | scripts)
@@ -908,11 +972,35 @@ queue_pass() {
             continue 2
           }
           read -r v u _ <<<"$line"
+          # Missing: the commit's Queue run decides (#635), read once. The
+          # first time it has completed, the check runs are read again, in
+          # case the job ended between the two reads.
+          if [ "$v" = missing ] && [ -z "$qrun" ]; then
+            qrun=$(fetch_queue_run "$sha") || {
+              skipped "${sha:0:7}" "its Queue run"
+              rc=1
+              continue 2
+            }
+            qrun=${qrun:-none}
+            if [ "${qrun%% *}" = completed ]; then
+              if ! checks=$(fetch_check_runs "$sha") || ! line=$(hosted_verdict "ci/$job" "$checks"); then
+                skipped "${sha:0:7}" "the run behind ci/$job"
+                rc=1
+                continue 2
+              fi
+              read -r v u _ <<<"$line"
+            fi
+          fi
+          if [ "$v" = missing ]; then
+            line=$(missing_verdict "$qrun")
+            read -r v u _ <<<"$line"
+          fi
           case "$v" in
             success) where=hosted u=- ;;
             failure) where=hosted ;;
             infra) where='' ;;
-            missing) v=pending where=- u=- ;;
+            # The run succeeded without it: nothing to re-run.
+            missed) v=failure where=did_not_run ;;
             *) where=- u=- ;;
           esac
           if [ "$v" = infra ]; then lines+="$job $line"$'\n'; else lines+="$job $v $where $u"$'\n'; fi

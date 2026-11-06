@@ -684,12 +684,20 @@ it is not the status itself.
   `merge-gate.yml` again. The 5-minute schedule stays, but GitHub runs it
   rarely, so nothing relies on it.
 - **A job that never ran.** A hosted job cancelled with no runner and no
-  step started (GitHub's "not acquired" capacity cancels) is no result, nor
-  is a summary job whose failing parts never ran. The gate re-runs the
-  run's failed jobs, at most twice a run (by its run attempt), and waits
-  (also while a re-run's new job has replaced the failed one);
-  after that it fails, worded "no macOS runner, 3 attempts". A job that ran
-  and failed still fails at once. A summary's parts are its caller's jobs
+  step started (GitHub's "not acquired" capacity cancels) is no result. Nor
+  is one cancelled after it started (an internal error, a lost runner;
+  GitHub reports a test failure as `failure`), unless its annotation says it
+  hit its own `timeout-minutes`, nor a summary job whose failing parts are
+  all such jobs. Nor is a queue commit's hosted check that is missing once
+  the commit's Queue run (found by its head SHA) has completed: its summary
+  job was never created (#635). The gate re-runs the run's failed jobs, at
+  most twice a run (by its run attempt), and waits (also while a re-run's
+  new job has replaced the failed one, and while the Queue run goes on);
+  after that it fails, worded "no macOS runner, 3 attempts", "cancelled on
+  macOS, 3 attempts" or "did not run, 3 attempts". A Queue run that
+  succeeded without the check has nothing to re-run: "did not run" at once.
+  A job that ran and failed, or timed out, still fails at once, and beside
+  it nothing is re-run on that commit. A summary's parts are its caller's jobs
   named after it: `ci/detection (2)` for `ci/detection`, `ci/ios-release`
   for `ci/ios`, `ci/macos (tests)` for `ci/macos`, `ci/scripts (bash 3.2)`
   for `ci/scripts`, `fast (unit)` for `fast (ubuntu)`; name new parts that way, or their capacity cancels count
