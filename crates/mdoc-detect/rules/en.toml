@@ -49,7 +49,8 @@ trim = [
 # Titles and post-nominals stay outside a person's span: "Ms Bennett" is
 # proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
 # #382). A title's period goes with it. Run after job phrases (#385), so
-# "Chief Investigator Ms Edda Brannock" also loses "Ms".
+# "Chief Investigator Ms Edda Brannock" also loses "Ms". Lowercase list
+# letters at a line start or list break are no initials (#546).
 [[span]]
 category = "PERSON"
 trim = [
@@ -57,6 +58,7 @@ trim = [
     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
     "kc", "qc", "esq", "phd",
 ]
+list_letter = true
 
 # Two initials before a surname belong to the name: the model's "Quill" in
 # "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after
@@ -70,9 +72,11 @@ extend = [
 # "& Anor" and "& Ors" (and another, and others) in a case name come off
 # a party's edge: "Pellow Holdings Ltd & Anor" is "Pellow Holdings Ltd"
 # (guide rule 2, issue #499). The "&" goes with the end's punctuation below.
+# Lowercase list letters at a line start or list break come off too (#546).
 [[span]]
 category = "ORG"
 trim = ["anor", "ors"]
+list_letter = true
 
 # An organization ends with its legal form, not the sentence's period or
 # comma: "Northbridge Legal Ltd." at a sentence end is "Northbridge Legal
@@ -1349,6 +1353,25 @@ parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 # model's "Id" as a person (#561).
 [[reference]]
 pattern = '\b(?:Id|id|Ibid|ibid)\.'
+
+# Defined English party codes are labels, not names (#546, guide rule 8).
+# A name followed by its bracketed code, or a Claimant/Defendant-style
+# label followed by a code, establishes only that letter's series. A
+# bare code without its own evidence stays. Ranges and lists go when
+# every member belongs to an established series; possessive trustees go
+# too. A code opening a name protects its short mentions (guide rule 2).
+# The bracket/quote syntax in the removal pattern consumes every form
+# accepted by the first evidence pattern, including "as appropriate".
+# Lowercase plc can end the defining name; a role and code can occupy
+# adjacent heading lines, but name continuations stop at a newline.
+[[reference]]
+pattern = '(?:\([\p{Zs}\t]*[“"‘\x27]?|[“"‘\x27])?\b(?P<series>[CDPR])[0-9]{1,2}\b(?:[\p{Zs}\t]*(?:[-–—]|to)[\p{Zs}\t]*(?P<series2>[CDPR])[0-9]{1,2}\b)?(?:[\x27’]s\b(?:[\p{Zs}\t]+(?:trustees?|representatives?|solicitors?|counsel|estate|agents?)\b)?)?(?:[”"’\x27]?(?:,[\p{Zs}\t]+as[\p{Zs}\t]+appropriate)?[\p{Zs}\t]*\)|[”"’\x27])?'
+when = [
+    '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*|plc)[\p{Zs}\t]+\([\p{Zs}\t]*[“"‘\x27]?(?P<series>[CDPR])[0-9]{1,2}\b[”"’\x27]?(?:,[\p{Zs}\t]+as[\p{Zs}\t]+appropriate)?[\p{Zs}\t]*\)',
+    '\b(?i:claimants?|defendants?|plaintiffs?|petitioners?|respondents?)[\p{Zs}\t\r\n:*(“"‘\x27]+(?P<series>[CDPR])[0-9]{1,2}\b',
+    '\b(?P<series>[CDPR])[0-9]{1,2}\b[\p{Zs}\t]*(?:[-–—:]|\()[\p{Zs}\t]*(?i:claimants?|defendants?|plaintiffs?|petitioners?|respondents?)\b',
+]
+categories = ["PERSON", "ORG"]
 
 # A form's outline letter before its part's title in title case is no
 # initial: "J. Additional Questions" (guide rule 1, issue #499).
