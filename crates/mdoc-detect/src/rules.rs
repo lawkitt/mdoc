@@ -1736,6 +1736,67 @@ impl Pack {
                 .any(|pattern| pattern.is_match(&outside))
     }
 
+    /// The UK central bank shares its name with a private US lender.
+    /// An article and a bank-specific public relation must occur locally;
+    /// a party label takes precedence. Uncertain mentions remain names.
+    fn bank_of_england_in_context(&self, text: &str, range: std::ops::Range<usize>) -> bool {
+        static PATTERNS: OnceLock<[Regex; 3]> = OnceLock::new();
+        let [name, public_before, public_after] = PATTERNS.get_or_init(|| {
+            [
+                r"(?i)^[\s\p{P}]*(?P<article>the[\p{Zs}\t]+)?bank[\p{Zs}\t]+of[\p{Zs}\t]+england(?:['’]s)?[\s\p{P}]*$",
+                r"(?i)\bgovernor[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?$",
+                r"(?i)^(?:['’]s[\p{Zs}\t]+(?:monetary[\p{Zs}\t]+policy[\p{Zs}\t]+committee|prudential[\p{Zs}\t]+regulation[\p{Zs}\t]+authority)\b|[\p{Zs}\t]*,?[\p{Zs}\t]+(?:is[\p{Zs}\t]+)?the[\p{Zs}\t]+(?:uk['’]s|united[\p{Zs}\t]+kingdom['’]s|british)[\p{Zs}\t]+central[\p{Zs}\t]+bank\b)",
+            ]
+            .map(|pattern| Regex::new(pattern).expect("central bank context pattern"))
+        });
+        let Some(name) = name.captures(&text[range.clone()]) else {
+            return false;
+        };
+        let boundary = |c| matches!(c, '.' | '!' | '?' | ';' | '\n' | '\r');
+        let start = text[..range.start].rfind(boundary).map_or(0, |at| at + 1);
+        let end = text[range.end..]
+            .find(boundary)
+            .map_or(text.len(), |at| range.end + at);
+        let before = &text[start..range.start];
+        let after = &text[range.end..end];
+        let words = |part: &str| {
+            part.split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+        };
+        let before_words = words(before);
+        let labelled = |word: &str| {
+            matches!(word, "lender" | "borrower" | "party" | "parties")
+                || self.party_roles.contains(word)
+                || word.strip_suffix('s').is_some_and(|word| {
+                    matches!(word, "lender" | "borrower") || self.party_roles.contains(word)
+                })
+        };
+        // Labels can wrap, include a party letter or precede a quoted
+        // article outside the model span. Read the sentence across lines
+        // for labels, while public evidence remains confined to the bank's line.
+        let label_before = text[..range.start]
+            .rsplit(['.', '!', '?', ';'])
+            .next()
+            .unwrap_or_default();
+        let label_after = text[range.end..]
+            .split(['.', '!', '?', ';'])
+            .next()
+            .unwrap_or_default();
+        if words(label_before)
+            .iter()
+            .chain(words(label_after).iter())
+            .any(|word| labelled(word) || word == "private")
+            || self.beside_role(text, range)
+        {
+            return false;
+        }
+        let article =
+            name.name("article").is_some() || before_words.last().is_some_and(|word| word == "the");
+        article && (public_before.is_match(before) || public_after.is_match(after))
+    }
+
     /// Whether a model span at `range` of `text` is cut out of a court's,
     /// public body's or law's name, read with the words beside it (#378):
     /// a lowercase tail after the name's capitalized head ("Министерства
@@ -1752,6 +1813,11 @@ impl Pack {
     ) -> bool {
         static TAIL: OnceLock<Regex> = OnceLock::new();
         static OF: OnceLock<Regex> = OnceLock::new();
+        static CUT_NAME: OnceLock<Regex> = OnceLock::new();
+        static LAW_END: OnceLock<Regex> = OnceLock::new();
+        if self.bank_of_england_in_context(text, range.clone()) {
+            return true;
+        }
         let tail = TAIL.get_or_init(|| {
             Regex::new(&rust_classes(
                 r"^s?[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*",
@@ -1765,6 +1831,23 @@ impl Pack {
             .expect("of pattern")
         });
         let span = &text[range.clone()];
+        // Only these fixed phrases establish the missing head; a person's
+        // name beside a court or an office is not part of that body (#378).
+        let cut_name = CUT_NAME.get_or_init(|| {
+            Regex::new(r"\b(?:High[ \t]+Court[ \t]+of[ \t]+Justice|Law[ \t]+Enforcement[ \t]+Office|Fire[ \t]+and[ \t]+Police[ \t]+Employees['’][ \t]+Retirement[ \t]+System)\b")
+                .expect("cut public name pattern")
+        });
+        let line_start = text[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        let line_end = text[range.end..]
+            .find('\n')
+            .map_or(text.len(), |at| range.end + at);
+        if cut_name.find_iter(&text[line_start..line_end]).any(|m| {
+            line_start + m.start() <= range.start
+                && range.end <= line_start + m.end()
+                && self.public_body(m.as_str(), category, titled)
+        }) {
+            return true;
+        }
         // A surname's lowercase particle opens a name, not a body's tail:
         // "начальник Отдела ⟦де Лаваль⟧".
         let particle = span
@@ -1772,7 +1855,13 @@ impl Pack {
             .next()
             .is_some_and(|word| NAME_PARTICLES.contains(&word));
         if span.chars().next().is_some_and(char::is_lowercase) && !particle {
-            let head = text[..range.start].trim_end_matches([' ', '\t']);
+            // One wrapped line belongs to the name; a paragraph break
+            // does not connect a ministry with the following text.
+            let before = &text[..range.start];
+            let head = before.trim_end_matches([' ', '\t']);
+            let head = head
+                .strip_suffix('\n')
+                .map_or(head, |head| head.trim_end_matches([' ', '\t', '\r']));
             let from = head
                 .char_indices()
                 .rev()
@@ -1781,12 +1870,53 @@ impl Pack {
             let word = &head[from..];
             if head.len() < range.start
                 && word.chars().next().is_some_and(char::is_uppercase)
-                && self.public_body(&text[from..range.end], category, titled)
+                // A bare office word does not establish a continuation.
+                // Require institutional syntax in the phrase patterns,
+                // joining only the one permitted wrap for those patterns.
+                && self.public_body_by(
+                    &text[from..range.end].replace(['\r', '\n'], " "),
+                    category,
+                    titled,
+                    false,
+                )
             {
                 return true;
             }
         }
         let after = &text[range.end..];
+        // A legal head alone may start the next document's heading.
+        // Require a supported statutory title pattern, rather than the
+        // generic never word "Act", and preserve a labelled signatory.
+        let law_end = LAW_END.get_or_init(|| {
+            Regex::new(r"^(?:[\p{Zs}\t]+(?:\r?\n[\p{Zs}\t]*)?|\r?\n[\p{Zs}\t]*)(?:Act|Code|Ordinance)(?:[\p{Zs}\t]*(?:[.,;:)]|$)|[\p{Zs}\t]+(?:19|20)\d{2}\b)")
+                .expect("cut law title pattern")
+        });
+        let title_words: Vec<&str> = span.split_whitespace().collect();
+        let (label, _) = Self::word_before(text, range.start);
+        if title_words.len() >= 2
+            && !self.beside_role(text, range.clone())
+            && label != "for"
+            && !self
+                .never
+                .iter()
+                .any(|entry| entry.person_role && entry.has(&label))
+            && title_words.iter().all(|word| {
+                word.chars().next().is_some_and(char::is_uppercase)
+                    && word
+                        .chars()
+                        .all(|c| c.is_alphabetic() || ['-', '\'', '’'].contains(&c))
+                    || ["of", "the", "and", "for", "on", "&"].contains(word)
+            })
+            && let Some(found) = law_end.find(after)
+            && self.public_body_by(
+                &text[range.start..range.end + found.end()].replace(['\r', '\n'], " "),
+                category,
+                titled,
+                false,
+            )
+        {
+            return true;
+        }
         if span.ends_with(['’', '\''])
             && let Some(found) = tail.find(after)
             && self.public_body(
@@ -1822,6 +1952,7 @@ impl Pack {
     /// which is ambiguous.
     fn unnamed_abbreviations(&self, text: &str) -> std::collections::HashSet<String> {
         static DEFINED: OnceLock<Regex> = OnceLock::new();
+        static PENSION_TITLE: OnceLock<Regex> = OnceLock::new();
         let defined = DEFINED.get_or_init(|| {
             Regex::new(&rust_classes(concat!(
                 // The words before: any case, across a line break too.
@@ -1839,9 +1970,18 @@ impl Pack {
                 // "hereinafter", "hereinafter referred to as", "the".
                 r"(?:hereinafter(?:[\p{Zs}\t]+(?:referred[\p{Zs}\t]+to[\p{Zs}\t]+as|called))?",
                 r"[\p{Zs}\t]*[,:]?[\p{Zs}\t]*)?(?:the[\p{Zs}\t]+)?[“\x22‘']?",
-                r"(\p{Uppercase}(?:[\p{Uppercase}\p{N}&.-]){1,11})[”\x22’']?\)",
+                r"(\p{Uppercase}(?:[\p{Alphabetic}\p{N}&. \t-]){1,39})[”\x22’']?\)",
             )))
             .expect("abbreviation pattern")
+        });
+        let pension_title = PENSION_TITLE.get_or_init(|| {
+            Regex::new(&rust_classes(concat!(
+                r"^(?:(?:\p{Uppercase}[\p{Alphabetic}'’-]*|of|the|and|&)[ \t]+){1,12}",
+                r"(?:Pension|Retirement)[ \t]+System(?:[ \t]+of[ \t]+(?:the[ \t]+)?",
+                r"(?:City|County)[ \t]+of[ \t]+\p{Uppercase}[\p{Alphabetic}'’-]*",
+                r"(?:[ \t]+\p{Uppercase}[\p{Alphabetic}'’-]*){0,2})?$",
+            )))
+            .expect("public pension title pattern")
         });
         let initials = |word: &str| -> Vec<char> {
             word.split('-')
@@ -1870,7 +2010,7 @@ impl Pack {
             // initials spell the abbreviation, the first one its first
             // letter ("Electronic funds transfer", not "pay by electronic
             // funds transfer").
-            let from = (letters.len() >= 2)
+            let from = (letters.len() >= 2 && !short.as_str().chars().any(char::is_lowercase))
                 .then(|| {
                     (0..words.len()).rev().find(|&first| {
                         let mut spelt = words[first..].iter().flat_map(|(_, w)| initials(w));
@@ -1881,7 +2021,53 @@ impl Pack {
                     })
                 })
                 .flatten();
-            let short = short.as_str().trim_end_matches('.').to_owned();
+            // A public body can define a short name rather than initials
+            // ("Brindle County Police Pension System (“Brindle P&P”)").
+            // Require a copied name word plus initials in order, and an
+            // independently public long form. Unrelated bracketed names
+            // and a company's short name remain names (#378).
+            let from = from.or_else(|| {
+                let parts: Vec<&str> = short
+                    .as_str()
+                    .split([' ', '\t', '&'])
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                let copied = parts
+                    .iter()
+                    .any(|part| part.chars().any(char::is_lowercase));
+                let acronym = parts
+                    .iter()
+                    .any(|part| part.chars().all(char::is_uppercase));
+                (copied && acronym)
+                    .then(|| {
+                        (0..words.len()).rev().find(|&first| {
+                            let long = &text[words[first].0..title.end()];
+                            let mut remaining = words[first..].iter();
+                            parts.iter().all(|part| {
+                                if part.chars().all(char::is_uppercase) {
+                                    part.chars().all(|letter| {
+                                        remaining.by_ref().any(|(_, word)| {
+                                            word.chars()
+                                                .next()
+                                                .is_some_and(|c| c.eq_ignore_ascii_case(&letter))
+                                        })
+                                    })
+                                } else {
+                                    // A geographic qualifier can be moved to
+                                    // the front ("… of the City of Baltimore"
+                                    // -> "Baltimore F&P"). It must still be
+                                    // copied exactly from the public long form.
+                                    words[first..]
+                                        .iter()
+                                        .any(|(_, word)| word.eq_ignore_ascii_case(part))
+                                }
+                            }) && pension_title.is_match(long)
+                                && self.public_body(long, Category::Organization, false)
+                        })
+                    })
+                    .flatten()
+            });
+            let short = short.as_str().trim().trim_end_matches('.').to_owned();
             let Some(from) = from else {
                 other.insert(short);
                 continue;
@@ -2184,6 +2370,11 @@ impl Pack {
         view: &mdoc_pii::view::View,
         detections: &mut Vec<Detection>,
     ) -> Vec<std::ops::Range<usize>> {
+        static EMPLOYEE: OnceLock<Regex> = OnceLock::new();
+        let employee = EMPLOYEE.get_or_init(|| {
+            Regex::new(r"(?i)\b(?:сотрудник|офицер|инспектор)\p{Alphabetic}{0,3}[\p{Zs}\t]+$")
+                .expect("employee affiliation pattern")
+        });
         let fixes = self.spans.iter().filter_map(|span| match span {
             Span::Fix(fix) => Some(fix),
             Span::Pattern { .. } => None,
@@ -2196,6 +2387,25 @@ impl Pack {
                 .extend
                 .iter()
                 .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
+                .filter(|m| {
+                    if !source[m.clone()].contains(['«', '"'])
+                        || !self.public_body(&source[m.clone()], fix.category, false)
+                    {
+                        return true;
+                    }
+                    let start = source[..m.start]
+                        .rfind(['\n', '.', ';'])
+                        .map_or(0, |at| at + 1);
+                    let before = &source[start..m.start];
+                    // An inner agency quotation cannot overrule the
+                    // private company enclosing it, in either category.
+                    let enclosed = self.legal_form(before)
+                        && (before.matches('«').count() > before.matches('»').count()
+                            || before.matches('"').count() % 2 == 1);
+                    // Even an explicit police department can be an
+                    // employee's affiliation before a quoted nickname.
+                    !enclosed && !employee.is_match(before)
+                })
                 .collect();
             // In reading order: a span never grows into part of another
             // span of its category, so in "Ветлин Н. О. Брюн Л. И." the
@@ -2223,6 +2433,11 @@ impl Pack {
                         && source[m.start..range.start]
                             .split(|c: char| !c.is_alphanumeric() && c != '-')
                             .any(|word| !word.is_empty() && self.never(word))
+                        // A supported quoted institution may grow over
+                        // its public head; extension patterns must first
+                        // establish the institution, not an affiliation.
+                        && !(source[m.clone()].contains(['«', '"'])
+                            && self.public_body(&source[m.clone()], fix.category, false))
                 };
                 let grown = matches
                     .iter()
@@ -2770,6 +2985,19 @@ impl Pack {
         text: &str,
         category: Category,
     ) -> bool {
+        self.identifying_with_organizations(source, range, text, category, &[])
+    }
+
+    /// Like `identifying_at`, with independently accepted model company
+    /// names as evidence for a reference-looking short name (#499).
+    pub(crate) fn identifying_with_organizations(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        text: &str,
+        category: Category,
+        organizations: &[&str],
+    ) -> bool {
         if source.get(range.clone()).is_none() {
             return false;
         }
@@ -2779,7 +3007,29 @@ impl Pack {
             return true;
         }
         if self.in_reference(source, range.clone()) {
-            return false;
+            // A complete company name needs the same protection as one
+            // that grows to its legal form. IDs assigned to a person are
+            // private even when their value looks like a reference.
+            let company = category == Category::Organization
+                && (self.legal_form(text) || self.company_short_name(source, text) || {
+                    let normalized = |name: &str| {
+                        name.split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                            .to_lowercase()
+                    };
+                    let short = normalized(text);
+                    organizations.iter().any(|name| {
+                        let full = normalized(name);
+                        full == short
+                            || full
+                                .strip_prefix(&short)
+                                .is_some_and(|tail| tail.starts_with(' '))
+                    })
+                });
+            if !company && !Self::personal_identifier_context(source, range.start) {
+                return false;
+            }
         }
         if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
             && !shape.forbid_in.is_empty()
@@ -2888,6 +3138,19 @@ impl Pack {
         self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
     }
 
+    /// An explicit personal-ID label immediately before the value takes
+    /// precedence over a reference's shape (guide rule 6, #499).
+    fn personal_identifier_context(source: &str, at: usize) -> bool {
+        static LABEL: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(
+                r"(?i)\b(?:badge(?:\s+(?:number|no\.?|id))?|(?:employee|staff)\s+(?:id|number|no\.?|badge)|passport(?:\s+(?:number|no\.?))?)[\s:*_#№.]*$",
+            )
+            .expect("constant personal identifier label pattern")
+        });
+        let start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+        LABEL.is_match(&mdoc_pii::view::decoded(&source[start..at]))
+    }
+
     /// Whether `range` of `source` lies inside a `reference` match, a legal
     /// reference ("424 U.S. at 38", "статьи 431 ГК РФ"): no identifier,
     /// address or name (guide rule 8). The span's lines are searched as
@@ -2935,7 +3198,8 @@ impl Pack {
     /// An organization span ending in a `person_before` word ("Ostrand
     /// Decl.") becomes the person before it ("Ostrand") when a person's span
     /// holds each of that name's words: a declaration is a person's, never
-    /// a company.
+    /// a company. The same suffix comes off an existing person's span in
+    /// a document citation ("Ostrand Decl. ¶ 3", #499).
     fn person_documents(&self, source: &str, detections: &mut [Detection]) {
         let words: Vec<&String> = self
             .spans
@@ -2963,7 +3227,7 @@ impl Pack {
             .collect();
         for detection in detections
             .iter_mut()
-            .filter(|d| d.category == Category::Organization)
+            .filter(|d| matches!(d.category, Category::Organization | Category::Person))
         {
             let text = source[detection.range.clone()].trim_end();
             let Some((name, last)) = text.rsplit_once(char::is_whitespace) else {
@@ -2972,11 +3236,65 @@ impl Pack {
             let last = last.trim_end_matches('.').to_lowercase();
             let name = name.trim_end();
             let wanted = name_words(name);
+            // An existing PERSON needs citation punctuation after the
+            // abbreviated document word. A surname at a sentence end
+            // ("Ivo Decl.") or without the dot stays as the model gave it.
+            let after = &source[detection.range.end..];
+            let citation_tail = if text.ends_with('.') {
+                Some(after)
+            } else {
+                after.strip_prefix('.')
+            }
+            .is_some_and(|after| {
+                let after = after.trim_start_matches([' ', '\t']);
+                let after = after
+                    .strip_prefix(',')
+                    .unwrap_or(after)
+                    .trim_start_matches([' ', '\t']);
+                static PAGE_LINE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"^\d+:\d+(?:[-–](?:\d+:)?\d+)?(?:$|[\s),;.\]])")
+                        .expect("constant page-line pinpoint pattern")
+                });
+                // "Ex. 1 to Penrow Decl." explicitly names a document;
+                // punctuation plus another span's given name does not.
+                static EXHIBIT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"\bEx\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+$")
+                        .expect("constant exhibit document pattern")
+                });
+                static AT_PAGE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    // A clock time or a street address after "at"
+                    // supplies no document pinpoint evidence.
+                    Regex::new(r"^at[\p{Zs}\t]+\d+(?:[-–]\d+)?(?:[\p{Zs}\t]*$|[\p{Zs}\t]*[),;.\]])")
+                        .expect("constant at-page pinpoint pattern")
+                });
+                after.starts_with('¶')
+                    || PAGE_LINE.is_match(after)
+                    || (after.is_empty() || after.starts_with([')', ';']))
+                        && EXHIBIT.is_match(&source[..detection.range.start])
+                    || AT_PAGE.is_match(after)
+            });
+            // "Ivo Affleck" corroborates "Ivo Aff", not an affidavit
+            // label. Sharing only a given name proves no document label.
+            let abbreviated_surname = people.iter().any(|person| {
+                person.len() == wanted.len() + 1
+                    && wanted
+                        .iter()
+                        .zip(person)
+                        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+                    && person.last().is_some_and(|surname| {
+                        surname.len() > last.len() && surname.to_lowercase().starts_with(&last)
+                    })
+            });
             if !words.iter().any(|word| **word == last)
                 || wanted.is_empty()
-                || !people
-                    .iter()
-                    .any(|person| wanted.iter().all(|word| person.contains(word)))
+                || abbreviated_surname
+                || if detection.category == Category::Person {
+                    !citation_tail
+                } else {
+                    !people
+                        .iter()
+                        .any(|person| wanted.iter().all(|word| person.contains(word)))
+                }
             {
                 continue;
             }
@@ -3238,6 +3556,75 @@ impl Pack {
             .filter(|word| !word.is_empty())
             .peekable();
         words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// A reference-looking short name stays when the document also gives
+    /// its company's legal form, ignoring case and a soft line wrap. No
+    /// model span is required over the full name (guide rule 2).
+    fn company_short_name(&self, source: &str, text: &str) -> bool {
+        let source = mdoc_pii::view::decoded(source);
+        let wording = text
+            .split_whitespace()
+            .map(regex::escape)
+            .collect::<Vec<_>>()
+            .join(r"[\p{Zs}\t]+");
+        if wording.is_empty() {
+            return false;
+        }
+        // Regex case folding preserves source offsets even for Unicode
+        // letters whose lowercase spelling has a different byte length.
+        let pattern = Regex::new(&format!(r"(?i){wording}")).expect("escaped company wording");
+        pattern.find_iter(&source).any(|found| {
+            // Check boundaries outside the matched wording so a name's
+            // own final dot ("C.F.R.") remains part of the spelling.
+            if source[..found.start()]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            {
+                return false;
+            }
+            let after = &source[found.end()..];
+            if !after.starts_with(char::is_whitespace) {
+                return false;
+            }
+            // Permit a soft wrap, but never a paragraph or heading break.
+            let end = after.find('\n').map_or(after.len(), |at| {
+                let next = &after[at + 1..];
+                let next_end = next.find('\n').unwrap_or(next.len());
+                let line = source[..found.end()]
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or_default();
+                if soft_break(line, &next[..next_end]) {
+                    at + 1 + next_end
+                } else {
+                    at
+                }
+            });
+            // Only contiguous name words can lead to the legal form;
+            // prose or a sentence boundary ends the name.
+            for word in after[..end].split_whitespace() {
+                let punctuated = word.ends_with(['.', ',', ';', ')', '»', '”', '"']);
+                let word = word.trim_end_matches(['.', ',', ';', ')', '»', '”', '"']);
+                if self.legal_form(word) {
+                    return true;
+                }
+                if punctuated
+                    || word != "&"
+                        && !(word
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_uppercase() || c.is_ascii_digit())
+                            && word
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '\'' | '’')))
+                {
+                    break;
+                }
+            }
+            false
+        })
     }
 
     /// Whether an organization `span` fix grows the span at `range` of
@@ -5542,6 +5929,616 @@ Privacy Act (“BIPA”). BIPA applies.",
             ),
             ["QF"]
         );
+    }
+
+    /// Recheck the outstanding #378 probe shapes against the current pack,
+    /// as both categories the model used. Collect failures to see the gaps
+    /// together before extending the existing public-body rules.
+    #[test]
+    fn public_bodies_round_three_reported_names() {
+        let mut missed = Vec::new();
+        for text in [
+            "HEALTH SUBCOMMITTEE",
+            "OVERSIGHT SUMCOMMITTEE",
+            "Federal Deposit Insurance Corporation",
+            "EPA Regional Office",
+            "Arizona Game and Fish Department",
+            "FWS's Law Enforcement Office",
+            "FBI Ashmoor Field Office",
+            "Ashmoor State Experiment Station",
+            "Northern Regional Research Laboratory",
+            "Ashmoor Experiment Station",
+            "Iova State Experiment Statione",
+            "Georgia Experiment Ststion",
+            "Northern Regional Reseerch Laboratory",
+            "Fungicide-Herbicide Branch Registration Division",
+            "Ashmoor County Dispatch",
+            "Ashmoor County Medical Examiner",
+            "Agricultural Research Service",
+            "Soil Conservation Service",
+            "Corps of Engineers",
+            "Secretary of Defense",
+            "Minister of Defence of the French Republic",
+            "NATO Land Group 1",
+            "Armaments Cooperation Division",
+            "Security Authority",
+            "National Archives",
+            "Basel Committee",
+            "International Monetary Fund",
+            "Brindle County Police Pension System",
+            "Fire and Police Employees' Retirement System of the City of Brindle",
+            "Williamson Cnty. Appraisal Dist.",
+            "Texas Health and Safety Code",
+            "CAFTA-DR Secretariat",
+            "ChD",
+            "Арбитражный суд Энской области",
+            "Министерства обороны Российской Федерации",
+            "Пенсионного фонда Российской Федерации",
+            "Фонда пенсионного и социального страхованияРоссийской Федерации",
+            "ОПФР",
+            "Регистрационно-лицензионной палатой",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(text, &[(text, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {text}"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// #378 cut spans and defined short names need the body's context;
+    /// adjacent personal names and private bodies must keep their spans.
+    #[test]
+    fn public_bodies_round_three_fragments() {
+        let mut missed = Vec::new();
+        for (source, span) in [
+            ("High Court of Justice", "Justice"),
+            ("the Law Enforcement Office", "Office"),
+            (
+                "Министерства\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            (
+                "Министерства\r\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            ("бюджет Фонда", "Фонда"),
+            ("МО МВД России «Энский»", "Энский"),
+            ("Brindle Freight Safety\nAct", "Brindle Freight Safety"),
+            (
+                "Brindle County Police Pension System (“Brindle P&P”). Brindle P&P replied.",
+                "Brindle P&P",
+            ),
+            (
+                "Fire and Police Employees' Retirement System of the City of Baltimore (“Baltimore F&P”).",
+                "Baltimore F&P",
+            ),
+            (
+                "Fire and Police Employees' Retirement System of the City of Brindle",
+                "Employees' Retirement System",
+            ),
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(source, &[(span, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {source} [span {span}]"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// The reach decision in #378's last comment (#484 item 4): statutory
+    /// corporations, enterprises, laboratories and regulators are bodies;
+    /// ownership alone never removes a university or a college.
+    #[test]
+    fn public_bodies_round_three_statutory_bodies() {
+        let mut missed = Vec::new();
+        for text in [
+            "PBGC",
+            "ARRC",
+            "Brookhaven National Laboratory",
+            "Brindle NHS Trust",
+            "Brindle Port Authority",
+            "Law Society of Brindle",
+            "Росатом",
+            "Роскосмос",
+            "ГУП «Энский водоканал»",
+            "МУП «Энский водоканал»",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                if !fixed(text, &[(text, category)]).is_empty() {
+                    missed.push(format!("{category:?}: {text}"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
+    }
+
+    /// Gate review of #643: each reported name survives both span fixes
+    /// and the proposals the user actually sees, with its category intact.
+    #[test]
+    fn public_bodies_gate_review_keeps_names() {
+        for (source, span, category) in [
+            (
+                "Employee: John Smith\nAct of acceptance of completed work",
+                "John Smith",
+                Category::Person,
+            ),
+            (
+                "For National Grid\nAct of acceptance of completed work",
+                "National Grid",
+                Category::Organization,
+            ),
+            ("John Smith\nAct", "John Smith", Category::Person),
+            (
+                "Brindle Freight Safety\nAct of acceptance of completed work",
+                "Brindle Freight Safety",
+                Category::Organization,
+            ),
+            (
+                "Employee: Brindle Freight Safety\nAct",
+                "Brindle Freight Safety",
+                Category::Organization,
+            ),
+            ("Department\njohn Smith", "john Smith", Category::Person),
+            ("Ministry\njohn Smith", "john Smith", Category::Person),
+            ("Ministry\r\njohn Smith", "john Smith", Category::Person),
+            ("Department john Smith", "john Smith", Category::Person),
+            (
+                "Министерства\nиван Смирнов",
+                "иван Смирнов",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МВД России «Иван Смирнов» подписал заявление.",
+                "Иван Смирнов",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МО МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "ООО «МВД России «Страж»» заключило договор.",
+                "Страж",
+                Category::Organization,
+            ),
+            (
+                "ООО «МО МВД России «Страж»» заключило договор.",
+                "Страж",
+                Category::Organization,
+            ),
+        ] {
+            assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
+            let start = source.find(span).unwrap();
+            let label = match category {
+                Category::Person => "person",
+                Category::Organization => "organization",
+                _ => unreachable!(),
+            };
+            let proposed = crate::recognition::proposals(
+                source,
+                &[crate::RawEntity {
+                    start,
+                    end: start + span.len(),
+                    label: label.into(),
+                    score: 0.9,
+                    text: span.into(),
+                }],
+            )
+            .unwrap();
+            assert_eq!(
+                proposed,
+                [crate::recognition::Span {
+                    range: start..start + span.len(),
+                    category: if category == Category::Person {
+                        "PERSON"
+                    } else {
+                        "ORG"
+                    }
+                    .into(),
+                }],
+                "{source}"
+            );
+        }
+    }
+
+    /// Private and party qualifiers on either side take precedence over
+    /// even a direct central-bank relation, in either model category.
+    #[test]
+    fn bank_of_england_gate_review_keeps_private_names() {
+        let name = "Bank of England";
+        for category in [Category::Organization, Category::Person] {
+            for source in [
+                "The Bank of England, a private Arkansas lender, financed a home in London.",
+                "The Bank of England (Lender) serves UK customers.",
+                "Private Bank of England discussed UK monetary policy.",
+                "The Bank of England, a private bank, discussed monetary policy.",
+                "Lender: The Bank of England is the British central bank.",
+                "The Bank of England (Lender) is the British central bank.",
+                "Party A: The Bank of England is the British central bank.",
+                "The Bank of England (Party A) is the British central bank.",
+                "Private: The Bank of England is the British central bank.",
+                "The Bank of England, private, is the British central bank.",
+                "The Bank of England\n(Lender) serves UK customers.",
+            ] {
+                assert_eq!(fixed(source, &[(name, category)]), [name], "{source}");
+                let start = source.find(name).unwrap();
+                let proposed = crate::recognition::proposals(
+                    source,
+                    &[crate::RawEntity {
+                        start,
+                        end: start + name.len(),
+                        label: if category == Category::Person {
+                            "person"
+                        } else {
+                            "organization"
+                        }
+                        .into(),
+                        score: 0.9,
+                        text: name.into(),
+                    }],
+                )
+                .unwrap();
+                assert!(
+                    proposed
+                        .iter()
+                        .any(|span| span.range == (start..start + name.len())),
+                    "{source}: {proposed:?}"
+                );
+            }
+        }
+    }
+
+    /// Institutional continuations still go when their syntax, rather
+    /// than the preceding bare office word, establishes the body's name.
+    #[test]
+    fn public_body_continuations_need_institutional_syntax() {
+        for (source, span) in [
+            ("Department\nof Justice", "of Justice"),
+            ("Ministry\nof Defence", "of Defence"),
+            (
+                "Министерства\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            (
+                "Министерства\nобороны Российской Федерации",
+                "обороны Российской Федерации",
+            ),
+            ("Brindle Freight Safety\nAct", "Brindle Freight Safety"),
+            (
+                "Biometric Information Privacy\r\nAct",
+                "Biometric Information Privacy",
+            ),
+            ("Data Protection\nAct", "Data Protection"),
+            ("МО МВД России «Энский»", "Энский"),
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                assert!(fixed(source, &[(span, category)]).is_empty(), "{source}");
+            }
+        }
+    }
+
+    /// #378 Q2: the Arkansas lender shares the central bank's name.
+    /// Only an article and a direct institutional relation disambiguate
+    /// it; geography and discussion of public policy are insufficient.
+    #[test]
+    fn bank_of_england_needs_public_context() {
+        let name = "Bank of England";
+        for category in [Category::Organization, Category::Person] {
+            for source in [
+                "Lender: Bank of England",
+                "Bank of England",
+                "The Bank of England supplied the loan",
+                "Bank of England discussed Monetary Policy",
+                "The Governor spoke. The Bank of England replied",
+                "UK policy\n\nThe Bank of England supplied the loan",
+                "The Bank of England Services Ltd discussed Monetary Policy",
+                "The Bank of England discussed Governor",
+                "The Bank of England discussed Monetary Policy",
+                "The Bank of England discussed Threadneedle",
+                "The Bank of England discussed Prudential Regulation",
+                "The Bank of England discussed UK",
+                "The Bank of England discussed United Kingdom",
+                "The Bank of England discussed British",
+                "The Bank of England discussed London",
+            ] {
+                let span = if source.contains("Services Ltd") {
+                    "Bank of England Services Ltd"
+                } else {
+                    name
+                };
+                assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
+            }
+            for source in [
+                "The Governor of the Bank of England replied",
+                "The Bank of England's Monetary Policy Committee replied",
+                "The Bank of England's Prudential Regulation Authority replied",
+                "The Bank of England, the UK's central bank, replied",
+                "The Bank of England is the British central bank",
+            ] {
+                assert!(fixed(source, &[(name, category)]).is_empty(), "{source}");
+                for label in [
+                    "Lender",
+                    "Borrower",
+                    "Party",
+                    "Plaintiff",
+                    "Defendant",
+                    "Lenders",
+                    "Party A",
+                    "Lender (UK)",
+                ] {
+                    for separator in [": ", ":\n"] {
+                        let source = format!("{label}{separator}{source}");
+                        // The article may be outside or inside the span.
+                        let article = if source.contains("the Bank") {
+                            "the"
+                        } else {
+                            "The"
+                        };
+                        for span in [name, &format!("{article} Bank of England")] {
+                            assert_eq!(fixed(&source, &[(span, category)]), [span], "{source}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// #378 Q2: the production company's complete trading name is private;
+    /// an office needs its public parent inside the proposed span.
+    #[test]
+    fn field_office_needs_a_public_parent() {
+        for category in [Category::Organization, Category::Person] {
+            for (source, span) in [
+                ("The Field Office supplied the film", "The Field Office"),
+                ("The Field Office supplied the film", "Field Office"),
+                ("The Ashmoor Field Office replied", "Ashmoor Field Office"),
+                ("Ice Field Office supplied the film", "Ice Field Office"),
+                ("The FBI contacted the Field Office", "Field Office"),
+                (
+                    "FBI Field Office Ltd supplied the film",
+                    "FBI Field Office Ltd",
+                ),
+            ] {
+                // An ORG ending in "Office" is a private department (#506)
+                // and goes anyway; a legal form keeps it.
+                if category == Category::Organization && span.ends_with("Office") {
+                    continue;
+                }
+                assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
+            }
+            for span in [
+                "FBI Field Office",
+                "FBI Ashmoor Field Office",
+                "ICE Field Office",
+                "USCIS Field Office",
+                "Social Security Field Office",
+                "Department of Labor Field Office",
+                "Ashmoor Agency Field Office",
+                "Ashmoor Bureau Field Office",
+                "Ashmoor Service Field Office",
+            ] {
+                assert!(fixed(span, &[(span, category)]).is_empty(), "{span}");
+            }
+        }
+    }
+
+    /// #378 Q2: Foundation and Hospital are parts of NHS trust names.
+    #[test]
+    fn nhs_foundation_trusts_are_public_bodies() {
+        for span in [
+            "Oxleas NHS Foundation Trust",
+            "Oxleas NHS Trust",
+            "Oxleas NHS Foundation Trust Hospital",
+            "NHS Foundation Trust",
+            "NHS Trust",
+            "NHS Foundation Trust Hospital",
+            "Ashmoor and Brindle NHS Foundation Trust",
+            "Ashmoor & Brindle NHS Foundation Trust",
+            "Ashmoor NHS\nFoundation Trust",
+            "Ashmoor NHS\r\nFoundation Trust",
+            "Ashmoor and\nBrindle NHS Foundation Trust",
+            "Ashmoor NHS Foundation\nTrust",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                assert!(fixed(span, &[(span, category)]).is_empty(), "{span}");
+            }
+        }
+        for private in [
+            "Oxleas NHS Foundation Trust Services Ltd",
+            "Ashmoor and Brindle NHS Foundation Trust Services Ltd",
+            "Ashmoor & Brindle NHS\nFoundation Trust Services Ltd",
+            "Ashmoor NHS\n\nFoundation Trust",
+            "Ashmoor and Brindle NHS Foundation Trust Consulting",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                assert_eq!(
+                    fixed(private, &[(private, category)]),
+                    [private],
+                    "{private}"
+                );
+            }
+        }
+    }
+
+    /// The privacy side of #378: similar people, companies, universities,
+    /// non-state funds and the body's own identifiers remain marked.
+    #[test]
+    fn public_bodies_round_three_preserves_names_and_details() {
+        for text in [
+            "Quillon Freight LLC",
+            "Bank of England Services Ltd",
+            "Security Authority Ltd",
+            "Basel Committee Consulting",
+            "Research Laboratory Partners",
+            "Field Office Supplies",
+            "Ashmoor Experiment Station Ltd",
+            "Experiment Station Productions",
+            "Regional Research Laboratory Services",
+            "NATO Logistics",
+            "NASA Federal Credit Union",
+            "Treaty Oak Capital",
+            "Ashmoor County Community College",
+            "ФГБОУ ВО «Энский государственный университет»",
+            "Негосударственный пенсионный фонд «Кедровый бор»",
+            "Благотворительный фонд «Кедровый бор»",
+            "ООО «Палата»",
+        ] {
+            assert_eq!(
+                fixed(text, &[(text, Category::Organization)]),
+                [text],
+                "{text}"
+            );
+        }
+        for (source, span) in [
+            ("Ms Justice wrote", "Justice"),
+            ("Secretary of Defense Orrin Quill wrote", "Orrin Quill"),
+            ("Minister of Defence Orrin Quill wrote", "Orrin Quill"),
+            ("начальник Министерства де Лаваль", "де Лаваль"),
+            ("Суд Н. О.", "Суд Н. О."),
+            ("Иван Судов", "Иван Судов"),
+            ("ГУ МВД России: Иван Ветлин", "Иван Ветлин"),
+            ("Police met Orrin Quill (“Orrin Q”).", "Orrin Q"),
+            (
+                "Brindle County Police Pension System; Brindle Paper Partners (“Brindle P&P”).",
+                "Brindle P&P",
+            ),
+        ] {
+            assert_eq!(
+                fixed(source, &[(span, Category::Person)]),
+                [span],
+                "{source}"
+            );
+        }
+        // The same short name also defined for a company is ambiguous.
+        assert_eq!(
+            fixed(
+                "Brindle County Police Pension System (“Brindle P&P”); \
+                 Brindle Paper Partners LLC (“Brindle P&P”).",
+                &[("Brindle P&P", Category::Organization)],
+            ),
+            ["Brindle P&P"]
+        );
+        // A line wrap is context; a paragraph break or a sentence is not.
+        assert_eq!(
+            fixed(
+                "Министерства\n\nФинансов Иван",
+                &[("Финансов Иван", Category::Person)]
+            ),
+            ["Финансов Иван"]
+        );
+        assert_eq!(
+            fixed(
+                "Министерства\n\nфинансов Российской Федерации",
+                &[("финансов Российской Федерации", Category::Organization)]
+            ),
+            ["финансов Российской Федерации"]
+        );
+        assert_eq!(
+            fixed(
+                "Treaty Oak Capital Agreement",
+                &[("Treaty Oak Capital", Category::Organization)]
+            ),
+            ["Treaty Oak Capital"]
+        );
+        assert_eq!(
+            fixed(
+                "Quillon Freight LLC\nAct",
+                &[("Quillon Freight LLC", Category::Organization)]
+            ),
+            ["Quillon Freight LLC"]
+        );
+        for (value, category) in [
+            ("41 Larch Road, Ashmoor AS1 9ZZ", Category::Address),
+            ("+1 (202) 555-0164", Category::Phone),
+            ("office@quarry.invalid", Category::Email),
+            ("7701234567", Category::Tax),
+            ("40702810900000012345", Category::Bank),
+        ] {
+            let source = format!("Bureau of Quarry Safety / Министерство финансов: {value}");
+            assert_eq!(fixed(&source, &[(value, category)]), [value]);
+        }
+    }
+
+    /// Exercise the complete correction/review path on the new synthetic
+    /// documents with injected model spans; no model snapshot is written.
+    #[test]
+    fn public_bodies_round_three_fixtures_with_injected_spans() {
+        use crate::recognition::{Fixture, proposals};
+        for (lang, extra) in [
+            (
+                "en",
+                vec![
+                    ("Ashmoor Field Office", Category::Organization),
+                    ("Northern Regional Research Laboratory", Category::Person),
+                    ("Justice", Category::Person),
+                    ("Law Enforcement Office", Category::Organization),
+                    ("Brindle P&P", Category::Person),
+                    ("Brindle Freight Safety", Category::Organization),
+                ],
+            ),
+            (
+                "ru",
+                vec![
+                    ("МО МВД России «Энский»", Category::Organization),
+                    ("Энский»", Category::Person),
+                    ("финансов Российской Федерации", Category::Organization),
+                    ("МУП «Энский водоканал»", Category::Person),
+                ],
+            ),
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../tests/fixtures/recognition/{lang}/judgment/probe-{lang}-r3-public-bodies-r3.md"));
+            let fixture = Fixture::read(&path).unwrap();
+            fixture.validate().unwrap();
+            fixture.validate_layout().unwrap();
+            let raw = |range: std::ops::Range<usize>, category: Category| {
+                let label = crate::FAMILIES
+                    .iter()
+                    .flat_map(|family| family.iter())
+                    .find(|(_, value)| *value == category)
+                    .unwrap()
+                    .0;
+                crate::RawEntity {
+                    start: range.start,
+                    end: range.end,
+                    label: label.into(),
+                    score: 0.9,
+                    text: fixture.source[range].to_owned(),
+                }
+            };
+            let mut entities: Vec<_> = fixture
+                .gold
+                .iter()
+                .map(|span| raw(span.range.clone(), category(&span.category).unwrap()))
+                .collect();
+            for (needle, category) in extra {
+                assert!(fixture.source.contains(needle), "{lang}: {needle}");
+                for (at, _) in fixture.source.match_indices(needle) {
+                    entities.push(raw(at..at + needle.len(), category));
+                }
+            }
+            let mut proposed = proposals(&fixture.source, &entities).unwrap();
+            // "Ashmoor Field Office" goes as a private department (#506),
+            // as the gold has it.
+            let mut gold = fixture.gold;
+            proposed.sort();
+            gold.sort();
+            assert_eq!(proposed, gold, "{lang}");
+        }
     }
 
     /// Pronouns, common words, religions and nationalities name no one
@@ -8116,6 +9113,735 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
         assert!(!pack().identifying("Anor", Category::Person));
         assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
+    /// Issue #499's follow-up probes: citation parts name nobody, while
+    /// the declarant and people following a reporter keep their full names.
+    #[test]
+    fn citation_parts_follow_up_probes() {
+        let mut failures = Vec::new();
+        for (source, text, label) in [
+            ("See 424 U.S. at 38.", "424 U.S. at 38", "address"),
+            (
+                "See 904 F.2d 275, 277.",
+                "904 F.2d 275, 277",
+                "phone_number",
+            ),
+            ("See 33 A.D.3d 352.", "A.D.", "person"),
+            ("Under 42 U.S.C. § 1983.", "S.C.", "person"),
+            ("Under I.R.C. § 61.", "I.R.C.", "person"),
+            (
+                "See n. 14; Tr. 112-14; 123sa.",
+                "n. 14",
+                "national_id_number",
+            ),
+            (
+                "Under Chapter 7 of the Bankruptcy Code.",
+                "Chapter 7",
+                "organization",
+            ),
+            ("Chapter 11 Case", "Chapter 11", "organization"),
+            ("R (on the application of Penrow)", "R", "person"),
+            ("See at p. 478A.", "478A", "address"),
+            ("See 1931 S.C. (H.L.) 13.", "S.C.", "person"),
+            ("See 1931 S.C. (H.L.) 13.", "H.L", "person"),
+            ("See [2031] All ER (Comm) 9.", "Comm", "organization"),
+            (
+                "Under National Instrument 45-999.",
+                "National Instrument 45-999",
+                "national_id_number",
+            ),
+            ("Under PD 57ZZ.", "PD 57ZZ", "organization"),
+            (
+                "See 352 DM - Aviation Safety.",
+                "352 DM - Aviation Safety",
+                "organization",
+            ),
+            (
+                "See AHCP/CCAA p. S-19.",
+                "AHCP/CCAA p. S-19",
+                "organization",
+            ),
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl", "person"),
+            ("See Decl. ¶ 4.", "Decl", "person"),
+            ("See Dep. of Ivo Penrow at 4.", "Dep", "person"),
+            ("See Aff. of Ivo Penrow ¶ 4.", "Aff", "person"),
+            ("See Ex. 1 to Penrow Decl.", "Ex. 1", "person"),
+            ("Under Tex. R. Civ. P. 91a.", "Tex. R. Civ", "organization"),
+            ("Under Tex. R. App. P. 9.", "Tex. R. App", "organization"),
+            ("Under Fed. R. Civ. P. 12.", "Fed. R. Civ", "organization"),
+            (
+                "See (Tex. App.—Slocombe 2031, pet. filed).",
+                "Slocombe 2031",
+                "address",
+            ),
+            ("See Section XII.", "Section XII", "organization"),
+            (
+                "As held in Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+                "09-31-00888-CV",
+                "national_id_number",
+            ),
+        ] {
+            let actual = shown(source, &[(text, label)]);
+            if !actual.is_empty() {
+                failures.push(format!("{source:?}: {actual:?}"));
+            }
+        }
+        for (source, text, expected) in [
+            ("(Ostrand Decl. ¶ 3)", "Ostrand Decl", "Ostrand"),
+            ("(Penrow Dep. at 4)", "Penrow Dep", "Penrow"),
+            ("(Penrow Aff. ¶ 4)", "Penrow Aff", "Penrow"),
+            (
+                "[2031] 1 W.L.R. 12, Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+            (
+                "[2031] 1 W.L.R. Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+        ] {
+            let actual = shown(source, &[(text, "person")]);
+            let wanted = pairs(&[(expected, "PERSON")]);
+            if actual != wanted {
+                failures.push(format!("{source:?}: {actual:?}, expected {wanted:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A capital S followed by a Roman-looking initial names a person,
+    /// including when the model leaves the last period outside its span.
+    #[test]
+    fn citation_parts_keep_witness_initials() {
+        let source = "The witness S. M. testified.";
+        for name in ["S. M", "S. M."] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")])
+            );
+        }
+        for reference in ["Section XII", "Sec. XII", "§ XII", "s. 12", "s. 12(a)"] {
+            let source = format!("See {reference}.");
+            assert!(
+                shown(&source, &[(reference, "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// A company's full name protects its short name throughout the
+    /// document, including when it resembles a chapter reference.
+    #[test]
+    fn citation_parts_keep_established_company_short_names() {
+        let source = "Chapter 11 Ltd supplied the books.\nChapter 11 refused repayment.";
+        assert_eq!(
+            shown_at(
+                source,
+                &[
+                    ("Chapter 11 Ltd", 0, "organization"),
+                    ("Chapter 11", 1, "organization")
+                ]
+            ),
+            pairs(&[("Chapter 11 Ltd", "ORG"), ("Chapter 11", "ORG")])
+        );
+        for source in [
+            source,
+            "Chapter 11 refused repayment.\nChapter 11 Ltd supplied the books.",
+            "Chapter 11 refused repayment.\nChapter 11 Books Ltd supplied the books.",
+            "Under Chapter 11, repayment is due.\nCHAPTER 11 LTD supplied the books.",
+            "# Parties\nUnder Chapter 11, repayment is due.\nChapter 11\nLtd supplied the books.",
+        ] {
+            // The full name is evidence even without a model span over it.
+            let at = source.find("Chapter 11").unwrap();
+            assert!(
+                pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+        for source in [
+            "Under Chapter 11, repayment is due.",
+            "SubChapter 11 Ltd supplied the books.\nUnder Chapter 11, repayment is due.",
+            "Chapter 11 applies to the debtor Ltd.\nUnder Chapter 11, repayment is due.",
+        ] {
+            let at = source.rfind("Chapter 11").unwrap();
+            assert!(
+                !pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+    }
+
+    /// A comma before a paragraph or a page:line pinpoint supplies the
+    /// citation context needed to remove an abbreviated document label.
+    #[test]
+    fn citation_parts_trim_document_labels_before_pinpoints() {
+        for (source, name) in [
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl"),
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl."),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep."),
+            ("(Penrow Dep., 12:4-13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4-9)", "Penrow Dep"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[("Penrow", "PERSON")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "The witness (Penrow Decl., who testified).",
+            "The witness (Penrow Dep. 12:4smith).",
+            "The witness (Penrow Dep. 12).",
+            "The witness (Penrow Dep. 12:4–).",
+        ] {
+            let name = if source.contains("Decl") {
+                "Penrow Decl"
+            } else {
+                "Penrow Dep"
+            };
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Complete company spans are protected before reference rejection,
+    /// and invalid Roman words never become section numbers (g1 finding 1).
+    #[test]
+    fn citation_parts_keep_complete_companies_and_reject_invalid_romans() {
+        for (source, name) in [
+            ("The supplier is Section LLC.", "Section LLC"),
+            ("The books were supplied by Chapters LLC.", "Chapters LLC"),
+            ("See Section LLC.", "Section LLC"),
+            ("See Chapters LLC.", "Chapters LLC"),
+            ("The supplier is Chapter LLC.", "Chapter LLC"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        // No ORG/legal-form protection participates in this check: the
+        // Roman grammar itself must refuse LLC and other invalid words.
+        for roman in ["LLC", "IIV", "VX", "IIII", "MMMM"] {
+            let source = format!("See § {roman}.");
+            assert!(
+                !pack().in_reference(&source, 7..7 + roman.len()),
+                "{source}"
+            );
+        }
+        for roman in [
+            "I",
+            "IV",
+            "IX",
+            "XII",
+            "XL",
+            "XC",
+            "CD",
+            "CM",
+            "MDCLXVI",
+            "MMMCMXCIX",
+        ] {
+            let reference = format!("Section {roman}");
+            let source = format!("See {reference}.");
+            assert!(
+                shown(&source, &[(&reference, "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// Personal-ID labels win over reference shapes, and ambiguous bare
+    /// PD/DM codes need affirmative legal context (g1 finding 2).
+    #[test]
+    fn citation_parts_keep_labelled_personal_identifiers() {
+        for (source, value, label) in [
+            ("Employee badge: PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            ("Employee ID: 352 DM.", "352 DM", "national_id_number"),
+            ("Employee ID: PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            (
+                "The witness presented passport PD 57ZZ.",
+                "PD 57ZZ",
+                "passport_number",
+            ),
+            ("Staff number: 352 DM.", "352 DM", "national_id_number"),
+            (
+                "Badge number: National Instrument 45-999.",
+                "National Instrument 45-999",
+                "national_id_number",
+            ),
+            (
+                "Employee ID: PD 57ZZ-9842.",
+                "PD 57ZZ-9842",
+                "national_id_number",
+            ),
+            ("The value is PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            ("The value is 352 DM.", "352 DM", "national_id_number"),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, "IDENTITY")]),
+                "{source}"
+            );
+        }
+        for (source, value) in [
+            ("Under PD 57ZZ.", "PD 57ZZ"),
+            ("See 352 DM.", "352 DM"),
+            ("See 352 DM - Aviation Safety.", "352 DM - Aviation Safety"),
+            ("Practice Direction PD 57ZZ.", "PD 57ZZ"),
+        ] {
+            assert!(
+                shown(source, &[(value, "national_id_number")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// Case, wrapping and an independently recognized trading name all
+    /// protect a company's short name; uncertainty keeps it (g1 finding 3).
+    #[test]
+    fn citation_parts_keep_company_casing_wraps_and_trading_names() {
+        for (source, full, short_n, expected_full) in [
+            (
+                "CHAPTER 11 LTD supplied the books. Chapter 11 refused a refund.",
+                "CHAPTER 11 LTD",
+                0,
+                "CHAPTER 11 LTD",
+            ),
+            (
+                "Chapter 11 Books supplied the books. Chapter 11 refused a refund.",
+                "Chapter 11 Books",
+                1,
+                "Chapter 11 Books",
+            ),
+            (
+                "Chapter 11\nLtd supplied the books. Chapter 11 refused a refund.",
+                "Chapter 11\nLtd",
+                1,
+                "Chapter 11",
+            ),
+            (
+                "Chapter 11 LLC supplied the books. Chapter 11 refused repayment.",
+                "Chapter 11 LLC",
+                1,
+                "Chapter 11 LLC",
+            ),
+            // Affirmative reference cues still defer to independent
+            // company evidence, including a later model-only trading name.
+            (
+                "CHAPTER 11 LTD supplied the books. See Chapter 11.",
+                "CHAPTER 11 LTD",
+                0,
+                "CHAPTER 11 LTD",
+            ),
+            (
+                "Chapter 11\nLtd supplied the books. See Chapter 11.",
+                "Chapter 11\nLtd",
+                1,
+                "Chapter 11",
+            ),
+            (
+                "Chapter 11 Books supplied the books. See Chapter 11.",
+                "Chapter 11 Books",
+                1,
+                "Chapter 11 Books",
+            ),
+        ] {
+            assert_eq!(
+                shown_at(
+                    source,
+                    &[
+                        (full, 0, "organization"),
+                        ("Chapter 11", short_n, "organization")
+                    ]
+                ),
+                pairs(&[(expected_full, "ORG"), ("Chapter 11", "ORG")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "The books were supplied by Chapter 11. Chapter 11 refused a refund.",
+                &[("Chapter 11", "organization")]
+            ),
+            pairs(&[("Chapter 11", "ORG"), ("Chapter 11", "ORG")])
+        );
+        for source in [
+            "The applicant trades as Section IV.",
+            "Chapter 11.",
+            "Chapter 11 governs repayment.",
+        ] {
+            let name = if source.contains("Section") {
+                "Section IV"
+            } else {
+                "Chapter 11"
+            };
+            assert_eq!(
+                shown(source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        let source = "See Chapter 11. Chapter 11 Books supplied the books.";
+        assert_eq!(
+            shown_at(
+                source,
+                &[
+                    ("Chapter 11", 0, "organization"),
+                    ("Chapter 11 Books", 0, "organization")
+                ]
+            ),
+            pairs(&[("Chapter 11", "ORG"), ("Chapter 11 Books", "ORG")])
+        );
+        let source = "C.F.R. LLC supplied the books. See C.F.R.";
+        // Source evidence matching must accept punctuation belonging to
+        // the short spelling, independently of category shape filters.
+        assert!(pack().company_short_name(source, "C.F.R."));
+    }
+
+    /// A shared given name and punctuation prove no document label, and
+    /// an attendance time is no pinpoint (g1 finding 4).
+    #[test]
+    fn citation_parts_keep_abbreviated_surnames_and_attendance_times() {
+        for (source, full, abbreviated) in [
+            (
+                "Ivo Affleck testified (recorded as Ivo Aff.).",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+            (
+                "Ivo Depp testified (recorded as Ivo Dep.).",
+                "Ivo Depp",
+                "Ivo Dep",
+            ),
+            (
+                "Ivo Affleck testified (recorded as Ivo Aff.; present).",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+            (
+                "Ivo Affleck testified; Ivo Aff. ¶ 4.",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+        ] {
+            assert_eq!(
+                shown_at(source, &[(full, 0, "person"), (abbreviated, 1, "person")]),
+                pairs(&[(full, "PERSON"), (abbreviated, "PERSON")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Witness: Ivo Dep. at 09:30; clerk: Orin Vale.",
+                &[("Ivo Dep", "person"), ("Orin Vale", "person")]
+            ),
+            pairs(&[("Ivo Dep", "PERSON"), ("Orin Vale", "PERSON")])
+        );
+        for (source, name) in [
+            ("Ivo Dep. at 09:30 signed the form.", "Ivo Dep"),
+            ("Ivo Aff. at 09:30 signed the form.", "Ivo Aff"),
+            ("Ivo Decl. at 09:30 signed the form.", "Ivo Decl"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Ivo Affleck testified (recorded as Ivo Dep.).",
+                &[("Ivo Affleck", "person"), ("Ivo Dep", "person")]
+            ),
+            pairs(&[("Ivo Affleck", "PERSON"), ("Ivo Dep", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "See Decl. of Ivo Penrow ¶ 4.",
+                &[("Decl. of Ivo Penrow", "person")]
+            ),
+            pairs(&[("Ivo Penrow", "PERSON")])
+        );
+    }
+
+    /// A citation-part fix must never hide a real name, company or number
+    /// that merely resembles its marker (issue #499).
+    #[test]
+    fn citation_parts_keep_real_names_and_identifiers() {
+        assert_eq!(
+            shown(
+                "The witness (Ivo Decl.) testified.",
+                &[("Ivo Decl", "person")]
+            ),
+            pairs(&[("Ivo Decl", "PERSON")])
+        );
+        for name in [
+            "Declan Penrow",
+            "Ivo Affleck",
+            "Ms Decl",
+            "Mr Aff",
+            "Ivo Decl",
+            "Decl",
+            "Aff",
+            "Ex",
+        ] {
+            let expected = name
+                .strip_prefix("Ms ")
+                .or_else(|| name.strip_prefix("Mr "))
+                .unwrap_or(name);
+            let source = format!("The witness is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
+        for name in [
+            "Decl Research Ltd",
+            "Aff Analytics LLC",
+            "Chapter 11 Ltd",
+            "National Instrument 45-999 Ltd",
+            "PD 57ZZ Ltd",
+            "Section XII LLC",
+            "Comm Trading Ltd",
+        ] {
+            let source = format!("The applicant is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        for (source, text) in [
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl. of Ivo Penrow"),
+            (
+                "See Ex. 1 to Ivo Penrow Decl. ¶ 4.",
+                "Ex. 1 to Ivo Penrow Decl",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(text, "person")]),
+                pairs(&[("Ivo Penrow", "PERSON")])
+            );
+        }
+        // The same docket in this action or its caption must stay; only
+        // a docket attached to a precedent is suppressed.
+        for source in [
+            "Case No. 09-31-00888-CV.",
+            "Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+            "The judgment under appeal is Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+        ] {
+            let detections = shown(source, &[("09-31-00888-CV", "national_id_number")]);
+            assert!(
+                detections.iter().any(|(text, _)| text == "09-31-00888-CV"),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "S.C. Penrow and H.L. Venn testified.",
+                &[("S.C. Penrow", "person"), ("H.L. Venn", "person")]
+            ),
+            pairs(&[("S.C. Penrow", "PERSON"), ("H.L. Venn", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "R. Penrow lives at 478A Cedar Road, Slocombe 45999.",
+                &[
+                    ("R. Penrow", "person"),
+                    ("478A Cedar Road, Slocombe 45999", "address")
+                ]
+            ),
+            pairs(&[
+                ("R. Penrow", "PERSON"),
+                ("478A Cedar Road, Slocombe 45999", "ADDRESS")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "Account 45-999; ID S-19; badge 57ZZ.",
+                &[
+                    ("45-999", "bank_account"),
+                    ("S-19", "national_id_number"),
+                    ("57ZZ", "national_id_number")
+                ]
+            ),
+            pairs(&[
+                ("45-999", "BANK"),
+                ("S-19", "IDENTITY"),
+                ("57ZZ", "IDENTITY")
+            ])
+        );
+    }
+
+    /// The real model run of #499's fixture: a Lord Justice's post-nominal
+    /// comes off the judge's name, and a badge after its bare label is
+    /// one person's identifier even when the model misses it.
+    #[test]
+    fn citation_parts_trim_lord_justices_and_mark_badges() {
+        for (source, raw, expected) in [
+            (
+                "See [2031] All ER (Comm) 9, per Ivo Ostrand LJ; Ostrand Aff. ¶ 3.",
+                "Ivo Ostrand LJ",
+                vec![("Ivo Ostrand", "PERSON"), ("Ostrand", "PERSON")],
+            ),
+            (
+                "Per Edda Venn LJJ, the appeal fails.",
+                "Edda Venn LJJ",
+                vec![("Edda Venn", "PERSON")],
+            ),
+            // "J" may be an initial and stays.
+            (
+                "The witness J Ostrand testified.",
+                "J Ostrand",
+                vec![("J Ostrand", "PERSON")],
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(raw, "person")]),
+                pairs(&expected),
+                "{source}"
+            );
+        }
+        for (source, badge) in [
+            ("The witness provided badge 88ZZ.", "88ZZ"),
+            ("Badge: 4471, issued at the gate.", "4471"),
+            ("Badge no. KX42 was returned.", "KX42"),
+        ] {
+            assert_eq!(
+                shown(source, &[]),
+                pairs(&[(badge, "IDENTITY")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "Badge holders may enter.",
+            "The badge 12 times failed.",
+            "Wear your badge at all times.",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+        // A labelled badge the model gives whole keeps its whole value.
+        assert_eq!(
+            shown(
+                "Employee badge: PD 57ZZ.",
+                &[("PD 57ZZ", "national_id_number")]
+            ),
+            pairs(&[("PD 57ZZ", "IDENTITY")])
+        );
+    }
+
+    /// Exercise the CC0 fixture through correction and review with the
+    /// faulty model boundaries from the probes, without inventing a model
+    /// snapshot. The model gate supplies its own real output later (#499).
+    #[test]
+    fn citation_parts_fixture_keeps_its_declarants() {
+        let fixture = crate::recognition::Fixture::parse(
+            std::path::Path::new("en/judgment/probe-en-r3-citation-parts.md"),
+            include_str!(
+                "../../../tests/fixtures/recognition/en/judgment/probe-en-r3-citation-parts.md"
+            ),
+        )
+        .unwrap();
+        fixture.validate().unwrap();
+        fixture.validate_layout().unwrap();
+        let source = fixture.source.as_str();
+        let mut raw: Vec<_> = fixture
+            .gold
+            .iter()
+            .map(|span| {
+                let mut range = span.range.clone();
+                let label = match span.category.as_str() {
+                    "PERSON" => "person",
+                    "ORG" => "organization",
+                    "IDENTITY" => "national_id_number",
+                    other => panic!("unexpected category {other}"),
+                };
+                if label == "person" {
+                    for word in [" Decl", " Aff", " Dep"] {
+                        if source[range.end..].starts_with(word) {
+                            range.end += word.len();
+                            break;
+                        }
+                    }
+                }
+                crate::RawEntity {
+                    start: range.start,
+                    end: range.end,
+                    label: label.into(),
+                    score: 0.8,
+                    text: source[range].into(),
+                }
+            })
+            .collect();
+        for (text, label) in [
+            ("Chapter 11", "organization"),
+            ("S.C.", "person"),
+            ("H.L", "person"),
+            ("Comm", "organization"),
+            ("National Instrument 45-999", "national_id_number"),
+            ("PD 57ZZ", "organization"),
+            ("478A", "address"),
+            ("Section XII", "organization"),
+            ("352 DM - Aviation Safety", "organization"),
+            ("AHCP/CCAA p. S-19", "organization"),
+            ("Decl", "person"),
+            ("Ex. 1", "person"),
+            ("Tex. R. Civ", "organization"),
+            ("Pellam", "person"),
+            ("Brindle", "person"),
+            ("Slocombe 2031", "address"),
+            ("09-31-00888-CV", "national_id_number"),
+            ("R", "person"),
+        ] {
+            // R is the judicial-review marker, not a letter in "Research".
+            let start = if text == "R" {
+                source.find("R (on").unwrap()
+            } else {
+                source.find(text).unwrap()
+            };
+            raw.push(crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            });
+        }
+        // The fixture also names Chapter 11 Ltd and Comm Trading Ltd.
+        // Their short names stay everywhere under the conservative name
+        // policy, even in references the fixture's existing gold omits.
+        // Keep this expectation here without changing the fixture.
+        let mut expected = fixture.gold.clone();
+        for text in ["Chapter 11", "Comm"] {
+            let start = source.find(text).unwrap();
+            expected.push(crate::recognition::Span {
+                range: start..start + text.len(),
+                category: "ORG".into(),
+            });
+        }
+        expected.sort();
+        assert_eq!(
+            crate::recognition::proposals(source, &raw).unwrap(),
+            expected
+        );
     }
 
     /// [`shown`] for spans each at the `n`th place of its text (from 0).

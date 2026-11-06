@@ -87,7 +87,9 @@
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
 #                         into part of another span of its category, and
-#                         a person's never over a `never` word (a role);
+#                         a person's never over a `never` word (a role),
+#                         except to drop a quoted public institution's own
+#                         name ("МВД России «…»");
 #                         earlier spans grow first
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
 #                         with some name left after them
@@ -104,6 +106,8 @@
 #                         it a person's document ("Ostrand Decl."): the
 #                         words before become a person's span when a person
 #                         span holds each of them
+#                         An existing PERSON loses the same document word
+#                         in a punctuated citation ("Ostrand Decl. ¶ 3").
 #   list_letter = true    for PERSON or ORG: a lowercase "a. " or "(a) "
 #                         at a line start or after list punctuation comes off
 # A fixed span left without its category's shape goes. An entry takes one

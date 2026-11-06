@@ -50,13 +50,16 @@ trim = [
 # proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
 # #382). A title's period goes with it. Run after job phrases (#385), so
 # "Chief Investigator Ms Edda Brannock" also loses "Ms". Lowercase list
-# letters at a line start or list break are no initials (#546).
+# letters at a line start or list break are no initials (#546). A Lord
+# Justice's "LJ" ("LJJ" for several) is a judge's post-nominal, not part
+# of the name: "per Ivo Ostrand LJ" is "Ivo Ostrand" (#499). "J" alone
+# stays, since it may be an initial.
 [[span]]
 category = "PERSON"
 trim = [
     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
-    "kc", "qc", "esq", "phd",
+    "kc", "qc", "esq", "phd", "lj", "ljj",
 ]
 list_letter = true
 
@@ -105,7 +108,22 @@ trim = [
 # ("Mr Ivo Ostrand"; guide rule 1, issue #499).
 [[span]]
 category = "ORG"
-person_before = ["decl", "declaration", "aff", "affidavit"]
+person_before = ["decl", "declaration", "aff", "affidavit", "dep", "deposition"]
+
+# A document label before "of" or a pinpoint page is no person's name
+# (#499). Require the dot and citation context: an untitled person called
+# Decl or Aff in prose must stay marked (guide rule 1).
+[[reference]]
+pattern = '\b(?:Decl|Dep|Aff)\.(?P<tail>[\p{Zs}\t]+(?:of\b|at[\p{Zs}\t]+\d+(?:[-–]\d+)?(?:[\p{Zs}\t]*$|[\p{Zs}\t]*[),;.\]]))|[\p{Zs}\t]*¶)'
+
+# A declaration's or exhibit's label before a person's name is outside
+# it, as is a numbered exhibit leading into the declarant (#499).
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:Decl|Dep|Aff)\.[\p{Zs}\t]+of[\p{Zs}\t]+',
+    'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
+]
 
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
@@ -604,7 +622,10 @@ patterns = [
     # Exchange Commission", "National Labor Relations Board", "Board of
     # Education".
     '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
-    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security)[\p{Zs}\t]+departments?\b',
+    # A ministry continuation needs its institutional connector, never
+    # just a lowercase personal name below a bare office header.
+    '(?i)\bministr(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
+    '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security|game[\p{Zs}\t]+and[\p{Zs}\t]+fish)[\p{Zs}\t]+departments?\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
     '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
     '(?i)\bagenc(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
@@ -623,9 +644,10 @@ patterns = [
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+|hm[\p{Zs}\t]+|h\.m\.[\p{Zs}\t]+|u\.[\p{Zs}\t]?s\.[\p{Zs}\t]+|united[\p{Zs}\t]+states[\p{Zs}\t]+)?treasury(?:[\p{Zs}\t]+department)?[\s\p{P}]*$',
     '(?i)^[\s\p{P}]*(?:hm|h\.m\.|(?:her|his)[\p{Zs}\t]+majesty[\x27’]s)[\p{Zs}\t]+(?:treasury|revenue|courts|prison|land|government|customs|inspectorate|coastguard|passport|procurator|chief|attorney|crown|stationery|forces)\b',
     # Prosecutors and ministers alone: "Attorney General", "U.S. Attorney",
-    # "District Attorney", "Secretary of State" ("Attorney General Quill" is
+    # "District Attorney", "Secretary of Defense", "Minister of Defence"
+    # ("Attorney General Quill" is
     # a person with a title).
-    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?|attorneys?[\p{Zs}\t-]+generals?|secretary[\p{Zs}\t]+of[\p{Zs}\t]+state)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|district|state[\x27’]?s?|county|city|prosecuting)[\p{Zs}\t]+attorneys?|attorneys?[\p{Zs}\t-]+generals?|(?:secretary|minister)[\p{Zs}\t]+of[\p{Zs}\t]+(?:state|defen[cs]e|justice|finance|health|education)(?:[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?[\p{Alphabetic}\p{Zs}\t]+)?)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Courts by their circuits, districts and divisions: "1st Cir.", "Ninth
     # Circuit", "Northern District of …", "Chancery Division".
     '(?i)(?:^|[\s\p{P}])(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|d\.[\p{Zs}\t]?c\.|federal)[\p{Zs}\t]+cir(?:cuit\b|\.|[\s\p{P}]|$)',
@@ -633,11 +655,14 @@ patterns = [
     '(?i)\b(?:chancery|family|appellate|civil|criminal|king[\x27’]s[\p{Zs}\t]+bench|queen[\x27’]s[\p{Zs}\t]+bench)[\p{Zs}\t]+division\b|^[\s\p{P}]*(?:the[\p{Zs}\t]+)?divisions?[\p{Zs}\t]+of\b',
     # Short names that companies share count alone only: "the IRS", "SEC",
     # "ET", "EAT", "NASA", "BLM" (but "CMA CGM", "SEC Newgate").
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP)(?:[\x27’]s?)?[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:U\.?S\.?[\p{Zs}\t]+)?(?:DOJ|IRS|FBI|DHS|HHS|FTC|FCC|FDA|EPA|DWP|FCA|CMA|SFO|DEA|ATF|FAA|NTSB|USDA|NIH|CDC|SEC|ICO|CPS|EAT|ET|NASA|BLM|STB|CEQ|USGS|AGFD|DPP|ChD|PBGC|ARRC)(?:[\x27’]s?)?[\s\p{P}]*$',
     # Codes and rules of law: "Bankruptcy Code", "Code of Federal
     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
     # Evidence".
-    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?)[\p{Zs}\t]+code\b',
+    '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?|health[\p{Zs}\t]+and[\p{Zs}\t]+safety)[\p{Zs}\t]+code\b',
+    # Recognized statutory subjects support a cut title across a wrap;
+    # a following document heading "Act ..." alone is insufficient.
+    '(?i)\b(?:freight[\p{Zs}\t]+safety|biometric[\p{Zs}\t]+(?:information[\p{Zs}\t]+)?privacy|data[\p{Zs}\t]+protection)[\p{Zs}\t]+act\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
     '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
     '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
@@ -668,6 +693,9 @@ patterns = [
     # treaties' short names as written, alone ("FLSA", "the FDCPA",
     # "CAFTA-DR").
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:USFWS|NMFS|ICAO|IMF|NATO|SIECA|CCAD)(?:[\x27’]s?)?(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Alphabetic}+[\p{Zs}\t]+){0,2}(?:Council|Assembly|Secretariat|Board|Committee|Commission|Command|Headquarters|Summit|Staff))?[\s\p{P}]*$',
+    # Further named organs (#378); these end the name, so private names
+    # such as "NATO Logistics" keep their spans.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:NATO[\p{Zs}\t]+Land[\p{Zs}\t]+Group[\p{Zs}\t]+\d+|CAFTA-DR[\p{Zs}\t]+Secretariat)[\s\p{P}]*$',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:FLSA|FDCPA|TCPA|DTPA|PHRA|NYDCL|ERISA|HIPAA|FMLA|ECHR|CAFTA-DR|CAFTA|NAFTA|USMCA)(?:[\x27’]s?)?[\s\p{P}]*$',
     # A court's division in a caption ("TEXARKANA DIVISION") and a state's
     # divisions ("Utah Division of Wildlife Resources").
@@ -696,8 +724,51 @@ patterns = [
     '(?i)\b(?:executive|criminal[\p{Zs}\t]+procedure|civil[\p{Zs}\t]+practice|penal|general[\p{Zs}\t]+obligations|general[\p{Zs}\t]+business|business[\p{Zs}\t]+corporation|debtor[\p{Zs}\t]+and[\p{Zs}\t]+creditor|real[\p{Zs}\t]+property|social[\p{Zs}\t]+services|public[\p{Zs}\t]+health|vehicle[\p{Zs}\t]+and[\p{Zs}\t]+traffic|environmental[\p{Zs}\t]+conservation|correction|judiciary|administrative[\p{Zs}\t]+procedure)[\p{Zs}\t]+law\b',
     # A bill by its number: "SB 8", "H.B. 1234".
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?[SHA]\.?[\p{Zs}\t]?B\.?[\p{Zs}\t]*\d{1,5}[\s\p{P}]*$',
+    # Remaining public institutions in #378, in full only: a private
+    # "Basel Committee Consulting" or "Research Laboratory Partners" stays.
+    # Bank of England also names a private lender: correction requires
+    # local public context rather than an unconditional never pattern.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:federal[\p{Zs}\t]+deposit[\p{Zs}\t]+insurance[\p{Zs}\t]+corporation|national[\p{Zs}\t]+archives|basel[\p{Zs}\t]+committee|international[\p{Zs}\t]+monetary[\p{Zs}\t]+fund|corps[\p{Zs}\t]+of[\p{Zs}\t]+engineers|agricultural[\p{Zs}\t]+research[\p{Zs}\t]+service|soil[\p{Zs}\t]+conservation[\p{Zs}\t]+service|security[\p{Zs}\t]+authority|armaments[\p{Zs}\t]+cooperation[\p{Zs}\t]+division)(?:[\x27’]s?)?[\s\p{P}]*$',
+    # Congressional committees, with the observed OCR "SUMCOMMITTEE";
+    # field offices and research facilities with an institutional head. Only
+    # the observed OCR spellings of Station and Research are accepted.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:health|oversight)[\p{Zs}\t]+su[bm]committees?[\s\p{P}]*$',
+    # "The Field Office" is a private trading name. Require the public
+    # parent in the span; neither an article nor a place establishes one.
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,4}(?:(?-i:FBI|ICE|USCIS)|Social[\p{Zs}\t]+Security|Department|Agency|Bureau|Service)(?:[\x27’]s)?[\p{Zs}\t]+(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,4}field[\p{Zs}\t]+office[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,3}(?i:(?:state[\p{Zs}\t]+)?experiment[\p{Zs}\t]+(?:statione?|ststion)|regional[\p{Zs}\t]+(?:research|reseerch)[\p{Zs}\t]+laboratory)[\s\p{P}]*$',
+    # Agency regional offices and law enforcement units; an Office span
+    # cut out of the latter is checked with the words before it.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:(?:EPA|USFWS|FWS|BLM|USGS)(?:[\x27’]s)?[\p{Zs}\t]+)?(?i:regional[\p{Zs}\t]+office|law[\p{Zs}\t]+enforcement[\p{Zs}\t]+office)[\s\p{P}]*$',
+    # A county's appraisal district, also abbreviated in the probe.
+    '(?i)\b(?:county|cnty\.?)[\p{Zs}\t]+appraisal[\p{Zs}\t]+dist(?:rict\b|\.?(?:\s|$))',
+    # The public units cut from their parents in #378: a county dispatch
+    # or medical examiner and the pesticide registration division.
+    '(?i)\b(?:county|city|municipal)[\p{Zs}\t]+(?:dispatch|medical[\p{Zs}\t]+examiner)(?:[\x27’]s)?(?:[\p{Zs}\t]+office)?[\s\p{P}]*$',
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?fungicide-herbicide[\p{Zs}\t]+branch[\p{Zs}\t]+registration[\p{Zs}\t]+division[\s\p{P}]*$',
+    # Statutory bodies under the reach decision (#484 item 4, #378): a
+    # federal national laboratory, NHS trusts, port authorities and law
+    # societies. Universities and colleges are exempt through `private`.
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,4}(?:National[\p{Zs}\t]+Laboratory|Port[\p{Zs}\t]+Authority)[\s\p{P}]*$',
+    # Up to four name words per side of one conjunction; each separator
+    # may wrap once, never across a paragraph or an unbounded prose tail.
+    '''(?x) ^[\p{Zs}\t\p{P}]* (?:[Tt]he[\p{Zs}\t]+)?
+        (?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)){0,4}
+        (?:(?:and|&)(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)
+            (?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)){1,4})?
+        NHS(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)
+        (?:Foundation(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*))?Trust
+        (?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)Hospital)?[\p{Zs}\t\p{P}]*$ ''',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?Law[\p{Zs}\t]+Society[\p{Zs}\t]+of[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]*){1,4}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
+
+# An ambiguous Field Office stays even when labelled PERSON: the generic
+# `office` word above is not public ownership. Require a public parent in
+# this same span before allowing any public-body veto.
+[[private]]
+patterns = ['(?i)^[\s\p{P}]*(?:[\p{Alphabetic}\x27’.-]+[\p{Zs}\t]+){0,6}field[\p{Zs}\t]+office[\s\p{P}]*$']
+unless = ['(?i)\b(?:(?-i:FBI|ICE|USCIS)|social[\p{Zs}\t]+security|department|agency|bureau|service)\b']
 
 # Universities and colleges are never public bodies, whoever owns them:
 # a span that names one itself, after capitalized words only ("Ashmoor
@@ -1108,6 +1179,16 @@ labels = [
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
 
+# A badge after "badge" alone is one person's too ("provided badge 88ZZ",
+# #499): digits then capitals, capitals then digits, or a bare number of
+# three digits or more. A word after the label ("badge holders") is none.
+[[context]]
+category = "IDENTITY"
+labels = ["badge", "badge no", "badge id"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2,}[A-Z]{1,4}|[A-Z]{1,4}\d{2,}|\d{3,}'
+min_digits = 2
+
 # A number assigned to one person is IDENTITY, the value only (guide rule
 # 6, the maintainer's decision on #484, item 3; #483): an attorney's bar
 # number and a police officer's shield number after their label ("Ohio
@@ -1280,9 +1361,42 @@ pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|U\.S\.[\p{Zs}\t]+(?:Dist\.|App\.)[\p
 
 # English and Welsh reports and neutral citations: "[2020] STC 960",
 # "[2019] EWCA Civ 1234", "(2004) 1 WLR 12", and the distinctive reports
-# without their year ("ICR 801").
+# without their year ("ICR 801"); "All ER (Comm)" puts its division before
+# the page (issue #499).
 [[reference]]
-pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER(?:[\p{Zs}\t]+\(Comm\))?|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+
+# Scottish reports have a year, reporter, court and page: "1931 S.C.
+# (H.L.) 13"; the initials inside name nobody (guide rule 8, #499).
+[[reference]]
+pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+S\.[\p{Zs}\t]?C\.[\p{Zs}\t]+\(H\.[\p{Zs}\t]?L\.\)[\p{Zs}\t]+\d{1,5}\b'
+
+# The Crown's R in a judicial-review title is no person. Only the marker
+# is suppressed, leaving the applicant's name to the cited-case rules
+# and the case-at-hand safeguards (guide rules 1 and 8, #499).
+[[reference]]
+pattern = '\bR(?P<tail>[\p{Zs}\t]+\(on[\p{Zs}\t]+the[\p{Zs}\t]+application[\p{Zs}\t]+of\b)'
+
+# Numbered instruments and the cited manual's heading/page are legal
+# references (#499). A manual's full title supplies its reference context.
+[[reference]]
+pattern = '\bNational[\p{Zs}\t]+Instrument[\p{Zs}\t]+\d{2}-\d{3}\b|\b\d{3}[\p{Zs}\t]+DM[\p{Zs}\t]+[-–][\p{Zs}\t]+Aviation[\p{Zs}\t]+Safety\b|\bAHCP/CCAA[\p{Zs}\t]+p\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b'
+
+# Bare PD and DM codes may be personal IDs. Require an affirmative
+# reference introducer, including a practice direction beside a numbered
+# instrument in the same citation; an isolated code is uncertain (#499).
+[[reference]]
+pattern = '(?P<lead>\b(?:(?i:under|see|pursuant[\p{Zs}\t]+to|practice[\p{Zs}\t]+direction|departmental[\p{Zs}\t]+manual)[\p{Zs}\t]+|National[\p{Zs}\t]+Instrument[\p{Zs}\t]+\d{2}-\d{3}[\p{Zs}\t]+and[\p{Zs}\t]+))(?:PD[\p{Zs}\t]+\d{1,3}[A-Z]{1,2}|\d{3}[\p{Zs}\t]+DM)\b'
+
+# Pinpoint pages ("at p. 478A", "p. S-19") and numbered exhibits are no
+# addresses or names; bare numbers and letters beside them stay (#499).
+[[reference]]
+pattern = '\bat[\p{Zs}\t]+p\.[\p{Zs}\t]+\d{1,5}[A-Z]?\b|\bp\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b|\bEx\.[\p{Zs}\t]+\d{1,4}\b'
+
+# A Texas appellate court's city and year are citation parts, not an
+# address. The court cue is required, never a city/year alone (#499).
+[[reference]]
+pattern = '\bTex\.[\p{Zs}\t]+App\.[\p{Zs}\t]*[—–-][\p{Zs}\t]*\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+\p{Uppercase}\p{Ll}+){0,3}[\p{Zs}\t]+(?:19|20)\d{2}\b'
 
 # US codes and regulations: "26 U.S.C. § 6212", "31 U.S.C. 3903", "48 CFR
 # 52.212-1", "735 ILCS 5/2-619", "I.R.C. § 61", and the dotted
@@ -1292,12 +1406,31 @@ pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|
 pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section})?|\b\d{1,3}[\p{Zs}\t]+(?:CFR|ILCS|USC)[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section}'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
-# Sections, paragraphs and clauses: "§ 6212", "§§ 1-3", "¶ 4", "section
-# 12", "Article 6", "clause 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)",
+# Sections (including Roman numerals), chapters, paragraphs and clauses
+# (#499): "§ 6212", "§§ 1-3", "¶ 4", "section 12", "Article 6", "clause
+# 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)", "Tex. R. Civ. P. 91a",
 # "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
 # stay unmarked).
 [[reference]]
-pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|Fed\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ecs?\.|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+# Canonical, nonempty Roman numerals only: LLC, IIV and VX are no numbers.
+parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|(?:M{1,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:CM|CD|DC{0,3}|C{1,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:XC|XL|LX{0,3}|X{1,3})(?:IX|IV|V?I{0,3})|IX|IV|VI{0,3}|I{1,3})\b)'
+
+# Section/chapter wording can be a trading name. A citation introducer
+# decides it; without one keep the model's name (guide rule 2, #499).
+[[reference]]
+pattern = '(?P<lead>\b(?i:under|see|pursuant[\p{Zs}\t]+to|according[\p{Zs}\t]+to)[\p{Zs}\t]+)\b(?i:sections?|chapters?)[\p{Zs}\t]+{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|(?:M{1,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:CM|CD|DC{0,3}|C{1,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:XC|XL|LX{0,3}|X{1,3})(?:IX|IV|V?I{0,3})|IX|IV|VI{0,3}|I{1,3})\b)'
+
+# A bankruptcy chapter followed by "Case" is a legal proceeding, with no
+# citation introducer needed. A bare Chapter 11 remains ambiguous (#499).
+[[reference]]
+pattern = '\b[Cc]hapters?[\p{Zs}\t]+\d{1,2}\b(?P<tail>[\p{Zs}\t]+[Cc]ase\b)'
+
+# Only lowercase "s." followed by digits is an abbreviated section cue:
+# "S. M." may be a witness's initials, even without the final model dot.
+[[reference]]
+pattern = '\bs{1,2}\.[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
 # Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
@@ -1352,11 +1485,13 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
 # (admitted 2020)") is none of it.
 [[reference]]
-pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}(?:{tex_docket})?|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
 parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|de|der|du|la|le|van|von|ex[\p{Zs}\t]+rel\.))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
+# A trailing docket belongs to the cited Texas appeal, not this case (#499).
+parts.tex_docket = '[\p{Zs}\t]*\(Tex\.[\p{Zs}\t]+App\.[^()\n]{0,60}?(?:19|20)\d{2}(?:,[\p{Zs}\t]*pet\.[\p{Zs}\t]+filed)?\),[\p{Zs}\t]+No\.[\p{Zs}\t]+\d{2}-\d{2}-\d{5}-CV\b'
 parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
 parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:(?:Action|A\.|Docket)[\p{Zs}\t]+)?|(?:C\.[\p{Zs}\t]?A\.|Docket|Index|Cause|Adv\.[\p{Zs}\t]+Proc?\.)[\p{Zs}\t]+)?Nos?\.[\p{Zs}\t]*(?:\d{2}[\p{Zs}\t](?:CV|Civ\.?|C)[\p{Zs}\t]?\d{3,}|[\dA-Z][\w:./\-–]*\d[\w/\-–]*)(?:[\p{Zs}\t]*\([A-Z]{2,4}\))?(?:,[\p{Zs}\t]*(?:ECF|Dkt\.?)[\p{Zs}\t]+No\.[\p{Zs}\t]*\d+(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
 parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:(?:Action|A\.|Docket)[\p{Zs}\t]+)?|(?:C\.[\p{Zs}\t]?A\.|Docket|Index|Cause|Adv\.[\p{Zs}\t]+Proc?\.)[\p{Zs}\t]+)?Nos?\.[\p{Zs}\t]*(?:\d{2}[\p{Zs}\t](?:CV|Civ\.?|C)[\p{Zs}\t]?\d{3,}|[\dA-Z][\w:./\-–]*\d[\w/\-–]*)(?:[\p{Zs}\t]*\([A-Z]{2,4}\))?,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|(?:\p{Uppercase}[\w.]*[\p{Zs}\t]+)*LEXIS|N\.Y\.[\p{Zs}\t]+Slip[\p{Zs}\t]+Op\.)[\p{Zs}\t]+\d+'
