@@ -1608,14 +1608,15 @@ impl Pack {
     }
 
     /// The UK central bank shares its name with a private US lender.
-    /// An article and public cue must occur in the same sentence or line;
+    /// An article and a bank-specific public relation must occur locally;
     /// a party label takes precedence. Uncertain mentions remain names.
     fn bank_of_england_in_context(&self, text: &str, range: std::ops::Range<usize>) -> bool {
-        static PATTERNS: OnceLock<[Regex; 2]> = OnceLock::new();
-        let [name, public] = PATTERNS.get_or_init(|| {
+        static PATTERNS: OnceLock<[Regex; 3]> = OnceLock::new();
+        let [name, public_before, public_after] = PATTERNS.get_or_init(|| {
             [
                 r"(?i)^[\s\p{P}]*(?P<article>the[\p{Zs}\t]+)?bank[\p{Zs}\t]+of[\p{Zs}\t]+england(?:['’]s)?[\s\p{P}]*$",
-                r"(?i)\b(?:governor|monetary[\p{Zs}\t]+policy|threadneedle|prudential[\p{Zs}\t]+regulation|uk|united[\p{Zs}\t]+kingdom|britain|british|england|english|london)\b",
+                r"(?i)\bgovernor[\p{Zs}\t]+of[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?$",
+                r"(?i)^(?:['’]s[\p{Zs}\t]+(?:monetary[\p{Zs}\t]+policy[\p{Zs}\t]+committee|prudential[\p{Zs}\t]+regulation[\p{Zs}\t]+authority)\b|[\p{Zs}\t]*,?[\p{Zs}\t]+(?:is[\p{Zs}\t]+)?the[\p{Zs}\t]+(?:uk['’]s|united[\p{Zs}\t]+kingdom['’]s|british)[\p{Zs}\t]+central[\p{Zs}\t]+bank\b)",
             ]
             .map(|pattern| Regex::new(pattern).expect("central bank context pattern"))
         });
@@ -1645,17 +1646,26 @@ impl Pack {
         };
         // Labels can wrap, include a party letter or precede a quoted
         // article outside the model span. Read the sentence across lines
-        // for labels, while public cues remain confined to the bank's line.
+        // for labels, while public evidence remains confined to the bank's line.
         let label_before = text[..range.start]
             .rsplit(['.', '!', '?', ';'])
             .next()
             .unwrap_or_default();
-        if words(label_before).iter().any(|word| labelled(word)) || self.beside_role(text, range) {
+        let label_after = text[range.end..]
+            .split(['.', '!', '?', ';'])
+            .next()
+            .unwrap_or_default();
+        if words(label_before)
+            .iter()
+            .chain(words(label_after).iter())
+            .any(|word| labelled(word) || word == "private")
+            || self.beside_role(text, range)
+        {
             return false;
         }
         let article =
             name.name("article").is_some() || before_words.last().is_some_and(|word| word == "the");
-        article && (public.is_match(before) || public.is_match(after))
+        article && (public_before.is_match(before) || public_after.is_match(after))
     }
 
     /// Whether a model span at `range` of `text` is cut out of a court's,
@@ -1731,21 +1741,36 @@ impl Pack {
             let word = &head[from..];
             if head.len() < range.start
                 && word.chars().next().is_some_and(char::is_uppercase)
-                && self.public_body(&text[from..range.end], category, titled)
+                // A bare office word does not establish a continuation.
+                // Require institutional syntax in the phrase patterns,
+                // joining only the one permitted wrap for those patterns.
+                && self.public_body_by(
+                    &text[from..range.end].replace(['\r', '\n'], " "),
+                    category,
+                    titled,
+                    false,
+                )
             {
                 return true;
             }
         }
         let after = &text[range.end..];
-        // A title cut just before its legal head, including a heading
-        // wrapped onto the next line. Require a multiword title and keep
-        // companies by their legal form, as for every other public veto.
+        // A legal head alone may start the next document's heading.
+        // Require a supported statutory title pattern, rather than the
+        // generic never word "Act", and preserve a labelled signatory.
         let law_end = LAW_END.get_or_init(|| {
-            Regex::new(r"^[\p{Zs}\t]+(?:\r?\n[\p{Zs}\t]*)?(?:Act|Code|Ordinance)\b|^\r?\n[\p{Zs}\t]*(?:Act|Code|Ordinance)\b")
+            Regex::new(r"^(?:[\p{Zs}\t]+(?:\r?\n[\p{Zs}\t]*)?|\r?\n[\p{Zs}\t]*)(?:Act|Code|Ordinance)(?:[\p{Zs}\t]*(?:[.,;:)]|$)|[\p{Zs}\t]+(?:19|20)\d{2}\b)")
                 .expect("cut law title pattern")
         });
         let title_words: Vec<&str> = span.split_whitespace().collect();
+        let (label, _) = Self::word_before(text, range.start);
         if title_words.len() >= 2
+            && !self.beside_role(text, range.clone())
+            && label != "for"
+            && !self
+                .never
+                .iter()
+                .any(|entry| entry.person_role && entry.has(&label))
             && title_words.iter().all(|word| {
                 word.chars().next().is_some_and(char::is_uppercase)
                     && word
@@ -1754,10 +1779,11 @@ impl Pack {
                     || ["of", "the", "and", "for", "on", "&"].contains(word)
             })
             && let Some(found) = law_end.find(after)
-            && self.public_body(
-                &text[range.start..range.end + found.end()],
+            && self.public_body_by(
+                &text[range.start..range.end + found.end()].replace(['\r', '\n'], " "),
                 category,
                 titled,
+                false,
             )
         {
             return true;
@@ -2215,6 +2241,11 @@ impl Pack {
         view: &mdoc_pii::view::View,
         detections: &mut Vec<Detection>,
     ) -> Vec<std::ops::Range<usize>> {
+        static EMPLOYEE: OnceLock<Regex> = OnceLock::new();
+        let employee = EMPLOYEE.get_or_init(|| {
+            Regex::new(r"(?i)\b(?:сотрудник|офицер|инспектор)\p{Alphabetic}{0,3}[\p{Zs}\t]+$")
+                .expect("employee affiliation pattern")
+        });
         let fixes = self.spans.iter().filter_map(|span| match span {
             Span::Fix(fix) => Some(fix),
             Span::Pattern { .. } => None,
@@ -2227,6 +2258,25 @@ impl Pack {
                 .extend
                 .iter()
                 .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
+                .filter(|m| {
+                    if !source[m.clone()].contains(['«', '"'])
+                        || !self.public_body(&source[m.clone()], fix.category, false)
+                    {
+                        return true;
+                    }
+                    let start = source[..m.start]
+                        .rfind(['\n', '.', ';'])
+                        .map_or(0, |at| at + 1);
+                    let before = &source[start..m.start];
+                    // An inner agency quotation cannot overrule the
+                    // private company enclosing it, in either category.
+                    let enclosed = self.legal_form(before)
+                        && (before.matches('«').count() > before.matches('»').count()
+                            || before.matches('"').count() % 2 == 1);
+                    // Even an explicit police department can be an
+                    // employee's affiliation before a quoted nickname.
+                    !enclosed && !employee.is_match(before)
+                })
                 .collect();
             // In reading order: a span never grows into part of another
             // span of its category, so in "Ветлин Н. О. Брюн Л. И." the
@@ -2254,10 +2304,9 @@ impl Pack {
                         && source[m.start..range.start]
                             .split(|c: char| !c.is_alphanumeric() && c != '-')
                             .any(|word| !word.is_empty() && self.never(word))
-                        // A quoted police unit is the body's own name,
-                        // even after a generic country word ("МВД России
-                        // «Энский»"); universities and companies are spared
-                        // by public_body as everywhere else (#378).
+                        // A supported quoted institution may grow over
+                        // its public head; extension patterns must first
+                        // establish the institution, not an affiliation.
                         && !(source[m.clone()].contains(['«', '"'])
                             && self.public_body(&source[m.clone()], fix.category, false))
                 };
@@ -4972,9 +5021,185 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert!(missed.is_empty(), "still proposed:\n{}", missed.join("\n"));
     }
 
+    /// Gate review of #643: each reported name survives both span fixes
+    /// and the proposals the user actually sees, with its category intact.
+    #[test]
+    fn public_bodies_gate_review_keeps_names() {
+        for (source, span, category) in [
+            (
+                "Employee: John Smith\nAct of acceptance of completed work",
+                "John Smith",
+                Category::Person,
+            ),
+            (
+                "For National Grid\nAct of acceptance of completed work",
+                "National Grid",
+                Category::Organization,
+            ),
+            ("John Smith\nAct", "John Smith", Category::Person),
+            (
+                "Brindle Freight Safety\nAct of acceptance of completed work",
+                "Brindle Freight Safety",
+                Category::Organization,
+            ),
+            (
+                "Employee: Brindle Freight Safety\nAct",
+                "Brindle Freight Safety",
+                Category::Organization,
+            ),
+            ("Department\njohn Smith", "john Smith", Category::Person),
+            ("Ministry\njohn Smith", "john Smith", Category::Person),
+            ("Ministry\r\njohn Smith", "john Smith", Category::Person),
+            ("Department john Smith", "john Smith", Category::Person),
+            (
+                "Министерства\nиван Смирнов",
+                "иван Смирнов",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МВД России «Иван Смирнов» подписал заявление.",
+                "Иван Смирнов",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "Сотрудник МО МВД России «Сокол» сообщил о встрече.",
+                "Сокол",
+                Category::Person,
+            ),
+            (
+                "ООО «МВД России «Страж»» заключило договор.",
+                "Страж",
+                Category::Organization,
+            ),
+            (
+                "ООО «МО МВД России «Страж»» заключило договор.",
+                "Страж",
+                Category::Organization,
+            ),
+        ] {
+            assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
+            let start = source.find(span).unwrap();
+            let label = match category {
+                Category::Person => "person",
+                Category::Organization => "organization",
+                _ => unreachable!(),
+            };
+            let proposed = crate::recognition::proposals(
+                source,
+                &[crate::RawEntity {
+                    start,
+                    end: start + span.len(),
+                    label: label.into(),
+                    score: 0.9,
+                    text: span.into(),
+                }],
+            )
+            .unwrap();
+            assert_eq!(
+                proposed,
+                [crate::recognition::Span {
+                    range: start..start + span.len(),
+                    category: if category == Category::Person {
+                        "PERSON"
+                    } else {
+                        "ORG"
+                    }
+                    .into(),
+                }],
+                "{source}"
+            );
+        }
+    }
+
+    /// Private and party qualifiers on either side take precedence over
+    /// even a direct central-bank relation, in either model category.
+    #[test]
+    fn bank_of_england_gate_review_keeps_private_names() {
+        let name = "Bank of England";
+        for category in [Category::Organization, Category::Person] {
+            for source in [
+                "The Bank of England, a private Arkansas lender, financed a home in London.",
+                "The Bank of England (Lender) serves UK customers.",
+                "Private Bank of England discussed UK monetary policy.",
+                "The Bank of England, a private bank, discussed monetary policy.",
+                "Lender: The Bank of England is the British central bank.",
+                "The Bank of England (Lender) is the British central bank.",
+                "Party A: The Bank of England is the British central bank.",
+                "The Bank of England (Party A) is the British central bank.",
+                "Private: The Bank of England is the British central bank.",
+                "The Bank of England, private, is the British central bank.",
+                "The Bank of England\n(Lender) serves UK customers.",
+            ] {
+                assert_eq!(fixed(source, &[(name, category)]), [name], "{source}");
+                let start = source.find(name).unwrap();
+                let proposed = crate::recognition::proposals(
+                    source,
+                    &[crate::RawEntity {
+                        start,
+                        end: start + name.len(),
+                        label: if category == Category::Person {
+                            "person"
+                        } else {
+                            "organization"
+                        }
+                        .into(),
+                        score: 0.9,
+                        text: name.into(),
+                    }],
+                )
+                .unwrap();
+                assert!(
+                    proposed
+                        .iter()
+                        .any(|span| span.range == (start..start + name.len())),
+                    "{source}: {proposed:?}"
+                );
+            }
+        }
+    }
+
+    /// Institutional continuations still go when their syntax, rather
+    /// than the preceding bare office word, establishes the body's name.
+    #[test]
+    fn public_body_continuations_need_institutional_syntax() {
+        for (source, span) in [
+            ("Department\nof Justice", "of Justice"),
+            ("Ministry\nof Defence", "of Defence"),
+            (
+                "Министерства\nфинансов Российской Федерации",
+                "финансов Российской Федерации",
+            ),
+            (
+                "Министерства\nобороны Российской Федерации",
+                "обороны Российской Федерации",
+            ),
+            ("Brindle Freight Safety\nAct", "Brindle Freight Safety"),
+            (
+                "Biometric Information Privacy\r\nAct",
+                "Biometric Information Privacy",
+            ),
+            ("Data Protection\nAct", "Data Protection"),
+            ("МО МВД России «Энский»", "Энский"),
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                assert!(fixed(source, &[(span, category)]).is_empty(), "{source}");
+            }
+        }
+    }
+
     /// #378 Q2: the Arkansas lender shares the central bank's name.
-    /// Only an article and local public context disambiguate it; a party
-    /// label always keeps the name, even beside that public context.
+    /// Only an article and a direct institutional relation disambiguate
+    /// it; geography and discussion of public policy are insufficient.
     #[test]
     fn bank_of_england_needs_public_context() {
         let name = "Bank of England";
@@ -4987,6 +5212,14 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "The Governor spoke. The Bank of England replied",
                 "UK policy\n\nThe Bank of England supplied the loan",
                 "The Bank of England Services Ltd discussed Monetary Policy",
+                "The Bank of England discussed Governor",
+                "The Bank of England discussed Monetary Policy",
+                "The Bank of England discussed Threadneedle",
+                "The Bank of England discussed Prudential Regulation",
+                "The Bank of England discussed UK",
+                "The Bank of England discussed United Kingdom",
+                "The Bank of England discussed British",
+                "The Bank of England discussed London",
             ] {
                 let span = if source.contains("Services Ltd") {
                     "Bank of England Services Ltd"
@@ -4995,29 +5228,14 @@ Privacy Act (“BIPA”). BIPA applies.",
                 };
                 assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
             }
-            for cue in [
-                "Governor",
-                "Monetary Policy",
-                "Threadneedle",
-                "Prudential Regulation",
-                "UK",
-                "United Kingdom",
-                "British",
-                "London",
+            for source in [
+                "The Governor of the Bank of England replied",
+                "The Bank of England's Monetary Policy Committee replied",
+                "The Bank of England's Prudential Regulation Authority replied",
+                "The Bank of England, the UK's central bank, replied",
+                "The Bank of England is the British central bank",
             ] {
-                for (source, span) in [
-                    (format!("The Bank of England discussed {cue}"), name),
-                    (
-                        format!("{cue} officials consulted the Bank of England"),
-                        name,
-                    ),
-                    (
-                        format!("The Bank of England discussed {cue}"),
-                        "The Bank of England",
-                    ),
-                ] {
-                    assert!(fixed(&source, &[(span, category)]).is_empty(), "{source}");
-                }
+                assert!(fixed(source, &[(name, category)]).is_empty(), "{source}");
                 for label in [
                     "Lender",
                     "Borrower",
@@ -5029,9 +5247,14 @@ Privacy Act (“BIPA”). BIPA applies.",
                     "Lender (UK)",
                 ] {
                     for separator in [": ", ":\n"] {
-                        let source =
-                            format!("{label}{separator}‘the Bank of England’ discussed {cue}");
-                        for span in [name, "the Bank of England"] {
+                        let source = format!("{label}{separator}{source}");
+                        // The article may be outside or inside the span.
+                        let article = if source.contains("the Bank") {
+                            "the"
+                        } else {
+                            "The"
+                        };
+                        for span in [name, &format!("{article} Bank of England")] {
                             assert_eq!(fixed(&source, &[(span, category)]), [span], "{source}");
                         }
                     }
@@ -5089,16 +5312,32 @@ Privacy Act (“BIPA”). BIPA applies.",
             "NHS Foundation Trust",
             "NHS Trust",
             "NHS Foundation Trust Hospital",
+            "Ashmoor and Brindle NHS Foundation Trust",
+            "Ashmoor & Brindle NHS Foundation Trust",
+            "Ashmoor NHS\nFoundation Trust",
+            "Ashmoor NHS\r\nFoundation Trust",
+            "Ashmoor and\nBrindle NHS Foundation Trust",
+            "Ashmoor NHS Foundation\nTrust",
         ] {
             for category in [Category::Organization, Category::Person] {
                 assert!(fixed(span, &[(span, category)]).is_empty(), "{span}");
             }
         }
-        let private = "Oxleas NHS Foundation Trust Services Ltd";
-        assert_eq!(
-            fixed(private, &[(private, Category::Organization)]),
-            [private]
-        );
+        for private in [
+            "Oxleas NHS Foundation Trust Services Ltd",
+            "Ashmoor and Brindle NHS Foundation Trust Services Ltd",
+            "Ashmoor & Brindle NHS\nFoundation Trust Services Ltd",
+            "Ashmoor NHS\n\nFoundation Trust",
+            "Ashmoor and Brindle NHS Foundation Trust Consulting",
+        ] {
+            for category in [Category::Organization, Category::Person] {
+                assert_eq!(
+                    fixed(private, &[(private, category)]),
+                    [private],
+                    "{private}"
+                );
+            }
+        }
     }
 
     /// The privacy side of #378: similar people, companies, universities,

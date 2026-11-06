@@ -29,8 +29,9 @@ extend = [
 [[span]]
 category = "ORG"
 extend = [
-    # A police department's quoted unit is part of the public name (#378).
-    '\b(?:МО[\p{Zs}\t]+)?(?:МВД|УМВД|ОМВД)[\p{Zs}\t]+России[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    # МО establishes a police unit; bare МВД России can instead be an
+    # employee's affiliation before a quoted personal name (#378).
+    '\bМО[\p{Zs}\t]+(?:МВД|УМВД|ОМВД)[\p{Zs}\t]+России[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
     '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФГАУ|ФКУ|МКУ|МБУ|ГУП|МУП|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:\p{Uppercase}{2,4}|(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
     '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
 ]
@@ -41,8 +42,9 @@ extend = [
 [[span]]
 category = "PERSON"
 extend = [
-    # A police department's quoted unit is part of the public name (#378).
-    '\b(?:МО[\p{Zs}\t]+)?(?:МВД|УМВД|ОМВД)[\p{Zs}\t]+России[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
+    # Require the unit head МО here too; an affiliation alone cannot
+    # consume a quoted officer or nickname (#378, GUIDE rule 1).
+    '\bМО[\p{Zs}\t]+(?:МВД|УМВД|ОМВД)[\p{Zs}\t]+России[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
     '\b(?:ГКУ|ГБУ|ГАУ|ФГБУ|ФГКУ|ФГАУ|ФКУ|МКУ|МБУ|ГУП|МУП|ГБОУ|ФГБОУ|МБОУ|ГБУЗ)(?:[\p{Zs}\t]+(?:\p{Uppercase}{2,4}|(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
     '\b(?:[Фф]едеральн|[Гг]осударственн|[Мм]униципальн)\p{Alphabetic}*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+){0,2}учреждени\p{Alphabetic}*(?:[\p{Zs}\t]+(?:(?:города|г\.)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?|\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t]+(?:\p{Alphabetic}+[\p{Zs}\t]+)?(?:области|края|округа|района|[Рр]еспублики)|Республики[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?))?[\p{Zs}\t]*[«"][^«»"\n]+[»"]',
 ]
@@ -448,6 +450,9 @@ anywhere_in = ["ORG"]
 [[never]]
 match = "pattern"
 patterns = [
+    # Supported ministry continuations after a wrap need a portfolio
+    # and jurisdiction, rather than an arbitrary lowercase name row.
+    '(?i)\bминистерств\p{Alphabetic}{0,3}[\p{Zs}\t]+(?:финансов|обороны|юстиции)[\p{Zs}\t]+Российской[\p{Zs}\t]+Федерации\b',
     '(?i)\b(?:пенсионн|социальн)\p{Alphabetic}*[\p{Zs}\t]+фонд',
     '(?i)\bфонд\p{Alphabetic}{0,2}[\p{Zs}\t]+(?:пенсионн|социальн|обязательн)',
     '(?i)\bбюджет\p{Alphabetic}{0,2}[\p{Zs}\t]+фонд',

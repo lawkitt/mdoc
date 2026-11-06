@@ -600,6 +600,9 @@ patterns = [
     # Exchange Commission", "National Labor Relations Board", "Board of
     # Education".
     '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
+    # A ministry continuation needs its institutional connector, never
+    # just a lowercase personal name below a bare office header.
+    '(?i)\bministr(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
     '(?i)\b(?:police|sheriff[\x27’]?s|probation|fire|health|home|state|county|city|treasury|justice|corrections?|correctional|revenue|transportation|labou?r|education|defen[cs]e|homeland[\p{Zs}\t]+security|game[\p{Zs}\t]+and[\p{Zs}\t]+fish)[\p{Zs}\t]+departments?\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:(?:u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|state|county|city|federal)[\p{Zs}\t]+)?offices?[\p{Zs}\t]+(?:of|for)\b',
     '(?i)\b(?:home|foreign|cabinet|war|colonial|patent|passport|(?:attorney|sheriff|comptroller|commissioner|prosecutor|defender|coroner|clerk|registrar|governor|mayor|attorney[\p{Zs}\t]+general|inspector[\p{Zs}\t]+general)[\x27’]s?)[\p{Zs}\t]+office\b',
@@ -635,6 +638,9 @@ patterns = [
     # Regulations", "18 U.S.C.", "Civil Procedure Rules", "Federal Rules of
     # Evidence".
     '(?i)\b(?:bankruptcy|revenue|penal|civil|criminal|commercial|tax|labou?r|vehicle|insurance|professions|family|probate|evidence|procedure|government|administrative|federal|state|u\.[\p{Zs}\t]?s\.|united[\p{Zs}\t]+states|municipal|building|education|corporations|judicial|elections?|health[\p{Zs}\t]+and[\p{Zs}\t]+safety)[\p{Zs}\t]+code\b',
+    # Recognized statutory subjects support a cut title across a wrap;
+    # a following document heading "Act ..." alone is insufficient.
+    '(?i)\b(?:freight[\p{Zs}\t]+safety|biometric[\p{Zs}\t]+(?:information[\p{Zs}\t]+)?privacy|data[\p{Zs}\t]+protection)[\p{Zs}\t]+act\b',
     '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?code[\p{Zs}\t]+of\b',
     '(?i)(?:^|[\s\p{P}\p{N}])(?:u\.[\p{Zs}\t]?s\.[\p{Zs}\t]?c|c\.[\p{Zs}\t]?f\.[\p{Zs}\t]?r|u\.[\p{Zs}\t]?c\.[\p{Zs}\t]?c|ilcs)(?:[\s\p{P}]|$)',
     '(?i)\brules[\p{Zs}\t]+of[\p{Zs}\t]+(?:civil|criminal|evidence|appellate|professional|court|procedure)\b|\b(?:civil|criminal)[\p{Zs}\t]+procedure[\p{Zs}\t]+rules\b',
@@ -722,7 +728,15 @@ patterns = [
     # federal national laboratory, NHS trusts, port authorities and law
     # societies. Universities and colleges are exempt through `private`.
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){1,4}(?:National[\p{Zs}\t]+Laboratory|Port[\p{Zs}\t]+Authority)[\s\p{P}]*$',
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]+){0,4}NHS[\p{Zs}\t]+(?:Foundation[\p{Zs}\t]+)?Trust(?:[\p{Zs}\t]+Hospital)?[\s\p{P}]*$',
+    # Up to four name words per side of one conjunction; each separator
+    # may wrap once, never across a paragraph or an unbounded prose tail.
+    '''(?x) ^[\p{Zs}\t\p{P}]* (?:[Tt]he[\p{Zs}\t]+)?
+        (?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)){0,4}
+        (?:(?:and|&)(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)
+            (?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)){1,4})?
+        NHS(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)
+        (?:Foundation(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*))?Trust
+        (?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)Hospital)?[\p{Zs}\t\p{P}]*$ ''',
     '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?Law[\p{Zs}\t]+Society[\p{Zs}\t]+of[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}\x27’.-]*[\p{Zs}\t]*){1,4}[\s\p{P}]*$',
 ]
 anywhere_in = ["ORG", "PERSON"]
