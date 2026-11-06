@@ -164,6 +164,11 @@ What implementing it settled (#616–#621):
   the longest job when it runs; `ci/macos` is about 8.5 min warm. The
   ways down are a pin to the image's runtime (Xcode 26.2 and iOS 26.2) or
   a cached iOS core on `main`. Both are the maintainer's decision.
+- **Pinned to Xcode 26.2 and iOS 26.2 (#630, 2026-11-06).** With no
+  runtime download, `ci/ios` took about 12 minutes on its shadow run
+  (tests 11.8 min, Release 5.8 min in parallel), from 17–21. The pin found
+  a Find-sheet hang on iOS 26.2 (#634), fixed first. The cached iOS core
+  (#633) comes on top.
 - **A summary's parts are named after it** (`ci/macos (checks)`,
   `ci/ios-release`, `ci/detection (2)`, `fast (unit)`): the gate treats a
   summary's parts as its caller's jobs whose names start with the summary's
