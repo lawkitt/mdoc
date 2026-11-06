@@ -629,6 +629,23 @@ fn to_source(
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let view = mdoc_pii::view::View::new(source);
+    // Establish model company names before filtering reference-looking
+    // short names. A trading name needs no legal form (guide rule 2).
+    let organizations: Vec<&str> = raw
+        .iter()
+        .filter(|entity| category_of(&entity.label) == Some(Category::Organization))
+        .filter_map(|entity| {
+            let text = &view.text[view.view_range(entity.start..entity.end)];
+            rules::pack()
+                .identifying_at(
+                    source,
+                    entity.start..entity.end,
+                    text,
+                    Category::Organization,
+                )
+                .then_some(text)
+        })
+        .collect();
     let mut detections: Vec<Detection> = raw
         .iter()
         .filter_map(|entity| {
@@ -636,7 +653,13 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             // Read as the model read it: "%41lice" in a link target is "Alice".
             let text = &view.text[view.view_range(entity.start..entity.end)];
             rules::pack()
-                .identifying_at(source, entity.start..entity.end, text, category)
+                .identifying_with_organizations(
+                    source,
+                    entity.start..entity.end,
+                    text,
+                    category,
+                    &organizations,
+                )
                 .then_some(Detection {
                     range: entity.start..entity.end,
                     category,
@@ -667,10 +690,18 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     // After the span fixes, so each spelling copies the fixed wording.
     let respelt = respelt(source, &view, &detections);
     detections.extend(respelt);
+    let names: Vec<Detection> = detections
+        .iter()
+        .filter(|d| matches!(d.category, Category::Person | Category::Organization))
+        .map(|d| Detection {
+            range: view.view_range(d.range.clone()),
+            ..d.clone()
+        })
+        .collect();
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()
-        .chain(rules::pack().spans(&view.text))
+        .chain(rules::pack().spans_beside(&view.text, &names))
         .chain(structured::scan(&view.text));
     let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
         .filter_map(|mut detection| {

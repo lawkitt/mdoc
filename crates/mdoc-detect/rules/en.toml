@@ -50,13 +50,16 @@ trim = [
 # proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
 # #382). A title's period goes with it. Run after job phrases (#385), so
 # "Chief Investigator Ms Edda Brannock" also loses "Ms". Lowercase list
-# letters at a line start or list break are no initials (#546).
+# letters at a line start or list break are no initials (#546). A Lord
+# Justice's "LJ" ("LJJ" for several) is a judge's post-nominal, not part
+# of the name: "per Ivo Ostrand LJ" is "Ivo Ostrand" (#499). "J" alone
+# stays, since it may be an initial.
 [[span]]
 category = "PERSON"
 trim = [
     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
     "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
-    "kc", "qc", "esq", "phd",
+    "kc", "qc", "esq", "phd", "lj", "ljj",
 ]
 list_letter = true
 
@@ -105,7 +108,22 @@ trim = [
 # ("Mr Ivo Ostrand"; guide rule 1, issue #499).
 [[span]]
 category = "ORG"
-person_before = ["decl", "declaration", "aff", "affidavit"]
+person_before = ["decl", "declaration", "aff", "affidavit", "dep", "deposition"]
+
+# A document label before "of" or a pinpoint page is no person's name
+# (#499). Require the dot and citation context: an untitled person called
+# Decl or Aff in prose must stay marked (guide rule 1).
+[[reference]]
+pattern = '\b(?:Decl|Dep|Aff)\.(?P<tail>[\p{Zs}\t]+(?:of\b|at[\p{Zs}\t]+\d+(?:[-–]\d+)?(?:[\p{Zs}\t]*$|[\p{Zs}\t]*[),;.\]]))|[\p{Zs}\t]*¶)'
+
+# A declaration's or exhibit's label before a person's name is outside
+# it, as is a numbered exhibit leading into the declarant (#499).
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:Decl|Dep|Aff)\.[\p{Zs}\t]+of[\p{Zs}\t]+',
+    'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
+]
 
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
@@ -1065,6 +1083,16 @@ labels = [
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+|[A-Z]{1,4}\d{3,}'
 
+# A badge after "badge" alone is one person's too ("provided badge 88ZZ",
+# #499): digits then capitals, capitals then digits, or a bare number of
+# three digits or more. A word after the label ("badge holders") is none.
+[[context]]
+category = "IDENTITY"
+labels = ["badge", "badge no", "badge id"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2,}[A-Z]{1,4}|[A-Z]{1,4}\d{2,}|\d{3,}'
+min_digits = 2
+
 # A number assigned to one person is IDENTITY, the value only (guide rule
 # 6, the maintainer's decision on #484, item 3; #483): an attorney's bar
 # number and a police officer's shield number after their label ("Ohio
@@ -1131,8 +1159,12 @@ min_digits = 3
 # Brindlecombe, GA 30999"). A US state may be spelled out or dotted before
 # its ZIP, which may wrap to the next line ("Brindlecombe, Georgia 30999",
 # "Wexford D.C. 20999"). A country after the postcode is no part of it
-# ("Slocombe SL9 7ZZ, UK"). P.O. boxes and a town with its postcode alone
-# wait for #506.
+# ("Slocombe SL9 7ZZ, UK"). A town with its postcode alone waits for #506.
+# Suite separators may be a space or hyphen; a town after only a space
+# needs a postcode, or the explicit end "Township". A word-number house
+# (One through Ten) still needs a street suffix. A single-word numbered
+# street needs a unit after it, so a numbered name alone is not an address.
+# A box can replace the street or follow it, never an intervening Attn name.
 #
 # The model reads a building's name before a house number as a company
 # ("Harrow House" of "Harrow House, 12 Pellin Street\nSlocombe SL9
@@ -1145,10 +1177,12 @@ min_digits = 3
 # not ending in a building word ("Tower Records") stays a company.
 [[span]]
 category = "ADDRESS"
-pattern = '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}){flat}){0,3}|{street}(?:(?:{sep}|{nl}){flat}){1,3}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})?|{street}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|{sep}{town})|{named}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl})(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode})'
-parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor|FLOOR)\b|(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b)'
+pattern = '(?:(?:(?:{flat}|{building})(?:{sep}|{nl})){1,3}{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}|{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){1,3}|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|(?:{flat}(?:{sep}|{nl})){0,2}{building}(?:{sep}|{nl}){named}(?:(?:{sep}|{nl}){flat}){0,3})(?:{after})?|{street}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?{after}|{box}{after}|{named}(?:(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode})'
+parts.after = '(?:{sep}|\s+){postcode}|(?:{sep}|{nl}|[\p{Zs}\t]+)(?:{town}|{caps_town})(?:{sep}(?:{town}|{caps_town}))?(?:{sep}|\s+){postcode}|[\p{Zs}\t]+(?:\p{Uppercase}[\p{Ll}\x27’-]+[\p{Zs}\t]+){1,2}Township\b|{sep}{town}'
+parts.box = '\b(?i:P\.?[\p{Zs}\t]*O\.?[\p{Zs}\t]+Box)[\p{Zs}\t]+\d+[A-Za-z]?\b'
+parts.flat = '\b(?:(?:Flat|Unit|Apartment|Suite|Room|Floor|Building|FLAT|UNIT|APARTMENT|SUITE|ROOM|FLOOR|BUILDING|Apt\.?|APT\.?|Ste\.?|STE\.?|Rm\.?|RM\.?|Fl\.|FL\.|Bldg\.?|BLDG\.?|Mail[\p{Zs}\t]?Stop|MAIL[\p{Zs}\t]?STOP)(?:[\p{Zs}\t]*#[\p{Zs}\t]*|[\p{Zs}\t]+)(?:\d+[A-Za-z]?(?:[-.][\dA-Za-z]+)?|[A-Z])\b|\d+(?:st|nd|rd|th)[\p{Zs}\t]+(?:Floor|FLOOR)\b|(?:Ground|First|Second|Third|Lower|Upper|GROUND|FIRST|SECOND|THIRD|LOWER|UPPER)[\p{Zs}\t]+(?:Floor|FLOOR)\b)|\#[\p{Zs}\t]*\d+[A-Za-z]?\b'
 parts.building = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,3}(?:House|Building|Buildings|Tower|Towers|Mansions|HOUSE|BUILDING|BUILDINGS|TOWER|TOWERS|MANSIONS)\b'
-parts.street = '\b\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4}(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
+parts.street = '\b(?:\d+[A-Za-z]?(?:[-–]\d+[A-Za-z]?)?[\p{Zs}\t]+|(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)[\p{Zs}\t]+|\d+(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)(?:(?:[NSEW]\.?[\p{Zs}\t]+\d+[\p{Zs}\t]+)|(?:(?:[NS]\.[EW]\.|\p{Uppercase}[\p{Alphabetic}\x27’-]*\.?|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,4})(?:(?:Road|Street|Lane|Avenue|Mews|Close|Court|Drive|Way|Place|Square|Crescent|Gardens|Terrace|Yard|Row|Hill|Grove|Walk|Parade|Boulevard|Parkway|Highway|Freeway|Expressway|Plaza|Circle|Trail|Quay|Wharf|Vale|Pike|Turnpike|Embankment|ROAD|STREET|LANE|AVENUE|MEWS|CLOSE|COURT|DRIVE|WAY|PLACE|SQUARE|CRESCENT|GARDENS|TERRACE|YARD|ROW|HILL|GROVE|WALK|PARADE|BOULEVARD|PARKWAY|HIGHWAY|FREEWAY|EXPRESSWAY|PLAZA|CIRCLE|TRAIL|QUAY|WHARF|VALE|PIKE|TURNPIKE|EMBANKMENT)\b|\b(?:Rd|St|Ave|Blvd|Ln|Dr|Pkwy|Hwy|Fwy|Expy|Pl|Ct|Cir|Sq|Ter|Trl|RD|ST|AVE|BLVD|LN|DR|PKWY|HWY|FWY|EXPY|PL|CT|CIR|SQ|TER|TRL)\b\.?)(?:,?[\p{Zs}\t]+(?:[NS]\.[EW]\.|[NSEW]\.|(?:[NS][EW]|[NSEW]|North|South|East|West)\b))?'
 parts.named = '\b(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*[\p{Zs}\t]+){1,2}(?:Road|Street|Lane|Avenue|Drive|Boulevard|Parkway|Highway|Place|Square|Crescent|Terrace|Gardens|Mews|ROAD|STREET|LANE|AVENUE|DRIVE|BOULEVARD|PARKWAY|HIGHWAY|PLACE|SQUARE|CRESCENT|TERRACE|GARDENS|MEWS)\b|\b(?:The[\p{Zs}\t]+)?(?:Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)\b'
 parts.sep = ',\s*|\s*<br\s*/?>\s*'
 parts.nl = '[\p{Zs}\t]*\\?\r?\n[\p{Zs}\t]*'
@@ -1156,6 +1190,50 @@ parts.town = '(?:(?:St|Ft|Mt)\.?[\p{Zs}\t]+)?\p{Uppercase}[\p{Ll}\d][\p{Alphabet
 parts.caps_town = '\b\p{Uppercase}{2,}(?:[\p{Zs}\t]+\p{Uppercase}{2,}){0,2}\b'
 parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|(?:[A-Z]{2}|[A-Z]\.[A-Z]\.|(?i:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming|district[\p{Zs}\t]+of[\p{Zs}\t]+columbia))(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{5}(?:-\d{4})?)\b'
 absorbs.ORG = '(?P<span>{building})(?:{sep}|{nl})(?:{flat}(?:{sep}|{nl})){0,3}\d'
+# The street/units or box are definite components; the guessed town after
+# them is not allowed to absorb a model name or an attention/contact field.
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
+
+# A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
+# street parts before its town (#498). The comma after the number is
+# required here; no prefix can take the preceding party's name.
+[[span]]
+category = "ADDRESS"
+pattern = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+[A-Z][a-z\x27’-]+(?:[\p{Zs}\t]+[A-Z][a-z\x27’-]+){0,2}(?:[\p{Zs}\t]+[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2})?\b'
+# The town after the two street components still cannot take a recipient.
+continuation_after = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street)\b'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
+
+# A corner needs its city AND ZIP (#553 item 3). A bare pair of street
+# names cannot match. Keep the alphabet and suffixes bounded to these
+# English street forms rather than guessing arbitrary named properties.
+[[span]]
+category = "ADDRESS"
+pattern = '\b{street}[\p{Zs}\t]+and[\p{Zs}\t]+{street},?[\p{Zs}\t]+(?:(?:[NS]\.[EW]\.|[NSEW]\.|[NS][EW]|[NSEW])[\p{Zs}\t]+)?[A-Z][a-z]+(?:[\p{Zs}\t]+[A-Z][a-z]+){0,2},[\p{Zs}\t]*[A-Z]{2}[\p{Zs}\t]+\d{5}(?:-\d{4})?\b'
+parts.street = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?:Street|Avenue|Road|St\.?|Ave\.?|Rd\.?)'
+
+# The Cyrillic box label has the same boundary as P.O. Box (#506 item 7):
+# its number through the city or index. Restrict city words to Cyrillic;
+# a following field, country or person's name is outside the box.
+[[span]]
+category = "ADDRESS"
+pattern = '(?i:а/я)[\p{Zs}\t]*\d+[\p{Zs}\t]*,[\p{Zs}\t]*(?:\d{6}[\p{Zs}\t]*,[\p{Zs}\t]*)?(?:г\.[\p{Zs}\t]*)?[А-ЯЁ][а-яё]+(?:[- ][А-ЯЁ][а-яё]+){0,2}(?:[\p{Zs}\t]*,[\p{Zs}\t]*\d{6})?\b'
+# Cyrillic city words are guesses too: a detected recipient ends the box
+# address before the name, even when an index follows it.
+continuation_after = '(?i:а/я)[\p{Zs}\t]*\d+\b'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
+
+# Bare street names and bare corners are unmarked, including a model's
+# ADDRESS guess (#553 item 3). A numeric house number, unit, city or postcode
+# prevents this whole-value veto; numbered ordinals can name streets.
+# Spelled-out house numbers are house numbers too. An explicit private-home
+# naming cue distinguishes a house from a bare street (#553 item 2).
+[[shape]]
+category = "ADDRESS"
+forbid = ['^[\s\p{P}]*(?:(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?)(?:[\p{Zs}\t]+and[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?))?|Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)[\s\p{P}]*$']
+forbid_unless = ['^[\s\p{P}]*(?i:one|two|three|four|five|six|seven|eight|nine|ten)[\p{Zs}\t]+']
+forbid_unless_after = ['(?i)\b(?:home|house|residence|cottage|chalet)[\p{Zs}\t]+(?:(?:is|was)[\p{Zs}\t]+)?(?:called|named)[\p{Zs}\t]+["“‘*_]*\z']
 
 # A country or the word "address" at the edge of a model's address is no
 # part of it: "… OX2 0EL\nUK" ends at the postcode, "… Street address" at
@@ -1237,9 +1315,42 @@ pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|U\.S\.[\p{Zs}\t]+(?:Dist\.|App\.)[\p
 
 # English and Welsh reports and neutral citations: "[2020] STC 960",
 # "[2019] EWCA Civ 1234", "(2004) 1 WLR 12", and the distinctive reports
-# without their year ("ICR 801").
+# without their year ("ICR 801"); "All ER (Comm)" puts its division before
+# the page (issue #499).
 [[reference]]
-pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|UKHL|UKPC|UKUT|UKFTT|UKEAT|EWCA[\p{Zs}\t]+(?:Civ|Crim)|EWHC|EWCOP|EWFC|AC|QB|KB|Ch|Fam|WLR|All[\p{Zs}\t]+ER(?:[\p{Zs}\t]+\(Comm\))?|ICR|IRLR|STC|BCLC|BCC|FSR|RPC|EGLR|HLR|SFTD|BTC|TC|Lloyd[\x27’]s[\p{Zs}\t]+Rep|Cr[\p{Zs}\t]+App[\p{Zs}\t]+R)|\b(?:\d{1,2}[\p{Zs}\t]+)?(?:ICR|IRLR|STC|WLR|BCLC|EWCA[\p{Zs}\t]+Civ|EWHC))[\p{Zs}\t]+\d{1,5}(?:[\p{Zs}\t]*\((?:Ch|Comm|QB|KB|Fam|Admin|TCC|IPEC|Pat|TC)\))?'
+
+# Scottish reports have a year, reporter, court and page: "1931 S.C.
+# (H.L.) 13"; the initials inside name nobody (guide rule 8, #499).
+[[reference]]
+pattern = '\b(?:19|20)\d{2}[\p{Zs}\t]+S\.[\p{Zs}\t]?C\.[\p{Zs}\t]+\(H\.[\p{Zs}\t]?L\.\)[\p{Zs}\t]+\d{1,5}\b'
+
+# The Crown's R in a judicial-review title is no person. Only the marker
+# is suppressed, leaving the applicant's name to the cited-case rules
+# and the case-at-hand safeguards (guide rules 1 and 8, #499).
+[[reference]]
+pattern = '\bR(?P<tail>[\p{Zs}\t]+\(on[\p{Zs}\t]+the[\p{Zs}\t]+application[\p{Zs}\t]+of\b)'
+
+# Numbered instruments and the cited manual's heading/page are legal
+# references (#499). A manual's full title supplies its reference context.
+[[reference]]
+pattern = '\bNational[\p{Zs}\t]+Instrument[\p{Zs}\t]+\d{2}-\d{3}\b|\b\d{3}[\p{Zs}\t]+DM[\p{Zs}\t]+[-–][\p{Zs}\t]+Aviation[\p{Zs}\t]+Safety\b|\bAHCP/CCAA[\p{Zs}\t]+p\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b'
+
+# Bare PD and DM codes may be personal IDs. Require an affirmative
+# reference introducer, including a practice direction beside a numbered
+# instrument in the same citation; an isolated code is uncertain (#499).
+[[reference]]
+pattern = '(?P<lead>\b(?:(?i:under|see|pursuant[\p{Zs}\t]+to|practice[\p{Zs}\t]+direction|departmental[\p{Zs}\t]+manual)[\p{Zs}\t]+|National[\p{Zs}\t]+Instrument[\p{Zs}\t]+\d{2}-\d{3}[\p{Zs}\t]+and[\p{Zs}\t]+))(?:PD[\p{Zs}\t]+\d{1,3}[A-Z]{1,2}|\d{3}[\p{Zs}\t]+DM)\b'
+
+# Pinpoint pages ("at p. 478A", "p. S-19") and numbered exhibits are no
+# addresses or names; bare numbers and letters beside them stay (#499).
+[[reference]]
+pattern = '\bat[\p{Zs}\t]+p\.[\p{Zs}\t]+\d{1,5}[A-Z]?\b|\bp\.[\p{Zs}\t]+[A-Z]-\d{1,5}\b|\bEx\.[\p{Zs}\t]+\d{1,4}\b'
+
+# A Texas appellate court's city and year are citation parts, not an
+# address. The court cue is required, never a city/year alone (#499).
+[[reference]]
+pattern = '\bTex\.[\p{Zs}\t]+App\.[\p{Zs}\t]*[—–-][\p{Zs}\t]*\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+\p{Uppercase}\p{Ll}+){0,3}[\p{Zs}\t]+(?:19|20)\d{2}\b'
 
 # US codes and regulations: "26 U.S.C. § 6212", "31 U.S.C. 3903", "48 CFR
 # 52.212-1", "735 ILCS 5/2-619", "I.R.C. § 61", and the dotted
@@ -1249,12 +1360,31 @@ pattern = '(?:[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,2}[\p{Zs}\t]+)?(?:UKSC|
 pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section})?|\b\d{1,3}[\p{Zs}\t]+(?:CFR|ILCS|USC)[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section}'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
-# Sections, paragraphs and clauses: "§ 6212", "§§ 1-3", "¶ 4", "section
-# 12", "Article 6", "clause 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)",
+# Sections (including Roman numerals), chapters, paragraphs and clauses
+# (#499): "§ 6212", "§§ 1-3", "¶ 4", "section 12", "Article 6", "clause
+# 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)", "Tex. R. Civ. P. 91a",
 # "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
 # stay unmarked).
 [[reference]]
-pattern = '(?:§§?|¶¶?|\b(?:[Ss]ections?|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|[Ss]s?\.|Fed\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ecs?\.|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+# Canonical, nonempty Roman numerals only: LLC, IIV and VX are no numbers.
+parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|(?:M{1,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:CM|CD|DC{0,3}|C{1,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:XC|XL|LX{0,3}|X{1,3})(?:IX|IV|V?I{0,3})|IX|IV|VI{0,3}|I{1,3})\b)'
+
+# Section/chapter wording can be a trading name. A citation introducer
+# decides it; without one keep the model's name (guide rule 2, #499).
+[[reference]]
+pattern = '(?P<lead>\b(?i:under|see|pursuant[\p{Zs}\t]+to|according[\p{Zs}\t]+to)[\p{Zs}\t]+)\b(?i:sections?|chapters?)[\p{Zs}\t]+{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|(?:M{1,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:CM|CD|DC{0,3}|C{1,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:XC|XL|LX{0,3}|X{1,3})(?:IX|IV|V?I{0,3})|IX|IV|VI{0,3}|I{1,3})\b)'
+
+# A bankruptcy chapter followed by "Case" is a legal proceeding, with no
+# citation introducer needed. A bare Chapter 11 remains ambiguous (#499).
+[[reference]]
+pattern = '\b[Cc]hapters?[\p{Zs}\t]+\d{1,2}\b(?P<tail>[\p{Zs}\t]+[Cc]ase\b)'
+
+# Only lowercase "s." followed by digits is an abbreviated section cue:
+# "S. M." may be a witness's initials, even without the final model dot.
+[[reference]]
+pattern = '\bs{1,2}\.[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
 # Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
@@ -1303,11 +1433,13 @@ pattern = '\b(?:[Ii]d\.,?|supra,?)[\p{Zs}\t]+at[\p{Zs}\t]+\d{1,6}(?:[-–]\d{1,6
 # 2031)", so a sentence on after it ("No. 22-1234, counsel was Ivo Harrow
 # (admitted 2020)") is none of it.
 [[reference]]
-pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
+pattern = '(?:\b(?:[Ii]n[\p{Zs}\t]+re|[Ee]x[\p{Zs}\t]+parte|(?:[Ii]n[\p{Zs}\t]+the[\p{Zs}\t]+)?[Mm]atter[\p{Zs}\t]+of)[\p{Zs}\t]+(?:the[\p{Zs}\t]+)?(?P<party>{party})|(?P<party2>{party}){v}(?P<party3>{party})),?{s}(?:{reporter}(?:{tex_docket})?|{neutral}|{docket_reporter}|(?P<docket>{docket}))'
 parts.party = '(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)(?:(?:[\p{Zs}\t]+(?:of|the|de|der|du|la|le|van|von|ex[\p{Zs}\t]+rel\.))*[\p{Zs}\t]+(?:(?:(?:Bros|Cty|Cnty|Dist|Dep[\x27’]t|Ass[\x27’]n|Mfg|Nat[\x27’]l|Int[\x27’]l|Sch|Univ|Hosp|Mut|Ins|Bd|Comm[\x27’]n|Sav|Fed|Sys|Servs?|Indus|Assocs?|Grp|Ctr|Twp|Auth|Elec|Tel|Mgmt|Prods?|St|Ft|Mt|Jr|Sr|Admin|Gen|Fin|Transp|Educ|Med|Hldgs|Invs?|Tech)\.|\p{Uppercase}\.(?:[\p{Zs}\t]?\p{Uppercase}\.)*|\p{Uppercase}[\p{Alphabetic}\x27’\-]*)|&|\d{1,4})){0,8}(?:[\p{Zs}\t]+(?:Co|Corp|Inc|Ltd|Cos|Plc|LLC)\.)?(?:,[\p{Zs}\t]*(?:Inc|Ltd|LLC|L\.L\.C|LLP|L\.L\.P|L\.P|Co|Corp|N\.A|P\.C|PLC|plc|S\.A|AG|GmbH)\.?)?(?:,?[\p{Zs}\t]+et[\p{Zs}\t]+al\.)?[*_]{0,3}'
 parts.v = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)(?:v|vs)\.?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.s = '(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)'
 parts.reporter = '\d{1,4}[\p{Zs}\t]+(?:(?:\p{Uppercase}\p{Alphabetic}{0,7}\.|[A-Z]{1,5}|\d(?:d|th)|App[\x27’]x)[\p{Zs}\t]?){1,5}[\p{Zs}\t]*\d{1,9}'
+# A trailing docket belongs to the cited Texas appeal, not this case (#499).
+parts.tex_docket = '[\p{Zs}\t]*\(Tex\.[\p{Zs}\t]+App\.[^()\n]{0,60}?(?:19|20)\d{2}(?:,[\p{Zs}\t]*pet\.[\p{Zs}\t]+filed)?\),[\p{Zs}\t]+No\.[\p{Zs}\t]+\d{2}-\d{2}-\d{5}-CV\b'
 parts.neutral = '[\[(](?:19|20)\d{2}[\])][\p{Zs}\t]+(?:\d{1,3}[\p{Zs}\t]+)?(?:\p{Uppercase}\p{Alphabetic}*\.?[\p{Zs}\t]+){1,4}\d{1,6}'
 parts.docket = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*(?:,[\p{Zs}\t]*slip[\p{Zs}\t]+op\.(?:[\p{Zs}\t]+at[\p{Zs}\t]+\d+)?)?[\p{Zs}\t]*\([\p{Uppercase}\d][^()\n]{0,60}?(?:19|20)\d{2}\)'
 parts.docket_reporter = '(?:(?:Case|Civ\.|Civil|Crim\.|Cr\.)[\p{Zs}\t]+(?:Action[\p{Zs}\t]+)?)?Nos?\.[\p{Zs}\t]*[\dA-Z][\w:.\-–]*\d[\w\-–]*,[\p{Zs}\t]*(?:19|20)\d{2}[\p{Zs}\t]+(?:WL|LEXIS|U\.S\.[\p{Zs}\t]+Dist\.[\p{Zs}\t]+LEXIS)[\p{Zs}\t]+\d+'
