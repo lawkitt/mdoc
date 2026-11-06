@@ -148,6 +148,23 @@ load_tools() {
   set +a
 }
 
+# The iOS Simulator runtime the iOS job tests on, as `<identifier> <version>`:
+# the available one whose build is IOS_SIM_RUNTIME_BUILD and whose
+# major.minor is IOS_SIM_RUNTIME (scripts/tools.env), or nothing. The same
+# build on CI and on a Mac (#654).
+ios_sim_runtime() {
+  xcrun simctl list runtimes -j | python3 -c '
+import json, sys
+build, want = sys.argv[1], sys.argv[2].split(".")[:2]
+for r in json.load(sys.stdin)["runtimes"]:
+    if (r.get("platform") == "iOS" and r.get("isAvailable")
+            and r.get("buildversion") == build
+            and r["version"].split(".")[:2] == want):
+        print(r["identifier"], r["version"])
+        break
+' "$IOS_SIM_RUNTIME_BUILD" "$IOS_SIM_RUNTIME"
+}
+
 # --- areas (ADR 0091) ---------------------------------------------------------
 
 # A GitHub filter glob as an anchored extended regex: ** crosses directories,
