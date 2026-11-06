@@ -695,15 +695,24 @@ struct AllReviewedLine: View {
     var body: some View {
         let replaced = candidates.filter { $0.state == .replaced }.count
         let kept = candidates.filter { $0.state == .kept }.count
-        HStack(spacing: Space.xs) {
-            StatusPill(Text("All \(candidates.count) reviewed"), systemImage: "checkmark.seal.fill", kind: .ready)
-            Text("\(replaced) replaced · \(kept) kept")
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+        let pill = StatusPill(Text("All \(candidates.count) reviewed"), systemImage: "checkmark.seal.fill", kind: .ready)
+        let counts = Text("\(replaced) replaced · \(kept) kept")
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+        // One line when it fits, else two: nothing truncates.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.xs) {
+                pill
+                counts
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                pill
+                counts
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .lineLimit(1)
-        .minimumScaleFactor(0.85)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("all-reviewed")

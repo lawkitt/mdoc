@@ -18,14 +18,19 @@ struct MentionSnippet: Hashable, Sendable {
         let utf8 = markdown.utf8
         let lower = utf8.index(utf8.startIndex, offsetBy: min(max(range.start, 0), utf8.count))
         let upper = utf8.index(utf8.startIndex, offsetBy: min(max(range.end, range.start), utf8.count))
-        let head = markdown[..<lower]
-        let tail = markdown[upper...]
+        // Only what a row can use: a window around the name, and the heading
+        // found by searching back, so a long document is never split whole.
+        // Windows line ends become plain ones (Swift reads "\r\n" as one
+        // character).
+        let window = radius * 6
+        let head = Substring(markdown[..<lower].suffix(window).replacingOccurrences(of: "\r\n", with: "\n"))
+        let tail = Substring(markdown[upper...].prefix(window).replacingOccurrences(of: "\r\n", with: "\n"))
         // The words come from the name's own paragraph: never across a
         // blank line or a heading.
         let ownHead = Self.paragraph(endingWith: head)
         let ownTail = Self.paragraph(startingWith: tail)
         self.name = name
-        heading = Self.heading(before: head)
+        heading = Self.heading(before: markdown[..<lower])
         // A generous slice first, cleaned, then trimmed to the radius: the
         // markers it drops would otherwise eat the budget.
         let rawBefore = Self.plain(String(ownHead.suffix(radius * 3)), currentLine: true)
@@ -62,14 +67,20 @@ struct MentionSnippet: Hashable, Sendable {
     /// The nearest heading above, without its `#` markers; nil when there
     /// is none or it is the line the name is on.
     static func heading(before head: Substring) -> String? {
-        let lines = head.split(separator: "\n", omittingEmptySubsequences: false)
-        // The last line holds the name itself.
-        for line in lines.dropLast().reversed() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("#") else { continue }
-            let text = plain(String(trimmed.drop { $0 == "#" }), currentLine: false)
-            guard !text.isEmpty else { return nil }
-            return text.count > 32 ? String(text.prefix(31)).trimmingCharacters(in: .whitespaces) + "…" : text
+        // The name's own line is not a heading above it.
+        guard let lineStart = head.lastIndex(where: { $0 == "\n" || $0 == "\r\n" }) else { return nil }
+        var above = head[..<lineStart]
+        // Back line by line until one starts with "#".
+        while !above.isEmpty {
+            let start = above.lastIndex(where: { $0 == "\n" || $0 == "\r\n" }).map { above.index(after: $0) } ?? above.startIndex
+            let trimmed = above[start...].trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let text = plain(String(trimmed.drop { $0 == "#" }), currentLine: false)
+                guard !text.isEmpty else { return nil }
+                return text.count > 32 ? String(text.prefix(31)).trimmingCharacters(in: .whitespaces) + "…" : text
+            }
+            guard start > above.startIndex else { break }
+            above = above[..<above.index(before: start)]
         }
         return nil
     }
@@ -77,11 +88,15 @@ struct MentionSnippet: Hashable, Sendable {
     /// The text without Markdown's markers, on one line.
     static func plain(_ text: String, currentLine: Bool) -> String {
         var out = text
-        // Links and images keep their text.
+        // Links and images keep their text, also when the window cut one
+        // in half.
         out = out.replacing(/!?\[([^\]]*)\]\([^)]*\)/) { String($0.output.1) }
+        out = out.replacing(/^([^\[\]]*?)\]\([^)]*\)/) { match in String(match.output.1) }
+        out = out.replacing(/!?\[([^\]]*)(\]\([^)]*)?$/) { String($0.output.1) }
         // Emphasis, code and strike markers; a lone `_` stays (PERSON_1).
         out = out.replacing(/\*{1,3}|_{2,3}|~~|`+/, with: "")
-        // Line-start markers: headings, quotes, list bullets and numbers.
+        // Line-start markers: headings, quotes and bullets. List numbers stay
+        // ("5. Return of property").
         out = out.replacing(/^[ \t]*(#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+)/.anchorsMatchLineEndings(), with: "")
         // Table pipes and rules, escapes, then whitespace.
         out = out.replacing(/\|[-: |]*\|?/, with: " ")

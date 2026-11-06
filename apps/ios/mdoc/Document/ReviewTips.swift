@@ -74,9 +74,11 @@ struct ReviewHintLine: View {
                     .font(.caption2.weight(.semibold))
                     // A concrete grey: the button's tint would take over.
                     .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                    .frame(width: Size.target, height: 24)
+                    .frame(width: Size.target, height: Size.target)
                     .contentShape(Rectangle())
             }
+            // A full 44-point target that doesn't make the line taller.
+            .padding(.vertical, -10)
             .accessibilityLabel(Text("Hide tip"))
         }
         .padding(.leading, Space.xxs)

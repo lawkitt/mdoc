@@ -59,4 +59,23 @@ final class MentionSnippetTests: XCTestCase {
         XCTAssertEqual(s.before, "Заявление: ")
         XCTAssertEqual(s.after, " подал документы.")
     }
+
+    func testWindowsLineEndsAreLines() {
+        let s = snippet("# Parties\r\n\r\nFirst paragraph here.\r\n\r\nThe client Maya Bennett signs.", "Maya Bennett")
+        XCTAssertEqual(s.heading, "Parties")
+        XCTAssertEqual(s.before, "The client ")
+    }
+
+    func testALinkCutByTheWindowKeepsItsText() {
+        let long = String(repeating: "word ", count: 80)
+        let s = snippet("\(long)[Riverside Holdings](https://example.com/a/long/path) and Maya Bennett", "Maya Bennett", radius: 30)
+        XCTAssertFalse(s.before.contains("]("), s.before)
+        XCTAssertFalse(s.before.contains("https"), s.before)
+    }
+
+    func testTheHeadingIsFoundFarAbove() {
+        let body = String(repeating: "Line of text.\n", count: 400)
+        let s = snippet("## 4. Terms\n\n\(body)\nSigned by Maya Bennett.", "Maya Bennett")
+        XCTAssertEqual(s.heading, "4. Terms")
+    }
 }

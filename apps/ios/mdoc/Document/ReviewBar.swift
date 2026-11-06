@@ -17,12 +17,14 @@ struct ReviewBar: View {
     var detailsHeight: CGFloat = 260
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The card's sideways drag.
+    /// The card's one-time nudge.
     @State private var drag: CGFloat = 0
-    /// The bar's vertical drag, up negative, while a finger is on it.
-    @State private var pull: CGFloat = 0
-    /// Which way a drag on the card goes, fixed by its first movement.
-    @State private var cardAxis: Axis?
+    /// The finger on the header, the mentions and the card. Gesture state, so
+    /// a cancelled drag (a notification, leaving the app) resets it, with a
+    /// spring.
+    @GestureState(resetTransaction: Transaction(animation: ReviewBar.settle)) private var headerPull: CGFloat = 0
+    @GestureState(resetTransaction: Transaction(animation: ReviewBar.settle)) private var detailsPull: CGFloat = 0
+    @GestureState(resetTransaction: Transaction(animation: ReviewBar.settle)) private var cardDrag = CardDrag()
     /// The mentions' own height, when less than the cap.
     @State private var contentHeight: CGFloat = 0
     @State private var detailsAtTop = true
@@ -31,6 +33,21 @@ struct ReviewBar: View {
     @State private var grabberLift: CGFloat = 0
     @AppStorage(ReviewHint.nudgedKey) private var nudged = false
     @AppStorage(ReviewHint.grabberBouncedKey) private var grabberBounced = false
+
+    /// A drag on the card: its axis, fixed by the first movement, and how far.
+    struct CardDrag: Equatable {
+        var axis: Axis?
+        var dx: CGFloat = 0
+        var dy: CGFloat = 0
+    }
+
+    /// How the bar settles when a finger lets go.
+    static let settle = Animation.spring(response: 0.35, dampingFraction: 0.86)
+
+    /// The bar's vertical drag, up negative, while a finger is on it.
+    private var pull: CGFloat {
+        headerPull + detailsPull + (cardDrag.axis == .vertical ? cardDrag.dy : 0)
+    }
 
     /// The full height of the mentions: their own height up to the cap.
     private var fullHeight: CGFloat {
@@ -63,7 +80,8 @@ struct ReviewBar: View {
                         .transition(.opacity)
                 }
                 pager(candidate)
-                if shownHeight > 0 {
+                // Kept while a finger drags them shut, so the drag isn't cut off.
+                if shownHeight > 0 || detailsPull != 0 {
                     details(candidate)
                 }
                 ReviewButtons(model: model, candidate: candidate)
@@ -77,8 +95,18 @@ struct ReviewBar: View {
             // The bar's text stops growing at AX2, as the system's bars do;
             // a long press shows a label in the large content viewer.
             .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-            .animation(Motion.move(reduced: reduceMotion), value: model.barExpanded)
             .animation(Motion.fade, value: model.hint)
+            // The mentions' height, measured whether or not they show, so the
+            // bar knows where full is before it opens.
+            .background(alignment: .top) {
+                ReviewDetails(model: model, candidate: candidate)
+                    .padding(.horizontal, Space.m)
+                    .frame(maxWidth: 560)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                    .accessibilityHidden(true)
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("review-bar")
             .background { keyboardShortcuts(candidate) }
@@ -138,10 +166,6 @@ struct ReviewBar: View {
 
     // MARK: Pulling
 
-    private func pullChanged(_ dy: CGFloat) {
-        pull = dy
-    }
-
     /// Where the finger let go, with its speed: compact or full, whichever
     /// the fling points nearer to. Dragging down on the compact bar only
     /// springs back.
@@ -149,9 +173,8 @@ struct ReviewBar: View {
         let was = model.barExpanded
         let target = (was ? fullHeight : 0) - dy
         let expand = target > fullHeight / 2
-        withAnimation(reduceMotion ? Motion.fade : .spring(response: 0.35, dampingFraction: 0.86)) {
+        withAnimation(reduceMotion ? Motion.fade : Self.settle) {
             model.barExpanded = expand
-            pull = 0
         }
         if expand != was {
             Haptics.selection()
@@ -164,7 +187,7 @@ struct ReviewBar: View {
         // In screen points: the bar grows under the finger, so its own
         // coordinates would move with it.
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
-            .onChanged { pullChanged($0.translation.height) }
+            .updating($headerPull) { value, pull, _ in pull = value.translation.height }
             .onEnded { pullEnded(predicted: $0.predictedEndTranslation.height) }
     }
 
@@ -208,20 +231,21 @@ struct ReviewBar: View {
     private func details(_ candidate: Candidate) -> some View {
         ScrollView {
             ReviewDetails(model: model, candidate: candidate)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .scrollDisabled(pull != 0)
+        .scrollDisabled(detailsPull != 0)
         .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 0.5 } action: { _, top in detailsAtTop = top }
+        // A new scroll view starts at the top.
+        .onAppear { detailsAtTop = true }
         // At the top, a drag down closes the bar as the grabber's does.
         .simultaneousGesture(
             DragGesture(minimumDistance: 10, coordinateSpace: .global)
-                .onChanged { value in
-                    guard detailsAtTop, value.translation.height > 0 || pull != 0 else { return }
-                    pullChanged(max(0, value.translation.height))
+                .updating($detailsPull) { value, pull, _ in
+                    guard detailsAtTop || pull != 0 else { return }
+                    pull = max(0, value.translation.height)
                 }
                 .onEnded { value in
-                    guard pull != 0 else { return }
+                    guard detailsAtTop, value.translation.height > 0 else { return }
                     pullEnded(predicted: value.predictedEndTranslation.height)
                 })
         .frame(height: shownHeight, alignment: .top)
@@ -245,7 +269,7 @@ struct ReviewBar: View {
                 : .asymmetric(
                     insertion: .offset(x: CGFloat(direction) * 60).combined(with: .opacity),
                     removal: .offset(x: CGFloat(-direction) * 60).combined(with: .opacity)))
-            .offset(x: drag)
+            .offset(x: drag + (cardDrag.axis == .horizontal ? cardDrag.dx : 0))
             .padding(.horizontal, 14)
             .background(alignment: .leading) {
                 Peek(visible: hasPrevious) { swiped(-1) }
@@ -259,34 +283,27 @@ struct ReviewBar: View {
             .contentShape(Rectangle())
         .simultaneousGesture(
             DragGesture(minimumDistance: 12, coordinateSpace: .global)
-                .onChanged { value in
+                .updating($cardDrag) { value, card, _ in
                     let dx = value.translation.width, dy = value.translation.height
-                    if cardAxis == nil { cardAxis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
-                    if cardAxis == .vertical {
-                        pullChanged(dy)
-                        return
-                    }
+                    if card.axis == nil { card.axis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
+                    card.dy = dy
                     // Rubber-band resistance where there is nothing to swipe to.
                     let blocked = (dx > 0 && !hasPrevious) || (dx < 0 && !hasNext)
-                    drag = blocked ? dx / 4 : dx
+                    card.dx = blocked ? dx / 4 : dx
                 }
                 .onEnded { value in
-                    defer { cardAxis = nil }
-                    if cardAxis == .vertical {
+                    let dx = value.translation.width, dy = value.translation.height
+                    if abs(dy) > abs(dx) {
                         pullEnded(predicted: value.predictedEndTranslation.height)
                         return
                     }
-                    let dx = value.translation.width
                     let threshold: CGFloat = 60
                     if dx < -threshold, hasNext {
-                        drag = 0
                         swiped(1)
                     } else if dx > threshold, hasPrevious {
-                        drag = 0
                         swiped(-1)
-                    } else {
-                        if abs(dx) > threshold { Haptics.edge() }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { drag = 0 }
+                    } else if abs(dx) > threshold {
+                        Haptics.edge()
                     }
                 })
         .accessibilityElement(children: .contain)
@@ -463,8 +480,8 @@ private struct ReviewButtons: View {
                     model.goToNextUndecided()
                 } label: {
                     HStack(spacing: Space.xxs) {
-                        Text(model.reviewOrder.isDone ? "Done" : "Next")
-                        if !model.reviewOrder.isDone {
+                        Text(model.documentIsDone ? "Done" : "Next")
+                        if !model.documentIsDone {
                             Image(systemName: "arrow.right")
                                 .accessibilityHidden(true)
                         }
@@ -473,7 +490,7 @@ private struct ReviewButtons: View {
                     .frame(maxWidth: .infinity, minHeight: Size.barButton)
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityHint(Text(model.reviewOrder.isDone ? "Ends review." : "Goes to the next name to decide."))
+                .accessibilityHint(Text(model.documentIsDone ? "Ends review." : "Goes to the next name to decide."))
                 .accessibilityIdentifier("review-next")
             }
         }

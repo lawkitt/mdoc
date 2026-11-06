@@ -54,7 +54,7 @@ extension DocumentViewModel {
     }
 
     /// Puts the bar on `id`, resetting the scope when the identity changes.
-    func select(_ id: CandidateID) {
+    func select(_ id: CandidateID, counts: Bool = true) {
         guard let candidate = snapshot.candidate(id) else { return }
         // A name outside the focused group ends the focus.
         if let focus, !focus.contains(candidate) { self.focus = nil }
@@ -62,7 +62,8 @@ extension DocumentViewModel {
             reviewScope = .allOccurrences
             scopeIdentity = candidate.identityID
         }
-        if id != reviewing { cardsSeen += 1 }
+        // A new card, not the same one found again after its range moved.
+        if counts && id != reviewing { cardsSeen += 1 }
         reviewing = id
         updateHint()
     }
@@ -187,14 +188,15 @@ extension DocumentViewModel {
     /// Next on a decided card: the next undecided candidate, or the end of
     /// review when none is left.
     func goToNextUndecided() {
-        let order = reviewOrder
-        if let next = order.nextUndecided(after: order.index(of: reviewing)) {
-            select(next.id)
-            Haptics.selection()
-        } else {
-            endReview()
-        }
+        // As after a decision: the group's next, then the document's, then
+        // All reviewed.
+        advance(from: reviewOrder.index(of: reviewing))
+        Haptics.selection()
     }
+
+    /// Whether every candidate in the document is decided: Next then reads
+    /// Done.
+    var documentIsDone: Bool { ReviewOrder(snapshot).isDone }
 
     /// After a decision: the next undecided candidate, or All reviewed.
     func advance(from index: Int?) {
@@ -271,11 +273,11 @@ extension DocumentViewModel {
     private func moveBar(to step: HistoryStep?) {
         if let id = step?.candidateID, snapshot.candidate(id) != nil {
             if let focus, let candidate = snapshot.candidate(id), !focus.contains(candidate) { self.focus = nil }
-            select(id)
+            select(id, counts: false)
             revealReviewed()
         } else if let range = step?.range, let near = ReviewOrder(snapshot).candidate(near: range.start) {
             focus = nil
-            select(near.id)
+            select(near.id, counts: false)
             revealReviewed()
         } else if let reviewing, snapshot.candidate(reviewing) == nil {
             self.reviewing = reviewOrder.nextUndecided(after: nil)?.id
@@ -420,10 +422,10 @@ extension DocumentViewModel {
     func reselect(near candidate: Candidate, index: Int?) {
         let order = reviewOrder
         if let index, let same = order.candidate(at: index) {
-            select(same.id)
+            select(same.id, counts: false)
         } else if let near = ReviewOrder(snapshot).candidate(near: candidate.range.start) {
             focus = nil
-            select(near.id)
+            select(near.id, counts: false)
         }
     }
 
