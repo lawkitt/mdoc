@@ -32,6 +32,36 @@ pub struct Library {
     store: Store,
     /// One load, change and save at a time in this process.
     writes: Mutex<()>,
+    /// Cases a move emptied and deleted, newest last, kept in memory only:
+    /// moving a document back into one recreates it (`move_document`).
+    deleted: Mutex<Vec<Case>>,
+}
+
+/// How many cases `Library::deleted` keeps for moving back.
+const DELETED_KEPT: usize = 8;
+
+/// The longest file stem a title makes, in bytes: room for " 99.md" in a
+/// 255-byte file name.
+const MAX_STEM: usize = 240;
+
+/// Characters a file name cannot hold everywhere, and the look-alikes that
+/// stand for them, so a title reads back from its file as it was typed.
+const FILE_NAME_STAND_INS: [(char, char); 9] = [
+    ('/', '\u{2215}'),  // ∕ DIVISION SLASH
+    ('\\', '\u{29F5}'), // ⧵ REVERSE SOLIDUS OPERATOR
+    (':', '\u{A789}'),  // ꞉ MODIFIER LETTER COLON
+    ('*', '\u{2217}'),  // ∗ ASTERISK OPERATOR
+    ('?', '\u{FF1F}'),  // ？ FULLWIDTH QUESTION MARK
+    ('"', '\u{FF02}'),  // ＂ FULLWIDTH QUOTATION MARK
+    ('<', '\u{FF1C}'),  // ＜ FULLWIDTH LESS-THAN SIGN
+    ('>', '\u{FF1E}'),  // ＞ FULLWIDTH GREATER-THAN SIGN
+    ('|', '\u{2223}'),  // ∣ DIVIDES
+];
+
+/// The case a document moves into.
+enum Target {
+    Case(String),
+    New(String),
 }
 
 /// A case as lists show it.
@@ -65,6 +95,37 @@ pub struct StoredDocument {
     pub case_id: Option<String>,
     /// Seconds since the Unix epoch.
     pub modified: u64,
+}
+
+/// Where `rename_document` left a document.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct RenamedDocument {
+    /// Its file now; `None` for a document not saved yet.
+    pub path: Option<String>,
+    /// Its title now: the title asked for, numbered ("Letter 2") when
+    /// another document has it, and shortened when it is too long for a
+    /// file name.
+    pub title: String,
+    /// Its case, renamed too when it held only this document and was named
+    /// after it.
+    pub case: Option<CaseInfo>,
+}
+
+/// Where `move_document` left a document.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MovedDocument {
+    /// The document's file, which stays where it was.
+    pub path: String,
+    /// The case it is in now.
+    pub case: CaseInfo,
+    /// The case it left, as saved after it left, if it was in one. Undo
+    /// moves it back with `move_document(path, left.id)`.
+    pub left: Option<CaseInfo>,
+    /// The case it left had no other document, was never shared (it is not
+    /// the current case) and held no reply, so it was deleted. Moving a
+    /// document back into it recreates it, under a new id, until mdoc
+    /// stops.
+    pub left_deleted: bool,
 }
 
 /// A byte range in UTF-8 text.
@@ -137,6 +198,7 @@ impl Library {
             store: Store::with_key(root.join(CASES), &key),
             root,
             writes: Mutex::new(()),
+            deleted: Mutex::new(Vec::new()),
         }))
     }
 
@@ -184,7 +246,7 @@ impl Library {
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
                 .map_or(0, |since| since.as_secs());
             documents.push(StoredDocument {
-                title: title(&path),
+                title: title_of(&path),
                 case_id: cases
                     .iter()
                     .find(|case| case.members.contains(&member))
@@ -200,11 +262,7 @@ impl Library {
     /// A new, empty case. Documents usually start their own case when they
     /// are saved (`DocumentSession::save`).
     pub fn create_case(&self, name: String) -> Result<CaseInfo, CoreError> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(CoreError::invalid("A case needs a name."));
-        }
-        self.create(Case::new(name.into(), &[], None))
+        self.create(Case::new(case_name(&name)?, &[], None))
     }
 
     /// Make the document at `path` a member of case `case_id`. A document
@@ -236,9 +294,7 @@ impl Library {
 
     /// The case of the most recently shared document, while it still exists.
     pub fn current_case(&self) -> Option<CaseInfo> {
-        let json = std::fs::read_to_string(self.root.join(CURRENT_CASE)).ok()?;
-        let value: serde_json::Value = serde_json::from_str(&json).ok()?;
-        self.case_info(value.get("case")?.as_str()?.to_owned()).ok()
+        self.case_info(self.current_case_id()?).ok()
     }
 
     /// Restore `reply` in place with case `case_id` alone, the Restore
@@ -282,28 +338,11 @@ impl Library {
     /// members left, as on desktop; cases are deleted on their own. Returns
     /// the case it left.
     pub fn delete_document(&self, path: String) -> Result<Option<CaseInfo>, CoreError> {
-        let path = std::path::absolute(&path).unwrap_or_else(|_| PathBuf::from(&path));
-        let documents =
-            std::path::absolute(self.documents_dir()).unwrap_or_else(|_| self.documents_dir());
-        if path.parent() != Some(documents.as_path()) || !mdoc_store::document::is_markdown(&path) {
-            return Err(CoreError::invalid(
-                "Only the library's documents can be deleted.",
-            ));
-        }
+        let path = self.library_document(Path::new(&path), "deleted")?;
         let member = self.member(&path);
         let lock = self.lock()?;
-        let (cases, unreadable) = self.store.list();
-        for id in unreadable {
-            if let Err(mdoc_store::cases::CaseError::Read(error)) = self.store.load(&id)
-                && error.kind() != std::io::ErrorKind::NotFound
-            {
-                return Err(CoreError::case(format!(
-                    "A case could not be read, so the document was not deleted: {error}"
-                )));
-            }
-        }
         let mut left = None;
-        for case in cases {
+        for case in self.readable_cases("deleted")? {
             if !case.members.contains(&member) && case.reply(&member).is_none() {
                 continue;
             }
@@ -318,6 +357,74 @@ impl Library {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
             _ => Ok(left),
         }
+    }
+
+    /// Rename…: give `path`, a document in the documents folder, the title
+    /// `title`. Its file is renamed after the title (characters a file name
+    /// cannot hold become look-alikes, so the title reads back as typed),
+    /// and what cases keep by the file follows it: membership, the reply
+    /// kept for it in any case (ADR 0078) and its review fingerprint (ADR
+    /// 0084). A case holding only this document and named after it takes
+    /// the title too. One write lock covers it; when a case cannot be
+    /// saved, the file and the cases saved before it go back as they were.
+    /// A document open in a `DocumentSession` is renamed through
+    /// `DocumentSession::rename_document`, which keeps the session's file.
+    pub fn rename_document(
+        &self,
+        path: String,
+        title: String,
+    ) -> Result<RenamedDocument, CoreError> {
+        let lock = self.lock()?;
+        self.rename_locked(&lock, Path::new(&path), &title)
+    }
+
+    /// Rename case `case_id` to `name`; its documents keep their titles.
+    pub fn rename_case(&self, case_id: String, name: String) -> Result<CaseInfo, CoreError> {
+        let name = case_name(&name)?;
+        self.edit(&case_id, |case| {
+            let changed = case.name != name;
+            case.name = name;
+            changed
+        })
+    }
+
+    /// Move to case: `path`, a document in the documents folder, leaves its
+    /// case and joins case `case_id`, as on desktop (ADR 0041 Joining). It
+    /// is opened in its case and lined up with the other by
+    /// `mdoc_pii::restore::plan_join`: a name the case knows takes its
+    /// alias, a clashing alias the case's next unused number, the case's
+    /// other names are proposed, and the file is rewritten with the new
+    /// aliases. The case it left keeps its identities and the reply kept
+    /// for the document, so replies to text already sent still restore with
+    /// it; left with no document, never shared (not the current case) and
+    /// holding no reply, it is deleted.
+    ///
+    /// Undo is the same call back into the case it left: the names line up
+    /// with that case's identities again and take their old aliases (a name
+    /// added meanwhile takes a fresh number), and its kept reply is the
+    /// document's again. A case deleted by a move comes back, under a new
+    /// id, when a document moves into it before mdoc stops.
+    ///
+    /// Refused for a document already in that case. The case is saved
+    /// first, then the file, then the case left; a step that fails puts the
+    /// earlier ones back. A document open in a `DocumentSession` is opened
+    /// again afterwards (`DocumentSession::open_document`): its file and
+    /// case changed.
+    pub fn move_document(&self, path: String, case_id: String) -> Result<MovedDocument, CoreError> {
+        let lock = self.lock()?;
+        self.move_locked(&lock, Path::new(&path), Target::Case(case_id))
+    }
+
+    /// Move to case › New case…: `move_document` into a new case named
+    /// `name`. A move that fails leaves no new case behind.
+    pub fn move_document_to_new_case(
+        &self,
+        path: String,
+        name: String,
+    ) -> Result<MovedDocument, CoreError> {
+        let name = case_name(&name)?;
+        let lock = self.lock()?;
+        self.move_locked(&lock, Path::new(&path), Target::New(name))
     }
 
     /// Remove the OCR pages kept for an import of `source` that has not
@@ -419,6 +526,310 @@ impl Library {
         }
     }
 
+    /// `path`, absolute, when it is a Markdown file in the documents folder;
+    /// otherwise refused: only those can be `done`.
+    fn library_document(&self, path: &Path, done: &str) -> Result<PathBuf, CoreError> {
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let documents =
+            std::path::absolute(self.documents_dir()).unwrap_or_else(|_| self.documents_dir());
+        if path.parent() != Some(documents.as_path()) || !mdoc_store::document::is_markdown(&path) {
+            return Err(CoreError::invalid(format!(
+                "Only the library's documents can be {done}."
+            )));
+        }
+        Ok(path)
+    }
+
+    /// Every readable case, for a change that must reach each case keeping
+    /// something of a document. A case that cannot be read for now refuses
+    /// it (the document is not `done`); one that never will (another key,
+    /// damaged) is passed over.
+    fn readable_cases(&self, done: &str) -> Result<Vec<Case>, CoreError> {
+        let (cases, unreadable) = self.store.list();
+        for id in unreadable {
+            if let Err(mdoc_store::cases::CaseError::Read(error)) = self.store.load(&id)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(CoreError::case(format!(
+                    "A case could not be read, so the document was not {done}: {error}"
+                )));
+            }
+        }
+        Ok(cases)
+    }
+
+    /// Save `before` over its case as stored now: a later step failed.
+    fn put_back(&self, _: &WriteLock, before: &Case) -> Result<(), CoreError> {
+        let mut case = before.clone();
+        case.revision = self
+            .load(&before.id)
+            .map_or(before.revision, |now| now.revision)
+            + 1;
+        Ok(self.store.save(&case)?)
+    }
+
+    /// The id `current-case.json` names, whether or not the case exists.
+    fn current_case_id(&self) -> Option<String> {
+        let json = std::fs::read_to_string(self.root.join(CURRENT_CASE)).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&json).ok()?;
+        Some(value.get("case")?.as_str()?.to_owned())
+    }
+
+    /// Keep `case`, which a move deleted, for moving back.
+    fn keep_deleted(&self, case: Case) {
+        let mut deleted = self.deleted.lock().unwrap_or_else(|e| e.into_inner());
+        deleted.retain(|kept| kept.id != case.id);
+        deleted.push(case);
+        let over = deleted.len().saturating_sub(DELETED_KEPT);
+        deleted.drain(..over);
+    }
+
+    /// The case a move deleted under `id`, no longer kept.
+    fn take_deleted(&self, id: &str) -> Option<Case> {
+        let mut deleted = self.deleted.lock().unwrap_or_else(|e| e.into_inner());
+        let at = deleted.iter().position(|case| case.id == id)?;
+        Some(deleted.remove(at))
+    }
+
+    /// [`Self::rename_document`] under a lock the caller holds.
+    pub(crate) fn rename_locked(
+        &self,
+        lock: &WriteLock,
+        path: &Path,
+        title: &str,
+    ) -> Result<RenamedDocument, CoreError> {
+        let title = document_title(title)?;
+        let path = self.library_document(path, "renamed")?;
+        std::fs::metadata(&path)?;
+        let cases = self.readable_cases("renamed")?;
+        let (renamed, reserved) = self.renamed_path(&path, &title)?;
+        if renamed != path
+            && let Err(error) = std::fs::rename(&path, &renamed)
+        {
+            if reserved {
+                let _ = std::fs::remove_file(&renamed);
+            }
+            return Err(error.into());
+        }
+        let (old, new) = (self.member(&path), self.member(&renamed));
+        let mut saved: Vec<Case> = Vec::new();
+        let mut info = None;
+        for case in cases {
+            let member = case.members.contains(&old);
+            let rename_case = member
+                && case.members.iter().all(|m| *m == old)
+                && case.name != title
+                && named_after(&case.name, &path);
+            let moved = old != new
+                && (member || case.reply(&old).is_some() || case.reviewed(&old).is_some());
+            if !moved && !rename_case {
+                if member {
+                    info = Some(self.info(&case));
+                }
+                continue;
+            }
+            let edited = self.edit_locked(lock, &case.id, |case| {
+                let follow = |m: &mut PathBuf| {
+                    if *m == old {
+                        *m = new.clone();
+                    }
+                };
+                case.members.iter_mut().for_each(follow);
+                case.replies.iter_mut().for_each(|r| follow(&mut r.member));
+                case.reviewed.iter_mut().for_each(|r| follow(&mut r.member));
+                if rename_case {
+                    case.name = title.clone();
+                }
+                Ok(true)
+            });
+            match edited {
+                Ok(edited) => {
+                    if member {
+                        info = Some(edited);
+                    }
+                    saved.push(case);
+                }
+                Err(error) => {
+                    for before in &saved {
+                        let _ = self.put_back(lock, before);
+                    }
+                    if renamed != path {
+                        let _ = std::fs::rename(&renamed, &path);
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        Ok(RenamedDocument {
+            title: title_of(&renamed),
+            path: Some(renamed.display().to_string()),
+            case: info,
+        })
+    }
+
+    /// A document not saved yet, in case `case_id` if any, renamed from
+    /// `old` to `title`: only an empty case named after it changes.
+    pub(crate) fn rename_unsaved_locked(
+        &self,
+        lock: &WriteLock,
+        case_id: Option<&str>,
+        old: &str,
+        title: &str,
+    ) -> Result<RenamedDocument, CoreError> {
+        let title = document_title(title)?;
+        let case = match case_id {
+            Some(id) => Some(self.edit_locked(lock, id, |case| {
+                let rename = case.members.is_empty() && case.name == old && case.name != title;
+                if rename {
+                    case.name = title.clone();
+                }
+                Ok(rename)
+            })?),
+            None => None,
+        };
+        Ok(RenamedDocument {
+            path: None,
+            title,
+            case,
+        })
+    }
+
+    /// Where a document at `current` titled `title` goes: `current` itself
+    /// when the title gives its name (or differs only in letter case on a
+    /// file system that ignores it), else a free path, reserved with an
+    /// empty file (the second value) so nothing else takes it meanwhile.
+    fn renamed_path(&self, current: &Path, title: &str) -> Result<(PathBuf, bool), CoreError> {
+        let stem = file_stem(title);
+        let dir = current.parent().unwrap_or(current);
+        for n in 1.. {
+            let candidate = numbered(dir, &stem, n);
+            if candidate == current || same_file(&candidate, current) {
+                return Ok((candidate, false));
+            }
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(_) => return Ok((candidate, true)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        unreachable!("a free name")
+    }
+
+    /// [`Self::move_document`] under a lock the caller holds.
+    fn move_locked(
+        &self,
+        lock: &WriteLock,
+        path: &Path,
+        target: Target,
+    ) -> Result<MovedDocument, CoreError> {
+        let path = self.library_document(path, "moved")?;
+        let mut stored = mdoc_store::document::Document::open(path.clone())?;
+        let cases = self.readable_cases("moved")?;
+        // A case made for this move goes again when the move fails.
+        let (target, made, revived) = match target {
+            Target::Case(id) => match self.take_deleted(&id) {
+                Some(deleted) => {
+                    let case = revive(&deleted);
+                    if let Err(error) = self.create_locked(lock, case.clone()) {
+                        self.keep_deleted(deleted);
+                        return Err(error);
+                    }
+                    (case, true, Some(deleted))
+                }
+                None => (self.load(&id)?, false, None),
+            },
+            Target::New(name) => {
+                let case = Case::new(name, &[], None);
+                self.create_locked(lock, case.clone())?;
+                (case, true, None)
+            }
+        };
+        let moved = self.move_into(lock, &path, &mut stored, &cases, &target);
+        if moved.is_err() && made {
+            let _ = self.store.delete(&target.id);
+            if let Some(deleted) = revived {
+                self.keep_deleted(deleted);
+            }
+        }
+        moved
+    }
+
+    fn move_into(
+        &self,
+        lock: &WriteLock,
+        path: &Path,
+        stored: &mut mdoc_store::document::Document,
+        cases: &[Case],
+        target: &Case,
+    ) -> Result<MovedDocument, CoreError> {
+        let member = self.member(path);
+        let from = cases
+            .iter()
+            .find(|case| case.id != target.id && case.members.contains(&member));
+        if from.is_none() && target.members.contains(&member) {
+            return Err(CoreError::case("This document is in that case already."));
+        }
+        let old = stored.saved.clone();
+        let (text, exported) = crate::document_session::realias(&old, from, target)?;
+        let case = self.edit_locked(lock, &target.id, |case| {
+            case.merge(&exported);
+            if !case.members.contains(&member) {
+                case.members.push(member.clone());
+            }
+            Ok(true)
+        })?;
+        if text != old
+            && let Err(error) = stored.save(path.to_path_buf(), &text)
+        {
+            let _ = self.put_back(lock, target);
+            return Err(error.into());
+        }
+        let Some(from) = from else {
+            return Ok(MovedDocument {
+                path: path.display().to_string(),
+                case,
+                left: None,
+                left_deleted: false,
+            });
+        };
+        let mut after = None;
+        let left = match self.edit_locked(lock, &from.id, |case| {
+            let changed = case.remove_member(&member);
+            after = Some(case.clone());
+            Ok(changed)
+        }) {
+            Ok(left) => left,
+            Err(error) => {
+                if text != old {
+                    let _ = stored.save(path.to_path_buf(), &old);
+                }
+                let _ = self.put_back(lock, target);
+                return Err(error);
+            }
+        };
+        // Emptied: deleted, unless it was shared or holds a reply.
+        let mut left_deleted = false;
+        if let Some(after) = after
+            && after.members.is_empty()
+            && after.replies.is_empty()
+            && self.current_case_id().as_deref() != Some(after.id.as_str())
+            && self.store.delete(&after.id).is_ok()
+        {
+            self.keep_deleted(after);
+            left_deleted = true;
+        }
+        Ok(MovedDocument {
+            path: path.display().to_string(),
+            case,
+            left: Some(left),
+            left_deleted,
+        })
+    }
+
     pub(crate) fn documents_dir(&self) -> PathBuf {
         self.root.join(DOCUMENTS)
     }
@@ -456,24 +867,10 @@ impl Library {
 
     /// A free path in the documents folder for a document titled `title`.
     pub(crate) fn new_document_path(&self, title: &str) -> PathBuf {
-        let stem: String = title
-            .chars()
-            .map(|c| {
-                if "/\\:*?\"<>|".contains(c) || c.is_control() {
-                    '-'
-                } else {
-                    c
-                }
-            })
-            .collect();
-        let stem = stem.trim().trim_start_matches('.');
-        let stem = if stem.is_empty() { "Document" } else { stem };
+        let stem = file_stem(title);
         let dir = self.documents_dir();
         (1..)
-            .map(|n| match n {
-                1 => dir.join(format!("{stem}.md")),
-                n => dir.join(format!("{stem} {n}.md")),
-            })
+            .map(|n| numbered(&dir, &stem, n))
             .find(|path| !path.exists())
             .expect("a free name")
     }
@@ -498,9 +895,154 @@ impl Library {
     }
 }
 
-fn title(path: &Path) -> String {
-    path.file_stem()
-        .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned())
+/// A library document's title: its file name without the extension, with
+/// the look-alikes a file name holds read back as the characters they stand
+/// for (`file_stem`).
+pub(crate) fn title_of(path: &Path) -> String {
+    path.file_stem().map_or_else(String::new, |stem| {
+        stem.to_string_lossy()
+            .chars()
+            .map(|c| {
+                FILE_NAME_STAND_INS
+                    .iter()
+                    .find(|(_, stand_in)| *stand_in == c)
+                    .map_or(c, |(original, _)| *original)
+            })
+            .collect()
+    })
+}
+
+/// The file stem for a document titled `title`: characters a file name
+/// cannot hold on every platform become look-alikes (`title_of` reads them
+/// back), control characters `-`; trimmed, without leading dots, at most
+/// `MAX_STEM` bytes, and "Document" when nothing is left.
+fn file_stem(title: &str) -> String {
+    let stem: String = title
+        .chars()
+        .map(|c| {
+            FILE_NAME_STAND_INS
+                .iter()
+                .find(|(original, _)| *original == c)
+                .map_or(if c.is_control() { '-' } else { c }, |(_, stand_in)| {
+                    *stand_in
+                })
+        })
+        .collect();
+    let mut stem = stem.trim().trim_start_matches('.');
+    if stem.len() > MAX_STEM {
+        let mut end = MAX_STEM;
+        while !stem.is_char_boundary(end) {
+            end -= 1;
+        }
+        stem = stem[..end].trim_end();
+    }
+    if stem.is_empty() {
+        "Document".into()
+    } else {
+        stem.into()
+    }
+}
+
+/// The stem documents were saved under before `file_stem`: every character
+/// a file name cannot hold became `-`.
+fn legacy_file_stem(title: &str) -> String {
+    let stem: String = title
+        .chars()
+        .map(|c| {
+            if "/\\:*?\"<>|".contains(c) || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let stem = stem.trim().trim_start_matches('.');
+    if stem.is_empty() {
+        "Document".into()
+    } else {
+        stem.into()
+    }
+}
+
+/// The `n`th name for `stem` in `dir`: `stem.md`, then `stem 2.md`, …
+fn numbered(dir: &Path, stem: &str, n: u32) -> PathBuf {
+    match n {
+        1 => dir.join(format!("{stem}.md")),
+        n => dir.join(format!("{stem} {n}.md")),
+    }
+}
+
+/// Whether the case named `name` is named after the document at `path`: the
+/// document took its file name from that name (or the document's title is
+/// that name), as a document saved into a new case does, under the current
+/// or the earlier file naming, numbered or not.
+fn named_after(name: &str, path: &Path) -> bool {
+    let Some(stem) = path.file_stem().map(|s| s.to_string_lossy()) else {
+        return false;
+    };
+    [file_stem(name), legacy_file_stem(name)]
+        .iter()
+        .any(|base| {
+            stem == base.as_str()
+                || stem
+                    .strip_prefix(base.as_str())
+                    .and_then(|rest| rest.strip_prefix(' '))
+                    .and_then(|n| n.parse::<u32>().ok())
+                    .is_some_and(|n| n >= 2)
+        })
+}
+
+/// Whether `a` and `b` name the same existing file (a letter-case change
+/// on a file system that ignores letter case).
+fn same_file(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (std::fs::metadata(a), std::fs::metadata(b)) {
+            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        a.exists() && a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    }
+}
+
+/// A case name as typed, trimmed; a blank one is refused.
+fn case_name(name: &str) -> Result<String, CoreError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(CoreError::invalid("A case needs a name."));
+    }
+    Ok(name.into())
+}
+
+/// A document title as typed, trimmed; a blank one is refused.
+fn document_title(title: &str) -> Result<String, CoreError> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(CoreError::invalid("A document needs a title."));
+    }
+    Ok(title.into())
+}
+
+/// `deleted`, a case a move deleted, as a new case to move back into: its
+/// name, colour, identities and settings, no members or replies. A new id,
+/// since the store refuses writes to a deleted one.
+fn revive(deleted: &Case) -> Case {
+    let mut case = Case::new(deleted.name.clone(), &[], None);
+    case.color = Some(
+        deleted
+            .color
+            .unwrap_or_else(|| mdoc_store::cases::CaseColor::for_id(&deleted.id)),
+    );
+    case.created = deleted.created;
+    case.identities = deleted.identities.clone();
+    case.skip = deleted.skip.clone();
+    case.dismissed_hints = deleted.dismissed_hints.clone();
+    case.lists = deleted.lists.clone();
+    case
 }
 
 #[cfg(test)]
@@ -560,7 +1102,7 @@ mod tests {
         let first = library.create_case("First".into()).unwrap();
         let second = library.create_case("Second".into()).unwrap();
         let path = library.new_document_path("Letter: to/Ann");
-        assert!(path.ends_with("documents/Letter- to-Ann.md"));
+        assert!(path.ends_with("documents/Letter\u{A789} to\u{2215}Ann.md"));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "PERSON_1 wrote.").unwrap();
         let document = path.display().to_string();
@@ -581,16 +1123,190 @@ mod tests {
         ));
         let documents = library.documents().unwrap();
         assert_eq!(documents.len(), 1);
-        assert_eq!(documents[0].title, "Letter- to-Ann");
+        assert_eq!(documents[0].title, "Letter: to/Ann");
         assert_eq!(documents[0].case_id, Some(first.id));
         assert_eq!(
             library.new_document_path("Letter: to/Ann"),
-            path.with_file_name("Letter- to-Ann 2.md")
+            path.with_file_name("Letter\u{A789} to\u{2215}Ann 2.md")
         );
         // Members are stored relative to the root, so a moved root keeps them.
         assert_eq!(
             library.member(&path),
-            Path::new("documents").join("Letter- to-Ann.md")
+            Path::new("documents").join("Letter\u{A789} to\u{2215}Ann.md")
+        );
+    }
+
+    /// A title reads back from its file as typed; the file name holds none
+    /// of the characters some file systems refuse.
+    #[test]
+    fn a_title_reads_back_as_typed() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        for title in [
+            "Sample: services agreement",
+            r#"A/B\C:D*E?F"G<H>I|J"#,
+            "Договор № 5: аренда",
+        ] {
+            let path = library.new_document_path(title);
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(!name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']));
+            assert_eq!(title_of(&path), title);
+        }
+        assert_eq!(title_of(&library.new_document_path(" .. ")), "Document");
+        assert_eq!(
+            title_of(&library.new_document_path("Tab\there")),
+            "Tab-here"
+        );
+        // A title too long for a file name is shortened at a character.
+        let long = "Ж".repeat(200);
+        let path = library.new_document_path(&long);
+        assert!(path.file_name().unwrap().len() <= 255);
+        assert!(long.starts_with(&title_of(&path)));
+        // A case is named after a document under the earlier naming too.
+        let legacy = library
+            .documents_dir()
+            .join("Sample- services agreement 2.md");
+        assert!(named_after("Sample: services agreement", &legacy));
+        assert!(named_after(
+            "Sample: services agreement",
+            &path.with_file_name("Sample\u{A789} services agreement.md")
+        ));
+        assert!(!named_after("Sample", &legacy));
+    }
+
+    /// Rename takes everything a case keeps by the file along: membership
+    /// and the reply; a case with other documents keeps its name.
+    #[test]
+    fn a_renamed_document_keeps_its_case_and_reply() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Ivanov".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let memo = member_with_reply(&library, &case, "Memo");
+        let renamed = library
+            .rename_document(letter.clone(), "  Letter: final ".into())
+            .unwrap();
+        assert_eq!(renamed.title, "Letter: final");
+        let path = renamed.path.clone().unwrap();
+        assert!(!Path::new(&letter).exists());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "Letter: PERSON_1 wrote."
+        );
+        let info = renamed.case.unwrap();
+        assert_eq!(info.name, "Ivanov");
+        assert_eq!(info.documents, [path.clone(), memo.clone()]);
+        assert_eq!(
+            library.reply(case.id.clone(), path.clone()).unwrap(),
+            Some("Thanks, PERSON_1.".into())
+        );
+        assert_eq!(library.reply(case.id.clone(), letter).unwrap(), None);
+        let titles: Vec<_> = library
+            .documents()
+            .unwrap()
+            .into_iter()
+            .map(|d| (d.title, d.case_id))
+            .collect();
+        assert!(titles.contains(&("Letter: final".into(), Some(case.id.clone()))));
+        // Another document's title is numbered; its own title changes nothing.
+        let numbered = library
+            .rename_document(memo, "Letter: final".into())
+            .unwrap();
+        assert_eq!(numbered.title, "Letter: final 2");
+        let same = library
+            .rename_document(path.clone(), "Letter: final".into())
+            .unwrap();
+        assert_eq!(same.path, Some(path.clone()));
+        // A change of letter case alone renames the one file.
+        let lower = library
+            .rename_document(path.clone(), "letter: final".into())
+            .unwrap();
+        assert_eq!(lower.title, "letter: final");
+        assert_eq!(library.documents().unwrap().len(), 2);
+        let path = lower.path.unwrap();
+        // A blank title, or a file outside the documents folder, is refused.
+        assert!(matches!(
+            library.rename_document(path, " ".into()),
+            Err(CoreError::Invalid { .. })
+        ));
+        let outside = scratch.path().join("outside.md");
+        std::fs::write(&outside, "Keep me.").unwrap();
+        assert!(matches!(
+            library.rename_document(outside.display().to_string(), "In".into()),
+            Err(CoreError::Invalid { .. })
+        ));
+    }
+
+    /// The case of a document saved into a new case carries its name: it
+    /// follows the document's renames while the document is its only one.
+    #[test]
+    fn a_case_named_after_its_only_document_is_renamed_with_it() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library
+            .create_case("Sample: services agreement".into())
+            .unwrap();
+        let sample = member_with_reply(&library, &case, "Sample: services agreement");
+        let renamed = library
+            .rename_document(sample, "Services: final".into())
+            .unwrap();
+        assert_eq!(renamed.case.unwrap().name, "Services: final");
+        // Saved under the earlier naming ("Sample- services agreement").
+        let legacy = library.create_case("Lease: draft".into()).unwrap();
+        let path = library.documents_dir().join("Lease- draft.md");
+        std::fs::write(&path, "Text.").unwrap();
+        let path = path.display().to_string();
+        library
+            .add_document(legacy.id.clone(), path.clone())
+            .unwrap();
+        let renamed = library.rename_document(path, "Lease".into()).unwrap();
+        assert_eq!(renamed.case.unwrap().name, "Lease");
+        // A case named otherwise, or with other documents, keeps its name.
+        let other = library.create_case("Ivanov".into()).unwrap();
+        let alone = member_with_reply(&library, &other, "Alone");
+        let renamed = library.rename_document(alone, "Elsewhere".into()).unwrap();
+        assert_eq!(renamed.case.unwrap().name, "Ivanov");
+        let shared = library.create_case("Pair".into()).unwrap();
+        let first = member_with_reply(&library, &shared, "Pair");
+        member_with_reply(&library, &shared, "Second");
+        let renamed = library.rename_document(first, "Single".into()).unwrap();
+        assert_eq!(renamed.case.unwrap().name, "Pair");
+        // A case can be renamed on its own; a blank name is refused.
+        assert_eq!(
+            library
+                .rename_case(shared.id.clone(), " Pair: two ".into())
+                .unwrap()
+                .name,
+            "Pair: two"
+        );
+        assert!(matches!(
+            library.rename_case(shared.id, "".into()),
+            Err(CoreError::Invalid { .. })
+        ));
+        assert!(library.rename_case("0".repeat(32), "Gone".into()).is_err());
+    }
+
+    /// When a case cannot be saved, the file goes back to its name and the
+    /// case still has it there.
+    #[test]
+    fn a_rename_a_case_refuses_leaves_the_document_as_it_was() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let held = Held::file(&case_file(&library, &case.id), true);
+        let result = library.rename_document(letter.clone(), "Memo".into());
+        drop(held);
+        assert!(result.is_err(), "{result:?}");
+        assert!(Path::new(&letter).exists());
+        assert!(!library.documents_dir().join("Memo.md").exists());
+        assert_eq!(
+            library.case_info(case.id.clone()).unwrap().documents,
+            std::slice::from_ref(&letter)
+        );
+        assert_eq!(
+            library.reply(case.id, letter).unwrap(),
+            Some("Thanks, PERSON_1.".into())
         );
     }
 
