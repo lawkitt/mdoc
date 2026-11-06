@@ -23,9 +23,7 @@ final class ReviewToolsUITests: XCTestCase {
         let find = app.buttons["find-in-document"]
         XCTAssertTrue(find.waitForExistence(timeout: 5))
         find.tap()
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Bennett")
+        typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
         XCTAssertTrue(hide.isEnabled)
@@ -93,9 +91,7 @@ final class ReviewToolsUITests: XCTestCase {
         // Repeats to step through: Find and Hide name on the surname.
         app.buttons["document-menu"].tap()
         app.buttons["find-in-document"].tap()
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Bennett")
+        typeInFindField(app, "Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
         hide.tap()
@@ -122,6 +118,18 @@ final class ReviewToolsUITests: XCTestCase {
         app.typeKey(".", modifierFlags: .command)
         let gone = NSPredicate(format: "exists == false")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: app.descendants(matching: .any)["review-bar"].firstMatch)], timeout: 5), .completed)
+    }
+
+    /// Types into the Find sheet's search field once it has focus, which
+    /// the sheet gives it when it is up (#634).
+    @MainActor
+    private func typeInFindField(_ app: XCUIApplication, _ text: String) {
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 5), .completed,
+                       "the Find field never took focus")
+        field.typeText(text)
     }
 
     private func expectLabel(of element: XCUIElement, _ label: String) {

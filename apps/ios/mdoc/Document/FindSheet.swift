@@ -57,7 +57,13 @@ struct FindSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear { focused = true }
+            // Focus once the sheet is up, not in onAppear: on iOS 26.2,
+            // focusing the field while the sheet presents spins the main
+            // thread and the app stops responding (#634).
+            .task {
+                try? await Task.sleep(for: .milliseconds(600))
+                focused = true
+            }
         }
         .presentationDetents([.medium, .large])
     }
