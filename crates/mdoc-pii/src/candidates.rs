@@ -11,8 +11,6 @@ pub(super) struct Candidates {
     original_lookup: HashMap<Arc<str>, u64>,
     occurrences: Vec<Candidate>,
     occurrence_lookup: HashMap<u64, usize>,
-    /// Exact short-number detections follow editor undo/redo, like policy.
-    location_history: HashMap<u64, HashMap<u64, Vec<Range<usize>>>>,
     counters: HashMap<u64, u64>,
     /// Cached discovery matcher: raw and read wording per group, in order.
     pub(super) matcher: Option<Arc<AhoCorasick>>,
@@ -77,40 +75,12 @@ impl Candidates {
     }
     /// Follow one history change: edits rebase pending mentions, while undo and
     /// redo discard them until rediscovery.
-    pub(super) fn rebase_locations(&mut self, edits: &[SourceEdit]) {
-        for variant in &mut self.variants {
-            if let Some(locations) = variant.locations.as_mut() {
-                tracking::rebase(locations, edits, |range| range);
-            }
-        }
-    }
-    pub(super) fn follow(&mut self, change: &mdoc_history::HistoryChange) {
-        self.location_history.insert(
-            change.before,
-            self.variants
-                .iter()
-                .filter_map(|v| v.locations.clone().map(|ranges| (v.id, ranges)))
-                .collect(),
-        );
-        if change.edits.is_empty() {
-            let saved = self.location_history.get(&change.after);
-            for variant in &mut self.variants {
-                if let Some(locations) = variant.locations.as_mut() {
-                    *locations = saved
-                        .and_then(|state| state.get(&variant.id))
-                        .cloned()
-                        .unwrap_or_default();
-                }
-            }
+    pub(super) fn follow(&mut self, edits: &[SourceEdit]) {
+        if edits.is_empty() {
             self.occurrences.clear();
         } else {
-            self.rebase_locations(&change.edits);
-            tracking::rebase(&mut self.occurrences, &change.edits, |o| &mut o.range);
+            tracking::rebase(&mut self.occurrences, edits, |o| &mut o.range);
         }
-    }
-    pub(super) fn retain_location_history(&mut self, retained: &[u64]) {
-        self.location_history
-            .retain(|version, _| retained.contains(version));
     }
     /// After following a transaction, group mentions await rediscovery.
     pub(super) fn await_discovery(&mut self) {

@@ -158,8 +158,6 @@ pub struct Variant {
     /// count ([`discovery::cue_before`], "DOB", "рождения"), so the same
     /// date elsewhere stays (#466, GUIDE rule 4). `None`: every mention.
     cues: Option<Vec<String>>,
-    /// Short numeric scan values occur only where actually detected (#375).
-    locations: Option<Vec<Range<usize>>>,
     /// Propagation decides its identity: its one candidate full name's, or
     /// `own` while there is none; checked again as names come and go.
     managed: bool,
@@ -376,10 +374,8 @@ impl Review {
             self.source = source.into();
             self.discovery_version += 1;
             for change in &transaction.changes {
-                self.candidates.follow(change);
+                self.candidates.follow(&change.edits);
             }
-            self.candidates
-                .retain_location_history(&transaction.retained);
             self.candidates.await_discovery();
             self.awaiting_discovery = true;
             if unchanged_source {
@@ -518,11 +514,6 @@ impl Review {
             }
             let old_end = self.source.len() - suffix;
             let delta = source.len() as isize - self.source.len() as isize;
-            self.candidates
-                .rebase_locations(&[mdoc_history::SourceEdit {
-                    range: prefix..old_end,
-                    new_len: source.len() - suffix - prefix,
-                }]);
             self.tracking.exclusions.retain_mut(|excluded| {
                 if excluded.range.end <= prefix {
                     return source.get(excluded.range.clone()) == Some(excluded.original.as_ref());
@@ -579,15 +570,6 @@ impl Review {
                     g.cues
                         .clone()
                         .filter(|_| !self.identities.every_mention(g.id))
-                })
-                .collect(),
-            locations: self
-                .variants()
-                .iter()
-                .map(|g| {
-                    g.locations
-                        .clone()
-                        .filter(|_| g.priority == 0 && !self.identities.every_mention(g.id))
                 })
                 .collect(),
             excluded: self
@@ -673,15 +655,6 @@ impl Review {
                 ..excluded.range.end.saturating_add_signed(delta);
             source.get(excluded.range.clone()) == Some(excluded.original.as_ref())
         });
-        self.candidates.rebase_locations(
-            &edits
-                .iter()
-                .map(|(range, replacement)| mdoc_history::SourceEdit {
-                    range: range.clone(),
-                    new_len: replacement.len(),
-                })
-                .collect::<Vec<_>>(),
-        );
         self.source = source.into();
         self.refresh(source);
     }
@@ -791,7 +764,6 @@ impl Review {
             })
         }));
         input.cues.extend(fresh.iter().map(|_| None));
-        input.locations.extend(fresh.iter().map(|_| None));
         input.originals.extend(fresh.iter().cloned());
         input.matcher = None;
         let unseen: HashSet<Arc<str>> = input
@@ -858,16 +830,6 @@ impl Review {
             })
             .map(|detection| &source[detection.range.clone()])
             .collect();
-        let explicit_numbers: HashSet<&str> = selected
-            .iter()
-            .filter(|d| {
-                d.recognizer == Recognizer::UserList
-                    // GUIDE rule 5 explicitly requires repeats of the document's
-                    // own labelled case number, including four-digit numbers.
-                    || d.category == Category::CaseNumber && d.recognizer == Recognizer::Context
-            })
-            .map(|d| &source[d.range.clone()])
-            .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
             let joins = detection.category == Category::Person
@@ -878,22 +840,6 @@ impl Review {
             } else {
                 let id = self.add_seed(text, detection.category);
                 self.recognized(id, first, detection.recognizer);
-                // Keep the detector's own occurrences, without turning a short
-                // number into a document-wide pattern. Explicit policy and the
-                // document's labelled case number retain their repeat semantics.
-                if discovery::short_number(text)
-                    && let Some(variant) = self.candidates.variant_mut(id)
-                {
-                    if explicit_numbers.contains(text) {
-                        variant.locations = None;
-                    } else if variant.id > first || variant.locations.is_some() {
-                        let locations = variant.locations.get_or_insert_default();
-                        if !locations.contains(&detection.range) {
-                            locations.push(detection.range.clone());
-                            locations.sort_by_key(|range| range.start);
-                        }
-                    }
-                }
                 if unlimited.contains(text) {
                     if let Some(variant) = self.candidates.variant_mut(id) {
                         variant.cues = None;
@@ -995,7 +941,6 @@ impl Review {
             recognizer: None,
             mid_sentence: false,
             cues: None,
-            locations: None,
             managed: false,
             own: None,
             surname: false,
