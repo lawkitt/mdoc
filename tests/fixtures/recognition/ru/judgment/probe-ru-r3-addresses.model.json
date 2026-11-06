@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":18,"end":89,"label":"organization","score":0.887009,"text":"Девятый арбитражный апелляционный суд"},
+    {"start":431,"end":465,"label":"organization","score":0.69128895,"text":"ООО «Кедровый бор»"}
+  ]
+}
