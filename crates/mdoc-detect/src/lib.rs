@@ -819,9 +819,14 @@ fn case_repeats<'a>(
                 || word(a1)
                 || joined(b1, b2)
                 || joined(a1, a2)
-                || others
-                    .iter()
-                    .any(|other| other.start < mention.end() && mention.start() < other.end)
+                // A value of another category on exactly the repeat's span
+                // is the number itself, which the model read as TAX or
+                // the like: the repeat makes it CASE.
+                || others.iter().any(|other| {
+                    other.start < mention.end()
+                        && mention.start() < other.end
+                        && (other.start, other.end) != (mention.start(), mention.end())
+                })
                 || precedents
                     .iter()
                     .any(|case| case.start <= mention.start() && mention.end() <= case.end)

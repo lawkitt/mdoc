@@ -4715,6 +4715,13 @@ mod tests {
         ] {
             assert_eq!(cases(source).len(), 1, "{source}");
         }
+        // The model reading the repeat itself as TAX makes it no other
+        // value: the repeat on exactly that span is CASE.
+        let source = "по делу № 33а-9999/2031\n\nДело № 33А-9999/2031 рассмотрено.";
+        assert_eq!(
+            shown(source, &[("33А-9999/2031", "tax_id")]),
+            pairs(&[("33а-9999/2031", "CASE"), ("33А-9999/2031", "CASE")])
+        );
     }
 
     /// A precedent's docket in the standard federal, Delaware and New York
