@@ -5798,11 +5798,6 @@ Privacy Act (“BIPA”). BIPA applies.",
             "пер. Кленовый",
             "наб. Лесная",
             "б-р Цветной",
-            "Cedar Court",
-            "Larch Rd",
-            "Sunset Boulevard",
-            "Mulholland Dr",
-            "Cherry Ln",
             "Сиреневая аллея, Москва",
             "9-я линия В.О.",
             "The Old Rectory, Nether Compton",
@@ -5952,12 +5947,11 @@ Privacy Act (“BIPA”). BIPA applies.",
             "12 Oak Road\nLeeds",
             "12 Oak Road\nJohn Smith AB will call",
             // No street: a building and a town, a court, a town and its
-            // postcode alone (#506), a P.O. box (#506).
+            // postcode alone (#506 item 6).
             "Brindle House, Leeds",
             "High Court, Slocombe WC2A 9ZZ",
             "BRANWICK, CO 81999",
             "Brindlecombe, OH 45999",
-            "P.O. Box 36060, Brindlecombe, CA 94999",
             // A street without a number needs its postcode.
             "Brindle Road, Leeds",
             "Strand, Leeds",
@@ -6067,6 +6061,117 @@ Privacy Act (“BIPA”). BIPA applies.",
             .map(|span| source[span.range].to_owned())
             .collect();
         assert_eq!(shown, [source.trim_end()]);
+    }
+
+    /// #498 round two: each separator and street shape ends at its own
+    /// city/postcode, with adjacent model names and the next field intact.
+    #[test]
+    fn round_two_address_shapes_keep_names_and_fields_outside() {
+        for address in [
+            "103 Pellin Parkway, Suite 305 Slocombe, New Jersey 07999",
+            "21495 Quarry Circle, Suite 304A Brindlecombe, Virginia 20999",
+            "200 East Long Quarry Road Suite 300 Brindle Hills, Michigan 48999",
+            "63 Pellam Street Suite 202 Slocombe, NJ 08999",
+            "242A West Harrow Road Ostrand,NJ 07999",
+            "1600 Pellin Hill Road, Slocombe, Georgia 30999",
+            "500 Pellin Avenue, Unit 16C, New York",
+            "500 Pellin Avenue, Unit 16C, New York, New York 10999",
+            "224 W 299 St., Bronx, NY 10999",
+            "224 W. 299 St., Bronx, NY 10999",
+            "One Pellin Plaza, Suite 3335 New York, New York 10999",
+            "One Pellin Plaza New York, New York 10999",
+            "Two Pellin Plaza, Suite 4, Slocombe, NY 10999",
+            "225 Broadmoor, Suite 2700 New York, N.Y. 10999",
+            "225 Broadmoor-Suite 2700 New York, N.Y. 10999",
+            "1565N. Harrow Expressway, Suite 200, Slocombe, TX 75999",
+            "100 N State Line Ave #16, Slocombe, TX 75999",
+            "2121 Quillon Ave. N.W., Wexford, DC 20999",
+            "2121 N.W. Quillon Ave., Wexford, DC 20999",
+            "10th Floor, 42 Pellin Pl., Bldg. 4, Slocombe, TX 75999",
+            "42 Pellin Fwy., Floor 3, Slocombe, TX 75999",
+            "7528 Rooke Road Penrow Township",
+            "24, Pellin Court, Harrow Place, Worcester",
+            "20th Street and Quillon Avenue, NW Wexford, DC 20999",
+            "P.O. Box 4410, Brindle Falls, OH 45999",
+            "P.O. Box 4410 Brindle Falls, OH 45999",
+            "P.O. Box 4410, Slocombe",
+            "190 South Pellin Street: P.O. Box 351 Slocombe, NY 10999",
+            "24 North Street\nP.O. Box 1308\nSlocombe, MA 02999",
+            "а/я 4410, Ольховск, 199999",
+            "а/я 4410, 199999, Ольховск",
+            "а/я 4410, Ольховск",
+        ] {
+            let source = format!(
+                "Larkfield Supply LLC, Jane Quenby, {address}; Email: post@quillon.invalid\nUK\naddress"
+            );
+            let found: Vec<_> = pack()
+                .spans(&source)
+                .into_iter()
+                .filter(|span| span.category == Category::Address)
+                .map(|span| source[span.range].to_owned())
+                .collect();
+            assert_eq!(found, [address], "{source}");
+            assert_eq!(
+                shown(
+                    &source,
+                    &[
+                        ("Larkfield Supply LLC", "organization"),
+                        ("Jane Quenby", "person"),
+                    ]
+                ),
+                pairs(&[
+                    ("Larkfield Supply LLC", "ORG"),
+                    ("Jane Quenby", "PERSON"),
+                    (address, "ADDRESS"),
+                    ("post@quillon.invalid", "EMAIL"),
+                ]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Decisions #506 item 7 and #553 items 1/3: a body's street is an
+    /// address, a bare street or corner is not, even from the model.
+    #[test]
+    fn address_decisions_keep_bodies_and_bare_streets_outside() {
+        for (body, address) in [
+            ("Royal Courts of Justice", "Strand, Slocombe, WC2A 9ZZ"),
+            (
+                "Securities and Exchange Commission",
+                "100 F Street, NE, Wexford, DC 20999",
+            ),
+        ] {
+            let source = format!("{body}\n{address}\nUK");
+            assert_eq!(
+                shown(&source, &[(body, "organization")]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        for street in [
+            "Cedar Court",
+            "Larch Rd",
+            "Sunset Boulevard",
+            "Mulholland Dr",
+            "Cherry Ln",
+            "Summerhill Rd. and Richmond Rd.",
+            "20th Street and Quillon Avenue",
+            "Strand",
+        ] {
+            assert!(shown(street, &[(street, "address")]).is_empty(), "{street}");
+        }
+        for source in [
+            "The Suite 300 Road plan follows One Long Street discussion.",
+            "There are 224 W 299 St. references in the index.",
+            "One Pellin Plaza was mentioned in the report.",
+            "225 Broadmoor agreed to the Suite 2700 proposal.",
+            "P.O. Box 4410 is a label without a destination.",
+            "а/я 4410 содержит письма.",
+            "The Floor and Bldg. labels describe the Fwy. and Pl. columns.",
+            "Summerhill Rd. and Richmond Rd. meet near the park.",
+        ] {
+            assert!(pack().spans(source).is_empty(), "{source}");
+        }
     }
 
     /// #498: the review keeps an address the pattern found over its own
