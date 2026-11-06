@@ -170,12 +170,6 @@ below). Record:
 [mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
 touch separate files and run as parallel lanes; 5 builds on both.
 
-3. **[CI] Android scripts on macOS and Linux.** `android-check.sh`, the SDK,
-   NDK and emulator scripts run on the Mac (`arm64-v8a` emulator) and on
-   Ubuntu with KVM as well as the PC; the Android job also builds the
-   minified release-like variant. *Done when:* `just android` passes on the
-   Mac and on a dispatched `ubuntu-latest` run, and a deliberately missing
-   R8 keep rule fails it.
 5. **[CI] Dependabot and Gradle metadata.** Dependabot and fork PRs run
    the hosted jobs of their areas; a dispatched workflow regenerates Gradle
    verification metadata as a reviewable diff. The Mac takeover is dropped
@@ -218,17 +212,10 @@ items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
    go, their area checks kept. *Done when:* a
    nightly drill with a broken fallback job opens an issue.
 
-13. **[CI] The `ci` area.** CI scripts, workflows and their suites run
-    lint, the scripts tier and the bash 3.2 suites, not the desktop suite.
-    *Done when:* a shadow run of a script-only change runs no `ci/macos`,
-    Windows or detection job.
-14. **[CI] Detection on PR heads.** Recognition-area PR heads run the
-    detection gate (3 shards), and the head `merge-gate` waits for it.
-    *Done when:* a PR with a stale snapshot is red on its head, not in the
-    queue.
-15. **[CI] CI targets.** `scripts/ci-stats.sh` measures ADR 0100's targets
-    from `gh api`, and a measurement a day after items 8–14 land, with the
-    parallel-testing verdict. *Done when:* the measurement is recorded.
+15. **[CI] CI targets.** A measurement with `scripts/ci-stats.sh --since
+    2026-11-06T00:35:00Z` once a day of queue traffic has run on items
+    8–14, recorded in ADR 0100 (the script is #627; the parallel-testing
+    verdict, off, is in #617). *Done when:* the measurement is recorded.
 
 ## Later
 
