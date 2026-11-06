@@ -34,7 +34,8 @@
 #            beside lint (ubuntu); the desktop suite does not. A workflow
 #            that builds or tests the app takes the area of what it runs:
 #            ci-desktop.yml, ci-detection.yml, queue.yml (which starts
-#            them) and release.yml are desktop, ci-ios.yml ios.
+#            them) and release.yml are desktop, ci-ios.yml ios,
+#            ci-android.yml (merge-gate's Android fallback) android.
 #
 # A script two areas run belongs to both: mobile-check.sh is the Mac's
 # desktop cargo check (`--ffi`) and the iOS job; install-android-ndk.sh
@@ -68,6 +69,7 @@ android               scripts/build-android-core.sh
 android               scripts/install-android-sdk.sh
 android               scripts/android-*.sh
 android               scripts/android-*.py
+android               .github/workflows/ci-android.yml
 
 desktop,ios           scripts/mobile-check.sh
 desktop,android       scripts/install-android-ndk.sh
