@@ -98,6 +98,29 @@ green and leave desktop unchanged. Record:
    on the TestFlight build.
    *Done when:* section 13 passes on a TestFlight build.
 
+## iOS 0.2
+
+A phone review as good as desktop's, and a UI system that keeps the look
+consistent ([ADR 0098](docs/adr/0098-mobile-review-bar.md),
+[ADR 0099](docs/adr/0099-mobile-ui-system.md); record:
+[review grill](docs/design/ios-review-grill-2026-11-05.md)). Built
+2026-11-05 in #604–#606, #608 and #609: the UI foundation, the core's undo
+and identity calls, the review bar with its tools, theme, Settings, Home,
+iPad keys, and Try a sample with stored proposals. VoiceOver's custom
+actions (Previous, Next, Redo) are covered by model tests, since XCUITest
+cannot drive them. Android takes the same decisions in its own milestone
+(Later).
+
+8. **[Mobile] Device check and TestFlight.** The maintainer checks the
+   review bar, undo, theme, Settings and Home on the iPhone 17 Pro from a
+   TestFlight build. *Done when:* that build passes the check, or its
+   findings are `ui` issues.
+9. **[Mobile] To grill: Home's Rename and Move to case.** ADR 0099's long
+   press lists them, but the core has no rename or move, and moving a
+   reviewed document into another case needs a rule for its aliases (the
+   core refuses joining a second case today); the menu ships Open, Share
+   and Delete. *Done when:* grilled and built.
+
 ## Android 0.1
 
 The review-first Android app on the shared Rust core, built beside iOS 0.1
@@ -147,12 +170,6 @@ below). Record:
 [mobile CI grill](docs/design/mobile-ci-grill-2026-11-01.md). Items 2 and 3
 touch separate files and run as parallel lanes; 5 builds on both.
 
-3. **[CI] Android scripts on macOS and Linux.** `android-check.sh`, the SDK,
-   NDK and emulator scripts run on the Mac (`arm64-v8a` emulator) and on
-   Ubuntu with KVM as well as the PC; the Android job also builds the
-   minified release-like variant. *Done when:* `just android` passes on the
-   Mac and on a dispatched `ubuntu-latest` run, and a deliberately missing
-   R8 keep rule fails it.
 5. **[CI] Dependabot and Gradle metadata.** Dependabot and fork PRs run
    the hosted jobs of their areas; a dispatched workflow regenerates Gradle
    verification metadata as a reviewable diff. The Mac takeover is dropped
@@ -178,21 +195,23 @@ touch separate files and run as parallel lanes; 5 builds on both.
 `main` merges through GitHub's merge queue; PR heads run a fast tier, and
 the full suite runs once per queue group on hosted runners and the PC
 ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), cut over 2026-11-03).
-Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md).
+Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md);
+items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
+[CI fixes grill](docs/design/ci-fixes-grill-2026-11-06.md).
 
-2. **[CI] The hosted Android job.** `ci-android.yml` on Ubuntu with KVM
-   (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
-   `merge-gate`'s Android fallback has a job to dispatch. *Done when:* a
-   queue drill with the PC off merges an Android change through it.
 7. **[CI] `main`, supply chain and upkeep.** The detection shards back to
    10 minutes once `main-caches.yml`'s caches make a warm shard fit; a
    nightly full run of every hosted job, the quarantined tier included,
    opens an issue when red; cargo-deny advisories move to
    `Cargo.lock` PRs and a daily run that opens an issue; the local CI
    scripts (`local-ci.sh`, `local-ci-fallback.sh`, `local-ci-setup.ps1`)
-   go, their area checks kept; the PC's web task re-adds `/ci` to
-   `tailscale serve` at start (a restart drops it). *Done when:* a
+   go, their area checks kept. *Done when:* a
    nightly drill with a broken fallback job opens an issue.
+
+15. **[CI] CI targets.** A measurement with `scripts/ci-stats.sh --since
+    2026-11-06T00:35:00Z` once a day of queue traffic has run on items
+    8–14, recorded in ADR 0100 (the script is #627; the parallel-testing
+    verdict, off, is in #617). *Done when:* the measurement is recorded.
 
 ## Later
 
@@ -269,15 +288,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   AX dump and press by title, pressing the menu bar item) in `scripts/`
   beside the Windows ones, so GUI runs don't rewrite them. *From the
   2026-10-31 shelf GUI run.*
-- **[Mobile]** Settings' Download button at the largest text size: on an
-  iPhone at AX XXXL its label breaks as "Down- / load 18…", hyphenated and
-  cut off (`ModelDownloadButton` in `SettingsView.swift`); stack the icon
-  above the label or let it wrap without hyphens, as the review rows do
-  (#312). *From build 1's acceptance run
-  ([P13](docs/evidence/mobile/2026-11-04/ios.md)).*
-- **[Mobile]** US spelling in the iOS and Android apps: desktop moved every
-  UI string to US spelling (UI polish decision 8, #327), but the mobile apps
-  still say "unrecognised" and "Licence". *From the 2026-11-01 UI polish run.*
+- **[Mobile]** US spelling in the Android app: desktop moved every UI
+  string to US spelling (UI polish decision 8, #327), and iOS followed in
+  the 2026-11-04 journey polish, but Android still says "unrecognised" and
+  "Licence". *From the 2026-11-01 UI polish run.*
 - **[Shelf]** Review the shelf preview's Markdown block reading (`src/shelf.rs`,
   `preview_lines`) against CommonMark as a whole rather than case by case:
   round after round of Codex review on #280 found another container or
@@ -418,6 +432,11 @@ never lists, role-aware aliases and hidden Office content moved to 0.4.0.
   free, sells support, or offers a firm edition. *From the 2026-10-31
   competitor scan.*
 
+- **[Android] The review bar and the UI system.** ADR 0098 and 0099 on
+  Android with Material conventions: the bar, undo through the shared
+  core, the identity tools, tokens under `ui/theme`, theme, Settings and
+  Home. *From the 2026-11-05 review grill.*
+
 Mobile ideas from the [2026-10-31 mobile UX ideas](docs/design/mobile-ux-ideas-2026-10-31.md)
 (the iOS survey's after set, the app's code and a scan of mobile
 redaction apps), roughly by expected value; each needs a grill, and
@@ -429,19 +448,7 @@ Android takes what applies. Its clipboard finding is
   scene leaves the foreground, and an opt-in lock for the app and Restore
   with mdoc (Android: `FLAG_SECURE`, biometric lock). *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: one proposal at a time.** A full-screen review card
-  (the proposal in its sentence, category, alias), Replace and Keep at
-  thumb height or by swipe, "3 of 12", haptics, undo the last; today the
-  candidate sheet covers half the text. *From the 2026-10-31 mobile UX
-  ideas.*
-- **[Mobile] To grill: undo.** Replace, Keep, Replace all, Keep all,
-  Remove reply and Delete document have no undo on iOS; an Undo toast plus
-  `UndoManager` (shake, three-finger swipe). *From the 2026-10-31 mobile UX
-  ideas.*
-- **[Mobile] To grill: merge hint and Same as… on mobile.** ADR 0080's hint
-  on Identities rows and Same as… in the candidate sheet; without them
-  "Ms Bennett", "Maya" and "Mia" reach the AI as three people. *From the
-  2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: "As the AI sees it".** A read-only view of the Copy
   for AI text with any original still in it highlighted, so the user sees
   what leaves before sharing; it could also be the default while the screen
@@ -452,18 +459,13 @@ Android takes what applies. Its clipboard finding is
   hands over; the app does the work); Android's `ACTION_PROCESS_TEXT` puts
   mdoc in every app's selection menu. Today only files arrive by share.
   *From the 2026-10-31 mobile UX ideas.*
-- **[Mobile] To grill: a demo document before the download.** "Try a
-  sample" on the empty Home: the settlement letter with stored proposals,
-  so review, share and restore work before the 649.5 MB download. *From
-  the 2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: Shortcuts and Siri.** App Intents for Restore text
   with a case, Get a reviewed document's text for AI, and Add text to mdoc
   (opens for review), so iOS 26's Use Model action can chain share, ask and
   restore; no intent hides names without review. *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: find, and mark every match.** `UIFindInteraction`
-  (⌘F on iPad) and Replace all matches as one identity, for a surname the
-  detector missed. *From the 2026-10-31 mobile UX ideas.*
+
 - **[Mobile] To grill: share a selection.** "Share for AI" in the selection
   menu sends one clause through Copy for AI's export path. *From the
   2026-10-31 mobile UX ideas.*
@@ -471,16 +473,15 @@ Android takes what applies. Its clipboard finding is
   30 or 90 days; documents and replies go, cases stay so replies still
   restore; storage per kind shown. *From the 2026-10-31 mobile UX ideas.*
 - **[Mobile] To grill: iPad as a work surface.** Drop files in, drag the
-  text for AI out to an AI app in Split View and the reply back in, keyboard
-  shortcuts (⌘F, R/K, arrows), two windows. *From the 2026-10-31 mobile UX
+  text for AI out to an AI app in Split View and the reply back in, two
+  windows (review keys are iOS 0.2). *From the 2026-10-31 mobile UX
   ideas.*
 - **[Mobile] To grill: highlights on the original page.** Found names boxed
   on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
   mobile UX ideas.*
-- **[Mobile] To grill: hints, haptics and quick actions.** TipKit for
-  select-to-mark, long-press Share and the Restore extension; haptics on
-  decisions; Home Screen quick actions Scan, Paste, Paste reply. *From the
-  2026-10-31 mobile UX ideas.*
+- **[Mobile] To grill: quick actions.** Home Screen quick actions Scan,
+  Paste, Paste reply (tips and haptics are iOS 0.2). *From the 2026-10-31
+  mobile UX ideas.*
 
 ## Ongoing tracks
 

@@ -68,20 +68,33 @@ struct ReplySheet: View {
 struct ReplyPane: View {
     let reply: ReplySnapshot
     let onClear: () -> Void
+    @State private var confirmsRemove = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 RestoreSummary(result: reply.restored)
                 Spacer()
-                Button(role: .destructive, action: onClear) {
+                // The reply is kept with the document (ADR 0078) and has no
+                // undo, so removing it asks first.
+                Button(role: .destructive) {
+                    confirmsRemove = true
+                } label: {
                     Label("Remove reply", systemImage: "trash")
                         .labelStyle(.iconOnly)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityIdentifier("reply-actions")
+                .confirmationDialog("Remove the reply?", isPresented: $confirmsRemove, titleVisibility: .visible) {
+                    Button("Remove reply", role: .destructive, action: onClear)
+                        .accessibilityIdentifier("reply-remove-confirm")
+                } message: {
+                    Text("The document and its names stay as they are.")
+                }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.leading)
+            .padding(.trailing, 4)
             Divider()
             RestoredTextView(result: reply.restored)
         }

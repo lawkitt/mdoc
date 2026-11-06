@@ -1,12 +1,16 @@
 # iOS UI polish
 
-Status: Accepted, 2026-10-31.
+Status: Accepted, 2026-10-31. The hand-off bar at accessibility sizes
+amended 2026-11-04 (the [name-replacement journey survey](../design/ios-pii-journey-survey-2026-11-04.md)).
+Home, Settings and the survey's device are amended by
+[ADR 0099](0099-mobile-ui-system.md); the candidate sheet is replaced by
+[ADR 0098](0098-mobile-review-bar.md)'s review bar.
 
 ## Problem
 
 iOS 0.1's screens ([ADR 0085](0085-mobile-apps.md)) work, but a survey of
 every screen in light and dark
-([before set](../evidence/ios-app/2026-10-31-ui-survey/README.md)) found
+([before set](https://github.com/lawkitt/mdoc/blob/1e7096412fda2d27ec5a274e5b53ba00c3b101f1/docs/evidence/ios-app/2026-10-31-ui-survey/README.md)) found
 layout defects (a gap in the candidate sheet, hyphens inside values, a
 wrapping button bar), faint dark-mode highlights, a Home list that repeats
 each title, two-step paste and share, and restored replies shown as raw
@@ -14,11 +18,8 @@ Markdown.
 
 ## Decision
 
-- **Home is a flat list, newest first.** Each row shows the title, the
-  case's dot, the case's name when it differs from the title, and the
-  status as a symbol with secondary text.
-  Status never has a colour of its own, so the case colour is the only
-  colour on a row.
+- **Home** follows [ADR 0099](0099-mobile-ui-system.md): rows with a
+  source tile, state colored by kind and the case as a tag.
 - **Review text keeps its source and styles it closer to reading.** Blank
   lines draw at about a third of a line, Markdown escapes dim as markers
   (in `mdoc-markdown`, so desktop gets them too), table rows use a smaller
@@ -32,7 +33,12 @@ Markdown.
   reads **Share, Copy, Paste** on both tabs, so it stays one row on a
   402 pt iPhone at default text size. VoiceOver keeps the full names:
   Paste reply on the Text tab; Share reply, Copy reply and Paste another
-  reply on the Reply tab.
+  reply on the Reply tab. The document's bar stops growing at the second
+  accessibility text size, as the system's own bars do, and a long press
+  shows a label in the large content viewer. Where its buttons do not fit
+  in one row, the primary button takes a row and the others share the
+  next, so at AX XXXL the bar takes about 150 pt rather than a third of
+  the screen (amended 2026-11-04).
 - **A portrait iPad gives the text the room.** In a regular-width window
   narrower than 1100 pt (every iPad in portrait, none in landscape) the
   sidebar hides once a document opens, and Identities show in the right
@@ -50,7 +56,7 @@ Markdown.
   colours, restored values highlighted, in the app and in Restore with mdoc.
 - **An empty scan says so**: a notice and the Home status "Nothing found".
 - **The UI survey is a test.** `ScreenshotUITests` takes every screen,
-  light and dark, on iPhone 17 and iPad Pro 13-inch, when run with
+  light and dark, on iPhone 17 Pro and iPad Pro 13-inch, when run with
   `TEST_RUNNER_MDOC_SCREENSHOTS=1`; it is not part of local CI.
 
 ## Invariants

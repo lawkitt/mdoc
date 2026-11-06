@@ -136,9 +136,9 @@ struct SetupCard: View {
 enum BelowFloor {
     static var note: String {
         if UIDevice.current.userInterfaceIdiom == .pad {
-            String(localized: "This iPad can't find names: the name detector needs 8\u{00A0}GB of memory (an iPad with M1 or later). Select text to mark a name.")
+            String(localized: "This iPad can't find names: the name finder needs 8\u{00A0}GB of memory (an iPad with M1 or later). Select text to mark a name.")
         } else {
-            String(localized: "This iPhone can't find names: the name detector needs 8\u{00A0}GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
+            String(localized: "This iPhone can't find names: the name finder needs 8\u{00A0}GB of memory (iPhone 15 Pro or later). Select text to mark a name.")
         }
     }
 }
@@ -207,8 +207,8 @@ struct ModelRow: View {
     /// What the model does, in the reader's words (ADR 0087).
     static func plainName(_ purpose: ModelPurpose) -> String {
         switch purpose {
-        case .detector: String(localized: "Name detector")
-        case .ocr: String(localized: "Text recognition, English and Russian")
+        case .detector: String(localized: "Name finder")
+        case .ocr: String(localized: "Text recognition (English, Russian)")
         }
     }
 }

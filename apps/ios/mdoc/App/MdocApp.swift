@@ -6,6 +6,13 @@ struct MdocApp: App {
     @UIApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var app = AppModel.live(downloader: AppDelegate.downloader)
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(AppTheme.key, store: MarkdownDisplay.store) private var theme = AppTheme.automatic.rawValue
+
+    private var appTheme: AppTheme { AppTheme(rawValue: theme) ?? .automatic }
+
+    init() {
+        ReviewTips.configure(testing: CoreFactory.isUITesting)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -17,6 +24,9 @@ struct MdocApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
                     app.saveDeferred()
                 }
+                // Settings › Appearance › Theme (ADR 0099), for every window.
+                .preferredColorScheme(appTheme.colorScheme)
+                .onChange(of: theme, initial: true) { appTheme.apply() }
         }
         .onChange(of: scenePhase) { _, phase in
             app = app.reopened(isActive: phase == .active) {
@@ -129,7 +139,10 @@ struct RootView: View {
         .onChange(of: app.selection) { fitColumns(narrow: isNarrow) }
         .onChange(of: sizeClass) { fitColumns(narrow: isNarrow) }
         .sheet(isPresented: $app.showsSettings) {
-            SettingsView(setup: app.setup)
+            SettingsView(setup: app.setup) {
+                app.showsSettings = false
+                app.trySample()
+            }
         }
     }
 

@@ -1,0 +1,30 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":409,"end":419,"label":"person","score":0.98813087,"text":"Ivo Penrow"},
+    {"start":195,"end":208,"label":"person","score":0.9675332,"text":"Edda Brannock"},
+    {"start":131,"end":149,"label":"person","score":0.52083147,"text":"Chief Investigator"},
+    {"start":19,"end":36,"label":"organization","score":0.9036349,"text":"Chapter 7 Trustee"},
+    {"start":421,"end":428,"label":"organization","score":0.86060363,"text":"Esquire"},
+    {"start":791,"end":801,"label":"person","score":0.97308767,"text":"Edda Chair"},
+    {"start":490,"end":520,"label":"person","score":0.94197524,"text":"Accident Investigation Advisor"},
+    {"start":644,"end":654,"label":"person","score":0.94197524,"text":"Lead Agent"},
+    {"start":717,"end":736,"label":"person","score":0.9175985,"text":"Operating Principal"},
+    {"start":552,"end":587,"label":"person","score":0.91243625,"text":"INTERNATIONAL AGREEMENTS SPECIALIST"},
+    {"start":596,"end":618,"label":"person","score":0.9119669,"text":"Division Administrator"},
+    {"start":765,"end":774,"label":"person","score":0.87439936,"text":"Mr Leader"},
+    {"start":779,"end":789,"label":"person","score":0.85824406,"text":"Ms Trustee"},
+    {"start":460,"end":481,"label":"person","score":0.85512674,"text":"Bureau Safety Manager"},
+    {"start":634,"end":638,"label":"person","score":0.8499712,"text":"User"},
+    {"start":535,"end":546,"label":"person","score":0.77881753,"text":"Supervisors"},
+    {"start":683,"end":693,"label":"person","score":0.76559335,"text":"Subscriber"},
+    {"start":702,"end":711,"label":"person","score":0.55769473,"text":"Recipient"},
+    {"start":668,"end":677,"label":"person","score":0.5386799,"text":"Affiliate"},
+    {"start":668,"end":677,"label":"organization","score":0.8140528,"text":"Affiliate"},
+    {"start":683,"end":693,"label":"organization","score":0.65068924,"text":"Subscriber"},
+    {"start":749,"end":762,"label":"organization","score":0.6013595,"text":"Sponsor Staff"},
+    {"start":460,"end":481,"label":"organization","score":0.5855752,"text":"Bureau Safety Manager"},
+    {"start":552,"end":587,"label":"organization","score":0.5373449,"text":"INTERNATIONAL AGREEMENTS SPECIALIST"}
+  ]
+}

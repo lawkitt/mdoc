@@ -1,7 +1,8 @@
 //! `DocumentSession` (ADR 0085): one document from intake to the AI and
 //! back. Import and OCR through `mdoc_import`, scans through `mdoc_detect`,
-//! the review of `mdoc_pii` as snapshots and transitions, Copy for AI and
-//! Share text, and the mapping saved into its case. Long jobs report their
+//! the review of `mdoc_pii` as snapshots and transitions with undo and redo
+//! (ADR 0098), Copy for AI and Share text, and the mapping saved into its
+//! case. Long jobs report their
 //! stage to the platform and stop when it cancels; the platform runs them
 //! off its main thread.
 mod intake;
@@ -15,8 +16,11 @@ use crate::{
 };
 use mdoc_pii::restore::RestoreMap;
 use review::ReviewText;
-pub use review::Scope;
-pub use snapshot::{Category, IdentityRow, LinkHint, Mention, MentionState, ReviewSnapshot};
+pub use review::{Scope, StepKind};
+pub use snapshot::{
+    Category, CategoryChoice, HistoryStep, IdentityRow, LinkHint, Mention, MentionState,
+    ReviewSnapshot,
+};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -91,6 +95,10 @@ struct Document {
     /// Bumped when an import replaces the document, so a late scan of the
     /// one before cannot land on it.
     generation: u64,
+    /// The case's identities as this document last joined or saved them:
+    /// while the case still holds exactly these, no other document changed
+    /// it, and saving needs no join that could undo this one's own steps.
+    synced: Option<Vec<mdoc_store::cases::StoredIdentity>>,
 }
 
 #[derive(uniffi::Object)]
@@ -304,9 +312,123 @@ impl DocumentSession {
         })
     }
 
-    /// Link identity `from` into identity `into`, which keeps its alias.
+    /// Link identity `from` into identity `into`, which keeps its alias:
+    /// Same as… from a merge hint, or for a whole identity. One undo step.
     pub fn link(&self, from: u64, into: u64) -> Result<ReviewSnapshot, CoreError> {
         self.with_document(|document| document.review.link(from, into))
+    }
+
+    /// Undo the last step (ADR 0098): a decision, a mark or an identity
+    /// change. The snapshot's `redo_step` names what it undid and where.
+    /// Nothing to undo leaves the review as it is.
+    pub fn undo(&self) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| {
+            document.review.undo();
+            Ok(())
+        })
+    }
+
+    /// Redo the last undone step; the snapshot's `undo_step` names it.
+    pub fn redo(&self) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| {
+            document.review.redo();
+            Ok(())
+        })
+    }
+
+    /// Rename…: the alias of the mention at `range`, or of its identity.
+    /// This one splits the mention off under the new alias. An alias another
+    /// identity has is refused (`identity_with_alias` names it: Same as is
+    /// the way to it), as are retired and malformed ones.
+    pub fn rename(
+        &self,
+        range: TextRange,
+        scope: Scope,
+        alias: String,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| document.review.rename(span(range), scope, &alias))
+    }
+
+    /// The identity already called `alias`, if any: Rename shows "PERSON_2
+    /// is Maya Bennett" with Same as instead of an error.
+    pub fn identity_with_alias(&self, alias: String) -> Result<Option<u64>, CoreError> {
+        self.read_document(|document| document.review.identity_with_alias(&alias))
+    }
+
+    /// The category menu for the mention at `range` in `scope`: every
+    /// category with the alias choosing it gives.
+    pub fn category_choices(
+        &self,
+        range: TextRange,
+        scope: Scope,
+    ) -> Result<Vec<CategoryChoice>, CoreError> {
+        let mut guard = self.lock_document();
+        let document = guard.as_mut().ok_or_else(no_document)?;
+        let range = span(range);
+        let current = document
+            .review
+            .at(&range)
+            .and_then(|at| document.review.entity(&at))
+            .and_then(|id| document.review.review.identity(id))
+            .map(|i| i.category);
+        Ok(document
+            .review
+            .category_choices(range, scope)?
+            .into_iter()
+            .map(|(category, alias)| CategoryChoice {
+                category: category.into(),
+                alias,
+                current: Some(category) == current,
+            })
+            .collect())
+    }
+
+    /// Change the category of the mention at `range`, or of its identity;
+    /// This one splits the mention off in the new category.
+    pub fn set_category(
+        &self,
+        range: TextRange,
+        scope: Scope,
+        category: Category,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| {
+            document
+                .review
+                .set_category(span(range), scope, category.into())
+        })
+    }
+
+    /// Same as…: All links the identity of the mention at `range` into
+    /// `target`, which keeps its alias and restore wording; This one moves
+    /// only this mention to `target`. Nothing is replaced by it.
+    pub fn same_as(
+        &self,
+        range: TextRange,
+        scope: Scope,
+        target: u64,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| document.review.same_as(span(range), scope, target))
+    }
+
+    /// New alias: the mention at `range` split off as an identity of its own.
+    pub fn new_alias(&self, range: TextRange) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| document.review.new_alias(span(range)))
+    }
+
+    /// Belongs to…: `owner`, a person or organization, owns contact or
+    /// identifier `identity`; `None` clears it.
+    pub fn set_owner(
+        &self,
+        identity: u64,
+        owner: Option<u64>,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| document.review.set_owner(identity, owner))
+    }
+
+    /// × on a merge hint: hidden from now on, and in the document's case
+    /// once it saves (ADR 0080). Not an undo step.
+    pub fn dismiss_hint(&self, from: u64, into: u64) -> Result<ReviewSnapshot, CoreError> {
+        self.with_document(|document| document.review.dismiss_hint(from, into))
     }
 
     /// Copy for AI: the alias-only note, then the text, byte for byte what
@@ -361,8 +483,10 @@ impl DocumentSession {
                 document
                     .review
                     .join(&case.exported(), &case.reserved_aliases())?;
+                document.review.dismiss_pairs(&case.dismissed_hints);
                 document.case = Some(case_id.clone());
                 document.skip = case.skipped();
+                document.synced = Some(case.identities.clone());
                 Ok(())
             }
         })
@@ -390,24 +514,43 @@ impl DocumentSession {
         library.refuse_other_case(&member, document.case.as_deref().unwrap_or_default())?;
         let case = match document.case.clone() {
             Some(id) => library.edit_locked(&lock, &id, |case| {
-                document
-                    .review
-                    .join(&case.exported(), &case.reserved_aliases())?;
+                // Only a case another document changed since is joined
+                // again: joining against this document's own last save would
+                // take back what Undo just reverted.
+                if document.synced.as_ref() != Some(&case.identities) {
+                    document
+                        .review
+                        .join(&case.exported(), &case.reserved_aliases())?;
+                    document.review.dismiss_pairs(&case.dismissed_hints);
+                }
                 document.stored.save(path.clone(), &document.review.text)?;
                 let before = case.clone();
                 case.merge(&document.review.review.export_identities());
                 if !case.members.contains(&member) {
                     case.members.push(member.clone());
                 }
+                for (a, b) in document.review.dismissed_pairs() {
+                    let pair = (a, b);
+                    let flipped = (pair.1.clone(), pair.0.clone());
+                    if !case.dismissed_hints.contains(&pair)
+                        && !case.dismissed_hints.contains(&flipped)
+                    {
+                        case.dismissed_hints.push(pair);
+                    }
+                }
+                document.synced = Some(case.identities.clone());
                 Ok(*case != before)
             })?,
             None => {
                 document.stored.save(path.clone(), &document.review.text)?;
-                let case = mdoc_store::cases::Case::new(
+                let mut case = mdoc_store::cases::Case::new(
                     document.title.clone(),
                     &document.review.review.export_identities(),
                     Some(member),
                 );
+                // Hints dismissed before the case existed stay dismissed.
+                case.dismissed_hints = document.review.dismissed_pairs();
+                document.synced = Some(case.identities.clone());
                 library.create_locked(&lock, case)?
             }
         };
@@ -473,6 +616,7 @@ impl DocumentSession {
             path: None,
             stored: mdoc_store::document::Document::default(),
             generation,
+            synced: None,
         };
         if let Some(opened) = opened {
             document.path = opened.path;
@@ -481,7 +625,9 @@ impl DocumentSession {
                 document
                     .review
                     .open_case(&case.exported(), &case.reserved_aliases());
+                document.review.dismiss_pairs(&case.dismissed_hints);
                 document.skip = case.skipped();
+                document.synced = Some(case.identities.clone());
                 document.case = Some(case.id);
             }
         }
@@ -802,6 +948,181 @@ mod tests {
         stop();
         library.discard_import(pdf).unwrap();
         assert_eq!(kept_pages(), 0);
+    }
+
+    fn range_of(snapshot: &ReviewSnapshot, wording: &str, nth: usize) -> TextRange {
+        let start = snapshot.text.match_indices(wording).nth(nth).unwrap().0 as u64;
+        TextRange {
+            start,
+            end: start + wording.len() as u64,
+        }
+    }
+
+    /// Each change saves (as the app does): saving joins the case only when
+    /// another document changed it, so an undone rename stays undone.
+    #[test]
+    fn an_undo_after_a_save_stays_undone() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Ann Lee wrote to Ann Lee.", "Letter");
+        select(&session, "Ann Lee");
+        let replaced = session.replace_all().unwrap();
+        session.save(library.clone()).unwrap();
+        let renamed = session
+            .rename(
+                range_of(&replaced, "PERSON_1", 0),
+                Scope::All,
+                "CLIENT".into(),
+            )
+            .unwrap();
+        assert_eq!(renamed.text, "CLIENT wrote to CLIENT.");
+        let step = renamed.undo_step.clone().unwrap();
+        assert_eq!(step.label, "Rename · CLIENT");
+        assert_eq!(step.range, Some(range_of(&renamed, "CLIENT", 0)));
+        session.save(library.clone()).unwrap();
+        let undone = session.undo().unwrap();
+        assert_eq!(undone.text, "PERSON_1 wrote to PERSON_1.");
+        assert_eq!(undone.redo_step.unwrap().kind, StepKind::Rename);
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(saved.review.text, "PERSON_1 wrote to PERSON_1.");
+        assert!(saved.review.can_redo);
+        assert_eq!(
+            library
+                .restore(saved.case.id.clone(), "PERSON_1 agreed.".into())
+                .unwrap()
+                .text,
+            "Ann Lee agreed."
+        );
+        let redone = session.redo().unwrap();
+        assert_eq!(redone.text, "CLIENT wrote to CLIENT.");
+        assert!(!redone.can_redo);
+    }
+
+    /// Same as saved into the case, then undone and saved again: the
+    /// document has two people again and restores each to its own. The case
+    /// keeps the merge, as on desktop: a member's save never reverses a case
+    /// merge (ADR 0041, `unmerged_members_cannot_reverse_a_case_merge`).
+    #[test]
+    fn an_undone_merge_is_two_people_in_the_document_again() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Ann Lee wrote to Mia Fox.", "Letter");
+        select(&session, "Ann Lee");
+        select(&session, "Mia Fox");
+        let replaced = session.replace_all().unwrap();
+        assert_eq!(replaced.text, "PERSON_1 wrote to PERSON_2.");
+        session.save(library.clone()).unwrap();
+        let (ann, mia) = (
+            session
+                .identity_with_alias("PERSON_1".into())
+                .unwrap()
+                .unwrap(),
+            session
+                .identity_with_alias("PERSON_2".into())
+                .unwrap()
+                .unwrap(),
+        );
+        session.link(mia, ann).unwrap();
+        session.save(library.clone()).unwrap();
+        assert_eq!(session.undo().unwrap().text, "PERSON_1 wrote to PERSON_2.");
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(saved.review.text, "PERSON_1 wrote to PERSON_2.");
+        assert_eq!(saved.review.identities.len(), 2);
+        assert_eq!(
+            session
+                .restore_reply("PERSON_1 and PERSON_2.".into())
+                .unwrap()
+                .text,
+            "Ann Lee and Mia Fox."
+        );
+        let case = library.load(&saved.case.id).unwrap();
+        assert_eq!(case.identities.len(), 1, "the case keeps the merge");
+    }
+
+    /// × on a merge hint is kept in the case: the document reopened, or
+    /// another member, no longer shows it (ADR 0080).
+    #[test]
+    fn a_dismissed_hint_is_kept_in_the_case() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Maya Bennett met Ms Bennett.", "Letter");
+        select(&session, "Maya Bennett");
+        select(&session, "Ms Bennett");
+        let mut snapshot = session.snapshot().unwrap();
+        if snapshot.identities.len() == 1 {
+            // Propagation joined the short form (ADR 0092): split it off.
+            snapshot = session
+                .new_alias(range_of(&snapshot, "Ms Bennett", 0))
+                .unwrap();
+        }
+        assert_eq!(snapshot.link_hints.len(), 1);
+        let hint = snapshot.link_hints[0].clone();
+        let can_undo = snapshot.can_undo;
+        let dismissed = session.dismiss_hint(hint.from, hint.into).unwrap();
+        assert!(dismissed.link_hints.is_empty());
+        assert_eq!(dismissed.can_undo, can_undo);
+        session.replace_all().unwrap();
+        let saved = session.save(library.clone()).unwrap();
+        assert_eq!(
+            library.load(&saved.case.id).unwrap().dismissed_hints.len(),
+            1
+        );
+        let reopened = DocumentSession::new()
+            .open_document(library.clone(), saved.path)
+            .unwrap();
+        assert_eq!(reopened.identities.len(), 2);
+        assert!(reopened.link_hints.is_empty());
+    }
+
+    /// The identity tools through the session: the category menu, owner,
+    /// the alias lookup Rename's Same as uses.
+    #[test]
+    fn the_identity_tools_reach_the_review() {
+        let session = session("Acme Ltd, info@acme.example.", "Letter");
+        select(&session, "Acme Ltd");
+        let text = session.snapshot().unwrap().text;
+        let start = text.find("info@acme.example").unwrap() as u64;
+        let email = TextRange {
+            start,
+            end: start + "info@acme.example".len() as u64,
+        };
+        session.add_selection(email, Some(Category::Email)).unwrap();
+        let snapshot = session.snapshot().unwrap();
+        let acme = range_of(&snapshot, "Acme Ltd", 0);
+        let choices = session.category_choices(acme, Scope::All).unwrap();
+        assert!(
+            choices
+                .iter()
+                .any(|c| c.current && c.category == Category::Person)
+        );
+        let org = choices
+            .iter()
+            .find(|c| c.category == Category::Organization)
+            .unwrap();
+        assert_eq!(org.alias.as_deref(), Some("ORG_1"));
+        let snapshot = session
+            .set_category(acme, Scope::All, Category::Organization)
+            .unwrap();
+        let company = session
+            .identity_with_alias("ORG_1".into())
+            .unwrap()
+            .unwrap();
+        let mailbox = session
+            .identity_with_alias("EMAIL_1".into())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            session.identity_with_alias("PERSON_1".into()).unwrap(),
+            None
+        );
+        assert_eq!(snapshot.undo_step.unwrap().identity, Some(company));
+        let owned = session.set_owner(mailbox, Some(company)).unwrap();
+        let row = owned.identities.iter().find(|i| i.id == mailbox).unwrap();
+        assert_eq!(row.owner, Some(company));
+        let undone = session.undo().unwrap();
+        let row = undone.identities.iter().find(|i| i.id == mailbox).unwrap();
+        assert_eq!(row.owner, None);
+        assert_eq!(undone.redo_step.unwrap().kind, StepKind::Owner);
     }
 
     #[test]

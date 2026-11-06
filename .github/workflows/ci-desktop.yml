@@ -1,11 +1,13 @@
 name: CI desktop
 
-# The desktop full tier on a hosted runner (ADR 0095): lint, then the unit,
-# recognition, app and renders test tiers, and on macOS the script suites
-# under Apple's bash 3.2 (#468) and the mdoc-ffi check. The merge queue calls
-# it on the queue commit, once per OS: macOS always runs here, Windows when
-# the PC falls back. Every step is a `just` recipe or a script, so a failure
-# reproduces locally (ADR 0037).
+# The desktop full tier on a hosted runner (ADR 0095, ADR 0100): two jobs in
+# parallel and a summary. The checks job runs lint, and on macOS the script
+# suites under Apple's bash 3.2 (#468) and the mdoc-ffi check; the tests job
+# runs the unit, recognition, app and renders test tiers. The summary,
+# `ci/macos` or `ci/windows (hosted)`, is the check merge-gate reads. The
+# merge queue calls it on the queue commit, once per OS: macOS always runs
+# here, Windows when the PC falls back. Every step is a `just` recipe or a
+# script, so a failure reproduces locally (ADR 0037).
 on:
   workflow_call:
     inputs:
@@ -41,11 +43,36 @@ permissions:
   contents: read
 
 jobs:
-  # The job id stays `test`: rust-cache keys its cache by job id, so this job
-  # restores the cache main's `test (…)` jobs in ci.yml save (ADR 0070).
-  test:
-    name: ${{ fromJSON('{"macos":"ci/macos","windows":"ci/windows (hosted)"}')[inputs.os] }}
+  # The job ids are ci.yml's: rust-cache keys its cache by job id, so each job
+  # restores the cache main's job of the same id saves (ADR 0070, ADR 0100):
+  # `checks` holds the lint build and the iOS and Android checks, `test` the
+  # test build.
+  checks:
+    name: ${{ fromJSON('{"macos":"ci/macos (checks)","windows":"ci/windows (hosted, checks)"}')[inputs.os] }}
     # An unknown os has no runner, so the run fails instead of guessing.
+    runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
+    # Job limits (ADR 0095).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - run: just lint
+
+      # The runner's `bash` is Apple's 3.2 too; named here so the suites run
+      # under it wherever PATH points.
+      - name: Script suites under /bin/bash 3.2
+        if: runner.os == 'macOS'
+        run: /bin/bash scripts/test.sh --tier scripts
+      - if: runner.os == 'macOS'
+        run: just mobile --ffi
+
+  test:
+    name: ${{ fromJSON('{"macos":"ci/macos (tests)","windows":"ci/windows (hosted, tests)"}')[inputs.os] }}
     runs-on: ${{ fromJSON('{"macos":"macos-26","windows":"windows-latest"}')[inputs.os] }}
     # Job limits (ADR 0095); hosted Windows builds take 32 minutes cold.
     timeout-minutes: ${{ inputs.os == 'windows' && 40 || 30 }}
@@ -61,7 +88,6 @@ jobs:
         with:
           tools: just cargo-nextest
 
-      - run: just lint
       - run: just test-tier unit
       - run: just test-tier recognition
       - run: just test-tier app
@@ -69,14 +95,6 @@ jobs:
         run: just test-tier renders
         env:
           MDOC_HEADLESS_ARTIFACTS: ${{ runner.temp }}/renders
-
-      # The runner's `bash` is Apple's 3.2 too; named here so the suites run
-      # under it wherever PATH points.
-      - name: Script suites under /bin/bash 3.2
-        if: runner.os == 'macOS'
-        run: /bin/bash scripts/test.sh --tier scripts
-      - if: runner.os == 'macOS'
-        run: just mobile --ffi
 
       - name: Headless screens and keyboard walks
         if: ${{ !cancelled() }}
@@ -89,6 +107,8 @@ jobs:
           retention-days: 7
           # A rerun replaces the earlier attempt's set.
           overwrite: true
+          # PNGs barely compress; this job is ci/macos's longer part.
+          compression-level: 0
 
       - name: Pick the requested screens
         id: screens
@@ -104,3 +124,20 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           overwrite: true
+
+  # The check merge-gate reads. Green only when both jobs ran and passed, so
+  # a missing, cancelled or skipped part never looks green (as ci/detection).
+  summary:
+    name: ${{ fromJSON('{"macos":"ci/macos","windows":"ci/windows (hosted)"}')[inputs.os] || 'ci/desktop' }}
+    needs: [checks, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          CHECKS: ${{ needs.checks.result }}
+          TESTS: ${{ needs.test.result }}
+        run: |
+          [ "$CHECKS" = success ] || echo "::error::checks (lint, script suites, mdoc-ffi): $CHECKS"
+          [ "$TESTS" = success ] || echo "::error::test tiers: $TESTS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ]

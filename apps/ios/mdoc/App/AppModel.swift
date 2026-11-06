@@ -49,6 +49,11 @@ final class AppModel {
         let defaults = testing ? UserDefaults(suiteName: "mdoc-ui-testing") ?? .standard : .standard
         if testing {
             defaults.removePersistentDomain(forName: "mdoc-ui-testing")
+            // Appearance lives in the App Group: each UI test starts from
+            // the defaults, whatever an earlier test chose.
+            for key in [AppTheme.key, MarkdownDisplay.serifKey] {
+                MarkdownDisplay.store.removeObject(forKey: key)
+            }
         }
         do {
             let (storage, core) = try open()
@@ -182,13 +187,15 @@ final class AppModel {
 
     /// Imports into the chosen case, opens the document and starts
     /// recognition, which the user asked for by adding it.
-    func finishImport(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) {
+    @discardableResult
+    func finishImport(_ pending: PendingImport, title: String, into caseChoice: CaseChoice) -> DocumentViewModel? {
         guard let session = home.importDocument(pending, title: title, into: caseChoice),
-              let model = documentModel(for: session.id) else { return }
+              let model = documentModel(for: session.id) else { return nil }
         selection = session.id
         if model.snapshot.phase == .recognizing {
             Task { await model.recognize() }
         }
+        return model
     }
 
     func deleteDocument(_ id: DocumentID) {
@@ -265,6 +272,30 @@ final class AppModel {
     func addText(_ text: String, title: String, into caseChoice: CaseChoice) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         finishImport(PendingImport(source: .text(text), suggestedTitle: Self.suggestedTitle(for: text)), title: title, into: caseChoice)
+    }
+
+    /// Home's Share: Copy for AI's text of a reviewed document, as the
+    /// document's own Share gives it.
+    func shareItems(for id: DocumentID) -> ShareItems? {
+        guard let model = documentModel(for: id) else { return nil }
+        model.share(asFile: false)
+        defer { model.share = nil }
+        if let message = model.errorMessage {
+            home.errorMessage = message
+            model.errorMessage = nil
+        }
+        return model.share
+    }
+
+    /// Try a sample (ADR 0099): the made-up agreement in the phone's
+    /// language, in a case of its own, opened for review.
+    func trySample() {
+        let sample = SampleDocument.forLanguages()
+        // Its names come in as proposals, so it reviews before the name
+        // finder is downloaded; only into the sample itself, never the
+        // document open before when the import fails.
+        let pending = PendingImport(source: .text(sample.text), suggestedTitle: sample.title)
+        finishImport(pending, title: sample.title, into: .newCase(name: sample.title))?.proposeStored(sample.names)
     }
 
     /// The first line, without Markdown heading marks, up to 60 characters.

@@ -497,9 +497,24 @@ runs only on queue commits ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 snapshots) and `scripts` ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
 **`merge-gate`**: the one aggregate required status beside `lint (ubuntu)`:
-on a PR head, green when the fast tier passed; on a queue commit, when
+on a PR head, green when the fast tier passed, and on a recognition-area
+PR the detection gate on its head; on a queue commit, when
 every affected full job passed, each named with where it ran
-([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
+([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md), [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+
+**Infrastructure failure**: a hosted CI job that ended without a result:
+cancelled with no runner assigned, cancelled after it started (an internal
+error, a lost runner; a job that hit its own timeout is a real failure),
+summarizing such jobs, or never created in a queue commit's completed Queue
+run.
+`merge-gate` re-runs it up to twice before failing, worded as
+infrastructure, never as a test failure
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
+
+**Follow-up pass**: a `merge-gate` pass started by `merge-gate-recheck.yml`
+3 minutes after a pass that left something pending or hit an API error,
+so a missed event never leaves a status stale
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
 
 **Quarantine list**: `.config/quarantine.txt`, tests CI excludes for a
 while: a nextest filter, its issue and an expiry date past which the fast
@@ -577,10 +592,42 @@ memory, scan time, heat, OCR output) that come before mobile UI work.
 Copy and Paste reply; it replaces the review actions once nothing is left
 to decide.
 
+**Review bar**: the docked bar a phone reviews in, in place of the
+hand-off bar: progress line, review card, then Undo, Keep and Replace. The
+text stays scrollable under it; it replaces the candidate sheet
+([ADR 0098](docs/adr/0098-mobile-review-bar.md)). Desktop's counterpart is
+the mention bar.
+
+**Review card**: the swipeable part of the review bar: the name under
+review and its category, alias and scope chips. Swiping it steps to the
+previous or next candidate.
+
+**Peek**: the sliver of the previous or next review card at the bar's
+edges; it shows there is more to swipe to, and tapping it steps.
+
+**Progress line**: "3 of 15" and a thin track under the review bar's
+grabber; the track fills with the decided share. Tapping it opens
+Identities.
+
+**Mentions chip**: "1 of 3 ›" on the review card when an identity has more
+than one mention; each tap scrolls the text to the next.
+
+**Focus** (mobile review): stepping limited to one identity or one
+category, started from Identities, shown on the progress line with ×.
+
+**Mobile UI guide**: `docs/mobile-ui.md`, the current rules for both mobile
+apps' look and feel (tokens, components, gestures, haptics, motion,
+wording), each pointing at its code; agents read it before UI work and
+every UI PR updates it.
+
+**Sample document**: the short contract with made-up names behind "Try a
+sample"; also the UI tests' and previews' fixture, so screenshots of it are
+safe to share.
+
 **UI survey**: light and dark screenshots of every mobile screen, taken by
 `ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
-under `docs/evidence/ios-app` and `docs/evidence/android-app` as before and
-after sets.
+under `docs/evidence/ios-app/current` and `docs/evidence/android-app/current`,
+replaced by each UI PR ([ADR 0099](docs/adr/0099-mobile-ui-system.md)).
 
 **Device UI tests**: the review flow and long jobs run on a real phone
 (`just ios-device-test`, `just android-device-test`), by hand before each
@@ -599,10 +646,15 @@ the pinned Simulator, when a change touches the core or the ios area (`just
 mobile --ios`); `ci/ios` on a queue commit, on hosted `macos-26`
 ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md), [ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)).
 
-**Area**: one of desktop, core, ios and android, from the one path table
-`scripts/ci-areas.txt`; a change runs the jobs of the areas it touches, a
-core change runs all of them, and files in no area (docs) run none
-([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)).
+**Area**: one of desktop, core, recognition, ios, android and ci, from the
+one path table `scripts/ci-areas.txt`; a change runs the jobs of the areas
+it touches, a core change runs all of them, and files in no area (docs) run
+none ([ADR 0091](docs/adr/0091-mobile-ci-and-releases.md)). The ci area is
+the CI machinery (the merge gate, the queue runner, the CI scripts, the
+workflows that build and test nothing themselves, their suites): on a queue
+commit it runs only `ci/scripts`, the script suites on Linux and under bash
+3.2, beside `lint (ubuntu)`
+([ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md)).
 
 **Takeover**: the Mac's local CI running a `local/android` job the PC left
 stuck for 15 minutes, before the hosted fallback
