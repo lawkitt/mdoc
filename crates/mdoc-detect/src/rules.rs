@@ -3039,12 +3039,17 @@ impl Pack {
     /// international holdings ltd") or a trading name ("C1 trading as").
     fn company_continuation(&self, rest: &str) -> bool {
         // A comma before a legal form belongs to the company, unlike a
-        // comma before the next person or clause ("C1, Mrs Penrow").
-        if rest.strip_prefix(',').is_some_and(|tail| {
-            tail.split_whitespace()
-                .next()
-                .is_some_and(|word| self.legal_form(bare(word)))
-        }) {
+        // comma before the next person or clause ("C1, Mrs Penrow"); OCR
+        // may leave a space before it ("C1 , Inc").
+        if rest
+            .trim_start_matches([' ', '\t'])
+            .strip_prefix(',')
+            .is_some_and(|tail| {
+                tail.split_whitespace()
+                    .next()
+                    .is_some_and(|word| self.legal_form(bare(word)))
+            })
+        {
             return true;
         }
         let clause = rest
@@ -3062,15 +3067,47 @@ impl Pack {
                 && word.starts_with(['C', 'D', 'P', 'R'])
                 && word.as_bytes()[1..].iter().all(u8::is_ascii_digit)
         };
+        let role = |word: &str| {
+            self.party_roles.iter().any(|role| {
+                role.eq_ignore_ascii_case(word)
+                    || word
+                        .strip_suffix('s')
+                        .is_some_and(|single| role.eq_ignore_ascii_case(single))
+            })
+        };
+        let trading = |words: &[&str]| {
+            words.windows(2).take(3).any(|pair| {
+                pair[0].eq_ignore_ascii_case("trading") && pair[1].eq_ignore_ascii_case("as")
+            }) || words
+                .iter()
+                .take(3)
+                .any(|word| word.eq_ignore_ascii_case("t/a"))
+        };
+        // A company's name may wrap onto the next line ("Claimant C1\n
+        // Holdings Ltd"): a legal form or trading name there continues it.
+        // A role or another code ends the look ("First Claimant\nC1\nSecond
+        // Claimant\nC2" is a heading layout).
+        let wrapped: Vec<_> = rest
+            .split(['.', ',', ';', ':', '!', '?'])
+            .next()
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(bare)
+            .filter(|word| !word.is_empty())
+            .take_while(|word| !role(word) && !code(word))
+            .take(5)
+            .collect();
+        if wrapped[..wrapped.len().min(4)]
+            .iter()
+            .any(|word| self.legal_form(word))
+            || trading(&wrapped)
+        {
+            return true;
+        }
         let capitalized = |word: &&str| {
             word.starts_with(char::is_uppercase)
                 && !code(word)
-                && !self.party_roles.iter().any(|role| {
-                    role.eq_ignore_ascii_case(word)
-                        || word
-                            .strip_suffix('s')
-                            .is_some_and(|single| role.eq_ignore_ascii_case(single))
-                })
+                && !role(word)
                 && !self.spans.iter().any(|span| {
                     matches!(span, Span::Fix(fix)
                         if fix.category == Category::Person
@@ -3082,13 +3119,7 @@ impl Pack {
             || words[..words.len().min(4)]
                 .iter()
                 .any(|word| self.legal_form(word))
-            || words.windows(2).take(3).any(|pair| {
-                pair[0].eq_ignore_ascii_case("trading") && pair[1].eq_ignore_ascii_case("as")
-            })
-            || words
-                .iter()
-                .take(3)
-                .any(|word| word.eq_ignore_ascii_case("t/a"))
+            || trading(&words)
     }
 
     /// Whether `text`'s words are all legal forms ("АО", "LLC").
@@ -6925,21 +6956,43 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "{source}"
             );
         }
-        // A newline ends evidence, so a heading after C1 is not a name
-        // continuation. With no kept full name, this is a defined code.
-        let source = "Claimant C1\nholdings ltd paid C1.";
-        let start = source.rfind("C1").unwrap();
-        let raw = [crate::RawEntity {
-            start,
-            end: start + 2,
-            label: "organization".into(),
-            score: 0.8,
-            text: "C1".into(),
-        }];
-        assert!(
-            crate::recognition::proposals(source, &raw)
-                .unwrap()
-                .is_empty()
+        // A company wrapped onto the next line, or with a space before its
+        // legal-form comma, still opens with its code: the code marks stay
+        // with only the code or short name marked by the model.
+        for source in [
+            "Claimant C1\nHoldings Ltd, trading as C1, paid.",
+            "Claimant C1\r\nHoldings Ltd, trading as C1, paid.",
+            "Claimant C1\nLogistics Ltd, trading as C1, paid.",
+            "Claimant C1\nInternational Holdings Ltd, trading as C1, paid.",
+            "Claimant C1\nholdings ltd paid C1.",
+            "Claimant C1\nLtd, trading as C1, paid.",
+            "Claimant C1 , Inc, trading as C1, paid.",
+            "Claimant C1 , LLC, trading as C1, paid.",
+            "Claimant C1, Inc, trading as C1, paid.",
+        ] {
+            for at in [source.find("C1").unwrap(), source.rfind("C1").unwrap()] {
+                let raw = [crate::RawEntity {
+                    start: at,
+                    end: at + 2,
+                    label: "organization".into(),
+                    score: 0.8,
+                    text: "C1".into(),
+                }];
+                let actual: Vec<_> = crate::recognition::proposals(source, &raw)
+                    .unwrap()
+                    .into_iter()
+                    .map(|span| source[span.range].to_owned())
+                    .collect();
+                assert!(actual.iter().any(|text| text == "C1"), "{source} at {at}");
+            }
+        }
+        // A heading layout still defines its codes.
+        assert_eq!(
+            shown(
+                "First Claimant\nC1\nSecond Claimant\nC2\nC1 lost.",
+                &[("C1", "organization")]
+            ),
+            []
         );
         // A role and code before a lowercase clause still define a code.
         assert_eq!(
