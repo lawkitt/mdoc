@@ -105,7 +105,7 @@ esac
 
 [ -n "$(runtime)" ] || download
 read -r runtime_id runtime_version <<<"$(runtime)"
-echo "ios-toolchain: iOS $runtime_version Simulator runtime ($runtime_id)" >&2
+echo "ios-toolchain: iOS $runtime_version Simulator runtime, build $IOS_SIM_RUNTIME_BUILD ($runtime_id)" >&2
 
 # The device: the runtime's own, else one created on it.
 has_device() {
