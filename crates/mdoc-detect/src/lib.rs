@@ -690,10 +690,18 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     // After the span fixes, so each spelling copies the fixed wording.
     let respelt = respelt(source, &view, &detections);
     detections.extend(respelt);
+    let names: Vec<Detection> = detections
+        .iter()
+        .filter(|d| matches!(d.category, Category::Person | Category::Organization))
+        .map(|d| Detection {
+            range: view.view_range(d.range.clone()),
+            ..d.clone()
+        })
+        .collect();
     let rules = rules::pack()
         .context(&view.text)
         .into_iter()
-        .chain(rules::pack().spans(&view.text))
+        .chain(rules::pack().spans_beside(&view.text, &names))
         .chain(structured::scan(&view.text));
     let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
         .filter_map(|mut detection| {
