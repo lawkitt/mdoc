@@ -1,0 +1,19 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":513,"end":532,"label":"person","score":0.9967775,"text":"Иван Судов"},
+    {"start":229,"end":310,"label":"organization","score":0.9781772,"text":"Министерства\nфинансов Российской Федерации"},
+    {"start":102,"end":126,"label":"organization","score":0.9229003,"text":"МО МВД России"},
+    {"start":314,"end":408,"label":"organization","score":0.9170059,"text":"Управление Пенсионного фонда Российской Федерации"},
+    {"start":566,"end":658,"label":"organization","score":0.89312315,"text":"Негосударственный пенсионный фонд «Кедровый бор»"},
+    {"start":697,"end":763,"label":"organization","score":0.83400166,"text":"Энский государственный университет"},
+    {"start":147,"end":189,"label":"organization","score":0.8262917,"text":"МУП «Энский водоканал»"},
+    {"start":193,"end":227,"label":"organization","score":0.8178656,"text":"ООО «Кедровый бор»"},
+    {"start":679,"end":689,"label":"organization","score":0.81017876,"text":"ФГБОУ"},
+    {"start":862,"end":880,"label":"phone_number","score":0.9999994,"text":"+7 (812) 555-01-01"},
+    {"start":917,"end":937,"label":"email","score":0.99982464,"text":"sud@en-court.invalid"},
+    {"start":947,"end":957,"label":"national_id_number","score":0.97209865,"text":"7701234567"},
+    {"start":988,"end":1008,"label":"bank_account","score":0.6660625,"text":"40702810900000012345"}
+  ]
+}
