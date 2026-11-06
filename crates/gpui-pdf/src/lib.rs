@@ -266,8 +266,14 @@ pub fn render_page(
     scale: f32,
     tone: PageTone,
 ) -> Result<Arc<RenderImage>, String> {
-    let pixmaps = hayro::render_pdf(doc, scale, InterpreterSettings::default(), Some(idx..=idx))
-        .ok_or_else(|| format!("render page {idx}"))?;
+    let pixmaps = hayro::render_pdf(
+        doc,
+        scale,
+        InterpreterSettings::default(),
+        &hayro::RenderSettings::default(),
+        Some(idx..=idx),
+    )
+    .ok_or_else(|| format!("render page {idx}"))?;
     let pixmap = pixmaps
         .into_iter()
         .next()
