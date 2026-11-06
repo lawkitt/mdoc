@@ -240,6 +240,15 @@ struct ShapeEntry {
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
+    /// A model span inside one of these matches in its surrounding line
+    /// is not this category (an amount's decimals or currency may be outside
+    /// the model's span). Labelled values are proposed separately.
+    #[serde(default)]
+    forbid_in: Vec<String>,
+    /// Matches that exempt a model span from `forbid_in` only: a labelled
+    /// identifier stays even beside an amount. Other shape checks still apply.
+    #[serde(default)]
+    unless_in: Vec<String>,
     word: Option<String>,
     #[serde(default)]
     guess: Vec<String>,
@@ -842,6 +851,8 @@ struct Shape {
     category: Category,
     require: Vec<Regex>,
     forbid: Vec<Regex>,
+    forbid_in: Vec<Regex>,
+    unless_in: Vec<Regex>,
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
@@ -1060,6 +1071,8 @@ impl Pack {
                 };
                 if entry.require.is_empty()
                     && entry.forbid.is_empty()
+                    && entry.forbid_in.is_empty()
+                    && entry.unless_in.is_empty()
                     && entry.word.is_none()
                     && entry.guess.is_empty()
                     && entry.guess_words.is_empty()
@@ -1111,6 +1124,16 @@ impl Pack {
                 }
                 let require = compile_all(&entry.require, false)?;
                 let forbid = compile_all(&entry.forbid, false)?;
+                let forbid_in = entry
+                    .forbid_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let unless_in = entry
+                    .unless_in
+                    .iter()
+                    .map(|pattern| with_parts(pattern, &Default::default()).map_err(at))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let word = entry
                     .word
                     .as_deref()
@@ -1124,6 +1147,8 @@ impl Pack {
                             category,
                             require: Vec::new(),
                             forbid: Vec::new(),
+                            forbid_in: Vec::new(),
+                            unless_in: Vec::new(),
                             word: None,
                             guess: Vec::new(),
                             guess_words: Vec::new(),
@@ -1139,6 +1164,8 @@ impl Pack {
                 }
                 shape.require.extend(require);
                 shape.forbid.extend(forbid);
+                shape.forbid_in.extend(forbid_in);
+                shape.unless_in.extend(unless_in);
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
@@ -2505,6 +2532,42 @@ impl Pack {
         if self.in_reference(source, range.clone()) {
             return false;
         }
+        if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
+            && !shape.forbid_in.is_empty()
+        {
+            // OCR can put an entire document on one line. Bound both the
+            // newline search and the decoded context per span; if an amount
+            // needs more distant evidence, keep the possible identifier.
+            let mut start = range.start.saturating_sub(300);
+            while !source.is_char_boundary(start) {
+                start += 1;
+            }
+            let mut end = range.end.saturating_add(300).min(source.len());
+            while !source.is_char_boundary(end) {
+                end -= 1;
+            }
+            start += source[start..range.start].rfind('\n').map_or(0, |i| i + 1);
+            end = source[range.end..end]
+                .find('\n')
+                .map_or(end, |i| range.end + i);
+            let view = mdoc_pii::view::View::new(&source[start..end]);
+            let span = view.view_range(range.start - start..range.end - start);
+            let inside = |pattern: &Regex| {
+                span_ranges(pattern, &view.text)
+                    .into_iter()
+                    .any(|found| found.start <= span.start && span.end <= found.end)
+            };
+            let forbidden = |pattern: &Regex| {
+                span_ranges(pattern, &view.text).into_iter().any(|found| {
+                    found.start <= span.start
+                        && span.end <= found.end
+                        && !joins_numeric_fields(&view.text, found, span.clone())
+                })
+            };
+            if shape.forbid_in.iter().any(forbidden) && !shape.unless_in.iter().any(inside) {
+                return false;
+            }
+        }
         let quoted = self
             .shapes
             .iter()
@@ -3064,6 +3127,42 @@ fn unquoted(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A contextual rejection must not join a candidate's digit groups to a
+/// neighbouring numeric field through whitespace alone. A decimal touching
+/// the candidate still connects an amount's fragments, including OCR-joined
+/// decimals ("762,0323 058"), but "770 901 001 500,00" does not make the
+/// first three groups money. Ambiguous columns keep the possible identifier.
+fn joins_numeric_fields(
+    source: &str,
+    found: std::ops::Range<usize>,
+    span: std::ops::Range<usize>,
+) -> bool {
+    let value = &source[span.clone()];
+    let before = &source[found.start..span.start];
+    let after = &source[span.end..found.end];
+    // Include two characters on either side so a decimal separator just
+    // outside the model span counts, without reading beyond this match.
+    let start = span.start
+        - before
+            .chars()
+            .rev()
+            .take(2)
+            .map(char::len_utf8)
+            .sum::<usize>();
+    let end = span.end + after.chars().take(2).map(char::len_utf8).sum::<usize>();
+    if source.as_bytes()[start..end].windows(3).any(|part| {
+        part[0].is_ascii_digit() && matches!(part[1], b',' | b'.') && part[2].is_ascii_digit()
+    }) {
+        return false;
+    }
+    (value.starts_with(|c: char| c.is_ascii_digit())
+        && before.ends_with(char::is_whitespace)
+        && before.trim_end().ends_with(|c: char| c.is_ascii_digit()))
+        || (value.ends_with(|c: char| c.is_ascii_digit())
+            && after.starts_with(char::is_whitespace)
+            && after.trim_start().starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the
@@ -9230,6 +9329,694 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("GB123456789", Category::Tax),
         ] {
             assert!(keeps(text, category), "{text:?}");
+        }
+    }
+
+    /// Money, including OCR-joined balance-sheet cells and fragments cut
+    /// at their decimal comma, is never TAX, BANK or PHONE (#547).
+    #[test]
+    fn money_and_its_fragments_are_no_identifiers() {
+        for (source, fragment) in [
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "0323 058 712"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "762,0323 058"),
+            ("Остаток: 4 588 762,0323 058 712,74 руб.", "4 588 762"),
+            ("Итого 12 345,67942838 306,12.", "942838 306"),
+            ("Итого 12 345,670321 448 312,74.", "0321 448 312"),
+            ("Бюджет: 164 353 783 тыс. руб.", "164 353 783"),
+            ("Бюджет: 12 345,05 8 443 789 778,00.", "05 8 443 789 778"),
+            ("Выплачено 135 130 руб. 86 коп.", "86"),
+            ("Выплачено 135 130 руб. 86 коп.", "135 130"),
+            ("Итого 714157,31.", "714157"),
+            ("Итого 23 707 750,02.", "23 707 750"),
+            ("Итого 2903,02.", "2903"),
+            ("Итого 714157.31.", "714157"),
+            ("Итого 23\u{a0}707\u{202f}750,02.", "23\u{a0}707\u{202f}750"),
+            ("Итого 23&nbsp;707&#32;750,02.", "23&nbsp;707&#32;750"),
+            ("Итого 164 353 783 млн рублей.", "164 353 783"),
+            ("Итого 164 353 783 €.", "164 353 783"),
+            ("Сумма, руб.: 164 353 783.", "164 353 783"),
+            ("The fund lost $350 billion.", "$350 billion"),
+            ("The fund lost $350 billion.", "350"),
+            ("The fund lost $11.2 billion a year.", "$11.2 billion"),
+            ("The fund lost $11.2 billion a year.", "11.2"),
+            ("The fund lost £350 million.", "350 million"),
+            ("The fund lost €350 million.", "350"),
+            ("The fund lost 350 billion dollars.", "350 billion"),
+            ("Tax ID: 999991111 received 350 billion.", "350 billion"),
+            ("Пени: ((0,06x159548,05) х2).", "06x159548"),
+            ("Пени: (0,05х199999,05) ×2.", "05х199999"),
+            ("Пени: (0,05*199999,05) *2.", "05*199999"),
+            (
+                "Взыскать 1 199999 (один миллион сто девяносто девять тысяч девятьсот девяносто девять) рублей.",
+                "1 199999",
+            ),
+            (
+                "Взыскать 1 129731 (один миллион сто двадцать девять тысяч семьсот тридцать один) рубль.",
+                "1 129731",
+            ),
+        ] {
+            for label in ["tax_id", "bank_account", "phone_number"] {
+                assert_eq!(
+                    shown(source, &[(fragment, label)]),
+                    [],
+                    "{source}: {label} {fragment}"
+                );
+            }
+        }
+        // A labelled identifier earlier in the sentence must not exempt
+        // a later amount; the context rule still proposes the account.
+        assert_eq!(
+            shown(
+                "Bank account: 12345678 funded 350 million.",
+                &[("350 million", "bank_account")]
+            ),
+            [("12345678".into(), "BANK".into())]
+        );
+    }
+
+    /// A column gap ends the amount's token group, even without a label (#547).
+    #[test]
+    fn amount_guards_keep_neighbouring_columns() {
+        assert_eq!(
+            shown(
+                "Account     Balance\n12345678    1000.00",
+                &[("12345678", "bank_account"), ("1000.00", "bank_account")]
+            ),
+            pairs(&[("12345678", "BANK")])
+        );
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (value, label, category) in [
+                ("12345678", "bank_account", "BANK"),
+                ("7709999999", "tax_id", "TAX"),
+                ("2025550199", "phone_number", "PHONE"),
+            ] {
+                for amount in [
+                    "1000.00",
+                    "714157,31",
+                    "350 dollars.",
+                    "$350",
+                    "350 (триста пятьдесят) рублей.",
+                ] {
+                    let source = format!("{value}{gap}{amount}");
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+                // A currency in the previous column is not this value's cue.
+                let source = format!("350 dollars{gap}{value}");
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    /// An identifier label exempts its own value, not the next column (#547).
+    #[test]
+    fn amount_label_exemptions_end_at_column_gaps() {
+        for gap in ["    ", "  ", "\t", "\u{a0}\u{a0}"] {
+            for (prefix, value, amount, fragment, label, category) in [
+                (
+                    "Bank account: ",
+                    "12345678",
+                    "350 dollars.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "ИНН ",
+                    "7709999999",
+                    "714157,31 руб.",
+                    "714157",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Tax ID: ",
+                    "999991111",
+                    "350 dollars.",
+                    "350",
+                    "tax_id",
+                    "TAX",
+                ),
+                (
+                    "Счёт: ",
+                    "12345678",
+                    "350 руб.",
+                    "350",
+                    "bank_account",
+                    "BANK",
+                ),
+                (
+                    "Phone: ",
+                    "2025550199",
+                    "350 dollars.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+                (
+                    "Телефон: ",
+                    "79990000123",
+                    "350 руб.",
+                    "350",
+                    "phone_number",
+                    "PHONE",
+                ),
+            ] {
+                let source = format!("{prefix}{value}{gap}{amount}");
+                assert_eq!(
+                    shown(&source, &[(value, label), (fragment, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+            // Twenty digits in separate columns do not make one bank account.
+            let source = format!("12345678{gap}123456789012 dollars.");
+            assert_eq!(
+                shown(
+                    &source,
+                    &[
+                        ("12345678", "bank_account"),
+                        ("123456789012", "bank_account")
+                    ]
+                ),
+                pairs(&[("12345678", "BANK")]),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// No amount cue means no reason to discard an identifier. Labels and
+    /// twenty-digit accounts win even with monetary context beside them.
+    #[test]
+    fn amount_guards_keep_identifiers_and_names() {
+        for (source, value, label, category) in [
+            // Single-space OCR columns must not join identifiers to money.
+            (
+                "Иванов И.И. 770912345678 15 000 руб.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ООО «Ромашка» 7709999999 1 000,00",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            ("Сумма 1 000,00 7709999999", "7709999999", "tax_id", "TAX"),
+            (
+                "Петров П.П. 8 916 123 45 67 1 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Карта 4276 3801 2345 6789 500 руб.",
+                "4276 3801 2345 6789",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Сумма 1 000,00 4081781009991000431",
+                "4081781009991000431",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Паспорт 4506 123456 01.02.2020",
+                "4506 123456",
+                "tax_id",
+                "TAX",
+            ),
+            ("770912345678 01.02.2020", "770912345678", "tax_id", "TAX"),
+            (
+                "Взыскать 500 руб. 7709999999",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Оплачено 500 руб. 8 916 123 45 67",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 0199 $500",
+                "202 555 0199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Call 020 7946 0958 £0.10",
+                "020 7946 0958",
+                "phone_number",
+                "PHONE",
+            ),
+            ("SSN 123 45 6789 $500", "123 45 6789", "tax_id", "TAX"),
+            ("UTR 12345 67890 £500", "12345 67890", "tax_id", "TAX"),
+            (
+                "IBAN DE89 3704 0044 0532 0130 00 € 500",
+                "3704 0044 0532 0130 00",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН/КПП 7709999999/770901001 500 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 8 916 123 45 67 500 руб.",
+                "8 916 123 45 67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 $500",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            // Working labels in the review remain working beside money.
+            (
+                "тел. 8 (495) 123-45-67 500 руб.",
+                "8 (495) 123-45-67",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Account No. 12 345 678 $500",
+                "12 345 678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "р/с 40702810900000004711 500 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone 202.555.0199 $500",
+                "202.555.0199",
+                "phone_number",
+                "PHONE",
+            ),
+            // Dates with a decimal-looking prefix are not amount evidence.
+            ("770912345678 01.02,2020", "770912345678", "tax_id", "TAX"),
+            // Written-out amounts have the same integer boundaries.
+            (
+                "770912345678 500 (пятьсот) рублей.",
+                "770912345678",
+                "tax_id",
+                "TAX",
+            ),
+            ("Номер: 164 353 783.", "164 353 783", "tax_id", "TAX"),
+            ("Номер: 942838 306.", "942838 306", "bank_account", "BANK"),
+            (
+                "Номер: 0321 448 312.",
+                "0321 448 312",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Номер: 1 199999 (основной) рублей не содержит.",
+                "1 199999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Счёт: 40702810900000004711 руб.",
+                "40702810900000004711",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "40702 810 9 0000 0004711 руб.",
+                "40702 810 9 0000 0004711",
+                "bank_account",
+                "BANK",
+            ),
+            ("ИНН 7709999999,02 руб.", "7709999999", "tax_id", "TAX"),
+            ("ОГРН 1199900000011 руб.", "1199900000011", "tax_id", "TAX"),
+            ("КПП 779901001 руб.", "779901001", "tax_id", "TAX"),
+            ("БИК 049999999 руб.", "049999999", "bank_account", "BANK"),
+            ("account: 12345.67.", "12345.67", "bank_account", "BANK"),
+            ("Счёт: 12345.67 руб.", "12345.67", "bank_account", "BANK"),
+            (
+                "Телефон: 79990000123 руб.",
+                "79990000123",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Phone: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Bank account: 12345678 dollars.",
+                "12345678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Tax ID: 999991111,02 dollars.",
+                "999991111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Tax ID: 999 991 111 dollars.",
+                "999 991 111",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Bank account: 1234 5678 dollars.",
+                "1234 5678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Phone: +1 (202) 555-0199 dollars.",
+                "+1 (202) 555-0199",
+                "phone_number",
+                "PHONE",
+            ),
+            ("ИНН 770 999 9999 руб.", "770 999 9999", "tax_id", "TAX"),
+            ("Счёт: 1234 5678 руб.", "1234 5678", "bank_account", "BANK"),
+            (
+                "Телефон: +7 (999) 555-01-23 руб.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "ИНН 7709999999; остаток 714157,31 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Остаток 714157,31 руб.; БИК 049999999.",
+                "049999999",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Остаток 714157,31 руб.; телефон +7 (999) 555-01-23.",
+                "+7 (999) 555-01-23",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "1 199999 рублей перечислены ООО «Кедровый бор».",
+                "ООО «Кедровый бор»",
+                "organization",
+                "ORG",
+            ),
+            (
+                "£350 million paid to Maren Quill.",
+                "Maren Quill",
+                "person",
+                "PERSON",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                [(value.into(), category.into())],
+                "{source}"
+            );
+        }
+    }
+
+    /// A total label cannot establish where an OCR column ends (#547, round 2 P1).
+    #[test]
+    fn amount_totals_keep_the_next_columns_identifiers() {
+        for gap in [" ", "  ", "\t"] {
+            for (header, value, label, category) in [
+                ("Сумма  КПП", "770 901 001", "tax_id", "TAX"),
+                ("Сумма  Routing", "021 000 021", "bank_account", "BANK"),
+            ] {
+                for source in [
+                    format!("{header}\nИтого 500{gap}{value}"),
+                    format!("Итого 500{gap}{value}"),
+                ] {
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Grouped identifiers cannot borrow a neighbour's amount cue (#547, round 2 P1).
+    #[test]
+    fn amount_guards_keep_grouped_identifiers_beside_money() {
+        for (value, label, category) in [
+            ("770 901 001", "tax_id", "TAX"),
+            ("1 199 900 000 011", "tax_id", "TAX"),
+            ("021 000 021", "bank_account", "BANK"),
+            ("202 555 019", "phone_number", "PHONE"),
+        ] {
+            for source in [
+                format!("{value} 500 руб."),
+                format!("500 руб. {value}"),
+                format!("$500 {value}"),
+                format!("{value} 500,00"),
+                format!("{value} 500.00"),
+                format!("{value} 500 (пятьсот) рублей."),
+                format!("{value} 500 €"),
+            ] {
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+        // The review's literal OCR rows have header labels on another line.
+        for (source, value) in [
+            (
+                "Организация  КПП  Сумма\nООО «Ромашка» 770 901 001 500 руб.",
+                "770 901 001",
+            ),
+            (
+                "Организация  ОГРН  Сумма\nООО «Ромашка» 1 199 900 000 011 500 руб.",
+                "1 199 900 000 011",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, "tax_id")]),
+                pairs(&[(value, "TAX")])
+            );
+        }
+    }
+
+    /// Multiword and slash-spaced labels protect only their values (#547, round 2 P2).
+    #[test]
+    fn amount_guards_keep_multiword_and_paired_labels() {
+        for (source, value, label, category) in [
+            (
+                "Routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Mobile number: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+            // Neither a later amount in prose nor another table column is exempt.
+            for separator in ["; paid ", "  ", "\t"] {
+                let source = format!("{source}{separator}714157,31");
+                assert_eq!(
+                    shown(&source, &[(value, label), ("714157", label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    /// Labels win even when the identifier itself has an amount's shape.
+    #[test]
+    fn amount_guards_keep_additional_labelled_values() {
+        for (source, value, label, category) in [
+            // Existing conservative account-label exception, acknowledged in review.
+            ("на счёт 500 руб.", "500", "bank_account", "BANK"),
+            (
+                "ИНН/КПП 7709999999/770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "моб. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "сот. 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "мобильный: 123 456 789 руб.",
+                "123 456 789",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Mobile: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Cell: 202 555 019 dollars.",
+                "202 555 019",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Routing 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            ("SSN 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("UTR 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+            ("Паспорт 4506 123456 руб.", "4506 123456", "tax_id", "TAX"),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Context searches stay local and preserve UTF-8 boundaries on long OCR lines.
+    #[test]
+    fn amount_guards_use_bounded_context() {
+        for (value, label, category) in [
+            ("7709999999", "tax_id", "TAX"),
+            ("12345678", "bank_account", "BANK"),
+            ("2025550199", "phone_number", "PHONE"),
+        ] {
+            let source = format!(
+                "{} {value} 500 руб. {}",
+                "ё ".repeat(1000),
+                "ё ".repeat(1000)
+            );
+            assert_eq!(
+                shown(&source, &[(value, label), ("500", label)]),
+                pairs(&[(value, category)])
+            );
+        }
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            # Distant context is insufficient to discard a possible identifier.
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['price: .*\d+ units']
+        "#,
+        )])
+        .unwrap();
+        let source = format!("price: {} 123 units", "ё ".repeat(1000));
+        let at = source.find("123").unwrap();
+        assert!(pack.identifying_at(&source, at..at + 3, "123", Category::Tax));
+    }
+
+    /// The contextual shape extension uses the pack's existing match
+    /// boundaries and validates its regexes just like span patterns.
+    #[test]
+    fn contextual_shapes_have_bounded_ranges_and_checked_patterns() {
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid_in = ['(?P<lead>price: )\d+(?P<tail> units)']
+        "#,
+        )])
+        .unwrap();
+        let source = "price: 123 units; 456";
+        assert!(!pack.identifying_at(source, 7..10, "123", Category::Tax));
+        assert!(pack.identifying_at(source, 18..21, "456", Category::Tax));
+        let pack = Pack::load(&[(
+            "test",
+            r#"
+            [[shape]]
+            category = "TAX"
+            forbid = ['^666$']
+            forbid_in = ['\d+ units']
+            unless_in = ['ID: \d+ units']
+        "#,
+        )])
+        .unwrap();
+        assert!(pack.identifying_at("ID: 123 units", 4..7, "123", Category::Tax));
+        assert!(!pack.identifying_at("ID: 666 units", 4..7, "666", Category::Tax));
+        for field in ["forbid_in", "unless_in"] {
+            for pattern in ["x*", "(", "(?P<unknown>x)"] {
+                let toml = format!("[[shape]]\ncategory = 'TAX'\n{field} = ['{pattern}']");
+                assert!(Pack::load(&[("test", &toml)]).is_err(), "{toml}");
+            }
         }
     }
 
