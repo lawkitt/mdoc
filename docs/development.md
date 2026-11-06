@@ -240,7 +240,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just android-core` | Windows, macOS or Linux: the Android core into `target/android` (`jniLibs/{arm64-v8a,x86_64}` with `libmdoc_ffi.so`, ONNX Runtime and PDFium; the Kotlin bindings; licences), built with the NDK's clang for API 31; fails on a library not aligned for 16 KB pages |
 | `just mobile [--ffi \| --ios]` | macOS: `--ffi`, `cargo check` of `mdoc-ffi` for iOS and Android, which `ci/macos` runs; `--ios`, the iOS job when the commit touches the core or ios area (`scripts/ci-areas.txt`; `MDOC_IOS_JOB=always` or `never` overrides): `just ios-app ios-test`, shutting down the Simulator it booted; `ci/ios (tests)` runs those recipes after the core, with a 40-minute limit. Neither: both |
 | `just local-ci [command]` | The retired local CI runner (ADR 0082): `uninstall` and `status` only matter now; the scripts go with CI redesign item 7 |
-| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
+| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.2 Simulator (Xcode 26.2) (`MDOC_IOS_TEST_WORKERS=<n>`: on n clones of it, as `ci/ios` does) |
 | `just ios-release` | macOS: the iOS core, then the app and extension in the Release configuration for the Simulator, unsigned, without tests: what an archive compiles; `ci/ios-release` runs it |
 | `just ios-device-test <udid>` | macOS: the device UI tests on a connected, unlocked iPhone on Wi-Fi: builds and installs mdoc, copies the fixtures into its container with `devicectl`, runs the review flow and the long-jobs test through the real background task, and fails on a new crash report; by hand before every TestFlight build after the first ([ADR 0088](adr/0088-ios-on-real-devices.md), [README](../apps/ios/README.md#device-ui-tests)) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
@@ -517,9 +517,12 @@ job saves. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
 --start`: it uses an installed runtime whose major.minor is
 `IOS_SIM_RUNTIME`, or downloads it (about 8 GB) in the background while
-the core builds; `--finish` waits for it. The `macos-26` image of
-2026-10-26 has iOS 26.2, 26.4 and 26.5 but not 26.1, so both jobs download
-it. `MDOC_IOS_TEST_WORKERS` in `ci-ios.yml` switches parallel testing on
+the core builds; `--finish` waits for it. The pins, Xcode 26.2 and iOS
+26.2, are ones the `macos-26` image ships (with its iPhone 17), so neither
+job downloads a runtime (#630); a pin the image lacks costs each job about
+8 GB and 4 minutes. A Mac that runs `just mobile --ios` needs the same
+Xcode 26.2 (`just doctor` checks it), with its iOS 26.2 platform.
+`MDOC_IOS_TEST_WORKERS` in `ci-ios.yml` switches parallel testing on
 (the number of Simulator clones); it is off, as 2 clones were slower and
 failed UI tests (#617).
 
