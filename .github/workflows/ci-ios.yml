@@ -125,8 +125,9 @@ jobs:
         with:
           cache-key: ios
 
-      # Xcode 26.1.1 finds no destination, generic or not, without an iOS
-      # 26.1 runtime, so this job readies one too, during the core's build.
+      # Xcode finds no Simulator destination, generic or not, without the
+      # pinned iOS runtime (scripts/tools.env), so this job readies it too;
+      # the image ships it, so that is a check, not a download.
       - run: scripts/ios-toolchain.sh --start >>"$GITHUB_ENV"
 
       # main's built core, as in the tests job; this job never saves it.

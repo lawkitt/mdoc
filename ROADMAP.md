@@ -199,10 +199,6 @@ Record: [CI redesign grill](docs/design/ci-redesign-grill-2026-11-02.md);
 items 8–15: [ADR 0100](docs/adr/0100-ci-reliability-after-the-cutover.md),
 [CI fixes grill](docs/design/ci-fixes-grill-2026-11-06.md).
 
-2. **[CI] The hosted Android job.** `ci-android.yml` on Ubuntu with KVM
-   (job `ci/android (hosted)`, 40 minutes), after Mobile CI/CD item 3, so
-   `merge-gate`'s Android fallback has a job to dispatch. *Done when:* a
-   queue drill with the PC off merges an Android change through it.
 7. **[CI] `main`, supply chain and upkeep.** The detection shards back to
    10 minutes once `main-caches.yml`'s caches make a warm shard fit; a
    nightly full run of every hosted job, the quarantined tier included,
