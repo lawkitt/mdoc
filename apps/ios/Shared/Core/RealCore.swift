@@ -158,6 +158,22 @@ private func core<T>(_ call: () throws -> T) throws -> T {
     }
 }
 
+/// A core call whose refusal (a blank title, the case the document is in
+/// already) the user reads in the core's words.
+private func refused<T>(_ call: () throws -> T) throws -> T {
+    do {
+        return try core(call)
+    } catch CoreError.importFailed(let message) {
+        throw CoreError.refused(message)
+    }
+}
+
+extension CaseSummary {
+    init(_ info: CaseInfo) {
+        self.init(id: CaseID(rawValue: info.id), name: info.name, colour: CaseColour(hue: info.hue))
+    }
+}
+
 /// Reports the core's job stages, and how far each is, to a `JobObserver`.
 private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
@@ -226,7 +242,7 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     func snapshot() -> LibrarySnapshot {
-        let cases = ffi.cases().cases.map { CaseSummary(id: CaseID(rawValue: $0.id), name: $0.name, colour: CaseColour(hue: $0.hue)) }
+        let cases = ffi.cases().cases.map(CaseSummary.init)
         let stored = (try? ffi.documents()) ?? []
         var documents: [DocumentSummary] = []
         var seen = Set<DocumentID>()
@@ -296,6 +312,41 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
         lock.withLock { _ = sessions.removeValue(forKey: document) }
         pending.remove(document)
+    }
+
+    func renameDocument(_ document: DocumentID, to title: String) throws {
+        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
+        let (old, new) = try session.rename(to: title)
+        // What this side keeps by the file follows it.
+        if let old, let new, old != new {
+            lock.withLock {
+                ids[old] = nil
+                ids[new] = session.id
+            }
+            originals.move(from: old, to: new)
+        }
+    }
+
+    func renameCase(_ caseID: CaseID, to name: String) throws {
+        _ = try refused { try ffi.renameCase(caseId: caseID.rawValue, name: name) }
+    }
+
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
+        guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
+        guard let path = session.path else {
+            throw CoreError.refused(String(localized: "Move the document once it is read."))
+        }
+        let moved = try refused {
+            switch target {
+            case .existing(let id): try ffi.moveDocument(path: path, caseId: id.rawValue)
+            case .newCase(let name): try ffi.moveDocumentToNewCase(path: path, name: name)
+            }
+        }
+        // Its text and case changed on disk: the session opens it again.
+        try session.reopen(path: path, original: originals.original(for: path))
+        return CaseMove(
+            document: document, to: CaseSummary(moved.case), from: moved.left.map { CaseID(rawValue: $0.id) },
+            fromDeleted: moved.leftDeleted)
     }
 
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {
@@ -409,6 +460,27 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             scanned = !opened.mentions.isEmpty
             self.original = original.0
             kind = original.1
+        }
+    }
+
+    /// Rename: the core renames the file and the session follows it,
+    /// keeping its review and history. Returns the path before and after.
+    fileprivate func rename(to title: String) throws -> (old: String?, new: String?) {
+        guard lock.withLock({ review != nil }) else {
+            throw CoreError.refused(String(localized: "Rename the document once it is read."))
+        }
+        let renamed = try refused { try ffi.renameDocument(library: library.ffi, title: title) }
+        let refreshed = try? ffi.snapshot()
+        return lock.withLock {
+            let old = path
+            if let new = renamed.path {
+                path = new
+            }
+            self.title = renamed.title
+            if let refreshed {
+                review = refreshed
+            }
+            return (old, path)
         }
     }
 
@@ -1009,6 +1081,16 @@ final class OriginalsIndex: @unchecked Sendable {
         case "pdf": return (urls.first.map(OriginalSource.pdf) ?? .none, .pdf)
         case "images": return (.images(urls), .scan)
         default: return (.none, .text)
+        }
+    }
+
+    /// A renamed document keeps its source files.
+    func move(from old: String, to new: String) {
+        lock.withLock {
+            var entries = load()
+            guard let entry = entries.removeValue(forKey: relative(old)) else { return }
+            entries[relative(new)] = entry
+            save(entries)
         }
     }
 

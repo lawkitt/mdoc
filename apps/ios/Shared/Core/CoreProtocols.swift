@@ -32,10 +32,35 @@ protocol Library: AnyObject, Sendable {
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
+    /// Rename: the document's title, as typed (its file follows, numbered
+    /// when another document has the title). A case holding only this
+    /// document and named after it is renamed with it. Refused for a blank
+    /// title, and for an import not read yet.
+    func renameDocument(_ document: DocumentID, to title: String) throws
+    /// Renames a case; its documents keep their titles.
+    func renameCase(_ caseID: CaseID, to name: String) throws
+    /// Move to case (ADR 0041 Joining): the document leaves its case and
+    /// joins `target`, its names taking that case's aliases (a name the case
+    /// knows takes its alias, a clashing alias the next free number). The
+    /// case it left keeps its names and the document's reply, so replies to
+    /// what was sent still restore with it; emptied, unshared and without a
+    /// reply, it is deleted. Refused for the case it is in already.
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove
 }
 
 extension Library {
     func saveDeferred() throws -> [DocumentID] { [] }
+    func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
+    func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
+
+    /// Undo of Move to case: the document moves back into the case it
+    /// left, recreated if the move deleted it, and its names take their old
+    /// aliases again; the reply kept there is the document's again.
+    func undoMove(_ move: CaseMove) throws -> CaseMove {
+        guard let from = move.from else { throw CoreError.noCase }
+        return try moveDocument(move.document, to: .existing(from))
+    }
 }
 
 /// One document's import, OCR, review and hand-off.

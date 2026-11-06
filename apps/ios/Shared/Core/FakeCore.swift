@@ -90,6 +90,9 @@ private struct FakeCase {
     var name: String
     var colour: CaseColour
     var identities: [FakeIdentity]
+    /// Replies of documents that moved to another case: they restore with
+    /// this one, and return when the document moves back.
+    var leftReplies: [DocumentID: String] = [:]
 }
 
 private struct FakeMention {
@@ -143,6 +146,12 @@ private final class FakeState: @unchecked Sendable {
     var cases: [FakeCase] = []
     var documents: [FakeDocument] = []
     var lastShared: DocumentID?
+    /// The case of the document shared last, as it was then: a move does
+    /// not change it, as in the core's `current-case.json`.
+    var sharedCase: CaseID?
+    /// Cases a move emptied and deleted, newest last: moving back into one
+    /// recreates it under a new id.
+    var deletedCases: [FakeCase] = []
     var models: [String: ModelState] = [:]
     private var counter = 0
 
@@ -207,6 +216,7 @@ private final class FakeState: @unchecked Sendable {
             }
         }
         lastShared = quotation.id
+        sharedCase = ellison
     }
 
     // MARK: Lookups
@@ -318,6 +328,78 @@ private final class FakeState: @unchecked Sendable {
             alias: alias ?? nextAlias(category, caseID: caseID))
         setIdentities(identities(of: caseID) + [identity], of: caseID)
         return identity
+    }
+
+    // MARK: Move to case
+
+    /// Move to case, as the core does it: a name the target case knows
+    /// takes its identity and alias, another keeps its alias unless the case
+    /// uses it (then the case's next free one). The case left keeps its
+    /// names and the document's reply; emptied, unshared and with no reply,
+    /// it is deleted, and moving back recreates it under a new id. The
+    /// document's history goes, as the real session opens it again.
+    func move(_ id: DocumentID, to target: CaseChoice) throws -> CaseMove {
+        guard let index = index(of: id) else { throw CoreError.notFound }
+        let from = documents[index].caseID
+        let targetID: CaseID
+        switch target {
+        case .newCase(let name):
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { throw CoreError.refused("A case needs a name.") }
+            targetID = CaseID(rawValue: nextID("case-"))
+            let colour = CaseColour.allCases[cases.count % CaseColour.allCases.count]
+            cases.append(FakeCase(id: targetID, name: name, colour: colour, identities: []))
+        case .existing(let existing):
+            if let deleted = deletedCases.firstIndex(where: { $0.id == existing }) {
+                let old = deletedCases.remove(at: deleted)
+                targetID = CaseID(rawValue: nextID("case-"))
+                cases.append(FakeCase(id: targetID, name: old.name, colour: old.colour, identities: old.identities))
+            } else {
+                guard caseIndex(of: existing) != nil else { throw CoreError.notFound }
+                guard existing != from else {
+                    throw CoreError.refused("This document is in that case already.")
+                }
+                targetID = existing
+            }
+        }
+        guard let targetIndex = caseIndex(of: targetID) else { throw CoreError.notFound }
+        let fromIdentities = identities(of: from)
+        var mapped: [IdentityID: IdentityID] = [:]
+        for mention in documents[index].mentions where mapped[mention.identityID] == nil {
+            guard let identity = fromIdentities.first(where: { $0.id == mention.identityID }) else { continue }
+            if let known = cases[targetIndex].identities.first(where: { !Set($0.variants).isDisjoint(with: identity.variants) }) {
+                mapped[identity.id] = known.id
+            } else {
+                let taken = cases[targetIndex].identities.contains { $0.alias == identity.alias }
+                let joined = FakeIdentity(
+                    id: IdentityID(rawValue: nextID("i")), category: identity.category, variants: identity.variants,
+                    alias: taken ? nextAlias(identity.category, caseID: targetID) : identity.alias,
+                    custom: identity.custom)
+                cases[targetIndex].identities.append(joined)
+                mapped[identity.id] = joined.id
+            }
+        }
+        for mention in documents[index].mentions.indices {
+            let identity = documents[index].mentions[mention].identityID
+            documents[index].mentions[mention].identityID = mapped[identity] ?? identity
+        }
+        documents[index].caseID = targetID
+        documents[index].updated = Date()
+        if let reply = documents[index].reply, let fromIndex = caseIndex(of: from) {
+            cases[fromIndex].leftReplies[id] = reply
+        }
+        documents[index].reply = cases[targetIndex].leftReplies.removeValue(forKey: id)
+        histories[id] = nil
+        let to = cases[targetIndex]
+        var fromDeleted = false
+        if let from, let fromIndex = caseIndex(of: from), !documents.contains(where: { $0.caseID == from }),
+           cases[fromIndex].leftReplies.isEmpty, sharedCase != from {
+            deletedCases.append(cases.remove(at: fromIndex))
+            fromDeleted = true
+        }
+        return CaseMove(
+            document: id, to: CaseSummary(id: to.id, name: to.name, colour: to.colour), from: from,
+            fromDeleted: fromDeleted)
     }
 
     /// Run `change` on document `id` as one undo step; it clears Redo.
@@ -545,7 +627,7 @@ private final class FakeLibrary: Library {
             LibrarySnapshot(
                 cases: state.cases.map { CaseSummary(id: $0.id, name: $0.name, colour: $0.colour) },
                 documents: state.documents.map(state.summary).sorted { $0.updated > $1.updated },
-                currentCase: state.lastShared.flatMap { id in state.documents.first { $0.id == id }?.caseID })
+                currentCase: state.sharedCase.flatMap { id in state.caseIndex(of: id).map { _ in id } })
         }
     }
 
@@ -605,8 +687,46 @@ private final class FakeLibrary: Library {
             state.documents.remove(at: index)
             if state.lastShared == document {
                 state.lastShared = nil
+                state.sharedCase = nil
             }
         }
+    }
+
+    func renameDocument(_ document: DocumentID, to title: String) throws {
+        try state.locked {
+            guard let index = state.index(of: document) else { throw CoreError.notFound }
+            let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { throw CoreError.refused("A document needs a title.") }
+            let old = state.documents[index].title
+            let caseID = state.documents[index].caseID
+            // Numbered when another document has the title, as its file is.
+            let taken = Set(state.documents.filter { $0.id != document }.map(\.title))
+            var renamed = title
+            var number = 2
+            while taken.contains(renamed) {
+                renamed = "\(title) \(number)"
+                number += 1
+            }
+            state.documents[index].title = renamed
+            state.documents[index].updated = Date()
+            if let caseIndex = state.caseIndex(of: caseID), state.cases[caseIndex].name == old,
+               state.documents.allSatisfy({ $0.caseID != caseID || $0.id == document }) {
+                state.cases[caseIndex].name = title
+            }
+        }
+    }
+
+    func renameCase(_ caseID: CaseID, to name: String) throws {
+        try state.locked {
+            guard let index = state.caseIndex(of: caseID) else { throw CoreError.notFound }
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { throw CoreError.refused("A case needs a name.") }
+            state.cases[index].name = name
+        }
+    }
+
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove {
+        try state.locked { try state.move(document, to: target) }
     }
 
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {
@@ -984,6 +1104,7 @@ private final class FakeSession: DocumentSession {
                 }
             }
             state.lastShared = id
+            state.sharedCase = state.documents.first { $0.id == id }?.caseID
             return HandOff(text: note + snapshot.markdown, fileName: fileName + ".md")
         }
     }
