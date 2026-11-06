@@ -240,6 +240,12 @@ struct ShapeEntry {
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
+    /// Evidence that this entry's veto does not describe the value: a
+    /// house number, or an explicit private-home naming cue before it.
+    #[serde(default)]
+    forbid_unless: Vec<String>,
+    #[serde(default)]
+    forbid_unless_after: Vec<String>,
     word: Option<String>,
     #[serde(default)]
     guess: Vec<String>,
@@ -276,6 +282,12 @@ struct SpanEntry {
     /// part of the match, not a span of its own. The parts work here too.
     #[serde(default)]
     absorbs: std::collections::BTreeMap<String, String>,
+    /// The last definite address component before a guessed town/recipient
+    /// tail. Names and contact fields after this component end the match.
+    #[serde(default)]
+    continuation_after: Option<String>,
+    #[serde(default)]
+    continuation_stop: Option<String>,
     #[serde(default)]
     trim: Vec<String>,
     /// ORG role trims need an explicit separator and an identifying remainder.
@@ -380,6 +392,8 @@ enum Span {
         /// where the match holds it: a building's name in an address is no
         /// company ("Harrow House" of "Harrow House, 12 Pellin Street").
         absorbs: Vec<(Category, Regex)>,
+        continuation_after: Option<Regex>,
+        continuation_stop: Option<Regex>,
     },
     Fix(SpanFix),
 }
@@ -841,13 +855,30 @@ impl Never {
 struct Shape {
     category: Category,
     require: Vec<Regex>,
-    forbid: Vec<Regex>,
+    forbid: Vec<Veto>,
     word: Option<Regex>,
     guess: Vec<Regex>,
     guess_words: Vec<String>,
     quotes: Vec<(char, char)>,
     quotes_after: Vec<String>,
     quotes_after_words: Vec<String>,
+}
+
+struct Veto {
+    patterns: Vec<Regex>,
+    unless: Vec<Regex>,
+    unless_after: Vec<Regex>,
+}
+
+impl Veto {
+    fn matches(&self, text: &str, before: &str) -> bool {
+        self.patterns.iter().any(|pattern| pattern.is_match(text))
+            && !self.unless.iter().any(|pattern| pattern.is_match(text))
+            && !self
+                .unless_after
+                .iter()
+                .any(|pattern| pattern.is_match(before))
+    }
 }
 
 impl Pack {
@@ -1110,7 +1141,18 @@ impl Pack {
                     return Err(at(format!("{word:?} is not one word")));
                 }
                 let require = compile_all(&entry.require, false)?;
-                let forbid = compile_all(&entry.forbid, false)?;
+                if entry.forbid.is_empty()
+                    && (!entry.forbid_unless.is_empty() || !entry.forbid_unless_after.is_empty())
+                {
+                    return Err(at(
+                        "forbid_unless and forbid_unless_after need forbid".into()
+                    ));
+                }
+                let forbid = Veto {
+                    patterns: compile_all(&entry.forbid, false)?,
+                    unless: compile_all(&entry.forbid_unless, false)?,
+                    unless_after: compile_all(&entry.forbid_unless_after, false)?,
+                };
                 let word = entry
                     .word
                     .as_deref()
@@ -1138,7 +1180,7 @@ impl Pack {
                     return Err(at(format!("a second word rule for {}", entry.category)));
                 }
                 shape.require.extend(require);
-                shape.forbid.extend(forbid);
+                shape.forbid.push(forbid);
                 shape.word = shape.word.take().or(word);
                 shape.guess.extend(guess);
                 shape.guess_words.extend(entry.guess_words);
@@ -1248,6 +1290,31 @@ impl Pack {
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
+                    let continuation_after = entry
+                        .continuation_after
+                        .as_ref()
+                        .map(|pattern| {
+                            let pattern = entry.parts.iter().fold(
+                                pattern.clone(),
+                                |pattern, (name, part)| {
+                                    pattern.replace(&format!("{{{name}}}"), &format!("(?:{part})"))
+                                },
+                            );
+                            Regex::new(&rust_classes(&pattern)).map_err(|e| e.to_string())
+                        })
+                        .transpose()
+                        .map_err(at)?;
+                    let continuation_stop = entry
+                        .continuation_stop
+                        .as_ref()
+                        .map(|pattern| {
+                            Regex::new(&rust_classes(pattern)).map_err(|e| e.to_string())
+                        })
+                        .transpose()
+                        .map_err(at)?;
+                    if continuation_stop.is_some() && continuation_after.is_none() {
+                        return Err(at("continuation_stop needs continuation_after".into()));
+                    }
                     let mut absorbs = Vec::new();
                     for (name, regex) in &entry.absorbs {
                         let absorbed = self::category(name).map_err(at)?;
@@ -1269,11 +1336,17 @@ impl Pack {
                         category,
                         pattern,
                         absorbs,
+                        continuation_after,
+                        continuation_stop,
                     });
                     continue;
                 }
-                if !entry.parts.is_empty() || !entry.absorbs.is_empty() {
-                    return Err(at("parts and absorbs need a pattern".into()));
+                if !entry.parts.is_empty()
+                    || !entry.absorbs.is_empty()
+                    || entry.continuation_after.is_some()
+                    || entry.continuation_stop.is_some()
+                {
+                    return Err(at("parts, absorbs and continuations need a pattern".into()));
                 }
                 if !fixes {
                     return Err(at(
@@ -1513,7 +1586,18 @@ impl Pack {
         named: &dyn Fn(&str) -> bool,
         titled: bool,
     ) -> bool {
-        self.shaped_named(text, category, named)
+        self.identifying_named_after(text, category, named, titled, "")
+    }
+
+    fn identifying_named_after(
+        &self,
+        text: &str,
+        category: Category,
+        named: &dyn Fn(&str) -> bool,
+        titled: bool,
+        before: &str,
+    ) -> bool {
+        self.shaped_named_after(text, category, named, before)
             && (category == Category::Person && self.role_person_name(text)
                 || !self.public_body(text, category, titled))
     }
@@ -1918,6 +2002,16 @@ impl Pack {
     /// `named` says which common words (lowercase) context makes a person's
     /// name.
     fn shaped_named(&self, text: &str, category: Category, named: &dyn Fn(&str) -> bool) -> bool {
+        self.shaped_named_after(text, category, named, "")
+    }
+
+    fn shaped_named_after(
+        &self,
+        text: &str,
+        category: Category,
+        named: &dyn Fn(&str) -> bool,
+        before: &str,
+    ) -> bool {
         let words = || {
             text.split_whitespace()
                 .map(bare)
@@ -1939,7 +2033,7 @@ impl Pack {
             return true;
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
-            && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
+            && !shape.forbid.iter().any(|veto| veto.matches(text, before))
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
                     || self.names(text, words().filter(|w| pattern.is_match(w)), named)
@@ -2159,7 +2253,7 @@ impl Pack {
                         d.category,
                         titled,
                     ))
-                && self.identifying_named(
+                && self.identifying_named_after(
                     text,
                     d.category,
                     &|word| {
@@ -2167,6 +2261,7 @@ impl Pack {
                             && (titled || name_cells.contains(&d.range) || named.contains(word))
                     },
                     titled,
+                    &view.text[..view.view_range(d.range.clone()).start],
                 )
                 && !field_code(source, d)
                 && !(d.category == Category::Organization
@@ -2573,7 +2668,14 @@ impl Pack {
         // "ООО «Судак»" grows to its legal form before a court's stem in it
         // could drop it. So do a person's common words, whose context the
         // fixes and the other spans settle ("Mr He", "Dawn French").
-        self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
+        let before = mdoc_pii::view::decoded(
+            source[..range.start]
+                .rsplit('\n')
+                .next()
+                .unwrap_or_default(),
+        );
+        self.shaped_named_after(text, category, &|_| category == Category::Person, &before)
+            && !quoted
     }
 
     /// Whether `range` of `source` lies inside a `reference` match, a legal
@@ -2877,35 +2979,106 @@ impl Pack {
 
     /// Whole spans the `span` patterns find in `source`: an address from
     /// its first element to its postcode or city (ADR 0092).
+    #[cfg(test)]
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
+        self.spans_beside(source, &[])
+    }
+
+    /// Matches beside existing evidence, all in view coordinates. Definite
+    /// street/building components may contain names; a guessed town tail
+    /// never consumes an independent PERSON/ORG or a contact field.
+    pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<Detection> {
         self.spans
             .iter()
             .filter_map(|span| match span {
                 Span::Pattern {
-                    category, pattern, ..
-                } => Some((*category, pattern)),
+                    category,
+                    pattern,
+                    continuation_after,
+                    continuation_stop,
+                    ..
+                } => Some((*category, pattern, continuation_after, continuation_stop)),
                 Span::Fix(_) => None,
             })
-            .flat_map(|(category, pattern)| {
-                span_ranges(pattern, source)
-                    .into_iter()
-                    // An address match before a colon ends in a field's
-                    // label ("12 Oak Road, Email: …"), not the address's
-                    // last part; a name before one is a speaker's ("ФИО1
-                    // А. Б.: …").
-                    .filter(move |range| {
-                        category != Category::Address
-                            || !source[range.end..]
-                                .trim_start_matches([' ', '\t'])
-                                .starts_with(':')
-                    })
-                    .map(move |range| Detection {
-                        range,
-                        category,
-                        score: CONTEXT_SCORE,
-                        recognizer: Recognizer::Span,
-                    })
-            })
+            .flat_map(
+                |(category, pattern, continuation_after, continuation_stop)| {
+                    span_ranges(pattern, source)
+                        .into_iter()
+                        .map(move |mut range| {
+                            if let Some(core) = continuation_after
+                                .as_ref()
+                                .and_then(|pattern| pattern.find(&source[range.clone()]))
+                            {
+                                let tail = range.start + core.end();
+                                // A name crossing the definite component's
+                                // edge ("Broadway Show") invalidates the
+                                // guessed street; never cut it to a fragment.
+                                if names.iter().any(|name| {
+                                    matches!(
+                                        name.category,
+                                        Category::Person | Category::Organization
+                                    ) && name.range.start < tail
+                                        && tail < name.range.end
+                                        && range.start < name.range.end
+                                }) {
+                                    range.end = range.start;
+                                    return range;
+                                }
+                                let name = names
+                                    .iter()
+                                    .filter(|name| {
+                                        matches!(
+                                            name.category,
+                                            Category::Person | Category::Organization
+                                        ) && tail <= name.range.start
+                                            && name.range.start < range.end
+                                    })
+                                    .map(|name| name.range.start)
+                                    .min();
+                                let field = continuation_stop
+                                    .as_ref()
+                                    .and_then(|pattern| pattern.find(&source[tail..range.end]))
+                                    .map(|field| tail + field.start());
+                                if let Some(end) = name.into_iter().chain(field).min() {
+                                    range.end = range.start
+                                        + source[range.start..end]
+                                            .trim_end_matches(|c: char| {
+                                                c.is_whitespace() || [',', ';', ':'].contains(&c)
+                                            })
+                                            .len();
+                                    // Cutting before a recipient must not
+                                    // promote a bare street ("Broadway").
+                                    if !self.shaped_named_after(
+                                        &source[range.clone()],
+                                        category,
+                                        &|_| false,
+                                        &source[..range.start],
+                                    ) {
+                                        range.end = range.start;
+                                    }
+                                }
+                            }
+                            range
+                        })
+                        // An address match before a colon ends in a field's
+                        // label ("12 Oak Road, Email: …"), not the address's
+                        // last part; a name before one is a speaker's ("ФИО1
+                        // А. Б.: …").
+                        .filter(move |range| {
+                            !range.is_empty()
+                                && (category != Category::Address
+                                    || !source[range.end..]
+                                        .trim_start_matches([' ', '\t'])
+                                        .starts_with(':'))
+                        })
+                        .map(move |range| Detection {
+                            range,
+                            category,
+                            score: CONTEXT_SCORE,
+                            recognizer: Recognizer::Span,
+                        })
+                },
+            )
             .collect()
     }
 
@@ -6318,11 +6491,11 @@ Privacy Act (“BIPA”). BIPA applies.",
                 &[("Harrow House", "ORG")],
             ),
             // A number after the match is none of it (review of #508): the
-            // pattern's "12 Oak Road, Chatham House" gives way as before.
+            // pattern ends before Chatham House and keeps the street.
             (
                 "Lives at 12 Oak Road, Chatham House, 12 March 2026.\n",
                 &[("Chatham House", "organization")],
-                &[("Chatham House", "ORG")],
+                &[("12 Oak Road", "ADDRESS"), ("Chatham House", "ORG")],
             ),
             // An address the review turns down (text after its town on its
             // last line) leaves the company standing (review of #508).
@@ -6376,7 +6549,10 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "Deliver to 12 Oak Road, John Smith will collect it.",
                 &[("John Smith", "person")]
             ),
-            [("John Smith".to_owned(), "PERSON".to_owned())]
+            [
+                ("12 Oak Road".to_owned(), "ADDRESS".to_owned()),
+                ("John Smith".to_owned(), "PERSON".to_owned())
+            ]
         );
         // Nor is a match cut down to its house number by a span over its
         // street, which would propose the number and its repeats.
@@ -6436,7 +6612,7 @@ Privacy Act (“BIPA”). BIPA applies.",
             .into_iter()
             .filter(|(_, category)| category == "ADDRESS")
             .count(),
-            0
+            1
         );
         // A model name inside the address is the street's: the address stays.
         assert_eq!(

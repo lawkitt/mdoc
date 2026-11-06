@@ -1105,6 +1105,10 @@ parts.town = '(?:(?:St|Ft|Mt)\.?[\p{Zs}\t]+)?\p{Uppercase}[\p{Ll}\d][\p{Alphabet
 parts.caps_town = '\b\p{Uppercase}{2,}(?:[\p{Zs}\t]+\p{Uppercase}{2,}){0,2}\b'
 parts.postcode = '\b(?:[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2}|(?:[A-Z]{2}|[A-Z]\.[A-Z]\.|(?i:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new[\p{Zs}\t]+hampshire|new[\p{Zs}\t]+jersey|new[\p{Zs}\t]+mexico|new[\p{Zs}\t]+york|north[\p{Zs}\t]+carolina|north[\p{Zs}\t]+dakota|ohio|oklahoma|oregon|pennsylvania|rhode[\p{Zs}\t]+island|south[\p{Zs}\t]+carolina|south[\p{Zs}\t]+dakota|tennessee|texas|utah|vermont|virginia|washington|west[\p{Zs}\t]+virginia|wisconsin|wyoming|district[\p{Zs}\t]+of[\p{Zs}\t]+columbia))(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{5}(?:-\d{4})?)\b'
 absorbs.ORG = '(?P<span>{building})(?:{sep}|{nl})(?:{flat}(?:{sep}|{nl})){0,3}\d'
+# The street/units or box are definite components; the guessed town after
+# them is not allowed to absorb a model name or an attention/contact field.
+continuation_after = '{street}(?:(?:{sep}|{nl}|[\p{Zs}\t]+|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}){0,3}(?:(?:{sep}|{nl}|:[\p{Zs}\t]*|[\p{Zs}\t]+){box})?|\b\d+[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}\x27’-]*(?:{sep}|[\p{Zs}\t]*-[\p{Zs}\t]*){flat}|{box}|{named}'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
 
 # A UK flat's "24, Pellin Court, Harrow Place, Worcester" has two
 # street parts before its town (#498). The comma after the number is
@@ -1112,6 +1116,9 @@ absorbs.ORG = '(?P<span>{building})(?:{sep}|{nl})(?:{flat}(?:{sep}|{nl})){0,3}\d
 [[span]]
 category = "ADDRESS"
 pattern = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+[A-Z][a-z\x27’-]+(?:[\p{Zs}\t]+[A-Z][a-z\x27’-]+){0,2}(?:[\p{Zs}\t]+[A-Z]{1,2}\d[A-Z\d]?[\p{Zs}\t]?\d[A-Z]{2})?\b'
+# The town after the two street components still cannot take a recipient.
+continuation_after = '\b\d+[A-Za-z]?,[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street),[\p{Zs}\t]+(?:[A-Z][a-z\x27’-]*[\p{Zs}\t]+){1,3}(?:Court|Place|Road|Street)\b'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
 
 # A corner needs its city AND ZIP (#553 item 3). A bare pair of street
 # names cannot match. Keep the alphabet and suffixes bounded to these
@@ -1127,13 +1134,21 @@ parts.street = '(?:(?:[A-Z][a-z\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?
 [[span]]
 category = "ADDRESS"
 pattern = '(?i:а/я)[\p{Zs}\t]*\d+[\p{Zs}\t]*,[\p{Zs}\t]*(?:\d{6}[\p{Zs}\t]*,[\p{Zs}\t]*)?(?:г\.[\p{Zs}\t]*)?[А-ЯЁ][а-яё]+(?:[- ][А-ЯЁ][а-яё]+){0,2}(?:[\p{Zs}\t]*,[\p{Zs}\t]*\d{6})?\b'
+# Cyrillic city words are guesses too: a detected recipient ends the box
+# address before the name, even when an index follows it.
+continuation_after = '(?i:а/я)[\p{Zs}\t]*\d+\b'
+continuation_stop = '\b(?i:attn|attention|c/o|contact|email|e-mail|phone|telephone|tel|fax)\b'
 
 # Bare street names and bare corners are unmarked, including a model's
 # ADDRESS guess (#553 item 3). A numeric house number, unit, city or postcode
 # prevents this whole-value veto; numbered ordinals can name streets.
+# Spelled-out house numbers are house numbers too. An explicit private-home
+# naming cue distinguishes a house from a bare street (#553 item 2).
 [[shape]]
 category = "ADDRESS"
 forbid = ['^[\s\p{P}]*(?:(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?)(?:[\p{Zs}\t]+and[\p{Zs}\t]+(?:(?:\p{Uppercase}[\p{Alphabetic}\x27’-]*|\d+(?:st|nd|rd|th))[\p{Zs}\t]+){1,3}(?i:road|street|avenue|lane|drive|court|place|boulevard|rd\.?|st\.?|ave\.?|ln\.?|dr\.?|ct\.?|pl\.?|blvd\.?))?|Strand|Aldwych|Broadway|Kingsway|Piccadilly|Haymarket)[\s\p{P}]*$']
+forbid_unless = ['^[\s\p{P}]*(?i:one|two|three|four|five|six|seven|eight|nine|ten)[\p{Zs}\t]+']
+forbid_unless_after = ['(?i)\b(?:home|house|residence|cottage|chalet)[\p{Zs}\t]+(?:(?:is|was)[\p{Zs}\t]+)?(?:called|named)[\p{Zs}\t]+["“‘*_]*\z']
 
 # A country or the word "address" at the edge of a model's address is no
 # part of it: "… OX2 0EL\nUK" ends at the postcode, "… Street address" at
