@@ -1360,16 +1360,16 @@ unless_in = ['(?i:\b(?:tax id|tin|ein|inn|vat|ssn|utr)\b)[\p{Zs}\t:*_№.#]{1,8}
 
 # A labelled BANK value stays beside money; only contextual amount
 # guards are bypassed, never the category's ordinary shape checks.
-# Routing and ABA labels identify bank values too.
+# Routing, ABA routing and their optional "number" suffix identify bank values too.
 # A tab or two spaces ends the labelled value at the next column.
 [[shape]]
 category = "BANK"
-unless_in = ['(?i:\b(?:bank account|account number|account no|account|sort code|iban|acct|a/c|routing|aba)\b)[\p{Zs}\t:*_№.#]{1,8}(?:[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d[\d/-]*(?:\p{Zs}[\d/-]+)*(?:[,.]\d+)?)\b']
+unless_in = ['(?i:\b(?:bank account|account number|account no|account|sort code|iban|acct|a/c|(?:aba\p{Zs})?routing(?:\p{Zs}number)?|aba)\b)[\p{Zs}\t:*_№.#]{1,8}(?:[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d[\d/-]*(?:\p{Zs}[\d/-]+)*(?:[,.]\d+)?)\b']
 
 # A labelled PHONE value stays beside money; only contextual amount
 # guards are bypassed, never the category's ordinary shape checks.
-# Mobile and cell labels identify phone values too.
+# Mobile and cell labels identify phone values too, with an optional "number".
 # A tab or two spaces ends the labelled value at the next column.
 [[shape]]
 category = "PHONE"
-unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell)\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']
+unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell)(?:\p{Zs}number)?\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']

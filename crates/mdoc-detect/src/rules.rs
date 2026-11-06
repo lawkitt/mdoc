@@ -2557,7 +2557,14 @@ impl Pack {
                     .into_iter()
                     .any(|found| found.start <= span.start && span.end <= found.end)
             };
-            if shape.forbid_in.iter().any(inside) && !shape.unless_in.iter().any(inside) {
+            let forbidden = |pattern: &Regex| {
+                span_ranges(pattern, &view.text).into_iter().any(|found| {
+                    found.start <= span.start
+                        && span.end <= found.end
+                        && !joins_numeric_fields(&view.text, found, span.clone())
+                })
+            };
+            if shape.forbid_in.iter().any(forbidden) && !shape.unless_in.iter().any(inside) {
                 return false;
             }
         }
@@ -3120,6 +3127,42 @@ fn unquoted(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A contextual rejection must not join a candidate's digit groups to a
+/// neighbouring numeric field through whitespace alone. A decimal touching
+/// the candidate still connects an amount's fragments, including OCR-joined
+/// decimals ("762,0323 058"), but "770 901 001 500,00" does not make the
+/// first three groups money. Ambiguous columns keep the possible identifier.
+fn joins_numeric_fields(
+    source: &str,
+    found: std::ops::Range<usize>,
+    span: std::ops::Range<usize>,
+) -> bool {
+    let value = &source[span.clone()];
+    let before = &source[found.start..span.start];
+    let after = &source[span.end..found.end];
+    // Include two characters on either side so a decimal separator just
+    // outside the model span counts, without reading beyond this match.
+    let start = span.start
+        - before
+            .chars()
+            .rev()
+            .take(2)
+            .map(char::len_utf8)
+            .sum::<usize>();
+    let end = span.end + after.chars().take(2).map(char::len_utf8).sum::<usize>();
+    if source.as_bytes()[start..end].windows(3).any(|part| {
+        part[0].is_ascii_digit() && matches!(part[1], b',' | b'.') && part[2].is_ascii_digit()
+    }) {
+        return false;
+    }
+    (value.starts_with(|c: char| c.is_ascii_digit())
+        && before.ends_with(char::is_whitespace)
+        && before.trim_end().ends_with(|c: char| c.is_ascii_digit()))
+        || (value.ends_with(|c: char| c.is_ascii_digit())
+            && after.starts_with(char::is_whitespace)
+            && after.trim_start().starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// A span pattern's matches without their `lead` and `tail` groups, the
@@ -9724,10 +9767,129 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         }
     }
 
+    /// A total label cannot establish where an OCR column ends (#547, round 2 P1).
+    #[test]
+    fn amount_totals_keep_the_next_columns_identifiers() {
+        for gap in [" ", "  ", "\t"] {
+            for (header, value, label, category) in [
+                ("Сумма  КПП", "770 901 001", "tax_id", "TAX"),
+                ("Сумма  Routing", "021 000 021", "bank_account", "BANK"),
+            ] {
+                for source in [
+                    format!("{header}\nИтого 500{gap}{value}"),
+                    format!("Итого 500{gap}{value}"),
+                ] {
+                    assert_eq!(
+                        shown(&source, &[(value, label)]),
+                        pairs(&[(value, category)]),
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Grouped identifiers cannot borrow a neighbour's amount cue (#547, round 2 P1).
+    #[test]
+    fn amount_guards_keep_grouped_identifiers_beside_money() {
+        for (value, label, category) in [
+            ("770 901 001", "tax_id", "TAX"),
+            ("1 199 900 000 011", "tax_id", "TAX"),
+            ("021 000 021", "bank_account", "BANK"),
+            ("202 555 019", "phone_number", "PHONE"),
+        ] {
+            for source in [
+                format!("{value} 500 руб."),
+                format!("500 руб. {value}"),
+                format!("$500 {value}"),
+                format!("{value} 500,00"),
+                format!("{value} 500.00"),
+                format!("{value} 500 (пятьсот) рублей."),
+                format!("{value} 500 €"),
+            ] {
+                assert_eq!(
+                    shown(&source, &[(value, label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+        // The review's literal OCR rows have header labels on another line.
+        for (source, value) in [
+            (
+                "Организация  КПП  Сумма\nООО «Ромашка» 770 901 001 500 руб.",
+                "770 901 001",
+            ),
+            (
+                "Организация  ОГРН  Сумма\nООО «Ромашка» 1 199 900 000 011 500 руб.",
+                "1 199 900 000 011",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, "tax_id")]),
+                pairs(&[(value, "TAX")])
+            );
+        }
+    }
+
+    /// Multiword and slash-spaced labels protect only their values (#547, round 2 P2).
+    #[test]
+    fn amount_guards_keep_multiword_and_paired_labels() {
+        for (source, value, label, category) in [
+            (
+                "Routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "ABA routing number: 021000021 dollars.",
+                "021000021",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Mobile number: 2025550199 dollars.",
+                "2025550199",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "ИНН / КПП 7709999999 / 770901001 руб.",
+                "7709999999",
+                "tax_id",
+                "TAX",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{source}"
+            );
+            // Neither a later amount in prose nor another table column is exempt.
+            for separator in ["; paid ", "  ", "\t"] {
+                let source = format!("{source}{separator}714157,31");
+                assert_eq!(
+                    shown(&source, &[(value, label), ("714157", label)]),
+                    pairs(&[(value, category)]),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
     /// Labels win even when the identifier itself has an amount's shape.
     #[test]
     fn amount_guards_keep_additional_labelled_values() {
         for (source, value, label, category) in [
+            // Existing conservative account-label exception, acknowledged in review.
+            ("на счёт 500 руб.", "500", "bank_account", "BANK"),
             (
                 "ИНН/КПП 7709999999/770901001 руб.",
                 "770901001",

@@ -142,7 +142,9 @@
 #                       context outside the forbidden range, as for `span`.
 #                       Read through the same view as detection; labelled
 #                       values and structured rules still win. No empty
-#                       match or other named group is allowed.
+#                       match or other named group is allowed. Numeric fields
+#                       joined only by whitespace outside the candidate do
+#                       not justify rejection; a decimal touching it does.
 #   unless_in = [regex…] a span inside one of these matches is exempt only
 #                       from `forbid_in` (a labelled identifier or account);
 #                       the other shape checks still apply. Same syntax.
@@ -200,9 +202,10 @@ guess = [
 # Numeric groups and their cues use at most one space, never a tab: a
 # column gap (two or more spaces or a tab) starts a neighbouring field.
 # A space-grouped integer without an amount cue stays: it might identify
-# someone. Integer groups contain three digits, so a neighbouring identifier
-# cannot become another group. Comma decimals have two digits, except for
-# the explicit OCR-join form ("762,0323 058 712,74"). Currency symbols are
+# someone. Grouping alone cannot distinguish a neighbouring identifier
+# from another amount group: contextual rejection must not cross a numeric
+# field outside the candidate through whitespace alone. Comma decimals have
+# two digits, except for the explicit OCR-join form ("762,0323 058 712,74"). Currency symbols are
 # prefixes; a currency word before a bare integer needs a colon.
 # Dot decimals exclude dates: `tail` implements `(?![.,]\d)` without
 # look-around, which the regex engine does not support.
@@ -214,14 +217,20 @@ guess = [
 [[shape]]
 category = "PHONE"
 forbid_in = [
+    # Decimal comma and OCR-joined decimal cells, including fragments.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    # Dot decimals with a bounded tail, so dates do not qualify.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    # Currency before a value needs a colon or decimals, never bare grouping.
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))\b',
+    # A currency symbol prefixes its own numeric field.
     '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    # A trailing currency symbol identifies this field without a total label.
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?[$£€]',
+    # A currency or scale word follows its own numeric field.
     '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    # Decimal arithmetic is no identifier.
     '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
-    # An explicit total label identifies a grouped amount without a symbol suffix.
-    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}{16,}', '^\s*04\d{7}\s*$']
@@ -299,14 +308,20 @@ require = ['\p{N}']
 [[shape]]
 category = "TAX"
 forbid_in = [
+    # Decimal comma and OCR-joined decimal cells, including fragments.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    # Dot decimals with a bounded tail, so dates do not qualify.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    # Currency before a value needs a colon or decimals, never bare grouping.
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))\b',
+    # A currency symbol prefixes its own numeric field.
     '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    # A trailing currency symbol identifies this field without a total label.
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?[$£€]',
+    # A currency or scale word follows its own numeric field.
     '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    # Decimal arithmetic is no identifier.
     '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
-    # An explicit total label identifies a grouped amount without a symbol suffix.
-    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
@@ -323,14 +338,20 @@ category = "BANK"
 # money. Keep that evidence over the surrounding amount cues.
 unless_in = ['\b\d(?:\p{Zs}?\d){19}\b']
 forbid_in = [
+    # Decimal comma and OCR-joined decimal cells, including fragments.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}(?:\p{Zs}(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2})*\b',
+    # Dot decimals with a bounded tail, so dates do not qualify.
     '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)\.\d{2}\b(?P<tail>(?:[.,](?:\D|$)|[^.,\d]|$))',
-    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\d+(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+)))\b',
+    # Currency before a value needs a colon or decimals, never bare grouping.
+    '(?i)\b(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?)\b\.?(?:\p{Zs}?:\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?|\p{Zs}?(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))\b',
+    # A currency symbol prefixes its own numeric field.
     '(?i)[$£€]\p{Zs}?\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?(?:\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?)?',
+    # A trailing currency symbol identifies this field without a total label.
+    '\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?[$£€]',
+    # A currency or scale word follows its own numeric field.
     '(?i)\b(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)(?:(?:(?:,\d+(?:\p{Zs}\d{3})*)?,\d{2}|\.\d+))?\p{Zs}?(?:руб(?:л[а-яё]*)?|коп(?:е[а-яё]*)?|тыс|млн|млрд|dollars?|pounds?|euros?|thousand|million|billion|trillion)\b\.?',
+    # Decimal arithmetic is no identifier.
     '(?i)\b\d+[,.]\d+(?:\p{Zs}?[xх×*]\p{Zs}?\d+(?:[,.]\d+)?)+\b',
-    # An explicit total label identifies a grouped amount without a symbol suffix.
-    '(?P<lead>(?i:\bитого)\p{Zs})\d{1,3}(?:\p{Zs}\d{3})+\b',
 ]
 require = ['\p{N}']
 forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']
