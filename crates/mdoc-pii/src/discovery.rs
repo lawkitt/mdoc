@@ -34,6 +34,8 @@ pub struct DiscoveryInput {
     /// Dates of birth: a mention counts only after one of its cue words
     /// ([`cue_before`]); `None` counts every mention.
     pub(super) cues: Vec<Option<Vec<String>>>,
+    /// Exact scan locations for short bare numbers; never spread these.
+    pub(super) locations: Vec<Option<Vec<Range<usize>>>>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -166,6 +168,9 @@ impl DiscoveryInput {
         };
         hits.retain(|(index, range)| {
             self.enabled[*index]
+                && self.locations[*index]
+                    .as_ref()
+                    .is_none_or(|locations| locations.contains(range))
                 && !self.excluded.contains(&(range.start, range.end))
                 && exact_boundary(source, range, &self.originals[*index])
                 && (source[range.clone()] == *self.originals[*index] || !glued(source, range))
@@ -396,6 +401,17 @@ pub(crate) fn whole_value(source: &str, range: &Range<usize>) -> bool {
     let before = near(source[..range.start].trim_end(), false);
     !AFTER.iter().any(|unit| after.starts_with(unit))
         && !BEFORE.iter().any(|unit| before.ends_with(unit))
+}
+
+/// A bare number below five digits, including view-decoded/grouped digits.
+/// Punctuation used to format a number does not make it a name or code.
+pub(super) fn short_number(text: &str) -> bool {
+    let text = crate::view::wording(text);
+    let digits = text.chars().filter(|c| c.is_numeric()).count();
+    (1..5).contains(&digits)
+        && text
+            .chars()
+            .all(|c| c.is_numeric() || c.is_whitespace() || "+()-.,".contains(c))
 }
 
 #[cfg(test)]

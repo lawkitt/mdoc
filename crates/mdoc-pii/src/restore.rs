@@ -761,6 +761,7 @@ impl Review {
                     recognizer: None,
                     mid_sentence: false,
                     cues: None,
+                    locations: None,
                     managed: false,
                     own: None,
                     surname: false,

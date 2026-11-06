@@ -978,7 +978,7 @@ category = "PHONE"
 # A value after its identifier label (including passport) wins over amount
 # cues. Mobile labels count too.
 # A tab or two spaces ends the labelled value at the next column.
-unless_in = ['(?i)\b(?:телефон|тел|факс|моб|сот|мобильный|паспорт)\b[\p{Zs}\t:*_№.]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']
+unless_in = ['(?i)\b(?:телефон|тел|факс|моб|сот|мобильный|паспорт)\b[\p{Zs}\t:*_№.]{1,8}\+?\d[\d().–-]*(?:\p{Zs}[\d().–-]+)*']
 forbid_in = [
     '(?i)\b(?:(?:\d{1,3}(?:\p{Zs}\d{3})+|\d+)|\d{1,3}\p{Zs}\d{6})\p{Zs}?\((?:один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяча|миллион)\b[^()\n]{0,240}\)\p{Zs}?руб(?:л[а-яё]*)?\b\.?',
 ]
@@ -993,3 +993,32 @@ forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']
 [[shape]]
 category = "ORG"
 forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']
+
+
+# A contract, project, notice, protocol or order number belongs to a record,
+# not a bank, phone or tax field (#375, guide rules 6/8). Only the listed
+# connecting words may precede the number sign; a later INN/phone/account
+# label cannot be swallowed. Lists share the same explicit number label.
+# Administrative-offence protocol CASE proposals belong to #364 (#484 item 7).
+[[reference]]
+pattern = '(?i)(?P<lead>\b(?:договор(?:а|у|ом|е|ы|ов|ам|ами|ах)?|проект(?:а|у|ом|е|ы|ов|ам|ами|ах)?|сообщени[еяюи]|объявлени[еяюи]|протокол(?:а|у|ом|е|ы|ов|ам|ами|ах)?|ордер(?:а|у|ом|е|ы|ов|ам|ами|ах)?)(?:[\p{Zs}\t]+(?:об|о|ипотеке|залоге|административном|правонарушении|от|\d{1,2}\.\d{1,2}\.\d{2,4})){0,6}[\p{Zs}\t]*№{1,2}[\p{Zs}\t]*){number}(?:[\p{Zs}\t]*,[\p{Zs}\t]*{number})*'
+parts.number = '\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
+
+# A licence's own number and a deposit certificate's number are records
+# (#375). A personal professional certificate ("удостоверение") stays
+# IDENTITY; only the specified certificate wording is suppressed here.
+[[reference]]
+pattern = '(?i)(?P<lead>\b(?:лицензи[яиюей]{1,2}[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?|свидетельств(?:о|а|у|ом|е)[\p{Zs}\t]+о[\p{Zs}\t]+депонировании[\p{Zs}\t]+произведения[\p{Zs}\t]*№[\p{Zs}\t]*))\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
+
+# The ERKNM inspection record identifies a record, no account (#375).
+# The register's name is required, so an ordinary "учетный номер" stays.
+[[reference]]
+pattern = '(?i)(?P<lead>\bуч[её]тный[\p{Zs}\t]+номер[\p{Zs}\t]+в[\p{Zs}\t]+ЕРКНМ[\p{Zs}\t:№]*)\d+'
+
+# Six digits before a redacted address or an explicitly introduced city
+# are a postcode, no PHONE (#375). A few unprefixed city names are certain;
+# arbitrary capitalized words may instead follow a real local phone.
+# The #547 phone-label exceptions still win.
+[[shape]]
+category = "PHONE"
+forbid_in = ['\b\d{6}\b(?P<tail>,?[\p{Zs}\t]+(?:<\.\.\.|<…|г\.[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}-]*|Москва\b|Санкт-Петербург\b|Энск\b))']

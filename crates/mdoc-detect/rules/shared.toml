@@ -135,6 +135,10 @@
 # may have the word inside ("Ministry of Colleges and Universities").
 #
 # A `shape` entry has any of:
+#   min_digits = n     minimum digits across all groups of a model value
+#   letters_at_most_digits = true  no more letters than digits (BANK)
+#                      `unless_in` exempts these counts too, for labels.
+#   forbid_unlabelled = [regex...]  candidate-level vetoes exempted by unless_in
 #   require = [regex…]  a model span must match each one somewhere
 #   forbid  = [regex…]  a model span must match none
 #   forbid_in = [regex…] a model span inside a match in its surrounding
@@ -146,7 +150,8 @@
 #                       joined only by whitespace outside the candidate do
 #                       not justify rejection; a decimal touching it does.
 #   unless_in = [regex…] a span inside one of these matches is exempt only
-#                       from `forbid_in` (a labelled identifier or account);
+#                       from `forbid_in`, `forbid_unlabelled` and digit/letter
+#                       counts (a labelled value);
 #                       the other shape checks still apply. Same syntax.
 #   word    = regex     some word of a model span (trimmed of punctuation
 #                       other than `-`) must match it and not be a `never`
@@ -179,8 +184,7 @@ span = []
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
 variants = []
 
-# References are per language.
-reference = []
+# Drawing expressions shared by both languages are below.
 
 # No language-free never words.
 never = []
@@ -210,7 +214,7 @@ guess = [
 # Dot decimals exclude dates: `tail` implements `(?![.,]\d)` without
 # look-around, which the regex engine does not support.
 # Twenty-digit bank accounts and labelled values are exempt and always win.
-# Phones: a model span needs a digit; a manual selection of at least seven
+# Phones: an unlabelled model span needs five digits; a manual selection of at least seven
 # digits with only spaces, `+`, brackets and dashes between is a phone. No
 # phone number has 16 digits in a row (E.164 allows 15), and a bare nine-digit
 # number starting 04 is a Russian bank code (БИК), not a phone.
@@ -326,7 +330,7 @@ forbid_in = [
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
 
-# Bank details need a digit and no `/` beside a digit: case and claim
+# Bank details need eight digits and no `/` beside a digit: case and claim
 # numbers ("6001842/2026") are not bank details, while an account's label
 # ("р/с", "a/c") is trimmed off its span (#486). A bare ten- or
 # eleven-digit number is a tax number, a phone or a contract number far
@@ -361,7 +365,7 @@ forbid = ['\p{N}\s*/|/\s*\p{N}', '^\s*\d{10,11}\s*$']
 # ("8,420,710", a US patent or an amount; "12/432,845", a patent
 # application), a span across a blank line (a page's footer), and a
 # document's code with its country after a dot ("STD001Y2K.UK", a form).
-# An account's decimals ("12345.67"), a passport's groups ("4510 123456")
+# An account's decimals ("123456.78"), a passport's groups ("4510 123456")
 # and an IBAN's ("GB29 NWBK 6016 …") stay.
 [[shape]]
 category = "TAX"
@@ -463,3 +467,63 @@ public = [
     "gov", "int", "mil", "example.com", "example.org", "example.net",
     "europa.eu", "un.org", "courtlistener.com", "law.cornell.edu",
 ]
+
+# Short header/line/route numbers are no bank details (#375). Count all
+# groups of a value, keeping full IBANs and cards, including OCR letters.
+# Label exceptions already used by #547 also protect short labelled values.
+[[shape]]
+category = "BANK"
+min_digits = 8
+letters_at_most_digits = true
+
+# A short extension needs a phone label (#375); a dot between digits in an
+# unlabelled PHONE span is a decimal/plot tick, including "1.981.96".
+# Label exceptions from #547 keep damaged labelled phone values too.
+[[shape]]
+category = "PHONE"
+min_digits = 5
+forbid_unlabelled = ['\d\.\d']
+# Conventional full-length dotted phones are real too ("202.555.0199").
+unless_in = ['\b(?:\d{1,3}\.)?\d{3}\.\d{3}\.\d{4}\b|\b\d{2,4}\.\d{3,4}\.\d{4}\b']
+forbid_in = ['\b\d+(?:\.\d+)+\b']
+
+# Drawing dimensions are no identifiers or addresses (guide rule 8, #375).
+# Match the numeric expression only; do not swallow adjoining real values.
+# References never veto context or structured detections.
+[[reference]]
+pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+(?:[.,]\d+)?[\p{Zs}\t]+R[\p{Zs}\t]+to[\p{Zs}\t]+inside\b'
+
+# Drawing dimensions inside a model BANK span stay unmarked (#375),
+# even if the model included words outside the numeric expression. The
+# labelled-value exceptions still win over this value-level check.
+[[shape]]
+category = "BANK"
+forbid_unlabelled = ['×|[\p{Zs}\t]R[\p{Zs}\t]']
+
+# Drawing dimensions inside a model PHONE span stay unmarked (#375),
+# even if the model included words outside the numeric expression. The
+# labelled-value exceptions still win over this value-level check.
+[[shape]]
+category = "PHONE"
+forbid_unlabelled = ['×|[\p{Zs}\t]R[\p{Zs}\t]']
+
+# Drawing dimensions inside a model TAX span stay unmarked (#375),
+# even if the model included words outside the numeric expression. The
+# labelled-value exceptions still win over this value-level check.
+[[shape]]
+category = "TAX"
+forbid_unlabelled = ['×|[\p{Zs}\t]R[\p{Zs}\t]']
+
+# Drawing dimensions inside a model IDENTITY span stay unmarked (#375),
+# even if the model included words outside the numeric expression. The
+# labelled-value exceptions still win over this value-level check.
+[[shape]]
+category = "IDENTITY"
+forbid_unlabelled = ['×|[\p{Zs}\t]R[\p{Zs}\t]']
+
+# Drawing dimensions inside a model ADDRESS span stay unmarked (#375),
+# even if the model included words outside the numeric expression. The
+# labelled-value exceptions still win over this value-level check.
+[[shape]]
+category = "ADDRESS"
+forbid_unlabelled = ['×|[\p{Zs}\t]R[\p{Zs}\t]']

@@ -1372,4 +1372,12 @@ unless_in = ['(?i:\b(?:bank account|account number|account no|account|sort code|
 # A tab or two spaces ends the labelled value at the next column.
 [[shape]]
 category = "PHONE"
-unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell)(?:\p{Zs}number)?\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d()–-]*(?:\p{Zs}[\d()–-]+)*']
+unless_in = ['(?i)\b(?:phone|telephone|tel|fax|mobile|cell)(?:\p{Zs}number)?\b[\p{Zs}\t:*_№.#]{1,8}\+?\d[\d().–-]*(?:\p{Zs}[\d().–-]+)*']
+
+
+# A code inside an absolute Windows document path is no phone (#375).
+# Require a drive, separators and a document extension, not a bare code
+# that could be an OCR-damaged phone; labelled phone exceptions still win.
+[[shape]]
+category = "PHONE"
+forbid_in = ['(?i)\b[a-z]:\\[^;\r\n<>"|?*]*\.(?:docx?|pdf|txt|xlsx?)\b']

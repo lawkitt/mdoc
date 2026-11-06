@@ -237,6 +237,12 @@ struct ContextEntry {
 struct ShapeEntry {
     category: String,
     #[serde(default)]
+    min_digits: usize,
+    #[serde(default)]
+    letters_at_most_digits: bool,
+    #[serde(default)]
+    forbid_unlabelled: Vec<String>,
+    #[serde(default)]
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
@@ -245,8 +251,9 @@ struct ShapeEntry {
     /// the model's span). Labelled values are proposed separately.
     #[serde(default)]
     forbid_in: Vec<String>,
-    /// Matches that exempt a model span from `forbid_in` only: a labelled
-    /// identifier stays even beside an amount. Other shape checks still apply.
+    /// Matches exempting contextual/value vetoes and digit/letter counts:
+    /// a labelled identifier stays even beside an amount. Ordinary require
+    /// and forbid checks still apply.
     #[serde(default)]
     unless_in: Vec<String>,
     word: Option<String>,
@@ -849,6 +856,9 @@ impl Never {
 
 struct Shape {
     category: Category,
+    min_digits: usize,
+    letters_at_most_digits: bool,
+    forbid_unlabelled: Vec<Regex>,
     require: Vec<Regex>,
     forbid: Vec<Regex>,
     forbid_in: Vec<Regex>,
@@ -1069,7 +1079,10 @@ impl Pack {
                         .map(|pattern| compile(pattern, whole))
                         .collect::<Result<Vec<_>, _>>()
                 };
-                if entry.require.is_empty()
+                if entry.min_digits == 0
+                    && !entry.letters_at_most_digits
+                    && entry.forbid_unlabelled.is_empty()
+                    && entry.require.is_empty()
                     && entry.forbid.is_empty()
                     && entry.forbid_in.is_empty()
                     && entry.unless_in.is_empty()
@@ -1122,6 +1135,7 @@ impl Pack {
                 {
                     return Err(at(format!("{word:?} is not one word")));
                 }
+                let forbid_unlabelled = compile_all(&entry.forbid_unlabelled, false)?;
                 let require = compile_all(&entry.require, false)?;
                 let forbid = compile_all(&entry.forbid, false)?;
                 let forbid_in = entry
@@ -1145,6 +1159,9 @@ impl Pack {
                     None => {
                         pack.shapes.push(Shape {
                             category,
+                            min_digits: 0,
+                            letters_at_most_digits: false,
+                            forbid_unlabelled: Vec::new(),
                             require: Vec::new(),
                             forbid: Vec::new(),
                             forbid_in: Vec::new(),
@@ -1162,6 +1179,9 @@ impl Pack {
                 if word.is_some() && shape.word.is_some() {
                     return Err(at(format!("a second word rule for {}", entry.category)));
                 }
+                shape.min_digits = shape.min_digits.max(entry.min_digits);
+                shape.letters_at_most_digits |= entry.letters_at_most_digits;
+                shape.forbid_unlabelled.extend(forbid_unlabelled);
                 shape.require.extend(require);
                 shape.forbid.extend(forbid);
                 shape.forbid_in.extend(forbid_in);
@@ -1527,7 +1547,8 @@ impl Pack {
     /// one here: no context says otherwise.
     #[cfg(test)]
     pub(crate) fn identifying(&self, text: &str, category: Category) -> bool {
-        self.identifying_named(text, category, &|_| false, false)
+        self.unlabelled_shape(text, category)
+            && self.identifying_named(text, category, &|_| false, false)
     }
 
     /// `identifying`, where `named` says which common words (lowercase)
@@ -1970,6 +1991,24 @@ impl Pack {
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
                     || self.names(text, words().filter(|w| pattern.is_match(w)), named)
+            })
+    }
+
+    /// Count separated digit groups together with the same Unicode predicates
+    /// as shape regexes, and check value-level vetoes. Labels exempt these.
+    fn unlabelled_shape(&self, text: &str, category: Category) -> bool {
+        self.shapes
+            .iter()
+            .find(|shape| shape.category == category)
+            .is_none_or(|shape| {
+                let digits = text.chars().filter(|c| c.is_numeric()).count();
+                digits >= shape.min_digits
+                    && !shape
+                        .forbid_unlabelled
+                        .iter()
+                        .any(|pattern| pattern.is_match(text))
+                    && (!shape.letters_at_most_digits
+                        || text.chars().filter(|c| c.is_alphabetic()).count() <= digits)
             })
     }
 
@@ -2532,8 +2571,12 @@ impl Pack {
         if self.in_reference(source, range.clone()) {
             return false;
         }
+        let mut shape_exempt = false;
         if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
-            && !shape.forbid_in.is_empty()
+            && (!shape.forbid_in.is_empty()
+                || shape.min_digits > 0
+                || shape.letters_at_most_digits
+                || !shape.forbid_unlabelled.is_empty())
         {
             // OCR can put an entire document on one line. Bound both the
             // newline search and the decoded context per span; if an amount
@@ -2564,7 +2607,8 @@ impl Pack {
                         && !joins_numeric_fields(&view.text, found, span.clone())
                 })
             };
-            if shape.forbid_in.iter().any(forbidden) && !shape.unless_in.iter().any(inside) {
+            shape_exempt = shape.unless_in.iter().any(inside);
+            if shape.forbid_in.iter().any(forbidden) && !shape_exempt {
                 return false;
             }
         }
@@ -2636,7 +2680,9 @@ impl Pack {
         // "ООО «Судак»" grows to its legal form before a court's stem in it
         // could drop it. So do a person's common words, whose context the
         // fixes and the other spans settle ("Mr He", "Dawn French").
-        self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
+        (shape_exempt || self.unlabelled_shape(text, category))
+            && self.shaped_named(text, category, &|_| category == Category::Person)
+            && !quoted
     }
 
     /// Whether `range` of `source` lies inside a `reference` match, a legal
@@ -3408,7 +3454,7 @@ mod tests {
         let pack = pack();
         assert!(pack.identifying("\u{A7CE}a", Category::Person));
         assert_eq!(pack.guess("\u{A7CE}a"), Some(Category::Person));
-        assert!(pack.identifying("\u{11DE0}", Category::Phone));
+        assert!(pack.identifying(&"\u{11DE0}".repeat(5), Category::Phone));
         for (name, predicate) in [
             (r"\p{Uppercase}", char::is_uppercase as fn(char) -> bool),
             (r"\p{Alphabetic}", char::is_alphabetic),
@@ -3571,7 +3617,7 @@ mod tests {
             ("40702810900000001234", Category::Bank),
             ("GB28NWBK60161331926819", Category::Bank),
             ("044525225", Category::Bank),
-            ("12345", Category::Bank),
+            ("12345678", Category::Bank),
             ("7707083893", Category::Tax),
             ("GB 123 4567 89", Category::Tax),
             ("maya.bennett@example.com", Category::Email),
@@ -9317,18 +9363,229 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             assert!(!keeps(text, category), "{text:?}");
         }
         for (text, category) in [
-            ("12345.67", Category::Bank),
+            ("123456.78", Category::Bank),
             ("4510 123456", Category::Identity),
             ("GB29 NWBK 6016 1331 9268 19", Category::Bank),
             ("77l12345O7", Category::Tax),
             ("4510\n123456", Category::Identity),
             ("555-12-34", Category::Phone),
             ("8-800-555-35-35", Category::Phone),
-            ("42", Category::Phone),
             ("RM6841932", Category::Identity),
             ("GB123456789", Category::Tax),
         ] {
             assert!(keeps(text, category), "{text:?}");
+        }
+    }
+
+    /// #375: short line/header/route numbers cannot become bank/phone values.
+    #[test]
+    fn short_number_shapes_drop_false_hits_and_keep_real_values() {
+        for value in [
+            "24",
+            "300",
+            "250250",
+            "006191",
+            "12 345 67",
+            "Eielson Alternative Segment 3",
+            "Segments 1 & 2",
+            "abcdefghijk12345678",
+        ] {
+            assert_eq!(shown(value, &[(value, "bank_account")]), [], "{value}");
+        }
+        for value in [
+            "021",
+            "3533",
+            "6 121",
+            "1.981.96",
+            "1.981.96 extra words",
+            "6.4\n-406",
+            "12345.678",
+            "12.345.678",
+        ] {
+            assert_eq!(shown(value, &[(value, "phone_number")]), [], "{value}");
+        }
+        for (value, label, category) in [
+            ("12345678", "bank_account", "BANK"),
+            ("12 345 678", "bank_account", "BANK"),
+            ("40702810900000004711", "bank_account", "BANK"),
+            ("GB29 NWBK 6016 1331 9268 19", "bank_account", "BANK"),
+            ("1234 5678 9012 3456", "bank_account", "BANK"),
+            ("abcdefgh12345678", "bank_account", "BANK"),
+            ("+7 (999) 555-01-23", "phone_number", "PHONE"),
+            ("202.555.0199", "phone_number", "PHONE"),
+            ("555-12-34", "phone_number", "PHONE"),
+            ("12345", "phone_number", "PHONE"),
+            ("7709999999", "tax_id", "TAX"),
+            ("770901001", "tax_id", "TAX"),
+            ("77l12345O7", "tax_id", "TAX"),
+        ] {
+            assert_eq!(
+                shown(value, &[(value, label)]),
+                pairs(&[(value, category)]),
+                "{value}"
+            );
+        }
+        for (source, value, label, category) in [
+            (
+                "тел. 6121; справка [021]; строка 6121.",
+                "6121",
+                "phone_number",
+                "PHONE",
+            ),
+            (
+                "Phone: 1234; paragraph 1234.",
+                "1234",
+                "phone_number",
+                "PHONE",
+            ),
+            ("Phone: 1.981.96", "1.981.96", "phone_number", "PHONE"),
+            (
+                "Account No. 12 345 678",
+                "12 345 678",
+                "bank_account",
+                "BANK",
+            ),
+            (
+                "Account No. 1234; line 1234.",
+                "1234",
+                "bank_account",
+                "BANK",
+            ),
+            ("р/с 1234; строка 1234.", "1234", "bank_account", "BANK"),
+            (
+                "ИНН / КПП 7709999999 / 770901001",
+                "770901001",
+                "tax_id",
+                "TAX",
+            ),
+        ] {
+            let proposed = shown(source, &[(value, label)]);
+            assert!(
+                proposed.contains(&(value.into(), category.into())),
+                "{source}: {proposed:?}"
+            );
+            assert_eq!(
+                proposed.iter().filter(|(v, _)| v == value).count(),
+                1,
+                "{source}"
+            );
+        }
+    }
+
+    /// Record prefixes are bounded to their own value/list, never a later PII field.
+    #[test]
+    fn russian_record_numbers_are_no_numeric_pii() {
+        for (source, value) in [
+            ("Договор № 12345678", "12345678"),
+            (
+                "договором об ипотеке № ДИ-999999/2031/00009",
+                "ДИ-999999/2031/00009",
+            ),
+            (
+                "договорами об ипотеке № ДИ-999999/2031/00009",
+                "ДИ-999999/2031/00009",
+            ),
+            ("договоров от 01.02.2031 № 12345678", "12345678"),
+            ("по проектам №№ 1199999, 119999Е, 12345678", "12345678"),
+            ("сообщение № 14218328", "14218328"),
+            ("объявление № 13838487", "13838487"),
+            (
+                "протокол об административном правонарушении № 0199999",
+                "0199999",
+            ),
+            ("по ордеру № 12345678", "12345678"),
+            ("лицензия Л099-09999-99/00999999", "00999999"),
+            (
+                "свидетельство о депонировании произведения № 023-014748",
+                "023-014748",
+            ),
+            (
+                "учетный номер в ЕРКНМ 20999999999999999999",
+                "20999999999999999999",
+            ),
+        ] {
+            for label in ["phone_number", "bank_account", "tax_id"] {
+                assert_eq!(shown(source, &[(value, label)]), [], "{source}: {label}");
+            }
+            for (tail, pii, label, category) in [
+                (
+                    "; телефон +7 (999) 555-01-23",
+                    "+7 (999) 555-01-23",
+                    "phone_number",
+                    "PHONE",
+                ),
+                ("; ИНН 7709999999", "7709999999", "tax_id", "TAX"),
+                (
+                    "; р/с 40702810900000004711",
+                    "40702810900000004711",
+                    "bank_account",
+                    "BANK",
+                ),
+            ] {
+                let source = format!("{source}{tail}");
+                assert!(
+                    shown(&source, &[(pii, label)]).contains(&(pii.into(), category.into())),
+                    "{source}"
+                );
+            }
+        }
+        // The reference word cannot leap over an identifier label to a later №.
+        for source in [
+            "договор телефон 6121 № 9",
+            "лицензия ИНН 7709999999",
+            "свидетельство телефон 6121 № 9",
+        ] {
+            let (value, label, category) = if source.contains("ИНН") {
+                ("7709999999", "tax_id", "TAX")
+            } else {
+                ("6121", "phone_number", "PHONE")
+            };
+            assert!(
+                shown(source, &[(value, label)]).contains(&(value.into(), category.into())),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn postcodes_paths_and_drawing_dimensions_are_not_numeric_pii() {
+        for source in [
+            "адрес регистрации: 999999, <...>",
+            "999999, г. Энск",
+            "999999, Москва",
+        ] {
+            let spans = shown(source, &[("999999", "phone_number")]);
+            assert!(
+                spans.iter().all(|(_, category)| category != "PHONE"),
+                "{source}: {spans:?}"
+            );
+        }
+        assert_eq!(
+            shown("тел. 999999, г. Энск", &[("999999", "phone_number")])
+                .iter()
+                .filter(|(_, c)| c == "PHONE")
+                .count(),
+            1
+        );
+        let path = r"W:\Penrow\09-F-0999 final.doc";
+        assert_eq!(shown(path, &[("09-F-0999", "phone_number")]), []);
+        assert_eq!(
+            shown(
+                "Phone: 555-01-99; file W:\\Penrow\\note.doc",
+                &[("555-01-99", "phone_number")]
+            ),
+            pairs(&[("555-01-99", "PHONE")])
+        );
+        for value in [
+            "76×6.4×914",
+            "76 × 6.4 × 914",
+            "6.4 R to inside",
+            "dimension 76×6.4×914",
+            "6.4 R to inside 12345678",
+        ] {
+            for label in ["bank_account", "phone_number", "tax_id", "address"] {
+                assert_eq!(shown(value, &[(value, label)]), [], "{value}: {label}");
+            }
         }
     }
 

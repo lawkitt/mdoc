@@ -2634,3 +2634,144 @@ fn an_always_listed_date_counts_every_mention() {
     review.refresh(&edited);
     assert_eq!(mention_count(&review, "14/03/1988"), 2);
 }
+
+/// #375: the seed itself remains, but short numbers never become a global
+/// match. Independent detections add their own locations; full values repeat.
+#[test]
+fn short_numeric_proposals_keep_only_detected_occurrences() {
+    for category in [
+        Category::Bank,
+        Category::Phone,
+        Category::Tax,
+        Category::Identity,
+        Category::CaseNumber,
+    ] {
+        for value in ["24", "021", "6121", "6 121"] {
+            let source = format!("Value: {value}; paragraph {value}; [{value}].");
+            let start = source.find(value).unwrap();
+            let mut review = Review::default();
+            review
+                .ingest(
+                    &source,
+                    vec![detection(start..start + value.len(), category)],
+                )
+                .unwrap();
+            assert_eq!(
+                proposed(&review, value).mentions,
+                std::slice::from_ref(&(start..start + value.len()))
+            );
+            let last = source.rfind(value).unwrap();
+            review
+                .ingest(&source, vec![detection(last..last + value.len(), category)])
+                .unwrap();
+            assert_eq!(proposed(&review, value).mentions.len(), 2);
+            let changed = format!("Note. {source}");
+            review.refresh(&changed);
+            assert_eq!(
+                proposed(&review, value).mentions,
+                [
+                    start + 6..start + 6 + value.len(),
+                    last + 6..last + 6 + value.len()
+                ]
+            );
+        }
+    }
+    for value in ["12345", "12345678", "+7 (999) 555-01-23", "AB1234"] {
+        let source = format!("{value}; {value}");
+        let mut review = Review::default();
+        review
+            .ingest(&source, vec![detection(0..value.len(), Category::Phone)])
+            .unwrap();
+        assert_eq!(proposed(&review, value).mentions.len(), 2, "{value}");
+    }
+    // Explicit user policy still means every occurrence.
+    for manual in [false, true] {
+        let source = "24; 24";
+        let mut review = Review::default();
+        if manual {
+            review.add_manual(source, 0..2, Category::Bank).unwrap();
+        } else {
+            let mut found = detection(0..2, Category::Bank);
+            found.recognizer = Recognizer::UserList;
+            review.ingest(source, vec![found]).unwrap();
+        }
+        assert_eq!(proposed(&review, "24").mentions.len(), 2);
+    }
+}
+
+/// Location restrictions travel with editor history, so replacing a short
+/// value, undoing and redoing cannot either lose it or spread it elsewhere.
+#[test]
+fn short_number_locations_follow_edits_undo_and_redo() {
+    use mdoc_history::{EditorTransaction, HistoryChange, SourceEdit};
+    let source = "Phone: 6121; paragraph 6121.";
+    let mut review = Review::default();
+    review
+        .ingest(source, vec![detection(7..11, Category::Phone)])
+        .unwrap();
+    let changed = "Phone: PHONE_1; paragraph 6121.";
+    for (revision, before, after, edits, text, count) in [
+        (
+            1,
+            0,
+            1,
+            vec![SourceEdit {
+                range: 7..11,
+                new_len: 7,
+            }],
+            changed,
+            0,
+        ),
+        (2, 1, 0, vec![], source, 1),
+        (3, 0, 1, vec![], changed, 0),
+        (4, 1, 0, vec![], source, 1),
+    ] {
+        review.on_transaction(
+            &EditorTransaction {
+                revision,
+                changes: vec![HistoryChange {
+                    before,
+                    after,
+                    edits,
+                }],
+                retained: vec![0, 1],
+            },
+            text,
+        );
+        review.refresh(text);
+        assert_eq!(
+            proposed(&review, "6121").mentions.len(),
+            count,
+            "{revision}"
+        );
+    }
+}
+
+#[test]
+fn an_always_entry_overrides_a_short_numbers_model_locations() {
+    for user_first in [false, true] {
+        let source = "24; 24";
+        let mut first = detection(0..2, Category::Bank);
+        let mut last = detection(4..6, Category::Bank);
+        if user_first {
+            first.recognizer = Recognizer::UserList;
+        } else {
+            last.recognizer = Recognizer::UserList;
+        }
+        let mut review = Review::default();
+        review.ingest(source, vec![first, last]).unwrap();
+        assert_eq!(proposed(&review, "24").mentions.len(), 2);
+        review.refresh("24; 24; 24");
+        assert_eq!(proposed(&review, "24").mentions.len(), 3);
+    }
+}
+
+#[test]
+fn a_labelled_case_number_keeps_its_guide_required_repeats() {
+    let source = "Case No. 1234; header 1234.";
+    let mut review = Review::default();
+    let mut found = detection(9..13, Category::CaseNumber);
+    found.recognizer = Recognizer::Context;
+    review.ingest(source, vec![found]).unwrap();
+    assert_eq!(proposed(&review, "1234").mentions.len(), 2);
+}
