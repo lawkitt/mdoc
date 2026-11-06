@@ -23,7 +23,9 @@ final class ReviewToolsUITests: XCTestCase {
         let find = app.buttons["find-in-document"]
         XCTAssertTrue(find.waitForExistence(timeout: 5))
         find.tap()
-        typeInFindField(app, "Bennett")
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
         XCTAssertTrue(hide.isEnabled)
@@ -91,7 +93,9 @@ final class ReviewToolsUITests: XCTestCase {
         // Repeats to step through: Find and Hide name on the surname.
         app.buttons["document-menu"].tap()
         app.buttons["find-in-document"].tap()
-        typeInFindField(app, "Bennett")
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
         hide.tap()
@@ -118,22 +122,6 @@ final class ReviewToolsUITests: XCTestCase {
         app.typeKey(".", modifierFlags: .command)
         let gone = NSPredicate(format: "exists == false")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: app.descendants(matching: .any)["review-bar"].firstMatch)], timeout: 5), .completed)
-    }
-
-    /// Types into the Find sheet's search field. On the hosted iOS 26.2
-    /// Simulator the field is sometimes not a SearchField in the tree though
-    /// it shows (#630), so its prompt finds it too, and a tap focuses it; a
-    /// failure prints the tree.
-    @MainActor
-    private func typeInFindField(_ app: XCUIApplication, _ text: String) {
-        let prompt = "Find in document"
-        let field = app.descendants(matching: .any).matching(NSPredicate(
-            format: "elementType == %@ OR placeholderValue == %@",
-            NSNumber(value: XCUIElement.ElementType.searchField.rawValue), prompt
-        )).firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "no Find field in:\n\(app.debugDescription)")
-        field.tap()
-        app.typeText(text)
     }
 
     private func expectLabel(of element: XCUIElement, _ label: String) {
