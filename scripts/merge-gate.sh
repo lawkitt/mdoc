@@ -22,7 +22,9 @@
 #   named ci/macos, ci/ios, ci/detection (the detection gate's summary of
 #   its shards) and ci/scripts (the CI machinery's script suites, ADR 0100);
 #   a check counts only when it concluded success, or skipped
-#   as not affected; anything else fails. The PC posts commit
+#   as not affected; anything else fails. A needed ci/scripts with no check
+#   run at all takes the commit's ci/macos verdict, which runs the same
+#   suites ("scripts (via ci/macos)", #665). The PC posts commit
 #   statuses ci/windows and ci/android, and refreshes a pending one at least
 #   every 5 minutes while it runs (its heartbeat).
 #
@@ -942,7 +944,7 @@ heads_pass() {
 
 queue_pass() {
   local t main branch sha cmp areas jobs checks status made age third prs pr kind cross job hv line state desc url v where u
-  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra qrun
+  local queue why ready no_hosted='' info disp pcline rc=0 lines wf extra hinfra qrun via mline
   t=$(now)
   main=$(fetch_main) || main=''
   [ -n "$main" ] || {
@@ -1010,6 +1012,24 @@ queue_pass() {
             continue 2
           }
           read -r v u _ <<<"$line"
+          # No ci/scripts at all: ci/macos (checks) runs the same suites
+          # under bash 3.2 (#622), so its verdict stands in (#665). The
+          # Queue run may have seen a desktop area that a group member
+          # merged meanwhile took off this diff.
+          via=''
+          if [ "$job" = scripts ] && [ "$v" = missing ]; then
+            mline=$(hosted_verdict ci/macos "$checks") || {
+              skipped "${sha:0:7}" "the run behind ci/macos"
+              rc=1
+              continue 2
+            }
+            case "${mline%% *}" in
+              success | failure | pending | infra)
+                line=$mline via=via_ci/macos
+                read -r v u _ <<<"$line"
+                ;;
+            esac
+          fi
           # Missing: the commit's Queue run decides (#635), read once. The
           # first time it has completed, the check runs are read again, in
           # case the job ended between the two reads.
@@ -1046,8 +1066,8 @@ queue_pass() {
             fi
           fi
           case "$v" in
-            success) where=hosted u=- ;;
-            failure) where=hosted ;;
+            success) where=${via:-hosted} u=- ;;
+            failure) where=${via:-hosted} ;;
             infra) where='' ;;
             # The run succeeded without it: nothing to re-run.
             missed) v=failure where=did_not_run ;;
