@@ -13,7 +13,10 @@
 [profile.default]
 retries = 0
 # Warn at 30 s, kill at 2 min (ADR 0095). A slow test is a bug, not a limit
-# to raise.
+# to raise. The recognition fixtures' one test, which loops over every
+# fixture, ran past the kill under a full run on the PC queue runner; it fits
+# again because the regex crates build optimized in dev and test (Cargo.toml,
+# #655): about 3 s instead of 14 on the M4.
 slow-timeout = { period = "30s", terminate-after = 4 }
 
 [test-groups]
