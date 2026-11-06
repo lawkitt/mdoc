@@ -2557,6 +2557,24 @@ fn ingest_birth_dates(source: &str, values: &[&str]) -> Review {
     review.ingest(source, detections).unwrap();
     review
 }
+/// #363: a date of birth its label proposed may wrap at a line break with
+/// the label after it on its last line, like an address found whole; the
+/// model's same span is two lines' text, and so is a date over a blank line.
+#[test]
+fn a_labelled_birth_date_may_wrap_before_its_label() {
+    let source = "He gave a March 9,\n1984 birth date.";
+    let review = ingest_birth_dates(source, &["March 9,\n1984"]);
+    assert_eq!(review.candidates().len(), 1);
+    let start = source.find("March").unwrap();
+    let mut review = Review::default();
+    let model = detection(start..start + "March 9,\n1984".len(), Category::Date);
+    review.ingest(source, vec![model]).unwrap();
+    assert!(review.candidates().is_empty());
+    let source = "He gave a March 9,\n\n1984 birth date.";
+    let review = ingest_birth_dates(source, &["March 9,\n\n1984"]);
+    assert!(review.candidates().is_empty());
+}
+
 fn mention_count(review: &Review, original: &str) -> usize {
     proposed(review, original).mentions.len()
 }

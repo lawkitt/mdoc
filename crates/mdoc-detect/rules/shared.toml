@@ -32,6 +32,11 @@
 #   line_start     = true        the label opens its line: only whitespace
 #                                and Markdown marks (#, >, *, _, |) before
 #                                it (a caption's "No.")
+#   after          = true        the labels follow the value instead ("a
+#                                March 9, 1984 birth date"): `between` is
+#                                what sits after the value, the value starts
+#                                a word, and a table column never takes
+#                                such a label; no line_start or unless_after
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an

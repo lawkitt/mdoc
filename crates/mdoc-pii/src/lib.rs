@@ -253,7 +253,8 @@ fn safe_span(value: &str) -> bool {
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
-/// or between the lines of an address the rule pack found whole. Adjacent
+/// or between the lines of an address the rule pack found whole, or of a date
+/// its label proposed ("March 9,\n1984 birth date"; #363). Adjacent
 /// emphasis runs and paired inline `<sup>`/`<sub>` tags inside it are text too.
 ///
 /// A web address keeps its own characters (ADR 0094): a final `_` and
@@ -261,8 +262,10 @@ fn safe_span(value: &str) -> bool {
 /// a link's own bracket.
 fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
-    let address =
-        detection.recognizer == Recognizer::Span && detection.category == Category::Address;
+    // Found whole by its parts or its label, so text may follow its last line.
+    let whole = (detection.recognizer == Recognizer::Span
+        && detection.category == Category::Address)
+        || (detection.recognizer == Recognizer::Context && detection.category == Category::Date);
     let value = &source[range.clone()];
     let url = detection.category == Category::Url;
     let forbidden = if url { "`|" } else { "[]`|" };
@@ -273,7 +276,7 @@ fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detect
         && !value.chars().any(|ch| forbidden.contains(ch))
         && !(url && (value.contains("](") || value.contains("][")))
         && !outside_value_syntax(source, markup, range).contains(['<', '>'])
-        && view::wrapped_value(source, range, address)
+        && view::wrapped_value(source, range, whole)
         && plain_text_span(source, markup, range.clone())
 }
 /// `range` of `source` without the formatting detection reads as text.

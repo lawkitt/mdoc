@@ -936,6 +936,20 @@ between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
 
+# A date before "года рождения" or "г.р." is a date of birth too, as
+# arbitration acts give a party's (#363): "Иванов И. И., 01.01.1980 года
+# рождения", "14 марта 1988 г.р.", "01.01.1980 г. р.". The "года" or "г."
+# belongs to the label, outside the span. A year alone ("1980 г.р.") is no
+# date, as the DATE guesses say, and stays. Only spaces sit between the
+# date and the label; a date may wrap at one line break between its words.
+[[context]]
+category = "DATE"
+labels = ["года рождения", "г. рождения", "г.рождения", "г.р", "г. р"]
+after = true
+between = '[\p{Zs}\t]+'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+only_guessed = ["DATE"]
+
 # Russian courts, public bodies, laws and legal databases are never web
 # addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
 # "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",

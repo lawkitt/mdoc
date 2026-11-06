@@ -1019,12 +1019,15 @@ category = "ORG"
 forbid = ['^\s*[A-Z][a-z]+(?:\s+[a-z]+)+\s*$']
 
 # Dates with an English month name: "12 March 2026" (a Russian "г." after
-# the year still counts) and "March 12, 2026".
+# the year still counts) and "March 12, 2026"; and a day, a month or its
+# short form and a two- or four-digit year, as a sanctions list gives a
+# date of birth ("3 Jun 61", "3 Sept. 1961"; #363).
 [[shape]]
 category = "DATE"
 guess = [
     '(?i)\s*[«"]?(?:\d{1,2}|(?:\\?_)+)[»"]?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{4}|(?:\\?_)+)(?:\s*(?:г\.?|года))?\s*',
     '(?i)\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*',
+    '(?i)\s*\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(?:\d{2}|\d{4})\s*',
 ]
 
 # Claim and case numbers after their label (ADR 0092): "Claim No.
@@ -1374,11 +1377,28 @@ last_word_of = ["ORG"]
 # other date stays: signing, deadlines, hearings. The value must be one the
 # DATE guesses take. The label may be in the cell before or on the line
 # before ("| DOB | 14/03/1988 |", "DOB:" then the date on its own line).
+# A sanctions list's year may have two digits ("DOB 3 Jun 61", "DOB:
+# 03/06/61"; #363), only after a space. A date with a month name may wrap
+# at one line break between its words ("March 9,\n1984"); never over a
+# blank line, which the review keeps as two paragraphs.
 [[context]]
 category = "DATE"
 labels = ["born", "dob", "d.o.b", "date of birth", "birth date"]
 between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?(?:on[\p{Zs}\t]+)?'
-value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}|\p{Alphabetic}+\p{Zs}+\d{1,2},?\p{Zs}+\d{4}'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+only_guessed = ["DATE"]
+
+# The same dates before "birth date" or "date of birth" (#363): "He gave a
+# March 9, 1984 birth date", "03/06/1961 date of birth", the date wrapped
+# as above. Only spaces sit between the date and the label, so a date that
+# ends a sentence or a cell ("Signed 12 March 2026. Date of birth: …") is
+# no birth date, and a bare "birth" ("birth certificate") is no label.
+[[context]]
+category = "DATE"
+labels = ["date of birth", "birth date"]
+after = true
+between = '[\p{Zs}\t]+'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+\.?(?:(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}|\p{Zs}+\d{2})|\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{1,2},?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
 only_guessed = ["DATE"]
 
 # English-speaking courts, public bodies, laws and legal databases are never

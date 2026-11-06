@@ -234,6 +234,10 @@ struct ContextEntry {
     /// it (a caption's "No." on a line of its own).
     #[serde(default)]
     line_start: bool,
+    /// The labels follow the value ("a March 9, 1984 birth date"), with
+    /// `between` after the value; the value starts a word.
+    #[serde(default)]
+    after: bool,
 }
 
 #[derive(Deserialize)]
@@ -846,6 +850,8 @@ struct Context {
     unless_guessed: Vec<Category>,
     only_guessed: Vec<Category>,
     line_start: bool,
+    /// The labels follow the value; the pattern starts with it.
+    after: bool,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1291,17 +1297,34 @@ impl Pack {
                             .join(r"\s+")
                     })
                     .collect();
-                let pattern = format!(
-                    // Case is ignored in the label only. Where the value
-                    // ends is checked after matching ("1988 г." ends in a dot).
-                    // A note marker may follow the label, inside its
-                    // emphasis or after it ("ИНН¹:", which the view reads
-                    // "ИНН ¹:", or "**ИНН**¹:"; #448).
-                    r"(?i)\b(?:{})\b(?-i:(?:[*_]*\p{{Zs}}?[¹²³⁰⁴-⁹]+)?(?:{})((?:{})))",
-                    labels.join("|"),
-                    rust_classes(&entry.between),
-                    rust_classes(&entry.value),
-                );
+                if entry.after && (entry.line_start || !entry.unless_after.is_empty()) {
+                    return Err(at(
+                        "a label after its value takes no line_start or unless_after".into(),
+                    ));
+                }
+                let pattern = if entry.after {
+                    // The value, what sits after it, then a whole label;
+                    // case is ignored in the label only. Where the value
+                    // starts and ends is checked after matching.
+                    format!(
+                        r"((?:{}))(?:{})(?i:\b(?:{})\b)",
+                        rust_classes(&entry.value),
+                        rust_classes(&entry.between),
+                        labels.join("|"),
+                    )
+                } else {
+                    format!(
+                        // Case is ignored in the label only. Where the value
+                        // ends is checked after matching ("1988 г." ends in
+                        // a dot). A note marker may follow the label, inside
+                        // its emphasis or after it ("ИНН¹:", which the view
+                        // reads "ИНН ¹:", or "**ИНН**¹:"; #448).
+                        r"(?i)\b(?:{})\b(?-i:(?:[*_]*\p{{Zs}}?[¹²³⁰⁴-⁹]+)?(?:{})((?:{})))",
+                        labels.join("|"),
+                        rust_classes(&entry.between),
+                        rust_classes(&entry.value),
+                    )
+                };
                 let pattern = Regex::new(&pattern).map_err(|e| at(e.to_string()))?;
                 let value = Regex::new(&format!("^(?:{})$", rust_classes(&entry.value)))
                     .map_err(|e| at(e.to_string()))?;
@@ -1347,6 +1370,7 @@ impl Pack {
                     unless_guessed,
                     only_guessed,
                     line_start: entry.line_start,
+                    after: entry.after,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -3421,6 +3445,13 @@ impl Pack {
                         .chars()
                         .next()
                         .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                    // A value before its label starts a word ("23 March",
+                    // not "123 March").
+                    let starts = !context.after
+                        || !source[..value.start()]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|c| c.is_alphanumeric() || c == '_');
                     let start = found.get(0)?.start();
                     let before = source[..start]
                         .trim_end()
@@ -3447,11 +3478,13 @@ impl Pack {
                     // "C.A. No." inside "18 U.S.C.A. No. 1234-5".
                     let mut label = source[start..].chars();
                     let mut back = source[..start].chars().rev();
-                    let inside = label.next().is_some_and(char::is_alphabetic)
+                    let inside = !context.after
+                        && label.next().is_some_and(char::is_alphabetic)
                         && label.next() == Some('.')
                         && back.next() == Some('.')
                         && back.next().is_some_and(char::is_alphabetic);
                     if !ends
+                        || !starts
                         || inside
                         || context.unless_after.contains(&before)
                         || (context.line_start && !opens())
@@ -3514,7 +3547,7 @@ impl Pack {
                         .to_lowercase();
                     self.contexts
                         .iter()
-                        .find(|context| context.labels.contains(&label))
+                        .find(|context| !context.after && context.labels.contains(&label))
                 })
                 .collect();
             row += 2;
@@ -8616,6 +8649,59 @@ Privacy Act (“BIPA”). BIPA applies.",
         assert_eq!(dates, ["14/03/1988", "14/03/1988"]);
     }
 
+    /// A two-digit year after DOB, and a date before "birth date", "date of
+    /// birth", «года рождения» or «г.р.», wrapped at a line break or not, are
+    /// dates of birth; the label stays out (#363). A bare year, a hearing
+    /// date and a date beside another "birth" stay.
+    #[test]
+    fn dates_of_birth_with_short_years_and_labels_after() {
+        let dates = |source: &str| -> Vec<String> {
+            crate::recognition::proposals(source, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "DATE")
+                .map(|span| source[span.range].to_owned())
+                .collect()
+        };
+        for (source, date) in [
+            ("DOB 3 Jun 61. Nationality: Ruritanian.", "3 Jun 61"),
+            ("DOB: 03/06/61; POB: Zenda.", "03/06/61"),
+            ("| DOB | 3 Sept. 1961 |", "3 Sept. 1961"),
+            ("He gave a March 9, 1984 birth date.", "March 9, 1984"),
+            ("He gave a March 9,\n1984 birth date.", "March 9,\n1984"),
+            ("a 9 March\r\n1984 birth date", "9 March\r\n1984"),
+            ("with a 03/06/1961 date of birth", "03/06/1961"),
+            ("born March 9,\n1984, in Zenda", "March 9,\n1984"),
+            (
+                "Ответчик Иванов И. И., 01.01.1980 года рождения, проживает",
+                "01.01.1980",
+            ),
+            ("Петров П. П., 14 марта 1988 г.р., паспорт", "14 марта 1988"),
+            ("Сидоров С. С. (01.02.1990 г. р.)", "01.02.1990"),
+            ("Орлова О. О., 01.02.1990 г.р.", "01.02.1990"),
+        ] {
+            assert_eq!(dates(source), [date], "{source:?}");
+        }
+        for source in [
+            "The hearing is listed for 3 Jun 26.",
+            "Hearing: 12 March 2026\nDate of birth: unknown",
+            "Signed 12 March 2026. Date of birth: unknown.",
+            "She was born in 1988 in Leeds.",
+            "a birth certificate No. 12/03/1988 issued 14 March 1988",
+            "On March 9, 1984 birth certificates were reissued.",
+            "Rule 123 March 1984 birth date",
+            // Over a blank line a date is two paragraphs' text: one span
+            // would join them.
+            "He gave a March 9,\n\n1984 birth date.",
+            "Иванов И. И., 1980 г.р., проживает",
+            "Иванов И. И., 1980 года рождения",
+            "свидетельство о рождении от 01.01.1980 выдано",
+            "решение от 01.01.2026 г. вступило в силу",
+        ] {
+            assert!(dates(source).is_empty(), "{source:?}: {:?}", dates(source));
+        }
+    }
+
     /// What the user is shown for the model's `raw` spans (text and label,
     /// each found at its first place): the correction stage and the review.
     fn shown(source: &str, raw: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -13357,6 +13443,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
     #[test]
     fn mistakes_in_a_rule_file_are_named() {
         for (source, problem) in [
+            (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nline_start = true\nbetween = ' '\nvalue = '\\d{4}'",
+                "no line_start or unless_after",
+            ),
             (
                 "[[never]]\nmatch = \"plural\"\nwords = [\"Ms\"]",
                 "not lowercase",
