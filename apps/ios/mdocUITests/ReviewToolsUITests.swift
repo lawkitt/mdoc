@@ -23,8 +23,10 @@ final class ReviewToolsUITests: XCTestCase {
         let find = app.buttons["find-in-document"]
         XCTAssertTrue(find.waitForExistence(timeout: 5))
         find.tap()
+        // The first search sheet on a fresh Simulator can take over 5 s
+        // (iOS 26.2 on the hosted runner, #630).
         let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.typeText("Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
@@ -94,7 +96,7 @@ final class ReviewToolsUITests: XCTestCase {
         app.buttons["document-menu"].tap()
         app.buttons["find-in-document"].tap()
         let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.typeText("Bennett")
         let hide = app.buttons["find-hide-name"]
         XCTAssertTrue(hide.waitForExistence(timeout: 5))
