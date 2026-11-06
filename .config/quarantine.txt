@@ -17,3 +17,4 @@ android:io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage  #537  2026
 
 # Flaked twice on unrelated changes, 2026-11-05/06.
 ios:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore  #638  2026-12-06
+ios:mdocUITests/ReviewToolsUITests/testHardwareKeysDriveTheBar  #640  2026-12-06
