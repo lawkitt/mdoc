@@ -402,6 +402,14 @@ forbid = [
     '^\s*[A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*\.[A-Z]{2,3}\s*$',
 ]
 
+# A dotted date's day, month or year is no account, and neither is the
+# whole date: the model's "03" in «от 30.03.2015 N 52н» (guide rule 4,
+# #480). A real day and month only, not inside a longer dotted number
+# ("40817.810.12.03.2031" stays). A labelled account keeps its own rule.
+[[shape]]
+category = "BANK"
+forbid_in = ['(?P<lead>(?:^|[^\d.,]))(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?P<tail>(?:[^.\d]|\.(?:\D|$)|$))']
+
 # The same as a phone, and a page number between dashes ("-44-", "– 12 –")
 # is no phone either; "555-12-34" keeps its dashes between digits.
 [[shape]]

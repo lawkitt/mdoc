@@ -8604,6 +8604,243 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
     }
 
+    /// Close variants of the English citations #511 covers are no tax,
+    /// bank or identity values either: codes without spaces or dots, state
+    /// statutes, the Civil Procedure Rules by rule or part, agencies'
+    /// letters and rulings, a running header's entry and page, and years
+    /// (guide rules 4 and 8, issue #480).
+    #[test]
+    fn english_citation_variants_are_never_proposed() {
+        let source = "Under 19CFR141.37, 42 USC Section 1981, 42 U.S.C. Sec. 1983, NRS 41.1395, \
+            N.R.S. § 41.085, 54 FR 35305, 49FR17754, CPR r71.8, CPR r.38.4, CPR r 71.5, CPR \
+            Part 35 and the CPR, Part 19.12 (Release Number 34-52926; FDIC FIL-111-2006; OTS \
+            No. 2006-49; CEQ # 20060476; T.D. 84-93; Rev. Rul. 2031-12; PLR 203112001; Fed. R. \
+            Civ. P. 12(b)(6)). In Reply Refer To: AESO/SE 22410-2005-F-0506.\n\
+            15-49008-wsd Doc 19-1 Filed 06/12/15\nTXSD Page 7 of 8\n\
+            For the years 2013 through 2016 and in March 2023 nothing changed.";
+        let raw = [
+            ("19CFR141.37", "tax_id"),
+            ("42 USC Section 1981", "tax_id"),
+            ("1983", "bank_account"),
+            ("NRS 41.1395", "tax_id"),
+            ("41.085", "tax_id"),
+            ("54 FR 35305", "tax_id"),
+            ("49FR17754", "tax_id"),
+            ("CPR r71.8", "national_id_number"),
+            ("r.38.4", "tax_id"),
+            ("CPR r 71.5", "national_id_number"),
+            ("CPR Part 35", "passport_number"),
+            ("Part 19.12", "tax_id"),
+            ("Release Number 34-52926", "bank_account"),
+            ("FIL-111-2006", "tax_id"),
+            ("OTS No. 2006-49", "tax_id"),
+            ("CEQ # 20060476", "tax_id"),
+            ("T.D. 84-93", "tax_id"),
+            ("Rev. Rul. 2031-12", "tax_id"),
+            ("203112001", "tax_id"),
+            ("12(b)(6)", "tax_id"),
+            ("AESO/SE 22410-2005-F-0506", "organization"),
+            ("15-49008-wsd", "tax_id"),
+            ("Doc 19-1", "tax_id"),
+            ("TXSD Page 7 of 8", "tax_id"),
+            ("2013 through 2016", "tax_id"),
+            ("2023", "tax_id"),
+        ];
+        let failures: Vec<String> = raw
+            .iter()
+            .filter_map(|span| {
+                let actual = shown(source, &[*span]);
+                (!actual.is_empty()).then(|| format!("{span:?}: {actual:?}"))
+            })
+            .collect();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        // A year alone is no tax number; a real one stays.
+        for year in ["2023", " 2013 through 2016 ", "2029 and 2030"] {
+            assert!(!pack().identifying(year, Category::Tax), "{year:?}");
+        }
+        for value in ["98-7654321", "123456789", "123-45-6789", "20231"] {
+            assert!(pack().identifying(value, Category::Tax), "{value:?}");
+        }
+    }
+
+    /// A docket number is the case at hand's after "No." (CASE, with its
+    /// repeats), a cited case's inside its citation, and never a tax, bank
+    /// or identity value (guide rule 5, #506 item 3, issue #480).
+    #[test]
+    fn docket_numbers_are_case_numbers_or_nothing() {
+        let source = "Ivo Harrow v. Quillon Freight LLC\nNo. 09-31-00999-CV\n\n\
+            See Pellam v. Ostrand, No. 09-30-00111-CV (Tex. App. 2030), and 1:31-cv-00999-ZZ \
+            (see 02 CV 3651). Index No. 06 CV 15490 is the related action. 31-99999-zzz Doc 7 \
+            Filed 06/12/31.\n09-31-00999-CV Page 2 of 3\n";
+        let raw = [
+            ("Ivo Harrow", "person"),
+            ("Quillon Freight LLC", "organization"),
+            ("09-31-00999-CV", "tax_id"),
+            ("09-30-00111-CV", "tax_id"),
+            ("1:31-cv-00999-ZZ", "tax_id"),
+            ("02 CV 3651", "bank_account"),
+            ("06 CV 15490", "tax_id"),
+            ("31-99999-zzz", "national_id_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Ivo Harrow", "PERSON"),
+                ("Quillon Freight LLC", "ORG"),
+                ("09-31-00999-CV", "CASE"),
+                ("06 CV 15490", "CASE"),
+                ("09-31-00999-CV", "CASE"),
+            ])
+        );
+        // A bankruptcy header's case number is CASE where a label names it,
+        // without the entry beside it.
+        let source = "Case: 15-49008-wsd\n15-49008-wsd Doc 19-1 Filed 06/12/15\n";
+        assert_eq!(
+            shown(source, &[("15-49008-wsd Doc 19-1", "tax_id")]),
+            pairs(&[("15-49008-wsd", "CASE"), ("15-49008-wsd", "CASE")])
+        );
+        for (value, category) in [
+            ("01-24-00779-CV", Category::Tax),
+            ("1:21-cv-00616-RP", Category::Tax),
+            ("02 CV 3651", Category::Bank),
+            ("15-49008-wsd Doc 19-1", Category::Tax),
+            ("01-24-00779-CV", Category::Identity),
+        ] {
+            assert!(!pack().identifying(value, category), "{value:?}");
+        }
+    }
+
+    /// Beside each English citation a real value and a party stay: a tax
+    /// number, an account, a phone, a passport, a company and a person
+    /// (issue #480).
+    #[test]
+    fn identifiers_beside_citation_variants_stay() {
+        let source = "Under 19CFR141.37 Quillon Freight LLC (EIN 98-7654321) paid from account \
+            number 12345678; NRS 41.1395 binds Ivo Harrow, tel. +1 (202) 555-0164, passport \
+            123456789 (CPR r71.8); Release Number 34-52926, SSN 123-45-6789; for the years \
+            2013 through 2016 (TXSD Page 7 of 8) Rowan Pell paid.";
+        let raw = [
+            ("Quillon Freight LLC", "organization"),
+            ("98-7654321", "tax_id"),
+            ("12345678", "bank_account"),
+            ("Ivo Harrow", "person"),
+            ("+1 (202) 555-0164", "phone_number"),
+            ("123456789", "passport_number"),
+            ("123-45-6789", "tax_id"),
+            ("Rowan Pell", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Quillon Freight LLC", "ORG"),
+                ("98-7654321", "TAX"),
+                ("12345678", "BANK"),
+                ("Ivo Harrow", "PERSON"),
+                ("+1 (202) 555-0164", "PHONE"),
+                ("123456789", "IDENTITY"),
+                ("123-45-6789", "TAX"),
+                ("Rowan Pell", "PERSON"),
+            ])
+        );
+    }
+
+    /// Close variants of the Russian references #511 covers: a law's number
+    /// spaced, reversed or in lower case, an article of a code by its full
+    /// name, a municipal act after a quoted name, a letter's number whole or
+    /// in pieces, a transfer document with its word, a trading protocol's
+    /// number and a date's month (guide rules 4 and 8, issue #480).
+    #[test]
+    fn russian_reference_variants_are_never_proposed() {
+        let source = "Постановление Администрации Энского района «Кедровый» от 25.03.2031 № \
+            833-ПА, по УПД № 137 от 06.06.2031, протоколу об определении участников торгов \
+            144355-МЭТС/1, Письмо Минфина России от 30.04.2031 N 52н, письмо № \
+            02-09-11/05-07-31116 и № 06-18/27628, Закон РФ «О защите прав потребителей» от \
+            07.02.1992 № 2300-1, Положение Банка России от 29.06.2031 N 762-П, ст. 428 \
+            Гражданского кодекса РФ, ст. 12.8 Кодекса Российской Федерации об \
+            административных правонарушениях, Федерального закона № 999 - ФЗ, ФЗ-127 и 44-фз.";
+        let raw = [
+            ("03", "bank_account"),
+            ("833-ПА", "national_id_number"),
+            ("УПД № 137", "tax_id"),
+            ("144355-МЭТС/1", "tax_id"),
+            ("52н", "tax_id"),
+            ("05-07-31116", "bank_account"),
+            ("06-18/27628", "tax_id"),
+            ("2300-1", "tax_id"),
+            ("762-П", "national_id_number"),
+            ("428 Гражданского кодекса РФ", "tax_id"),
+            ("12.8 Кодекса Российской Федерации", "tax_id"),
+            ("999 - ФЗ", "tax_id"),
+            ("ФЗ-127", "tax_id"),
+            ("44-фз", "tax_id"),
+        ];
+        let failures: Vec<String> = raw
+            .iter()
+            .filter_map(|span| {
+                let actual = shown(source, &[*span]);
+                (!actual.is_empty()).then(|| format!("{span:?}: {actual:?}"))
+            })
+            .collect();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// Beside each Russian reference real values, a party and the case's
+    /// own number stay; a page number comes off the case number's repeat,
+    /// and a court case's number after "№" is no letter's (issue #480).
+    #[test]
+    fn identifiers_beside_russian_reference_variants_stay() {
+        let source = "Дело № А28-3207/2031. Постановление Администрации Энского района \
+            «Кедровый» от 25.03.2031 № 833-ПА получила Лидия Брюн, ИНН 7701234567, КПП \
+            770101001, ОГРН 1027700132195, р/с 40702810900000012345 от 30.03.2031, паспорт \
+            4512 345678, тел. +7 (495) 123-45-67; по УПД № 137 ООО «Кедровый бор».\n\
+            3 А28-3207/2031\n";
+        let raw = [
+            ("Лидия Брюн", "person"),
+            ("7701234567", "tax_id"),
+            ("770101001", "tax_id"),
+            ("1027700132195", "tax_id"),
+            ("40702810900000012345", "bank_account"),
+            ("4512 345678", "passport_number"),
+            ("+7 (495) 123-45-67", "phone_number"),
+            ("ООО «Кедровый бор»", "organization"),
+            ("3 А28-3207/2031", "tax_id"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("А28-3207/2031", "CASE"),
+                ("Лидия Брюн", "PERSON"),
+                ("7701234567", "TAX"),
+                ("770101001", "TAX"),
+                // The structured ОГРН rule's category, as before #480.
+                ("1027700132195", "IDENTITY"),
+                ("40702810900000012345", "BANK"),
+                ("4512 345678", "IDENTITY"),
+                ("+7 (495) 123-45-67", "PHONE"),
+                ("ООО «Кедровый бор»", "ORG"),
+                ("А28-3207/2031", "CASE"),
+            ])
+        );
+        // A court case's number after "№" is no letter's: the model's span
+        // stays, as do a dotted account and an appellate number.
+        let source = "Решение суда № 2-1842/2031, счёт 40817.810.12.03.2031, № 09АП-1234/2031";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("2-1842/2031", "national_id_number"),
+                    ("40817.810.12.03.2031", "bank_account"),
+                    ("09АП-1234/2031", "tax_id"),
+                ]
+            ),
+            pairs(&[
+                ("2-1842/2031", "IDENTITY"),
+                ("40817.810.12.03.2031", "BANK"),
+                ("09АП-1234/2031", "TAX"),
+            ])
+        );
+    }
+
     /// A citation is found as detection reads it: through character
     /// references and across a soft line break. A company named like a
     /// code keeps its name; a blank line, a table row or a list item ends
