@@ -130,6 +130,14 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.fdeflate]
 opt-level = 2
+# The detection rule pack compiles and matches hundreds of patterns: the
+# recognition fixture test ran past nextest's 2-minute kill on the PC queue
+# runner (#655). Optimized, it takes 3.1 s instead of 13.6 on the M4, and
+# the Russian demo test 0.6 s instead of 2.9.
+[profile.dev.package.regex-automata]
+opt-level = 2
+[profile.dev.package.regex-syntax]
+opt-level = 2
 
 # Full debug information for lldb/CodeLLDB, in its own target/debugging/.
 [profile.debugging]

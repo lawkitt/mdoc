@@ -151,6 +151,12 @@
 # may have the word inside ("Ministry of Colleges and Universities").
 #
 # A `shape` entry has any of:
+#   min_code_chars = n  a model value needs n digits and capital letters
+#                       together, across all its groups ("24" and "[021]"
+#                       have too few; a SWIFT code's capitals count)
+#   lowercase_at_most_digits = true  a model value has no more lowercase
+#                       letters than digits ("Alternative Segment 3")
+#   forbid_unlabelled = [regex…]  like `forbid`, but `unless_in` lifts it
 #   require = [regex…]  a model span must match each one somewhere
 #   forbid  = [regex…]  a model span must match none
 #   case    = [regex…]  a model span matching one (anchor it yourself) is
@@ -167,7 +173,8 @@
 #                       joined only by whitespace outside the candidate do
 #                       not justify rejection; a decimal touching it does.
 #   unless_in = [regex…] a span inside one of these matches is exempt only
-#                       from `forbid_in` (a labelled identifier or account);
+#                       from `forbid_in`, `forbid_unlabelled` and digit/letter
+#                       counts (a labelled value);
 #                       the other shape checks still apply. Same syntax.
 #   word    = regex     some word of a model span (trimmed of punctuation
 #                       other than `-`) must match it and not be a `never`
@@ -200,8 +207,8 @@ span = []
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
 variants = []
 
-# References are per language.
-reference = []
+# Drawing dimensions are a reference (end of this file); others are per
+# language.
 
 # No language-free never words.
 never = []
@@ -497,3 +504,31 @@ public = [
     "gov", "int", "mil", "example.com", "example.org", "example.net",
     "europa.eu", "un.org", "courtlistener.com", "law.cornell.edu",
 ]
+
+# Short line, header and route numbers are no bank details (#375): a
+# pleading line "24", a plot tick "300", "Eielson Alternative Segment 3".
+# A sort code ("20-00-00"), a card's last four ("ending 4242",
+# "****1234"), a seven-digit account, a SWIFT/BIC code ("NWBKGB2L") and
+# an IBAN's first groups ("GB29 NWBK") have enough. A label lifts both.
+[[shape]]
+category = "BANK"
+min_code_chars = 4
+lowercase_at_most_digits = true
+
+# A bracketed page-header code ("[021]") is no phone (#375); a four-digit
+# extension stays even without its label ("6121"), a three-digit one
+# needs its label ("x207"). A plot's OCR-joined ticks ("1.981.96": one
+# digit, a dot, a group, a dot, two digits) are no phone either, while
+# dotted phones have more digits or other groups ("8.912.345.67.89",
+# "(495) 123.45.67", "01.23.45.67.89", "07700.900.123").
+[[shape]]
+category = "PHONE"
+min_code_chars = 4
+forbid_unlabelled = ['^\s*\d\.\d{1,3}\.\d{2}\s*$']
+
+# Drawing dimensions are no identifier, address or name (guide rule 8,
+# #375): numbers joined by "×" ("76×6.4×914") and a bend radius written
+# "<number> R to inside" ("6.4 R to inside"). Only the expression itself:
+# a lone " R " is a street, block or passport letter ("1500 R Street").
+[[reference]]
+pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+(?:[.,]\d+)?[\p{Zs}\t]+R[\p{Zs}\t]+to[\p{Zs}\t]+inside\b'
