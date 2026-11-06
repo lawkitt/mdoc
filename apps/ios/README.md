@@ -14,7 +14,9 @@ just mobile     # what CI runs: --ffi in ci/macos, --ios (the iOS job) as ci/ios
 just ios-device-test <hardware UDID>   # the device UI tests on a connected iPhone
 ```
 
-They need Xcode 26.2 (`scripts/tools.env`) with the iOS 26.2 platform. Both build the core first
+They need Xcode 26.2 and the iOS 26.2 Simulator runtime of build 23C54, as
+CI (`scripts/tools.env`; `scripts/ios-toolchain.sh` downloads the runtime,
+about 8 GB, and `just doctor` checks both). Both build the core first
 (`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
 `pdfium.xcframework`; a few seconds when nothing changed). Builds go to
 `target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
