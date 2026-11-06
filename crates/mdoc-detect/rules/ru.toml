@@ -756,8 +756,9 @@ unless_guessed = ["DATE"]
 # An administrative-offence protocol's number is CASE, not a phone (#484
 # item 7, #375): "протокол об административном правонарушении № 99 АБ
 # 123456", "протоколом об административном правонарушении от 01.03.2031 №
-# 18810099310001234567" (a date between, which stays unmarked). The series
-# and number keep their spaces.
+# 18810099310001234567" (a date between, in figures or with its month in
+# words, «от 01 марта 2031 г.», which stays unmarked). The series and
+# number keep their spaces.
 [[context]]
 category = "CASE"
 labels = [
@@ -767,7 +768,7 @@ labels = [
     "протоколом об административном правонарушении",
     "протоколе об административном правонарушении",
 ]
-between = '(?:[\p{Zs}\t]+от[\p{Zs}\t]+\d{1,2}\.\d{1,2}\.\d{2,4}(?:[\p{Zs}\t]*г\.?)?)?[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
+between = '(?:[\p{Zs}\t]+от[\p{Zs}\t]+\d{1,2}(?:\.\d{1,2}\.|[\p{Zs}\t]+\p{Lowercase}{3,8}[\p{Zs}\t]+)\d{2,4}(?:[\p{Zs}\t]*г\.?)?)?[\p{Zs}\t*_]{0,3}№[\p{Zs}\t:*_.]{0,6}'
 value = '\d{2}[\p{Zs}\t]?\p{Uppercase}{2}[\p{Zs}\t]?\d{6,7}|(?:\p{Alphabetic}+[-/:.]?)*\d[\p{Alphabetic}\p{N}]*(?:[-/:.][\p{Alphabetic}\p{N}]+)*'
 min_digits = 4
 unless_guessed = ["DATE"]

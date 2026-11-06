@@ -694,10 +694,15 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     // A case number repeated in another letter case is the same number
     // ("33А-2090/2026" in an act's title after "по делу № 33а-2090/2026",
     // issue #364); the review finds each wording's exact repeats.
-    let rules: Vec<Detection> = case_repeats(source, &rules, &precedents)
-        .into_iter()
-        .chain(rules)
-        .collect();
+    let rules: Vec<Detection> = case_repeats(
+        source,
+        &rules,
+        &precedents,
+        detections.iter().chain(&rules).chain(&spans),
+    )
+    .into_iter()
+    .chain(rules)
+    .collect();
     // A web address inside a labelled case number is part of it (guide rule
     // 8), and a domain inside an email is the email's
     // ("ismay&#64;crane-pith.invalid"); any other address wins over what is
@@ -745,8 +750,23 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
 }
 
 /// Each labelled case number's mentions in `source` in another letter case,
-/// as whole words and outside a precedent's citation.
-fn case_repeats(source: &str, rules: &[Detection], precedents: &[Range<usize>]) -> Vec<Detection> {
+/// as whole values, outside a precedent's citation and outside any value
+/// of another category in `others`.
+fn case_repeats<'a>(
+    source: &str,
+    rules: &[Detection],
+    precedents: &[Range<usize>],
+    others: impl Iterator<Item = &'a Detection>,
+) -> Vec<Detection> {
+    // An email, an account, an address or a web address may hold the
+    // number ("claims+cl-2026-000123@insurer.example", "account
+    // gb-2031-4471-0098", "Suite 2a-1234, 12 Harbour Road"): it is theirs,
+    // whoever found them.
+    let others: Vec<Range<usize>> = others
+        .filter(|other| other.category != Category::CaseNumber)
+        .map(|other| other.range.clone())
+        .chain(urls::scan(source).into_iter().map(|url| url.range))
+        .collect();
     let mut seen = std::collections::HashSet::new();
     let mut found = Vec::new();
     for rule in rules {
@@ -762,9 +782,23 @@ fn case_repeats(source: &str, rules: &[Detection], precedents: &[Range<usize>]) 
         };
         for mention in pattern.find_iter(source) {
             let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+            // A separator and a letter or digit beyond it join a longer
+            // value, as the review's whole values have it ("+cl-…@", "…-0098").
+            let joined = |separator: Option<char>, next: Option<char>| {
+                separator.is_some_and(|c| r"-/.:_\@+".contains(c)) && word(next)
+            };
+            let mut back = source[..mention.start()].chars().rev();
+            let mut ahead = source[mention.end()..].chars();
+            let (b1, b2) = (back.next(), back.next());
+            let (a1, a2) = (ahead.next(), ahead.next());
             if mention.as_str() == text
-                || word(source[..mention.start()].chars().next_back())
-                || word(source[mention.end()..].chars().next())
+                || word(b1)
+                || word(a1)
+                || joined(b1, b2)
+                || joined(a1, a2)
+                || others
+                    .iter()
+                    .any(|other| other.start < mention.end() && mention.start() < other.end)
                 || precedents
                     .iter()
                     .any(|case| case.start <= mention.start() && mention.end() <= case.end)
