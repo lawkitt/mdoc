@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":469,"end":482,"label":"organization","score":0.7783125,"text":"КоАП РФ"},
+    {"start":592,"end":625,"label":"organization","score":0.8319638,"text":"Судебная коллегия"},
+    {"start":797,"end":808,"label":"organization","score":0.5949043,"text":"КАС РФ"},
+    {"start":557,"end":590,"label":"tax_id","score":0.56427854,"text":"УИД 99RS0001-01-2031-009999-99"},
+    {"start":541,"end":555,"label":"tax_id","score":0.51970416,"text":"33А-9999/2031"}
+  ]
+}
