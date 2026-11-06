@@ -8422,6 +8422,63 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
     }
 
+    /// The real model run of #499's fixture: a Lord Justice's post-nominal
+    /// comes off the judge's name, and a badge after its bare label is
+    /// one person's identifier even when the model misses it.
+    #[test]
+    fn citation_parts_trim_lord_justices_and_mark_badges() {
+        for (source, raw, expected) in [
+            (
+                "See [2031] All ER (Comm) 9, per Ivo Ostrand LJ; Ostrand Aff. ¶ 3.",
+                "Ivo Ostrand LJ",
+                vec![("Ivo Ostrand", "PERSON"), ("Ostrand", "PERSON")],
+            ),
+            (
+                "Per Edda Venn LJJ, the appeal fails.",
+                "Edda Venn LJJ",
+                vec![("Edda Venn", "PERSON")],
+            ),
+            // "J" may be an initial and stays.
+            (
+                "The witness J Ostrand testified.",
+                "J Ostrand",
+                vec![("J Ostrand", "PERSON")],
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(raw, "person")]),
+                pairs(&expected),
+                "{source}"
+            );
+        }
+        for (source, badge) in [
+            ("The witness provided badge 88ZZ.", "88ZZ"),
+            ("Badge: 4471, issued at the gate.", "4471"),
+            ("Badge no. KX42 was returned.", "KX42"),
+        ] {
+            assert_eq!(
+                shown(source, &[]),
+                pairs(&[(badge, "IDENTITY")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "Badge holders may enter.",
+            "The badge 12 times failed.",
+            "Wear your badge at all times.",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+        // A labelled badge the model gives whole keeps its whole value.
+        assert_eq!(
+            shown(
+                "Employee badge: PD 57ZZ.",
+                &[("PD 57ZZ", "national_id_number")]
+            ),
+            pairs(&[("PD 57ZZ", "IDENTITY")])
+        );
+    }
+
     /// Exercise the CC0 fixture through correction and review with the
     /// faulty model boundaries from the probes, without inventing a model
     /// snapshot. The model gate supplies its own real output later (#499).
