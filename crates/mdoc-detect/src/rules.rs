@@ -13004,10 +13004,12 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 &[("0099911", "national_id_number")],
                 &[("0099911", "IDENTITY")],
             ),
+            // An administrative-offence protocol number is CASE (#484 item 7,
+            // #364's label rule).
             (
                 "протокол об административном правонарушении № 0199999",
                 &[("0199999", "national_id_number")],
-                &[("0199999", "IDENTITY")],
+                &[("0199999", "CASE")],
             ),
             // P3-1: a list after a record number stops before a phone or an ИНН;
             // a licence is no record.
@@ -13124,6 +13126,15 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ),
             pairs(&[("555-01-99", "PHONE")])
         );
+        // An administrative-offence protocol number is no phone but CASE
+        // (#484 item 7).
+        assert_eq!(
+            shown(
+                "протокол об административном правонарушении № 0199999",
+                &[("0199999", "phone_number")]
+            ),
+            pairs(&[("0199999", "CASE")])
+        );
         // Russian record numbers, list members of the first one's form too.
         for (source, value) in [
             ("Договор № 12345678", "12345678"),
@@ -13141,10 +13152,6 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("сообщение № 9999999", "9999999"),
             ("объявление № 13838487", "13838487"),
             ("протокол № 0199999", "0199999"),
-            (
-                "протокол об административном правонарушении № 0199999",
-                "0199999",
-            ),
             ("по ордеру № 009999", "009999"),
             (
                 "свидетельства о депонировании произведения № 023-014748",
