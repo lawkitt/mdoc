@@ -2965,6 +2965,19 @@ impl Pack {
         text: &str,
         category: Category,
     ) -> bool {
+        self.identifying_with_organizations(source, range, text, category, &[])
+    }
+
+    /// Like `identifying_at`, with independently accepted model company
+    /// names as evidence for a reference-looking short name (#499).
+    pub(crate) fn identifying_with_organizations(
+        &self,
+        source: &str,
+        range: std::ops::Range<usize>,
+        text: &str,
+        category: Category,
+        organizations: &[&str],
+    ) -> bool {
         if source.get(range.clone()).is_none() {
             return false;
         }
@@ -2974,7 +2987,29 @@ impl Pack {
             return true;
         }
         if self.in_reference(source, range.clone()) {
-            return false;
+            // A complete company name needs the same protection as one
+            // that grows to its legal form. IDs assigned to a person are
+            // private even when their value looks like a reference.
+            let company = category == Category::Organization
+                && (self.legal_form(text) || self.company_short_name(source, text) || {
+                    let normalized = |name: &str| {
+                        name.split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                            .to_lowercase()
+                    };
+                    let short = normalized(text);
+                    organizations.iter().any(|name| {
+                        let full = normalized(name);
+                        full == short
+                            || full
+                                .strip_prefix(&short)
+                                .is_some_and(|tail| tail.starts_with(' '))
+                    })
+                });
+            if !company && !Self::personal_identifier_context(source, range.start) {
+                return false;
+            }
         }
         if let Some(shape) = self.shapes.iter().find(|s| s.category == category)
             && !shape.forbid_in.is_empty()
@@ -3083,6 +3118,19 @@ impl Pack {
         self.shaped_named(text, category, &|_| category == Category::Person) && !quoted
     }
 
+    /// An explicit personal-ID label immediately before the value takes
+    /// precedence over a reference's shape (guide rule 6, #499).
+    fn personal_identifier_context(source: &str, at: usize) -> bool {
+        static LABEL: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(
+                r"(?i)\b(?:badge(?:\s+(?:number|no\.?|id))?|(?:employee|staff)\s+(?:id|number|no\.?|badge)|passport(?:\s+(?:number|no\.?))?)[\s:*_#№.]*$",
+            )
+            .expect("constant personal identifier label pattern")
+        });
+        let start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+        LABEL.is_match(&mdoc_pii::view::decoded(&source[start..at]))
+    }
+
     /// Whether `range` of `source` lies inside a `reference` match, a legal
     /// reference ("424 U.S. at 38", "статьи 431 ГК РФ"): no identifier,
     /// address or name (guide rule 8). The span's lines are searched as
@@ -3130,7 +3178,8 @@ impl Pack {
     /// An organization span ending in a `person_before` word ("Ostrand
     /// Decl.") becomes the person before it ("Ostrand") when a person's span
     /// holds each of that name's words: a declaration is a person's, never
-    /// a company.
+    /// a company. The same suffix comes off an existing person's span in
+    /// a document citation ("Ostrand Decl. ¶ 3", #499).
     fn person_documents(&self, source: &str, detections: &mut [Detection]) {
         let words: Vec<&String> = self
             .spans
@@ -3158,7 +3207,7 @@ impl Pack {
             .collect();
         for detection in detections
             .iter_mut()
-            .filter(|d| d.category == Category::Organization)
+            .filter(|d| matches!(d.category, Category::Organization | Category::Person))
         {
             let text = source[detection.range.clone()].trim_end();
             let Some((name, last)) = text.rsplit_once(char::is_whitespace) else {
@@ -3167,11 +3216,65 @@ impl Pack {
             let last = last.trim_end_matches('.').to_lowercase();
             let name = name.trim_end();
             let wanted = name_words(name);
+            // An existing PERSON needs citation punctuation after the
+            // abbreviated document word. A surname at a sentence end
+            // ("Ivo Decl.") or without the dot stays as the model gave it.
+            let after = &source[detection.range.end..];
+            let citation_tail = if text.ends_with('.') {
+                Some(after)
+            } else {
+                after.strip_prefix('.')
+            }
+            .is_some_and(|after| {
+                let after = after.trim_start_matches([' ', '\t']);
+                let after = after
+                    .strip_prefix(',')
+                    .unwrap_or(after)
+                    .trim_start_matches([' ', '\t']);
+                static PAGE_LINE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"^\d+:\d+(?:[-–](?:\d+:)?\d+)?(?:$|[\s),;.\]])")
+                        .expect("constant page-line pinpoint pattern")
+                });
+                // "Ex. 1 to Penrow Decl." explicitly names a document;
+                // punctuation plus another span's given name does not.
+                static EXHIBIT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"\bEx\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+$")
+                        .expect("constant exhibit document pattern")
+                });
+                static AT_PAGE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    // A clock time or a street address after "at"
+                    // supplies no document pinpoint evidence.
+                    Regex::new(r"^at[\p{Zs}\t]+\d+(?:[-–]\d+)?(?:[\p{Zs}\t]*$|[\p{Zs}\t]*[),;.\]])")
+                        .expect("constant at-page pinpoint pattern")
+                });
+                after.starts_with('¶')
+                    || PAGE_LINE.is_match(after)
+                    || (after.is_empty() || after.starts_with([')', ';']))
+                        && EXHIBIT.is_match(&source[..detection.range.start])
+                    || AT_PAGE.is_match(after)
+            });
+            // "Ivo Affleck" corroborates "Ivo Aff", not an affidavit
+            // label. Sharing only a given name proves no document label.
+            let abbreviated_surname = people.iter().any(|person| {
+                person.len() == wanted.len() + 1
+                    && wanted
+                        .iter()
+                        .zip(person)
+                        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+                    && person.last().is_some_and(|surname| {
+                        surname.len() > last.len() && surname.to_lowercase().starts_with(&last)
+                    })
+            });
             if !words.iter().any(|word| **word == last)
                 || wanted.is_empty()
-                || !people
-                    .iter()
-                    .any(|person| wanted.iter().all(|word| person.contains(word)))
+                || abbreviated_surname
+                || if detection.category == Category::Person {
+                    !citation_tail
+                } else {
+                    !people
+                        .iter()
+                        .any(|person| wanted.iter().all(|word| person.contains(word)))
+                }
             {
                 continue;
             }
@@ -3407,6 +3510,75 @@ impl Pack {
             .filter(|word| !word.is_empty())
             .peekable();
         words.peek().is_some() && words.all(|word| self.legal_form(word))
+    }
+
+    /// A reference-looking short name stays when the document also gives
+    /// its company's legal form, ignoring case and a soft line wrap. No
+    /// model span is required over the full name (guide rule 2).
+    fn company_short_name(&self, source: &str, text: &str) -> bool {
+        let source = mdoc_pii::view::decoded(source);
+        let wording = text
+            .split_whitespace()
+            .map(regex::escape)
+            .collect::<Vec<_>>()
+            .join(r"[\p{Zs}\t]+");
+        if wording.is_empty() {
+            return false;
+        }
+        // Regex case folding preserves source offsets even for Unicode
+        // letters whose lowercase spelling has a different byte length.
+        let pattern = Regex::new(&format!(r"(?i){wording}")).expect("escaped company wording");
+        pattern.find_iter(&source).any(|found| {
+            // Check boundaries outside the matched wording so a name's
+            // own final dot ("C.F.R.") remains part of the spelling.
+            if source[..found.start()]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            {
+                return false;
+            }
+            let after = &source[found.end()..];
+            if !after.starts_with(char::is_whitespace) {
+                return false;
+            }
+            // Permit a soft wrap, but never a paragraph or heading break.
+            let end = after.find('\n').map_or(after.len(), |at| {
+                let next = &after[at + 1..];
+                let next_end = next.find('\n').unwrap_or(next.len());
+                let line = source[..found.end()]
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or_default();
+                if soft_break(line, &next[..next_end]) {
+                    at + 1 + next_end
+                } else {
+                    at
+                }
+            });
+            // Only contiguous name words can lead to the legal form;
+            // prose or a sentence boundary ends the name.
+            for word in after[..end].split_whitespace() {
+                let punctuated = word.ends_with(['.', ',', ';', ')', '»', '”', '"']);
+                let word = word.trim_end_matches(['.', ',', ';', ')', '»', '”', '"']);
+                if self.legal_form(word) {
+                    return true;
+                }
+                if punctuated
+                    || word != "&"
+                        && !(word
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_uppercase() || c.is_ascii_digit())
+                            && word
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '\'' | '’')))
+                {
+                    break;
+                }
+            }
+            false
+        })
     }
 
     /// Whether an organization `span` fix grows the span at `range` of
@@ -8497,6 +8669,735 @@ Privacy Act (“BIPA”). BIPA applies.",
         );
         assert!(!pack().identifying("Anor", Category::Person));
         assert!(!pack().identifying("Ors", Category::Organization));
+    }
+
+    /// Issue #499's follow-up probes: citation parts name nobody, while
+    /// the declarant and people following a reporter keep their full names.
+    #[test]
+    fn citation_parts_follow_up_probes() {
+        let mut failures = Vec::new();
+        for (source, text, label) in [
+            ("See 424 U.S. at 38.", "424 U.S. at 38", "address"),
+            (
+                "See 904 F.2d 275, 277.",
+                "904 F.2d 275, 277",
+                "phone_number",
+            ),
+            ("See 33 A.D.3d 352.", "A.D.", "person"),
+            ("Under 42 U.S.C. § 1983.", "S.C.", "person"),
+            ("Under I.R.C. § 61.", "I.R.C.", "person"),
+            (
+                "See n. 14; Tr. 112-14; 123sa.",
+                "n. 14",
+                "national_id_number",
+            ),
+            (
+                "Under Chapter 7 of the Bankruptcy Code.",
+                "Chapter 7",
+                "organization",
+            ),
+            ("Chapter 11 Case", "Chapter 11", "organization"),
+            ("R (on the application of Penrow)", "R", "person"),
+            ("See at p. 478A.", "478A", "address"),
+            ("See 1931 S.C. (H.L.) 13.", "S.C.", "person"),
+            ("See 1931 S.C. (H.L.) 13.", "H.L", "person"),
+            ("See [2031] All ER (Comm) 9.", "Comm", "organization"),
+            (
+                "Under National Instrument 45-999.",
+                "National Instrument 45-999",
+                "national_id_number",
+            ),
+            ("Under PD 57ZZ.", "PD 57ZZ", "organization"),
+            (
+                "See 352 DM - Aviation Safety.",
+                "352 DM - Aviation Safety",
+                "organization",
+            ),
+            (
+                "See AHCP/CCAA p. S-19.",
+                "AHCP/CCAA p. S-19",
+                "organization",
+            ),
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl", "person"),
+            ("See Decl. ¶ 4.", "Decl", "person"),
+            ("See Dep. of Ivo Penrow at 4.", "Dep", "person"),
+            ("See Aff. of Ivo Penrow ¶ 4.", "Aff", "person"),
+            ("See Ex. 1 to Penrow Decl.", "Ex. 1", "person"),
+            ("Under Tex. R. Civ. P. 91a.", "Tex. R. Civ", "organization"),
+            ("Under Tex. R. App. P. 9.", "Tex. R. App", "organization"),
+            ("Under Fed. R. Civ. P. 12.", "Fed. R. Civ", "organization"),
+            (
+                "See (Tex. App.—Slocombe 2031, pet. filed).",
+                "Slocombe 2031",
+                "address",
+            ),
+            ("See Section XII.", "Section XII", "organization"),
+            (
+                "As held in Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+                "09-31-00888-CV",
+                "national_id_number",
+            ),
+        ] {
+            let actual = shown(source, &[(text, label)]);
+            if !actual.is_empty() {
+                failures.push(format!("{source:?}: {actual:?}"));
+            }
+        }
+        for (source, text, expected) in [
+            ("(Ostrand Decl. ¶ 3)", "Ostrand Decl", "Ostrand"),
+            ("(Penrow Dep. at 4)", "Penrow Dep", "Penrow"),
+            ("(Penrow Aff. ¶ 4)", "Penrow Aff", "Penrow"),
+            (
+                "[2031] 1 W.L.R. 12, Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+            (
+                "[2031] 1 W.L.R. Ivo Ostrand LJ",
+                "Ivo Ostrand",
+                "Ivo Ostrand",
+            ),
+        ] {
+            let actual = shown(source, &[(text, "person")]);
+            let wanted = pairs(&[(expected, "PERSON")]);
+            if actual != wanted {
+                failures.push(format!("{source:?}: {actual:?}, expected {wanted:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A capital S followed by a Roman-looking initial names a person,
+    /// including when the model leaves the last period outside its span.
+    #[test]
+    fn citation_parts_keep_witness_initials() {
+        let source = "The witness S. M. testified.";
+        for name in ["S. M", "S. M."] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")])
+            );
+        }
+        for reference in ["Section XII", "Sec. XII", "§ XII", "s. 12", "s. 12(a)"] {
+            let source = format!("See {reference}.");
+            assert!(
+                shown(&source, &[(reference, "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// A company's full name protects its short name throughout the
+    /// document, including when it resembles a chapter reference.
+    #[test]
+    fn citation_parts_keep_established_company_short_names() {
+        let source = "Chapter 11 Ltd supplied the books.\nChapter 11 refused repayment.";
+        assert_eq!(
+            shown_at(
+                source,
+                &[
+                    ("Chapter 11 Ltd", 0, "organization"),
+                    ("Chapter 11", 1, "organization")
+                ]
+            ),
+            pairs(&[("Chapter 11 Ltd", "ORG"), ("Chapter 11", "ORG")])
+        );
+        for source in [
+            source,
+            "Chapter 11 refused repayment.\nChapter 11 Ltd supplied the books.",
+            "Chapter 11 refused repayment.\nChapter 11 Books Ltd supplied the books.",
+            "Under Chapter 11, repayment is due.\nCHAPTER 11 LTD supplied the books.",
+            "# Parties\nUnder Chapter 11, repayment is due.\nChapter 11\nLtd supplied the books.",
+        ] {
+            // The full name is evidence even without a model span over it.
+            let at = source.find("Chapter 11").unwrap();
+            assert!(
+                pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+        for source in [
+            "Under Chapter 11, repayment is due.",
+            "SubChapter 11 Ltd supplied the books.\nUnder Chapter 11, repayment is due.",
+            "Chapter 11 applies to the debtor Ltd.\nUnder Chapter 11, repayment is due.",
+        ] {
+            let at = source.rfind("Chapter 11").unwrap();
+            assert!(
+                !pack().identifying_at(
+                    source,
+                    at..at + "Chapter 11".len(),
+                    "Chapter 11",
+                    Category::Organization
+                ),
+                "{source}"
+            );
+        }
+    }
+
+    /// A comma before a paragraph or a page:line pinpoint supplies the
+    /// citation context needed to remove an abbreviated document label.
+    #[test]
+    fn citation_parts_trim_document_labels_before_pinpoints() {
+        for (source, name) in [
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl"),
+            ("(Penrow Decl., ¶ 3)", "Penrow Decl."),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4–13:2)", "Penrow Dep."),
+            ("(Penrow Dep., 12:4-13:2)", "Penrow Dep"),
+            ("(Penrow Dep. 12:4-9)", "Penrow Dep"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[("Penrow", "PERSON")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "The witness (Penrow Decl., who testified).",
+            "The witness (Penrow Dep. 12:4smith).",
+            "The witness (Penrow Dep. 12).",
+            "The witness (Penrow Dep. 12:4–).",
+        ] {
+            let name = if source.contains("Decl") {
+                "Penrow Decl"
+            } else {
+                "Penrow Dep"
+            };
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// Complete company spans are protected before reference rejection,
+    /// and invalid Roman words never become section numbers (g1 finding 1).
+    #[test]
+    fn citation_parts_keep_complete_companies_and_reject_invalid_romans() {
+        for (source, name) in [
+            ("The supplier is Section LLC.", "Section LLC"),
+            ("The books were supplied by Chapters LLC.", "Chapters LLC"),
+            ("See Section LLC.", "Section LLC"),
+            ("See Chapters LLC.", "Chapters LLC"),
+            ("The supplier is Chapter LLC.", "Chapter LLC"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        // No ORG/legal-form protection participates in this check: the
+        // Roman grammar itself must refuse LLC and other invalid words.
+        for roman in ["LLC", "IIV", "VX", "IIII", "MMMM"] {
+            let source = format!("See § {roman}.");
+            assert!(
+                !pack().in_reference(&source, 7..7 + roman.len()),
+                "{source}"
+            );
+        }
+        for roman in [
+            "I",
+            "IV",
+            "IX",
+            "XII",
+            "XL",
+            "XC",
+            "CD",
+            "CM",
+            "MDCLXVI",
+            "MMMCMXCIX",
+        ] {
+            let reference = format!("Section {roman}");
+            let source = format!("See {reference}.");
+            assert!(
+                shown(&source, &[(&reference, "organization")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// Personal-ID labels win over reference shapes, and ambiguous bare
+    /// PD/DM codes need affirmative legal context (g1 finding 2).
+    #[test]
+    fn citation_parts_keep_labelled_personal_identifiers() {
+        for (source, value, label) in [
+            ("Employee badge: PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            ("Employee ID: 352 DM.", "352 DM", "national_id_number"),
+            ("Employee ID: PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            (
+                "The witness presented passport PD 57ZZ.",
+                "PD 57ZZ",
+                "passport_number",
+            ),
+            ("Staff number: 352 DM.", "352 DM", "national_id_number"),
+            (
+                "Badge number: National Instrument 45-999.",
+                "National Instrument 45-999",
+                "national_id_number",
+            ),
+            (
+                "Employee ID: PD 57ZZ-9842.",
+                "PD 57ZZ-9842",
+                "national_id_number",
+            ),
+            ("The value is PD 57ZZ.", "PD 57ZZ", "national_id_number"),
+            ("The value is 352 DM.", "352 DM", "national_id_number"),
+        ] {
+            assert_eq!(
+                shown(source, &[(value, label)]),
+                pairs(&[(value, "IDENTITY")]),
+                "{source}"
+            );
+        }
+        for (source, value) in [
+            ("Under PD 57ZZ.", "PD 57ZZ"),
+            ("See 352 DM.", "352 DM"),
+            ("See 352 DM - Aviation Safety.", "352 DM - Aviation Safety"),
+            ("Practice Direction PD 57ZZ.", "PD 57ZZ"),
+        ] {
+            assert!(
+                shown(source, &[(value, "national_id_number")]).is_empty(),
+                "{source}"
+            );
+        }
+    }
+
+    /// Case, wrapping and an independently recognized trading name all
+    /// protect a company's short name; uncertainty keeps it (g1 finding 3).
+    #[test]
+    fn citation_parts_keep_company_casing_wraps_and_trading_names() {
+        for (source, full, short_n, expected_full) in [
+            (
+                "CHAPTER 11 LTD supplied the books. Chapter 11 refused a refund.",
+                "CHAPTER 11 LTD",
+                0,
+                "CHAPTER 11 LTD",
+            ),
+            (
+                "Chapter 11 Books supplied the books. Chapter 11 refused a refund.",
+                "Chapter 11 Books",
+                1,
+                "Chapter 11 Books",
+            ),
+            (
+                "Chapter 11\nLtd supplied the books. Chapter 11 refused a refund.",
+                "Chapter 11\nLtd",
+                1,
+                "Chapter 11",
+            ),
+            (
+                "Chapter 11 LLC supplied the books. Chapter 11 refused repayment.",
+                "Chapter 11 LLC",
+                1,
+                "Chapter 11 LLC",
+            ),
+            // Affirmative reference cues still defer to independent
+            // company evidence, including a later model-only trading name.
+            (
+                "CHAPTER 11 LTD supplied the books. See Chapter 11.",
+                "CHAPTER 11 LTD",
+                0,
+                "CHAPTER 11 LTD",
+            ),
+            (
+                "Chapter 11\nLtd supplied the books. See Chapter 11.",
+                "Chapter 11\nLtd",
+                1,
+                "Chapter 11",
+            ),
+            (
+                "Chapter 11 Books supplied the books. See Chapter 11.",
+                "Chapter 11 Books",
+                1,
+                "Chapter 11 Books",
+            ),
+        ] {
+            assert_eq!(
+                shown_at(
+                    source,
+                    &[
+                        (full, 0, "organization"),
+                        ("Chapter 11", short_n, "organization")
+                    ]
+                ),
+                pairs(&[(expected_full, "ORG"), ("Chapter 11", "ORG")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "The books were supplied by Chapter 11. Chapter 11 refused a refund.",
+                &[("Chapter 11", "organization")]
+            ),
+            pairs(&[("Chapter 11", "ORG"), ("Chapter 11", "ORG")])
+        );
+        for source in [
+            "The applicant trades as Section IV.",
+            "Chapter 11.",
+            "Chapter 11 governs repayment.",
+        ] {
+            let name = if source.contains("Section") {
+                "Section IV"
+            } else {
+                "Chapter 11"
+            };
+            assert_eq!(
+                shown(source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        let source = "See Chapter 11. Chapter 11 Books supplied the books.";
+        assert_eq!(
+            shown_at(
+                source,
+                &[
+                    ("Chapter 11", 0, "organization"),
+                    ("Chapter 11 Books", 0, "organization")
+                ]
+            ),
+            pairs(&[("Chapter 11", "ORG"), ("Chapter 11 Books", "ORG")])
+        );
+        let source = "C.F.R. LLC supplied the books. See C.F.R.";
+        // Source evidence matching must accept punctuation belonging to
+        // the short spelling, independently of category shape filters.
+        assert!(pack().company_short_name(source, "C.F.R."));
+    }
+
+    /// A shared given name and punctuation prove no document label, and
+    /// an attendance time is no pinpoint (g1 finding 4).
+    #[test]
+    fn citation_parts_keep_abbreviated_surnames_and_attendance_times() {
+        for (source, full, abbreviated) in [
+            (
+                "Ivo Affleck testified (recorded as Ivo Aff.).",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+            (
+                "Ivo Depp testified (recorded as Ivo Dep.).",
+                "Ivo Depp",
+                "Ivo Dep",
+            ),
+            (
+                "Ivo Affleck testified (recorded as Ivo Aff.; present).",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+            (
+                "Ivo Affleck testified; Ivo Aff. ¶ 4.",
+                "Ivo Affleck",
+                "Ivo Aff",
+            ),
+        ] {
+            assert_eq!(
+                shown_at(source, &[(full, 0, "person"), (abbreviated, 1, "person")]),
+                pairs(&[(full, "PERSON"), (abbreviated, "PERSON")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Witness: Ivo Dep. at 09:30; clerk: Orin Vale.",
+                &[("Ivo Dep", "person"), ("Orin Vale", "person")]
+            ),
+            pairs(&[("Ivo Dep", "PERSON"), ("Orin Vale", "PERSON")])
+        );
+        for (source, name) in [
+            ("Ivo Dep. at 09:30 signed the form.", "Ivo Dep"),
+            ("Ivo Aff. at 09:30 signed the form.", "Ivo Aff"),
+            ("Ivo Decl. at 09:30 signed the form.", "Ivo Decl"),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                pairs(&[(name, "PERSON")]),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "Ivo Affleck testified (recorded as Ivo Dep.).",
+                &[("Ivo Affleck", "person"), ("Ivo Dep", "person")]
+            ),
+            pairs(&[("Ivo Affleck", "PERSON"), ("Ivo Dep", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "See Decl. of Ivo Penrow ¶ 4.",
+                &[("Decl. of Ivo Penrow", "person")]
+            ),
+            pairs(&[("Ivo Penrow", "PERSON")])
+        );
+    }
+
+    /// A citation-part fix must never hide a real name, company or number
+    /// that merely resembles its marker (issue #499).
+    #[test]
+    fn citation_parts_keep_real_names_and_identifiers() {
+        assert_eq!(
+            shown(
+                "The witness (Ivo Decl.) testified.",
+                &[("Ivo Decl", "person")]
+            ),
+            pairs(&[("Ivo Decl", "PERSON")])
+        );
+        for name in [
+            "Declan Penrow",
+            "Ivo Affleck",
+            "Ms Decl",
+            "Mr Aff",
+            "Ivo Decl",
+            "Decl",
+            "Aff",
+            "Ex",
+        ] {
+            let expected = name
+                .strip_prefix("Ms ")
+                .or_else(|| name.strip_prefix("Mr "))
+                .unwrap_or(name);
+            let source = format!("The witness is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
+        for name in [
+            "Decl Research Ltd",
+            "Aff Analytics LLC",
+            "Chapter 11 Ltd",
+            "National Instrument 45-999 Ltd",
+            "PD 57ZZ Ltd",
+            "Section XII LLC",
+            "Comm Trading Ltd",
+        ] {
+            let source = format!("The applicant is {name}.");
+            assert_eq!(
+                shown(&source, &[(name, "organization")]),
+                pairs(&[(name, "ORG")]),
+                "{source}"
+            );
+        }
+        for (source, text) in [
+            ("See Decl. of Ivo Penrow ¶ 4.", "Decl. of Ivo Penrow"),
+            (
+                "See Ex. 1 to Ivo Penrow Decl. ¶ 4.",
+                "Ex. 1 to Ivo Penrow Decl",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(text, "person")]),
+                pairs(&[("Ivo Penrow", "PERSON")])
+            );
+        }
+        // The same docket in this action or its caption must stay; only
+        // a docket attached to a precedent is suppressed.
+        for source in [
+            "Case No. 09-31-00888-CV.",
+            "Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+            "The judgment under appeal is Pellam v. Ostrand, 999 S.W.3d 1 (Tex. App.—Slocombe 2031, pet. filed), No. 09-31-00888-CV.",
+        ] {
+            let detections = shown(source, &[("09-31-00888-CV", "national_id_number")]);
+            assert!(
+                detections.iter().any(|(text, _)| text == "09-31-00888-CV"),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            shown(
+                "S.C. Penrow and H.L. Venn testified.",
+                &[("S.C. Penrow", "person"), ("H.L. Venn", "person")]
+            ),
+            pairs(&[("S.C. Penrow", "PERSON"), ("H.L. Venn", "PERSON")])
+        );
+        assert_eq!(
+            shown(
+                "R. Penrow lives at 478A Cedar Road, Slocombe 45999.",
+                &[
+                    ("R. Penrow", "person"),
+                    ("478A Cedar Road, Slocombe 45999", "address")
+                ]
+            ),
+            pairs(&[
+                ("R. Penrow", "PERSON"),
+                ("478A Cedar Road, Slocombe 45999", "ADDRESS")
+            ])
+        );
+        assert_eq!(
+            shown(
+                "Account 45-999; ID S-19; badge 57ZZ.",
+                &[
+                    ("45-999", "bank_account"),
+                    ("S-19", "national_id_number"),
+                    ("57ZZ", "national_id_number")
+                ]
+            ),
+            pairs(&[
+                ("45-999", "BANK"),
+                ("S-19", "IDENTITY"),
+                ("57ZZ", "IDENTITY")
+            ])
+        );
+    }
+
+    /// The real model run of #499's fixture: a Lord Justice's post-nominal
+    /// comes off the judge's name, and a badge after its bare label is
+    /// one person's identifier even when the model misses it.
+    #[test]
+    fn citation_parts_trim_lord_justices_and_mark_badges() {
+        for (source, raw, expected) in [
+            (
+                "See [2031] All ER (Comm) 9, per Ivo Ostrand LJ; Ostrand Aff. ¶ 3.",
+                "Ivo Ostrand LJ",
+                vec![("Ivo Ostrand", "PERSON"), ("Ostrand", "PERSON")],
+            ),
+            (
+                "Per Edda Venn LJJ, the appeal fails.",
+                "Edda Venn LJJ",
+                vec![("Edda Venn", "PERSON")],
+            ),
+            // "J" may be an initial and stays.
+            (
+                "The witness J Ostrand testified.",
+                "J Ostrand",
+                vec![("J Ostrand", "PERSON")],
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(raw, "person")]),
+                pairs(&expected),
+                "{source}"
+            );
+        }
+        for (source, badge) in [
+            ("The witness provided badge 88ZZ.", "88ZZ"),
+            ("Badge: 4471, issued at the gate.", "4471"),
+            ("Badge no. KX42 was returned.", "KX42"),
+        ] {
+            assert_eq!(
+                shown(source, &[]),
+                pairs(&[(badge, "IDENTITY")]),
+                "{source}"
+            );
+        }
+        for source in [
+            "Badge holders may enter.",
+            "The badge 12 times failed.",
+            "Wear your badge at all times.",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+        // A labelled badge the model gives whole keeps its whole value.
+        assert_eq!(
+            shown(
+                "Employee badge: PD 57ZZ.",
+                &[("PD 57ZZ", "national_id_number")]
+            ),
+            pairs(&[("PD 57ZZ", "IDENTITY")])
+        );
+    }
+
+    /// Exercise the CC0 fixture through correction and review with the
+    /// faulty model boundaries from the probes, without inventing a model
+    /// snapshot. The model gate supplies its own real output later (#499).
+    #[test]
+    fn citation_parts_fixture_keeps_its_declarants() {
+        let fixture = crate::recognition::Fixture::parse(
+            std::path::Path::new("en/judgment/probe-en-r3-citation-parts.md"),
+            include_str!(
+                "../../../tests/fixtures/recognition/en/judgment/probe-en-r3-citation-parts.md"
+            ),
+        )
+        .unwrap();
+        fixture.validate().unwrap();
+        fixture.validate_layout().unwrap();
+        let source = fixture.source.as_str();
+        let mut raw: Vec<_> = fixture
+            .gold
+            .iter()
+            .map(|span| {
+                let mut range = span.range.clone();
+                let label = match span.category.as_str() {
+                    "PERSON" => "person",
+                    "ORG" => "organization",
+                    "IDENTITY" => "national_id_number",
+                    other => panic!("unexpected category {other}"),
+                };
+                if label == "person" {
+                    for word in [" Decl", " Aff", " Dep"] {
+                        if source[range.end..].starts_with(word) {
+                            range.end += word.len();
+                            break;
+                        }
+                    }
+                }
+                crate::RawEntity {
+                    start: range.start,
+                    end: range.end,
+                    label: label.into(),
+                    score: 0.8,
+                    text: source[range].into(),
+                }
+            })
+            .collect();
+        for (text, label) in [
+            ("Chapter 11", "organization"),
+            ("S.C.", "person"),
+            ("H.L", "person"),
+            ("Comm", "organization"),
+            ("National Instrument 45-999", "national_id_number"),
+            ("PD 57ZZ", "organization"),
+            ("478A", "address"),
+            ("Section XII", "organization"),
+            ("352 DM - Aviation Safety", "organization"),
+            ("AHCP/CCAA p. S-19", "organization"),
+            ("Decl", "person"),
+            ("Ex. 1", "person"),
+            ("Tex. R. Civ", "organization"),
+            ("Pellam", "person"),
+            ("Brindle", "person"),
+            ("Slocombe 2031", "address"),
+            ("09-31-00888-CV", "national_id_number"),
+            ("R", "person"),
+        ] {
+            // R is the judicial-review marker, not a letter in "Research".
+            let start = if text == "R" {
+                source.find("R (on").unwrap()
+            } else {
+                source.find(text).unwrap()
+            };
+            raw.push(crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: label.into(),
+                score: 0.8,
+                text: text.into(),
+            });
+        }
+        // The fixture also names Chapter 11 Ltd and Comm Trading Ltd.
+        // Their short names stay everywhere under the conservative name
+        // policy, even in references the fixture's existing gold omits.
+        // Keep this expectation here without changing the fixture.
+        let mut expected = fixture.gold.clone();
+        for text in ["Chapter 11", "Comm"] {
+            let start = source.find(text).unwrap();
+            expected.push(crate::recognition::Span {
+                range: start..start + text.len(),
+                category: "ORG".into(),
+            });
+        }
+        expected.sort();
+        assert_eq!(
+            crate::recognition::proposals(source, &raw).unwrap(),
+            expected
+        );
     }
 
     /// [`shown`] for spans each at the `n`th place of its text (from 0).
