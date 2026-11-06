@@ -4,11 +4,11 @@
 # prints `DEVELOPER_DIR=<its Developer folder>` on stdout, which ci-ios.yml
 # appends to $GITHUB_ENV (ADR 0095). Finds the Xcode whose `xcodebuild
 # -version` is XCODE_VERSION (the selected one, or /Applications/Xcode_<v>.app
-# as the hosted images name them) and fails when none is; uses an installed
-# iOS Simulator runtime whose major.minor is IOS_SIM_RUNTIME, and downloads
-# that runtime only when none is (about 8 GB, 4 minutes on a hosted runner);
-# creates the iPhone 17 the job tests on when the runtime has none. On a Mac
-# already set up it changes nothing.
+# as the hosted images name them) and fails when none is; uses the installed
+# iOS Simulator runtime of build IOS_SIM_RUNTIME_BUILD (IOS_SIM_RUNTIME), and
+# downloads that build only when it is missing (about 8 GB, 4 minutes on a
+# hosted runner, whose image ships it); creates the iPhone 17 the job tests
+# on when the runtime has none. On a Mac already set up it changes nothing.
 #
 #   --no-simulator  Xcode only: a build of the core (main-caches.yml) needs
 #                   no Simulator runtime. An app build does, even for a
@@ -54,36 +54,27 @@ if [ "$mode" = --no-simulator ]; then
   exit 0
 fi
 
-# runtime: the identifier and version of an available iOS runtime whose
-# major.minor is the pin's (26.2 takes 26.2 or 26.2.x), or nothing.
-runtime() {
-  xcrun simctl list runtimes -j | python3 -c '
-import json, sys
-want = sys.argv[1].split(".")[:2]
-for r in json.load(sys.stdin)["runtimes"]:
-    if (r.get("platform") == "iOS" and r.get("isAvailable")
-            and r["version"].split(".")[:2] == want):
-        print(r["identifier"], r["version"])
-        break
-' "$IOS_SIM_RUNTIME"
-}
+# runtime: the identifier and version of the pinned runtime, or nothing.
+runtime() { ios_sim_runtime; }
+pin="iOS $IOS_SIM_RUNTIME ($IOS_SIM_RUNTIME_BUILD)"
 
 # download: the runtime from Apple, one retry, as for any download (ADR 0095).
 download() {
-  # The build of the runtime that this Xcode pairs with its SDK when the
-  # versions agree: Xcode 26.1.1 took no other iOS 26.1 build (23B80 left
-  # it without an iOS Simulator destination). Arm64 only, like the core.
-  local version=() start=$SECONDS
-  [ "$(xcrun --sdk iphonesimulator --show-sdk-version)" = "$IOS_SIM_RUNTIME" ] ||
-    version=(-buildVersion "$IOS_SIM_RUNTIME")
-  echo "ios-toolchain: no iOS $IOS_SIM_RUNTIME Simulator runtime installed; downloading it" >&2
-  fetch() { xcodebuild -downloadPlatform iOS ${version[@]+"${version[@]}"} -architectureVariant arm64 >&2; }
+  # By build: a version alone is ambiguous (26.2 resolves to the 23C52
+  # release candidate; 26.1 to 23B80, which left Xcode 26.1.1 without an iOS
+  # Simulator destination), and no version takes the newest runtime this
+  # Xcode supports (26.3.1 for Xcode 26.2; #654). Arm64 only, like the core.
+  local start=$SECONDS
+  echo "ios-toolchain: no $pin Simulator runtime installed; downloading it" >&2
+  fetch() { xcodebuild -downloadPlatform iOS -buildVersion "$IOS_SIM_RUNTIME_BUILD" -architectureVariant arm64 >&2; }
   fetch || {
     echo "ios-toolchain: the download failed; retrying once" >&2
     fetch
   }
-  [ -n "$(runtime)" ] || die "iOS $IOS_SIM_RUNTIME is still not an available Simulator runtime after its download"
-  echo "ios-toolchain: iOS $IOS_SIM_RUNTIME installed in $((SECONDS - start)) s" >&2
+  # Runtimes of one version share an identifier, so with another build of
+  # it installed Xcode may prefer that one.
+  [ -n "$(runtime)" ] || die "$pin is still not an available Simulator runtime after its download; if another iOS $IOS_SIM_RUNTIME build is installed, prefer this one with: xcrun simctl runtime match set iphoneos$IOS_SIM_RUNTIME $IOS_SIM_RUNTIME_BUILD"
+  echo "ios-toolchain: $pin installed in $((SECONDS - start)) s" >&2
 }
 
 case "$mode" in
@@ -95,7 +86,7 @@ case "$mode" in
       nohup bash -c 'scripts/ios-toolchain.sh; echo $? >"$0/status"' "$state" \
         </dev/null >"$state/log" 2>&1 &
       echo $! >"$state/pid"
-      echo "ios-toolchain: downloading the iOS $IOS_SIM_RUNTIME Simulator runtime in the background ($state/log)" >&2
+      echo "ios-toolchain: downloading the $pin Simulator runtime in the background ($state/log)" >&2
     fi
     echo "DEVELOPER_DIR=$developer"
     exit 0
@@ -107,7 +98,7 @@ case "$mode" in
       # Its own lines and the end of Xcode's; the progress lines are noise.
       grep -v '^Downloading ' "$state/log" | tail -n 40 >&2 || true
       echo "ios-toolchain: waited $((SECONDS - start)) s for the background download" >&2
-      [ "$(cat "$state/status" 2>/dev/null)" = 0 ] || die "the background download of iOS $IOS_SIM_RUNTIME failed (above)"
+      [ "$(cat "$state/status" 2>/dev/null)" = 0 ] || die "the background download of $pin failed (above)"
     fi
     ;;
 esac

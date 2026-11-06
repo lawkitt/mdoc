@@ -515,13 +515,19 @@ Both build the core with `just ios-core` and restore one cargo cache
 (`cache-key: ios`), which `main-caches.yml`'s build-only run of the tests
 job saves. Xcode needs a Simulator runtime of the SDK's version for any
 app build, Release included, so each job runs `scripts/ios-toolchain.sh
---start`: it uses an installed runtime whose major.minor is
-`IOS_SIM_RUNTIME`, or downloads it (about 8 GB) in the background while
-the core builds; `--finish` waits for it. The pins, Xcode 26.2 and iOS
-26.2, are ones the `macos-26` image ships (with its iPhone 17), so neither
-job downloads a runtime (#630); a pin the image lacks costs each job about
-8 GB and 4 minutes. A Mac that runs `just mobile --ios` needs the same
-Xcode 26.2 (`just doctor` checks it), with its iOS 26.2 platform.
+--start`: it uses the installed runtime of build `IOS_SIM_RUNTIME_BUILD`
+(of version `IOS_SIM_RUNTIME`), or downloads that build (about 8 GB) in
+the background while the core builds; `--finish` waits for it. The pins,
+Xcode 26.2 and iOS 26.2 build 23C54, are ones the `macos-26` image ships
+(with its iPhone 17), so neither job downloads a runtime (#630); a pin the
+image lacks costs each job about 8 GB and 4 minutes. The build is pinned
+because a version alone is ambiguous: `-buildVersion 26.2` resolves to the
+23C52 release candidate (#654). A Mac that runs `just mobile --ios` needs
+the same Xcode and runtime build (`just doctor` checks both);
+`scripts/ios-toolchain.sh` downloads the runtime once, or
+`xcodebuild -downloadPlatform iOS -buildVersion 23C54 -architectureVariant
+arm64 -exportPath <dir>` exports it for `xcrun simctl runtime add` on
+another Mac.
 `MDOC_IOS_TEST_WORKERS` in `ci-ios.yml` switches parallel testing on
 (the number of Simulator clones); it is off, as 2 clones were slower and
 failed UI tests (#617).

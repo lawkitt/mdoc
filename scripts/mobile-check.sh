@@ -63,19 +63,19 @@ xcode=$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode //p')
   die "the iOS job needs Xcode $XCODE_VERSION (scripts/tools.env); this Mac has ${xcode:-none}. Install it, or pin the new one in its own PR"
 
 device="iPhone 17"
-runtime="iOS-${IOS_SIM_RUNTIME//./-}"
-# The Simulator the tests use, and whether it was running before.
+# The pinned runtime, its build exactly as on CI (#654), and the Simulator
+# on it the tests use, and whether it was running before.
+read -r runtime _ <<<"$(ios_sim_runtime)"
+[ -n "${runtime:-}" ] ||
+  die "no iOS $IOS_SIM_RUNTIME ($IOS_SIM_RUNTIME_BUILD) Simulator runtime (scripts/tools.env); scripts/ios-toolchain.sh downloads it"
 udid=$(xcrun simctl list devices available -j | python3 -c '
 import json, sys
-devices = json.load(sys.stdin)["devices"]
-for runtime, entries in devices.items():
-    if runtime.endswith(sys.argv[2]):
-        for device in entries:
-            if device["name"] == sys.argv[1]:
-                print(device["udid"], device["state"])
-                sys.exit(0)
+for device in json.load(sys.stdin)["devices"].get(sys.argv[2], []):
+    if device["name"] == sys.argv[1]:
+        print(device["udid"], device["state"])
+        break
 ' "$device" "$runtime")
-[ -n "$udid" ] || die "no $device Simulator on iOS $IOS_SIM_RUNTIME (scripts/tools.env); add one in Xcode › Settings › Components"
+[ -n "$udid" ] || die "no $device Simulator on iOS $IOS_SIM_RUNTIME ($IOS_SIM_RUNTIME_BUILD); scripts/ios-toolchain.sh creates it"
 read -r udid was <<<"$udid"
 shutdown() {
   if [ "$was" != Booted ]; then

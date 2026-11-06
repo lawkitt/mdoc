@@ -32,6 +32,10 @@ check shfmt "$SHFMT_VERSION" "$(out shfmt --version)"
 # Xcode installs by hand; the iOS job needs exactly this one (ADR 0091).
 if [ "$(uname -s)" = Darwin ]; then
   check xcode "$XCODE_VERSION" "$(out xcodebuild -version)"
+  # The iOS Simulator runtime, by build (#654); scripts/ios-toolchain.sh
+  # downloads it.
+  check ios-runtime "$IOS_SIM_RUNTIME_BUILD" \
+    "$(ios_sim_runtime 2>/dev/null | awk -v b="$IOS_SIM_RUNTIME_BUILD" '{ print "iOS " $2 " " b }')"
 fi
 # Not pinned: `just lint-scripts` needs any shellcheck (Homebrew, apt, winget).
 if command -v shellcheck >/dev/null; then
