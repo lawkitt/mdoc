@@ -498,7 +498,7 @@ wait for.
 | `ci/macos` | desktop | hosted `macos-26` (`ci-desktop.yml`), the summary of two parallel jobs: `ci/macos (checks)`, lint, the script suites under `/bin/bash` 3.2 and `just mobile --ffi`; `ci/macos (tests)`, the unit, recognition, app and renders tiers | 20 min (checks), 30 min (tests) |
 | `ci/windows` | desktop | the PC (`scripts/queue-runner.sh`): setup, `just lint`, `just test` | 30 min |
 | `ci/ios` | ios | hosted `macos-26` (`ci-ios.yml`), the summary of two parallel jobs: `ci/ios (tests)`, `just ios-app ios-test` on the pinned Xcode (as `just mobile --ios`), and `ci/ios-release`, `just ios-release` | 40 min (tests), 30 min (Release) |
-| `ci/android` | android | the PC: `just android` | 40 min |
+| `ci/android` | android | the PC: `just android`; its fallback is hosted `ubuntu-latest` with KVM (`ci-android.yml`, check `ci/android (hosted)`), which `merge-gate` dispatches (below) | 40 min |
 | `ci/detection` | desktop, recognition | hosted `macos-26` (`ci-detection.yml`): the detection gate in 4 shards, each warning past 80% of its 5-minute model budget | 20 min a shard (10 once `main` caches its build, item 7) |
 
 | `ci/scripts` | ci, without desktop | hosted (`ci-scripts.yml`), the summary of two parallel jobs: `ci/scripts (linux)`, the script suites on `ubuntu-latest`; `ci/scripts (bash 3.2)`, the same under `/bin/bash` 3.2 on `macos-26`. No toolchain or cache | 10 min |
@@ -600,7 +600,8 @@ PC side by side, one per job, each with its own CI checkout and `target/`
 on the Dev Drive. They test queue commits only, oldest first, never PR
 heads or `main`, and never a group holding a fork or bot PR. A running job
 posts `pending` "Running <step> (<elapsed>)" and refreshes it at least
-every 4 minutes: the heartbeat `merge-gate` reads.
+every 4 minutes: the heartbeat `merge-gate` reads. While the PC is off,
+`merge-gate` runs either job hosted (Fallback, below).
 
 | | Windows job | Android job |
 |---|---|---|
@@ -657,9 +658,14 @@ status, in follow-up passes, and every 5 minutes) dispatches a PC job hosted whe
 10 minutes after the queue commit appeared, when its heartbeat is 10
 minutes old, when it posts `error`, or at once for a group with a fork or
 bot PR: `ci-desktop.yml` with `os=windows` (`ci/windows (hosted)`, the
-summary of lint and the four test tiers as two jobs, 20 and 40 minutes). The result that finished first counts. There is no hosted
-Android job yet (ROADMAP, CI redesign): while the PC is off, a group that
-needs `ci/android` waits for it.
+summary of lint and the four test tiers as two jobs, 20 and 40 minutes),
+or `ci-android.yml` (`ci/android (hosted)`, one job, 40 minutes:
+`MDOC_ANDROID_JOB=always just android` on `ubuntu-latest` after a udev
+rule opens `/dev/kvm`; about 25 minutes cold, with the Gradle reports,
+JUnit XML and emulator log uploaded as `android-reports` when it fails).
+Both take `-f ref=<sha>` and run on the queue branch. The result that
+finished first counts. A lane may dispatch the Android job on its branch:
+`gh workflow run ci-android.yml --repo lawkitt/mdoc --ref <branch>`.
 
 **The gate's passes** ([ADR 0100](adr/0100-ci-reliability-after-the-cutover.md)).
 `merge-gate.yml`'s job, `merge-gate pass`, posts the `merge-gate` status;
@@ -722,8 +728,8 @@ toolchain. A red `main` stops enqueueing.
 `--since` measures only what ran after a change landed.
 
 **Nightly.** `nightly.yml` runs every hosted job on `main` at 02:17 UTC: the
-desktop jobs on both OSes, iOS, the detection gate, the quarantined tests
-and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
+desktop jobs on both OSes, iOS, Android (`ci-android.yml`), the detection
+gate, the quarantined tests and cargo-deny's advisories. A red night opens one issue, "Nightly CI is
 red", or comments on the open one; a green night closes it
 (`scripts/nightly-issue.sh`). Run it by hand with `gh workflow run
 nightly.yml --repo lawkitt/mdoc`.

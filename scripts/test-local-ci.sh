@@ -100,6 +100,7 @@ not() { ! "$@"; }
   # A workflow that builds or tests the app keeps the area of what it runs.
   routes desktop .github/workflows/ci-desktop.yml .github/workflows/ci-detection.yml .github/workflows/queue.yml .github/workflows/release.yml
   routes ios .github/workflows/ci-ios.yml
+  routes android .github/workflows/ci-android.yml
   routes "core desktop recognition ios android ci" scripts/ci-areas.sh
   routes "desktop ci" scripts/merge-gate.sh src/main.rs
   routes "ios ci" scripts/merge-gate.sh apps/ios/a.swift

@@ -48,8 +48,8 @@
 # never runs on the PC. Whichever result finished first counts. A renamed
 # file counts in the areas of both its old and its new path.
 #
-# With no hosted workflow to fall back to (ci-android.yml does not exist
-# yet, ROADMAP CI item 2), the job fails at once and says why, rather than
+# With no hosted workflow to fall back to (GitHub has none of that name, or
+# it is disabled), the job fails at once and says why, rather than
 # leaving the group to the queue's 2-hour timeout: for third-party code, a
 # PC runner error or a stale heartbeat; for a silent PC, only when the PC
 # has posted that job on no queue commit and not on main for 10 minutes
@@ -262,8 +262,8 @@ fetch_pr() { gh_call text api "repos/$repo/pulls/$1" --jq '"\(.user.type) \(.hea
 fetch_workflow_state() { gh_call text api "repos/$repo/actions/workflows/$1" --jq .state; }
 
 # How many manual runs of a workflow exist for a commit: 0 when the
-# repository has no such workflow (HTTP 404: ci-android.yml does not exist
-# yet), which is an answer, not an error.
+# repository has no such workflow (HTTP 404: a fallback workflow not yet on
+# main), which is an answer, not an error.
 fetch_dispatched() { # workflow sha
   local out rc=0 err
   err=$(mktemp "$gate_tmp/err.XXXXXX")

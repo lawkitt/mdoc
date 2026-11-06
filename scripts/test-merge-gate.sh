@@ -90,9 +90,9 @@ if out=$(fetch_workflow_state ci-android.yml 2>&1); then fail "a 404 returned su
 eq "$out" "gh: Not Found (HTTP 404)"
 eq "$(ncalls)" 1
 eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
-# No such workflow when counting its manual runs (ci-android.yml does not
-# exist yet): 0 runs, not an error that skips the queue commit (the first
-# passes after #619 failed every queue commit that needed ci/android).
+# No such workflow when counting its manual runs (ci-android.yml not on
+# main): 0 runs, not an error that skips the queue commit (the first passes
+# after #619 failed every queue commit that needed ci/android).
 eq "$(fetch_dispatched ci-android.yml abc 2>&1)" 0
 eq "$(cat "$gate_tmp/errors")$(cat "$logf")" ""
 # A run that finished before its cancel (HTTP 409): no "cannot cancel" noise.
@@ -419,7 +419,7 @@ eq "$(cat "$dispatched")" "ci-desktop.yml gh-readonly-queue/main/pr-514-mmmm qqq
 ci-android.yml gh-readonly-queue/main/pr-514-mmmm qqqq"
 echo "ok: queue: a fork or bot PR never runs on the PC"
 
-# No hosted Android job yet (ci-android.yml is a 404): the Android job fails
+# No hosted Android job on GitHub (ci-android.yml a 404): the Android job fails
 # at once, saying why, when it has nowhere to run; hosted Windows still runs.
 fetch_workflow_state() {
   case "$1" in
