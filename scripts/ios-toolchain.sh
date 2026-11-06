@@ -55,7 +55,7 @@ if [ "$mode" = --no-simulator ]; then
 fi
 
 # runtime: the identifier and version of an available iOS runtime whose
-# major.minor is the pin's (26.1 takes 26.1 or 26.1.x), or nothing.
+# major.minor is the pin's (26.2 takes 26.2 or 26.2.x), or nothing.
 runtime() {
   xcrun simctl list runtimes -j | python3 -c '
 import json, sys
@@ -71,7 +71,7 @@ for r in json.load(sys.stdin)["runtimes"]:
 # download: the runtime from Apple, one retry, as for any download (ADR 0095).
 download() {
   # The build of the runtime that this Xcode pairs with its SDK when the
-  # versions agree: Xcode 26.1.1 takes no other iOS 26.1 build (23B80 leaves
+  # versions agree: Xcode 26.1.1 took no other iOS 26.1 build (23B80 left
   # it without an iOS Simulator destination). Arm64 only, like the core.
   local version=() start=$SECONDS
   [ "$(xcrun --sdk iphonesimulator --show-sdk-version)" = "$IOS_SIM_RUNTIME" ] ||
