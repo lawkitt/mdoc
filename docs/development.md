@@ -272,7 +272,8 @@ test-tier quarantined` runs the list alone without failing, and a line past
 its date fails the `scripts` tier until the test is fixed or the date is
 renewed in a PR that says why. Hosted CI jobs stop at
 15 (lint), 20 (clippy) and 30 (test) minutes, and after each `main` run a
-cache cleanup job deletes older generations of the cargo caches it saved.
+cache cleanup job deletes older generations of the cargo caches and the
+built iOS core.
 
 ### Shell scripts
 
@@ -719,6 +720,20 @@ it under its id, or every queue commit compiles it cold. A cache that
 matches its key exactly is never saved again, so new builds reach it only
 under a new key: a new job id, or the next change to `Cargo.lock` or the
 toolchain. A red `main` stops enqueueing.
+
+**The built iOS core.** Building the core takes 5–6 minutes even with a
+cargo cache hit, as rust-cache drops the workspace crates, so `main`'s
+build-only `ios` job also saves `target/ios` (the xcframeworks, the Swift
+bindings and the licences; #631). `scripts/ios-core-cache.sh key` keys it
+on the committed tree of everything the build reads (`crates/`,
+`resources/`, the Cargo manifests and lock, the toolchain, `.cargo/`, the
+`justfile`, the build script with `lib.sh`, and `XCODE_VERSION`). Both iOS jobs restore it
+and on an exact hit skip `just ios-core`, as `just --no-deps` already
+skips it for the app recipes; `scripts/ios-build-info.sh` still writes this
+commit's `Build.xcconfig`. A miss builds the core as before, then
+`scripts/ios-core-cache.sh check` fails if cargo's dep-info names a file the
+key does not hash, so a stale core cannot pass. Only `main` saves; the
+cache cleanup keeps its newest key.
 
 **CI targets.** `scripts/ci-stats.sh [--days N | --since <UTC time>]` measures ADR 0100's targets from GitHub, read-only, and exits 1 when one fails:
 - a queue commit's time to a green `merge-gate`: median 13 minutes or less;
