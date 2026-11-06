@@ -492,8 +492,11 @@ letters_at_most_digits = true
 category = "PHONE"
 min_digits = 5
 forbid_unlabelled = ['\d\.\d']
-# Conventional full-length dotted phones are real too ("202.555.0199").
-unless_in = ['\b(?:\d{1,3}\.)?\d{3}\.\d{3}\.\d{4}\b|\b\d{2,4}\.\d{3,4}\.\d{4}\b']
+# Conventional full-length dotted phones are real too ("202.555.0199",
+# "+1.202.555.0187": the plus belongs to the model's span). A leading
+# plus with a country code is a phone in any dotted grouping
+# ("+44.20.7946.0958"); plot ticks never start with one.
+unless_in = ['(?:\+|\b)(?:\d{1,3}\.)?\d{3}\.\d{3}\.\d{4}\b|(?:\+|\b)\d{2,4}\.\d{3,4}\.\d{4}\b|\+\d{1,3}(?:\.\d{2,4}){2,4}\b']
 forbid_in = ['\b\d+(?:\.\d+)+\b']
 
 # Drawing dimensions are no identifiers or addresses (guide rule 8, #375).
