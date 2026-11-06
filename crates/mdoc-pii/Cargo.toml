@@ -16,7 +16,7 @@ regex = "1"
 # emphasis characters.
 markdown = "1"
 # NFC for the text detection reads: decomposed letters compose (ADR 0092).
-unicode-normalization = "=0.1.25"
+unicode-normalization = "=0.1.26"
 mdoc-history = { path = "../mdoc-history" }
 
 [dev-dependencies]
