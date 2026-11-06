@@ -101,6 +101,8 @@
 #                         it a person's document ("Ostrand Decl."): the
 #                         words before become a person's span when a person
 #                         span holds each of them
+#   list_letter = true    for PERSON or ORG: a lowercase "a. " or "(a) "
+#                         at a line start or after list punctuation comes off
 # A fixed span left without its category's shape goes. An entry takes one
 # kind's keys only.
 #
@@ -112,6 +114,13 @@
 # structured rules are never checked against it. `pattern` and `parts` work
 # as in a `span` pattern, `lead` and `tail` groups included; a match stays
 # on one line.
+# With `when = [regex, ...]` and `categories = ["PERSON", "ORG"]`, a
+# reference is checked after boundary fixes, over the decoded document.
+# Each `when` regex and `pattern` must capture `series`: only series found
+# by document evidence are references. An optional `series2` in `pattern`
+# must be established too (a range). This keeps unexplained short names
+# and identifiers; the match never discards a name reaching beyond it.
+# A bracketed reference at the end of a name comes off ("Penrow (C1)").
 #
 # A `reference` whose pattern has groups named `party`, `party2`, … is a
 # cited case ("Pellam v. Ostrand, 912 F.3d 455"), its parties those groups.
