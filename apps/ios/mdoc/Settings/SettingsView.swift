@@ -25,7 +25,7 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings-haptics")
                     Button {
-                        ReviewTips.resetOnNextLaunch()
+                        ReviewHint.resetAll()
                         tipsReset = true
                     } label: {
                         SettingsLabel("Reset tips", systemImage: "lightbulb", color: .yellow)
@@ -36,7 +36,7 @@ struct SettingsView: View {
                     Text("Review")
                 } footer: {
                     if tipsReset {
-                        Text("The tips show again the next time you open mdoc.")
+                        Text("The tips show again as you review.")
                     }
                 }
                 models

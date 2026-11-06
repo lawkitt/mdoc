@@ -1,6 +1,8 @@
 # Mobile review bar
 
-Status: Accepted, 2026-11-05. Amends [ADR 0085](0085-mobile-apps.md)'s review screen and
+Status: Accepted, 2026-11-05; expanding, the expanded view, a decided
+card's buttons and tips amended by [ADR 0101](0101-mobile-review-bar-polish.md).
+Amends [ADR 0085](0085-mobile-apps.md)'s review screen and
 [ADR 0087](0087-ios-ui-polish.md)'s candidate sheet. Written for iOS first;
 Android follows the same decisions.
 

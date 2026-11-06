@@ -41,8 +41,15 @@ final class DocumentViewModel {
     var reviewScope: Scope = .allOccurrences
     /// The identity the scope was chosen for.
     var scopeIdentity: IdentityID?
-    /// Swiped up: the identity's mentions and the bulk choices.
+    /// Pulled up: the identity's mentions, one row each.
     var barExpanded = false
+    /// The one hint line this document shows, while it shows.
+    var hint: ReviewHint?
+    /// A hint has shown in this document: no second one.
+    var hintShownHere = false
+    /// Cards and decisions so far in this document, which time the hints.
+    var cardsSeen = 0
+    var decisionsHere = 0
     /// Stepping limited to one identity or category.
     var focus: ReviewFocus?
     /// "Same as Maya Bennett · Undo" and the like.

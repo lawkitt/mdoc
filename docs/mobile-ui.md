@@ -59,6 +59,8 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `StatusPill` | State as an icon and words in the state's color. |
 | `IconTile` | Settings: white symbol on a colored square. Home: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s. |
+| `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
+| `ReviewHintLine` | The review's one hint line: symbol, words, ×. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
 
 ## Screens
@@ -79,18 +81,33 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 
 ## Review bar
 
-[ADR 0098](adr/0098-mobile-review-bar.md); code in
+[ADR 0098](adr/0098-mobile-review-bar.md), polished by
+[ADR 0101](adr/0101-mobile-review-bar-polish.md); code in
 [`apps/ios/mdoc/Document/`](../apps/ios/mdoc/Document/) (`ReviewBar`,
-`ReviewCard`, `ReviewState`, `DocumentViewModel+Review`).
+`ReviewCard`, `MentionSnippet`, `ReviewState`, `DocumentViewModel+Review`).
 
 - **Layout:** grabber, progress line ("3 of 15" and the decided track; ×
-  ends review), the card with peeking neighbors, then Undo, Keep and
-  Replace (Replace filled). Text stops growing at AX2.
-- **Card:** category icon and the name (tap to scroll back to it), the
-  mentions chip when the name repeats; then the category ▾, alias ▾ and
-  scope ▾ chips; a merge hint line while the core sees one.
+  ends review), a hint line now and then, the card with peeking neighbors,
+  the mentions when pulled up, then the buttons. Text stops growing at AX2.
+- **Dragging:** the bar follows the finger from the grabber, the progress
+  line, the card, and the mentions scrolled to the top (in screen points).
+  It settles compact or full (the mentions' height, at most about 60% of
+  the screen); down on compact springs back. Opening it keeps the active
+  name visible above the bar.
+- **Card:** category icon and the name (tap to scroll back to it), its
+  state mark once decided, the mentions chip when the name repeats; then
+  the category ▾, alias ▾ and scope ▾ chips; a merge hint line while the
+  core sees one.
+- **Mentions (full):** one row each, in document order: the heading above
+  it, the words of its own paragraph cut at words, and the original name
+  bold on its category's highlight. A tap on the row goes there; a tap on
+  its state mark changes that mention only, and the bar stays.
+- **Buttons:** Undo, Keep and Replace ("Keep all 3", "Replace all 3" with
+  scope All). A decided card: Undo, Keep instead (or Replace instead),
+  and Next → filled ("Done" when nothing is left).
 - **Moving on:** a decision steps to the next undecided candidate; the
-  last ends review with "All N reviewed · Undo". Candidate ids are source
+  last ends review with "All N reviewed · Undo", and a line above Share
+  says "All 15 reviewed · 12 replaced · 3 kept". Candidate ids are source
   ranges that move, so the bar keeps its place by position
   (`ReviewOrder`).
 - **Undo:** every core step is also registered with the window's undo
@@ -100,8 +117,11 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   outcome before the tap ("Organization → ORG_3"); Same as… lists hints
   first, then the same category, then the rest, and a long list becomes a
   searchable sheet.
-- **Tips** (`ReviewTips`): swipe, details, long press and undo, once each;
-  off in UI tests; Settings › Review › Reset tips.
+- **Tips** (`ReviewHint`): no popovers or cards. One line per document at
+  most, inside the bar: "Swipe the card for the next name" from the
+  second card, "Long-press any name for more" after three decisions; gone
+  for good once the gesture is used or × tapped. The grabber hops once on
+  the third card. Off in UI tests; Settings › Review › Reset tips.
 - **Keys:** Return Replace, K Keep, ← → step, ⌘. end (Esc too where iOS
   passes it to the app), ⌘Z and ⇧⌘Z.
 
@@ -113,7 +133,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Where | Gesture | Does |
 |---|---|---|
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
-| Review bar grabber | Swipe up or down | Expand or collapse; down on the compact bar ends review |
+| Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
 | Identities row | Swipe right or left | Replace; Keep and Same as… |
 | Anywhere | Shake, three-finger swipe | Undo and redo |

@@ -74,19 +74,13 @@ struct ReviewCard: View {
         }
     }
 
+    /// Replaced or kept, in the mention rows' round marks; nothing while
+    /// proposed.
     @ViewBuilder
     private var stateBadge: some View {
-        switch candidate.state {
-        case .replaced:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Palette.ready)
-                .accessibilityLabel(Text("Replaced"))
-        case .kept:
-            Image(systemName: "eye")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(Text("Kept"))
-        case .proposed:
-            EmptyView()
+        if candidate.state != .proposed {
+            StateMark(state: candidate.state)
+                .accessibilityLabel(Text(ReviewDetails.stateName(candidate.state)))
         }
     }
 
@@ -397,70 +391,36 @@ struct SameAsPicker: View {
     }
 }
 
-/// Swipe up: the identity's mentions with their context, and Keep all or
-/// Replace all for it (ADR 0098's expanded view).
+/// Pulled up: one row per mention of the identity under review, in
+/// document order. Each shows the words around the name, the name in its
+/// original wording, and the heading above it; a tap scrolls the text there,
+/// and the state pill changes that one mention (docs/mobile-ui.md).
 struct ReviewDetails: View {
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
 
     var body: some View {
         let mentions = model.snapshot.mentions(of: candidate.identityID).sorted { $0.range.start < $1.range.start }
-        // As tall as its content, scrolling only past the cap.
-        ViewThatFits(in: .vertical) {
-            content(mentions)
-            ScrollView { content(mentions) }
-                .scrollBounceBehavior(.basedOnSize)
-        }
-        .accessibilityIdentifier("review-details")
-    }
-
-    private func content(_ mentions: [Candidate]) -> some View {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("Mentions (\(mentions.count))")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(mentions) { mention in
-                    Button {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentions.enumerated()), id: \.element.id) { offset, mention in
+                MentionRow(
+                    snippet: model.snippet(of: mention), state: mention.state,
+                    isCurrent: mention.id == candidate.id, tint: candidate.category.color,
+                    onOpen: {
                         model.select(mention.id)
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
-                            Image(systemName: Self.symbol(mention.state))
-                                .foregroundStyle(mention.state == .replaced ? Palette.ready : .secondary)
-                                .accessibilityLabel(Text(Self.stateName(mention.state)))
-                            Text(model.context(of: mention))
-                                .font(Typography.caption)
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(.vertical, Space.xxs)
-                        .background(mention.id == candidate.id ? Palette.accent.opacity(0.08) : .clear)
-                    }
-                    .buttonStyle(.plain)
-                }
-                if mentions.count > 1 {
-                    HStack(spacing: Space.s) {
-                        Button("Keep all \(mentions.count)") {
-                            model.decideIdentity(.keep)
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Replace all \(mentions.count)") {
-                            model.decideIdentity(.replace)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding(.top, Space.xs)
+                        model.revealReviewed()
+                    },
+                    onToggle: {
+                        model.decideMention(mention.id, mention.state == .replaced ? .keep : .replace)
+                    })
+                if offset < mentions.count - 1 {
+                    Divider().padding(.leading, Space.s)
                 }
             }
-            .padding(.vertical, Space.xs)
-    }
-
-    static func symbol(_ state: MentionState) -> String {
-        switch state {
-        case .proposed: "circle.dashed"
-        case .replaced: "checkmark.circle.fill"
-        case .kept: "eye"
         }
+        .padding(.vertical, Space.xxs)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("review-details")
     }
 
     static func stateName(_ state: MentionState) -> String {
@@ -469,5 +429,118 @@ struct ReviewDetails: View {
         case .replaced: String(localized: "Replaced")
         case .kept: String(localized: "Kept")
         }
+    }
+
+    static func symbol(_ state: MentionState) -> String {
+        switch state {
+        case .proposed: "circle.dashed"
+        case .replaced: "eye.slash"
+        case .kept: "eye"
+        }
+    }
+}
+
+/// One mention: its heading and words, the name highlighted as in the
+/// text, and a pill with its state.
+struct MentionRow: View {
+    let snippet: MentionSnippet
+    let state: MentionState
+    let isCurrent: Bool
+    let tint: Color
+    let onOpen: () -> Void
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s) {
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let heading = snippet.heading {
+                        Text(heading)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Text(words)
+                        .font(Typography.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(spoken))
+            .accessibilityHint(Text("Scrolls the text to it."))
+            Button(action: onToggle) {
+                StateButtonLabel(state: state)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(ReviewDetails.stateName(state)))
+            .accessibilityHint(Text(state == .replaced ? "Keeps this one." : "Replaces this one."))
+            .accessibilityIdentifier("mention-state")
+        }
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xxs)
+        .background(
+            isCurrent ? Palette.accent.opacity(0.08) : .clear,
+            in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+        .accessibilityIdentifier("mention-row")
+    }
+
+    /// The words, with the name bold on its category's highlight.
+    private var words: AttributedString {
+        var name = AttributedString(snippet.name)
+        name.inlinePresentationIntent = .stronglyEmphasized
+        name.backgroundColor = tint.opacity(0.18)
+        return AttributedString(snippet.before) + name + AttributedString(snippet.after)
+    }
+
+    private var spoken: String {
+        [snippet.heading, snippet.before + snippet.name + snippet.after]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+            .replacingOccurrences(of: "…", with: "")
+    }
+}
+
+/// A mention's or an identity's state as a round button, like Reminders'
+/// checkbox: a dashed ring while proposed, a filled accent disc once
+/// replaced, an eye once kept. The words are for VoiceOver.
+struct StateButtonLabel: View {
+    let state: MentionState
+
+    var body: some View {
+        StateMark(state: state)
+            // The whole 44-point square is the target.
+            .frame(width: Size.target, height: Size.target)
+            .contentShape(Rectangle())
+    }
+}
+
+/// The round mark itself, 26 points.
+struct StateMark: View {
+    let state: MentionState
+
+    var body: some View {
+        ZStack {
+            switch state {
+            case .proposed:
+                Circle()
+                    .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+            case .replaced:
+                Circle().fill(Palette.accent)
+                Image(systemName: "eye.slash.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+            case .kept:
+                Circle().fill(Palette.chipFill)
+                Image(systemName: "eye")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .frame(width: 26, height: 26)
     }
 }
