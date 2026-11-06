@@ -18,7 +18,7 @@ on:
         type: string
         default: ""
       build-only:
-        description: Build the iOS core only, which saves its cargo cache on main (main-caches.yml).
+        description: Build the iOS core only, which saves it and its cargo cache on main (main-caches.yml).
         type: boolean
         default: false
   workflow_dispatch:
@@ -44,7 +44,8 @@ env:
 
 jobs:
   # The job id stays `ios`: main-caches.yml's build-only call saves the
-  # cargo cache under it, and both jobs restore it (`cache-key: ios`).
+  # cargo cache under it, and both jobs restore it (`cache-key: ios`). That
+  # call also saves the built core, which both jobs restore too.
   ios:
     name: ci/ios (tests)
     runs-on: macos-26
@@ -65,7 +66,31 @@ jobs:
       # builds.
       - run: scripts/ios-toolchain.sh ${{ inputs.build-only && '--no-simulator' || '--start' }} >>"$GITHUB_ENV"
 
-      - run: just ios-core
+      # The built core from main (#631): an exact hit on the hash of its
+      # inputs (scripts/ios-core-cache.sh) skips its build, and the app
+      # links the restored xcframeworks; Build.xcconfig names this commit.
+      # A miss builds it and checks that the key hashes every file the build
+      # read.
+      - id: core-key
+        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios-core-cache.sh check
+      - if: steps.core.outputs.cache-hit == 'true'
+        run: scripts/ios-build-info.sh
+
+      # Only main saves (main-caches.yml's build-only run), as for the cargo
+      # cache: a branch restores only its own caches and main's, so a queue
+      # commit's or a PR's copy would only fill the 10 GB.
+      - if: steps.core.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
 
       - if: ${{ !inputs.build-only }}
         run: scripts/ios-toolchain.sh --finish >/dev/null
@@ -104,7 +129,18 @@ jobs:
       # 26.1 runtime, so this job readies one too, during the core's build.
       - run: scripts/ios-toolchain.sh --start >>"$GITHUB_ENV"
 
-      - run: just ios-core
+      # main's built core, as in the tests job; this job never saves it.
+      - id: core-key
+        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios-core-cache.sh check
+      - if: steps.core.outputs.cache-hit == 'true'
+        run: scripts/ios-build-info.sh
 
       - run: scripts/ios-toolchain.sh --finish >/dev/null
 
