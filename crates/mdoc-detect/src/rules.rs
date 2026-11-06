@@ -240,6 +240,12 @@ struct ShapeEntry {
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
+    /// What a court's own case number looks like, the whole span: a model
+    /// span of this shape is no value of this category but a case number
+    /// (`CASE`), its group `case` if it has one ("3 А28-3207/2026" is
+    /// "А28-3207/2026"). A reference or a cited case still removes it.
+    #[serde(default)]
+    case: Vec<String>,
     /// A model span inside one of these matches in its surrounding line
     /// is not this category (an amount's decimals or currency may be outside
     /// the model's span). Labelled values are proposed separately.
@@ -892,6 +898,7 @@ struct Shape {
     category: Category,
     require: Vec<Regex>,
     forbid: Vec<Regex>,
+    case: Vec<Regex>,
     forbid_in: Vec<Regex>,
     unless_in: Vec<Regex>,
     word: Option<Regex>,
@@ -1113,6 +1120,7 @@ impl Pack {
                 };
                 if entry.require.is_empty()
                     && entry.forbid.is_empty()
+                    && entry.case.is_empty()
                     && entry.forbid_in.is_empty()
                     && entry.unless_in.is_empty()
                     && entry.word.is_none()
@@ -1166,6 +1174,7 @@ impl Pack {
                 }
                 let require = compile_all(&entry.require, false)?;
                 let forbid = compile_all(&entry.forbid, false)?;
+                let case = compile_all(&entry.case, false)?;
                 let forbid_in = entry
                     .forbid_in
                     .iter()
@@ -1189,6 +1198,7 @@ impl Pack {
                             category,
                             require: Vec::new(),
                             forbid: Vec::new(),
+                            case: Vec::new(),
                             forbid_in: Vec::new(),
                             unless_in: Vec::new(),
                             word: None,
@@ -1206,6 +1216,7 @@ impl Pack {
                 }
                 shape.require.extend(require);
                 shape.forbid.extend(forbid);
+                shape.case.extend(case);
                 shape.forbid_in.extend(forbid_in);
                 shape.unless_in.extend(unless_in);
                 shape.word = shape.word.take().or(word);
@@ -1616,6 +1627,25 @@ impl Pack {
             .filter(|entry| entry.anywhere_in.is_empty() && !entry.phrase_only && entry.has(&word))
             .peekable();
         listing.peek().is_some() && listing.all(|entry| entry.unless_named)
+    }
+
+    /// Where in `text`, a model span of `category`, a court's case number
+    /// lies when the span has one of the category's `case` shapes: the
+    /// span is that number (`CASE`), no value of the category (guide rule
+    /// 5, #480).
+    pub(crate) fn case_number(
+        &self,
+        text: &str,
+        category: Category,
+    ) -> Option<std::ops::Range<usize>> {
+        let shape = self.shapes.iter().find(|s| s.category == category)?;
+        shape.case.iter().find_map(|pattern| {
+            let found = pattern.captures(text)?;
+            found.name("case").or_else(|| found.get(0)).map(|m| {
+                let start = m.start() + (m.as_str().len() - m.as_str().trim_start().len());
+                start..m.start() + m.as_str().trim_end().len()
+            })
+        })
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -2249,6 +2279,7 @@ impl Pack {
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
             && !shape.forbid.iter().any(|pattern| pattern.is_match(text))
+            && !shape.case.iter().any(|pattern| pattern.is_match(text))
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
                     || self.names(text, words().filter(|w| pattern.is_match(w)), named)
@@ -8839,6 +8870,335 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("09АП-1234/2031", "TAX"),
             ])
         );
+    }
+
+    /// A source, the model's spans in it (each wording's `n`th mention)
+    /// and what the review should show.
+    type Shown<'a> = (
+        &'a str,
+        &'a [(&'a str, usize, &'a str)],
+        &'a [(&'a str, &'a str)],
+    );
+
+    /// Each case's proposals against what it should show; the failures,
+    /// one line each.
+    fn failures(cases: &[Shown<'_>]) -> Vec<String> {
+        cases
+            .iter()
+            .filter_map(|(source, raw, expected)| {
+                let actual = shown_at(source, raw);
+                (actual != pairs(expected))
+                    .then(|| format!("{source:?}: {actual:?}, not {expected:?}"))
+            })
+            .collect()
+    }
+
+    /// A court's docket number the model takes for a tax, bank or identity
+    /// value is a case number under any label, in a list or alone, and
+    /// never goes unmarked (guide rule 5, #480 review).
+    #[test]
+    fn docket_numbers_under_any_label_stay_case_numbers() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "UNITED STATES DISTRICT COURT\nIvo Harrow v. Quillon Freight LLC\nDocket: \
+                1:21-cv-00616-RP\n",
+                &[("1:21-cv-00616-RP", 0, "tax_id")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "Docket Number: 1:21-cv-00616-RP\n",
+                &[("1:21-cv-00616-RP", 0, "bank_account")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "NUMBER 13-21-00234-CV\n\nCOURT OF APPEALS\nIvo Harrow, Appellant, v. Quillon \
+                Freight LLC, Appellee.\n",
+                &[("13-21-00234-CV", 0, "tax_id")],
+                &[("13-21-00234-CV", "CASE")],
+            ),
+            (
+                "NUMBER 13-21-00234-CV\n\nIvo Harrow, Appellant, v. Quillon Freight LLC, \
+                Appellee.\n\nWe affirm in 13-21-00234-CV.\n",
+                &[
+                    ("13-21-00234-CV", 0, "tax_id"),
+                    ("13-21-00234-CV", 1, "tax_id"),
+                ],
+                &[("13-21-00234-CV", "CASE"), ("13-21-00234-CV", "CASE")],
+            ),
+            (
+                "NUMBERS 13-21-00234-CV & 13-21-00235-CV\n\nCOURT OF APPEALS\n",
+                &[
+                    ("13-21-00234-CV", 0, "tax_id"),
+                    ("13-21-00235-CV", 0, "tax_id"),
+                ],
+                &[("13-21-00234-CV", "CASE"), ("13-21-00235-CV", "CASE")],
+            ),
+            (
+                "NOS. 01-24-00779-CV, 01-24-00780-CV\n",
+                &[
+                    ("01-24-00779-CV", 0, "tax_id"),
+                    ("01-24-00780-CV", 0, "tax_id"),
+                ],
+                &[("01-24-00779-CV", "CASE"), ("01-24-00780-CV", "CASE")],
+            ),
+            (
+                "Nos. 01-24-00779-CV & 01-24-00780-CV\n",
+                &[
+                    ("01-24-00779-CV", 0, "tax_id"),
+                    ("01-24-00780-CV", 0, "tax_id"),
+                ],
+                &[("01-24-00779-CV", "CASE"), ("01-24-00780-CV", "CASE")],
+            ),
+            (
+                "Case Nos. 1:21-cv-00616-RP, 1:21-cv-00617-RP\n",
+                &[
+                    ("1:21-cv-00616-RP", 0, "tax_id"),
+                    ("1:21-cv-00617-RP", 0, "tax_id"),
+                ],
+                &[("1:21-cv-00616-RP", "CASE"), ("1:21-cv-00617-RP", "CASE")],
+            ),
+            (
+                "Cause Number 01-24-00779-CV\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("01-24-00779-CV", 0, "national_id_number")],
+                &[("01-24-00779-CV", "CASE")],
+            ),
+            (
+                "Civil Action 1:21-cv-00616-RP\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("1:21-cv-00616-RP", 0, "tax_id")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "Index # 06 CV 15490\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("06 CV 15490", 0, "tax_id")],
+                &[("06 CV 15490", "CASE")],
+            ),
+            (
+                "In re Ivo Harrow, Debtor.\nBankruptcy No. 15-49008-wsd\nChapter 7\n",
+                &[("15-49008-wsd", 0, "tax_id")],
+                &[("15-49008-wsd", "CASE")],
+            ),
+            (
+                "Ivo Harrow, Plaintiff, v. Quillon Freight LLC, Defendant.\nAdv. No. \
+                15-04123-wsd\n",
+                &[("15-04123-wsd", 0, "tax_id")],
+                &[("15-04123-wsd", "CASE")],
+            ),
+            (
+                "Adv. Pro. No. 31-01992-wsd\n",
+                &[("31-01992-wsd", 0, "tax_id")],
+                &[("31-01992-wsd", "CASE")],
+            ),
+            (
+                "In re Ivo Harrow, Debtor. Chapter 7, Bankruptcy 15-49008-wsd\n",
+                &[("15-49008-wsd", 0, "tax_id")],
+                &[("15-49008-wsd", "CASE")],
+            ),
+            (
+                "No. 01-24-00779-CR\nThe State of Texas v. Ivo Harrow\n",
+                &[("01-24-00779-CR", 0, "tax_id")],
+                &[("01-24-00779-CR", "CASE")],
+            ),
+            // "No." inside the model's span stays outside the case number.
+            (
+                "NO. 14-31-00999-CV\n",
+                &[("NO. 14-31-00999-CV", 0, "tax_id")],
+                &[("14-31-00999-CV", "CASE")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // Russian: a case number under another label or none is CASE too,
+        // its page number left out.
+        let cases: &[Shown<'_>] = &[
+            (
+                "Апелляционное производство № 33-1234/2031\nСудья Брюн Л.\n",
+                &[("33-1234/2031", 0, "tax_id")],
+                &[("33-1234/2031", "CASE")],
+            ),
+            (
+                "Материал № 13-123/2031\n",
+                &[("13-123/2031", 0, "tax_id")],
+                &[("13-123/2031", "CASE")],
+            ),
+            (
+                "№ 2-1842/2031\nРЕШЕНИЕ\nИменем Российской Федерации\n",
+                &[("2-1842/2031", 0, "tax_id")],
+                &[("2-1842/2031", "CASE")],
+            ),
+            (
+                "Апелляционное производство № 33-1234/2031\nДело № 2-1842/2031\n",
+                &[("33-1234/2031", 0, "tax_id"), ("2-1842/2031", 0, "tax_id")],
+                &[("33-1234/2031", "CASE"), ("2-1842/2031", "CASE")],
+            ),
+            (
+                "Определение Арбитражного суда Кировской области от 01.03.2031 № \
+                А28-3207/2031\n",
+                &[("А28-3207/2031", 0, "tax_id")],
+                &[("А28-3207/2031", "CASE")],
+            ),
+            (
+                "3 А28-3207/2031\n",
+                &[("3 А28-3207/2031", 0, "tax_id")],
+                &[("А28-3207/2031", "CASE")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    /// A Russian act's, letter's or law's lead before "№" takes no account,
+    /// БИК, card, passport or tax number after an author's word, and no
+    /// surname that starts like "Закон"; an arbitration court's case number
+    /// after an act stays the model's (#480 review).
+    #[test]
+    fn values_after_an_act_lead_stay() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "Письмо ООО «Ромашка» Счёт N 40702810900000012345\n",
+                &[("40702810900000012345", 0, "bank_account")],
+                &[("40702810900000012345", "BANK")],
+            ),
+            (
+                "Письмо ПАО Сбербанк БИК № 044525225\n",
+                &[("044525225", 0, "bank_account")],
+                &[("044525225", "BANK")],
+            ),
+            (
+                "Письмо Брюн Л. Карта № 4276123456789012\n",
+                &[("4276123456789012", 0, "bank_account")],
+                &[("4276123456789012", "BANK")],
+            ),
+            (
+                "Положение Сотрудника Брюн Л. № 4276123456789012\n",
+                &[("4276123456789012", 0, "bank_account")],
+                &[("4276123456789012", "BANK")],
+            ),
+            (
+                "Законов Иван Петрович N 4512345678, проживает в г. Кирове.\n",
+                &[
+                    ("Законов Иван Петрович", 0, "person"),
+                    ("4512345678", 0, "passport_number"),
+                ],
+                &[
+                    ("Законов Иван Петрович", "PERSON"),
+                    ("4512345678", "IDENTITY"),
+                ],
+            ),
+            (
+                "Письмо Минфина России от 30.03.2031 № 7701234567\n",
+                &[("7701234567", 0, "tax_id")],
+                &[("7701234567", "TAX")],
+            ),
+            (
+                "передаточному документу N 40702810900000012345\n",
+                &[("40702810900000012345", 0, "bank_account")],
+                &[("40702810900000012345", "BANK")],
+            ),
+            (
+                "Определение Арбитражного суда Кировской области от 01.03.2031 № \
+                А28-3207/2031\n",
+                &[("А28-3207/2031", 0, "national_id_number")],
+                &[("А28-3207/2031", "IDENTITY")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // The references themselves still go.
+        let source = "Закон РФ от 07.02.1992 № 2300-1, Законом № 999-ФЗ, Письмо Минфина России \
+            от 30.03.2031 № 02-09-11/05-03-99999, Определение Верховного Суда РФ от \
+            12.03.2031 № 305-ЭС31-1234.";
+        for (text, label) in [
+            ("2300-1", "tax_id"),
+            ("999-ФЗ", "tax_id"),
+            ("02-09-11/05-03-99999", "bank_account"),
+            ("305-ЭС31-1234", "tax_id"),
+        ] {
+            assert_eq!(shown(source, &[(text, label)]), Vec::new(), "{text:?}");
+        }
+        // A date's month after «от» is no account, its year short or not.
+        for source in ["письмо от 30.03.15 N 52н.", "письмо от 30.03.2015 N 52н."]
+        {
+            assert_eq!(
+                shown(source, &[("03", "bank_account")]),
+                Vec::new(),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// A running header's page count, a Treasury Decision, a dotted date,
+    /// the Federal Register and a header's entry number each take only
+    /// their own shape: a party's name, a phone, a sort code, an address
+    /// and an identity number beside a look-alike stay (#480 review).
+    #[test]
+    fn neighbours_of_citation_look_alikes_stay() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "DECLARATION OF HARROW Page 2 of 8\n",
+                &[("HARROW", 0, "person")],
+                &[("HARROW", "PERSON")],
+            ),
+            (
+                "Prepared for ACME Page 2 of 8\n",
+                &[("ACME", 0, "organization")],
+                &[("ACME", "ORG")],
+            ),
+            (
+                "Contacts: Smith, T.D. 555-0164; Jones, A.B. 555-0199.\n",
+                &[
+                    ("555-0164", 0, "phone_number"),
+                    ("555-0199", 0, "phone_number"),
+                ],
+                &[("555-0164", "PHONE"), ("555-0199", "PHONE")],
+            ),
+            (
+                "Sort code: 20.03.12\nAccount number: 12345678\n",
+                &[
+                    ("20.03.12", 0, "bank_account"),
+                    ("12345678", 0, "bank_account"),
+                ],
+                &[("20.03.12", "BANK"), ("12345678", "BANK")],
+            ),
+            (
+                "Pay to Ivo Harrow, sort code 20.03.12, account 12345678.\n",
+                &[
+                    ("20.03.12", 0, "bank_account"),
+                    ("12345678", 0, "bank_account"),
+                ],
+                &[("20.03.12", "BANK"), ("12345678", "BANK")],
+            ),
+            (
+                "Счёт 12.03.31 банк\n",
+                &[("12.03.31", 0, "bank_account")],
+                &[("12.03.31", "BANK")],
+            ),
+            (
+                "Quillon Freight LLC, Unit 12 FR 75008 Paris\n",
+                &[("75008", 0, "address")],
+                &[("75008", "ADDRESS")],
+            ),
+            (
+                "Identity Document 12345 Page 2 of the file.\n",
+                &[("12345", 0, "national_id_number")],
+                &[("12345", "IDENTITY")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // The look-alikes themselves still go.
+        let source = "TXSD Page 7 of 8; T.D. 84-93; T.D. 9876; 54 FR 35305, 35310; 49FR17754 \
+            at 2; Document 12 Filed 06/12/21; от 30.03.2015 N 52н.";
+        for (text, label) in [
+            ("TXSD Page 7 of 8", "tax_id"),
+            ("84-93", "tax_id"),
+            ("9876", "tax_id"),
+            ("54 FR 35305", "tax_id"),
+            ("49FR17754", "tax_id"),
+            ("Document 12", "national_id_number"),
+            ("03", "bank_account"),
+        ] {
+            assert_eq!(shown(source, &[(text, label)]), Vec::new(), "{text:?}");
+        }
     }
 
     /// A citation is found as detection reads it: through character

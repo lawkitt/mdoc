@@ -922,8 +922,15 @@ parts.code = '(?:\p{Uppercase}\p{Ll}+(?:-\p{Ll}+)?(?:[\p{Zs}\t]+\p{Ll}+)?[\p{Zs}
 # Администрации Энского района «Кедровый» от 01.03.2031 № 999-ПА"), and a
 # letter's outgoing mark ("исх. №"). A lower court's words ("районного",
 # "апелляционного") stay out: its act's number is mostly a case number.
+# A law is "Закон", "Закона", "Закону", "Законом" or "Законе", no
+# surname ("Законов Иван Петрович N 4512345678"). The number is short or
+# has letters, dashes or a slash: nine or more bare digits after "№" are
+# an account, a БИК, a card, a passport or an ИНН beside the author's
+# words ("Письмо … Счёт N 40702810900000012345", "БИК № 044525225"), and
+# an arbitration court's case number ("№ А28-3207/2031") is the case's
+# (guide rule 5); both stay.
 [[reference]]
-pattern = '(?P<lead>\b(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ|[Пп]исьм|[Зз]акон|[Пп]оложени)\p{Alphabetic}{0,4}(?:[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}.-]*|«[^«»\n]{1,80}»|"[^"\n]{1,80}"|от|г\.|исх\.|вх\.|\d{1,2}\.\d{1,2}\.\d{2,4}|суда|судебной|коллегии|по|экономическим|гражданским|административным|уголовным|делам|спорам|арбитражного|округа|пленума|президиума|района|области|края|города|муниципального|образования|поселения|сельского|России)){0,16}[\p{Zs}\t]*(?:№|N)[\p{Zs}\t]*)\p{Alphabetic}{0,4}\d[\p{Alphabetic}\d/-]*'
+pattern = '(?P<lead>\b(?:(?:[Оо]пределени|[Пп]остановлени|[Пп]риказ|[Рр]аспоряжени|[Уу]каз|УПД|[Пп]ередаточн\p{Alphabetic}{0,4}[\p{Zs}\t]+документ|[Пп]исьм|[Пп]оложени)\p{Alphabetic}{0,4}|[Зз]акон(?:а|у|ом|е)?\b)(?:[\p{Zs}\t]+(?:\p{Uppercase}[\p{Alphabetic}.-]*|«[^«»\n]{1,80}»|"[^"\n]{1,80}"|от|г\.|исх\.|вх\.|\d{1,2}\.\d{1,2}\.\d{2,4}|суда|судебной|коллегии|по|экономическим|гражданским|административным|уголовным|делам|спорам|арбитражного|округа|пленума|президиума|района|области|края|города|муниципального|образования|поселения|сельского|России)){0,16}[\p{Zs}\t]*(?:№|N)[\p{Zs}\t]*)(?:\p{Alphabetic}{2,4}|[\p{Alphabetic}&&[^АA]])?\d{1,8}(?:[\p{Alphabetic}/-][\p{Alphabetic}\d/-]*)?\b'
 
 # A form's number and a classifier's code are no identifiers (guide rules 6
 # and 8, issue #486): "Форма № Р11001", "Форма по КНД 1111501", "Форма по
@@ -957,9 +964,11 @@ pattern = '(?m:^)[\p{Zs}\t]*\d{4}[\p{Zs}\t]{2,}\d{4}(?:[\p{Zs}\t]*(?m:$)|(?P<tai
 # "товарной накладной № 15", "счёта-фактуры № 123/4". A bank account
 # after "счёт №" is no invoice's and stays. A transfer document's number
 # goes with its word too, as the model takes them together ("по УПД № 137
-# от 06.06.2022", "передаточному документу N 5"; #480).
+# от 06.06.2022", "передаточному документу N 5"; #480). Nine or more bare
+# digits after the "№" are an account or a tax number, no document's
+# ("передаточному документу N 40702810900000012345"), and stay.
 [[reference]]
-pattern = '\b(?:ТН|ТТН|ТрН|УПД|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*|(?:[Уу]ниверсальн\p{Alphabetic}*[\p{Zs}\t]+)?[Пп]ередаточн\p{Alphabetic}*[\p{Zs}\t]+документ\p{Alphabetic}*)[\p{Zs}\t]*(?:№|N)[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d[\p{Alphabetic}\d/-]*'
+pattern = '\b(?:ТН|ТТН|ТрН|УПД|[Тт]оварно-транспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]овар\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Тт]ранспортн\p{Alphabetic}*[\p{Zs}\t]+накладн\p{Alphabetic}*|[Нн]акладн\p{Alphabetic}*|[Сс]ч[её]т\p{Alphabetic}{0,2}-фактур\p{Alphabetic}*|(?:[Уу]ниверсальн\p{Alphabetic}*[\p{Zs}\t]+)?[Пп]ередаточн\p{Alphabetic}*[\p{Zs}\t]+документ\p{Alphabetic}*)[\p{Zs}\t]*(?:№|N)[\p{Zs}\t]*\p{Alphabetic}{0,4}-?\d{1,8}(?:[\p{Alphabetic}/-][\p{Alphabetic}\d/-]*)?\b'
 
 # A public body's letter number is no bank or tax value, whole or in
 # pieces (#480): "№ 02-09-11/05-03-31116", "N 03-18/27628", two-digit
@@ -1032,13 +1041,15 @@ forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']
 category = "ORG"
 forbid = ['^[\s\p{P}]*ИП[\s\p{P}]*$']
 
-# A court case's number is no tax value, with a page number before it or
-# not: a running header's «3 А28-3207/2026», «А40-123456/2026»,
-# «2-1842/2026» (guide rule 5, #553 item 7, #480). The case at hand's after
-# its label is CASE (the `context` rules), and the review gives each repeat
-# the same, without the page number. An ИНН/КПП pair's slash has nine
+# A court case's number is no tax value but a case number, with a page
+# number before it or not: a running header's «3 А28-3207/2026»,
+# «А40-123456/2026», «2-1842/2026», and under any label or none
+# («Апелляционное производство № 33-1234/2026», «Материал № 13-123/2026»,
+# a judgment's heading «№ 2-1842/2026»; guide rule 5, #553 item 7, #480).
+# The model's span stays hidden as CASE without the page number; a cited
+# act's reference still removes it. An ИНН/КПП pair's slash has nine
 # digits after it and stays. An appellate «05АП-…» number, CASE by #484
 # item 7 with no rule of its own yet, keeps the model's span.
 [[shape]]
 category = "TAX"
-forbid = ['^\s*(?:\d{1,4}[\p{Zs}\t]+)?(?:[А-ЯA-Z]\d{2}|\d{1,2}[а-яa-z]?)-\d{1,7}(?:-\d{1,4})?/(?:19|20)\d{2}\s*$']
+case = ['^\s*(?:\d{1,4}[\p{Zs}\t]+)?(?P<case>(?:[А-ЯA-Z]\d{2}|\d{1,2}[а-яa-z]?)-\d{1,7}(?:-\d{1,4})?/(?:19|20)\d{2})\s*$']
