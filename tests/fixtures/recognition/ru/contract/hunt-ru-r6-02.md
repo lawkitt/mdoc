@@ -1,11 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: role-as-name
 issue: 385
 kind: contract
 source: hunt-r6
-expect: false hit: PERSON "Заимодавец"
-expect: false hit: PERSON "Заёмщик" ×2
 ---
 # Проект договора займа для согласования расчёта
 

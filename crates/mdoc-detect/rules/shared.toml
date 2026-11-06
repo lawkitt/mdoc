@@ -10,6 +10,7 @@
 #   span      whole spans by pattern (an address from its first element
 #             to its postcode or city), and boundary fixes for model spans
 #   variants  nicknames of given names, for names already in the document
+#   role_surnames lowercase occupational surnames kept when capitalized as PERSON
 #   reference legal references and markers no model span is inside
 #   private   bodies that are never public, whoever owns them
 #
@@ -58,6 +59,11 @@
 #                               do too where the span is a name alone
 #                               ("Суд Н. О."); a pattern entry needs
 #                               anywhere_in PERSON alone
+#   person_role = true          with unless_named: an initial + capitalized
+#                               role remains PERSON; plural surnames must
+#                               be listed in role_surnames
+#   phrase_only = true          with unless_named alone: role modifiers count
+#                               only beside a role head, never alone
 #   person_endings = [ending…]  for a stem with PERSON in anywhere_in: in
 #                               a person's span the stem counts only with
 #                               one of these endings ("" for none), the
@@ -86,6 +92,9 @@
 #                         word's own final period or colon with it, and
 #                         a comma before a trailing one; or phrases of them,
 #                         single-spaced ("in re"), with a word left beside
+#   role_trim = true      for ORG role words/phrases: require comma, dash,
+#                         colon or leading for; keep the whole span if
+#                         the remainder does not identify an organization
 #   strip_end = "…"       punctuation that comes off the end, except an
 #                         initial's period
 #   person_before = […]   for ORG: lowercase words that, ending a span, make

@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":26,"end":52,"label":"person","score":0.91520464,"text":"Пахомцева И. В."},
+    {"start":458,"end":482,"label":"person","score":0.87862706,"text":"Пахомцев И. В."},
+    {"start":1171,"end":1195,"label":"person","score":0.8578872,"text":"Вельтову О. Р."},
+    {"start":1067,"end":1092,"label":"person","score":0.56217647,"text":"Лада Игоревна"},
+    {"start":252,"end":340,"label":"organization","score":0.76960015,"text":"Уполномоченный по защите прав предпринимателей"}
+  ]
+}
