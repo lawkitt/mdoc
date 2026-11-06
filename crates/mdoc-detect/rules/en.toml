@@ -5,14 +5,56 @@
 # No English nicknames yet.
 variants = []
 
+# Capitalized occupational surnames remain PERSON even without another mention.
+# Most are already outside the role vocabulary; listing them also protects
+# future additions. Initial + role is protected in code; plurals need listing.
+role_surnames = [
+    "master", "masters", "steward", "stewards", "judge", "marshal", "sheriff",
+    "bishop", "chancellor", "clerk", "mayor", "dean", "sergeant", "banker",
+    "cook", "porter", "baker", "taylor", "mason", "carter", "fowler",
+    "leader", "chair", "chairman",
+]
+
+# Complete job titles come off a name's edges (#385). Do not trim their
+# individual heads: "Ivo Leader" and "Edda Chair" may be full names.
+[[span]]
+category = "PERSON"
+trim = [
+    "team leader", "chief investigator", "bureau safety manager",
+    "accident investigation advisor", "program manager",
+    "vice president of infrastructure", "chief executive officer",
+    "head of delegation", "magistrate judge", "notary public",
+    "division administrator", "international agreements specialist",
+    "chapter 7 trustee", "chapter 11 trustee", "first defendant", "second claimant",
+    "lead agent", "dealer covered person", "sponsor staff", "operating principal",
+    "bankrupt party", "attorneys for plaintiffs",
+]
+
+# The same role phrases around an organization's actual name (#385).
+[[span]]
+category = "ORG"
+role_trim = true
+trim = [
+    "trustee",
+    "team leader", "chief investigator", "bureau safety manager",
+    "accident investigation advisor", "program manager",
+    "vice president of infrastructure", "chief executive officer",
+    "head of delegation", "magistrate judge", "notary public",
+    "division administrator", "international agreements specialist",
+    "chapter 7 trustee", "chapter 11 trustee", "first defendant", "second claimant",
+    "lead agent", "dealer covered person", "sponsor staff", "operating principal",
+    "bankrupt party", "attorneys for plaintiffs",
+]
+
 # Titles and post-nominals stay outside a person's span: "Ms Bennett" is
 # proposed as "Bennett", "Ysolde Qhenn, KC" as "Ysolde Qhenn" (guide rule 1,
-# #382). A title's period goes with it.
+# #382). A title's period goes with it. Run after job phrases (#385), so
+# "Chief Investigator Ms Edda Brannock" also loses "Ms".
 [[span]]
 category = "PERSON"
 trim = [
     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
-    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
     "kc", "qc", "esq", "phd",
 ]
 
@@ -67,7 +109,7 @@ person_before = ["decl", "declaration", "aff", "affidavit"]
 match = "plural"
 words = [
     "mr", "mrs", "ms", "miss", "mx", "dr", "prof", "professor", "sir", "dame",
-    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau",
+    "lord", "lady", "madam", "madame", "mme", "mlle", "herr", "frau", "monsieur",
 ]
 
 # Family words: "her husband" names no one.
@@ -76,7 +118,7 @@ match = "plural"
 words = ["husband", "wife", "spouse", "partner", "father", "mother", "daughter"]
 
 # Roles in a matter or a contract: "the Employer", "Her Adviser", "Parties"
-# (issue #302).
+# (issues #302, #385). A title or a full name keeps a role-like surname.
 [[never]]
 match = "plural"
 words = [
@@ -85,9 +127,13 @@ words = [
     "applicant", "defendant", "plaintiff", "appellant", "party", "parties",
     "buyer", "seller", "landlord", "tenant", "lessor", "lessee", "licensor",
     "licensee", "contractor", "customer", "supplier", "company", "director",
-    "witness", "judge", "owner", "repairer", "assignee", "assignor", "principal",
-    "provider",
+    "witness", "judge", "owner", "repairer", "assignee", "assignor",
+    "provider", "debtor", "trustee", "creditor", "appellee", "affiliate",
+    "agent", "subscriber", "dealer", "sponsor", "recipient", "franchisee",
+    "participant", "user", "discloser",
 ]
+unless_named = true
+person_role = true
 
 # "Anor" and "Ors" (another, others) in a case name ("X Ltd & Anor") name
 # no one (issue #499).
@@ -106,32 +152,101 @@ words = ["people", "person", "individual"]
 match = "whole"
 words = ["the", "an", "her", "his", "their", "its", "our", "my", "your", "this", "that", "said"]
 
-# Job roles: never a name alone ("Surveyor"), and an organization span
-# ending in one is a team or office, not a company ("Costs Officer",
-# "Administrative Team"). A person's span keeps a surname that is also a
-# role ("John Clerk").
+# Job roles: never a name alone ("Surveyor"). Only a complete role phrase
+# goes ("Costs Officer", "Administrative Team"); another word keeps a
+# person's or company's name ("John Clerk", "Brannock Leader"; #385).
 [[never]]
 match = "plural"
 words = [
-    "officer", "reviewer", "team", "surveyor", "representative", "secretary",
-    "expert", "registrar", "assessor", "inspector", "adjudicator", "mediator",
-    "arbitrator", "clerk",
+    "reviewer", "surveyor", "representative", "secretary",
+    "expert", "registrar", "assessor", "adjudicator", "mediator",
+    "arbitrator", "clerk", "leader", "investigator", "specialist", "marshal",
+    "supervisor", "chair", "chairman", "president", "sergeant", "sheriff",
+    "undersheriff", "master", "recorder", "administrator", "notary",
+    "esquire", "treasurer", "ceo", "cxo", "hod", "magistrate",
 ]
+unless_named = true
+person_role = true
+
+# A private body's department is no organization (GUIDE #506 item 9).
+# A legal form keeps the company; these words may still be person surnames.
+[[never]]
+match = "plural"
+words = [
+    "team", "officer", "committee", "inspector", "desk",
+]
+unless_named = true
+person_role = true
 last_word_of = ["ORG"]
 
 # The same roles' -ies plurals.
 [[never]]
 match = "whole"
-words = ["secretaries"]
+words = ["secretaries", "deputies", "chairmen"]
+unless_named = true
+person_role = true
 
 # Words that make a job title of a role: "Technical Reviewer", "Managing
-# Director" name no one (guide rule 8). Matched whole.
+# Director" name no one (guide rule 8). Alone they may name someone or
+# a company ("VICE"); only a multiword phrase uses them as modifiers.
 [[never]]
 match = "whole"
 words = [
     "technical", "managing", "senior", "junior", "chief", "deputy",
     "assistant", "executive", "independent", "administrative",
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+    "eighth", "ninth", "tenth", "bankrupt", "lead", "covered", "operating",
+    "circuit", "district", "bureau", "accident", "investigation", "vice",
+    "other", "originating", "host", "agreement", "agreements",
+    "division", "public", "fire", "costs",
+    "acting", "head", "general", "generals", "principal", "principals",
 ]
+unless_named = true
+phrase_only = true
+
+# An explanatory note can explicitly define capacities rather than people.
+# Require the defining clause as well as role vocabulary; "Principal"
+# alone, or beside an actual name, remains a possible name.
+[[reference]]
+pattern = '(?i)\bthe[\p{Zs}\t]+terms?[\p{Zs}\t]+(?:principal|attorney|witness)(?:[\p{Zs}\t]*(?:,|and|or)[\p{Zs}\t]+(?:principal|attorney|witness))*[\p{Zs}\t]+describ(?:e|es)[\p{Zs}\t]+(?:a[\p{Zs}\t]+)?capacit(?:y|ies)\b'
+
+# Complete role-only phrases whose numbers, prepositions or optional
+# plural suffix escape word lists (#385). Both ends are anchored: a name
+# beside a role must survive. A person's preceding title keeps a surname
+# that happens to be one of these phrases.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:international[\p{Zs}\t]+agreements[\p{Zs}\t]+specialists?|chapter[\p{Zs}\t]+\d{1,2}[\p{Zs}\t]+trustees?|(?:plaintiff|defendant|claimant|circuit[\p{Zs}\t]+judge)\(s\)|head[\p{Zs}\t]+of[\p{Zs}\t]+delegation|attorneys?[\p{Zs}\t]+for[\p{Zs}\t]+plaintiffs?|vice[\p{Zs}\t]+president[\p{Zs}\t]+of[\p{Zs}\t]+infrastructure|king[\p{Zs}\t]+of[\p{Zs}\t]+sweden)[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+
+# The same complete phrases misclassified as organizations (#385).
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?(?:international[\p{Zs}\t]+agreements[\p{Zs}\t]+specialists?|chapter[\p{Zs}\t]+\d{1,2}[\p{Zs}\t]+trustees?|(?:plaintiff|defendant|claimant|circuit[\p{Zs}\t]+judge)\(s\)|head[\p{Zs}\t]+of[\p{Zs}\t]+delegation|attorneys?[\p{Zs}\t]+for[\p{Zs}\t]+plaintiffs?|vice[\p{Zs}\t]+president[\p{Zs}\t]+of[\p{Zs}\t]+infrastructure|king[\p{Zs}\t]+of[\p{Zs}\t]+sweden)[\s\p{P}]*$',
+]
+anywhere_in = ["ORG"]
+
+# These complete headings/roles contain modifiers alone; they do not
+# make other modifier combinations ("General Accident") generic.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:(?:[a-z]\.[\p{Zs}\t]+)?general[\p{Zs}\t]+terms|operating[\p{Zs}\t]+principals?)[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+
+# The same complete headings/roles misclassified as organizations.
+[[never]]
+match = "pattern"
+patterns = [
+    '(?i)^[\s\p{P}]*(?:(?:[a-z]\.[\p{Zs}\t]+)?general[\p{Zs}\t]+terms|operating[\p{Zs}\t]+principals?)[\s\p{P}]*$',
+]
+anywhere_in = ["ORG"]
 
 # Category words: "Email", "Address", "Bank" in a table header name no one
 # (issue #379). Matched whole, with their plurals listed, so the surname
@@ -223,7 +338,7 @@ unless_named = true
 [[never]]
 match = "plural"
 words = [
-    "approved", "judgment", "judgement", "announcement", "general", "term",
+    "approved", "judgment", "judgement", "announcement", "term",
     "federal", "law", "school", "end", "product",
 ]
 unless_named = true
@@ -240,10 +355,18 @@ unless_named = true
 match = "plural"
 words = [
     "program", "programme", "initiative", "standard", "plan", "assurance",
-    "project", "trial", "online", "manager", "portal", "platform", "website",
+    "project", "trial", "online", "portal", "platform", "website",
     "app",
 ]
 unless_named = true
+last_word_of = ["ORG"]
+
+# A manager is both a job's head and software's ("Application Manager").
+[[never]]
+match = "plural"
+words = ["manager"]
+unless_named = true
+person_role = true
 last_word_of = ["ORG"]
 
 # The same for "system", whose plural ends many a company's name ("Acme
@@ -452,10 +575,16 @@ anywhere_in = ["ORG", "PERSON"]
 [[never]]
 match = "plural"
 words = [
-    "department", "agency", "bureau", "office", "county", "district",
-    "council", "commission", "board", "division",
+    "agency", "bureau", "county", "district", "council", "commission",
 ]
 anywhere_in = ["PERSON"]
+
+# Department words also end private departments, not company names (#506).
+[[never]]
+match = "plural"
+words = ["department", "office", "board", "division"]
+anywhere_in = ["PERSON"]
+last_word_of = ["ORG"]
 
 # Public bodies, laws and courts by their phrases, as an organization or a
 # person (issue #378). A legal form keeps a company; words in quotes are a
@@ -800,7 +929,7 @@ trim = ["in re", "in the matter of", "ex parte"]
 # ("Acme Ltd.").
 [[shape]]
 category = "ORG"
-guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "PLC"]
+guess_words = ["LLC", "LLP", "Ltd", "Inc", "Corp", "Co", "PLC"]
 
 # "U.S." and "U.K." alone are a country, never a company or a person: "527
 # U.S. 706", "U.S. District Court" (guide rules 1, 2 and 8, issue #499).
@@ -1037,9 +1166,16 @@ forbid = ['(?i)^\s*(?:(?:suite|ste\.?|floor|fl\.|building|bldg\.?|room|rm\.?|mai
 match = "plural"
 words = [
     "suite", "ste", "floor", "bldg", "building", "room", "rm", "mailstop",
-    "mail", "stop", "apt", "apartment", "flat", "unit",
+    "mail", "stop", "apt", "apartment", "flat",
 ]
 anywhere_in = ["BANK", "IDENTITY"]
+
+# A unit also ends a department's name (#506).
+[[never]]
+match = "plural"
+words = ["unit"]
+anywhere_in = ["BANK", "IDENTITY"]
+last_word_of = ["ORG"]
 
 # Dates of birth (ADR 0092): a date after born, DOB or date of birth is a
 # personal date ("born 14 March 1988", "**DOB:** 23 September 1991"). Every
