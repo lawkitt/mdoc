@@ -43,9 +43,12 @@ fi
 
 sdk=$(scripts/install-android-sdk.sh)
 scripts/build-android-core.sh >/dev/null
-export JAVA_HOME ANDROID_HOME
+# ANDROID_SDK_ROOT too: AGP refuses two different SDKs, and hosted runners
+# set it to the image's own.
+export JAVA_HOME ANDROID_HOME ANDROID_SDK_ROOT
 JAVA_HOME=$(native_path "$(android_jdk)")
 ANDROID_HOME=$(native_path "$sdk")
+ANDROID_SDK_ROOT=$ANDROID_HOME
 
 echo "android-check: JVM tests and builds"
 (cd apps/android && ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleMinified)
