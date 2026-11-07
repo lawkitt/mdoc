@@ -898,31 +898,154 @@ between = '(?:[\p{Zs}\t]+(?:адвоката|нотариуса|арбитраж
 value = '(?:\p{Uppercase}{1,4}[\p{Zs}-]?)?\d{3,10}(?:/\d{1,6})?'
 min_digits = 3
 
-# Addresses (ADR 0092, issue #362): a street and a house ("д. 7"), after an
-# optional index, region and city, then a building and a flat or office:
-# "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12", "197101, г.
-# Москва, ул. Кедровая, д. 42-А, кв. 7", "Тверская область, г. Ржев, ул.
-# Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9". A city without "г."
-# leads only where a field or line starts, or after a lowercase word
-# ("адресу Псков, ул. Тихих залов, д. 29"), never mid-name ("Иван
-# Иванович, ул. …"). The parts also come in reverse, the flat first and the
-# city last, where a city without "г." ends its field: "кв. 9, д. 32,
-# переулок Бумажных лодок, Тверь", then an index. A city of several
-# words needs its "г." ("г. Нижний Новгород"): without one it reads as a
-# name (#362).
+# Addresses (ADR 0092, issue #362) in reverse, the flat first and the city
+# last, where a city without "г." ends its field: "кв. 9, д. 32, переулок
+# Бумажных лодок, Тверь", then an index. A city of several words needs its
+# "г." ("г. Нижний Новгород"): without one it reads as a name. A
+# depersonalised address masked before its house starts at the house, when
+# a building or flat follows, or at a plot: "(<...> д 31 к 2, кв 69б, ИНН
+# …)" is "д 31 к 2, кв 69б", "…, <...> уч. 109" is "уч. 109", "<...> …
+# д. 5, стр. 1, оф. 2" is "д. 5, стр. 1, оф. 2"; "<...> д. 5 мая" and
+# "<...> уч. 2023 года" are none (#362, probe round 2). No span holds a "<"
+# (the review's syntax rule), so the places before such a mask are an
+# address of their own (the third entry below). The parts are the forward
+# entry's (below), the tail aside; this entry comes first, so a reverse
+# address keeps its place before a forward one in the list of matches.
+# Place names are Cyrillic or Latin letters of any language ("г. Київ",
+# "г. Өскемен"), a narrower class than every letter, which keeps the
+# forward pattern within the regex size limit.
 [[span]]
 category = "ADDRESS"
-pattern = '(?:{index},\s*(?:(?:{region},\s*)?(?:{city}|{bare_city}),\s*)?|(?:{region},\s*)?{city},\s*|(?P<lead>{lead})(?:{region},\s*)?{bare_city},\s*)?{street},\s*{house}(?:,\s*{building})*(?:,\s*{flat})?|(?:{flat},\s*)?(?:{building},\s*)*{house},\s*(?:{building},\s*)*{street}(?:,\s*{city}(?:,\s*{index}\b)?|,\s*{bare_city}(?:,\s*{index}\b|(?P<tail>{tail})))?'
-parts.lead = '(?m:^)[\p{Zs}\t]*|[:|>(«"—–;,][\p{Zs}\t]*|\b\p{Ll}[\p{Ll}-]*[\p{Zs}\t]+'
+pattern = '(?:{flat}{sep})?(?:{building}{sep})*{house}{sep}(?:{building}{sep})*{street}(?:{sep}{city}(?:{sep}{index}\b)?|{sep}{bare_city}(?:{sep}{index}\b|(?P<tail>{tail})))?|(?P<lead>{mask}[\p{Zs}\t]*,?[\p{Zs}\t]*(?:{street_mask}[\p{Zs}\t]*,?[\p{Zs}\t]*)?)(?:{house}(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))+|{plot})'
 parts.tail = '[\p{Zs}\t]*(?:(?m:$)|[\r|<.;,()—–])'
-parts.region = '\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:область|край)|\bРеспублика[\p{Zs}\t]\p{Uppercase}[\p{Alphabetic}-]*'
+# A blank element between commas ("д. 5, , ком. 1-А") is no break (#362).
+parts.sep = ',(?:[\p{Zs}\t]*,)*\s*'
 parts.index = '\b\d{6}'
-parts.bare_city = '\b\p{Uppercase}[\p{Alphabetic}\d]*(?:-[\p{Alphabetic}\d]+)*'
-parts.city = '\bг\.[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t]\p{Uppercase}[\p{Alphabetic}\d-]*){0,2}'
-parts.street = '(?:\bул\.|\bулица|\bпр-т|\bпр\.|\bпер\.|\bнаб\.|\bб-р|\bпл\.|\bш\.|\b(?:проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)\b)[\p{Zs}\t]*\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?|\b\p{Uppercase}[\p{Alphabetic}-]*[\p{Zs}\t](?:проспект|переулок|улица|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт)'
-parts.house = '(?:\bд\.|\bдом)[\p{Zs}\t]*\d+(?:-\d+)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?'
-parts.building = '(?:\bкорп\.|\bкорпус|\bстр\.|\bстроение)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bлит(?:\.|ера)[\p{Zs}\t]*\p{Uppercase}\b'
-parts.flat = '(?:\bкв\.|\bквартира|\bофис|\bоф\.|\bпомещение|\bпом\.)[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?'
+parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+# Only a mask that is no ordinary punctuation: "<...>", "<***>", "<данные
+# изъяты>", "***".
+parts.mask = '<(?:\.{3}|…|\*{1,5}|данные[\p{Zs}\t]+изъяты|ДАННЫЕ[\p{Zs}\t]+ИЗЪЯТЫ|адрес)>|\*{3,}|[\[(](?:данные[\p{Zs}\t]+изъяты|изъято)[\])]'
+# A plot after a mask: up to three digits, or four that are no year
+# ("уч. 109", "уч. 1234", but not "уч. 2023 года").
+parts.plot = '\b(?:уч|УЧ)\.[\p{Zs}\t]*(?:\d{1,3}|(?:[03-9]\d|1[0-8]|2[1-9])\d{2})(?:-?\p{Alphabetic})?\b'
+parts.street = '{street_type}[\p{Zs}\t]*(?:{street_name}|{street_mask})|\b\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?[\p{Zs}\t]+(?:\([^()\n]{1,20}\)[\p{Zs}\t]+)?{street_after}'
+parts.street_type = '\b(?:ул|УЛ)\b\.?|\b(?:пр|пер|наб|пл|ш|ПР|ПЕР|НАБ|ПЛ)\.|\b(?:пр-т|пр-кт|пр-д|б-р|ПР-Т|ПР-КТ|ПР-Д|Б-Р)\b|\b(?:улица|проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт|УЛИЦА|ПРОСПЕКТ|ПЕРЕУЛОК|БУЛЬВАР|ШОССЕ|НАБЕРЕЖНАЯ|ПЛОЩАДЬ|ПРОЕЗД|ТУПИК|АЛЛЕЯ|ЛИНИЯ|ТРАКТ)\b'
+parts.street_name = '(?:(?:им|ИМ)\.[\p{Zs}\t]*|имени[\p{Zs}\t]+)?(?:\p{Uppercase}\.[\p{Zs}\t]*){0,2}(?:\d{1,3}(?:-?\p{Ll}{1,2})?[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?'
+parts.street_mask = '…|\.{3}|\*{3,}'
+parts.street_after = '(?:улица|проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт|УЛИЦА|ПРОСПЕКТ|ПЕРЕУЛОК|БУЛЬВАР|ШОССЕ|ПРОЕЗД)\b|(?:ул|пр|пер|наб|пл|ш|УЛ|ПР|ПЕР)\.|(?:пр-т|пр-кт|пр-д|б-р)\b'
+parts.house = '\bд[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}(?:[\p{Zs}\t]+к[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?\b)?|(?:\b(?:д|Д|дом|ДОМ|вл|влд|ВЛД)\b\.?|\b(?:уч|УЧ)\.|\bучасток\b)[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}'
+parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?(?:[\p{Zs}\t][А-ЙЛ-РТ-ЯЁ]\b)?'
+parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bк\.[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:корпус|КОРПУС|строение|СТРОЕНИЕ)\b[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:лит|ЛИТ)(?:\.|ера|ЕРА|ер|ЕР|\b)[\p{Zs}\t]*\p{Uppercase}\b|\b(?:эт|ЭТ)\.[\p{Zs}\t]*\d+|\bэтаж[\p{Zs}\t]*\d+'
+parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
+
+# Addresses (ADR 0092, issue #362) forward: a street and a house ("д. 7",
+# "д 31", "Д. 14", or a bare number after the street's comma: "ул.
+# Еловая,16"), after an optional index and the places above the street,
+# then buildings, flats and offices in any order: "191187, Санкт-Петербург,
+# Литейный проспект, д. 7, офис 12", "Тверская область, г. Ржев, ул. Тихих
+# арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9", "РОССИЯ 999999, ЭНСК, УЛ
+# ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ОФ. 1". An address that opens with its region,
+# country or «ГСП» keeps it (guide rule 3). A city without "г." leads only
+# after an index, where a field or line starts, or after a lowercase word
+# ("адресу Псков, ул. Тихих залов, д. 29"), and only right before the
+# street: a bare word before a "г.", a region, a district or a settlement
+# is a name ("Истец: Иванов, г. Энск, …", "ответчику Иванову, Кедровский
+# район, …"), never a city. With no index, the places hold one city at
+# most, so a public body's name stays out ("Администрация г. Энска, г.
+# Энск, ул. Ленина, д. 1" is "г. Энск, …"; #553 item 1). A flat list or a
+# second house number goes on ("кв. 1, 2, 4", "ул. Луговая, 6, 9") only up
+# to its field's end, so a phone or a date after it ("кв. 7, 8–916–…",
+# "кв. 7, 12.03.1985 г.р.") stays out. With places before it, a blank or
+# elided street (", ,", "…") still leaves one address of the elements
+# around it; and after an index and a place, a street with no house, or a
+# box, ends one: "999999, Энская область, Энск город, Московское (18 км)
+# шоссе", "999999, г. Энск, а/ 1" (#362, probe rounds 1 and 2). An index
+# alone, or an index and a city with no street, is no match here.
+[[span]]
+category = "ADDRESS"
+pattern = '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:{area}{sep})*(?:{bare_city}{sep}(?:{area}{sep})*)?|{areas}|(?P<lead>{lead})(?:{area}{sep})*{bare_city}{sep})?{street}{sep}(?:{house}|{bare_house})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*(?:{item}+(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}){item}*)*(?P<tail>{tail}))?|(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})*|{areas})(?:{street_mask}[\p{Zs}\t]*,?[\p{Zs}\t]*|,[\p{Zs}\t]*)(?:{street}{sep})?(?:{house}|{flat})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*|(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})+(?:{street}|{box})'
+parts.lead = '(?m:^)[\p{Zs}\t]*|[:|>(«"—–;,][\p{Zs}\t]*|\b\p{Ll}[\p{Ll}-]*[\p{Zs}\t]+'
+# A list ends its field: a line's end, "|", "<", ";", a closing bracket or
+# quote, a full stop or a dash before no digit ("кв. 1, 2." but not "кв.
+# 7, 12.03.1985", "кв. 7, 8–916" or "кв. 7, 8 – 916"), or a comma before a
+# word (a next field).
+parts.tail = '[\p{Zs}\t]*(?:(?m:$)|[\r|<;)\]»"]|\.(?:\D|\z)|[—–][\p{Zs}\t]*(?:[^\d\p{Zs}\t]|\z))|,[\p{Zs}\t]*\p{Alphabetic}'
+parts.item = ',[\p{Zs}\t]*\d{1,3}(?:-?\p{Alphabetic})?\b'
+parts.sep = ',(?:[\p{Zs}\t]*,)*\s*'
+parts.index = '\b\d{6}'
+parts.country = '\b(?:Россия|РОССИЯ|Российская[\p{Zs}\t]+Федерация|РОССИЙСКАЯ[\p{Zs}\t]+ФЕДЕРАЦИЯ)\b'
+parts.gsp = '\bГСП(?:-\d{1,3})?\b'
+# The places above a street: a region, a district, a city with its "г." or
+# "город", a settlement by its type («ч.», «г.о.», «ст.», «пгт», «с.»,
+# «п.», «х.», «а.», «вн.тер.г.»; #482), a country or «ГСП».
+parts.area = '{region}|{district}|{city}|{settlement}|{country}|{gsp}'
+# One place or more, with one city at most.
+parts.areas = '(?:(?:{region}|{district}|{settlement}|{country}|{gsp}){sep})+(?:{city}{sep}(?:(?:{region}|{district}|{settlement}|{country}|{gsp}){sep})*)?|{city}{sep}(?:(?:{region}|{district}|{settlement}|{country}|{gsp}){sep})*'
+parts.region = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:область|обл\.|край|ОБЛАСТЬ|ОБЛ\.|КРАЙ)|\b(?:Республика|РЕСПУБЛИКА)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*(?:[\p{Zs}\t]+\([\p{Cyrillic}\p{Latin}-]+\))?'
+parts.district = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:р-н|район|Р-Н|РАЙОН|(?:муниципальный|городской)[\p{Zs}\t]+(?:район|округ))\b'
+parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+# A settlement's type is lowercase before its name ("с. Кедровка", "г.о.
+# Кедровск"); in capitals it goes only before a name in capitals, as a
+# register extract writes it ("Г.О. КЕДРОВСК"), so a person's initials
+# ("А.С. Петров", "И.П. Петров", "Д. Петров") are no settlement.
+parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
+parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+parts.street = '{street_type}[\p{Zs}\t]*(?:{street_name}|{street_mask})|\b\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?[\p{Zs}\t]+(?:\([^()\n]{1,20}\)[\p{Zs}\t]+)?{street_after}'
+# Dotless «ул» and the capitals of a register extract («УЛ», «ПР-Т»).
+parts.street_type = '\b(?:ул|УЛ)\b\.?|\b(?:пр|пер|наб|пл|ш|ПР|ПЕР|НАБ|ПЛ)\.|\b(?:пр-т|пр-кт|пр-д|б-р|ПР-Т|ПР-КТ|ПР-Д|Б-Р)\b|\b(?:улица|проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт|УЛИЦА|ПРОСПЕКТ|ПЕРЕУЛОК|БУЛЬВАР|ШОССЕ|НАБЕРЕЖНАЯ|ПЛОЩАДЬ|ПРОЕЗД|ТУПИК|АЛЛЕЯ|ЛИНИЯ|ТРАКТ)\b'
+# "им." and initials inside a street's name ("ул. им. Пахомова", "ул. Б.
+# Тульская"), a number before it ("ул. 8 Марта").
+parts.street_name = '(?:(?:им|ИМ)\.[\p{Zs}\t]*|имени[\p{Zs}\t]+)?(?:\p{Uppercase}\.[\p{Zs}\t]*){0,2}(?:\d{1,3}(?:-?\p{Ll}{1,2})?[\p{Zs}\t]+)?\p{Uppercase}[\p{Alphabetic}\d-]*(?:[\p{Zs}\t][\p{Alphabetic}\d-]+)?'
+parts.street_mask = '…|\.{3}|\*{3,}'
+# The type after the name, abbreviated too ("Смольнинская ул.",
+# "Большая Тульская улица").
+parts.street_after = '(?:улица|проспект|переулок|бульвар|шоссе|набережная|площадь|проезд|тупик|аллея|линия|тракт|УЛИЦА|ПРОСПЕКТ|ПЕРЕУЛОК|БУЛЬВАР|ШОССЕ|ПРОЕЗД)\b|(?:ул|пр|пер|наб|пл|ш|УЛ|ПР|ПЕР)\.|(?:пр-т|пр-кт|пр-д|б-р)\b'
+# A house and its number; «уч.» is a plot. A dotless «д» takes a dotless
+# «к» building ("д 31 к 2"); elsewhere a lowercase «к» needs its dot, so
+# "д. 5 к 10 часам" ends at "д. 5".
+parts.house = '\bд[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}(?:[\p{Zs}\t]+к[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?\b)?|(?:\b(?:д|Д|дом|ДОМ|вл|влд|ВЛД)\b\.?|\b(?:уч|УЧ)\.|\bучасток\b)[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}'
+# A house number ("5-7", "42-А", "68/70") and a house letter after a space,
+# a capital other than «К» and «С», which open a building ("д. 43 Г", but
+# "Д. 14 К. 4"). A part after a hyphen has three digits at most, so a case
+# number ("д. № 2-1234/2020") is none.
+parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?(?:[\p{Zs}\t][А-ЙЛ-РТ-ЯЁ]\b)?'
+parts.bare_house = '\b\d{1,3}(?:-?\p{Alphabetic})?(?:/\d{1,3}(?:-?\p{Alphabetic})?)?\b(?:[\p{Zs}\t][А-ЙЛ-РТ-ЯЁ]\b)?'
+parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bк\.[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:корпус|КОРПУС|строение|СТРОЕНИЕ)\b[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:лит|ЛИТ)(?:\.|ера|ЕРА|ер|ЕР|\b)[\p{Zs}\t]*\p{Uppercase}\b|\b(?:эт|ЭТ)\.[\p{Zs}\t]*\d+|\bэтаж[\p{Zs}\t]*\d+'
+parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
+parts.box = '\b(?:а/я|А/Я|а/)[\p{Zs}\t]*\d+\b'
+
+# Addresses (ADR 0092, guide rule 3, #506 item 6): an index and the places
+# after it are an address with no street where a mask follows them, which
+# no span holds: "999999, Энская область, г.о. Кедровск, <...> … д. 5"
+# has "999999, Энская область, г.о. Кедровск" (and the house after the
+# mask, in the reverse entry). The last place has its type (a region, a
+# district, a city, a settlement), so an index and a bare word ("999999,
+# Энск, <...>") are none (#362, probe round 2).
+[[span]]
+category = "ADDRESS"
+pattern = '(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})*(?:{area})(?P<tail>[\p{Zs}\t]*,?[\p{Zs}\t]*{mask})'
+parts.sep = ',(?:[\p{Zs}\t]*,)*\s*'
+parts.index = '\b\d{6}'
+parts.country = '\b(?:Россия|РОССИЯ|Российская[\p{Zs}\t]+Федерация|РОССИЙСКАЯ[\p{Zs}\t]+ФЕДЕРАЦИЯ)\b'
+parts.gsp = '\bГСП(?:-\d{1,3})?\b'
+parts.mask = '<(?:\.{3}|…|\*{1,5}|данные[\p{Zs}\t]+изъяты|ДАННЫЕ[\p{Zs}\t]+ИЗЪЯТЫ|адрес)>|\*{3,}|[\[(](?:данные[\p{Zs}\t]+изъяты|изъято)[\])]'
+parts.area = '{region}|{district}|{city}|{settlement}|{country}|{gsp}'
+parts.region = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:область|обл\.|край|ОБЛАСТЬ|ОБЛ\.|КРАЙ)|\b(?:Республика|РЕСПУБЛИКА)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*(?:[\p{Zs}\t]+\([\p{Cyrillic}\p{Latin}-]+\))?'
+parts.district = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:р-н|район|Р-Н|РАЙОН|(?:муниципальный|городской)[\p{Zs}\t]+(?:район|округ))\b'
+parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
+parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+
+# The model's address that runs on into the next field ends before its
+# label: "…, лит. Б, кадастровый №" ends at "лит. Б", and a residue that is
+# only a letter and the label goes (#362, probe round 1).
+[[span]]
+category = "ADDRESS"
+trim = [
+    "кадастровый", "кадастровым", "кадастровый номер", "кадастровым номером",
+    "№", "инн", "огрн", "огрнип", "тел", "телефон",
+]
 
 # Dates of birth (ADR 0092): a date after "дата рождения", "д.р.", "род.",
 # "родился" is a personal date ("дата рождения 14 марта 1988 г.",
