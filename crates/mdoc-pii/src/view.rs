@@ -1425,9 +1425,9 @@ pub fn occurrences(source: &str, wording: &str) -> Vec<Range<usize>> {
     let mut chars = source.char_indices().peekable();
     while let Some((at, c)) = chars.next() {
         let mut end = at + c.len_utf8();
-        while let Some((i, mark)) = chars.next_if(|&(_, mark)| {
-            unicode_normalization::char::canonical_combining_class(mark) != 0
-        }) {
+        while let Some((i, mark)) = chars
+            .next_if(|&(_, mark)| unicode_normalization::char::canonical_combining_class(mark) != 0)
+        {
             end = i + mark.len_utf8();
         }
         starts.push((text.len(), at));

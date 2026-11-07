@@ -314,7 +314,9 @@ pub(super) fn of(
                 |e| e.originals.iter().map(|o| o.to_string()).collect(),
             );
             let tally = tallies.get(&id);
-            let mentions = review.identity_count(id) as u64;
+            // `Review::identity_count`, from the mentions already found: it
+            // walks every mention for each identity.
+            let mentions = tally.map_or(0, |t| t.count - t.kept);
             Some(IdentityRow {
                 id,
                 alias: identity.alias.clone(),

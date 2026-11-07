@@ -3,9 +3,12 @@
 //! extension. Cases are the desktop's encrypted files
 //! (`mdoc_store::cases::Store`) under the key the platform passes in; Rust
 //! never touches a keychain here.
+mod state;
+
 use crate::CoreError;
 use mdoc_pii::restore::RestoreMap;
 use mdoc_store::cases::{Case, CaseLink, Store};
+pub(crate) use state::DocumentState;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -350,7 +353,11 @@ impl Library {
         }
         match std::fs::remove_file(&path) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
-            _ => Ok(left),
+            _ => {
+                // Only the entry is left of it; one left behind is harmless.
+                let _ = self.set_document_state(&lock, &path, None);
+                Ok(left)
+            }
         }
     }
 
@@ -703,6 +710,9 @@ impl Library {
                 }
             }
         }
+        // The rename has happened: an entry that cannot follow it only
+        // makes the document reopen as it would without one.
+        let _ = self.move_document_state(lock, &path, &renamed);
         Ok(RenamedDocument {
             title: title_of(&renamed),
             path: Some(renamed.display().to_string()),

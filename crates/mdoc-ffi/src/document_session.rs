@@ -244,6 +244,7 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
+            scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
         };
         self.open(imported, &cancel, Some(opened))
     }
@@ -603,6 +604,9 @@ struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
     case: Option<mdoc_store::cases::Case>,
+    /// What its last save recorded; `None` for a document saved before
+    /// the library kept it.
+    scanned: Option<bool>,
 }
 
 impl Document {
@@ -696,6 +700,13 @@ impl Document {
                 library.create_locked(&lock, case)?
             }
         };
+        library.set_document_state(
+            &lock,
+            &path,
+            Some(crate::library::DocumentState {
+                scanned: self.scanned,
+            }),
+        )?;
         self.case = Some(case.id.clone());
         self.saved = Some(self.change_key());
         Ok(SavedDocument {
@@ -750,6 +761,13 @@ impl DocumentSession {
                 document.synced = Some(case.identities.clone());
                 document.case = Some(case.id);
             }
+            // Saved before scans were recorded: scanned when it has
+            // mentions, as the apps used to tell.
+            document.scanned = opened
+                .scanned
+                .unwrap_or_else(|| !document.review.mention_ranges().is_empty());
+            // As saved: nothing to save until something changes.
+            document.saved = Some(document.change_key());
         }
         let snapshot = document.snapshot();
         *self.lock_document() = Some(document);

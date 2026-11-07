@@ -604,4 +604,150 @@ mod tests {
         ));
         assert!(DocumentSession::new().info().is_none());
     }
+
+    /// Scanned is kept with the document: a scan that found nothing reopens
+    /// as scanned, and a document never scanned as unscanned whatever its
+    /// mentions; a rename keeps it. Documents saved before it was kept
+    /// count as scanned when they have mentions.
+    #[test]
+    fn scanned_is_kept_with_the_document() {
+        let scratch = Scratch::new();
+        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let reopened = |path: &str| {
+            DocumentSession::new()
+                .open_document(library.clone(), path.into())
+                .unwrap()
+        };
+        let empty = DocumentSession::new();
+        empty
+            .import_text("Nothing here.".into(), "Empty".into())
+            .unwrap();
+        empty
+            .review(names(&[("Ann Lee", Category::Person)]), None)
+            .unwrap();
+        let empty = empty.save(library.clone()).unwrap().path;
+        let again = reopened(&empty);
+        assert!(again.scanned);
+        assert_eq!(again.phase, DocumentPhase::Ready);
+        let marked = DocumentSession::new();
+        let text = marked
+            .import_text("Ann Lee wrote.".into(), "Marked".into())
+            .unwrap();
+        let range = TextRange { start: 0, end: 7 };
+        assert_eq!(&text.text[..7], "Ann Lee");
+        marked
+            .review(
+                ReviewAction::ReplaceSelection {
+                    range,
+                    category: Category::Person,
+                },
+                Some(library.clone()),
+            )
+            .unwrap();
+        let marked = marked.info().unwrap().path.unwrap();
+        let again = reopened(&marked);
+        assert!(!again.scanned && !again.mentions.is_empty());
+        let renamed = library.rename_document(empty, "Renamed".into()).unwrap();
+        assert!(reopened(&renamed.path.clone().unwrap()).scanned);
+        // Saved before the library kept it.
+        std::fs::remove_file(scratch.path().join("documents.json")).unwrap();
+        assert!(!reopened(&renamed.path.unwrap()).scanned);
+        assert!(reopened(&marked).scanned);
+    }
+
+    /// What a review tap costs on a long document (ADR 0104: async calls
+    /// only past about 16 ms on an iPhone 12 Pro): about 20 pages, 200
+    /// names, 1,600 mentions. `cargo test --release -p mdoc-ffi --lib
+    /// measure_a_review_tap -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement; run it in release"]
+    fn measure_a_review_tap() {
+        use std::time::Instant;
+        let scratch = Scratch::new();
+        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let mut text = String::new();
+        for page in 0..20 {
+            text += &format!("## Page {page}\n\n");
+            for i in 0..80 {
+                let n = (page * 80 + i) % 200;
+                text += &format!("Clause {i}: Name{n} Family{n} agrees with the terms. ");
+            }
+            text += "\n\n";
+        }
+        let session = DocumentSession::new();
+        session.import_text(text, "Long".into()).unwrap();
+        let people: Vec<_> = (0..200)
+            .map(|n| ProposedName {
+                wording: format!("Name{n} Family{n}"),
+                category: Category::Person,
+            })
+            .collect();
+        let start = session
+            .review(
+                ReviewAction::ProposeNames { names: people },
+                Some(library.clone()),
+            )
+            .unwrap();
+        eprintln!(
+            "{} bytes, {} mentions",
+            start.text.len(),
+            start.mentions.len()
+        );
+        let time = |label: &str, run: &mut dyn FnMut()| {
+            let runs = 20;
+            let began = Instant::now();
+            for _ in 0..runs {
+                run();
+            }
+            eprintln!(
+                "{label}: {:.2} ms",
+                began.elapsed().as_secs_f64() * 1e3 / runs as f64
+            );
+        };
+        time("snapshot", &mut || {
+            session.snapshot().unwrap();
+        });
+        time("markdown_styling", &mut || {
+            crate::markdown::markdown_styling(start.text.clone());
+        });
+        let mut mentions = start.mentions.iter().map(|m| m.id);
+        time("review: Replace one, no save", &mut || {
+            let mention = mentions.next().unwrap();
+            session
+                .review(
+                    ReviewAction::Replace {
+                        mention,
+                        scope: Scope::This,
+                    },
+                    None,
+                )
+                .unwrap();
+        });
+        time("review: Replace one, saved", &mut || {
+            let mention = mentions.next().unwrap();
+            session
+                .review(
+                    ReviewAction::Replace {
+                        mention,
+                        scope: Scope::This,
+                    },
+                    Some(library.clone()),
+                )
+                .unwrap();
+        });
+        time("review: Undo, saved", &mut || {
+            session
+                .review(ReviewAction::Undo, Some(library.clone()))
+                .unwrap();
+        });
+        // Replace on a replaced mention changes nothing: no save.
+        let replaced = start.mentions[0].id;
+        time("review: nothing changed, library given", &mut || {
+            let action = ReviewAction::Replace {
+                mention: replaced,
+                scope: Scope::This,
+            };
+            session.review(action, Some(library.clone())).unwrap();
+        });
+    }
 }
