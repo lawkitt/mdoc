@@ -37,7 +37,7 @@ Android: `apps/android/.../ui/theme` under the same names (to come).
 | Token | Values | Use |
 |---|---|---|
 | `Space` | 4, 8, 12, 16, 24 (`xxs`…`l`) | Padding and gaps; nothing off the 4 pt grid |
-| `Radius` | chip (capsule), control 12, card 20, tile 8 | Continuous corners |
+| `Radius` | chip (capsule), control 12, card 20, tile 8, screen 44 | Continuous corners; screen for the sliding screen beside a drawer |
 | `Size` | target 44, bar button 40, chip 30, tile 30 | Hit targets never under 44 pt |
 | `Palette` | accent, surface, background, chip fill, separator; to review (orange), ready (green), restored (blue) | Only named colors; system colors adapt to dark mode and Increase Contrast |
 | `Typography` | title, body, caption, chip, alias (monospaced), progress | Dynamic Type text styles only |
@@ -57,6 +57,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Chip` | Anything tappable that isn't a button is a filled capsule. A chip that opens a menu ends in a chevron; plain text never acts. Neutral fill, or tinted by category or state. At least 44 pt of target. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
+| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. |
 | `IconTile` | Settings: white symbol on a colored square. Home: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
@@ -74,10 +75,34 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   (`MarkdownDisplay.serif`, read by `MarkdownStyler.font`).
 - **Settings:** inset grouped with `SettingsLabel` icon tiles; Appearance,
   Review, Models (plain names, details one tap deeper), Privacy, About.
-- **Home:** `DocumentRow`, a tinted source tile, the title on one line, then
-  `StatusPill`, the time and the `CaseTag`. Search from 8 documents, a case
-  filter from 2 cases, Scan and + in the bottom bar, and the empty state's
-  three tiles with Try a sample.
+- **Documents** (was Home): `DocumentRow`, a tinted source tile, the title
+  on one line, then `StatusPill`, the time and the `CaseTag`. Search from 8
+  documents, a case filter from 2 cases, Scan and + in the bottom bar.
+- **Start:** the main area with nothing open: the setup card, Continue
+  (the newest document with names to review), the Scan, Files and Paste
+  tiles, and Try a sample while there are no documents.
+- **Cases:** each case with its colour, document count and how many wait
+  for review; a tap shows its documents.
+
+## Sidebar
+
+[ADR 0102](adr/0102-mobile-sidebar.md); code in
+[`apps/ios/mdoc/Home/SidebarView.swift`](../apps/ios/mdoc/Home/SidebarView.swift)
+and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
+
+- **Motion:** on iPhone the screen slides right over the sidebar,
+  following the finger from ☰ or the left edge (22 pt), leaving a dimmed
+  72 pt sliver with `Radius.screen` corners; a tap on it or a swipe left
+  closes it. Reduce Motion fades. On a wide iPad it is the standing first
+  column.
+- **Layout:** search (titles and cases) at the top, no title; the Cases
+  and Documents rows; *To review* (orange count of names left) and
+  *Recent* (20 at most, green dot when ready); a spinner while a job works
+  on a document; the open row highlighted with `Palette.chipFill`. ⚙ and
+  "+ New" float at the bottom over a fade.
+- **Rows:** `SidebarRowLabel`, one line, 44 pt high; a long press gives
+  Rename, Move to case, Share and Delete.
+- **Keys:** ⌘K search, ⌘N Start.
 
 ## Review bar
 
@@ -137,6 +162,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
 | Identities row | Swipe right or left | Replace; Keep and Same as… |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
+| Left edge (iPhone) | Swipe right | The sidebar; swipe left or tap the sliver to close |
 
 No swipes on the document text.
 

@@ -3,6 +3,18 @@ import Observation
 import UIKit
 import UniformTypeIdentifiers
 
+/// The sidebar's section rows: each opens a page in the main area.
+enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
+    case cases, documents
+    var id: String { rawValue }
+}
+
+/// The ways in: the camera, Photos, Files and pasted text.
+enum Intake: String, Identifiable, Hashable {
+    case scan, photos, files, paste
+    var id: String { rawValue }
+}
+
 /// The app's root: the core, storage, the one job runner and the screens'
 /// view models.
 @MainActor
@@ -13,10 +25,39 @@ final class AppModel {
     let jobs: LongJobRunner
     let home: HomeViewModel
     let setup: SetupViewModel
+    /// The open document; nil shows Start or the sidebar section's page.
     var selection: DocumentID? {
-        didSet { if selection != oldValue { showsSettings = false } }
+        didSet {
+            guard selection != oldValue else { return }
+            showsSettings = false
+            if selection != nil {
+                section = nil
+                showsSidebar = false
+            }
+        }
     }
     var showsSettings = false
+    /// The sidebar, slid out over the screen on iPhone (docs/mobile-ui.md,
+    /// Sidebar); a standing column on a wide iPad.
+    var showsSidebar = false
+    /// A sidebar section's page in the main area, in place of a document.
+    var section: SidebarSection?
+    /// An add flow asked for from Start or the sidebar's New menu.
+    var intake: Intake?
+    /// Bumped by ⌘K: the sidebar opens with its search field focused.
+    var searchRequest = 0
+    /// The document Rename… is asking a title for.
+    var renamingDocument: DocumentID?
+    /// The case Rename… is asking a name for (Cases page).
+    var renamingCase: CaseID?
+    /// Move to case › New case…: the document it asks a case name for.
+    var movingToNewCase: DocumentID?
+    /// Move to case › All cases…: the document the case list is for.
+    var choosingCase: DocumentID?
+    /// Share from a document's menu, over whatever shows.
+    var sharing: ShareItems?
+    /// "Moved to Riverside · Undo" and the like, over every screen.
+    var toast: ToastMessage?
     /// Why the core could not open (the Keychain or storage failed).
     let startupError: String?
     private var documents: [DocumentID: DocumentViewModel] = [:]
@@ -196,6 +237,103 @@ final class AppModel {
             Task { await model.recognize() }
         }
         return model
+    }
+
+    /// Opens a section's page and closes the sidebar on iPhone.
+    func open(_ section: SidebarSection) {
+        selection = nil
+        self.section = section
+        showsSidebar = false
+    }
+
+    /// ⌘K: the sidebar's search.
+    func requestSearch() {
+        showsSidebar = true
+        searchRequest += 1
+    }
+
+    /// Start: no document and no section.
+    func showStart() {
+        selection = nil
+        section = nil
+        showsSidebar = false
+    }
+
+    /// The document most worth going back to: the newest with names left to
+    /// review.
+    var continueDocument: DocumentSummary? {
+        home.documents.filter { $0.phase == .reviewing }.max { $0.updated < $1.updated }
+    }
+
+    /// The document a job is working on now, for the sidebar's spinner.
+    var workingDocument: DocumentID? { jobs.current?.documentID }
+
+    // MARK: Rename and Move to case (ADR 0102)
+
+    /// The five cases most recently created, without the one the document is
+    /// in: Move to case's quick list.
+    func recentCases(excluding current: CaseID?) -> [CaseSummary] {
+        Array(home.cases.filter { $0.id != current }.prefix(5))
+    }
+
+    func rename(_ id: DocumentID, to title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        do {
+            try core.library.renameDocument(id, to: title)
+            documents[id]?.refresh()
+            home.refresh()
+            Haptics.decision()
+        } catch {
+            home.errorMessage = error.localizedDescription
+        }
+    }
+
+    func renameCase(_ id: CaseID, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        do {
+            try core.library.renameCase(id, to: name)
+            home.refresh()
+            documents.values.forEach { $0.refresh() }
+            Haptics.decision()
+        } catch {
+            home.errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Move to case: the names take the case's aliases; the toast offers
+    /// Undo, which moves the document back.
+    func move(_ id: DocumentID, to target: CaseChoice) {
+        do {
+            let move = try core.library.moveDocument(id, to: target)
+            documents[id]?.refresh()
+            home.refresh()
+            Haptics.decision()
+            toast = ToastMessage(
+                text: String(localized: "Moved to \(move.to.name)"),
+                actionTitle: move.from == nil ? nil : String(localized: "Undo"),
+                action: move.from == nil ? nil : { [weak self] in self?.undoMove(move) })
+        } catch {
+            home.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func undoMove(_ move: CaseMove) {
+        do {
+            let back = try core.library.undoMove(move)
+            documents[move.document]?.refresh()
+            home.refresh()
+            Haptics.warning()
+            toast = ToastMessage(text: String(localized: "Moved back to \(back.to.name)"))
+        } catch {
+            home.errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Share from a menu: the reviewed text, over whatever shows.
+    func share(_ id: DocumentID) {
+        sharing = shareItems(for: id)
     }
 
     func deleteDocument(_ id: DocumentID) {

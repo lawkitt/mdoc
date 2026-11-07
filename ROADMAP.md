@@ -115,11 +115,24 @@ cannot drive them. Android takes the same decisions in its own milestone
    review bar, undo, theme, Settings and Home on the iPhone 17 Pro from a
    TestFlight build. *Done when:* that build passes the check, or its
    findings are `ui` issues.
-9. **[Mobile] To grill: Home's Rename and Move to case.** ADR 0099's long
-   press lists them, but the core has no rename or move, and moving a
-   reviewed document into another case needs a rule for its aliases (the
-   core refuses joining a second case today); the menu ships Open, Share
-   and Delete. *Done when:* grilled and built.
+9. **[Mobile] Rename and Move to case.** Grilled 2026-11-06
+   ([record](docs/design/ios-sidebar-grill-2026-11-06.md) Q6,
+   [ADR 0102](docs/adr/0102-mobile-sidebar.md)): Move follows desktop's
+   leave-then-join rule (ADR 0041), the old case keeping its mapping. The
+   core calls, then the sidebar's and the title's menus. *Done when:*
+   built.
+10. **[Mobile] The review bar follows the finger.** The drag, the full
+    view's mention rows, Keep instead and Next, hint lines in place of
+    TipKit, All reviewed ([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md),
+    #659). *Done when:* merged and checked on the iPhone 17 Pro.
+11. **[Mobile] The sidebar.** Claude-style sidebar over the open document,
+    Start, Cases and Documents pages, ⌘K and ⌘N
+    ([ADR 0102](docs/adr/0102-mobile-sidebar.md)). *Done when:* merged and
+    checked on the device.
+12. **[Mobile] Identities as a drawer.** The right-edge drawer, ordered by
+    what is left, state buttons, Replace N, Looks like, Select
+    ([record](docs/design/ios-sidebar-grill-2026-11-06.md) round 2).
+    *Done when:* built and checked on the device.
 
 ## Android 0.1
 
@@ -479,6 +492,17 @@ Android takes what applies. Its clipboard finding is
 - **[Mobile] To grill: highlights on the original page.** Found names boxed
   on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
   mobile UX ideas.*
+- **[Recognition] To grill: hint transliterated pairs.** The same name in
+  Latin and Cyrillic letters ("Ivanov" and "Иванов") comes out as two
+  identities, and merge hints treat transliteration as no signal on
+  purpose; a hint would change desktop too. Mobile's Select and Same as fix
+  a pair by hand meanwhile. *From the 2026-11-06 sidebar grill (Q13).*
+- **[Mobile] Delete a case.** From the Cases page, confirmed and
+  irreversible as on desktop (ADR 0041 Forgetting); cases a move left
+  empty stay until then. *From the 2026-11-06 sidebar grill (#660
+  review).*
+- **[Mobile] To grill: pinned cases.** Pin a case to the top of the
+  sidebar, as Claude pins chats. *From the 2026-11-06 sidebar grill.*
 - **[Mobile] To grill: quick actions.** Home Screen quick actions Scan,
   Paste, Paste reply (tips and haptics are iOS 0.2). *From the 2026-10-31
   mobile UX ideas.*

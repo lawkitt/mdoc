@@ -49,7 +49,13 @@
     "%lld" : {
 
     },
+    "%lld documents" : {
+
+    },
     "%lld GB" : {
+
+    },
+    "%lld left" : {
 
     },
     "%lld matches" : {
@@ -163,10 +169,19 @@
         }
       }
     },
+    "1 document" : {
+
+    },
     "1 match" : {
 
     },
     "A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored." : {
+
+    },
+    "A letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
+
+    },
+    "A letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
 
     },
     "A short agreement with made-up names, to try review without your own documents." : {
@@ -178,10 +193,16 @@
     "Add" : {
 
     },
+    "Add a document" : {
+
+    },
     "Add a letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
 
     },
     "Add a letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
+
+    },
+    "Add another" : {
 
     },
     "Add document" : {
@@ -217,6 +238,9 @@
     "All cases" : {
 
     },
+    "All cases…" : {
+
+    },
     "Another job is running. Try again when it finishes." : {
 
     },
@@ -244,6 +268,9 @@
     "Cancel download" : {
 
     },
+    "Cancel search" : {
+
+    },
     "Candidates" : {
 
     },
@@ -262,6 +289,9 @@
     "Case: %@" : {
 
     },
+    "Cases" : {
+
+    },
     "Category, %@" : {
 
     },
@@ -274,11 +304,24 @@
     "Checking and installing" : {
 
     },
-    "Choose a document, or add one with +." : {
-
-    },
     "Clear" : {
 
+    },
+    "Close sidebar" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Continue %@, %lld left" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Continue %1$@, %2$lld left"
+          }
+        }
+      }
     },
     "Converting" : {
 
@@ -296,6 +339,9 @@
 
     },
     "Copy" : {
+
+    },
+    "Copy for AI" : {
 
     },
     "Copy reply" : {
@@ -319,6 +365,9 @@
     "Document font" : {
 
     },
+    "Documents" : {
+
+    },
     "Documents and cases" : {
 
     },
@@ -326,6 +375,9 @@
 
     },
     "Documents stay on this iPhone" : {
+
+    },
+    "Documents you add show here." : {
 
     },
     "DOCX files and pasted text show their text only." : {
@@ -362,6 +414,9 @@
 
     },
     "Downloading %@" : {
+
+    },
+    "Each document you add starts a case, or joins one you choose." : {
 
     },
     "Each gets its alias. You can still keep any of them." : {
@@ -455,6 +510,9 @@
 
     },
     "Installing %@" : {
+
+    },
+    "Its case keeps its names." : {
 
     },
     "Just this one" : {
@@ -578,7 +636,22 @@
     "More" : {
 
     },
+    "Move" : {
+
+    },
     "Move the document once it is read." : {
+
+    },
+    "Move to case" : {
+
+    },
+    "Moved back to %@" : {
+
+    },
+    "Moved to %@" : {
+
+    },
+    "Name" : {
 
     },
     "Name detector (GLiNER2)" : {
@@ -590,10 +663,19 @@
     "Names and aliases" : {
 
     },
+    "New" : {
+
+    },
     "New alias" : {
 
     },
     "New case" : {
+
+    },
+    "New case…" : {
+
+    },
+    "New document" : {
 
     },
     "Next" : {
@@ -602,7 +684,7 @@
     "No cases yet" : {
 
     },
-    "No document open" : {
+    "No documents or cases match “%@”." : {
 
     },
     "No documents yet" : {
@@ -743,6 +825,9 @@
     "Ready to share" : {
 
     },
+    "Recent" : {
+
+    },
     "Recognition stopped when mdoc left the screen. Finished pages are kept." : {
 
     },
@@ -777,6 +862,12 @@
 
     },
     "Rename" : {
+
+    },
+    "Rename case" : {
+
+    },
+    "Rename document" : {
 
     },
     "Rename the document once it is read." : {
@@ -932,6 +1023,9 @@
     "Scrolls to this name's next mention." : {
 
     },
+    "Search documents and cases" : {
+
+    },
     "Select the words to replace first." : {
 
     },
@@ -972,6 +1066,9 @@
 
     },
     "Show original" : {
+
+    },
+    "Show sidebar" : {
 
     },
     "Show Sidebar" : {
@@ -1019,6 +1116,9 @@
     "The document and its names stay as they are." : {
 
     },
+    "The document leaves its case. Replies already sent still restore with the old case." : {
+
+    },
     "The download failed (HTTP %lld)." : {
 
     },
@@ -1061,6 +1161,9 @@
     "Title" : {
 
     },
+    "To review" : {
+
+    },
     "Try a sample" : {
 
     },
@@ -1098,6 +1201,9 @@
       "comment" : "A Markdown alert's title"
     },
     "Web address" : {
+
+    },
+    "working" : {
 
     },
     "Your carrier may charge for the data." : {

@@ -2,17 +2,13 @@ import PhotosUI
 import SwiftUI
 import VisionKit
 
-/// Every document, newest first, with the setup card, search, the case
-/// filter and adding at the bottom (ADR 0099).
+/// The Documents page (the sidebar's Documents row): every document,
+/// newest first, with search, the case filter and adding at the bottom
+/// (ADR 0099). Its empty state is the setup card and the add tiles.
 struct HomeView: View {
     @Bindable var app: AppModel
 
-    @State private var showsScanner = false
-    @State private var showsPhotos = false
-    @State private var photoItems: [PhotosPickerItem] = []
-    @State private var showsFiles = false
-    @State private var showsPaste = false
-    @State private var shareItems: ShareItems?
+    @Environment(\.showSidebar) private var showSidebar
 
     private var home: HomeViewModel { app.home }
 
@@ -49,20 +45,7 @@ struct HomeView: View {
                             } label: {
                                 Label("Open", systemImage: "doc.text")
                             }
-                            // Only a reviewed document leaves mdoc, through
-                            // Copy for AI's export path (ADR 0085).
-                            if document.phase == .ready {
-                                Button {
-                                    shareItems = app.shareItems(for: document.id)
-                                } label: {
-                                    Label("Share", systemImage: "square.and.arrow.up")
-                                }
-                            }
-                            Button(role: .destructive) {
-                                app.deleteDocument(document.id)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                            DocumentMenuItems(app: app, document: document)
                         } preview: {
                             DocumentPreview(document: document, caseSummary: home.caseSummary(of: document), findsNames: home.findsNames)
                         }
@@ -74,16 +57,11 @@ struct HomeView: View {
                 emptyState
             }
         }
-        .navigationTitle("mdoc")
+        .navigationTitle("Documents")
         .modifier(HomeSearch(home: home))
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    app.showsSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .accessibilityIdentifier("settings-button")
+            if let showSidebar {
+                SidebarButton(action: showSidebar)
             }
             if home.offersCaseFilter {
                 ToolbarItem(placement: .primaryAction) {
@@ -95,7 +73,7 @@ struct HomeView: View {
             ToolbarItemGroup(placement: .bottomBar) {
                 if VNDocumentCameraViewController.isSupported {
                     Button {
-                        showsScanner = true
+                        app.intake = .scan
                     } label: {
                         Label("Scan", systemImage: "doc.viewfinder")
                             .labelStyle(.titleAndIcon)
@@ -108,58 +86,6 @@ struct HomeView: View {
             }
         }
         .refreshable { home.refresh() }
-        .fullScreenCover(isPresented: $showsScanner) {
-            DocumentScanner { images in
-                showsScanner = false
-                app.receiveImages(images, scanned: true)
-            } onCancel: {
-                showsScanner = false
-            }
-            .ignoresSafeArea()
-        }
-        .photosPicker(isPresented: $showsPhotos, selection: $photoItems, maxSelectionCount: 20, matching: .images)
-        .onChange(of: photoItems) { _, items in
-            guard !items.isEmpty else { return }
-            photoItems = []
-            Task {
-                var images: [Data] = []
-                for item in items {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        images.append(data)
-                    }
-                }
-                app.receiveImages(images, scanned: false)
-            }
-        }
-        .fileImporter(isPresented: $showsFiles, allowedContentTypes: AppModel.importTypes) { result in
-            switch result {
-            case .success(let url): app.receiveFile(url)
-            case .failure(let error): home.errorMessage = error.localizedDescription
-            }
-        }
-        .sheet(item: $shareItems) { items in
-            ActivityView(items: items.items)
-        }
-        .sheet(isPresented: $showsPaste) {
-            PasteTextSheet(cases: home.cases) { text, title, caseChoice in
-                showsPaste = false
-                app.addText(text, title: title, into: caseChoice)
-            }
-        }
-        .sheet(item: Bindable(home).pendingImport) { pending in
-            ImportSheet(pending: pending, cases: home.cases) { title, caseChoice in
-                app.finishImport(pending, title: title, into: caseChoice)
-            }
-        }
-        .alert(
-            "Something went wrong",
-            isPresented: Binding(get: { home.errorMessage != nil }, set: { if !$0 { home.errorMessage = nil } }),
-            presenting: home.errorMessage
-        ) { _ in
-            Button("OK") { home.errorMessage = nil }
-        } message: { message in
-            Text(message)
-        }
     }
 
     private var showsSetupCard: Bool {
@@ -203,10 +129,10 @@ struct HomeView: View {
     @ViewBuilder
     private var addTiles: some View {
         if VNDocumentCameraViewController.isSupported {
-            AddTile(title: "Scan", spoken: "Scan a document", id: "empty-scan", systemImage: "doc.viewfinder", color: .teal) { showsScanner = true }
+            AddTile(title: "Scan", spoken: "Scan a document", id: "empty-scan", systemImage: "doc.viewfinder", color: .teal) { app.intake = .scan }
         }
-        AddTile(title: "Files", spoken: "Add from Files", id: "empty-files", systemImage: "folder", color: .blue) { showsFiles = true }
-        AddTile(title: "Paste", spoken: "Paste text", id: "empty-paste", systemImage: "doc.on.clipboard", color: .orange) { showsPaste = true }
+        AddTile(title: "Files", spoken: "Add from Files", id: "empty-files", systemImage: "folder", color: .blue) { app.intake = .files }
+        AddTile(title: "Paste", spoken: "Paste text", id: "empty-paste", systemImage: "doc.on.clipboard", color: .orange) { app.intake = .paste }
     }
 
     /// From two cases: Home shows one case's documents, or all.
@@ -231,33 +157,9 @@ struct HomeView: View {
         .accessibilityIdentifier("case-filter")
     }
 
-    /// Paste, Files, Photos, Scan: the first item opens nearest the button,
-    /// so the camera is last, away from it, and a double tap cannot open it
-    /// (ADR 0088).
     private var addMenu: some View {
         Menu {
-            Button {
-                showsPaste = true
-            } label: {
-                Label("Paste", systemImage: "doc.on.clipboard")
-            }
-            Button {
-                showsFiles = true
-            } label: {
-                Label("Files", systemImage: "folder")
-            }
-            Button {
-                showsPhotos = true
-            } label: {
-                Label("Photos", systemImage: "photo.on.rectangle")
-            }
-            if VNDocumentCameraViewController.isSupported {
-                Button {
-                    showsScanner = true
-                } label: {
-                    Label("Scan", systemImage: "doc.viewfinder")
-                }
-            }
+            NewMenuItems(app: app)
         } label: {
             Label("Add", systemImage: "plus")
         }
@@ -267,7 +169,7 @@ struct HomeView: View {
 }
 
 /// One of the empty state's large add tiles.
-private struct AddTile: View {
+struct AddTile: View {
     let title: LocalizedStringKey
     /// Apart from the + menu's item of the same name.
     let spoken: LocalizedStringKey
@@ -398,6 +300,17 @@ struct DocumentRow: View {
             parts.append(String(localized: "case \(caseSummary.name)"))
         }
         return parts.joined(separator: ", ")
+    }
+
+    /// The source's symbol, as the sidebar shows it.
+    static func symbol(of kind: SourceKind) -> String {
+        switch kind {
+        case .pdf: "doc.richtext"
+        case .docx: "doc.text"
+        case .image: "photo"
+        case .scan: "doc.viewfinder"
+        case .text: "text.alignleft"
+        }
     }
 
     private var source: (symbol: String, color: Color) {

@@ -19,16 +19,17 @@ final class LargeTextExploreUITests: XCTestCase {
         app.launchArguments = ["-mdoc-ui-testing", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(MdocUITest.defaultSeed).path
         app.launch()
-        let row = app.descendants(matching: .any).matching(identifier: "document-row").firstMatch
+        let row = MdocUITest.anyDocumentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 30))
         sleep(2)
         save(app, "01-home")
-        app.buttons["settings-button"].firstMatch.tap()
+        MdocUITest.openSettings(app)
         sleep(1)
         save(app, "02-settings")
         app.swipeUp()
         save(app, "03-settings-end")
         app.buttons["Done"].firstMatch.tap()
+        MdocUITest.revealSidebar(app)
         row.tap()
         sleep(2)
         save(app, "04-review")

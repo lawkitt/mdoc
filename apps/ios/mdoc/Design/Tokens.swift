@@ -22,6 +22,8 @@ enum Radius {
     static let card: CGFloat = 20
     /// Icon tiles.
     static let tile: CGFloat = 8
+    /// The screen's corners while a drawer slides it aside.
+    static let screen: CGFloat = 44
 }
 
 /// Sizes that recur.
