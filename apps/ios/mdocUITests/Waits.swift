@@ -49,7 +49,9 @@ extension MdocUITest {
     /// appearance change, where no element says the view has finished
     /// drawing. With `unlike`, first waits for the screen to differ from
     /// that picture: an appearance change draws a moment after it is asked
-    /// for. Gives up after `timeout` and returns the latest picture: a
+    /// for. Looks four times a second, letting the run loop go on between
+    /// looks: back-to-back screenshots hold up an appearance change on the
+    /// Simulator. Gives up after `timeout` and returns the latest picture: a
     /// blinking caret never holds still.
     @MainActor
     @discardableResult
@@ -57,21 +59,24 @@ extension MdocUITest {
         unlike previous: XCUIScreenshot? = nil, steady: TimeInterval = 0.5, timeout: TimeInterval = 5
     ) -> XCUIScreenshot {
         let deadline = Date().addingTimeInterval(timeout)
-        var latest = XCUIScreen.main.screenshot()
-        var latestPNG = latest.pngRepresentation
+        func look() -> (XCUIScreenshot, Data) {
+            let screen = XCUIScreen.main.screenshot()
+            return (screen, screen.pngRepresentation)
+        }
+        func pause() { RunLoop.current.run(until: min(deadline, Date().addingTimeInterval(0.25))) }
+        var (latest, latestPNG) = look()
         if let before = previous?.pngRepresentation {
             while latestPNG == before, Date() < deadline {
-                latest = XCUIScreen.main.screenshot()
-                latestPNG = latest.pngRepresentation
+                pause()
+                (latest, latestPNG) = look()
             }
         }
         var steadySince = Date()
         while Date() < deadline {
-            let next = XCUIScreen.main.screenshot()
-            let png = next.pngRepresentation
+            pause()
+            let (next, png) = look()
             if png != latestPNG {
-                latest = next
-                latestPNG = png
+                (latest, latestPNG) = (next, png)
                 steadySince = Date()
             } else if Date().timeIntervalSince(steadySince) >= steady {
                 return next

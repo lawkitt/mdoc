@@ -403,18 +403,17 @@ final class SurveyUITests: XCTestCase {
         }
     }
 
-    /// The screen in light, then in dark, each once it has settled: dark
-    /// once it differs from light, and back to light the same way.
+    /// The screen in light, then in dark, each once it has settled (dark
+    /// once it differs from light), then back to light. Setting the
+    /// appearance waits for the app to go idle, so the next step sees light.
     @MainActor
     private func shot(_ name: String) {
         XCUIDevice.shared.appearance = .light
         let light = MdocUITest.settledScreen()
         keep(light, "\(name)-light")
         XCUIDevice.shared.appearance = .dark
-        let dark = MdocUITest.settledScreen(unlike: light)
-        keep(dark, "\(name)-dark")
+        keep(MdocUITest.settledScreen(unlike: light), "\(name)-dark")
         XCUIDevice.shared.appearance = .light
-        MdocUITest.settledScreen(unlike: dark, timeout: 3)
     }
 
     @MainActor
