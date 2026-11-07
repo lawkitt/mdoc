@@ -123,22 +123,9 @@ Features are frozen until items 13–19 land (Q4).
     what is left, state buttons, Replace N, Looks like, Select
     ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
-15. **[Mobile] The core owns its rules.** *From Q10 and Q12.* The snapshot's
-    `scanned`, identity states, kept list and stable ids; Copy for AI's
-    refusal and typed errors in Rust; document summaries, the file-name
-    rule and the sample's occurrences from the core; one call per tap; no
-    state in `RealSession`; cancel reaching the job; the spike behind a
-    feature. The Rust half can run on ubuntu beside 13 and 14. *Done when:*
-    merged, and a review tap is timed on the iPhone 12 Pro (async calls
-    only if it takes more than about 16 ms).
 16. **[Mobile] Generated types used directly.** *From Q11.* The Swift
     copies of UniFFI records go; labels stay as extensions. *Done when:*
     merged with an empty survey diff.
-17. **[Mobile] App shell.** *From Q13, Q14, Q16–Q18.* One navigation
-    model and one presenter, the drawer on a narrow iPad, `LibraryModel`,
-    `Importer`, `DocumentStore`, `LaunchConfiguration` and one
-    `Preferences`; Undo for Delete; Home becomes Documents; leftovers go.
-    *Done when:* merged, the survey diff empty except Delete's toast.
 18. **[Mobile] Document screen.** *From Q15.* Review selection as one value
     type, the text view recolouring in place and holding reveals until
     layout, the long-press menu from the view model, `DocumentScreen` split.
