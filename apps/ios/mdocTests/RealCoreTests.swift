@@ -149,6 +149,45 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
     }
 
+    /// A scan that found nothing is still a scan (#673): after mdoc
+    /// restarts the document is ready, not offered Find names again.
+    func testAScanThatFoundNothingStaysScannedAfterARestart() throws {
+        let session = try core().library.importDocument(
+            .text("# Note\n\nNothing to hide here."), title: "Note", into: .newCase(name: "Plain"))
+        _ = try session.recognize(observer: TestObserver())
+        let scanned = try session.scan(observer: TestObserver())
+        XCTAssertTrue(scanned.candidates.isEmpty)
+        XCTAssertEqual(scanned.phase, .ready)
+        let reopened = try core().library
+        XCTAssertEqual(reopened.snapshot().documents.first?.phase, .ready)
+        let id = try XCTUnwrap(reopened.snapshot().documents.first?.id)
+        XCTAssertEqual(try reopened.session(for: id).snapshot().phase, .ready)
+    }
+
+    /// Category menus list categories in `mdoc_pii::Category`'s order
+    /// (#682): Identity, Tax and Bank before Case number and Date.
+    func testCategoriesFollowTheCoresOrder() {
+        XCTAssertEqual(
+            Category.allCases.map(\.rawValue),
+            ["person", "organization", "email", "url", "phone", "address", "identity", "tax", "bank", "caseNumber", "date", "other"])
+    }
+
+    /// File names from titles follow the core's rule (#683, `file_stem` in
+    /// `crates/mdoc-ffi/src/library.rs`): a look-alike for each character a
+    /// file name cannot hold, control characters as "-", no leading dot,
+    /// at most 240 bytes before the extension, cut on a character.
+    func testFileNamesFollowTheCoresRule() {
+        XCTAssertEqual(MdocStorage.fileName("Claim: Bennett", extension: "pdf"), "Claim\u{A789} Bennett.pdf")
+        XCTAssertEqual(
+            MdocStorage.fileName("Why? <draft> \"A|B\" *", extension: "docx"),
+            "Why\u{FF1F} \u{FF1C}draft\u{FF1E} \u{FF02}A\u{2223}B\u{FF02} \u{2217}.docx")
+        XCTAssertEqual(MdocStorage.fileName(".hidden", extension: "pdf"), "hidden.pdf", "never a hidden file")
+        XCTAssertEqual(MdocStorage.fileName("Tab\there", extension: ""), "Tab-here")
+        XCTAssertEqual(MdocStorage.fileName("  ", extension: "pdf"), "Document.pdf")
+        let long = MdocStorage.fileName(String(repeating: "ж", count: 200), extension: "pdf")
+        XCTAssertEqual(long, String(repeating: "ж", count: 120) + ".pdf", "240 bytes, whole letters")
+    }
+
     func testReopenedLibraryKeepsTheDocumentAndCase() throws {
         let session = try reviewed(core())
         _ = try session.replaceAllPending()

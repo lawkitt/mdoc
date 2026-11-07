@@ -350,13 +350,14 @@ private struct Peek: View {
 /// focus ("ORG_1 · 1 of 3 ×"). Tapping it opens Identities; × ends review.
 private struct ProgressLine: View {
     @Bindable var model: DocumentViewModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         let order = model.reviewOrder
         let index = (order.index(of: model.reviewing) ?? 0) + 1
         HStack(spacing: Space.xs) {
             Button {
-                model.showsIdentities = true
+                model.showIdentities(true, compact: sizeClass == .compact)
             } label: {
                 HStack(spacing: Space.xs) {
                     Track(fraction: order.count == 0 ? 0 : Double(order.decided) / Double(order.count))

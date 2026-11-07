@@ -46,6 +46,9 @@ final class AppModel {
     var intake: Intake?
     /// Bumped by ⌘K: the sidebar opens with its search field focused.
     var searchRequest = 0
+    /// ⌘K's request until a sidebar takes it: on iPhone the drawer builds
+    /// its sidebar only once it opens, after the request (#675).
+    private var searchPending = false
     /// The document Rename… is asking a title for.
     var renamingDocument: DocumentID?
     /// The case Rename… is asking a name for (Cases page).
@@ -239,17 +242,40 @@ final class AppModel {
         return model
     }
 
-    /// Opens a section's page and closes the sidebar on iPhone.
+    /// Opens a section's page and closes the sidebar on iPhone. The
+    /// Documents row lists every document, whatever case was opened
+    /// before (#676).
     func open(_ section: SidebarSection) {
+        if section == .documents {
+            home.caseFilter = nil
+        }
         selection = nil
         self.section = section
         showsSidebar = false
     }
 
-    /// ⌘K: the sidebar's search.
-    func requestSearch() {
-        showsSidebar = true
+    /// A case's row: the Documents page filtered to that case.
+    func openCase(_ id: CaseID) {
+        open(.documents)
+        home.caseFilter = id
+    }
+
+    /// ⌘K: the sidebar's search. On iPhone the drawer opens; a split view
+    /// shows its sidebar column itself, and the drawer's flag stays down so
+    /// a window that turns compact opens nothing (#675).
+    func requestSearch(inDrawer: Bool) {
+        if inDrawer {
+            showsSidebar = true
+        }
+        searchPending = true
         searchRequest += 1
+    }
+
+    /// Whether ⌘K asked for the search and no sidebar took it yet; taking
+    /// it clears it.
+    func takeSearchRequest() -> Bool {
+        defer { searchPending = false }
+        return searchPending
     }
 
     /// Start: no document and no section.
@@ -305,6 +331,14 @@ final class AppModel {
     /// Move to case: the names take the case's aliases; the toast offers
     /// Undo, which moves the document back.
     func move(_ id: DocumentID, to target: CaseChoice) {
+        var target = target
+        if case .newCase(let name) = target {
+            // As every new case is named (#677): trimmed, never blank, and
+            // numbered when a case has the name already.
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return }
+            target = .newCase(name: HomeViewModel.unusedName(name, among: home.cases.map(\.name)))
+        }
         do {
             let move = try core.library.moveDocument(id, to: target)
             documents[id]?.refresh()

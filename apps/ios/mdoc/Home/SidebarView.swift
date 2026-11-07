@@ -64,7 +64,11 @@ struct SidebarView: View {
             }
         }
         .background(Palette.background)
-        .onChange(of: app.searchRequest) { searching = true }
+        // ⌘K: on appear too, since the drawer builds this view only once
+        // it opens, after the request (#675).
+        .task(id: app.searchRequest) {
+            if app.takeSearchRequest() { searching = true }
+        }
         // A container: its rows and buttons keep identifiers of their own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar")
@@ -188,8 +192,7 @@ struct SidebarView: View {
 
     private func caseRow(_ summary: CaseSummary) -> some View {
         Button {
-            home.caseFilter = summary.id
-            app.open(.documents)
+            app.openCase(summary.id)
         } label: {
             SidebarRowLabel(isSelected: false) {
                 CaseDot(colour: summary.colour)

@@ -71,14 +71,20 @@ struct DocumentScreen: View {
                 Text(message)
             }
             .onAppear {
-                model.systemUndo = undoManager
-                undoManager?.levelsOfUndo = 256
+                // The window's undo holds this document's steps only (#672).
+                model.attachSystemUndo(undoManager)
                 model.refresh()
+                // The root swaps layouts on a size-class change, so this
+                // screen is new: a drawer opened in a compact window stays
+                // shut when the window narrows again (#674).
+                if isRegular { model.closeIdentitiesDrawer() }
                 // In a narrow window the original shows first.
                 if isRegular && !identitiesInPane && model.snapshot.phase != .recognizing {
                     model.showsIdentities = true
                 }
             }
+            .onDisappear { model.detachSystemUndo() }
+            .onChange(of: sizeClass) { model.closeIdentitiesDrawer() }
             .onChange(of: identitiesInPane) { _, inPane in
                 // Rotating to portrait shows the original; to landscape, the list.
                 if isRegular { model.showsIdentities = !inPane }
@@ -97,7 +103,7 @@ struct DocumentScreen: View {
     /// goes back to acting on the document, the text the user sees.
     private func showIdentities(_ show: Bool) {
         if show && identitiesInPane && model.pane == .reply { model.pane = .text }
-        model.showsIdentities = show
+        model.showIdentities(show, compact: !isRegular)
     }
 
     /// The inspector stays closed while Identities show in the right column.
@@ -368,7 +374,7 @@ struct DocumentScreen: View {
         // One group: beside a title menu, separate items overflow into More.
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
-                showIdentities(!model.showsIdentities)
+                showIdentities(!(isRegular ? model.showsIdentities : model.identitiesDrawerOpen))
             } label: {
                 Label("Identities", systemImage: "person.text.rectangle")
             }

@@ -13,17 +13,17 @@ struct IdentitiesPanel: View {
         IdentitiesView(
             model: model,
             onOpen: { id in
-                if !isRegular { model.showsIdentities = false }
+                if !isRegular { model.showIdentities(false, compact: true) }
                 model.openIdentity(id)
             },
             onFocus: { focus in
-                if !isRegular { model.showsIdentities = false }
+                if !isRegular { model.showIdentities(false, compact: true) }
                 model.beginReview(focus: focus)
             },
             onPickSameAs: { sameAsSource = $0 },
-            onClose: isRegular ? nil : { withAnimation(Motion.snappy) { model.showsIdentities = false } })
+            onClose: isRegular ? nil : { withAnimation(Motion.snappy) { model.showIdentities(false, compact: true) } })
         // In the drawer the document's own toast is under the panel.
-        .modifier(DrawerToast(model: model, enabled: !isRegular && model.showsIdentities))
+        .modifier(DrawerToast(model: model, enabled: !isRegular && model.identitiesDrawerOpen))
         .sheet(item: Binding(get: { sameAsSource.map(Source.init) }, set: { if $0 == nil { sameAsSource = nil } })) { source in
             if let identity = model.snapshot.identities.first(where: { $0.id == source.id }) {
                 SameAsPicker(
@@ -50,7 +50,13 @@ struct IdentitiesDrawer<Content: View>: View {
 
     var body: some View {
         if let id = app.selection, let model = app.documentModel(for: id) {
-            SideDrawer(side: .trailing, isOpen: Bindable(model).showsIdentities, closeLabel: "Close Identities") {
+            // The drawer, not the wish: a wide window that narrows keeps
+            // the text in view (#674).
+            SideDrawer(
+                side: .trailing,
+                isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0, compact: true) }),
+                closeLabel: "Close Identities"
+            ) {
                 IdentitiesPanel(model: model, isRegular: false)
             } content: {
                 content()

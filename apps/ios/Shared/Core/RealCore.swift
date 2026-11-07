@@ -273,7 +273,7 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
         guard FileManager.default.fileExists(atPath: path) else { throw CoreError.notFound }
         let session = RealSession(id: DocumentID(rawValue: path), library: self, source: nil, title: "", caseID: nil)
-        try session.reopen(path: path, original: originals.original(for: path))
+        try session.reopen(path: path, original: originals.original(for: path), scanned: originals.scanned(for: path))
         lock.withLock {
             sessions[session.id] = session
             ids[path] = session.id
@@ -359,7 +359,7 @@ final class RealLibrary: Library, @unchecked Sendable {
         // Its text and case changed on disk: the session opens it again.
         let original = originals.original(for: path)
         do {
-            try session.reopen(path: path, original: original)
+            try session.reopen(path: path, original: original, scanned: originals.scanned(for: path))
         } catch {
             session.reopenLater(original: original)
         }
@@ -417,9 +417,9 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     /// A saved document keeps its id for the rest of the run.
-    fileprivate func saved(_ session: RealSession, path: String, original: OriginalSource, owned: [URL]) {
+    fileprivate func saved(_ session: RealSession, path: String, original: OriginalSource, owned: [URL], scanned: Bool) {
         lock.withLock { ids[path] = session.id }
-        originals.record(original, owned: owned, for: path)
+        originals.record(original, owned: owned, scanned: scanned, for: path)
         pending.remove(session.id, keepingFiles: true)
     }
 
@@ -471,15 +471,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         }
     }
 
-    /// Opens a saved document in its case.
-    fileprivate func reopen(path: String, original: (OriginalSource, SourceKind)) throws {
+    /// Opens a saved document in its case. `scanned` is what the library
+    /// kept (#673); a document saved before it was kept counts as scanned
+    /// when it has mentions.
+    fileprivate func reopen(path: String, original: (OriginalSource, SourceKind), scanned stored: Bool?) throws {
         let opened = try core { try ffi.openDocument(library: library.ffi, path: path) }
         lock.withLock {
             self.path = path
             review = opened
             title = opened.title
             caseID = opened.caseId
-            scanned = !opened.mentions.isEmpty
+            scanned = stored ?? (scanned || !opened.mentions.isEmpty)
             self.original = original.0
             kind = original.1
         }
@@ -532,7 +534,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             return (pending, path)
         }
         guard let due else { return }
-        if (try? reopen(path: due.path, original: due.original)) != nil {
+        if (try? reopen(path: due.path, original: due.original, scanned: nil)) != nil {
             lock.withLock { reopenPending = nil }
         }
     }
@@ -891,13 +893,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     private func save() throws {
         let saved = try core { try ffi.save(library: library.ffi) }
-        let (original, owned) = lock.withLock {
+        let (original, owned, scanned) = lock.withLock {
             path = saved.path
             caseID = saved.case.id
             review = saved.review
-            return (self.original, self.owned)
+            return (self.original, self.owned, self.scanned)
         }
-        library.saved(self, path: saved.path, original: original, owned: owned)
+        library.saved(self, path: saved.path, original: original, owned: owned, scanned: scanned)
     }
 }
 
@@ -1020,13 +1022,18 @@ struct PreparedSource: Sendable {
 
 /// The app's record of which source file each saved document came from,
 /// for the Original view: `originals.json` beside the core's folders, with
-/// paths relative to the storage root.
+/// paths relative to the storage root. It also keeps whether the document
+/// was scanned, which its saved review cannot tell when the scan found
+/// nothing (#673), until the core's snapshot says so (ADR 0104).
 final class OriginalsIndex: @unchecked Sendable {
     private struct Entry: Codable {
         var kind: String
         var files: [String]
         /// Intake folders the document owns; older entries have none.
         var folders: [String]?
+        /// Find names ran (or a sample's names came in); older entries
+        /// have no answer.
+        var scanned: Bool?
     }
 
     private let storage: MdocStorage
@@ -1098,7 +1105,7 @@ final class OriginalsIndex: @unchecked Sendable {
         #endif
     }
 
-    func record(_ original: OriginalSource, owned: [URL], for path: String) {
+    func record(_ original: OriginalSource, owned: [URL], scanned: Bool, for path: String) {
         let files: [URL]
         let kind: String
         switch original {
@@ -1106,13 +1113,26 @@ final class OriginalsIndex: @unchecked Sendable {
         case .pdf(let url): files = [url]; kind = "pdf"
         case .images(let urls): files = urls; kind = "images"
         }
-        guard !files.isEmpty || !owned.isEmpty else { return }
         lock.withLock {
             var entries = load()
-            entries[relative(path)] = Entry(
-                kind: kind, files: files.map { relative($0.path) }, folders: owned.map { relative($0.path) })
+            let key = relative(path)
+            if !files.isEmpty || !owned.isEmpty {
+                entries[key] = Entry(
+                    kind: kind, files: files.map { relative($0.path) }, folders: owned.map { relative($0.path) },
+                    scanned: scanned)
+            } else if entries[key] != nil {
+                entries[key]?.scanned = scanned
+            } else {
+                entries[key] = Entry(kind: kind, files: [], folders: [], scanned: scanned)
+            }
             save(entries)
         }
+    }
+
+    /// Whether the document was scanned; nil for an entry from before
+    /// this was kept.
+    func scanned(for path: String) -> Bool? {
+        lock.withLock { load()[relative(path)]?.scanned }
     }
 
     func original(for path: String) -> (OriginalSource, SourceKind) {

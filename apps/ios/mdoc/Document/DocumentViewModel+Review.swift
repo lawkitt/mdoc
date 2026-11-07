@@ -155,6 +155,13 @@ extension DocumentViewModel {
     /// candidate; the last decision ends review with All reviewed.
     func decideCurrent(_ decision: Decision) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
+        // A decided name changes in place, as the card's Keep instead and
+        // Replace instead do (ADR 0101), from the long press, K and Return
+        // too (#678); deciding it as it is changes nothing.
+        guard candidate.state == .proposed else {
+            if candidate.state != (decision == .keep ? .kept : .replaced) { changeCurrent(decision) }
+            return
+        }
         let index = reviewOrder.index(of: candidate.id)
         let ok = performReview { try session.decide(candidate.id, decision, scope: reviewScope) }
         guard ok else { return }
@@ -470,14 +477,19 @@ extension DocumentViewModel {
         snapshot.candidates.first { $0.range.start <= range.start && $0.range.end >= range.end }
     }
 
+    /// A match with up to 50 characters either side, cut between
+    /// characters, never inside a letter (#679).
     func context(of range: SourceRange) -> String {
-        let bytes = Array(snapshot.markdown.utf8)
-        let start = max(0, range.start - 50), end = min(bytes.count, range.end + 50)
-        guard start < end else { return "" }
-        let text = String(decoding: bytes[start..<end], as: UTF8.self)
+        let text = snapshot.markdown
+        let utf8 = text.utf8
+        guard range.start >= 0, range.start <= range.end, range.end <= utf8.count else { return "" }
+        let lower = utf8.index(utf8.startIndex, offsetBy: range.start)
+        let upper = utf8.index(utf8.startIndex, offsetBy: range.end)
+        let before = text[..<lower].suffix(50), after = text[upper...].prefix(50)
+        let shown = (before + text[lower..<upper] + after)
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
-        return (start > 0 ? "…" : "") + text + (end < bytes.count ? "…" : "")
+        return (before.startIndex > text.startIndex ? "…" : "") + shown + (after.endIndex < text.endIndex ? "…" : "")
     }
 
     /// Scrolls the text to a match: onto its candidate when it is one.
@@ -497,18 +509,56 @@ extension DocumentViewModel {
     /// undo, the three-finger swipe and ⌘Z reach the same history as the
     /// bar's Undo (ADR 0098).
     func registerSystemUndo() {
+        systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         guard let manager = systemUndo else { return }
         manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
         manager.setActionName(snapshot.undoStep?.label ?? "")
     }
 
+    /// As many steps as the core keeps (`DocumentSession`, 256).
+    static let systemUndoLevels = 256
+
+    /// The document shows in a window: its steps go back on the window's
+    /// undo stack, each its own group, so ⌘Z and shake reach them again.
+    /// Redo starts empty there; the bar's Redo still reaches the core.
+    func attachSystemUndo(_ manager: UndoManager?) {
+        guard manager !== systemUndo else { return }
+        detachSystemUndo()
+        systemUndo = manager
+        guard let manager else { return }
+        manager.levelsOfUndo = Self.systemUndoLevels
+        // Inside an open group the steps would join it as one.
+        guard systemUndoSteps > 0, manager.groupingLevel == 0 else {
+            systemUndoSteps = 0
+            return
+        }
+        let byEvent = manager.groupsByEvent
+        manager.groupsByEvent = false
+        for step in 0..<systemUndoSteps {
+            manager.beginUndoGrouping()
+            manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
+            if step == systemUndoSteps - 1 { manager.setActionName(snapshot.undoStep?.label ?? "") }
+            manager.endUndoGrouping()
+        }
+        manager.groupsByEvent = byEvent
+    }
+
+    /// The document leaves the window: its steps leave the window's stacks,
+    /// so another document's ⌘Z or Undo never reaches them (#672).
+    func detachSystemUndo() {
+        systemUndo?.removeAllActions(withTarget: self)
+        systemUndo = nil
+    }
+
     private func undoFromSystem() {
+        systemUndoSteps = max(systemUndoSteps - 1, 0)
         undo(fromSystem: true)
         systemUndo?.registerUndo(withTarget: self) { $0.redoFromSystem() }
         systemUndo?.setActionName(snapshot.redoStep?.label ?? "")
     }
 
     private func redoFromSystem() {
+        systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         redo(fromSystem: true)
         systemUndo?.registerUndo(withTarget: self) { $0.undoFromSystem() }
         systemUndo?.setActionName(snapshot.undoStep?.label ?? "")
