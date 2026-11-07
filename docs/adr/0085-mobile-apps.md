@@ -172,6 +172,11 @@ already lives in GUI-free Rust crates (ADR 0069).
 - Shared text always passes through the same export path as desktop Copy
   for AI: no share or copy action sends originals unless the user chose
   Keep for them.
+- Nothing outside the app shows a document's or case's title, since titles
+  often hold client names: Live Activities, widgets, Spotlight entries,
+  notifications and quick actions show counts and stages ("Recognizing page
+  3 of 12", "3 documents to review"). *Added 2026-11-07
+  ([refactor grill](../design/ios-refactor-grill-2026-11-07.md) Q6).*
 - No code is downloaded after install on either platform: ONNX Runtime and
   PDFium ship inside the app bundle (statically linked, or as an embedded,
   signed framework); only model files are downloaded.

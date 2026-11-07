@@ -52,7 +52,7 @@ document.
 
 ### Rename and Move to case
 
-(ROADMAP iOS 0.2 item 9.)
+(ROADMAP iOS item 9.)
 
 - **Rename** renames the document, from its sidebar row, the Cases page or
   the menu on the document's title. A case with only this document that is

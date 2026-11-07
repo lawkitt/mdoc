@@ -21,7 +21,7 @@ on the release build follows (0.3.x). No PII model has passed the
 releases: [CHANGELOG](CHANGELOG.md).
 
 Three tracks run in parallel and each releases when ready: desktop 0.4.0,
-iOS 0.1 (the first to ship) and Android 0.1.
+iOS (the first to ship) and Android.
 
 ## 0.3.x
 
@@ -73,12 +73,21 @@ Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
 The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
 runs as a separate overnight hub during 0.4.0, outside the item count.
 
-## iOS 0.1
+## iOS
 
 The review-first iPhone and iPad app on the shared Rust core
-([ADR 0085](docs/adr/0085-mobile-apps.md)). Core-crate changes merge when
-green and leave desktop unchanged. Record:
-[mobile grill](docs/design/mobile-grill-2026-10-31.md).
+([ADR 0085](docs/adr/0085-mobile-apps.md)). One section for every iOS
+version: an item names the version it ships in when that matters. Core-crate
+changes merge when green and leave desktop unchanged. Built so far: 0.1's
+app (#266–#278, [mobile grill](docs/design/mobile-grill-2026-10-31.md)) and
+0.2's review bar, UI system, theme, Settings, iPad keys and Try a sample
+(#604–#609, [ADR 0098](docs/adr/0098-mobile-review-bar.md),
+[ADR 0099](docs/adr/0099-mobile-ui-system.md),
+[review grill](docs/design/ios-review-grill-2026-11-05.md)). 0.1 is not
+released on its own: the next TestFlight build is `ios-v0.2.0-rc.1` and
+runs 0.1's acceptance rows too
+([refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q24).
+Features are frozen until items 13–19 land (Q4).
 
 1. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
    (#269, #272, #275–#278) and the
@@ -89,38 +98,19 @@ green and leave desktop unchanged. Record:
    cellular and the 12 Pro on Wi-Fi (#583, #584): the maintainer kept the
    17 Pro on cellular (slow Wi-Fi), so each download path ran on one phone
    instead of the 17 Pro on Wi-Fi. P17 passed on the 17 Pro after its fixes
-   (#591; a locked phone pauses a job, accepted). Build 1,
-   `ios-v0.1.0-rc.2` (734), is on TestFlight for the internal group and
-   installed on the 17 Pro (`rc.1`'s upload failed on the export key, now
-   NO). Section 13's Simulator rows and P12 ran on 2026-11-04
-   ([evidence](docs/evidence/mobile/2026-11-04/ios.md)): all pass except
-   P13, a Later item. Left: the Device rows, and P18's device half, by hand
-   on the TestFlight build.
+   (#591; a locked phone pauses a job, accepted). Builds `ios-v0.1.0-rc.2`
+   (734) and `rc.3` (742) went to the internal group (`rc.1`'s upload
+   failed on the export key, now NO). Section 13's Simulator rows and P12
+   ran on 2026-11-04 ([evidence](docs/evidence/mobile/2026-11-04/ios.md)):
+   all pass except P13, a Later item. Left: the Device rows, and P18's
+   device half, by hand on `ios-v0.2.0-rc.1`.
    *Done when:* section 13 passes on a TestFlight build.
-
-## iOS 0.2
-
-A phone review as good as desktop's, and a UI system that keeps the look
-consistent ([ADR 0098](docs/adr/0098-mobile-review-bar.md),
-[ADR 0099](docs/adr/0099-mobile-ui-system.md); record:
-[review grill](docs/design/ios-review-grill-2026-11-05.md)). Built
-2026-11-05 in #604–#606, #608 and #609: the UI foundation, the core's undo
-and identity calls, the review bar with its tools, theme, Settings, Home,
-iPad keys, and Try a sample with stored proposals. VoiceOver's custom
-actions (Previous, Next, Redo) are covered by model tests, since XCUITest
-cannot drive them. Android takes the same decisions in its own milestone
-(Later).
-
 8. **[Mobile] Device check and TestFlight.** The maintainer checks the
-   review bar, undo, theme, Settings and Home on the iPhone 17 Pro from a
-   TestFlight build. *Done when:* that build passes the check, or its
-   findings are `ui` issues.
-9. **[Mobile] Rename and Move to case.** Grilled 2026-11-06
-   ([record](docs/design/ios-sidebar-grill-2026-11-06.md) Q6,
-   [ADR 0102](docs/adr/0102-mobile-sidebar.md)): Move follows desktop's
-   leave-then-join rule (ADR 0041), the old case keeping its mapping. The
-   core calls, then the sidebar's and the title's menus. *Done when:*
-   built.
+   review bar, undo, theme, Settings, the sidebar and Identities on the
+   iPhone 17 Pro from `ios-v0.2.0-rc.1`, after items 13–19. Items 10–12 get
+   a first look from a Release dev build right after they merge (Q3).
+   *Done when:* that build passes the check, or its findings are `ui`
+   issues.
 10. **[Mobile] The review bar follows the finger.** The drag, the full
     view's mention rows, Keep instead and Next, hint lines in place of
     TipKit, All reviewed ([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md),
@@ -133,12 +123,61 @@ cannot drive them. Android takes the same decisions in its own milestone
     what is left, state buttons, Replace N, Looks like, Select
     ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
+13. **[Mobile] Review and shell bugs.** *From the
+    [refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q8.*
+    Bugs 1–9, 12 and 13 of the record: undo across documents, a scan that
+    found nothing, Identities opening on iPad, ⌘K, the stale case filter,
+    New case… names, Keep instead moving on, Find previews, category order,
+    file names. *Done when:* merged, each with a test that fails without it.
+14. **[Mobile] Tests on the real core.** *From Q9 and
+    [ADR 0104](docs/adr/0104-mobile-app-structure.md).* View-model and
+    snapshot tests run the real core over temporary storage; the fake
+    library and session go, and test fakes leave the shipping targets.
+    *Done when:* merged with an empty survey diff (Q22).
+15. **[Mobile] The core owns its rules.** *From Q10 and Q12.* The snapshot's
+    `scanned`, identity states, kept list and stable ids; Copy for AI's
+    refusal and typed errors in Rust; document summaries, the file-name
+    rule and the sample's occurrences from the core; one call per tap; no
+    state in `RealSession`; cancel reaching the job; the spike behind a
+    feature. The Rust half can run on ubuntu beside 13 and 14. *Done when:*
+    merged, and a review tap is timed on the iPhone 12 Pro (async calls
+    only if it takes more than about 16 ms).
+16. **[Mobile] Generated types used directly.** *From Q11.* The Swift
+    copies of UniFFI records go; labels stay as extensions. *Done when:*
+    merged with an empty survey diff.
+17. **[Mobile] App shell.** *From Q13, Q14, Q16–Q18.* One navigation
+    model and one presenter, the drawer on a narrow iPad, `LibraryModel`,
+    `Importer`, `DocumentStore`, `LaunchConfiguration` and one
+    `Preferences`; Undo for Delete; Home becomes Documents; leftovers go.
+    *Done when:* merged, the survey diff empty except Delete's toast.
+18. **[Mobile] Document screen.** *From Q15.* Review selection as one value
+    type, the text view recolouring in place and holding reveals until
+    layout, the long-press menu from the view model, `DocumentScreen` split.
+    *Done when:* merged with an empty survey diff.
+19. **[Mobile] Rules that keep it so.** *From Q19.* `docs/development.md`
+    gains ADR 0104's rules; `just lint` refuses `Task.sleep` and
+    `asyncAfter` in app code without an issue on the line; UI tests wait
+    for elements. *Done when:* merged.
+20. **[Mobile] To grill: peek at the originals.** *From the
+    [sidebar grill](docs/design/ios-sidebar-grill-2026-11-06.md) ideas and
+    Q7.* Press and hold to see the originals in place of the aliases;
+    "As the AI sees it" (Later) folds into the same control. *Done when:*
+    grilled and built, after item 19.
+21. **[Mobile] To grill: Paste a reply from Start.** *From the sidebar
+    grill ideas and Q7.* After sharing, Start offers to restore a reply
+    whose aliases match the case, through the system paste button, so
+    there's no paste prompt. *Done when:* grilled and built, after item 19.
+22. **[Mobile] To grill: a case's page.** *From the sidebar grill ideas.*
+    A case's names, documents and replies (desktop's ADR 0077), with Delete
+    a case (Later) on it. *Done when:* grilled and built, after 20 and 21.
 
-## Android 0.1
+## Android
 
-The review-first Android app on the shared Rust core, built beside iOS 0.1
+The review-first Android app on the shared Rust core, built beside iOS
 on the Windows PC ([ADR 0089](docs/adr/0089-android-app.md)). Core-crate
-changes merge when green and leave desktop and iOS unchanged. Record:
+changes merge when green and leave desktop and iOS unchanged. One section
+for every Android version. It follows [ADR 0104](docs/adr/0104-mobile-app-structure.md)
+when it next moves (refactor grill Q25). Record:
 [Android grill](docs/design/android-grill-2026-10-31.md), whose
 Maintainer actions list the steps on the maintainer's side.
 
@@ -487,7 +526,7 @@ Android takes what applies. Its clipboard finding is
   restore; storage per kind shown. *From the 2026-10-31 mobile UX ideas.*
 - **[Mobile] To grill: iPad as a work surface.** Drop files in, drag the
   text for AI out to an AI app in Split View and the reply back in, two
-  windows (review keys are iOS 0.2). *From the 2026-10-31 mobile UX
+  windows (review keys are built). *From the 2026-10-31 mobile UX
   ideas.*
 - **[Mobile] To grill: highlights on the original page.** Found names boxed
   on scan and photo pages, if OCR keeps word boxes. *From the 2026-10-31
@@ -504,8 +543,20 @@ Android takes what applies. Its clipboard finding is
 - **[Mobile] To grill: pinned cases.** Pin a case to the top of the
   sidebar, as Claude pins chats. *From the 2026-11-06 sidebar grill.*
 - **[Mobile] To grill: quick actions.** Home Screen quick actions Scan,
-  Paste, Paste reply (tips and haptics are iOS 0.2). *From the 2026-10-31
+  Paste, Paste reply (tips and haptics are built). *From the 2026-10-31
   mobile UX ideas.*
+- **[Mobile] To grill: kept names before sharing.** One line above Copy
+  for AI, "Sharing with 2 names kept as they are: …", listing them on a tap,
+  so an unmeant Keep shows at the step that can't be undone. *From the
+  [refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q7.*
+- **[Mobile] To grill: long jobs in the Dynamic Island.** A Live Activity
+  for OCR and Find names ("Recognizing page 3 of 12"), no title (ADR 0085's
+  invariant). Needs a widget extension. *From the sidebar grill ideas.*
+- **[Mobile] To grill: a widget.** "3 documents to review", opening the
+  first; counts only, no titles. *From the sidebar grill ideas.*
+- **[Mobile] To grill: document thumbnails.** The first page of a PDF or
+  scan on the Documents page; the cache stays out of backups. *From the
+  sidebar grill ideas.*
 
 ## Ongoing tracks
 
