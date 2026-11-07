@@ -25,9 +25,10 @@ struct SideDrawer<Panel: View, Content: View>: View {
     /// isn't there for VoiceOver, taps or tests (its UIKit views would be,
     /// hidden or not), and it is made fresh for each opening.
     @State private var showsPanel = false
-    /// Follows `isOpen` with the drawer's own motion, so the panel goes
-    /// once the screen has slid back over it (the animation's completion).
-    @State private var settled = false
+    /// Counts the closings: each moves an invisible frame with the drawer's
+    /// own motion, whose completion takes the panel away once the screen
+    /// has slid back over it, however the closing came.
+    @State private var closings = 0
 
     /// The sliver of the screen left showing while the panel is open.
     static var sliver: CGFloat { 72 }
@@ -90,29 +91,29 @@ struct SideDrawer<Panel: View, Content: View>: View {
             .background(Palette.background.ignoresSafeArea())
             // Nothing to see: what the settling animation moves, so its
             // completion comes when the drawer's motion ends.
-            .background(Color.clear.frame(width: settled ? 1 : 0, height: 1).accessibilityHidden(true))
+            .background(Color.clear.frame(width: CGFloat(closings % 64), height: 1).accessibilityHidden(true))
             .simultaneousGesture(isOpen ? dragGesture(width: width) : nil)
         }
         .onChange(of: isOpen) { _, open in
-            if open { showsPanel = true }
-            withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
-                settled = open
-            } completion: {
-                // Gone once the screen has slid back over it.
-                if !isOpen && !dragging { showsPanel = false }
+            if open {
+                showsPanel = true
+            } else {
+                hidePanelOnceClosed()
             }
         }
         .onChange(of: dragging) { _, now in
-            if now {
-                showsPanel = true
-            } else if !isOpen {
-                // A drag that ends shut: gone once the screen is back.
-                withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
-                    settled.toggle()
-                } completion: {
-                    if !isOpen && !dragging { showsPanel = false }
-                }
-            }
+            if now { showsPanel = true }
+        }
+    }
+
+    /// Takes the panel away when the closing's motion ends, unless the
+    /// drawer opened again meanwhile. Every closing, from the sliver, a
+    /// swipe or a button outside, comes through here or the drag's end.
+    private func hidePanelOnceClosed() {
+        withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
+            closings += 1
+        } completion: {
+            if !isOpen && !dragging { showsPanel = false }
         }
     }
 
@@ -145,9 +146,13 @@ struct SideDrawer<Panel: View, Content: View>: View {
                 let predicted = value.predictedEndTranslation.width * sign
                 let end = (isOpen ? width : 0) + predicted
                 let target = end > width / 2
-                withAnimation(Motion.move(reduced: reduceMotion)) {
+                withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
                     drag = 0
                     isOpen = target
+                } completion: {
+                    // A drag that ends shut, from shut too: gone once the
+                    // screen is back over it.
+                    if !isOpen && !dragging { showsPanel = false }
                 }
                 Haptics.selection()
             }

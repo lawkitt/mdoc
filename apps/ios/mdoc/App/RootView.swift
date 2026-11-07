@@ -15,7 +15,12 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if layout.sidebarStands {
+            if sizeClass != .compact && windowWidth == 0 {
+                // A regular window's width decides between the two; until
+                // it is known (the first layout), neither is made, so a
+                // portrait iPad never builds the split view to drop it.
+                Palette.background.ignoresSafeArea()
+            } else if layout.sidebarStands {
                 standing
             } else {
                 drawer

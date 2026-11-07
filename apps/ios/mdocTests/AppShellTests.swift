@@ -118,6 +118,22 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(again.systemUndoSteps, 2, "its window steps come back")
     }
 
+    /// A document waiting for its model's download keeps its model when
+    /// another opens: Download & continue holds it and runs its job (review
+    /// of #691).
+    func testAModelWaitingForSetupIsKept() async throws {
+        let seeded = try Fixture.seeded(memory: Fixture.detectorTier)
+        let app = Fixture.app(seeded)
+        app.open(seeded.quotation)
+        let waiting = try XCTUnwrap(app.openModel)
+        await waiting.findNames()
+        XCTAssertTrue(waiting.needsSetup)
+        app.open(seeded.letter)
+        XCTAssertTrue(app.documents.model(for: seeded.quotation) === waiting)
+        app.open(seeded.quotation)
+        XCTAssertTrue(app.openModel === waiting, "the same model, with its setup card")
+    }
+
     /// Share from a menu makes a model for a document not open, and lets
     /// it go again.
     func testShareFromAMenuKeepsNoModel() throws {
@@ -258,6 +274,28 @@ final class AppShellTests: XCTestCase {
         XCTAssertFalse(seeded.library.snapshot().documents.contains { $0.id == seeded.quotation })
         app.undoDelete()
         XCTAssertFalse(app.library.documents.contains { $0.id == seeded.quotation }, "too late for Undo")
+    }
+
+    /// Once the delete happened, its toast goes: no Undo that undoes nothing
+    /// (review of #691).
+    func testTheToastGoesWithTheDelete() throws {
+        let app = try app()
+        app.delete(seeded.letter)
+        XCTAssertNotNil(app.toast)
+        app.leftForeground()
+        XCTAssertNil(app.toast)
+    }
+
+    /// Undo puts the document back, but opens it again only if nothing
+    /// else opened meanwhile (review of #691).
+    func testUndoLeavesWhatOpenedSince() throws {
+        let app = try app()
+        app.open(seeded.letter)
+        app.delete(seeded.letter)
+        app.open(seeded.quotation)
+        app.undoDelete()
+        XCTAssertEqual(app.navigator.openDocument, seeded.quotation)
+        XCTAssertTrue(app.library.documents.contains { $0.id == seeded.letter })
     }
 
     // MARK: Launch and preferences

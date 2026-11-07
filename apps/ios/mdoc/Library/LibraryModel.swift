@@ -194,8 +194,15 @@ final class LibraryModel {
 
     /// Saves what finished while the phone was locked; returns its documents.
     func saveDeferred() throws -> [DocumentID] {
-        defer { refresh() }
-        return try library.saveDeferred()
+        do {
+            let saved = try library.saveDeferred()
+            // Every activation asks; most find nothing to save.
+            if !saved.isEmpty { refresh() }
+            return saved
+        } catch {
+            refresh()
+            throw error
+        }
     }
 
     // MARK: Status

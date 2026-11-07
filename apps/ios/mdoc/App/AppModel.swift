@@ -164,8 +164,13 @@ final class AppModel {
         navigator.requestSearch()
     }
 
+    /// Lets go of the models of documents not open, but those with work
+    /// still to do: a job running, or a job waiting for its model's
+    /// download, whose Download & continue holds the model.
     private func evictClosedDocuments() {
-        documents.evict(keeping: Set([navigator.openDocument, jobs.current?.documentID].compactMap { $0 }))
+        var kept = Set([navigator.openDocument, jobs.current?.documentID].compactMap { $0 })
+        kept.formUnion(documents.all.filter(\.needsSetup).map(\.id))
+        documents.evict(keeping: kept)
     }
 
     /// The open document shows the setup card itself (it asked for setup),
@@ -378,13 +383,16 @@ final class AppModel {
         pendingDelete = nil
         library.unhide(pending.id)
         Haptics.warning()
-        if pending.wasOpen { open(pending.id) }
+        // Open again where it closed, unless something else opened since.
+        if pending.wasOpen && navigator.destination == .start { open(pending.id) }
     }
 
-    /// The Delete waiting on its toast happens now.
+    /// The Delete waiting on its toast happens now; its toast, and the
+    /// Undo it offered, go with it.
     func commitPendingDelete() {
         guard let pending = pendingDelete else { return }
         pendingDelete = nil
+        if toast?.id == pending.toast { toast = nil }
         documents.remove(pending.id)
         do {
             try library.delete(pending.id)
@@ -393,8 +401,9 @@ final class AppModel {
         }
     }
 
-    /// The scene left the foreground: nothing waits on a toast the user may
-    /// never come back to.
+    /// The scene went to the background: nothing waits on a toast the user
+    /// may never come back to. (Inactive is not enough: Control Center or
+    /// an alert over mdoc keeps the toast and its Undo.)
     func leftForeground() {
         commitPendingDelete()
     }

@@ -29,7 +29,7 @@ struct MdocApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             // A Delete waiting on its toast happens before mdoc goes (Q17).
-            if phase != .active {
+            if phase == .background {
                 app.leftForeground()
             }
             app = app.reopened(isActive: phase == .active) {
