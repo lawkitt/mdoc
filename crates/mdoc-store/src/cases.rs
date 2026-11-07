@@ -649,6 +649,11 @@ impl Store {
     fn path(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{id}.case"))
     }
+    /// Where case `id` is stored. Each save replaces the file whole, so a
+    /// stat of it tells whether the case changed.
+    pub fn file(&self, id: &str) -> PathBuf {
+        self.path(id)
+    }
     fn aad(id: &str) -> Vec<u8> {
         [MAGIC.as_slice(), id.as_bytes()].concat()
     }

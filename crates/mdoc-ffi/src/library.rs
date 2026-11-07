@@ -10,8 +10,8 @@ mod summary_tests;
 use crate::CoreError;
 use mdoc_pii::restore::RestoreMap;
 use mdoc_store::cases::{Case, CaseLink, Store};
-pub(crate) use state::Counts;
-use state::{DocumentState, Recorded, Stamp};
+use state::DocumentState;
+pub(crate) use state::{Recorded, Stamp};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -41,6 +41,11 @@ pub struct Library {
     /// Documents `document_summaries` read to count them.
     #[cfg(test)]
     pub(crate) summary_opens: std::sync::atomic::AtomicUsize,
+    /// Run once by `document_summaries` between its reads and its
+    /// write-back.
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) before_write_back: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The longest file stem a title makes, in bytes: room for " 99.md" in a
@@ -226,6 +231,8 @@ impl Library {
             writes: Mutex::new(()),
             #[cfg(test)]
             summary_opens: Default::default(),
+            #[cfg(test)]
+            before_write_back: Mutex::new(None),
         }))
     }
 
@@ -258,7 +265,7 @@ impl Library {
         let mut documents = Vec::new();
         for (path, metadata) in self.markdown_files()? {
             let member = self.member(&path);
-            let modified = Stamp::of(&metadata).modified;
+            let modified = Stamp::of(&metadata).map_or(0, |stamp| stamp.modified);
             documents.push(StoredDocument {
                 title: title_of(&path),
                 case_id: cases
@@ -282,22 +289,30 @@ impl Library {
     /// one) is read and counted, as opening it would count it; its record
     /// is brought up to date for the next list. The cases are read once.
     pub fn document_summaries(&self) -> Result<Vec<DocumentSummary>, CoreError> {
+        // Stamped before they are read, as `open_document` does.
+        let case_stamps = self.case_stamps();
         let (cases, _) = self.store.list();
-        let mut states = self.states();
-        let mut changed = Vec::new();
+        let states = self.states();
+        // Entries counted again: as read, and as counted now.
+        let mut changed: Vec<(PathBuf, Option<DocumentState>, DocumentState)> = Vec::new();
         let mut summaries = Vec::new();
         for (path, metadata) in self.markdown_files()? {
             let member = self.member(&path);
             let case = cases.iter().find(|case| case.members.contains(&member));
-            let key = self.key(&path);
             let stamp = Stamp::of(&metadata);
-            let state = states.documents.get(&key);
+            let mark = case.map(|case| (case.id.clone(), case_stamps.get(&case.id).copied()));
+            let state = states.documents.get(&self.key(&path));
+            let now = Recorded::of(Default::default(), stamp, mark.clone());
+            let fresh = |recorded: &Recorded| {
+                now.as_ref()
+                    .is_some_and(|now| now.stamp == recorded.stamp && now.case == recorded.case)
+            };
             let (counts, scanned) = match state {
                 Some(DocumentState {
                     scanned,
                     summary: Some(recorded),
                     ..
-                }) if recorded.stamp == stamp => (recorded.counts, *scanned),
+                }) if fresh(recorded) => (recorded.counts, *scanned),
                 _ => {
                     #[cfg(test)]
                     self.summary_opens
@@ -307,18 +322,15 @@ impl Library {
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                         Err(error) => return Err(error.into()),
                     };
-                    let counts = crate::document_session::reopened_counts(text, case);
-                    // As `open_document` tells a document without a record.
-                    let scanned = state
-                        .map_or(counts.proposed + counts.replaced + counts.kept > 0, |s| {
-                            s.scanned
-                        });
-                    let fresh = DocumentState {
+                    let (counts, mentions) = crate::document_session::reopened_counts(text, case);
+                    // As `open_document` tells it.
+                    let scanned = state.map_or(mentions, |s| s.scanned);
+                    let recounted = DocumentState {
                         scanned,
-                        summary: Some(Recorded { counts, stamp }),
+                        summary: Recorded::of(counts, stamp, mark),
                         opened: state.and_then(|s| s.opened),
                     };
-                    changed.push((key.clone(), fresh));
+                    changed.push((path.clone(), state.cloned(), recounted));
                     (counts, scanned)
                 }
             };
@@ -330,14 +342,25 @@ impl Library {
                 proposed: counts.proposed,
                 replaced: counts.replaced,
                 kept: counts.kept,
-                modified: stamp.modified,
-                opened: states.documents.get(&key).and_then(|s| s.opened),
+                modified: stamp.map_or(0, |stamp| stamp.modified),
+                opened: state.and_then(|s| s.opened),
                 path: path.display().to_string(),
             });
         }
         summaries.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.title.cmp(&b.title)));
-        // Records brought up to date, and those of files gone dropped;
-        // best effort, as a list never fails nor waits for them.
+        #[cfg(test)]
+        if let Some(hook) = self
+            .before_write_back
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            hook();
+        }
+        // Entries brought up to date, and those of files gone dropped; best
+        // effort, as a list never fails nor waits for them. An entry another
+        // save, open or process wrote since it was read stays as written,
+        // as does one whose file or case changed since it was counted.
         let gone = states
             .documents
             .keys()
@@ -345,11 +368,21 @@ impl Library {
         if (!changed.is_empty() || gone)
             && let Some(_lock) = self.try_lock()
         {
-            states = self.states();
+            let mut states = self.states();
             states
                 .documents
                 .retain(|key, _| self.root.join(key).exists());
-            states.documents.extend(changed);
+            for (path, read, recounted) in changed {
+                let key = self.key(&path);
+                let unchanged = states.documents.get(&key) == read.as_ref();
+                let still = recounted
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| self.still(&path, summary));
+                if unchanged && still {
+                    states.documents.insert(key, recounted);
+                }
+            }
             let _ = self.write_states(&states);
         }
         Ok(summaries)

@@ -178,12 +178,7 @@ impl DocumentSession {
 impl Document {
     /// Pending proposals, as the snapshot counts them.
     fn proposed(&self) -> u64 {
-        let review = &self.review.review;
-        review
-            .candidates()
-            .iter()
-            .filter(|c| review.variant(c.variant).is_some())
-            .count() as u64
+        self.review.counts().proposed
     }
 
     /// The mention with id `id` now.

@@ -6,6 +6,7 @@ use crate::{
     document_session::{
         Category, DocumentPhase, ProposedName, ReviewAction, ReviewSnapshot, Scope,
     },
+    library::TextRange,
     test_support::Scratch,
 };
 use std::sync::atomic::Ordering;
@@ -147,18 +148,23 @@ fn a_changed_file_is_counted_again_once() {
     library.document_summaries().unwrap();
     assert_eq!(opens(&library), 1, "the record was brought up to date");
     assert_eq!(counts(edited), reopened(&library, &letter));
-    // Moved into another case: rewritten for it, so counted again.
-    let (_, memo) = saved(&library, "Bob Hart wrote.", "Memo", Some(&["Bob Hart"]), 1);
+    // Moved into another case: counted again, and so is that case's other
+    // member, whose case changed.
+    let (memo_path, memo) = saved(&library, "Bob Hart wrote.", "Memo", Some(&["Bob Hart"]), 1);
     let memo_case = memo.case_id.unwrap();
     library
         .move_document(letter.clone(), memo_case.clone())
         .unwrap();
     let before = opens(&library);
     let summaries = library.document_summaries().unwrap();
-    assert_eq!(opens(&library), before + 1);
+    assert_eq!(opens(&library), before + 2);
     let moved = summary(&summaries, &letter);
     assert_eq!(moved.case_id, Some(memo_case));
     assert_eq!(counts(moved), reopened(&library, &letter));
+    assert_eq!(
+        counts(summary(&summaries, &memo_path)),
+        reopened(&library, &memo_path)
+    );
 }
 
 /// Renamed or removed outside the app: the new file is counted, and the
@@ -208,6 +214,133 @@ fn documents_saved_before_records_are_counted_once() {
     library.document_summaries().unwrap();
     assert_eq!(opens(&library), 2);
     assert!(library.document_summaries().unwrap().len() == 2);
+}
+
+/// A save that lands while a list counts keeps what it wrote: the list's
+/// write-back never puts back the entry it read, so scanned stays.
+#[test]
+fn a_list_racing_a_save_keeps_the_save() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let session = DocumentSession::new();
+    session
+        .import_text("Nothing here.".into(), "Empty".into())
+        .unwrap();
+    let names = vec![ProposedName {
+        wording: "Ann Lee".into(),
+        category: Category::Person,
+    }];
+    session
+        .review(ReviewAction::ProposeNames { names }, None)
+        .unwrap();
+    let path = session.save(library.clone()).unwrap().path;
+    // No entry: the list counts it, as found then, with no mentions.
+    std::fs::remove_file(scratch.path().join("documents.json")).unwrap();
+    let (racing, saving) = (session.clone(), library.clone());
+    *library.before_write_back.lock().unwrap() = Some(Box::new(move || {
+        let range = TextRange { start: 0, end: 7 };
+        let mark = ReviewAction::Mark {
+            range,
+            category: Some(Category::Person),
+        };
+        racing.review(mark, Some(saving)).unwrap();
+    }));
+    let raced = library.document_summaries().unwrap();
+    assert_eq!(raced[0].phase, DocumentPhase::Unscanned, "as read");
+    let state = library.document_state(Path::new(&path)).unwrap();
+    assert!(state.scanned, "the save's entry stays");
+    let before = opens(&library);
+    let after = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), before, "the save's entry is fresh");
+    assert_eq!(counts(&after[0]), reopened(&library, &path));
+    assert_eq!(after[0].phase, DocumentPhase::Reviewing);
+}
+
+/// A move that leaves the text as it is still changes what opening the
+/// document proposes: the case's names. The list counts it again, and the
+/// case's other member too.
+#[test]
+fn a_move_with_the_text_unchanged_is_counted_again() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (letter, review) = saved(&library, "Ann Lee wrote.", "Letter", Some(&["Ann Lee"]), 1);
+    let text = "Ann Lee called Bob Hart.";
+    let (memo, _) = saved(&library, text, "Memo", Some(&["Bob Hart"]), 0);
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(summary(&summaries, &memo).proposed, 1);
+    let case = review.case_id.unwrap();
+    library.move_document(memo.clone(), case.clone()).unwrap();
+    assert_eq!(std::fs::read_to_string(&memo).unwrap(), text);
+    let summaries = library.document_summaries().unwrap();
+    let moved = summary(&summaries, &memo);
+    assert_eq!(moved.case_id, Some(case));
+    assert_eq!(moved.proposed, 2, "Ann Lee, from the case, and Bob Hart");
+    assert_eq!(counts(moved), reopened(&library, &memo));
+    assert_eq!(
+        counts(summary(&summaries, &letter)),
+        reopened(&library, &letter)
+    );
+}
+
+/// A file added to a case changes nothing in it, but its counts.
+#[test]
+fn a_document_added_to_a_case_is_counted_again() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (_, review) = saved(&library, "Ann Lee wrote.", "Letter", Some(&["Ann Lee"]), 1);
+    let note = library.documents_dir().join("Note.md");
+    std::fs::write(&note, "Ann Lee phoned.").unwrap();
+    let note = note.display().to_string();
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(
+        counts(summary(&summaries, &note)),
+        (0, 0, 0, DocumentPhase::Unscanned)
+    );
+    let case = review.case_id.unwrap();
+    library.add_document(case.clone(), note.clone()).unwrap();
+    let summaries = library.document_summaries().unwrap();
+    let added = summary(&summaries, &note);
+    assert_eq!(added.case_id, Some(case));
+    assert_eq!(added.proposed, 1);
+    assert_eq!(counts(added), reopened(&library, &note));
+}
+
+/// Another document of the case adds a name this one holds: opening this
+/// one proposes it now, and so does its summary.
+#[test]
+fn a_name_another_member_adds_is_counted() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (first, review) = saved(
+        &library,
+        "Bob Hart met Ann Lee.",
+        "First",
+        Some(&["Bob Hart"]),
+        0,
+    );
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(summary(&summaries, &first).proposed, 1);
+    let second = DocumentSession::new();
+    second
+        .import_text("Ann Lee wrote.".into(), "Second".into())
+        .unwrap();
+    second
+        .join_case(library.clone(), review.case_id.unwrap())
+        .unwrap();
+    let names = vec![ProposedName {
+        wording: "Ann Lee".into(),
+        category: Category::Person,
+    }];
+    second
+        .review(ReviewAction::ProposeNames { names }, None)
+        .unwrap();
+    second
+        .review(ReviewAction::ReplaceAll, Some(library.clone()))
+        .unwrap();
+    let summaries = library.document_summaries().unwrap();
+    let first_now = summary(&summaries, &first);
+    assert_eq!(first_now.proposed, 2);
+    assert_eq!(counts(first_now), reopened(&library, &first));
 }
 
 /// The library list for 50 documents of about 10 KB and 20 names each:
