@@ -73,6 +73,14 @@ pub(crate) struct ReviewText {
     pub text_revision: u64,
 }
 
+/// A review's counts (`ReviewText::counts`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Counts {
+    pub proposed: u64,
+    pub replaced: u64,
+    pub kept: u64,
+}
+
 fn text_revision(text: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -110,6 +118,27 @@ impl ReviewText {
         ranges.sort_by_key(|r| (r.start, r.end));
         ranges.dedup();
         ranges
+    }
+
+    /// Proposed, replaced and kept mentions, as the snapshot and lists
+    /// count them.
+    pub(crate) fn counts(&self) -> Counts {
+        let review = &self.review;
+        Counts {
+            proposed: review
+                .candidates()
+                .iter()
+                .filter(|c| review.variant(c.variant).is_some())
+                .count() as u64,
+            replaced: review.applied().len() as u64,
+            kept: review.kept_mentions().len() as u64,
+        }
+    }
+
+    /// Any mention at all: how a document saved before scans were recorded
+    /// tells it was scanned, on opening and in lists alike.
+    pub(crate) fn has_mentions(&self) -> bool {
+        !self.mention_ranges().is_empty()
     }
 
     /// Give the mentions as they are now their ids.

@@ -12,11 +12,12 @@ mod snapshot;
 
 use crate::{
     CoreError,
-    library::{CaseInfo, Library, RenamedDocument, RestoredReply, TextRange},
+    library::{CaseInfo, Library, Recorded, RenamedDocument, RestoredReply, Stamp, TextRange},
     setup::{DetectorPaths, OcrPaths},
 };
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 use mdoc_pii::restore::RestoreMap;
+pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use snapshot::{
@@ -232,12 +233,20 @@ impl DocumentSession {
         path: String,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        // Stamped before they are read: counts recorded with these stamps
+        // are never of anything newer.
+        let stamp = Stamp::of_file(Path::new(&path));
+        let case_stamps = library.case_stamps();
+        let read = library.document_state(Path::new(&path));
         let stored = mdoc_store::document::Document::open(PathBuf::from(&path))?;
         let member = library.member(Path::new(&path));
         let case = library
             .cases_raw()
             .into_iter()
             .find(|case| case.members.contains(&member));
+        let case_mark = case
+            .as_ref()
+            .map(|case| (case.id.clone(), case_stamps.get(&case.id).copied()));
         let imported = intake::Imported {
             title: crate::library::title_of(Path::new(&path)),
             markdown: stored.saved.clone(),
@@ -248,9 +257,36 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
-            scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
+            scanned: read.as_ref().map(|s| s.scanned),
         };
-        self.open(imported, &cancel, Some(opened))
+        let snapshot = self.open(imported, &cancel, Some(opened))?;
+        #[cfg(test)]
+        if let Some(hook) = library
+            .before_record
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            hook();
+        }
+        // Its summary, as it opened; best effort, as only lists read it,
+        // and never waiting for a save in progress.
+        if let Some(lock) = library.try_lock() {
+            let counts = Counts {
+                proposed: snapshot.proposed,
+                replaced: snapshot.replaced,
+                kept: snapshot.kept,
+            };
+            let summary = Recorded::of(counts, stamp, case_mark);
+            let _ = library.record_opened(
+                &lock,
+                Path::new(&path),
+                read.as_ref(),
+                snapshot.scanned,
+                summary,
+            );
+        }
+        Ok(snapshot)
     }
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
@@ -620,6 +656,21 @@ pub(crate) fn realias(
     Ok((review.text, exported))
 }
 
+/// What `open_document` would count in a stored document with `text`, in
+/// `case` if any, without a session, and whether it has any mention (how
+/// `open_document` tells a document without a record was scanned): what a
+/// summary falls back to.
+pub(crate) fn reopened_counts(
+    text: String,
+    case: Option<&mdoc_store::cases::Case>,
+) -> (Counts, bool) {
+    let mut review = ReviewText::new(text);
+    if let Some(case) = case {
+        review.open_case(&case.exported(), &case.reserved_aliases());
+    }
+    (review.counts(), review.has_mentions())
+}
+
 /// What a document the library keeps brings when it is opened.
 struct Opened {
     path: Option<PathBuf>,
@@ -680,6 +731,8 @@ impl Document {
         };
         let member = library.member(&path);
         library.refuse_other_case(&member, self.case.as_deref().unwrap_or_default())?;
+        // The case as this save stores it.
+        let mut stored = None;
         let case = match self.case.clone() {
             Some(id) => library.edit_locked(&lock, &id, |case| {
                 // Only a case another document changed since is joined
@@ -706,6 +759,7 @@ impl Document {
                     }
                 }
                 self.synced = Some(case.identities.clone());
+                stored = Some(case.clone());
                 Ok(*case != before)
             })?,
             None => {
@@ -718,24 +772,33 @@ impl Document {
                 // Hints dismissed before the case existed stay dismissed.
                 case.dismissed_hints = self.review.dismissed_pairs();
                 self.synced = Some(case.identities.clone());
+                stored = Some(case.clone());
                 library.create_locked(&lock, case)?
             }
         };
         self.case = Some(case.id.clone());
+        let review = self.snapshot();
         // The document and its case are saved: an entry that cannot be
-        // written only makes it reopen as one saved before entries were.
-        let _ = library.set_document_state(
-            &lock,
-            &path,
-            Some(crate::library::DocumentState {
-                scanned: self.scanned,
-            }),
+        // written only makes it reopen, and list, as one saved before
+        // entries were.
+        // What opening it gives, as lists show: Keep decisions are not
+        // saved, so with any the saved text and case are counted as a
+        // reopen counts them (a kept name the case knows is proposed again).
+        let mut counts = self.review.counts();
+        if counts.kept > 0 {
+            counts = reopened_counts(self.review.text.clone(), stored.as_ref()).0;
+        }
+        let summary = Recorded::of(
+            counts,
+            Stamp::of_file(&path),
+            Some((case.id.clone(), library.case_stamp(&case.id))),
         );
+        let _ = library.record_saved(&lock, &path, self.scanned, summary);
         self.saved = Some(self.change_key());
         Ok(SavedDocument {
             path: path.display().to_string(),
             case,
-            review: self.snapshot(),
+            review,
         })
     }
 }
@@ -787,7 +850,7 @@ impl DocumentSession {
             // mentions, as the apps used to tell.
             document.scanned = opened
                 .scanned
-                .unwrap_or_else(|| !document.review.mention_ranges().is_empty());
+                .unwrap_or_else(|| document.review.has_mentions());
             // As saved: nothing to save until something changes.
             document.saved = Some(document.change_key());
         }

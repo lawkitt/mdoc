@@ -373,8 +373,8 @@ pub(super) fn of(
             }),
         }
     }
-    let count = |state| mentions.iter().filter(|m| m.state == state).count() as u64;
-    let proposed = count(MentionState::Proposed);
+    let counts = document.counts();
+    let proposed = counts.proposed;
     let step = |(step, focus): (&Step, &Focus)| {
         let mention = focus
             .range
@@ -408,8 +408,8 @@ pub(super) fn of(
             })
             .collect(),
         proposed,
-        replaced: count(MentionState::Replaced),
-        kept: count(MentionState::Kept),
+        replaced: counts.replaced,
+        kept: counts.kept,
         identities,
         mentions,
         case_id: case_id.map(str::to_owned),
