@@ -3,13 +3,12 @@ import XCTest
 
 /// Identities as a drawer (2026-11-06 grill, round 2): state buttons, bulk
 /// decisions and Same as with one Undo, and opening a name in the bar's
-/// full view, over the fake core.
+/// full view, over the real core and the seeded letter.
 @MainActor
 final class IdentitiesModelTests: XCTestCase {
     private func model() throws -> DocumentViewModel {
-        let core = Fixture.core()
-        let session = try core.library.session(for: Fixture.letter)
-        return DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let seeded = try Fixture.seeded()
+        return try seeded.model(seeded.letter)
     }
 
     /// Identities wanted (a wide iPad's inspector) is not the drawer: a
