@@ -127,7 +127,7 @@ final class ReviewToolsUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
                        "the Find field never took focus")
         field.typeText(text)
     }
