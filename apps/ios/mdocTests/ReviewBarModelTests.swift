@@ -348,4 +348,84 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertNil(model.hint, "no second hint in this document")
         XCTAssertTrue(ReviewHint.swipe.isLearned)
     }
+
+    // MARK: Candidate actions (ADR 0104, #678)
+
+    /// The long press, the card and the keys take their actions from one
+    /// place, for each state.
+    func testActionsForEachState() throws {
+        let model = try model()
+        let proposed = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
+        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: proposed) == (.keep, .replace))
+        XCTAssertEqual(model.keyAction(.return, for: proposed), .replace)
+        XCTAssertEqual(model.keyAction(.keep, for: proposed), .keep)
+
+        var replaced = proposed
+        replaced.state = .replaced
+        XCTAssertEqual(model.actions(for: replaced), [.showOriginal, .keepInstead, .sameAs, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: replaced) == (.keepInstead, .next))
+        XCTAssertEqual(model.keyAction(.return, for: replaced), .next, "Return is the filled Next")
+        XCTAssertEqual(model.keyAction(.keep, for: replaced), .keepInstead)
+
+        var kept = proposed
+        kept.state = .kept
+        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: kept) == (.replaceInstead, .next))
+        XCTAssertEqual(model.keyAction(.return, for: kept), .replaceInstead)
+        XCTAssertNil(model.keyAction(.keep, for: kept), "K on a kept name does nothing")
+    }
+
+    /// With no other identity there is no Same as… to offer.
+    func testNoSameAsWithoutAnotherIdentity() throws {
+        let (core, storage) = try Fixture.core()
+        let session = try core.library.importDocument(.text("Maya Bennett signed."), title: "Note", into: .newCase(name: "Bennett"))
+        _ = try session.recognize(observer: TestObserver())
+        _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
+        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        let only = try XCTUnwrap(model.snapshot.candidates.first)
+        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory])
+    }
+
+    /// A menu choice puts the bar on the name, in scope All, or This one for
+    /// Just this one, and acts as the card would.
+    func testAMenuChoicePutsTheBarOnTheName() throws {
+        let model = try model()
+        let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
+        let mentions = model.sortedMentions(of: repeated.id)
+        model.perform(.replaceThisOne, fromMenuOn: mentions[1].id)
+        XCTAssertEqual(model.sortedMentions(of: repeated.id).filter { $0.state == .replaced }.count, 1, "this one only")
+        model.undo()
+        let again = model.sortedMentions(of: repeated.id)
+        model.select(again[0].id)
+        model.setScope(.this)
+        model.perform(.keep, fromMenuOn: again[0].id)
+        XCTAssertTrue(model.sortedMentions(of: repeated.id).allSatisfy { $0.state == .kept }, "the menu acts in scope All")
+        model.perform(.showOriginal, fromMenuOn: again[0].id)
+        XCTAssertEqual(model.toast?.text, "Original: \(again[0].original)")
+    }
+
+    /// Opening a name's menu is the long press found: its hint goes. The
+    /// menu itself is built without changing anything.
+    func testOpeningTheMenuLearnsTheLongPress() throws {
+        let wasEnabled = ReviewHint.enabled
+        ReviewHint.resetAll()
+        ReviewHint.enabled = true
+        defer {
+            ReviewHint.resetAll()
+            ReviewHint.enabled = wasEnabled
+        }
+        let model = try model()
+        let candidate = try XCTUnwrap(model.snapshot.candidates.first)
+        _ = CandidateMenu.make(for: candidate.id, model: model) { _ in }
+        XCTAssertFalse(ReviewHint.longPress.isLearned, "building the menu learns nothing")
+        model.menuOpened(on: candidate.id)
+        XCTAssertTrue(ReviewHint.longPress.isLearned)
+    }
+
+    /// A notice clears itself once read, and a newer one keeps its own time.
+    func testANoticeStaysLongEnoughToRead() {
+        XCTAssertEqual(DocumentViewModel.noticeDuration("Copied"), .seconds(2))
+        XCTAssertEqual(DocumentViewModel.noticeDuration(String(repeating: "a", count: 100)), .seconds(4))
+    }
 }
