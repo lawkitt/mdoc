@@ -127,6 +127,7 @@ final class ComponentSnapshotTests: XCTestCase {
         let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {})
         XCTAssertEqual(ToastPresenter.duration(of: undo, seconds: 4), 6)
         XCTAssertEqual(ToastPresenter.duration(of: ToastMessage(text: "All 15 reviewed"), seconds: 4), 4)
+    }
 
     /// What a screen draws in the safe areas stays on screen: the drawer
     /// clipped to its frame, which cut the bottom toolbar's buttons in half.
