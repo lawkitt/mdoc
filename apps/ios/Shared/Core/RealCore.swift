@@ -249,19 +249,26 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     /// The saved documents from the core's summaries, which open none of
-    /// them (ADR 0104), then the imports not saved yet.
+    /// them (ADR 0104), then the imports not saved yet. A document open
+    /// this run lists as its session has it, as it shows when opened: a
+    /// Keep is not saved, and a save a locked phone held back has not
+    /// landed yet.
     func snapshot() -> LibrarySnapshot {
         let cases = ffi.cases().cases.map(CaseSummary.init)
         let stored = (try? ffi.documentSummaries()) ?? []
         let kinds = originals.kinds()
-        var documents = lock.withLock {
+        let rows = lock.withLock {
             stored.map { summary in
-                DocumentSummary(
-                    id: ids[summary.path] ?? DocumentID(rawValue: summary.path), title: summary.title,
-                    caseID: summary.caseId.map(CaseID.init), kind: kinds(summary.path), phase: DocumentPhase(summary.phase),
-                    pendingCount: Int(summary.proposed), updated: Date(timeIntervalSince1970: TimeInterval(summary.modified)),
-                    candidateCount: Int(summary.proposed + summary.replaced + summary.kept))
+                let id = ids[summary.path] ?? DocumentID(rawValue: summary.path)
+                return (summary, id, sessions[id])
             }
+        }
+        var documents = rows.map { summary, id, session in
+            let updated = Date(timeIntervalSince1970: TimeInterval(summary.modified))
+            return session?.loadedSummary(updated: updated) ?? DocumentSummary(
+                id: id, title: summary.title, caseID: summary.caseId.map(CaseID.init), kind: kinds(summary.path),
+                phase: DocumentPhase(summary.phase), pendingCount: Int(summary.proposed), updated: updated,
+                candidateCount: Int(summary.proposed + summary.replaced + summary.kept))
         }
         let listed = Set(documents.map(\.id))
         let pending = lock.withLock { sessions.values.filter { !listed.contains($0.id) } }
@@ -314,14 +321,18 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     func deleteDocument(_ document: DocumentID) throws {
-        guard let session = lock.withLock({ sessions[document] }) else { throw CoreError.notFound }
-        if let path = session.path {
+        let session = lock.withLock { sessions[document] }
+        // A listed document not opened this run has no session: its id is
+        // its file.
+        let path = session.map(\.path) ?? (FileManager.default.fileExists(atPath: document.rawValue) ? document.rawValue : nil)
+        guard session != nil || path != nil else { throw CoreError.notFound }
+        if let path {
             // The core takes it out of its case (and the reply kept for it),
             // then removes the file; a case it cannot save keeps it.
             _ = try core { try ffi.deleteDocument(path: path) }
             lock.withLock { _ = ids.removeValue(forKey: path) }
             originals.remove(for: path)
-        } else if let source = session.sourceFile {
+        } else if let source = session?.sourceFile {
             // An import not yet read: OCR's kept pages go first, found by the
             // source file's digest, then the file.
             try core { try ffi.discardImport(source: source.path) }
@@ -458,8 +469,11 @@ final class RealLibrary: Library, @unchecked Sendable {
         guard !recorded.isEmpty, let summaries = try? ffi.documentSummaries() else { return }
         var kept: Set<String> = []
         for summary in summaries where !summary.scanned && recorded.contains(originals.key(summary.path)) {
+            // A session of its own, let go after: the document saves once,
+            // its time changing as any save's does.
+            let session = RealSession(id: DocumentID(rawValue: summary.path), library: self, source: nil, title: "", caseID: nil)
             do {
-                guard let session = try self.session(for: DocumentID(rawValue: summary.path)) as? RealSession else { continue }
+                try session.reopen(path: summary.path, original: (.none, .text))
                 try session.markScanned()
             } catch {
                 kept.insert(originals.key(summary.path))
@@ -578,6 +592,17 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             candidateCount: snapshot.candidates.count)
     }
 
+    /// The list row of a document this session holds, from the core's
+    /// review without the reply or the styling; nil before it is read.
+    fileprivate func loadedSummary(updated: Date) -> DocumentSummary? {
+        guard let review = try? ffi.snapshot() else { return nil }
+        let caseID = review.caseId ?? chosen.caseID
+        return DocumentSummary(
+            id: id, title: review.title, caseID: caseID.map(CaseID.init), kind: lock.withLock { kind },
+            phase: DocumentPhase(review.phase), pendingCount: Int(review.proposed), updated: updated,
+            candidateCount: review.mentions.count)
+    }
+
     fileprivate func reopenLater(original: (OriginalSource, SourceKind)) {
         lock.withLock { reopenPending = original }
     }
@@ -613,8 +638,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// `path`. It derives nothing: states, counts, the kept names, the
     /// phase and the ids are the core's.
     private func snapshot(of review: ReviewSnapshot, path: String?) -> DocumentSnapshot {
-        // Before its first save the core has no case: the one chosen.
-        let caseID = review.caseId ?? (path == nil ? chosen.caseID : nil)
+        // Before its first save the core has no case: the one chosen. A
+        // saved document is always in one.
+        let caseID = review.caseId ?? chosen.caseID
         let (kind, original) = lock.withLock { (self.kind, self.original) }
         let reply: ReplySnapshot? = {
             guard let caseID, let path,
@@ -658,7 +684,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
                     wording: hint.wording)
             },
             canUndo: review.canUndo, canRedo: review.canRedo,
-            undoStep: review.undoStep.map(step), redoStep: review.redoStep.map(step))
+            undoStep: review.undoStep.map(step), redoStep: review.redoStep.map(step),
+            counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)))
     }
 
     /// The text's Markdown styling, parsed again only when the text changed.

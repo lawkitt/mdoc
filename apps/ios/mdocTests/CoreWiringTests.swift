@@ -250,6 +250,35 @@ final class CoreWiringTests: XCTestCase {
         XCTAssertEqual(try library.session(for: letter.id).snapshot().title, Letters.letterTitle)
     }
 
+    /// Delete from the list, for a document not opened since mdoc started:
+    /// the list opened none, so there is no session to delete through.
+    func testDeletingADocumentNotOpenedThisRun() throws {
+        let path = try XCTUnwrap((try imported(core()) as? RealSession)?.path)
+        let library = try core().library
+        let id = try XCTUnwrap(library.snapshot().documents.first?.id)
+        try library.deleteDocument(id)
+        XCTAssertTrue(library.snapshot().documents.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    /// A document open this run lists as it shows: a Keep of a name its
+    /// case knows is not saved (reopened, the case proposes it again), so
+    /// the saved summary still counts it.
+    func testAnOpenDocumentListsAsItShows() throws {
+        let core = try core()
+        let first = try imported(core, text: "Write to ann@example.com.")
+        let email = try XCTUnwrap(try first.scan(observer: TestObserver()).candidates.first)
+        let caseID = try XCTUnwrap(try first.decide(email.id, .replace, scope: .allOccurrences).caseID)
+        let second = try core.library.importDocument(.text("Ann: ann@example.com."), title: "Note", into: .existing(caseID))
+        let read = try second.recognize(observer: TestObserver())
+        let proposal = try XCTUnwrap(read.candidates.first)
+        XCTAssertEqual(read.pendingCount, 1)
+        XCTAssertEqual(try second.decide(proposal.id, .keep, scope: .allOccurrences).pendingCount, 0)
+        let row = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == second.id })
+        XCTAssertEqual(row.pendingCount, 0)
+        XCTAssertEqual(row.candidateCount, 1)
+    }
+
     /// A library from before the core kept "scanned": what the app recorded
     /// (#685) goes to the core once, then the app's record goes.
     func testTheAppsScannedRecordGoesToTheCoreOnce() throws {

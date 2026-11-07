@@ -307,6 +307,13 @@ struct HandOff: Hashable, Sendable {
     var fileName: String
 }
 
+/// Mentions by state, as the core counts them.
+struct MentionCounts: Hashable, Sendable {
+    var proposed: Int
+    var replaced: Int
+    var kept: Int
+}
+
 struct DocumentSnapshot: Equatable, Sendable {
     let id: DocumentID
     var title: String
@@ -342,12 +349,16 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// What Redo would make again; after an undo, what it undid.
     var redoStep: HistoryStep? = nil
 
+    /// The core's count of mentions in each state; nil for a snapshot the
+    /// core did not make, which counts `candidates`.
+    var counts: MentionCounts? = nil
+
     var pendingCount: Int {
-        candidates.filter { $0.state == .proposed }.count
+        counts?.proposed ?? candidates.filter { $0.state == .proposed }.count
     }
 
     var replacedCount: Int {
-        candidates.filter { $0.state == .replaced }.count
+        counts?.replaced ?? candidates.filter { $0.state == .replaced }.count
     }
 
     func candidate(_ id: CandidateID) -> Candidate? {
