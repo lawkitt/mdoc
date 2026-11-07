@@ -352,7 +352,7 @@ final class DocumentViewModel {
     /// document shows, waits to be seen; a newer notice cancels the wait.
     func noticeShown(_ text: String) async {
         UIAccessibility.post(notification: .announcement, argument: text)
-        // timing: a notice stays up long enough to read; no event ends it
+        // timing: how long a notice stays to be read, not a wait for an event (ADR 0099)
         do { try await Task.sleep(for: Self.noticeDuration(text)) } catch { return }
         if notice == text { notice = nil }
     }
