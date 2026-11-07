@@ -307,6 +307,13 @@ struct HandOff: Hashable, Sendable {
     var fileName: String
 }
 
+/// Mentions by state, as the core counts them.
+struct MentionCounts: Hashable, Sendable {
+    var proposed: Int
+    var replaced: Int
+    var kept: Int
+}
+
 struct DocumentSnapshot: Equatable, Sendable {
     let id: DocumentID
     var title: String
@@ -316,6 +323,10 @@ struct DocumentSnapshot: Equatable, Sendable {
     var phase: DocumentPhase
     var markdown: String
     var styling: MarkdownStyling
+    /// The core's `text_revision`: the same while `markdown` is, so the
+    /// text view lays the text out again only when it changes. Nil for a
+    /// snapshot the core did not make.
+    var textRevision: UInt64? = nil
     var candidates: [Candidate]
     var identities: [Identity]
     var original: OriginalSource
@@ -338,12 +349,16 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// What Redo would make again; after an undo, what it undid.
     var redoStep: HistoryStep? = nil
 
+    /// The core's count of mentions in each state; nil for a snapshot the
+    /// core did not make, which counts `candidates`.
+    var counts: MentionCounts? = nil
+
     var pendingCount: Int {
-        candidates.filter { $0.state == .proposed }.count
+        counts?.proposed ?? candidates.filter { $0.state == .proposed }.count
     }
 
     var replacedCount: Int {
-        candidates.filter { $0.state == .replaced }.count
+        counts?.replaced ?? candidates.filter { $0.state == .replaced }.count
     }
 
     func candidate(_ id: CandidateID) -> Candidate? {
@@ -430,20 +445,46 @@ struct JobUpdate: Hashable, Sendable {
 
 // MARK: - Errors
 
+/// Why a call failed, each with its own message (ADR 0104). The core's
+/// failures map one to one from its `CoreError` and `ReviewError`
+/// (`CoreFailure`); the rest are the app's own.
 enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case cancelled
+    /// The document is no longer in the library.
     case notFound
+    /// Copy for AI and Share wait until every proposal is replaced or kept.
     case pendingReview(Int)
     case emptySelection
     case noCase
     /// Scanning needs the detector, or recognition needs OCR, and it is not
     /// installed.
     case modelMissing
+    /// Reading or converting the file.
     case importFailed(String)
+    /// Text recognition failed.
+    case recognitionFailed(String)
+    /// Finding names failed.
+    case findNamesFailed(String)
+    /// A review change no longer applies: the text or the mention changed.
+    case reviewChanged(String)
+    /// A case rule (one case per document), or the case could not be read.
+    case caseRefused(String)
+    /// A model file could not be verified or installed.
+    case setupFailed(String)
+    /// Something the core does not accept, such as a blank title.
+    case invalid(String)
+    /// Reading or writing a file failed.
+    case fileFailed(String)
     /// Rename: another identity has this alias. Same as is the way to it.
     case aliasTaken(alias: String, by: IdentityID)
-    /// A review change the core refused, in its words.
+    /// The mention or identity is no longer in the review.
+    case nameNotFound
+    /// A change refused, in the core's words or the app's.
     case refused(String)
+    /// A review change could not be saved.
+    case saveFailed(String)
+    /// Anything else, in its own words.
+    case other(String)
 
     var errorDescription: String? {
         switch self {
@@ -461,9 +502,24 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "Download the models first.")
         case .importFailed(let reason):
             String(localized: "mdoc could not open this file: \(reason)")
+        case .recognitionFailed(let reason):
+            String(localized: "Text recognition stopped: \(reason)")
+        case .findNamesFailed(let reason):
+            String(localized: "Find names stopped: \(reason)")
+        case .setupFailed(let reason):
+            String(localized: "The model could not be installed: \(reason)")
+        case .fileFailed(let reason):
+            String(localized: "mdoc could not read or write a file: \(reason)")
+        case .saveFailed(let reason):
+            String(localized: "mdoc could not save this change: \(reason)")
         case .aliasTaken(let alias, _):
             String(localized: "\(alias) is another name's alias.")
-        case .refused(let reason):
+        case .nameNotFound:
+            String(localized: "That name is no longer in the document.")
+        // Sentences of the core's (a blank title, the case a document is
+        // in already, a mention that moved) or of the app's, as they are.
+        case .reviewChanged(let reason), .caseRefused(let reason), .invalid(let reason), .refused(let reason),
+             .other(let reason):
             reason
         }
     }

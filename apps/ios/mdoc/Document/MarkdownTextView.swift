@@ -123,10 +123,15 @@ struct MarkdownTextView: UIViewRepresentable {
 
         func restyle(_ key: StyleKey, _ view: CandidateTextView) {
             pending = nil
-            let textChanged = styled?.snapshot.markdown != key.snapshot.markdown
+            // The core's revision says whether the text changed, without
+            // comparing it; a snapshot without one compares the text.
+            let textChanged = key.snapshot.textRevision.map { $0 != styled?.snapshot.textRevision }
+                ?? (styled?.snapshot.markdown != key.snapshot.markdown)
             let newlySelected = key.selected != styled?.selected ? key.selected : nil
+            if textChanged || styled == nil {
+                offsets = TextOffsets(key.snapshot.markdown)
+            }
             styled = key
-            offsets = TextOffsets(key.snapshot.markdown)
             render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
             keepsScroll = true
             if let newlySelected {

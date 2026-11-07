@@ -126,7 +126,7 @@ synchronized group, so adding a file needs no project edit.
 
 | Folder | Target | What it holds |
 | --- | --- | --- |
-| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's error |
+| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's errors (`CoreError` and `ReviewError`, one case each) |
 | `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
 | `mdoc/` | app | `App/`: the app model, the navigator and its one presenter, the open documents' models, the UI tests' seed; `Library/`: the library model, file intake, the sidebar, Start, Cases and Documents; the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
 | `RestoreExtension/` | Restore with mdoc | The share extension's entry point |

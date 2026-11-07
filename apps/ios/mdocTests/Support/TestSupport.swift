@@ -174,6 +174,8 @@ final class TestObserver: JobObserver, @unchecked Sendable {
     private var cancelled = false
     private var handlers: [@Sendable () -> Void] = []
     private(set) var updates: [JobUpdate] = []
+    /// Runs on the job's thread with each update, while the job runs.
+    var onProgress: (@Sendable (JobUpdate) -> Void)?
 
     func cancel() {
         lock.lock()
@@ -187,7 +189,9 @@ final class TestObserver: JobObserver, @unchecked Sendable {
     func progress(_ update: JobUpdate) {
         lock.lock()
         updates.append(update)
+        let hook = onProgress
         lock.unlock()
+        hook?(update)
     }
 
     func onCancel(_ handler: @escaping @Sendable () -> Void) {

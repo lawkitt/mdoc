@@ -196,7 +196,7 @@ final class DocumentViewModel {
         // A scan that finds nothing says so, rather than going quietly to
         // Share (ADR 0087).
         if case .finished(let scanned) = outcome {
-            let proposed = scanned.candidates.filter { $0.state == .proposed }.count
+            let proposed = scanned.pendingCount
             if scanned.candidates.isEmpty {
                 say(String(localized: "No names found. Select text to mark one."))
             } else if proposed > 0 {
@@ -297,7 +297,7 @@ final class DocumentViewModel {
 
     func replaceAllPending() {
         guard !reviewWaitsForJob() else { return }
-        let count = snapshot.candidates.filter { $0.state == .proposed }.count
+        let count = snapshot.pendingCount
         let wasReviewing = isReviewing
         perform { try session.replaceAllPending() }
         // One tap changed them all: says so, with Undo (ADR 0098).
