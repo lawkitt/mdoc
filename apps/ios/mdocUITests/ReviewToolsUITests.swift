@@ -151,4 +151,19 @@ final class ReviewToolsUITests: XCTestCase {
         let enabled = NSPredicate(format: "isEnabled == true")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: element)], timeout: 5), .completed)
     }
+
+    /// The text ends where the bottom bar starts: its last line is readable
+    /// and tappable without holding the text up.
+    @MainActor
+    func testTheTextEndsAtTheBottomBar() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 30))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        let replace = app.buttons["primary-action"]
+        XCTAssertTrue(replace.waitForExistence(timeout: 30))
+        XCTAssertLessThanOrEqual(text.frame.maxY, replace.frame.minY)
+    }
 }
