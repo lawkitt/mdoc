@@ -113,7 +113,10 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 [ADR 0098](adr/0098-mobile-review-bar.md), polished by
 [ADR 0101](adr/0101-mobile-review-bar-polish.md); code in
 [`apps/ios/mdoc/Document/`](../apps/ios/mdoc/Document/) (`ReviewBar`,
-`ReviewCard`, `MentionSnippet`, `ReviewState`, `DocumentViewModel+Review`).
+`ReviewCard`, `MentionSnippet`, `ReviewState`, `CandidateActions`,
+`DocumentViewModel+Review`). The bar's state is one `ReviewState` value
+that only the view model changes; views send intents
+([ADR 0104](adr/0104-mobile-app-structure.md)).
 
 - **Layout:** grabber, progress line ("3 of 15" and the decided track; ×
   ends review), a hint line now and then, the card with peeking neighbors,
@@ -142,8 +145,9 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 - **Undo:** every core step is also registered with the window's undo
   manager, so shake, the three-finger swipe and ⌘Z share the bar's
   history; Undo moves the bar back and the toast offers Redo.
-- **Menus:** the long press on a name and the chips' menus show the
-  outcome before the tap ("Organization → ORG_3"); Same as… lists hints
+- **Menus:** the long press on a name, the card's buttons and the keys
+  take their actions from `actions(for:)`, so they agree. The long press
+  and the chips' menus show the outcome before the tap ("Organization → ORG_3"); Same as… lists hints
   first, then the same category, then the rest, and a long list becomes a
   searchable sheet.
 - **Tips** (`ReviewHint`): no popovers or cards. One line per document at
