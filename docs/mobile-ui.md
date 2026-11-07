@@ -59,7 +59,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `StatusPill` | State as an icon and words in the state's color. |
 | `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. |
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
-| `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s. |
+| `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
 | `ReviewHintLine` | The review's one hint line: symbol, words, ×. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
