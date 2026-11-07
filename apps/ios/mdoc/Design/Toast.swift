@@ -74,6 +74,7 @@ struct ToastPresenter: ViewModifier {
                     .task(id: message.id) {
                         UIAccessibility.post(notification: .announcement, argument: message.text)
                         // Longer with an action (Undo, Redo): time to reach it.
+                        // timing: how long a toast stays, not a wait for an event (ADR 0099)
                         try? await Task.sleep(for: .seconds(message.action == nil ? seconds : seconds + 2))
                         if self.message?.id == message.id {
                             self.message = nil

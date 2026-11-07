@@ -70,6 +70,7 @@ struct FindSheet: View {
                 guard presented else { return }
                 for _ in 0..<12 {
                     focused = true
+                    // timing: iOS 26.2 drops or hangs on an early focus and says nothing when it takes (#634, #669)
                     try? await Task.sleep(for: .milliseconds(250))
                     // Once it took, stop: the user may close the keyboard.
                     if focused || Task.isCancelled { return }

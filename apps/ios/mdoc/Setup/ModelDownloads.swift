@@ -268,6 +268,7 @@ struct FakeModelDownloader: ModelDownloader {
         let steps = 20
         for step in 1...steps {
             if seconds > 0 {
+                // timing: the fake download's pretend length, for previews and timing tests (ADR 0104)
                 try await Task.sleep(for: .seconds(seconds / Double(steps)))
             }
             try Task.checkCancellation()
