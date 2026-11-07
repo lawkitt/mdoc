@@ -106,10 +106,15 @@ struct MarkdownTextView: UIViewRepresentable {
         var scoped: Set<CandidateID>
     }
 
-    /// A stretch of one candidate in one text view (the main text or a
-    /// table cell), with the decoration keys it has undecorated.
+    /// A stretch of one candidate in the main text or a table cell, with
+    /// the decoration keys it has undecorated.
     struct DecoratedRun {
-        weak var view: UITextView?
+        enum Place: Hashable {
+            case text
+            case cell(table: Int, row: Int, column: Int)
+        }
+
+        let place: Place
         let range: NSRange
         let base: [NSAttributedString.Key: Any]
     }
@@ -141,6 +146,9 @@ struct MarkdownTextView: UIViewRepresentable {
 
         init(parent: MarkdownTextView) {
             self.parent = parent
+            // A request made before this view existed (another pane showed,
+            // or the document was closed) is not this view's to run.
+            takenReveal = parent.reveal?.id
         }
 
         deinit {
@@ -220,9 +228,11 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
-        /// The end of a layout pass: the pending reveal runs, once.
+        /// The end of a layout pass: the pending reveal runs, once, when the
+        /// view is on screen with a size to measure in.
         func layoutDone(_ view: CandidateTextView) {
-            guard !rendering, pending == nil, let reveal = pendingReveal else { return }
+            guard !rendering, pending == nil, let reveal = pendingReveal,
+                  view.window != nil, view.textWidth > 0, view.bounds.height > 0 else { return }
             pendingReveal = nil
             switch reveal.target {
             case .candidate(let id):
@@ -327,15 +337,33 @@ struct MarkdownTextView: UIViewRepresentable {
             rebuilds += 1
             let snapshot = parent.snapshot
             let offset = view.contentOffset
-            // Built undecorated; `redecorate` adds the decoration, as it does
-            // on a selection change, so the two never differ.
+            // Built undecorated, its candidates' stretches noted, then
+            // decorated as a selection change recolours them, so the two
+            // never differ; the view gets the text decorated already.
             let styler = MarkdownStyler(
                 traits: view.traitCollection, selected: nil, scoped: [], rendered: parent.rendered,
                 width: width > 0 ? width : nil)
-            view.show(styler.document(for: snapshot), width: width)
-            collectRuns(in: view)
+            var document = styler.document(for: snapshot)
+            let text = NSMutableAttributedString(attributedString: document.text)
+            var cells: [DecoratedRun.Place: NSMutableAttributedString] = [:]
+            for (table, rendered) in document.tables.enumerated() {
+                for (row, rowCells) in rendered.rows.enumerated() {
+                    for (column, cell) in rowCells.enumerated() {
+                        cells[.cell(table: table, row: row, column: column)] = NSMutableAttributedString(attributedString: cell.text)
+                    }
+                }
+            }
+            func string(_ place: DecoratedRun.Place) -> NSMutableAttributedString? {
+                place == .text ? text : cells[place]
+            }
+            collectRuns(text: text, cells: cells)
             decoration = DecorationKey(selected: nil, scoped: [])
-            redecorate(to: DecorationKey(selected: parent.selected, scoped: parent.scoped), in: view)
+            decorate(DecorationKey(selected: parent.selected, scoped: parent.scoped), dark: view.traitCollection.userInterfaceStyle == .dark, in: string)
+            document.text = text
+            for (place, cell) in cells {
+                if case .cell(let table, let row, let column) = place { document.tables[table].rows[row][column].text = cell }
+            }
+            view.show(document, width: width)
             var items: [CandidateTextView.RotorItem] = []
             for (order, candidate) in snapshot.candidates.enumerated() {
                 let range = offsets.nsRange(candidate.range)
@@ -357,48 +385,66 @@ struct MarkdownTextView: UIViewRepresentable {
 
         /// Where each candidate's link runs are, in the text and in each
         /// table cell (a folded table line has none), with their colours.
-        private func collectRuns(in view: CandidateTextView) {
+        private func collectRuns(text: NSAttributedString, cells: [DecoratedRun.Place: NSMutableAttributedString]) {
             runs = [:]
             let keys = MarkdownStyler.decorationKeys
-            func collect(_ textView: UITextView) {
-                let text = textView.textStorage
-                text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            func collect(_ string: NSAttributedString, _ place: DecoratedRun.Place) {
+                string.enumerateAttribute(.link, in: NSRange(location: 0, length: string.length)) { value, range, _ in
                     guard let url = value as? URL, let id = MarkdownStyler.candidateID(from: url) else { return }
-                    text.enumerateAttributes(in: range) { attributes, part, _ in
+                    string.enumerateAttributes(in: range) { attributes, part, _ in
                         let base = attributes.filter { keys.contains($0.key) }
-                        runs[id, default: []].append(DecoratedRun(view: textView, range: part, base: base))
+                        runs[id, default: []].append(DecoratedRun(place: place, range: part, base: base))
                     }
                 }
             }
-            collect(view)
-            for table in view.tableViews {
-                for cell in table.cells.joined() { collect(cell) }
-            }
+            collect(text, .text)
+            for (place, cell) in cells { collect(cell, place) }
         }
 
         /// Recolours the names whose decoration changed, in place: the one
         /// under review and the mentions its scope reaches, the text kept
         /// as it is laid out.
         func redecorate(to new: DecorationKey, in view: CandidateTextView) {
+            var edited: [DecoratedRun.Place: NSTextStorage] = [:]
+            decorate(new, dark: view.traitCollection.userInterfaceStyle == .dark) { place in
+                if let storage = edited[place] { return storage }
+                let textView: UITextView? = switch place {
+                case .text: view
+                case .cell(let table, let row, let column):
+                    view.tableViews.indices.contains(table) && view.tableViews[table].cells.indices.contains(row)
+                        && view.tableViews[table].cells[row].indices.contains(column)
+                        ? view.tableViews[table].cells[row][column] : nil
+                }
+                guard let storage = textView?.textStorage else { return nil }
+                storage.beginEditing()
+                edited[place] = storage
+                return storage
+            }
+            for storage in edited.values { storage.endEditing() }
+        }
+
+        /// Sets the decoration keys of each candidate whose decoration
+        /// changes from the current one to `new`, in the strings `string`
+        /// gives for each place.
+        private func decorate(
+            _ new: DecorationKey, dark: Bool, in string: (DecoratedRun.Place) -> NSMutableAttributedString?
+        ) {
             let old = decoration
             decoration = new
             let changed = Set([old.selected, new.selected].compactMap { $0 }).union(old.scoped.symmetricDifference(new.scoped))
-            let dark = view.traitCollection.userInterfaceStyle == .dark
             for id in changed {
                 guard let candidate = parent.snapshot.candidate(id), let runs = runs[id] else { continue }
                 let added = MarkdownStyler.decoration(
                     of: candidate, selected: id == new.selected, scoped: new.scoped.contains(id), dark: dark)
                 for run in runs {
-                    guard let storage = run.view?.textStorage, NSMaxRange(run.range) <= storage.length else { continue }
-                    storage.beginEditing()
+                    guard let text = string(run.place), NSMaxRange(run.range) <= text.length else { continue }
                     for key in MarkdownStyler.decorationKeys {
                         if let value = added[key] ?? run.base[key] {
-                            storage.addAttribute(key, value: value, range: run.range)
+                            text.addAttribute(key, value: value, range: run.range)
                         } else {
-                            storage.removeAttribute(key, range: run.range)
+                            text.removeAttribute(key, range: run.range)
                         }
                     }
-                    storage.endEditing()
                 }
             }
         }

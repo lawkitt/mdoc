@@ -285,13 +285,16 @@ struct ReviewState: Equatable {
         return true
     }
 
-    /// Hide name on a selection: the bar on the new mark, out of any focus.
-    mutating func selectMarked(_ selection: SourceRange) {
+    /// Hide name on a selection: the bar on the new mark, out of any focus;
+    /// false when there is none.
+    @discardableResult
+    mutating func selectMarked(_ selection: SourceRange) -> Bool {
         let marked = document.candidates.first { $0.range.start <= selection.start && $0.range.end >= selection.end }
             ?? document.candidate(near: selection.start)
-        guard let marked else { return }
+        guard let marked else { return false }
         setFocus(nil)
         select(marked.id)
+        return true
     }
 
     // MARK: After a change

@@ -423,7 +423,7 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertTrue(ReviewHint.longPress.isLearned)
     }
 
-    /// A notice clears itself once read, and a newer one keeps its own time.
+    /// A notice stays two to four seconds, by its length.
     func testANoticeStaysLongEnoughToRead() {
         XCTAssertEqual(DocumentViewModel.noticeDuration("Copied"), .seconds(2))
         XCTAssertEqual(DocumentViewModel.noticeDuration(String(repeating: "a", count: 100)), .seconds(4))

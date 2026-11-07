@@ -163,4 +163,30 @@ final class MarkdownTextViewTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         XCTAssertEqual(view.contentOffset.y, -view.adjustedContentInset.top, accuracy: 1)
     }
+
+    /// A request made before the view existed (the text pane came back, or
+    /// the document opened again) is not run: the new view starts where it
+    /// should, not at an old name (review of #699).
+    func testANewViewIgnoresAnEarlierReveal() throws {
+        let (core, _) = try Fixture.core()
+        let session = try core.library.importDocument(.text(Self.text), title: "Agreement", into: .newCase(name: "Bennett"))
+        _ = try session.recognize(observer: TestObserver())
+        let snapshot = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
+        let last = try XCTUnwrap(snapshot.candidates.max { $0.range.start < $1.range.start })
+        let old = RevealRequest(id: 7, target: .candidate(last.id))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let view = CandidateTextView()
+        view.isEditable = false
+        view.frame = window.bounds
+        window.addSubview(view)
+        window.isHidden = false
+        let shown = textView(snapshot, reveal: old)
+        let coordinator = MarkdownTextView.Coordinator(parent: shown)
+        coordinator.attach(to: view)
+        coordinator.update(view, with: shown, dynamicTypeSize: .large, colorScheme: .light)
+        view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(view.contentOffset.y, -view.adjustedContentInset.top, accuracy: 1, "still at the top")
+        XCTAssertNil(coordinator.pendingReveal)
+    }
 }

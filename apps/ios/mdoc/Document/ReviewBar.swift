@@ -260,6 +260,7 @@ struct ReviewBar: View {
         .clipped()
         .opacity(detailsShown ? 1 : 0)
         .allowsHitTesting(detailsShown)
+        .disabled(!detailsShown)
         .accessibilityHidden(!detailsShown)
     }
 

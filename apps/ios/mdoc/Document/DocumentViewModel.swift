@@ -73,8 +73,6 @@ final class DocumentViewModel {
     private(set) var notice: String?
     /// The notice's symbol: a check, or an hourglass while review waits.
     private(set) var noticeSymbol = "checkmark.circle.fill"
-    /// Clears the notice once it has been read (`say`).
-    private var noticeTimer: Task<Void, Never>?
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
@@ -303,8 +301,7 @@ final class DocumentViewModel {
         let selection = Self.trimmed(selection, in: snapshot.markdown)
         guard selection.length > 0 else { return }
         guard perform({ try session.markSelection(selection) }) else { return }
-        updateReview { $0.selectMarked(selection) }
-        if isReviewing { Haptics.decision() }
+        if updateReview({ $0.selectMarked(selection) }) { Haptics.decision() }
     }
 
     // MARK: Hand-off
@@ -341,25 +338,23 @@ final class DocumentViewModel {
     }
 
     func clearNotice() {
-        noticeTimer?.cancel()
         notice = nil
     }
 
-    /// Shows a notice, says it to VoiceOver, and clears it once it has been
-    /// up long enough to read. A newer notice replaces it and starts its own
-    /// wait.
     private func say(_ text: String, symbol: String = "checkmark.circle.fill") {
         notice = text
         noticeSymbol = symbol
+    }
+
+    /// The notice is on screen: VoiceOver says it, and it goes once it has
+    /// been up long enough to read. The screen runs this while the notice
+    /// shows, so a notice said while the review bar covers it, or before the
+    /// document shows, waits to be seen; a newer notice cancels the wait.
+    func noticeShown(_ text: String) async {
         UIAccessibility.post(notification: .announcement, argument: text)
-        noticeTimer?.cancel()
-        let shown = Self.noticeDuration(text)
-        noticeTimer = Task { [weak self] in
-            // timing: a notice stays up long enough to read; no event ends it
-            try? await Task.sleep(for: shown)
-            guard !Task.isCancelled, let self, self.notice == text else { return }
-            self.notice = nil
-        }
+        // timing: a notice stays up long enough to read; no event ends it
+        do { try await Task.sleep(for: Self.noticeDuration(text)) } catch { return }
+        if notice == text { notice = nil }
     }
 
     /// How long a notice stays: two seconds, up to four for a sentence.
@@ -513,18 +508,22 @@ final class DocumentViewModel {
     }
 
     /// One transition of the review bar, given the hints still to teach.
+    /// Written only when it changed, so views reading the bar redraw only
+    /// then.
     @discardableResult
     func updateReview<T>(_ transition: (inout ReviewState) -> T) -> T {
         var state = review
         state.setTeachable(ReviewHint.teachable)
         let result = transition(&state)
-        review = state
+        if state != review { review = state }
         return result
     }
 
     func applyReview(_ new: DocumentSnapshot) {
         snapshot = new
-        review.apply(new)
+        var state = review
+        state.apply(new)
+        if state != review { review = state }
         if new.reply == nil && pane == .reply {
             pane = .text
         }

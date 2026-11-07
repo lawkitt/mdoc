@@ -357,6 +357,7 @@ struct DocumentScreen: View {
                     .padding(.vertical, 6)
                     .background(.thinMaterial, in: Capsule())
                     .accessibilityIdentifier("notice")
+                    .task(id: notice) { await model.noticeShown(notice) }
             }
             if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
                 // The card's download, of the model this job needs, is the
