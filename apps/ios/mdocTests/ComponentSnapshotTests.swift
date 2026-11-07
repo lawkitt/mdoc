@@ -127,6 +127,42 @@ final class ComponentSnapshotTests: XCTestCase {
         let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {})
         XCTAssertEqual(ToastPresenter.duration(of: undo, seconds: 4), 6)
         XCTAssertEqual(ToastPresenter.duration(of: ToastMessage(text: "All 15 reviewed"), seconds: 4), 4)
+
+    /// What a screen draws in the safe areas stays on screen: the drawer
+    /// clipped to its frame, which cut the bottom toolbar's buttons in half.
+    func testSideDrawerKeepsWhatTheScreenDrawsInTheSafeAreas() throws {
+        let host = UIHostingController(rootView: SideDrawer(isOpen: .constant(false)) {
+            Color.clear
+        } content: {
+            Color(red: 1, green: 0, blue: 0).ignoresSafeArea()
+        })
+        host.additionalSafeAreaInsets = UIEdgeInsets(top: 60, left: 0, bottom: 40, right: 0)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 300, height: 600)
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.preferredRange = .standard // 8 bits a channel
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        window.isHidden = true
+        let data = try XCTUnwrap(image.cgImage?.dataProvider?.data as Data?)
+        let cgImage = try XCTUnwrap(image.cgImage)
+        func pixel(_ y: CGFloat) -> [UInt8] {
+            let row = Int(y * image.scale), column = cgImage.width / 2
+            let start = row * cgImage.bytesPerRow + column * cgImage.bitsPerPixel / 8
+            return Array(data[start..<start + 4])
+        }
+        // BGRA or RGBA: red is the one bright colour channel either way.
+        func isRed(_ bytes: [UInt8]) -> Bool {
+            bytes[1] < 40 && (bytes[0] > 200) != (bytes[2] > 200)
+        }
+        XCTAssertTrue(isRed(pixel(300)), "the middle of the screen: \(pixel(300))")
+        XCTAssertTrue(isRed(pixel(590)), "the bottom safe area: \(pixel(590))")
+        XCTAssertTrue(isRed(pixel(10)), "the top safe area: \(pixel(10))")
     }
 
     func testSampleChoosesItsLanguage() {

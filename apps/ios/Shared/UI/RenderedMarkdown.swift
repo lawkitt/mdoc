@@ -940,6 +940,8 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         content.primaryTextLayoutManager = layout
         super.init(frame: .zero, textContainer: container)
         layout.delegate = self
+        // A short text takes a drag too, so it never feels frozen.
+        alwaysBounceVertical = true
     }
 
     @available(*, unavailable)

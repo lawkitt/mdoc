@@ -173,7 +173,6 @@ struct DocumentScreen: View {
             onReviewNext: { model.reviewNext() },
             onMenu: { model.menuOpened(on: $0) },
             menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } })
-        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private enum PickerSource: Identifiable, Hashable {

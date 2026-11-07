@@ -25,11 +25,11 @@ final class MarkdownTextViewTests: XCTestCase {
         let coordinator: MarkdownTextView.Coordinator
     }
 
-    private func harness() throws -> Harness {
+    private func harness(text: String = text, name: String = "Maya Bennett") throws -> Harness {
         let (core, _) = try Fixture.core()
-        let session = try core.library.importDocument(.text(Self.text), title: "Agreement", into: .newCase(name: "Bennett"))
+        let session = try core.library.importDocument(.text(text), title: "Agreement", into: .newCase(name: "Bennett"))
         _ = try session.recognize(observer: TestObserver())
-        _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
+        _ = try session.propose([SampleDocument.Name(wording: name, category: .person)])
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let view = CandidateTextView()
         view.isEditable = false
@@ -188,5 +188,44 @@ final class MarkdownTextViewTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         XCTAssertEqual(view.contentOffset.y, -view.adjustedContentInset.top, accuracy: 1, "still at the top")
         XCTAssertNil(coordinator.pendingReveal)
+    }
+
+    /// Replacing can leave text that fits the screen. The scroll kept from
+    /// before must not outlive it: a text view whose content fits doesn't
+    /// pan, so the top of the document was out of reach for good.
+    func testAScrolledDocumentThatNowFitsGoesBackToItsTop() throws {
+        let name = "Alexandria Montgomery-Featherstonehaugh"
+        let paragraph = Array(repeating: name, count: 6).joined(separator: " and ")
+        let text = Array(repeating: paragraph, count: 12).joined(separator: "\n\n") + "\n"
+        let harness = try harness(text: text, name: name)
+        show(harness, textView(harness.session.snapshot()))
+        harness.view.setContentOffset(CGPoint(x: 0, y: 500), animated: false)
+        harness.view.layoutIfNeeded()
+        XCTAssertEqual(harness.view.contentOffset.y, 500, "the document is long enough to scroll")
+
+        show(harness, textView(try harness.session.replaceAllPending()))
+
+        let insets = harness.view.adjustedContentInset
+        XCTAssertLessThan(
+            harness.view.contentSize.height + insets.top + insets.bottom, harness.view.bounds.height,
+            "the replaced text fits")
+        XCTAssertEqual(harness.view.contentOffset.y, -insets.top, "back at the top")
+    }
+
+    /// A drag always takes, so a document that fits never feels frozen.
+    func testADocumentThatFitsStillTakesADrag() {
+        XCTAssertTrue(CandidateTextView().alwaysBounceVertical)
+    }
+
+    /// A long document keeps its place across a Replace.
+    func testALongDocumentKeepsItsScrollAcrossAReplace() throws {
+        let harness = try harness()
+        show(harness, textView(harness.session.snapshot()))
+        harness.view.setContentOffset(CGPoint(x: 0, y: 800), animated: false)
+        harness.view.layoutIfNeeded()
+
+        show(harness, textView(try harness.session.replaceAllPending()))
+
+        XCTAssertEqual(harness.view.contentOffset.y, 800)
     }
 }
