@@ -1011,6 +1011,53 @@ forbid = [
 category = "TAX"
 forbid = ['^\s*(?:19|20)\d{2}\s*[/–-]\s*(?:\d{2}|(?:19|20)\d{2})\s*$']
 
+# So is a year alone, or years joined by a word: "for the years 2013
+# through 2016", "In March 2023", "2029 and 2030" (guide rule 4, #480). No
+# tax number has four digits.
+[[shape]]
+category = "TAX"
+forbid = ['^\s*(?:19|20)\d{2}(?:\s*(?:,|&|and|through|thru|to|[–-])\s*(?:19|20)\d{2})*\s*$']
+
+# A court's docket number is no tax, bank or identity value, whatever the
+# model guessed, but a case number (guide rule 5, #480): a Texas appeal's
+# "01-24-00779-CV", a federal "1:21-cv-00616-RP", a New York "02 CV 3651",
+# a bankruptcy case's "15-49008-wsd" with its judge's initials, "No." or a
+# running header's entry ("15-49008-wsd Doc 19-1") left out. Whatever its
+# label ("NUMBER", "Docket:", "Cause Number", "Civil Action", "Index #",
+# "Adv. No.") or none, the model's span stays hidden as CASE; a cited
+# case's docket goes with its citation, and a running header's with the
+# header (the references below, #506 item 3). An EIN's "98-7654321" has
+# seven digits after its dash, an account's "12-34567-890" no letters, and
+# both stay.
+[[shape]]
+category = "TAX"
+case = [
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{2}-\d{5}-C[VR])\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d:\d{2}-[a-z]{2,3}-\d{3,6}(?:-[A-Za-z]{1,4})*)\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}[\p{Zs}\t-](?:CV|Civ\.|CIV|cv)[\p{Zs}\t-]\d{3,6})\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{5}-[a-z]{2,4})(?:[\p{Zs}\t]+Doc\.?[\p{Zs}\t]+\d+(?:-\d+)?)?\s*$',
+]
+
+# The same as bank details.
+[[shape]]
+category = "BANK"
+case = [
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{2}-\d{5}-C[VR])\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d:\d{2}-[a-z]{2,3}-\d{3,6}(?:-[A-Za-z]{1,4})*)\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}[\p{Zs}\t-](?:CV|Civ\.|CIV|cv)[\p{Zs}\t-]\d{3,6})\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{5}-[a-z]{2,4})(?:[\p{Zs}\t]+Doc\.?[\p{Zs}\t]+\d+(?:-\d+)?)?\s*$',
+]
+
+# The same as an identity document's number.
+[[shape]]
+category = "IDENTITY"
+case = [
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{2}-\d{5}-C[VR])\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d:\d{2}-[a-z]{2,3}-\d{3,6}(?:-[A-Za-z]{1,4})*)\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}[\p{Zs}\t-](?:CV|Civ\.|CIV|cv)[\p{Zs}\t-]\d{3,6})\s*$',
+    '^\s*(?:No\.\s*)?(?P<case>\d{2}-\d{5}-[a-z]{2,4})(?:[\p{Zs}\t]+Doc\.?[\p{Zs}\t]+\d+(?:-\d+)?)?\s*$',
+]
+
 # An English name of an organization is in title case or carries a legal
 # form; words in sentence case are a document kind, a heading or a team
 # ("Distribution register", "Lasting power of attorney", "Accounts team").
@@ -1151,6 +1198,18 @@ category = "CASE"
 labels = ["charge"]
 between = '[\p{Zs}\t]*\(?[\p{Zs}\t]*(?:#|[Nn]o\.?|NO\.?|[Nn]umber|NUMBER)[\p{Zs}\t:.#]{0,3}'
 value = '\d{2,3}[A-Z]?-(?:19|20)\d{2}-\d{5}'
+min_digits = 4
+
+# A bankruptcy case's own number after its label (guide rule 5, #480):
+# "Bankruptcy No. 15-49008-wsd", "Bankr. Case No. 15-49008". The labels
+# above (#364) cover the other captions; a bare "No." in running text is a
+# cited case's (#506 item 3). A model span in a docket shape becomes CASE
+# anyway (the shapes' `case` patterns).
+[[context]]
+category = "CASE"
+labels = ["bankruptcy no", "bankruptcy case no", "bankr. no", "bankr. case no"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '\d{2}-\d{5}(?:-[a-z]{2,4})?'
 min_digits = 4
 
 # A bank account after its label, whatever the model guessed: "**Bank
@@ -1451,18 +1510,36 @@ pattern = '\bTex\.[\p{Zs}\t]+App\.[\p{Zs}\t]*[—–-][\p{Zs}\t]*\p{Uppercase}\p
 # US codes and regulations: "26 U.S.C. § 6212", "31 U.S.C. 3903", "48 CFR
 # 52.212-1", "735 ILCS 5/2-619", "I.R.C. § 61", and the dotted
 # abbreviations alone ("U.S.C.", whose "S.C." is no one's initials). The
-# undotted ones need their numbers: "USC" alone may be a university.
+# undotted ones need their numbers: "USC" alone may be a university. A
+# section word may stand for "§" ("42 USC Section 1981", "42 U.S.C. Sec.
+# 1983"), and an undotted code may touch its numbers ("19CFR141.37"; #480).
 [[reference]]
-pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section})?|\b\d{1,3}[\p{Zs}\t]+(?:CFR|ILCS|USC)[\p{Zs}\t]*(?:§§?[\p{Zs}\t]*)?{section}'
+pattern = '(?:\b\d{1,3}[\p{Zs}\t]+)?\b(?:U\.[\p{Zs}\t]?S\.[\p{Zs}\t]?C\.(?:[\p{Zs}\t]?A\.)?|I\.[\p{Zs}\t]?R\.[\p{Zs}\t]?C\.|C\.[\p{Zs}\t]?F\.[\p{Zs}\t]?R\.|U\.[\p{Zs}\t]?C\.[\p{Zs}\t]?C\.)(?:[\p{Zs}\t]*{sign}{section})?|\b\d{1,3}[\p{Zs}\t]*(?:CFR|ILCS|USC)[\p{Zs}\t]*{sign}{section}'
 parts.section = '\d[\dA-Za-z]*(?:[.\-/–][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
+parts.sign = '(?:(?:§§?|[Ss]ections?|SECTIONS?|[Ss]ecs?\.)[\p{Zs}\t]*)?'
+
+# Federal Register pages, spaced or not ("54 FR 35305", "49FR17754"): a
+# volume before the number is required, so "FR" alone (a French VAT
+# number's prefix) stays, and so is a citation's end after the page (a
+# comma, a semicolon, a bracket, a full stop, "at" or the line's end), so
+# an address's "Unit 12 FR 75008 Paris" stays too (#480).
+[[reference]]
+pattern = '\b\d{1,3}[\p{Zs}\t]*FR[\p{Zs}\t]*\d{3,6}(?P<tail>[\p{Zs}\t]*(?:[,;:)\]]|\.(?:\s|$)|\(|$)|[\p{Zs}\t]+at\b)'
+
+# Nevada's statutes by section ("NRS 41.1395", "N.R.S. § 41.085"): the
+# code before the number is required (#480).
+[[reference]]
+pattern = '\b(?:NRS|N\.[\p{Zs}\t]?R\.[\p{Zs}\t]?S\.|Nev\.[\p{Zs}\t]?Rev\.[\p{Zs}\t]?Stat\.)[\p{Zs}\t]*(?:§[\p{Zs}\t]*)?\d{1,3}[A-Z]?\.\d{2,5}[A-Z]?(?:\([\dA-Za-z]{1,4}\))*'
 
 # Sections (including Roman numerals), chapters, paragraphs and clauses
 # (#499): "§ 6212", "§§ 1-3", "¶ 4", "section 12", "Article 6", "clause
 # 4.2", "Rule 56(a)", "Fed. R. Civ. P. 12(b)(6)", "Tex. R. Civ. P. 91a",
 # "CPR 31.16" (guide rule 5: statute, article, section and clause numbers
-# stay unmarked).
+# stay unmarked). The Civil Procedure Rules also cite a rule or a part
+# ("CPR r71.8", "CPR r.38.4", "CPR r 71.5", "CPR Part 35", "the CPR, Part
+# 19.12"; #480).
 [[reference]]
-pattern = '(?:§§?|¶¶?|\b(?:[Ss]ecs?\.|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
+pattern = '(?:§§?|¶¶?|\b(?:[Ss]ecs?\.|[Aa]rticles?|[Cc]lauses?|[Rr]ules?|[Pp]aragraphs?|[Ss]chedules?|[Rr]egulations?|[Aa]rt\.|[Pp]aras?\.|(?:Fed|Tex)\.[\p{Zs}\t]?R\.[\p{Zs}\t]?(?:Civ|Crim|App|Evid|Bankr)\.[\p{Zs}\t]?P\.|FRCP|CPR(?:,?[\p{Zs}\t]*(?:rr?\.?|Parts?|PD))?))[\p{Zs}\t]*{section}(?:[\p{Zs}\t]*[-–][\p{Zs}\t]*{section})?'
 # Canonical, nonempty Roman numerals only: LLC, IIV and VX are no numbers.
 parts.section = '(?:\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*|(?:M{1,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:CM|CD|DC{0,3}|C{1,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})|(?:XC|XL|LX{0,3}|X{1,3})(?:IX|IV|V?I{0,3})|IX|IV|VI{0,3}|I{1,3})\b)'
 
@@ -1485,9 +1562,59 @@ parts.section = '\d[\dA-Za-z]*(?:[.\-/][\dA-Za-z]+)*(?:\([\dA-Za-z]{1,4}\))*'
 
 # Regulations, orders, laws and releases by number: "FAR 52.212-1", "E.O.
 # 13526", "Executive Order No. 14028", "Pub. L. No. 115-97", "Release No.
-# 34-98765".
+# 34-98765", "Release Number 34-52926" (#480).
 [[reference]]
-pattern = '\b(?:(?:FAR|DFARS)[\p{Zs}\t]+(?:§[\p{Zs}\t]*)?\d+(?:\.\d+)+(?:-\d+)*|(?:E\.[\p{Zs}\t]?O\.|Exec\.[\p{Zs}\t]+Order|Executive[\p{Zs}\t]+Order)[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{3,6}|Pub\.[\p{Zs}\t]?L\.[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{2,3}-\d{1,4}|(?:Release|Rel\.)[\p{Zs}\t]+No\.[\p{Zs}\t]*(?:[A-Z]{1,3}-)?\d+(?:-\d+)*)'
+pattern = '\b(?:(?:FAR|DFARS)[\p{Zs}\t]+(?:§[\p{Zs}\t]*)?\d+(?:\.\d+)+(?:-\d+)*|(?:E\.[\p{Zs}\t]?O\.|Exec\.[\p{Zs}\t]+Order|Executive[\p{Zs}\t]+Order)[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{3,6}|Pub\.[\p{Zs}\t]?L\.[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?\d{2,3}-\d{1,4}|(?:Release|Rel\.)[\p{Zs}\t]+(?:Nos?\.|[Nn]umbers?)[\p{Zs}\t]*(?:[A-Z]{1,3}-)?\d+(?:-\d+)*)'
+
+# An agency's letters, rulings and filings by number are references, no
+# tax or bank values (guide rule 8, #480): "FDIC FIL-111-2006", "OTS No.
+# 2006-49", "CEQ # 20060476", "T.D. 84-93", "Rev. Rul. 2031-12", "Rev.
+# Proc. 2031-1", "PLR 203112001", "Private Letter Ruling 203112001". Each
+# needs its agency's or series' own word: a number after "No." alone stays.
+# A letter ruling's number is year-led, so a nine-digit tax number beside
+# "PLR" without a year stays. A Treasury Decision's number is "84-93" or
+# "9876", a ruling's or procedure's year-led ("55-540", "2031-12"): a
+# phone after a person's initials ("Smith, T.D. 555-0164") stays.
+[[reference]]
+pattern = '\b(?:FDIC[\p{Zs}\t]+)?FIL-\d{1,4}-(?:19|20)\d{2}\b|\bOTS[\p{Zs}\t]+(?:No\.|[Nn]umber)[\p{Zs}\t]*(?:19|20)\d{2}-\d{1,4}\b|\bCEQ[\p{Zs}\t]*(?:#|No\.|[Nn]umber)[\p{Zs}\t]*(?:19|20)\d{6}\b|\bT\.[\p{Zs}\t]?D\.[\p{Zs}\t]+(?:\d{2}-\d{1,3}|\d{4})\b|\b(?:Rev\.[\p{Zs}\t]?Rul\.|Rev\.[\p{Zs}\t]?Proc\.)[\p{Zs}\t]+(?:\d{2}|(?:19|20)\d{2})-\d{1,3}\b|\b(?:PLR|Priv\.[\p{Zs}\t]?Ltr\.[\p{Zs}\t]?Rul\.|Private[\p{Zs}\t]+Letter[\p{Zs}\t]+Ruling)[\p{Zs}\t]+(?:No\.[\p{Zs}\t]*)?(?:19|20)\d{7}\b'
+
+# A wildlife service's consultation number belongs to a project, no one's
+# identifier: "In Reply Refer To: AESO/SE 22410-2005-F-0506" (formal or
+# informal consultation, the office's code before it or not; #480).
+[[reference]]
+pattern = '\b(?:[A-Z]{2,6}/[A-Z]{2,4}[\p{Zs}\t]+)?\d{4,6}-(?:19|20)\d{2}-(?:F|I|TA|FC|IC)-\d{3,5}\b'
+
+# A filing's entry number in a court's running header is no identifier:
+# "15-49008-wsd Doc 19-1 Filed 06/12/15", "Document 12 Filed in TXSD"
+# (#480). The header's cue is required, a case number before it or a
+# "Filed" after it: an identity document's number in prose stays. A
+# bankruptcy case's number, its judge's initials after it, is the
+# header's too: the case at hand's after its label is CASE, and the
+# review gives the header the same; a policy's "12-34567" before "Doc 5"
+# stays.
+[[reference]]
+pattern = '(?:\b\d{2}-\d{5}-[a-z]{2,4}[\p{Zs}\t]+|(?P<lead>\b\d{2}-\d{5}[\p{Zs}\t]+))(?:Doc|Document)\.?[\p{Zs}\t]*#?[\p{Zs}\t]*\d{1,5}(?:-\d{1,3})?\b'
+
+# The same entry before the header's "Filed" or "Entered" ("Identity
+# Document 12345 Page 2" is no header).
+[[reference]]
+pattern = '\b(?:Doc|Document)\.?[\p{Zs}\t]*#?[\p{Zs}\t]*\d{1,5}(?:-\d{1,3})?(?P<tail>[\p{Zs}\t]+(?:Filed|Entered)\b)'
+
+# A court filing's running header is no identifier: "TXSD Page 7 of 8", a
+# page count with a federal district's code before it ("TXSD", "ILND",
+# "CACD") or not (#480). Any other capitalised word before it is no
+# court's: "DECLARATION OF HARROW Page 2 of 8" keeps "HARROW".
+[[reference]]
+pattern = '(?:\b[A-Z]{2}[NSEWMC]?D[\p{Zs}\t]+)?\b(?:Page|PAGE)[\p{Zs}\t]+\d{1,4}[\p{Zs}\t]+(?:of|OF)[\p{Zs}\t]+\d{1,4}\b'
+
+# A docket number cited as authority is part of its citation, no case
+# number of the case at hand (guide rule 5, #506 item 3, #480): after a
+# citation signal ("see 02 CV 3651", "cf. No. 03-21-00650-CV") or listed
+# after a citation's court and year ("(Tex. App. 2030), and
+# 1:31-cv-00999-ZZ"). Any other docket the model takes is CASE (the
+# shapes above).
+[[reference]]
+pattern = '(?P<lead>(?:\b(?:[Ss]ee(?:[\p{Zs}\t]+also)?|[Cc]f\.|[Aa]ccord|[Cc]iting|[Qq]uoting)|\([^()\n]{0,40}\b(?:19|20)\d{2}\)[,;]?[\p{Zs}\t]+(?:and|&|or))[\p{Zs}\t]+(?:Nos?\.[\p{Zs}\t]*)?)(?:\d{2}-\d{2}-\d{5}-C[VR]|\d:\d{2}-[a-z]{2,3}-\d{3,6}(?:-[A-Za-z]{1,4})*|\d{2}[\p{Zs}\t-](?:CV|Civ\.|CIV|cv)[\p{Zs}\t-]\d{3,6}|\d{2}-\d{5}-[a-z]{2,4})\b'
 
 # The record: transcript pages ("Tr. 435-36", "Tr. at 12:4-9"), docket
 # entries ("ECF Doc. #12-3", "ECF No. 45", "Dkt. 7"), footnotes ("n. 14",
