@@ -2,13 +2,17 @@ import XCTest
 @testable import mdoc
 
 /// The sidebar's navigation and its document commands (ADR 0102), over the
-/// fake core: a document, a section's page or Start in the main area;
+/// real core and the seeded library: a document, a section's page or Start in the main area;
 /// Rename and Move to case with Undo.
 @MainActor
 final class SidebarModelTests: XCTestCase {
+    private var seeded: Seeded!
+
     private func app() throws -> AppModel {
-        AppModel(
-            core: Fixture.core(), storage: try Fixture.temporaryStorage(),
+        let seeded = try Fixture.seeded()
+        self.seeded = seeded
+        return AppModel(
+            core: seeded.core, storage: seeded.storage,
             background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
             network: FakeNetwork(.wifi))
     }
@@ -18,7 +22,7 @@ final class SidebarModelTests: XCTestCase {
         app.open(.cases)
         XCTAssertEqual(app.section, .cases)
         app.showsSidebar = true
-        app.selection = Fixture.letter
+        app.selection = seeded.letter
         XCTAssertNil(app.section, "a document replaces the section's page")
         XCTAssertFalse(app.showsSidebar)
         app.showStart()
@@ -49,9 +53,9 @@ final class SidebarModelTests: XCTestCase {
     /// before (#676).
     func testTheDocumentsRowClearsACasesFilter() throws {
         let app = try app()
-        app.openCase(Fixture.harbour)
+        app.openCase(seeded.harbour)
         XCTAssertEqual(app.section, .documents)
-        XCTAssertEqual(app.home.caseFilter, Fixture.harbour)
+        XCTAssertEqual(app.home.caseFilter, seeded.harbour)
         app.open(.documents)
         XCTAssertNil(app.home.caseFilter)
         XCTAssertEqual(app.home.shownDocuments.count, app.home.documents.count)
@@ -62,11 +66,11 @@ final class SidebarModelTests: XCTestCase {
     func testMoveToANewCaseTrimsAndNumbersTheName() throws {
         let app = try app()
         let before = app.home.cases.count
-        app.move(Fixture.letter, to: .newCase(name: "   "))
+        app.move(seeded.letter, to: .newCase(name: "   "))
         XCTAssertEqual(app.home.cases.count, before, "a blank name makes no case")
         XCTAssertNil(app.toast)
-        app.move(Fixture.letter, to: .newCase(name: "  Harbour Street lease "))
-        let moved = try XCTUnwrap(app.home.documents.first { $0.id == Fixture.letter }?.caseID)
+        app.move(seeded.letter, to: .newCase(name: "  Harbour Street lease "))
+        let moved = try XCTUnwrap(app.home.documents.first { $0.id == seeded.letter }?.caseID)
         XCTAssertEqual(app.home.cases.first { $0.id == moved }?.name, "Harbour Street lease 2")
         XCTAssertEqual(app.home.cases.map(\.name).filter { $0 == "Harbour Street lease" }.count, 1)
     }
@@ -79,25 +83,25 @@ final class SidebarModelTests: XCTestCase {
 
     func testRenameShowsInTheList() throws {
         let app = try app()
-        app.rename(Fixture.letter, to: "Letter: before claim")
-        XCTAssertEqual(app.home.documents.first { $0.id == Fixture.letter }?.title, "Letter: before claim")
+        app.rename(seeded.letter, to: "Letter: before claim")
+        XCTAssertEqual(app.home.documents.first { $0.id == seeded.letter }?.title, "Letter: before claim")
         XCTAssertNil(app.home.errorMessage)
     }
 
     func testMoveOffersUndoThatMovesBack() throws {
         let app = try app()
-        let before = app.home.documents.first { $0.id == Fixture.letter }?.caseID
-        app.move(Fixture.letter, to: .existing(Fixture.harbour))
-        XCTAssertEqual(app.home.documents.first { $0.id == Fixture.letter }?.caseID, Fixture.harbour)
+        let before = app.home.documents.first { $0.id == seeded.letter }?.caseID
+        app.move(seeded.letter, to: .existing(seeded.harbour))
+        XCTAssertEqual(app.home.documents.first { $0.id == seeded.letter }?.caseID, seeded.harbour)
         let toast = try XCTUnwrap(app.toast)
         XCTAssertTrue(toast.text.contains("Moved to"))
         toast.action?()
-        XCTAssertEqual(app.home.documents.first { $0.id == Fixture.letter }?.caseID, before)
+        XCTAssertEqual(app.home.documents.first { $0.id == seeded.letter }?.caseID, before)
     }
 
     func testRecentCasesLeaveOutTheDocumentsOwn() throws {
         let app = try app()
-        let own = app.home.documents.first { $0.id == Fixture.letter }?.caseID
+        let own = app.home.documents.first { $0.id == seeded.letter }?.caseID
         XCTAssertFalse(app.recentCases(excluding: own).contains { $0.id == own })
         XCTAssertLessThanOrEqual(app.recentCases(excluding: own).count, 5)
     }

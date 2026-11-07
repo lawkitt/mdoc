@@ -35,8 +35,9 @@ final class TextOffsetsTests: XCTestCase {
 
 final class MarkdownStylerTests: XCTestCase {
     func testCandidatesBecomeCandidateLinksAtTheirRanges() throws {
-        let core = Fixture.core()
-        let snapshot = try core.library.session(for: Fixture.letter).snapshot()
+        let seeded = try Fixture.seeded()
+        let snapshot = try seeded.session(seeded.letter).snapshot()
+        XCTAssertFalse(snapshot.candidates.isEmpty)
         let text = MarkdownStyler(traits: UITraitCollection(), selected: nil).attributedText(for: snapshot)
         let offsets = TextOffsets(snapshot.markdown)
         for candidate in snapshot.candidates {
@@ -48,8 +49,8 @@ final class MarkdownStylerTests: XCTestCase {
     }
 
     func testMarkersAreDimmedInTheSource() throws {
-        let core = Fixture.core()
-        let snapshot = try core.library.session(for: Fixture.letter).snapshot()
+        let seeded = try Fixture.seeded()
+        let snapshot = try seeded.session(seeded.letter).snapshot()
         let text = MarkdownStyler(traits: UITraitCollection(), selected: nil, rendered: false).attributedText(for: snapshot)
         // The letter starts with "# ", a heading marker.
         let colour = text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor

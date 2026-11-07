@@ -127,10 +127,10 @@ synchronized group, so adding a file needs no project edit.
 | Folder | Target | What it holds |
 | --- | --- | --- |
 | `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's error |
-| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `FakeCore`, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
+| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
 | `mdoc/` | app | Home, the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
 | `RestoreExtension/` | Restore with mdoc | The share extension's entry point |
-| `mdocTests/`, `mdocUITests/` | tests | View models against `FakeCore`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
+| `mdocTests/`, `mdocUITests/` | tests | View models on the real core over temporary storage, with the fixtures and test doubles in `mdocTests/Support`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
 | `Config/` | — | Info.plist additions and entitlements |
 
 The app embeds `MdocFFI.framework` and `pdfium.framework`; the extension
@@ -149,9 +149,16 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 
 - **Rust owns state.** View models keep the snapshots the core returns and
   view state only; every change is a core call, and a document saves into
-  its case after each one. `CoreFactory` picks the core: `RealCore` in the
-  app and the extension, `FakeCore` (fictional fixtures, in memory) only in
-  the view-model tests.
+  its case after each one. `CoreFactory` opens `RealCore` for the app and
+  the extension.
+- **Tests run the real core** ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)):
+  over temporary storage with a fixed case key, below the detector floor so
+  no model is needed, the fixture's names proposed as Try a sample proposes
+  its own (`mdocTests/Support`). The only stand-ins are a fake `Setup` for
+  the download tests and `SlowJobs`, a real session whose long jobs wait
+  first, for the timing tests. Previews use the real core and the sample
+  document behind `#if DEBUG`; no fake or fixture ships in the app or the
+  extension.
 - **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
   offsets into the Markdown source; `TextOffsets` converts them for UIKit.
 - **The core recognizes Markdown.** `MarkdownStyling` asks the core for a

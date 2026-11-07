@@ -65,7 +65,7 @@ final class ScreenSnapshotTests: XCTestCase {
     /// Search stays while a query is typed, so it can be cleared even when
     /// the list shrinks below the threshold.
     func testSearchStaysWhileAQueryIsTyped() throws {
-        let home = HomeViewModel(library: Fixture.core().library)
+        let home = HomeViewModel(library: try Fixture.seeded().library)
         XCTAssertLessThan(home.documents.count, HomeViewModel.searchThreshold)
         XCTAssertFalse(home.offersSearch)
         home.query = "x"
@@ -100,10 +100,10 @@ final class ScreenSnapshotTests: XCTestCase {
         XCTAssertEqual(ModelDetailView.memoryText(7_900_000_000), "8 GB")
     }
 
-    func testHomeSearchAndCaseFilter() {
-        let home = HomeViewModel(library: Fixture.core().library)
+    func testHomeSearchAndCaseFilter() throws {
+        let home = HomeViewModel(library: try Fixture.seeded().library)
         XCTAssertEqual(home.shownDocuments.count, home.documents.count)
-        let first = try! XCTUnwrap(home.documents.first)
+        let first = try XCTUnwrap(home.documents.first)
         home.query = String(first.title.prefix(4))
         XCTAssertTrue(home.shownDocuments.contains(first))
         home.query = "zzzz-no-such-document"

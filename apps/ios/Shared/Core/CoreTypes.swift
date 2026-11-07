@@ -1,8 +1,7 @@
 import Foundation
 
 // Value types that cross the core boundary. They mirror the records and
-// enums `crates/mdoc-ffi` will export through UniFFI (ADR 0085), so the
-// real core can replace `FakeCore` without changing the views. Swift keeps
+// enums `crates/mdoc-ffi` exports through UniFFI (ADR 0085). Swift keeps
 // only these snapshots and its own view state; the core owns the rest.
 
 struct CaseID: Hashable, Sendable, Codable {

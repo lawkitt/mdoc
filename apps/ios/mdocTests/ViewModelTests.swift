@@ -3,30 +3,38 @@ import XCTest
 
 @MainActor
 final class DocumentViewModelTests: XCTestCase {
+    /// The seeded letter, or another of `Fixture.seeded()`'s documents.
     private func model(
-        _ id: DocumentID = Fixture.letter,
-        core: Core = Fixture.core(),
-        jobs: LongJobRunner? = nil,
+        _ pick: (Seeded) -> DocumentID = \.letter, memory: UInt64 = Fixture.belowFloor,
+        findsNames: Bool = true, slow seconds: Double? = nil
+    ) throws -> (DocumentViewModel, Seeded) {
+        let seeded = try Fixture.seeded(memory: memory)
+        return (try seeded.model(pick(seeded), findsNames: findsNames, slow: seconds), seeded)
+    }
+
+    /// A new document of its own case on a fresh core, not yet read.
+    private func imported(
+        _ source: (MdocStorage) throws -> ImportSource, title: String = "Note", memory: UInt64 = Fixture.belowFloor,
         findsNames: Bool = true
     ) throws -> DocumentViewModel {
-        DocumentViewModel(
-            session: try core.library.session(for: id),
-            jobs: jobs ?? LongJobRunner(background: NoBackgroundContinuation()),
-            storage: try Fixture.temporaryStorage(), findsNames: findsNames)
+        let (core, storage) = try Fixture.core(memory: memory)
+        let session = try core.library.importDocument(try source(storage), title: title, into: .newCase(name: title))
+        return DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage,
+            findsNames: findsNames)
     }
 
     /// Below the floor the document offers no Find names: it says why, and
     /// the hand-off is there for what the user marks (ADR 0088).
     func testBelowTheFloorTheNoteStandsWhereFindNamesWouldBe() async throws {
-        let core = Fixture.core(memory: 4 * Fixture.gigabyte)
-        let below = try model(Fixture.tenancy, core: core, findsNames: false)
+        let below = try imported({ _ in .text(Letters.quotation) }, findsNames: false)
         XCTAssertFalse(below.showsBelowFloorNote)
         await below.recognize()
         XCTAssertEqual(below.snapshot.phase, .unscanned)
         XCTAssertEqual(below.primaryAction, .handOff)
         XCTAssertTrue(below.showsBelowFloorNote)
 
-        let detector = try model(Fixture.tenancy, core: Fixture.core())
+        let detector = try imported({ _ in .text(Letters.quotation) }, memory: Fixture.detectorTier)
         await detector.recognize()
         XCTAssertEqual(detector.primaryAction, .findNames)
         XCTAssertFalse(detector.showsBelowFloorNote)
@@ -35,28 +43,24 @@ final class DocumentViewModelTests: XCTestCase {
     /// An interrupted import of a file that needs no recognition reads as
     /// an import, not as missing text recognition (ADR 0088).
     func testAStoppedDocxImportOffersFinishImport() async throws {
-        let core = Fixture.core()
-        let docx = try core.library.importDocument(
-            .file(URL(fileURLWithPath: "/tmp/contract.docx"), .docx), title: "Contract", into: .newCase(name: "Contract"))
-        let model = DocumentViewModel(
-            session: docx, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        let model = try imported(
+            { try .file(Fixture.copy("tests/fixtures/import/text.docx", into: $0), .docx) }, title: "Contract")
         XCTAssertTrue(model.importNotFinished)
         XCTAssertEqual(model.primaryAction, .finishImport)
         await model.recognize()
         XCTAssertFalse(model.importNotFinished)
         XCTAssertEqual(model.primaryAction, .findNames)
 
-        let page = URL(fileURLWithPath: "/tmp/page-1.jpg")
-        let scan = try core.library.importDocument(.scan([page]), title: "Scan", into: .newCase(name: "Scan"))
-        let scanModel = DocumentViewModel(
-            session: scan, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        let seeded = try Fixture.seeded()
+        let scanModel = try seeded.model(seeded.tenancy)
         XCTAssertFalse(scanModel.importNotFinished)
         XCTAssertEqual(scanModel.primaryAction, .recognize(resume: false))
     }
 
     func testPrimaryActionFollowsTheDocument() async throws {
-        let model = try model(Fixture.tenancy)
-        XCTAssertEqual(model.primaryAction, .recognize(resume: true))
+        // A PDF with a text layer reads without text recognition.
+        let model = try imported({ try .file(Letters.textPDF([Letters.letter], named: "letter", in: $0.url(.originals)), .pdf) })
+        XCTAssertEqual(model.primaryAction, .finishImport)
         await model.recognize()
         XCTAssertEqual(model.primaryAction, .findNames)
         await model.findNames()
@@ -69,7 +73,7 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testReviewBarDecisionUpdatesTheSnapshot() throws {
-        let model = try model()
+        let (model, _) = try model()
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.open(maya.id)
         XCTAssertEqual(model.reviewing, maya.id)
@@ -79,7 +83,7 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testReviewNextWrapsToTheFirstProposal() throws {
-        let model = try model()
+        let (model, _) = try model()
         let pending = model.snapshot.candidates.filter { $0.state == .proposed }.sorted { $0.range.start < $1.range.start }
         model.reviewNext()
         XCTAssertEqual(model.reviewing, pending.first?.id)
@@ -89,14 +93,18 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testIdentityDecisionCoversAllMentions() throws {
-        let model = try model()
-        let identity = try XCTUnwrap(model.snapshot.identities.first { $0.primaryWording == "Daniel Okafor" })
+        let (model, _) = try model()
+        let identity = try XCTUnwrap(model.snapshot.identities.first { $0.primaryWording == "Maya Ellison" })
+        XCTAssertGreaterThan(identity.mentionCount, 1)
         model.decide(identity: identity.id, .keep)
-        XCTAssertTrue(model.snapshot.mentions(of: identity.id).allSatisfy { $0.state == .kept })
+        let mentions = model.snapshot.mentions(of: identity.id)
+        XCTAssertEqual(mentions.count, identity.mentionCount)
+        XCTAssertTrue(mentions.allSatisfy { $0.state == .kept })
     }
 
     func testShareNeedsAFinishedReview() throws {
-        let model = try model()
+        let (model, _) = try model()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.share(asFile: false)
         XCTAssertNil(model.share)
         XCTAssertNotNil(model.errorMessage)
@@ -106,7 +114,7 @@ final class DocumentViewModelTests: XCTestCase {
         // The text travels with the document's title as the share preview.
         let item = try XCTUnwrap(model.share?.items.first as? TitledText)
         XCTAssertEqual(item.title, model.snapshot.title)
-        XCTAssertTrue(item.text.contains("PERSON_1"))
+        XCTAssertTrue(item.text.contains(maya.alias))
         XCTAssertFalse(item.text.contains("Maya Ellison"))
         // Save to Files gets the same text as a .md file.
         let file = try XCTUnwrap(item.file)
@@ -115,7 +123,7 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testShareAsFileWritesAMarkdownFileAndKeepsIt() throws {
-        let model = try model()
+        let (model, _) = try model()
         model.replaceAllPending()
         model.share(asFile: true)
         let items = try XCTUnwrap(model.share)
@@ -132,7 +140,7 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testCopyForAIConfirms() throws {
-        let model = try model()
+        let (model, _) = try model()
         model.replaceAllPending()
         var copied: String?
         model.copyForAI { copied = $0 }
@@ -141,23 +149,26 @@ final class DocumentViewModelTests: XCTestCase {
     }
 
     func testPastedReplyOpensRestored() throws {
-        let model = try model()
+        let (model, _) = try model()
         model.replaceAllPending()
+        let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" }?.alias)
+        let joinery = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Brightwater Joinery Ltd" }?.alias)
+        let reply = "\(maya) should hear from \(joinery) by Friday."
         model.showsReplySheet = true
-        model.restore(reply: "PERSON_1 should hear from ORG_1 by Friday.")
+        model.restore(reply: reply)
         XCTAssertFalse(model.showsReplySheet)
         XCTAssertEqual(model.pane, .reply)
         XCTAssertEqual(model.snapshot.reply?.restored.text, "Maya Ellison should hear from Brightwater Joinery Ltd by Friday.")
-        XCTAssertEqual(model.snapshot.reply?.aliasText, "PERSON_1 should hear from ORG_1 by Friday.")
+        XCTAssertEqual(model.snapshot.reply?.aliasText, reply)
         model.clearReply()
         XCTAssertNil(model.snapshot.reply)
         XCTAssertEqual(model.pane, .text)
     }
 
+    /// At the detector tier, Find names needs the name detector, which the
+    /// tests never download.
     func testMissingModelAsksForSetup() async throws {
-        let core = Fixture.core(modelsInstalled: false)
-        let model = try model(Fixture.quotation, core: core)
-        // The quotation is scanned already; scanning again needs the model.
+        let (model, _) = try model(\.quotation, memory: Fixture.detectorTier)
         await model.findNames()
         XCTAssertTrue(model.needsSetup)
         XCTAssertEqual(model.setupNeeds, .detector)
@@ -166,13 +177,14 @@ final class DocumentViewModelTests: XCTestCase {
     /// On iPad Home and the document are on screen together: the setup card
     /// shows once, in the document that asked for it.
     func testHomeLeavesTheSetupCardToTheDocumentThatAsked() async throws {
+        let seeded = try Fixture.seeded(memory: Fixture.detectorTier)
         let app = AppModel(
-            core: Fixture.core(modelsInstalled: false), storage: try Fixture.temporaryStorage(),
+            core: seeded.core, storage: seeded.storage,
             background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
             network: FakeNetwork(.wifi))
         XCTAssertTrue(app.setup.showsCard)
-        app.selection = Fixture.quotation
-        let document = try XCTUnwrap(app.documentModel(for: Fixture.quotation))
+        app.selection = seeded.quotation
+        let document = try XCTUnwrap(app.documentModel(for: seeded.quotation))
         XCTAssertFalse(app.openDocumentShowsSetup)
         await document.findNames()
         XCTAssertTrue(document.needsSetup)
@@ -181,63 +193,59 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertFalse(app.openDocumentShowsSetup)
     }
 
+    /// Below the floor the core's structured rules scan without a model.
     func testSetupThenScanBelowTheFloor() async throws {
-        let core = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte)
-        let model = try model(Fixture.tenancy, core: core)
+        let model = try imported({ _ in .text(Letters.letter) })
         await model.recognize()
         await model.findNames()
         XCTAssertFalse(model.needsSetup)
         XCTAssertNotEqual(model.snapshot.phase, .unscanned)
     }
 
-    func testMissingOCRSetsUpThenRecognizes() async throws {
-        let core = Fixture.core(modelsInstalled: false)
-        let model = try model(Fixture.tenancy, core: core)
+    /// A scan needs text recognition, and the document asks for it alone
+    /// (ADR 0090). `OCRResumeTests` downloads it and recognizes after setup.
+    func testMissingOCRAsksForTextRecognition() async throws {
+        let (model, _) = try model(\.tenancy, memory: Fixture.detectorTier)
         await model.recognize()
         XCTAssertTrue(model.needsSetup)
         XCTAssertEqual(model.waitingForSetup, .recognize)
         XCTAssertEqual(model.setupNeeds, .ocr)
         XCTAssertNil(model.errorMessage)
-        // Text recognition alone is enough to continue (ADR 0090).
-        for offer in core.setup.snapshot().offers where offer.purpose == .ocr {
-            for request in try core.setup.downloadRequests(for: offer.id) {
-                _ = try core.setup.install(request, from: URL(fileURLWithPath: "/dev/null"))
-            }
-        }
+        // Still without it, the job asks again rather than failing.
         await model.continueAfterSetup()
-        XCTAssertFalse(model.needsSetup)
-        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertEqual(model.waitingForSetup, .recognize)
+        XCTAssertNil(model.errorMessage)
     }
 
+    /// The core's import note (here, Word comments left out) shows once the
+    /// text is read.
     func testAnImportWarningShowsWithTheText() async throws {
-        let core = Fixture.core()
-        let session = try core.library.importDocument(
-            .file(URL(fileURLWithPath: "/tmp/statement.pdf"), .pdf), title: "Statement", into: .newCase(name: "Statement"))
-        let model = DocumentViewModel(
-            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        let model = try imported(
+            { try .file(Fixture.copy("tests/fixtures/import/handmade-hidden-content.docx", into: $0), .docx) },
+            title: "Lease")
         XCTAssertNil(model.snapshot.warning)
         await model.recognize()
-        XCTAssertEqual(model.snapshot.warning, FakeFixtures.importWarning)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+        XCTAssertEqual(model.snapshot.warning, "2 comments not imported.")
     }
 
+    /// A cancelled recognition ends the job and offers it again. Resume,
+    /// after OCR kept pages, is `ResumeDeleteTests`' and `OCRResumeTests`'.
     func testCancelledRecognitionCanResume() async throws {
-        let jobs = LongJobRunner(background: NoBackgroundContinuation())
-        let core = Fixture.core(timing: FakeCore.Timing(page: 5, scan: 0, install: 0))
-        let model = try model(Fixture.tenancy, core: core, jobs: jobs)
+        let (model, _) = try model(\.tenancy, slow: 30)
         let run = Task { await model.recognize() }
         while model.runningJob == nil { await Task.yield() }
         model.cancelJob()
         await run.value
         XCTAssertNil(model.runningJob)
-        XCTAssertEqual(model.primaryAction, .recognize(resume: true))
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.primaryAction, .recognize(resume: false))
     }
 
     /// While Find names runs on the document, review waits and says so: a
     /// change to the text would make the core throw the scan away.
     func testReviewWaitsWhileFindNamesRuns() async throws {
-        let jobs = LongJobRunner(background: NoBackgroundContinuation())
-        let core = Fixture.core(timing: FakeCore.Timing(page: 0, scan: 5, install: 0))
-        let model = try model(core: core, jobs: jobs)
+        let (model, _) = try model(slow: 30)
         let candidate = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
         let pending = model.snapshot.pendingCount
         let run = Task { await model.findNames() }
@@ -265,30 +273,32 @@ final class DocumentViewModelTests: XCTestCase {
 
 @MainActor
 final class HomeViewModelTests: XCTestCase {
-    func testDocumentsAreNewestFirstWithTheirCase() {
-        let home = HomeViewModel(library: Fixture.core().library)
+    func testDocumentsAreNewestFirstWithTheirCase() throws {
+        let seeded = try Fixture.seeded()
+        let home = HomeViewModel(library: seeded.library)
         let documents = home.documents
-        XCTAssertEqual(Set(documents.map(\.id)), [Fixture.letter, Fixture.quotation, Fixture.tenancy])
+        XCTAssertEqual(Set(documents.map(\.id)), [seeded.letter, seeded.quotation, seeded.tenancy])
         XCTAssertEqual(documents.map(\.updated), documents.map(\.updated).sorted(by: >))
-        let tenancy = try? XCTUnwrap(documents.first { $0.id == Fixture.tenancy })
-        XCTAssertEqual(tenancy.flatMap(home.caseSummary(of:))?.id, Fixture.harbour)
-        let letter = try? XCTUnwrap(documents.first { $0.id == Fixture.letter })
-        XCTAssertEqual(letter.flatMap(home.caseSummary(of:))?.id, Fixture.ellison)
+        let tenancy = try XCTUnwrap(documents.first { $0.id == seeded.tenancy })
+        XCTAssertEqual(home.caseSummary(of: tenancy)?.id, seeded.harbour)
+        let letter = try XCTUnwrap(documents.first { $0.id == seeded.letter })
+        XCTAssertEqual(home.caseSummary(of: letter)?.id, seeded.ellison)
     }
 
     func testImportIntoAnExistingCase() throws {
-        let home = HomeViewModel(library: Fixture.core().library)
+        let seeded = try Fixture.seeded()
+        let home = HomeViewModel(library: seeded.library)
         let pending = PendingImport(source: .text("Maya Ellison phoned."), suggestedTitle: "Call note")
         home.pendingImport = pending
-        let session = try XCTUnwrap(home.importDocument(pending, title: " ", into: .existing(Fixture.harbour)))
+        let session = try XCTUnwrap(home.importDocument(pending, title: " ", into: .existing(seeded.harbour)))
         XCTAssertNil(home.pendingImport)
         XCTAssertEqual(session.snapshot().title, "Call note")
-        XCTAssertEqual(session.snapshot().caseID, Fixture.harbour)
-        XCTAssertEqual(home.documents.filter { $0.caseID == Fixture.harbour }.count, 2)
+        XCTAssertEqual(session.snapshot().caseID, seeded.harbour)
+        XCTAssertEqual(home.documents.filter { $0.caseID == seeded.harbour }.count, 2)
     }
 
     func testImportStartsANewCaseByDefault() throws {
-        let home = HomeViewModel(library: Fixture.core().library)
+        let home = HomeViewModel(library: try Fixture.seeded().library)
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
         _ = home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
         XCTAssertEqual(home.cases.count, 3)
@@ -299,7 +309,7 @@ final class HomeViewModelTests: XCTestCase {
     /// A new case never takes a name a case already has: the case pickers
     /// could not tell the two apart.
     func testANewCaseOfATakenNameIsNumbered() throws {
-        let home = HomeViewModel(library: Fixture.core().library)
+        let home = HomeViewModel(library: try Fixture.seeded().library)
         let taken = try XCTUnwrap(home.cases.first?.name)
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
         _ = home.importDocument(pending, title: "Note", into: .newCase(name: taken))
@@ -316,7 +326,7 @@ final class HomeViewModelTests: XCTestCase {
     /// A scan that found nothing says so on Home (ADR 0087).
     func testStatusSaysWhenNothingWasFound() {
         var document = DocumentSummary(
-            id: Fixture.letter, title: "Letter", caseID: nil, kind: .text, phase: .ready,
+            id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .ready,
             pendingCount: 0, updated: .now, candidateCount: 0)
         XCTAssertEqual(HomeViewModel.status(of: document), "Nothing found")
         document.candidateCount = 3
@@ -327,7 +337,7 @@ final class HomeViewModelTests: XCTestCase {
     /// recognition wording (ADR 0088).
     func testStatusSaysWhenAnImportIsNotFinished() {
         var document = DocumentSummary(
-            id: Fixture.quotation, title: "Quotation", caseID: nil, kind: .docx, phase: .recognizing,
+            id: DocumentID(rawValue: "quotation"), title: "Quotation", caseID: nil, kind: .docx, phase: .recognizing,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(HomeViewModel.status(of: document), "Import not finished")
         document.kind = .pdf
@@ -340,44 +350,58 @@ final class HomeViewModelTests: XCTestCase {
 
     func testBelowTheFloorNothingWaitsForFindNames() {
         let document = DocumentSummary(
-            id: Fixture.letter, title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
+            id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(HomeViewModel.status(of: document), "Ready to find names")
         XCTAssertEqual(HomeViewModel.status(of: document, findsNames: false), "Ready to mark names")
     }
 
-    func testDeleteRemovesTheDocument() {
-        let home = HomeViewModel(library: Fixture.core().library)
-        home.delete(Fixture.tenancy)
-        XCTAssertFalse(home.documents.contains { $0.caseID == Fixture.harbour })
+    func testDeleteRemovesTheDocument() throws {
+        let seeded = try Fixture.seeded()
+        let home = HomeViewModel(library: seeded.library)
+        home.delete(seeded.tenancy)
+        XCTAssertFalse(home.documents.contains { $0.caseID == seeded.harbour })
     }
 }
 
 @MainActor
 final class RestoreViewModelTests: XCTestCase {
+    /// The seeded library, and the alias the shared quotation gave Maya Ellison.
+    private func seeded() throws -> (Seeded, String) {
+        let seeded = try Fixture.seeded()
+        let quotation = try seeded.session(seeded.quotation).snapshot()
+        let alias = try XCTUnwrap(quotation.candidates.first { $0.original == "Maya Ellison" }?.alias)
+        return (seeded, alias)
+    }
+
     func testDefaultsToTheCaseSharedLast() throws {
-        let model = RestoreViewModel(library: Fixture.core().library, reply: "PERSON_1 agrees.")
-        XCTAssertEqual(model.selectedCase, Fixture.ellison)
+        let (seeded, alias) = try seeded()
+        let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
+        XCTAssertEqual(model.selectedCase, seeded.ellison)
         XCTAssertEqual(model.result?.text, "Maya Ellison agrees.")
-        XCTAssertEqual(model.defaultSaveTarget?.id, Fixture.quotation)
+        // Save to document's default: the case's most recently changed one.
+        XCTAssertEqual(Set(model.documentsInCase.map(\.id)), [seeded.letter, seeded.quotation])
+        XCTAssertEqual(model.documentsInCase.map(\.updated), model.documentsInCase.map(\.updated).sorted(by: >))
+        XCTAssertEqual(model.defaultSaveTarget?.id, model.documentsInCase.first?.id)
     }
 
     func testPickingAnotherCaseRestoresWithItsNamesOnly() throws {
-        let model = RestoreViewModel(library: Fixture.core().library, reply: "PERSON_1 agrees.")
-        model.selectCase(Fixture.harbour)
-        XCTAssertEqual(model.selectedCase, Fixture.harbour)
-        XCTAssertEqual(model.result?.text, "PERSON_1 agrees.")
+        let (seeded, alias) = try seeded()
+        let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
+        model.selectCase(seeded.harbour)
+        XCTAssertEqual(model.selectedCase, seeded.harbour)
+        XCTAssertEqual(model.result?.text, "\(alias) agrees.")
         XCTAssertEqual(model.result?.unresolvedCount, 1)
-        XCTAssertEqual(model.documentsInCase.map(\.id), [Fixture.tenancy])
+        XCTAssertEqual(model.documentsInCase.map(\.id), [seeded.tenancy])
     }
 
     func testSaveKeepsTheReplyInAliasForm() throws {
-        let core = Fixture.core()
-        let model = RestoreViewModel(library: core.library, reply: "PERSON_1 agrees.")
-        model.save(to: Fixture.quotation)
-        XCTAssertEqual(model.savedTo, Fixture.quotation)
-        let reply = try core.library.session(for: Fixture.quotation).snapshot().reply
-        XCTAssertEqual(reply?.aliasText, "PERSON_1 agrees.")
+        let (seeded, alias) = try seeded()
+        let model = RestoreViewModel(library: seeded.library, reply: "\(alias) agrees.")
+        model.save(to: seeded.quotation)
+        XCTAssertEqual(model.savedTo, seeded.quotation)
+        let reply = try seeded.session(seeded.quotation).snapshot().reply
+        XCTAssertEqual(reply?.aliasText, "\(alias) agrees.")
         XCTAssertEqual(reply?.restored.text, "Maya Ellison agrees.")
     }
 

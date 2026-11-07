@@ -1,8 +1,8 @@
 import Foundation
 
-/// The one place that picks the core: the Rust core through `MdocFFI` for
-/// the app and the extension; `FakeCore` only for previews and view-model
-/// tests.
+/// The one place that opens the core for the app and the extension: the
+/// Rust core through `MdocFFI`, over the App Group's library or, for UI
+/// tests, a fresh one of their own.
 enum CoreFactory {
     /// Launch argument for UI tests: a separate, fresh storage root and case
     /// key, and a device below the detector floor, so no model is needed;

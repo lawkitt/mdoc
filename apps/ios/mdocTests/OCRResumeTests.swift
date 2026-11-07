@@ -16,7 +16,7 @@ final class OCRResumeTests: XCTestCase {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_OCR_TESTS"] == "1", "OCR tests not requested")
         storage = try Fixture.temporaryStorage()
         core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: 4 * Fixture.gigabyte)
-        try await installOCR()
+        try await Self.installOCR(into: core)
     }
 
     override func tearDown() {
@@ -58,6 +58,28 @@ final class OCRResumeTests: XCTestCase {
         XCTAssertGreaterThan(keptPages(), 0)
         try core.library.deleteDocument(stopped.id)
         XCTAssertEqual(keptPages(), 0)
+    }
+
+    /// A scan asks for text recognition alone, and recognizes once it is in,
+    /// with the name detector still missing (ADR 0090).
+    @MainActor
+    func testMissingOCRSetsUpThenRecognizes() async throws {
+        let fresh = try Fixture.temporaryStorage()
+        defer { try? FileManager.default.removeItem(at: fresh.root) }
+        let without = try RealCore.make(storage: fresh, keys: FixedCaseKeyStore(), physicalMemory: Fixture.detectorTier)
+        let session = try without.library.importDocument(.scan(try pages("setup")), title: "Setup", into: .newCase(name: "Setup"))
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: fresh)
+        await model.recognize()
+        XCTAssertTrue(model.needsSetup)
+        XCTAssertEqual(model.waitingForSetup, .recognize)
+        XCTAssertEqual(model.setupNeeds, .ocr)
+        XCTAssertNil(model.errorMessage)
+        try await Self.installOCR(into: without)
+        await model.continueAfterSetup()
+        XCTAssertFalse(model.needsSetup)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
     }
 
     // MARK: Support
@@ -122,7 +144,7 @@ final class OCRResumeTests: XCTestCase {
     }
 
     /// Downloads the OCR model's files and has the core verify and install them.
-    private func installOCR() async throws {
+    private static func installOCR(into core: Core) async throws {
         let setup = try XCTUnwrap(core.setup as? RealSetup)
         for request in try setup.downloadRequests(for: "ocr-english-russian") {
             let (file, response) = try await URLSession.shared.download(from: request.url)

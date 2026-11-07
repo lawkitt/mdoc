@@ -1,28 +1,54 @@
 import SwiftUI
 
-/// Data for `#Preview`s (ADR 0099): the fake core with models installed and
-/// no delays, and the sample document. Previews show every component and
-/// screen state without walking the journey in the Simulator. Not behind
-/// `#if DEBUG`: previews compile in Release too, so an archive needs these.
+/// Data for `#Preview`s (ADR 0099): the sample document, and the real core
+/// over a temporary library holding it, its names proposed as Try a sample
+/// proposes them. Previews show every component and screen state without
+/// walking the journey in the Simulator. The sample is not behind
+/// `#if DEBUG`, since previews of components compile in Release too; the
+/// core and app model are, as only `#if DEBUG` previews use them and the
+/// fixed case key they open the library with ships in no Release build.
 @MainActor
 enum PreviewFixtures {
     static let sample = SampleDocument.english
     static let russianSample = SampleDocument.russian
 
-    /// A fresh fake core: the seeded cases, the letter to review, models
-    /// installed.
-    static func core() -> Core {
-        FakeCore.make(FakeCore.Options(timing: .instant, modelsInstalled: true))
+    #if DEBUG
+    /// A fresh library on the real core, with the sample to review. A
+    /// device below the detector floor, so no model is needed.
+    static func core() -> (Core, MdocStorage) {
+        let storage = MdocStorage(
+            root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-preview-\(UUID().uuidString)"))
+        do {
+            try storage.prepare()
+            let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: CoreFactory.belowFloorMemory)
+            let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
+            _ = try session.recognize(observer: PreviewObserver())
+            _ = try session.propose(sample.names)
+            return (core, storage)
+        } catch {
+            return (Core(library: UnavailableLibrary(), setup: UnavailableSetup()), storage)
+        }
     }
 
-    /// The app model over the fake core, for screen previews.
+    /// The app model over the real core, for screen previews.
     static func app() -> AppModel {
-        AppModel(
-            core: core(), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-preview")),
+        let (core, storage) = core()
+        return AppModel(
+            core: core, storage: storage,
             background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
             network: NetworkMonitor(), defaults: UserDefaults(suiteName: "mdoc-preview") ?? .standard)
     }
+    #endif
 }
+
+#if DEBUG
+/// A preview's import: nothing to report, never cancelled.
+private final class PreviewObserver: JobObserver, @unchecked Sendable {
+    func progress(_ update: JobUpdate) {}
+    func isCancelled() -> Bool { false }
+    func onCancel(_ handler: @escaping @Sendable () -> Void) {}
+}
+#endif
 
 /// Shows `content` in the preview matrix ADR 0099 asks for: light, dark,
 /// AX5, and an iPad-wide frame.

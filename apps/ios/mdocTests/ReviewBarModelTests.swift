@@ -3,13 +3,12 @@ import XCTest
 
 /// The review bar's model (ADR 0098): stepping in document order, moving on
 /// after a decision, All reviewed, undo moving the bar back, focus and the
-/// identity tools, over the fake core.
+/// identity tools, over the real core and the seeded letter.
 @MainActor
 final class ReviewBarModelTests: XCTestCase {
     private func model() throws -> DocumentViewModel {
-        let core = Fixture.core()
-        let session = try core.library.session(for: Fixture.letter)
-        return DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let seeded = try Fixture.seeded()
+        return try seeded.model(seeded.letter)
     }
 
     func testBeginReviewOpensTheFirstProposalInDocumentOrder() throws {
@@ -246,11 +245,10 @@ final class ReviewBarModelTests: XCTestCase {
     /// change in one document, the window's undo in another never reaches
     /// it, and back in the first its step undoes again.
     func testSwitchingDocumentsNeverUndoesTheOthersStep() throws {
-        let core = Fixture.core()
+        let seeded = try Fixture.seeded()
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
-        let storage = MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        let letter = DocumentViewModel(session: try core.library.session(for: Fixture.letter), jobs: jobs, storage: storage)
-        let other = DocumentViewModel(session: try core.library.session(for: Fixture.quotation), jobs: jobs, storage: storage)
+        let letter = try seeded.model(seeded.letter, jobs: jobs)
+        let other = try seeded.model(seeded.quotation, jobs: jobs)
         let window = UndoManager()
         window.groupsByEvent = false
         let letterScreen = UUID(), otherScreen = UUID()
@@ -305,11 +303,11 @@ final class ReviewBarModelTests: XCTestCase {
 
     /// Find's previews cut on characters, never inside a letter (#679).
     func testFindPreviewsCutOnCharacters() throws {
-        let core = Fixture.core()
+        let (core, storage) = try Fixture.core()
         let text = String(repeating: "а", count: 60) + " Иван " + String(repeating: "б", count: 60)
         let session = try core.library.importDocument(.text(text), title: "Письмо", into: .newCase(name: "Петров"))
         _ = try session.recognize(observer: TestObserver())
-        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
         let match = try XCTUnwrap(model.matches(of: "Иван").first)
         let bytes = Array(model.snapshot.markdown.utf8)
         XCTAssertEqual(bytes[match.start - 50] & 0xC0, 0x80, "50 bytes back is inside a letter")
