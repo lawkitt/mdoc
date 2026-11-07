@@ -210,13 +210,10 @@ struct MarkdownStyler {
                 attributes[.underlineStyle] = NSUnderlineStyle.single.union(.patternDot).rawValue
                 attributes[.underlineColor] = UIColor.secondaryLabel
             }
-            if candidate.id == selected {
-                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected)
-            } else if scoped.contains(candidate.id) {
-                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected * 0.45)
-                attributes[.underlineStyle] = NSUnderlineStyle.thick.rawValue
-                attributes[.underlineColor] = colour
-            }
+            let decoration = Self.decoration(
+                of: candidate, selected: candidate.id == selected, scoped: scoped.contains(candidate.id),
+                dark: traits.userInterfaceStyle == .dark)
+            attributes.merge(decoration) { _, decorated in decorated }
             text.addAttributes(attributes, range: range)
         }
         extra?(text)
@@ -227,6 +224,30 @@ struct MarkdownStyler {
         let tables = width.map { layout.tables(width: $0) } ?? []
         layout.apply(tables: tables)
         return RenderedDocument(text: text, tables: tables)
+    }
+
+    /// The keys `decoration` may set: what a selection or scope change
+    /// recolours in place (`MarkdownTextView`).
+    static let decorationKeys: [NSAttributedString.Key] = [.backgroundColor, .underlineStyle, .underlineColor]
+
+    /// What the review bar adds to a candidate over its state's look: the
+    /// one under review filled stronger, the other mentions its scope
+    /// reaches filled lighter with a thick underline (ADR 0098). Empty for
+    /// any other candidate.
+    static func decoration(of candidate: Candidate, selected: Bool, scoped: Bool, dark: Bool) -> [NSAttributedString.Key: Any] {
+        let colour = candidate.category.uiColor
+        let fill = fill(dark: dark)
+        if selected {
+            return [.backgroundColor: colour.withAlphaComponent(fill.selected)]
+        }
+        if scoped {
+            return [
+                .backgroundColor: colour.withAlphaComponent(fill.selected * 0.45),
+                .underlineStyle: NSUnderlineStyle.thick.rawValue,
+                .underlineColor: colour,
+            ]
+        }
+        return [:]
     }
 
     /// What VoiceOver adds after a candidate's words.

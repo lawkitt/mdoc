@@ -155,13 +155,9 @@ struct DocumentScreen: View {
                         .background(Color.orange.opacity(0.15))
                         .accessibilityIdentifier("import-warning")
                 }
-                markdownText
+                markdownTextView
             }
         }
-    }
-
-    private var markdownText: some View {
-        markdownTextView
     }
 
     private var markdownTextView: some View {
@@ -169,14 +165,14 @@ struct DocumentScreen: View {
             snapshot: model.snapshot,
             selected: model.reviewing,
             scoped: model.scopedMentions,
-            revealRequest: model.revealRequest,
-            revealRange: model.revealRange,
+            reveal: model.review.reveal,
             rendered: !preferences.showsSource,
             serif: preferences.serif,
             onCandidate: { model.open($0) },
             onReplace: { model.markSelection($0) },
             onReviewNext: { model.reviewNext() },
-            menu: { id in candidateMenu(id) })
+            onMenu: { model.menuOpened(on: $0) },
+            menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } })
         .ignoresSafeArea(.container, edges: .bottom)
     }
 
@@ -207,66 +203,6 @@ struct DocumentScreen: View {
                 }
             }
         }
-    }
-
-    /// A long press on a name (ADR 0098): what its state allows, under a
-    /// header with the name and its alias. Each action puts the bar on it.
-    private func candidateMenu(_ id: CandidateID) -> UIMenu? {
-        guard let candidate = model.snapshot.candidate(id) else { return nil }
-        // The long press was found: its hint isn't needed.
-        model.learn(.longPress)
-        func act(_ scope: Scope = .all, _ body: @escaping () -> Void) -> () -> Void {
-            { model.select(id); model.reviewScope = scope; body() }
-        }
-        func action(_ title: String, _ image: String, attributes: UIMenuElement.Attributes = [], _ run: @escaping () -> Void) -> UIAction {
-            UIAction(title: title, image: UIImage(systemName: image), attributes: attributes) { _ in run() }
-        }
-        let categories = UIMenu(
-            title: String(localized: "Change category"), image: UIImage(systemName: "tag"),
-            children: Category.allCases.filter { $0 != candidate.category }.map { category in
-                action(category.label, category.symbol, act { model.setCategory(category) })
-            })
-        let found = model.sameAsTargets(for: candidate)
-        let targets = found.all
-        func targetActions(_ identities: [Identity]) -> [UIMenuElement] {
-            identities.map { target in
-                action("\(target.primaryWording) · \(target.alias)", target.category.symbol, act { model.sameAs(target.id) })
-            }
-        }
-        // The same order as the card's picker; past 8, its searchable sheet.
-        let sameAs: UIMenuElement = targets.count > 8
-            ? action(String(localized: "Same as…"), "link", act { sameAsCandidate = id })
-            : UIMenu(title: String(localized: "Same as…"), image: UIImage(systemName: "link"), children: [
-                UIMenu(title: String(localized: "Looks like"), options: .displayInline, children: targetActions(found.hinted)),
-                UIMenu(options: .displayInline, children: targetActions(found.sameCategory)),
-                UIMenu(title: String(localized: "Other categories"), children: targetActions(found.otherCategories)),
-            ].filter { !$0.children.isEmpty })
-        var children: [UIMenuElement] = []
-        switch candidate.state {
-        case .proposed:
-            children = [
-                action(String(localized: "Replace"), "eye.slash", act { model.decideCurrent(.replace) }),
-                action(String(localized: "Keep"), "eye", act { model.decideCurrent(.keep) }),
-                action(String(localized: "Just this one"), "1.circle", act(.this) { model.decideCurrent(.replace) }),
-            ]
-            if !targets.isEmpty { children.append(sameAs) }
-            children.append(categories)
-        case .replaced:
-            children = [
-                action(String(localized: "Show original"), "text.quote") {
-                    model.toast = ToastMessage(text: String(localized: "Original: \(candidate.original)"))
-                },
-                action(String(localized: "Keep instead"), "eye", act { model.decideCurrent(.keep) }),
-            ]
-            if !targets.isEmpty { children.append(sameAs) }
-            children.append(categories)
-        case .kept:
-            children = [
-                action(String(localized: "Replace instead"), "eye.slash", act { model.decideCurrent(.replace) }),
-                categories,
-            ]
-        }
-        return UIMenu(title: "\(candidate.original) → \(candidate.alias)", children: children)
     }
 
     /// What the picker switches between: a pane, or Identities in iPad's
@@ -403,7 +339,7 @@ struct DocumentScreen: View {
     @ViewBuilder
     private var bottomBar: some View {
         if model.isReviewing && model.runningJob == nil {
-            ReviewBar(model: model, detailsHeight: max(160, screenHeight * 0.6 - 190))
+            ReviewBar(model: model, detailsHeight: ReviewBarMetrics.detailsHeight(screen: screenHeight))
         } else {
             actionBottomBar
         }
@@ -421,15 +357,6 @@ struct DocumentScreen: View {
                     .padding(.vertical, 6)
                     .background(.thinMaterial, in: Capsule())
                     .accessibilityIdentifier("notice")
-                    .task(id: notice) {
-                        UIAccessibility.post(notification: .announcement, argument: notice)
-                        // Long enough to read: two seconds, more for a sentence.
-                        // A newer notice cancels this wait and must stay.
-                        do {
-                            try await Task.sleep(for: .seconds(min(4, max(2, Double(notice.count) / 12))))
-                            model.clearNotice()
-                        } catch {}
-                    }
             }
             if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
                 // The card's download, of the model this job needs, is the
@@ -452,342 +379,5 @@ struct DocumentScreen: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-}
-
-/// "Recognition stopped when mdoc left the screen."
-private struct InterruptionBanner: View {
-    let kind: JobKind
-    /// The stopped job read a file that needs no recognition.
-    let isImport: Bool
-    let resume: () -> Void
-
-    var body: some View {
-        HStack {
-            // OCR keeps its finished pages and resumes; the scan reruns.
-            Text(message)
-                .font(.footnote)
-            Spacer()
-            Button(button, action: resume)
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("interruption-resume")
-        }
-    }
-
-    private var message: LocalizedStringKey {
-        switch kind {
-        case .recognize where isImport: "The import stopped when mdoc left the screen."
-        case .recognize: "Recognition stopped when mdoc left the screen. Finished pages are kept."
-        case .scan, .install: "Finding names stopped when mdoc left the screen."
-        }
-    }
-
-    private var button: LocalizedStringKey {
-        switch kind {
-        case .recognize where isImport: "Finish import"
-        case .recognize: "Resume"
-        case .scan, .install: "Start again"
-        }
-    }
-}
-
-/// Below the detector floor, where Find names would be (ADR 0088).
-private struct BelowFloorNote: View {
-    var body: some View {
-        Label(BelowFloor.note, systemImage: "info.circle")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("below-floor-note")
-    }
-}
-
-/// The primary action, as on desktop: Recognize, Find names, running with
-/// Cancel, Replace N, then Share, Copy and Paste (a reply).
-private struct ActionBar: View {
-    @Bindable var model: DocumentViewModel
-
-    var body: some View {
-        switch model.primaryAction {
-        case .recognize(let resume):
-            primary(resume ? "Resume recognition" : "Recognize text", systemImage: "text.viewfinder") {
-                Task { await model.recognize() }
-            }
-        case .finishImport:
-            primary("Finish import", systemImage: "doc.badge.arrow.up") {
-                Task { await model.recognize() }
-            }
-        case .findNames:
-            primary("Find names", systemImage: "text.magnifyingglass") {
-                Task { await model.findNames() }
-            }
-        case .running(let kind, let progress):
-            HStack(spacing: 12) {
-                Group {
-                    // The core reports stages; a fraction only when it knows one.
-                    if let fraction = progress?.fraction {
-                        ProgressView(value: fraction) {
-                            Text(Self.progressLabel(kind, progress))
-                                .font(.footnote)
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text(Self.progressLabel(kind, progress))
-                                .font(.footnote)
-                            Spacer(minLength: 0)
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
-                }
-                .accessibilityIdentifier("job-progress")
-                Button("Cancel", role: .cancel) {
-                    model.cancelJob()
-                }
-                .buttonStyle(.bordered)
-            }
-        case .waiting:
-            Text("Waiting for another document to finish.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-        case .replaceAll(let count):
-            layout {
-                Button {
-                    model.beginReview()
-                } label: {
-                    Label("Review", systemImage: "list.bullet.rectangle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                primary("Replace \(count)", systemImage: "eye.slash") {
-                    model.replaceAllPending()
-                }
-                .accessibilityLabel(Text("Replace all \(count) proposals"))
-                .accessibilityHint(Text("Each gets its alias. You can still keep any of them."))
-            }
-        case .handOff where model.pane == .reply && model.snapshot.reply != nil:
-            // On the Reply tab the bar acts on the reply (ADR 0087). Short
-            // labels keep three buttons in one row on a phone; VoiceOver
-            // says what each acts on.
-            layout {
-                Button {
-                    model.shareReply()
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel(Text("Share reply"))
-                .accessibilityIdentifier("share-reply")
-                Button {
-                    model.copyReply { RestoredPasteboard.copy($0) }
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel(Text("Copy reply"))
-                .accessibilityIdentifier("copy-reply")
-                pasteReply(accessibilityLabel: "Paste another reply")
-            }
-        case .handOff:
-            VStack(spacing: Space.xs) {
-                if !model.snapshot.candidates.isEmpty {
-                    AllReviewedLine(candidates: model.snapshot.candidates)
-                }
-                handOffButtons
-            }
-        }
-    }
-
-    /// Share, Copy and Paste once every name is decided.
-    private var handOffButtons: some View {
-            layout {
-                // One tap shares the text; the file is a long press away.
-                Button {
-                    model.share(asFile: false)
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .contextMenu {
-                    Button {
-                        model.share(asFile: true)
-                    } label: {
-                        Label("Share as Markdown file", systemImage: "doc")
-                    }
-                }
-                .accessibilityAction(named: Text("Share as Markdown file")) {
-                    model.share(asFile: true)
-                }
-                .accessibilityIdentifier("primary-action")
-                Button {
-                    model.copyForAI { UIPasteboard.general.string = $0 }
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityHint(Text("Copies the text for an AI app, with the note about placeholders."))
-                .accessibilityIdentifier("copy-for-ai")
-                pasteReply(accessibilityLabel: "Paste reply")
-            }
-    }
-
-    /// Paste, which opens the reply sheet.
-    private func pasteReply(accessibilityLabel: LocalizedStringKey) -> some View {
-        Button {
-            model.showsReplySheet = true
-        } label: {
-            Label("Paste", systemImage: "arrow.uturn.backward")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel(Text(accessibilityLabel))
-        .accessibilityIdentifier("paste-reply")
-    }
-
-    /// The buttons side by side when every label fits on one line, stacked
-    /// otherwise: a label never wraps inside its button (ADR 0087). Like the
-    /// system's own bars, the bar's text stops growing at the second
-    /// accessibility size, where the primary button keeps a row and the
-    /// others share one, so the text keeps most of the screen; a long press
-    /// shows a label in the large content viewer.
-    private func layout<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ButtonRow {
-            Group { content() }
-                .accessibilityShowsLargeContentViewer()
-        }
-        .lineLimit(1)
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-    }
-
-    private func primary(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("primary-action")
-    }
-
-    static func progressLabel(_ kind: JobKind, _ progress: JobUpdate?) -> String {
-        if let page = progress?.page, let count = progress?.pageCount, count > 0 {
-            return String(localized: "Recognizing page \(min(page + 1, count)) of \(count)")
-        }
-        switch progress?.stage {
-        case .reading: return String(localized: "Reading the file")
-        case .converting: return String(localized: "Converting")
-        case .recognizing: return String(localized: "Recognizing text")
-        case .scanning: return String(localized: "Finding names")
-        case nil:
-            switch kind {
-            case .recognize: return String(localized: "Reading the file")
-            case .scan: return String(localized: "Finding names")
-            case .install: return String(localized: "Installing")
-            }
-        }
-    }
-}
-
-/// Above Share once review is done: "All 15 reviewed", with how many were
-/// replaced and kept, so the moment reads as finished.
-struct AllReviewedLine: View {
-    let candidates: [Candidate]
-
-    var body: some View {
-        let replaced = candidates.filter { $0.state == .replaced }.count
-        let kept = candidates.filter { $0.state == .kept }.count
-        let pill = StatusPill(Text("All \(candidates.count) reviewed"), systemImage: "checkmark.seal.fill", kind: .ready)
-        let counts = Text("\(replaced) replaced · \(kept) kept")
-            .font(Typography.caption)
-            .foregroundStyle(.secondary)
-        // One line when it fits, else two: nothing truncates.
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Space.xs) {
-                pill
-                counts
-                Spacer(minLength: 0)
-            }
-            .lineLimit(1)
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                pill
-                counts
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("all-reviewed")
-    }
-}
-
-/// Buttons of equal width in a row when the widest label fits its share.
-/// Otherwise the first button (the primary one) takes a row of its own and
-/// the rest share the next when they fit, else every button takes a row: a
-/// label never wraps or truncates (ADR 0087).
-struct ButtonRow: Layout {
-    var spacing: CGFloat = 8
-    /// One button a row, always.
-    var forceColumn = false
-
-    /// The rows: how many buttons each holds, first row first.
-    private func rows(_ width: CGFloat?, _ subviews: Subviews) -> [Int] {
-        let count = subviews.count
-        guard count > 1 else { return count == 1 ? [1] : [] }
-        if forceColumn { return Array(repeating: 1, count: count) }
-        let widths = subviews.map { $0.sizeThatFits(.unspecified).width }
-        guard let width else { return [count] }
-        if fits(widths, in: width) { return [count] }
-        if count > 2, fits(Array(widths.dropFirst()), in: width) { return [1, count - 1] }
-        return Array(repeating: 1, count: count)
-    }
-
-    private func fits(_ widths: [CGFloat], in width: CGFloat) -> Bool {
-        let share = (width - spacing * CGFloat(widths.count - 1)) / CGFloat(widths.count)
-        return (widths.max() ?? 0) <= share
-    }
-
-    /// Each row's buttons with their frames' width.
-    private func arranged(_ width: CGFloat, _ subviews: Subviews) -> [(Subviews, CGFloat)] {
-        var start = subviews.startIndex
-        return rows(width, subviews).map { count in
-            let row = subviews[start..<start + count]
-            start += count
-            return (row, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
-        }
-    }
-
-    private func height(of row: Subviews, share: CGFloat) -> CGFloat {
-        row.map { $0.sizeThatFits(ProposedViewSize(width: share, height: nil)).height }.max() ?? 0
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let widest: CGFloat = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        let gaps = CGFloat(max(subviews.count - 1, 0))
-        let width: CGFloat = proposal.width ?? widest * CGFloat(subviews.count) + spacing * gaps
-        let rows = arranged(width, subviews)
-        var total: CGFloat = spacing * CGFloat(max(rows.count - 1, 0))
-        for (row, share) in rows {
-            total += height(of: row, share: share)
-        }
-        return CGSize(width: width, height: total)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for (row, share) in arranged(bounds.width, subviews) {
-            let rowHeight = height(of: row, share: share)
-            var x = bounds.minX
-            for subview in row {
-                subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: share, height: rowHeight))
-                x += share + spacing
-            }
-            y += rowHeight + spacing
-        }
     }
 }

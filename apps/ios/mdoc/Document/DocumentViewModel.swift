@@ -1,6 +1,7 @@
 import Foundation
 import MdocFFI
 import Observation
+import UIKit
 
 /// One document screen. It holds the core's latest snapshot and view state
 /// only; every change goes through the session and comes back as a new
@@ -35,30 +36,12 @@ final class DocumentViewModel {
     private let onChange: () -> Void
 
     private(set) var snapshot: DocumentSnapshot
-    /// The candidate on the review bar; nil when not reviewing (ADR 0098).
-    var reviewing: CandidateID?
-    /// The bar's scope chip: All by default, held within an identity and
-    /// reset to All on the next one.
-    var reviewScope: Scope = .all
-    /// The identity the scope was chosen for.
-    var scopeIdentity: IdentityID?
-    /// Pulled up: the identity's mentions, one row each.
-    var barExpanded = false
-    /// The one hint line this document shows, while it shows.
-    var hint: ReviewHint?
-    /// A hint has shown in this document: no second one.
-    var hintShownHere = false
-    /// Cards and decisions so far in this document, which time the hints.
-    var cardsSeen = 0
-    var decisionsHere = 0
-    /// Stepping limited to one identity or category.
-    var focus: ReviewFocus?
+    /// The review bar: the name under review, its scope, the focus, the
+    /// pulled-up view, the hint line and the pending reveal (ADR 0104: one
+    /// value with one way to change it). Views read it and send intents.
+    private(set) var review: ReviewState
     /// "Same as Maya Bennett · Undo" and the like.
     var toast: ToastMessage?
-    /// Bumped to scroll the text back to the candidate under review, or to
-    /// `revealRange` (a Find match).
-    var revealRequest = 0
-    var revealRange: SourceRange?
     /// The window's undo manager while this document shows in it
     /// (ADR 0098's system undo); `attachSystemUndo` sets it.
     weak var systemUndo: UndoManager?
@@ -90,6 +73,8 @@ final class DocumentViewModel {
     private(set) var notice: String?
     /// The notice's symbol: a check, or an hourglass while review waits.
     private(set) var noticeSymbol = "checkmark.circle.fill"
+    /// Clears the notice once it has been read (`say`).
+    private var noticeTimer: Task<Void, Never>?
     /// Below the floor, where Find names would be: the device cannot find
     /// names, and selecting text marks one (ADR 0088).
     var showsBelowFloorNote: Bool { !findsNames && snapshot.phase == .unscanned }
@@ -125,7 +110,9 @@ final class DocumentViewModel {
         self.jobs = jobs
         self.storage = storage
         self.onChange = onChange
-        snapshot = session.snapshot()
+        let snapshot = session.snapshot()
+        self.snapshot = snapshot
+        review = ReviewState(snapshot)
     }
 
     var id: DocumentID { snapshot.id }
@@ -280,10 +267,7 @@ final class DocumentViewModel {
 
     /// The first proposal after the one under review, wrapping around.
     func reviewNext() {
-        let order = reviewOrder
-        if let next = order.nextUndecided(after: order.index(of: reviewing)) {
-            select(next.id)
-        }
+        updateReview { $0.reviewNext() }
     }
 
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) {
@@ -318,14 +302,9 @@ final class DocumentViewModel {
         // words.
         let selection = Self.trimmed(selection, in: snapshot.markdown)
         guard selection.length > 0 else { return }
-        guard performReview({ try session.markSelection(selection) }) else { return }
-        let marked = snapshot.candidates.first { $0.range.start <= selection.start && $0.range.end >= selection.end }
-            ?? ReviewOrder(snapshot).candidate(near: selection.start)
-        if let marked {
-            focus = nil
-            select(marked.id)
-            Haptics.decision()
-        }
+        guard perform({ try session.markSelection(selection) }) else { return }
+        updateReview { $0.selectMarked(selection) }
+        if isReviewing { Haptics.decision() }
     }
 
     // MARK: Hand-off
@@ -362,12 +341,30 @@ final class DocumentViewModel {
     }
 
     func clearNotice() {
+        noticeTimer?.cancel()
         notice = nil
     }
 
+    /// Shows a notice, says it to VoiceOver, and clears it once it has been
+    /// up long enough to read. A newer notice replaces it and starts its own
+    /// wait.
     private func say(_ text: String, symbol: String = "checkmark.circle.fill") {
         notice = text
         noticeSymbol = symbol
+        UIAccessibility.post(notification: .announcement, argument: text)
+        noticeTimer?.cancel()
+        let shown = Self.noticeDuration(text)
+        noticeTimer = Task { [weak self] in
+            // timing: a notice stays up long enough to read; no event ends it
+            try? await Task.sleep(for: shown)
+            guard !Task.isCancelled, let self, self.notice == text else { return }
+            self.notice = nil
+        }
+    }
+
+    /// How long a notice stays: two seconds, up to four for a sentence.
+    static func noticeDuration(_ text: String) -> Duration {
+        .seconds(min(4, max(2, Double(text.count) / 12)))
     }
 
     /// `range` without the whitespace and newlines at its ends.
@@ -486,21 +483,48 @@ final class DocumentViewModel {
         applyReview(session.snapshot())
     }
 
-    private func perform(_ change: () throws -> DocumentSnapshot) {
+    /// The one change runner: runs a core change, shows the new snapshot
+    /// (the review bar follows it) and, when the change made an undo step,
+    /// mirrors it on the window's undo stack. A failure shows its message
+    /// and returns false; with `rethrowing` it is handed back instead, to a
+    /// caller that shows it its own way (Rename: an alias taken offers Same
+    /// as). `undoable` is false for changes that make no step of their own
+    /// (undo and redo, a dismissed hint, stored proposals).
+    @discardableResult
+    func change(
+        undoable: Bool = true, rethrowing: Bool = false, _ body: () throws -> DocumentSnapshot
+    ) throws -> Bool {
+        let before = snapshot.undoStep
         do {
-            let before = snapshot.undoStep
-            applyReview(try change())
-            if snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
+            applyReview(try body())
         } catch {
+            if rethrowing { throw error }
             errorMessage = error.localizedDescription
+            return false
         }
+        if undoable && snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
+        return true
+    }
+
+    /// `change` for a caller that lets it show its errors: it never throws.
+    @discardableResult
+    func perform(undoable: Bool = true, _ body: () throws -> DocumentSnapshot) -> Bool {
+        (try? change(undoable: undoable, body)) ?? false
+    }
+
+    /// One transition of the review bar, given the hints still to teach.
+    @discardableResult
+    func updateReview<T>(_ transition: (inout ReviewState) -> T) -> T {
+        var state = review
+        state.setTeachable(ReviewHint.teachable)
+        let result = transition(&state)
+        review = state
+        return result
     }
 
     func applyReview(_ new: DocumentSnapshot) {
         snapshot = new
-        if let reviewing, new.candidate(reviewing) == nil {
-            self.reviewing = nil
-        }
+        review.apply(new)
         if new.reply == nil && pane == .reply {
             pane = .text
         }

@@ -74,7 +74,7 @@ final class ReviewBarModelTests: XCTestCase {
     func testScopeResetsOnTheNextIdentity() throws {
         let model = try model()
         model.beginReview()
-        model.reviewScope = .this
+        model.setScope(.this)
         let identity = model.reviewedCandidate?.identityID
         while model.reviewedCandidate?.identityID == identity, model.step(1) {}
         XCTAssertEqual(model.reviewScope, .all)
