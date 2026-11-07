@@ -487,6 +487,29 @@ impl Library {
         })
     }
 
+    /// The write lock if it is free now: for best-effort writes that a
+    /// list or an open makes, which never wait on a save in progress.
+    pub(crate) fn try_lock(&self) -> Option<WriteLock<'_>> {
+        let guard = match self.writes.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        let dir = self.root.join(CASES);
+        std::fs::create_dir_all(&dir).ok()?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(LOCK))
+            .ok()?;
+        file.try_lock().ok()?;
+        Some(WriteLock {
+            _file: file,
+            _guard: guard,
+        })
+    }
+
     /// Save a new case.
     pub(crate) fn create(&self, case: Case) -> Result<CaseInfo, CoreError> {
         let lock = self.lock()?;

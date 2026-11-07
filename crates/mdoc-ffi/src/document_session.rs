@@ -115,7 +115,10 @@ pub struct DocumentSession {
     generation: Mutex<u64>,
 }
 
-/// The session's jobs, one at a time: a new job stops the one before.
+/// The session's jobs, one at a time: a new job stops the one before. Its
+/// lock is held only for a moment, never across a job's work nor while
+/// waiting for another lock, so `cancel`, `cancel_job` and `next_job`
+/// return at once from any thread.
 #[derive(Default)]
 struct Jobs {
     /// The latest job's cancel flag.
@@ -739,17 +742,16 @@ impl Document {
 
 impl DocumentSession {
     /// Make `imported` the session's document, unless its job was
-    /// cancelled or a newer job started: then the current one stays.
+    /// cancelled or a newer job started: then the current one stays. The
+    /// document is built first, with no lock held: the job lock is only
+    /// ever held for a moment, so `cancel` from the platform's main thread
+    /// never waits on a job's work.
     fn open(
         &self,
         imported: intake::Imported,
         cancel: &Job,
         opened: Option<Opened>,
     ) -> Result<ReviewSnapshot, CoreError> {
-        let job = self.lock_job();
-        if job.id != cancel.id || cancel.load(Ordering::Relaxed) {
-            return Err(CoreError::Cancelled);
-        }
         let generation = {
             let mut generation = self.generation.lock().unwrap_or_else(|e| e.into_inner());
             *generation += 1;
@@ -790,12 +792,21 @@ impl DocumentSession {
             document.saved = Some(document.change_key());
         }
         let snapshot = document.snapshot();
-        *self.lock_document() = Some(document);
+        // The document lock, then the job's check: a newer job that starts
+        // after the check opens its document after this one, in this order.
+        let mut slot = self.lock_document();
+        {
+            let jobs = self.lock_job();
+            if jobs.id != cancel.id || cancel.load(Ordering::Relaxed) {
+                return Err(CoreError::Cancelled);
+            }
+        }
+        *slot = Some(document);
+        drop(slot);
         // Taken: an import rejected before this point keeps its OCR pages.
         if let Some(kept) = imported_kept {
             kept.remove();
         }
-        drop(job);
         Ok(snapshot)
     }
 
@@ -986,7 +997,81 @@ mod tests {
         assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
     }
 
-    /// A cancel that comes after its job ended, as the platform's handler
+    /// A job blocked in its progress callback, until released.
+    struct Blocked {
+        entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl JobProgress for Blocked {
+        fn stage(&self, _: JobStage) {
+            if let Some(entered) = self.entered.lock().unwrap().take() {
+                entered.send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+            }
+        }
+        fn advanced(&self, _: u64, _: u64) {}
+    }
+
+    /// What the platforms call from their main thread returns at once
+    /// while a job runs: Android cancels from it, and a blocked main thread
+    /// misses the system's deadlines.
+    #[test]
+    fn main_thread_calls_never_wait_for_a_running_job() {
+        use std::{
+            sync::mpsc,
+            time::{Duration, Instant},
+        };
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee wrote.").unwrap();
+        let session = session("Current", "Current");
+        let (entered, on_enter) = mpsc::channel();
+        let (release, on_release) = mpsc::channel();
+        let progress = Blocked {
+            entered: Mutex::new(Some(entered)),
+            release: Mutex::new(on_release),
+        };
+        let job = {
+            let session = session.clone();
+            let path = path.display().to_string();
+            std::thread::spawn(move || {
+                session.import_file(path, ImportOptions::default(), Some(Box::new(progress)))
+            })
+        };
+        on_enter.recv_timeout(Duration::from_secs(10)).unwrap();
+        let began = Instant::now();
+        session.cancel();
+        let next = session.next_job();
+        session.cancel_job(next - 1);
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        assert_eq!(session.info().unwrap().title, "Current");
+        let took = began.elapsed();
+        assert!(took < Duration::from_millis(500), "{took:?}");
+        release.send(()).unwrap();
+        let result = job.join().unwrap();
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+    }
+
+    /// The cancel calls never wait for the document, which a save or a
+    /// scan's last step holds.
+    #[test]
+    fn cancel_never_waits_for_the_document() {
+        use std::{sync::mpsc, time::Duration};
+        let session = session("Current", "Current");
+        let held = session.lock_document();
+        let (done, finished) = mpsc::channel();
+        let other = session.clone();
+        std::thread::spawn(move || {
+            other.cancel();
+            other.cancel_job(other.next_job());
+            done.send(()).unwrap();
+        });
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+        drop(held);
+    }
+
     /// may while the app saves, never stops the next job.
     #[test]
     fn a_cancel_after_a_job_ended_leaves_the_next_one() {

@@ -78,7 +78,8 @@ impl Library {
         if gone(&self.states()).is_empty() {
             return;
         }
-        let Ok(_lock) = self.lock() else { return };
+        // Never waits: a save holding the lock leaves it for the next list.
+        let Some(_lock) = self.try_lock() else { return };
         let mut states = self.states();
         for key in gone(&states) {
             states.documents.remove(&key);
