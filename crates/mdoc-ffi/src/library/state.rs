@@ -300,7 +300,8 @@ impl Library {
     }
 }
 
-#[cfg(test)]
+// Unix only: elsewhere a stamp has no inode nor status-change time.
+#[cfg(all(test, unix))]
 mod tests {
     use super::Stamp;
     use crate::test_support::Scratch;
@@ -308,7 +309,6 @@ mod tests {
     /// A file replaced by one of the same length with its modification
     /// time kept (`cp -p`, a restore from backup) is a changed file.
     #[test]
-    #[cfg(unix)]
     fn a_file_copied_over_with_its_time_is_a_change() {
         let scratch = Scratch::new();
         let (file, copy) = (scratch.path().join("a.md"), scratch.path().join("b.md"));
