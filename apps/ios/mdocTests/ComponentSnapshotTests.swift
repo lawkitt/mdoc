@@ -89,6 +89,39 @@ final class ComponentSnapshotTests: XCTestCase {
         XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(-1)), 1, "never above full")
     }
 
+    /// The ring at default size, and at the largest, where "Undo" stays whole.
+    func testToastCountdownRing() {
+        let undo = ToastMessage(text: "Same as Maya Bennett", actionTitle: "Undo", action: {})
+        let view = VStack(spacing: Space.m) {
+            Toast(message: undo, duration: 6, frozenAt: undo.created.addingTimeInterval(2), opaque: true)
+            Toast(message: undo, duration: 6, frozenAt: undo.created.addingTimeInterval(2), opaque: true)
+                .environment(\.dynamicTypeSize, .accessibility5)
+        }
+        .padding()
+        .background(Palette.background)
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(view, named: "toast-countdown", appearance: appearance)
+        }
+    }
+
+    /// A toast's view going (the Identities drawer closing) ends its wait,
+    /// not the toast: the message stays for the screen still showing it.
+    func testACancelledToastWaitLeavesTheToast() async {
+        let wait = Task { await ToastPresenter.waitOut(ToastCountdown(start: .now, duration: 60)) }
+        wait.cancel()
+        let ranOut = await wait.value
+        XCTAssertFalse(ranOut)
+    }
+
+    /// One shown again carries on the same clock: nothing left, it ends now.
+    func testAToastWaitRunsOnItsOwnClock() async {
+        let start = Date.now.addingTimeInterval(-10)
+        let began = Date.now
+        let ranOut = await ToastPresenter.waitOut(ToastCountdown(start: start, duration: 6))
+        XCTAssertTrue(ranOut)
+        XCTAssertLessThan(Date.now.timeIntervalSince(began), 1)
+    }
+
     /// The ring shows the time the toast really stays.
     func testToastStaysLongerWithAnAction() {
         let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {})

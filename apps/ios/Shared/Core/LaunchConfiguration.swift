@@ -21,6 +21,9 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_UI_DETECTOR_TIER=1`: the UI survey and the device long-jobs
     /// test run at the detector tier instead of below the floor.
     var detectorTier = false
+    /// `MDOC_SLOW_TOASTS=1`: the UI survey: a toast stays long enough to
+    /// photograph, its countdown still, so its screen settles.
+    var slowToasts = false
 
     init() {}
 
@@ -28,6 +31,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         isUITesting = arguments.contains(Self.uiTestingArgument)
         guard isUITesting else { return }
         seedFile = environment["MDOC_SEED_FILE"]
+        slowToasts = environment["MDOC_SLOW_TOASTS"] == "1"
         realDownloads = environment["MDOC_REAL_DOWNLOADS"] == "1"
         detectorTier = environment["MDOC_UI_DETECTOR_TIER"] == "1"
     }

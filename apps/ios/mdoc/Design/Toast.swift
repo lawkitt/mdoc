@@ -39,27 +39,42 @@ struct ToastCountdown: Equatable {
 /// VoiceOver hears the toast once, not every second.
 private struct ToastCountdownRing: View {
     let countdown: ToastCountdown
-    @ScaledMetric(relativeTo: .caption) private var size: CGFloat = 26
+    /// Shows this moment instead of the clock: snapshots and the UI survey.
+    var frozenAt: Date?
+    @ScaledMetric(relativeTo: .footnote) private var size = Size.toastRing
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.periodic(from: countdown.start, by: reduceMotion ? 1 : 0.05)) { context in
-            ZStack {
-                Circle().stroke(Palette.accent.opacity(0.2), lineWidth: 2.5)
-                Circle()
-                    .trim(from: 0, to: countdown.fraction(at: context.date))
-                    .stroke(Palette.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text(countdown.seconds(at: context.date), format: .number)
-                    .font(Typography.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.6)
-                    .padding(3)
+        // Grows with the text up to a hit target's size, so at the largest
+        // sizes the words and the action keep the room they need.
+        let side = min(size, Size.target)
+        Group {
+            if let frozenAt {
+                ring(at: frozenAt)
+            } else {
+                TimelineView(.periodic(from: countdown.start, by: reduceMotion ? 1 : 0.05)) { context in
+                    ring(at: context.date)
+                }
             }
         }
-        .frame(width: size, height: size)
+        .frame(width: side, height: side)
         .accessibilityHidden(true)
-        .accessibilityIdentifier("toast-countdown")
+    }
+
+    private func ring(at date: Date) -> some View {
+        ZStack {
+            Circle().stroke(Palette.accent.opacity(0.2), lineWidth: Size.toastRingLine)
+            Circle()
+                .trim(from: 0, to: countdown.fraction(at: date))
+                .stroke(Palette.accent, style: StrokeStyle(lineWidth: Size.toastRingLine, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text(countdown.seconds(at: date), format: .number)
+                .font(Typography.caption.weight(.semibold))
+                .monospacedDigit()
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+                .minimumScaleFactor(0.6)
+                .padding(Space.xxs)
+        }
     }
 }
 
@@ -67,6 +82,8 @@ struct Toast: View {
     let message: ToastMessage
     /// How long it stays, for a toast with an action; nil shows no ring.
     var duration: TimeInterval?
+    /// The moment the ring shows, instead of the clock.
+    var frozenAt: Date?
     var dismiss: () -> Void = {}
     /// A solid fill instead of the material: snapshots, whose offscreen
     /// render draws materials unevenly.
@@ -84,7 +101,7 @@ struct Toast: View {
     var body: some View {
         HStack(spacing: Space.s) {
             if let duration, message.action != nil {
-                ToastCountdownRing(countdown: ToastCountdown(start: message.created, duration: duration))
+                ToastCountdownRing(countdown: ToastCountdown(start: message.created, duration: duration), frozenAt: frozenAt)
             }
             Text(message.text)
                 .font(Typography.chip)
@@ -94,6 +111,8 @@ struct Toast: View {
                     .accessibilityIdentifier("toast-action")
                 .font(Typography.chip.weight(.semibold))
                 .foregroundStyle(Palette.accent)
+                // Whole at any size: the words give way, not "Undo".
+                .fixedSize()
                 .frame(minHeight: Size.target)
             }
         }
@@ -119,25 +138,43 @@ struct ToastPresenter: ViewModifier {
     var seconds: Double = 4
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Longer with an action (Undo, Redo): time to reach it.
+    /// Longer with an action (Undo, Redo): time to reach it. The UI survey
+    /// photographs a toast in two appearances, which takes longer.
     static func duration(of message: ToastMessage, seconds: Double) -> TimeInterval {
-        message.action == nil ? seconds : seconds + 2
+        if LaunchConfiguration.current.slowToasts { return 15 }
+        return message.action == nil ? seconds : seconds + 2
+    }
+
+    /// Waits out what is left of `countdown`: true when the time ran out,
+    /// false when the wait was cancelled. A view that went (the Identities
+    /// drawer closing, a screen rebuilt) ends its wait, not the toast, and one
+    /// shown again carries on the same clock, so the ring stays true.
+    static func waitOut(_ countdown: ToastCountdown) async -> Bool {
+        do {
+            // timing: how long a toast stays, not a wait for an event (ADR 0099)
+            try await Task.sleep(for: .seconds(countdown.remaining(at: .now)))
+            return true
+        } catch {
+            return false
+        }
     }
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
             if let message {
                 let duration = Self.duration(of: message, seconds: seconds)
-                Toast(message: message, duration: duration) {
+                let countdown = ToastCountdown(start: message.created, duration: duration)
+                Toast(
+                    message: message, duration: duration,
+                    frozenAt: LaunchConfiguration.current.slowToasts ? message.created : nil
+                ) {
                     if self.message?.id == message.id { self.message = nil }
                 }
                     .padding(.bottom, Space.xs)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .task(id: message.id) {
                         UIAccessibility.post(notification: .announcement, argument: message.text)
-                        // timing: how long a toast stays, not a wait for an event (ADR 0099)
-                        try? await Task.sleep(for: .seconds(duration))
-                        if self.message?.id == message.id {
+                        if await Self.waitOut(countdown), self.message?.id == message.id {
                             self.message = nil
                         }
                     }
@@ -169,13 +206,13 @@ extension View {
 }
 
 #Preview("Toast, dark") {
-    Toast(message: ToastMessage(text: "Undid Replace · Riverside Holdings", actionTitle: "Redo", action: {}))
+    Toast(message: ToastMessage(text: "Undid Replace · Riverside Holdings", actionTitle: "Redo", action: {}), duration: 6)
         .padding()
         .preferredColorScheme(.dark)
 }
 
 #Preview("Toast, matrix") {
     PreviewMatrix {
-        Toast(message: ToastMessage(text: "Same as Maya Bennett", actionTitle: "Undo", action: {}))
+        Toast(message: ToastMessage(text: "Same as Maya Bennett", actionTitle: "Undo", action: {}), duration: 6)
     }
 }
