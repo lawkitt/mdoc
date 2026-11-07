@@ -1,5 +1,5 @@
 use super::{from_html, pasted_markdown};
-use crate::tables;
+use crate::{spans, tables};
 
 fn md(html: &str) -> String {
     from_html(html).expect("text")
@@ -205,4 +205,79 @@ fn html_without_structure_leaves_the_plain_text() {
 fn nothing_to_read_gives_the_plain_text_or_nothing() {
     assert_eq!(pasted_markdown("<p></p>", Some("x")).as_deref(), Some("x"));
     assert_eq!(pasted_markdown("<p></p>", None), None);
+}
+
+#[test]
+fn marks_never_split_an_alias() {
+    assert_eq!(md("<p><b>ORG</b>_3 pays.</p>"), "ORG_3 pays.");
+    assert_eq!(md("<p>ORG_<b>3</b> pays.</p>"), "ORG_3 pays.");
+    assert_eq!(md("<p>O<i>RG_</i>3 pays.</p>"), "ORG_3 pays.");
+    assert_eq!(md("<p><b>ORG</b><i>_3</i> pays.</p>"), "ORG_3 pays.");
+    assert_eq!(
+        md(r#"<p><a href="https://a.example">ORG</a>_3</p>"#),
+        "ORG_3"
+    );
+    assert_eq!(md("<p><code>ORG</code>_3</p>"), "ORG_3");
+    assert_eq!(
+        md("<table><tr><td><b>PERSON</b>_12</td></tr></table>"),
+        "| PERSON_12 |\n| --- |"
+    );
+    // A whole alias keeps its mark, and marks beside a space stay.
+    assert_eq!(
+        md("<p>By <b>ORG_3</b> and <i>PERSON_1</i>.</p>"),
+        "By **ORG_3** and *PERSON_1*."
+    );
+    assert_eq!(md("<p><b>a</b> b</p>"), "**a** b");
+}
+
+#[test]
+fn a_lone_double_star_is_no_markdown() {
+    let html = "<table><tr><th>Power</th></tr><tr><td>x**2</td></tr></table>";
+    assert_eq!(
+        pasted_markdown(html, Some("Power\nx**2")).as_deref(),
+        Some("| Power |\n| --- |\n| x\\*\\*2 |")
+    );
+    assert!(
+        pasted_markdown(html, Some("2**3 and 4**5"))
+            .unwrap()
+            .starts_with("| Power")
+    );
+    assert_eq!(
+        pasted_markdown(html, Some("Some __bold__ here")).as_deref(),
+        Some("Some __bold__ here")
+    );
+    assert_eq!(
+        pasted_markdown(html, Some("**Bold** first")).as_deref(),
+        Some("**Bold** first")
+    );
+    assert!(pasted_markdown(html, Some("a __init__.py b")).is_some());
+}
+
+/// The reader's own spans: what is literal in the HTML stays unmarked.
+#[test]
+fn literal_delimiters_stay_literal_to_the_reader() {
+    for html in [
+        "<p>Keep ~~this~~ literally.</p>",
+        "<p>Keep ==this== literally.</p>",
+        "<p>Keep __this__ literally.</p>",
+        "<p>Keep _this_ literally.</p>",
+    ] {
+        let markdown = md(html);
+        let styled = spans::scan(&markdown);
+        assert!(
+            styled.iter().all(|span| !span.style.bold
+                && !span.style.italic
+                && !span.style.strike
+                && span.style.bg.is_none()),
+            "{html} gave {markdown}"
+        );
+    }
+    assert_eq!(md("<p>ORG_3 and ORG_4_a</p>"), "ORG_3 and ORG_4_a");
+}
+
+#[test]
+fn code_with_backticks_at_its_edges_keeps_them() {
+    assert_eq!(md("<p>Use <code>&#96;x&#96;</code>.</p>"), "Use `` `x` ``.");
+    assert_eq!(md("<p><code>a`b</code></p>"), "``a`b``");
+    assert_eq!(md("<p><code>plain</code></p>"), "`plain`");
 }

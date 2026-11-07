@@ -39,15 +39,48 @@ pub fn pasted_markdown(html: &str, plain: Option<&str>) -> Option<String> {
 }
 
 /// Whether plain text shows what only Markdown writes: a table's separator,
-/// a heading or bold. A list doesn't count, as `* ` is how the ChatGPT app's
-/// flattened plain text writes one.
+/// a heading or a bold pair. A list doesn't count, as `* ` is how the ChatGPT
+/// app's flattened plain text writes one, and neither does a lone `**`, as in
+/// `x**2`.
 fn is_markdown(plain: &str) -> bool {
-    plain.contains("**")
-        || plain.lines().any(|line| {
-            let hashes = line.chars().take_while(|c| *c == '#').count();
-            (1..=6).contains(&hashes) && line[hashes..].starts_with(' ')
-                || line.contains('-') && line.contains('|') && tables::is_table_separator(line)
-        })
+    plain.lines().any(|line| {
+        let hashes = line.chars().take_while(|c| *c == '#').count();
+        (1..=6).contains(&hashes) && line[hashes..].starts_with(' ')
+            || line.contains('-') && line.contains('|') && tables::is_table_separator(line)
+            || has_bold_pair(line, "**")
+            || has_bold_pair(line, "__")
+    })
+}
+
+/// `marker` opening after a non-word character and closing before one, with
+/// no space just inside it.
+fn has_bold_pair(line: &str, marker: &str) -> bool {
+    let is_word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let mut from = 0;
+    while let Some(found) = line[from..].find(marker) {
+        let start = from + found;
+        let inner = start + marker.len();
+        if !is_word(line[..start].chars().next_back())
+            && line[inner..]
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_whitespace())
+            && let Some(close) = line[inner..].find(marker)
+        {
+            let end = inner + close;
+            if close > 0
+                && line[..end]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| !c.is_whitespace())
+                && !is_word(line[end + marker.len()..].chars().next())
+            {
+                return true;
+            }
+        }
+        from = inner;
+    }
+    false
 }
 
 /// The Markdown, and whether the HTML held more than paragraphs.
@@ -183,6 +216,20 @@ struct Frame {
     cells: Vec<String>,
     /// A table's rows.
     rows: Vec<Vec<String>>,
+    /// Where the marks last added to `inline` are, while they end it.
+    marks: Option<Marks>,
+}
+
+/// The byte ranges of one inline mark's opening and closing in `inline`.
+#[derive(Debug)]
+struct Marks {
+    open: std::ops::Range<usize>,
+    close: std::ops::Range<usize>,
+}
+
+/// What an alias is made of: marks between these would split one.
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 impl Frame {
@@ -193,6 +240,20 @@ impl Frame {
             blocks: Vec::new(),
             cells: Vec::new(),
             rows: Vec::new(),
+            marks: None,
+        }
+    }
+
+    /// Marks that would end in the middle of a word go, or `<b>ORG</b>_3`
+    /// would hide the alias ORG_3 from Restore.
+    fn unsplit(&mut self, next: char) {
+        let Some(marks) = self.marks.take() else {
+            return;
+        };
+        let inner_end = self.inline[..marks.close.start].chars().next_back();
+        if marks.close.end == self.inline.len() && is_word(next) && inner_end.is_some_and(is_word) {
+            self.inline.replace_range(marks.close, "");
+            self.inline.replace_range(marks.open, "");
         }
     }
 
@@ -204,6 +265,7 @@ impl Frame {
             self.blocks.push(Done { text, list: false });
         }
         self.inline.clear();
+        self.marks = None;
     }
 
     /// The frame's blocks, with a blank line between them; in a list item, a
@@ -456,7 +518,19 @@ impl Converter {
             }
             last_space = false;
             let c = if c == '\u{a0}' { ' ' } else { c };
+            top.unsplit(c);
             if !raw {
+                let doubled = matches!(c, '~' | '=') && chars.peek() == Some(&c);
+                // `_` inside a word is no emphasis, and every alias has one. At
+                // the edge of a mark its neighbour is still unknown: it may
+                // be an alias split by marks, so it stays.
+                let before = top.inline.chars().next_back();
+                let starts_loose = match before {
+                    Some(before) => !before.is_alphanumeric(),
+                    None => !top.kind.is_inline(),
+                };
+                let ends_loose = chars.peek().is_some_and(|next| !next.is_alphanumeric());
+                let loose_underscore = c == '_' && (starts_loose || ends_loose);
                 let entity = c == '&' && {
                     let rest: String = chars.clone().take(32).collect();
                     let name = rest.split(';').next().unwrap_or("");
@@ -464,7 +538,11 @@ impl Converter {
                         && !name.is_empty()
                         && name.chars().all(|n| n.is_ascii_alphanumeric() || n == '#')
                 };
-                if matches!(c, '\\' | '*' | '`' | '<' | '[' | ']') || entity {
+                if matches!(c, '\\' | '*' | '`' | '<' | '[' | ']')
+                    || entity
+                    || doubled
+                    || loose_underscore
+                {
                     top.inline.push('\\');
                 }
             }
@@ -490,7 +568,19 @@ impl Converter {
             Kind::Strike => self.wrap(frame.inline, "~~", "~~", false),
             Kind::Code => {
                 let fence = "`".repeat(longest_run(&frame.inline, '`') + 1);
-                self.wrap(frame.inline, &fence, &fence, code);
+                // A space keeps a backtick at the code's edge out of the fence.
+                let trimmed = frame.inline.trim();
+                let pad = if trimmed.starts_with('`') || trimmed.ends_with('`') {
+                    " "
+                } else {
+                    ""
+                };
+                self.wrap(
+                    frame.inline.clone(),
+                    &format!("{fence}{pad}"),
+                    &format!("{pad}{fence}"),
+                    code,
+                );
             }
             Kind::Link(href) => match href.filter(|href| safe_link(href)) {
                 Some(href) => {
@@ -629,6 +719,7 @@ impl Converter {
     }
 
     /// Adds inline text with its markers, any space at its ends outside them.
+    /// None inside a word: `ORG_<b>3</b>` keeps the alias whole.
     fn wrap(&mut self, inner: String, open: &str, close: &str, quiet: bool) {
         let trimmed = inner.trim();
         let lead = inner.len() - inner.trim_start().len();
@@ -637,17 +728,32 @@ impl Converter {
         if lead > 0 && !parent.inline.is_empty() && !parent.inline.ends_with([' ', '\n']) {
             parent.inline.push(' ');
         }
-        if !trimmed.is_empty() {
-            if !quiet {
-                parent.inline.push_str(open);
-            }
+        let Some(first) = trimmed.chars().next() else {
+            return;
+        };
+        if lead == 0 {
+            parent.unsplit(first);
+        } else {
+            parent.marks = None;
+        }
+        let inside_word =
+            lead == 0 && is_word(first) && parent.inline.chars().next_back().is_some_and(is_word);
+        if quiet || inside_word {
             parent.inline.push_str(trimmed);
-            if !quiet {
-                parent.inline.push_str(close);
-            }
-            if trail > 0 {
-                parent.inline.push(' ');
-            }
+            parent.marks = None;
+        } else {
+            let open_at = parent.inline.len();
+            parent.inline.push_str(open);
+            parent.inline.push_str(trimmed);
+            let close_at = parent.inline.len();
+            parent.inline.push_str(close);
+            parent.marks = Some(Marks {
+                open: open_at..open_at + open.len(),
+                close: close_at..close_at + close.len(),
+            });
+        }
+        if trail > 0 {
+            parent.inline.push(' ');
         }
     }
 
