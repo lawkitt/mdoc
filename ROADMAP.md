@@ -123,17 +123,6 @@ Features are frozen until items 13–19 land (Q4).
     what is left, state buttons, Replace N, Looks like, Select
     ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
-16. **[Mobile] Generated types used directly.** *From Q11.* The Swift
-    copies of UniFFI records go; labels stay as extensions. *Done when:*
-    merged with an empty survey diff.
-18. **[Mobile] Document screen.** *From Q15.* Review selection as one value
-    type, the text view recolouring in place and holding reveals until
-    layout, the long-press menu from the view model, `DocumentScreen` split.
-    *Done when:* merged with an empty survey diff.
-19. **[Mobile] Rules that keep it so.** *From Q19.* `docs/development.md`
-    gains ADR 0104's rules; `just lint` refuses `Task.sleep` and
-    `asyncAfter` in app code without an issue on the line; UI tests wait
-    for elements. *Done when:* merged.
 20. **[Mobile] To grill: peek at the originals.** *From the
     [sidebar grill](docs/design/ios-sidebar-grill-2026-11-06.md) ideas and
     Q7.* Press and hold to see the originals in place of the aliases;
