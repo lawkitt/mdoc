@@ -90,33 +90,7 @@ struct DocumentScreen: View {
     }
 
     private var identities: some View {
-        IdentitiesView(
-            identities: model.snapshot.identities,
-            onOpen: { identity in
-                // The bar on the identity's first undecided mention, or its
-                // first (ADR 0098's map).
-                let mentions = model.snapshot.mentions(of: identity).sorted { $0.range.start < $1.range.start }
-                if let first = mentions.first(where: { $0.state == .proposed }) ?? mentions.first {
-                    if !isRegular { model.showsIdentities = false }
-                    model.open(first.id)
-                }
-            },
-            onDecide: { identity, decision in model.decide(identity: identity, decision) },
-            onFocus: { focus in
-                if !isRegular { model.showsIdentities = false }
-                model.beginReview(focus: focus)
-            },
-            onSameAs: { identity, target in model.link(identity, into: target) },
-            onPickSameAs: { identity in sameAsIdentity = identity },
-            mentions: { identity in
-                model.snapshot.mentions(of: identity).sorted { $0.range.start < $1.range.start }
-                    .map { (id: $0.id, context: model.context(of: $0), state: $0.state) }
-            },
-            onOpenMention: { id in
-                if !isRegular { model.showsIdentities = false }
-                model.open(id)
-            },
-            onClose: isRegular ? nil : { model.showsIdentities = false })
+        IdentitiesPanel(model: model, isRegular: isRegular)
     }
 
     /// Identities in the right column cover the reply, so the hand-off bar
@@ -127,9 +101,11 @@ struct DocumentScreen: View {
     }
 
     /// The inspector stays closed while Identities show in the right column.
+    /// On iPhone Identities is the right-edge drawer (`IdentitiesDrawer`), so
+    /// the inspector, a sheet there, stays closed.
     private var inspectorBinding: Binding<Bool> {
         Binding(
-            get: { model.showsIdentities && !identitiesInPane },
+            get: { isRegular && model.showsIdentities && !identitiesInPane },
             set: { model.showsIdentities = $0 })
     }
 

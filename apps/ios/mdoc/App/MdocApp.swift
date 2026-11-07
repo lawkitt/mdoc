@@ -136,8 +136,10 @@ struct RootView: View {
         SideDrawer(isOpen: $app.showsSidebar) {
             SidebarView(app: app)
         } content: {
-            NavigationStack {
-                main
+            IdentitiesDrawer(app: app) {
+                NavigationStack {
+                    main
+                }
             }
             .environment(\.showSidebar) {
                 withAnimation(Motion.move(reduced: reduceMotion)) { app.showsSidebar = true }

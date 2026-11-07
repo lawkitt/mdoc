@@ -150,6 +150,25 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 - **Keys:** Return Replace, K Keep, ← → step, ⌘. end (Esc too where iOS
   passes it to the app), ⌘Z and ⇧⌘Z.
 
+## Identities
+
+[ADR 0103](adr/0103-mobile-identities-drawer.md); code in
+[`IdentitiesView`](../apps/ios/mdoc/Document/IdentitiesView.swift),
+`IdentitiesPanel` and `DocumentViewModel+Identities`.
+
+- **Where:** iPhone, a drawer from the right edge or 🪪 (`SideDrawer`,
+  trailing); a wide iPad, the standing right column. A tap on a name opens
+  the review bar's full view on it.
+- **Top:** progress ring, "Identities", "9 names · 4 left", search circle,
+  Select, › close; then Replace N, filled.
+- **Then:** Looks like cards (Same as, Not the same), category chips, and
+  the names by what is left: To review, Replaced, Kept (folded).
+- **Rows:** category icon, the name (wrapped at words), the alias, "3×"
+  and its other spellings in grey, and a round `StateButtonLabel`: replace, then Replaced ⇄
+  Kept, with Undo in the toast.
+- **Select:** tick rows, then Replace, Keep or Same as (into the name
+  mentioned most); one Undo takes the selection back.
+
 ## Gestures
 
 Every gesture also has a visible control and a VoiceOver action; no action
@@ -160,9 +179,10 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
-| Identities row | Swipe right or left | Replace; Keep and Same as… |
+| Identities row | Swipe right or left, or tap its round button | Replace; Keep and Same as…; the button replaces, then switches Replaced and Kept |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
 | Left edge (iPhone) | Swipe right | The sidebar; swipe left or tap the sliver to close |
+| Right edge (iPhone, a document open) | Swipe left | Identities; swipe right or tap the sliver to close |
 
 No swipes on the document text.
 

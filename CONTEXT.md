@@ -597,6 +597,11 @@ column on a wide iPad: search, Cases, Documents, To review, Recent, Settings
 and New ([ADR 0102](docs/adr/0102-mobile-sidebar.md)). The screen slides
 aside to show it.
 
+**Identities drawer** (mobile): the open document's names in a panel from
+the right edge on iPhone (the standing right column on iPad), ordered by
+what is left, with state buttons, Looks like and Select
+([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)).
+
 **Start** (mobile): the main area with no document open: setup, Continue,
 the add tiles and Try a sample.
 
