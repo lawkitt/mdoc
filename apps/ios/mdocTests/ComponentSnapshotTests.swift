@@ -76,6 +76,26 @@ final class ComponentSnapshotTests: XCTestCase {
         XCTAssertEqual(shown?.text, "Undid Replace all")
     }
 
+    func testToastCountdownCountsTheSecondsLeft() {
+        let start = Date(timeIntervalSinceReferenceDate: 1000)
+        let countdown = ToastCountdown(start: start, duration: 6)
+        XCTAssertEqual(countdown.seconds(at: start), 6)
+        XCTAssertEqual(countdown.fraction(at: start), 1)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(0.5)), 6)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(5.5)), 1)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(3)), 0.5)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(9)), 0, "never below zero")
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(9)), 0)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(-1)), 1, "never above full")
+    }
+
+    /// The ring shows the time the toast really stays.
+    func testToastStaysLongerWithAnAction() {
+        let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {})
+        XCTAssertEqual(ToastPresenter.duration(of: undo, seconds: 4), 6)
+        XCTAssertEqual(ToastPresenter.duration(of: ToastMessage(text: "All 15 reviewed"), seconds: 4), 4)
+    }
+
     func testSampleChoosesItsLanguage() {
         XCTAssertEqual(SampleDocument.forLanguages(["ru-RU", "en-GB"]), .russian)
         XCTAssertEqual(SampleDocument.forLanguages(["en-GB", "ru-RU"]), .english)
