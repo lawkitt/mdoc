@@ -128,10 +128,14 @@ pub(super) fn import_file(
     })
 }
 
-/// A document's title: its file name without the extension.
+/// A document's title: its file name without the extension, read as a
+/// library document's is (`library::title_of`), so a file the platform
+/// named after a title gives that title back.
 pub(super) fn title(path: &Path) -> String {
-    path.file_stem()
-        .map_or_else(|| "Document".into(), |s| s.to_string_lossy().into_owned())
+    match crate::library::title_of(path) {
+        title if title.is_empty() => "Document".into(),
+        title => title,
+    }
 }
 
 /// A one-page PDF showing `jpeg` (baseline or progressive) at its own

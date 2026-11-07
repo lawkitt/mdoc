@@ -32,10 +32,35 @@ protocol Library: AnyObject, Sendable {
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
+    /// Rename: the document's title, as typed (its file follows, numbered
+    /// when another document has the title). A case holding only this
+    /// document and named after it is renamed with it. Refused for a blank
+    /// title, and for an import not read yet.
+    func renameDocument(_ document: DocumentID, to title: String) throws
+    /// Renames a case; its documents keep their titles.
+    func renameCase(_ caseID: CaseID, to name: String) throws
+    /// Move to case (ADR 0041 Joining): the document leaves its case and
+    /// joins `target`, its names taking that case's aliases (a name the case
+    /// knows takes its alias, a clashing alias the next free number). The
+    /// case it left keeps its names and the document's reply, so replies to
+    /// what was sent still restore with it, and it stays even with no
+    /// documents left. Refused for the case it is in already, and for an
+    /// import not read yet.
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove
+    /// Undo of Move to case: the document moves back into the case it
+    /// left and its names take their old aliases again; the reply kept there
+    /// is the document's again. The case it leaves loses the names the move
+    /// added, unless another of its documents or a reply kept there uses
+    /// them, or it is the current case.
+    func undoMove(_ move: CaseMove) throws -> CaseMove
 }
 
 extension Library {
     func saveDeferred() throws -> [DocumentID] { [] }
+    func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
+    func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
+    func undoMove(_ move: CaseMove) throws -> CaseMove { throw CoreError.noCase }
 }
 
 /// One document's import, OCR, review and hand-off.

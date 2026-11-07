@@ -143,6 +143,19 @@ enum CaseChoice: Hashable, Sendable {
     case existing(CaseID)
 }
 
+/// Where Move to case took a document, for "Moved to <case> · Undo".
+struct CaseMove: Hashable, Sendable {
+    var document: DocumentID
+    /// The case it is in now.
+    var to: CaseSummary
+    /// The case it left, if it was in one; it stays, even empty. Undo moves
+    /// the document back there.
+    var from: CaseID?
+    /// Aliases of the names the move added to `to`; Undo takes them out
+    /// again where nothing else uses them.
+    var added: [String]
+}
+
 /// The page the text came from.
 enum OriginalSource: Equatable, Sendable {
     case none

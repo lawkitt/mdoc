@@ -578,6 +578,9 @@
     "More" : {
 
     },
+    "Move the document once it is read." : {
+
+    },
     "Name detector (GLiNER2)" : {
 
     },
@@ -774,6 +777,9 @@
 
     },
     "Rename" : {
+
+    },
+    "Rename the document once it is read." : {
 
     },
     "Rename…" : {

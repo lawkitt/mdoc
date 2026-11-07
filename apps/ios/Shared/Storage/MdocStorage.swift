@@ -103,11 +103,12 @@ struct MdocStorage: Sendable {
         return target
     }
 
-    /// A file name from a title: no path separators, the extension kept.
+    /// A file name from a title, the extension kept. Path separators and ":"
+    /// become the look-alikes the core reads back (`FILE_NAME_STAND_INS` in
+    /// `crates/mdoc-ffi/src/library.rs`), so "Claim: Bennett" stays that title.
     static func fileName(_ title: String, extension ext: String) -> String {
-        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: CharacterSet(charactersIn: "/:\\"))
-            .joined(separator: "-")
+        let standIns: [Character: Character] = ["/": "\u{2215}", "\\": "\u{29F5}", ":": "\u{A789}"]
+        let cleaned = String(title.trimmingCharacters(in: .whitespacesAndNewlines).map { standIns[$0] ?? $0 })
         let base = cleaned.isEmpty ? "Document" : cleaned
         return ext.isEmpty ? base : "\(base).\(ext)"
     }

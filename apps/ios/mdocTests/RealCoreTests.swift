@@ -297,6 +297,76 @@ final class RealCoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Receipt.jpg").path))
     }
 
+    /// A title lists as typed (no "Sample- services agreement"), and Rename
+    /// keeps the open session: it saves on to the renamed file, and the
+    /// case named after the document follows it.
+    func testRenameKeepsTheTitleAsTypedAndTheSession() throws {
+        let core = try core()
+        let title = "Sample: services agreement"
+        let session = try core.library.importDocument(.text(Self.letter), title: title, into: .newCase(name: title))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(core.library.snapshot().documents.map(\.title), [title])
+
+        try core.library.renameDocument(session.id, to: "Services: final")
+        XCTAssertEqual(session.snapshot().title, "Services: final")
+        let renamed = core.library.snapshot()
+        XCTAssertEqual(renamed.documents.map(\.title), ["Services: final"])
+        XCTAssertEqual(renamed.cases.map(\.name), ["Services: final"])
+        XCTAssertEqual(renamed.documents.first?.id, session.id)
+        _ = try session.scan(observer: TestObserver())
+        XCTAssertEqual(try session.replaceAllPending().phase, .ready)
+        XCTAssertThrowsError(try core.library.renameDocument(session.id, to: "  ")) { error in
+            XCTAssertEqual(error as? CoreError, .refused("A document needs a title."))
+        }
+
+        try core.library.renameCase(try XCTUnwrap(renamed.cases.first?.id), to: "Ellison")
+        let reopened = try self.core().library.snapshot()
+        XCTAssertEqual(reopened.documents.map(\.title), ["Services: final"])
+        XCTAssertEqual(reopened.documents.first?.phase, .ready)
+        XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
+    }
+
+    /// Move to case re-aliases the document for the case it joins; the case
+    /// it left stays, and Undo moves it back with the old aliases and takes
+    /// its names out of the case it joined.
+    func testMoveToCaseAndUndoThroughTheCore() throws {
+        let core = try core()
+        let letter = try reviewed(core)
+        let before = try letter.replaceAllPending().markdown
+        XCTAssertTrue(before.contains("EMAIL_1"))
+        let note = try core.library.importDocument(
+            .text("Write to someone@example.org."), title: "Note", into: .newCase(name: "Other"))
+        _ = try note.recognize(observer: TestObserver())
+        _ = try note.scan(observer: TestObserver())
+        XCTAssertTrue(try note.replaceAllPending().markdown.contains("EMAIL_1"))
+        let other = try XCTUnwrap(note.snapshot().caseID)
+
+        let move = try core.library.moveDocument(letter.id, to: .existing(other))
+        XCTAssertEqual(move.to.id, other)
+        XCTAssertEqual(move.to.name, "Other")
+        XCTAssertTrue(move.added.contains("EMAIL_2"))
+        let moved = letter.snapshot()
+        XCTAssertEqual(moved.caseID, other)
+        XCTAssertFalse(moved.markdown.contains("EMAIL_1"))
+        XCTAssertTrue(moved.markdown.contains("EMAIL_2"))
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).text, "maya.ellison@example.com")
+        let ellison = try XCTUnwrap(move.from)
+        XCTAssertEqual(Set(core.library.snapshot().cases.map(\.name)), ["Ellison", "Other"])
+        XCTAssertTrue(core.library.snapshot().documents(in: ellison).isEmpty)
+        XCTAssertThrowsError(try core.library.moveDocument(letter.id, to: .existing(other)))
+
+        let undone = try core.library.undoMove(move)
+        XCTAssertEqual(undone.to.id, ellison)
+        XCTAssertEqual(letter.snapshot().markdown, before)
+        XCTAssertEqual(letter.snapshot().caseID, ellison)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).unresolvedCount, 1)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_1", in: other).text, "someone@example.org")
+
+        let fresh = try core.library.moveDocument(letter.id, to: .newCase(name: "Fresh"))
+        XCTAssertEqual(fresh.to.name, "Fresh")
+        XCTAssertEqual(letter.snapshot().markdown, before)
+    }
+
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
         let small = RealSetup(storage: storage, physicalMemory: 4 * Fixture.gigabyte).snapshot()
         XCTAssertEqual(small.tier, .belowFloor)

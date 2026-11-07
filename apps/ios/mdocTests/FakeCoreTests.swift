@@ -73,6 +73,104 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertNoThrow(try session.scan(observer: TestObserver()))
     }
 
+    // MARK: Rename and Move to case
+
+    func testRenameTakesTheCaseNamedAfterItsOnlyDocument() throws {
+        let library = Fixture.core().library
+        let title = "Sample: services agreement"
+        let sample = try library.importDocument(.text("Text."), title: title, into: .newCase(name: title))
+        try library.renameDocument(sample.id, to: " Services: final ")
+        XCTAssertEqual(sample.snapshot().title, "Services: final")
+        XCTAssertEqual(sample.snapshot().caseName, "Services: final")
+        // A case with other documents keeps its name; a taken title is numbered.
+        try library.renameDocument(Fixture.letter, to: FakeFixtures.quotationTitle)
+        let renamed = try library.session(for: Fixture.letter).snapshot()
+        XCTAssertEqual(renamed.title, "\(FakeFixtures.quotationTitle) 2")
+        XCTAssertEqual(renamed.caseName, "Ellison v Brightwater")
+        XCTAssertThrowsError(try library.renameDocument(Fixture.letter, to: " ")) { error in
+            XCTAssertEqual(error as? CoreError, .refused("A document needs a title."))
+        }
+        // Letter case alone does not make a title another's, as on the disk.
+        try library.renameDocument(Fixture.letter, to: FakeFixtures.quotationTitle.uppercased())
+        XCTAssertEqual(
+            try library.session(for: Fixture.letter).snapshot().title, "\(FakeFixtures.quotationTitle.uppercased()) 2")
+        try library.renameCase(Fixture.harbour, to: "Harbour Street")
+        XCTAssertEqual(library.snapshot().cases.first { $0.id == Fixture.harbour }?.name, "Harbour Street")
+        XCTAssertThrowsError(try library.renameCase(Fixture.harbour, to: ""))
+        // An import not read yet is renamed and moved once it is.
+        XCTAssertThrowsError(try library.renameDocument(Fixture.tenancy, to: "Lease")) { error in
+            XCTAssertEqual(error as? CoreError, .refused("Rename the document once it is read."))
+        }
+        XCTAssertThrowsError(try library.moveDocument(Fixture.tenancy, to: .existing(Fixture.ellison))) { error in
+            XCTAssertEqual(error as? CoreError, .refused("Move the document once it is read."))
+        }
+    }
+
+    /// A document saved before titles kept ":" has "-" where its case has
+    /// ":": the case still follows its renames.
+    func testACaseNamedAfterTheEarlierFileNameFollowsTheRename() throws {
+        let library = Fixture.core().library
+        let draft = try library.importDocument(
+            .text("Text."), title: "Sample- services agreement", into: .newCase(name: "Sample: services agreement"))
+        try library.renameDocument(draft.id, to: "Services")
+        XCTAssertEqual(draft.snapshot().caseName, "Services")
+    }
+
+    /// The document takes the case's aliases; the case it left keeps its
+    /// names and the reply, and Undo moves it back with its old aliases.
+    func testMoveToCaseAndUndoRestoreTheAliases() throws {
+        let library = Fixture.core().library
+        let letter = try library.session(for: Fixture.letter)
+        let before = try letter.replaceAllPending()
+        _ = try letter.restoreReply("PERSON_1 agrees.")
+        // The harbour case knows Daniel Okafor as PERSON_1, the letter's Maya Ellison.
+        let call = try library.importDocument(.text("Daniel Okafor called."), title: "Call", into: .existing(Fixture.harbour))
+        let daniel = try XCTUnwrap(try call.scan(observer: TestObserver()).candidates.first { $0.original == "Daniel Okafor" })
+        _ = try call.rename(daniel.id, scope: .allOccurrences, to: "PERSON_1")
+
+        let move = try library.moveDocument(Fixture.letter, to: .existing(Fixture.harbour))
+        XCTAssertEqual(move.from, Fixture.ellison)
+        XCTAssertEqual(move.to.id, Fixture.harbour)
+        XCTAssertTrue(move.added.contains("PERSON_2"), "Maya, new to the harbour case")
+        XCTAssertFalse(move.added.contains("PERSON_1"), "Mr Okafor was known")
+        let moved = letter.snapshot()
+        XCTAssertEqual(moved.caseID, Fixture.harbour)
+        XCTAssertNil(moved.reply, "the reply stays with the case it was written against")
+        XCTAssertFalse(moved.canUndo)
+        XCTAssertEqual(moved.candidates.first { $0.original == "Mr Okafor" }?.alias, "PERSON_1")
+        XCTAssertEqual(moved.candidates.first { $0.original == "Maya Ellison" }?.alias, "PERSON_2")
+        XCTAssertNotEqual(moved.markdown, before.markdown)
+        XCTAssertEqual(try library.restore(reply: "PERSON_1 agrees.", in: Fixture.ellison).text, "Maya Ellison agrees.")
+        XCTAssertThrowsError(try library.moveDocument(Fixture.letter, to: .existing(Fixture.harbour)))
+
+        let undone = try library.undoMove(move)
+        XCTAssertEqual(undone.to.id, Fixture.ellison)
+        let back = letter.snapshot()
+        XCTAssertEqual(back.markdown, before.markdown)
+        XCTAssertEqual(back.reply?.aliasText, "PERSON_1 agrees.")
+        // The harbour case forgets Maya; Daniel, its own, stays.
+        XCTAssertEqual(try library.restore(reply: "PERSON_2", in: Fixture.harbour).restoredCount, 0)
+        XCTAssertEqual(try library.restore(reply: "PERSON_1", in: Fixture.harbour).text, "Daniel Okafor")
+    }
+
+    /// The case a document leaves stays, even empty; Undo keeps the names
+    /// the move added in a case that is the current one.
+    func testACaseLeftStaysAndAnUndoIntoTheCurrentCaseKeepsItsNames() throws {
+        let library = Fixture.core().library
+        _ = try library.moveDocument(Fixture.letter, to: .newCase(name: "Letters"))
+        let last = try library.moveDocument(Fixture.quotation, to: .existing(Fixture.harbour))
+        XCTAssertTrue(library.snapshot().cases.contains { $0.id == Fixture.ellison })
+        XCTAssertTrue(library.snapshot().documents(in: Fixture.ellison).isEmpty)
+
+        let session = try library.session(for: Fixture.quotation)
+        _ = try session.copyForAI()
+        XCTAssertEqual(library.snapshot().currentCase, Fixture.harbour)
+        XCTAssertFalse(last.added.isEmpty)
+        _ = try library.undoMove(last)
+        let alias = try XCTUnwrap(last.added.first)
+        XCTAssertEqual(try library.restore(reply: alias, in: Fixture.harbour).restoredCount, 1)
+    }
+
     func testRestoreCountsDistinctValues() throws {
         let result = try Fixture.core().library.restore(reply: "PERSON_1, PERSON_1, ORG_9, ORG_9.", in: Fixture.ellison)
         XCTAssertEqual(result.restoredCount, 1)
