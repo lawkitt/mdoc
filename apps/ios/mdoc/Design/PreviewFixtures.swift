@@ -20,7 +20,7 @@ enum PreviewFixtures {
             root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-preview-\(UUID().uuidString)"))
         do {
             try storage.prepare()
-            let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: CoreFactory.belowFloorMemory)
+            let core = try RealCore.make(storage: storage, keys: FixedCaseKeyStore(), physicalMemory: LaunchConfiguration.belowFloorMemory)
             let session = try core.library.importDocument(.text(sample.text), title: sample.title, into: .newCase(name: sample.title))
             _ = try session.recognize(observer: PreviewObserver())
             _ = try session.propose(sample.names)
@@ -36,7 +36,7 @@ enum PreviewFixtures {
         return AppModel(
             core: core, storage: storage,
             background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
-            network: NetworkMonitor(), defaults: UserDefaults(suiteName: "mdoc-preview") ?? .standard)
+            network: NetworkMonitor(), preferences: Preferences(store: UserDefaults(suiteName: "mdoc-preview") ?? .standard))
     }
     #endif
 }

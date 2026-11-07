@@ -4,20 +4,18 @@ import UIKit
 /// One document: Text and Original switch on iPhone and sit side by side on
 /// iPad, with the Identities list beside the text there. In a narrow iPad
 /// window (portrait) Identities take the Original's place instead of a third
-/// column (ADR 0087).
+/// column (ADR 0087). Where Identities show comes from the window's
+/// `DocumentLayout`; whether they are wanted, from the model.
 struct DocumentScreen: View {
     @Bindable var model: DocumentViewModel
     let setup: SetupViewModel
-    /// The window is too narrow for a third column (iPad portrait).
-    var isNarrow = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.documentLayout) private var layout
     @Environment(\.undoManager) private var undoManager
     @Environment(\.showSidebar) private var showSidebar
     @Environment(\.appModel) private var app
-    @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
-    @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
+    @Environment(\.preferences) private var preferences
 
-    private var isRegular: Bool { sizeClass == .regular }
+    private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
     /// The long press's Same as… with a long list: the searchable picker.
     @State private var sameAsCandidate: CandidateID?
@@ -27,11 +25,10 @@ struct DocumentScreen: View {
     /// one for the same document (#672).
     @State private var screenID = UUID()
 
-    /// iPad's right column: the original or the reply beside the text.
-    private var hasRightPane: Bool { model.hasOriginal || model.snapshot.reply != nil }
+    private var hasRightPane: Bool { model.hasRightPane }
 
     /// Identities show in the right column rather than as an inspector.
-    private var identitiesInPane: Bool { isRegular && isNarrow && hasRightPane }
+    private var identitiesInPane: Bool { model.identitiesPlacement == .column }
 
     var body: some View {
         content
@@ -57,8 +54,6 @@ struct DocumentScreen: View {
             .sheet(isPresented: $model.showsReplySheet) {
                 ReplySheet(caseName: model.snapshot.caseName) { reply in
                     model.restore(reply: reply)
-                    // Shown even when the Reply tab was already selected.
-                    if identitiesInPane && model.pane == .reply { model.showsIdentities = false }
                 }
             }
             .sheet(item: $model.share, onDismiss: nil) { items in
@@ -77,36 +72,14 @@ struct DocumentScreen: View {
                 // The window's undo holds this document's steps only (#672).
                 model.attachSystemUndo(undoManager, for: screenID)
                 model.refresh()
-                // The root swaps layouts on a size-class change, so this
-                // screen is new: a drawer opened in a compact window stays
-                // shut when the window narrows again (#674).
-                if isRegular { model.closeIdentitiesDrawer() }
-                // In a narrow window the original shows first.
-                if isRegular && !identitiesInPane && model.snapshot.phase != .recognizing {
-                    model.showsIdentities = true
-                }
             }
             .onDisappear { model.detachSystemUndo(for: screenID) }
-            .onChange(of: sizeClass) { model.closeIdentitiesDrawer() }
-            .onChange(of: identitiesInPane) { _, inPane in
-                // Rotating to portrait shows the original; to landscape, the list.
-                if isRegular { model.showsIdentities = !inPane }
-            }
-            .onChange(of: model.pane) { _, pane in
-                // A restored reply shows over the list.
-                if identitiesInPane && pane == .reply { model.showsIdentities = false }
-            }
+            // Where Identities show follows the window (ADR 0104).
+            .onChange(of: layout, initial: true) { _, layout in model.windowChanged(to: layout) }
     }
 
     private var identities: some View {
-        IdentitiesPanel(model: model, isRegular: isRegular)
-    }
-
-    /// Identities in the right column cover the reply, so the hand-off bar
-    /// goes back to acting on the document, the text the user sees.
-    private func showIdentities(_ show: Bool) {
-        if show && identitiesInPane && model.pane == .reply { model.pane = .text }
-        model.showIdentities(show, compact: !isRegular)
+        IdentitiesPanel(model: model)
     }
 
     /// The inspector stays closed while Identities show in the right column.
@@ -114,9 +87,10 @@ struct DocumentScreen: View {
     /// the inspector, a sheet there, stays closed.
     private var inspectorBinding: Binding<Bool> {
         Binding(
-            get: { isRegular && model.showsIdentities && !identitiesInPane },
-            set: { model.showsIdentities = $0 })
+            get: { model.identitiesPlacement == .inspector && model.wantsIdentities },
+            set: { model.showIdentities($0) })
     }
+
 
     // MARK: Panes
 
@@ -126,7 +100,7 @@ struct DocumentScreen: View {
             HStack(spacing: 0) {
                 textPane
                 Divider()
-                if identitiesInPane && model.showsIdentities {
+                if identitiesInPane && model.wantsIdentities {
                     identities
                 } else if model.pane == .reply, let reply = model.snapshot.reply {
                     ReplyPane(reply: reply, onClear: model.clearReply)
@@ -196,8 +170,8 @@ struct DocumentScreen: View {
             scoped: model.scopedMentions,
             revealRequest: model.revealRequest,
             revealRange: model.revealRange,
-            rendered: !showsSource,
-            serif: serif,
+            rendered: !preferences.showsSource,
+            serif: preferences.serif,
             onCandidate: { model.open($0) },
             onReplace: { model.markSelection($0) },
             onReviewNext: { model.reviewNext() },
@@ -320,7 +294,7 @@ struct DocumentScreen: View {
                 Label("Copy for AI", systemImage: "doc.on.doc")
             }
         }
-        if let app, let document = app.home.documents.first(where: { $0.id == model.id }) {
+        if let app, let document = app.library.document(model.id) {
             DocumentMenuItems(app: app, document: document)
         }
     }
@@ -377,7 +351,7 @@ struct DocumentScreen: View {
         // One group: beside a title menu, separate items overflow into More.
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
-                showIdentities(!(isRegular ? model.showsIdentities : model.identitiesDrawerOpen))
+                model.showIdentities(!model.identitiesShowing)
             } label: {
                 Label("Identities", systemImage: "person.text.rectangle")
             }
@@ -392,7 +366,7 @@ struct DocumentScreen: View {
                 .disabled(model.snapshot.markdown.isEmpty)
                 .accessibilityIdentifier("find-in-document")
                 // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-                Toggle(isOn: $showsSource) {
+                Toggle(isOn: Bindable(preferences).showsSource) {
                     Label("Show Markdown", systemImage: "number")
                 }
                 .accessibilityIdentifier("show-markdown")
@@ -410,16 +384,15 @@ struct DocumentScreen: View {
     private var paneBinding: Binding<Shown> {
         Binding(
             get: {
-                if identitiesInPane && model.showsIdentities { return .identities }
+                if identitiesInPane && model.wantsIdentities { return .identities }
                 return .pane(isRegular && model.pane == .text ? .original : model.pane)
             },
             set: { shown in
                 switch shown {
                 case .identities:
-                    showIdentities(true)
+                    model.showIdentities(true)
                 case .pane(let pane):
-                    if identitiesInPane { model.showsIdentities = false }
-                    model.pane = pane
+                    model.show(pane)
                 }
             })
     }

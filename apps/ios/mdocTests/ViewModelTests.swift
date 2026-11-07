@@ -174,22 +174,19 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertEqual(model.setupNeeds, .detector)
     }
 
-    /// On iPad Home and the document are on screen together: the setup card
+    /// On iPad the Documents page and the document are on screen together: the setup card
     /// shows once, in the document that asked for it.
     func testHomeLeavesTheSetupCardToTheDocumentThatAsked() async throws {
         let seeded = try Fixture.seeded(memory: Fixture.detectorTier)
-        let app = AppModel(
-            core: seeded.core, storage: seeded.storage,
-            background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
-            network: FakeNetwork(.wifi))
+        let app = Fixture.app(seeded)
         XCTAssertTrue(app.setup.showsCard)
-        app.selection = seeded.quotation
-        let document = try XCTUnwrap(app.documentModel(for: seeded.quotation))
+        app.open(seeded.quotation)
+        let document = try XCTUnwrap(app.openModel)
         XCTAssertFalse(app.openDocumentShowsSetup)
         await document.findNames()
         XCTAssertTrue(document.needsSetup)
         XCTAssertTrue(app.openDocumentShowsSetup)
-        app.selection = nil
+        app.showStart()
         XCTAssertFalse(app.openDocumentShowsSetup)
     }
 
@@ -272,10 +269,10 @@ final class DocumentViewModelTests: XCTestCase {
 }
 
 @MainActor
-final class HomeViewModelTests: XCTestCase {
+final class LibraryModelTests: XCTestCase {
     func testDocumentsAreNewestFirstWithTheirCase() throws {
         let seeded = try Fixture.seeded()
-        let home = HomeViewModel(library: seeded.library)
+        let home = LibraryModel(library: seeded.library)
         let documents = home.documents
         XCTAssertEqual(documents.map(\.id), [seeded.tenancy, seeded.letter, seeded.quotation])
         let tenancy = try XCTUnwrap(documents.first { $0.id == seeded.tenancy })
@@ -286,20 +283,18 @@ final class HomeViewModelTests: XCTestCase {
 
     func testImportIntoAnExistingCase() throws {
         let seeded = try Fixture.seeded()
-        let home = HomeViewModel(library: seeded.library)
+        let home = LibraryModel(library: seeded.library)
         let pending = PendingImport(source: .text("Maya Ellison phoned."), suggestedTitle: "Call note")
-        home.pendingImport = pending
-        let session = try XCTUnwrap(home.importDocument(pending, title: " ", into: .existing(seeded.harbour)))
-        XCTAssertNil(home.pendingImport)
+        let session = try home.importDocument(pending, title: " ", into: .existing(seeded.harbour))
         XCTAssertEqual(session.snapshot().title, "Call note")
         XCTAssertEqual(session.snapshot().caseID, seeded.harbour)
         XCTAssertEqual(home.documents.filter { $0.caseID == seeded.harbour }.count, 2)
     }
 
     func testImportStartsANewCaseByDefault() throws {
-        let home = HomeViewModel(library: try Fixture.seeded().library)
+        let home = LibraryModel(library: try Fixture.seeded().library)
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
-        _ = home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
+        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: "Note"))
         XCTAssertEqual(home.cases.count, 3)
         let note = try XCTUnwrap(home.documents.first { $0.title == "Note" })
         XCTAssertEqual(home.caseSummary(of: note)?.name, "Note")
@@ -308,28 +303,28 @@ final class HomeViewModelTests: XCTestCase {
     /// A new case never takes a name a case already has: the case pickers
     /// could not tell the two apart.
     func testANewCaseOfATakenNameIsNumbered() throws {
-        let home = HomeViewModel(library: try Fixture.seeded().library)
+        let home = LibraryModel(library: try Fixture.seeded().library)
         let taken = try XCTUnwrap(home.cases.first?.name)
         let pending = PendingImport(source: .text("Text"), suggestedTitle: "Note")
-        _ = home.importDocument(pending, title: "Note", into: .newCase(name: taken))
+        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: taken))
         XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
         XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 2" })
         // Spaces around a name count for nothing, as the core trims them.
-        _ = home.importDocument(pending, title: "Note", into: .newCase(name: " \(taken) "))
+        _ = try home.importDocument(pending, title: "Note", into: .newCase(name: " \(taken) "))
         XCTAssertEqual(home.cases.filter { $0.name == taken }.count, 1)
         XCTAssertTrue(home.cases.contains { $0.name == "\(taken) 3" })
-        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
-        XCTAssertEqual(HomeViewModel.unusedName("Lease", among: ["Other"]), "Lease")
+        XCTAssertEqual(LibraryModel.unusedName("Lease", among: ["Lease", "Lease 2"]), "Lease 3")
+        XCTAssertEqual(LibraryModel.unusedName("Lease", among: ["Other"]), "Lease")
     }
 
-    /// A scan that found nothing says so on Home (ADR 0087).
+    /// A scan that found nothing says so in the lists (ADR 0087).
     func testStatusSaysWhenNothingWasFound() {
         var document = DocumentSummary(
             id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .ready,
             pendingCount: 0, updated: .now, candidateCount: 0)
-        XCTAssertEqual(HomeViewModel.status(of: document), "Nothing found")
+        XCTAssertEqual(LibraryModel.status(of: document), "Nothing found")
         document.candidateCount = 3
-        XCTAssertEqual(HomeViewModel.status(of: document), "Ready to share")
+        XCTAssertEqual(LibraryModel.status(of: document), "Ready to share")
     }
 
     /// An interrupted import reads as one; scans and photos keep the
@@ -338,27 +333,27 @@ final class HomeViewModelTests: XCTestCase {
         var document = DocumentSummary(
             id: DocumentID(rawValue: "quotation"), title: "Quotation", caseID: nil, kind: .docx, phase: .recognizing,
             pendingCount: 0, updated: .now)
-        XCTAssertEqual(HomeViewModel.status(of: document), "Import not finished")
+        XCTAssertEqual(LibraryModel.status(of: document), "Import not finished")
         document.kind = .pdf
-        XCTAssertEqual(HomeViewModel.status(of: document), "Import not finished")
+        XCTAssertEqual(LibraryModel.status(of: document), "Import not finished")
         document.kind = .scan
-        XCTAssertEqual(HomeViewModel.status(of: document), "Text not recognized yet")
+        XCTAssertEqual(LibraryModel.status(of: document), "Text not recognized yet")
         document.kind = .image
-        XCTAssertEqual(HomeViewModel.status(of: document), "Text not recognized yet")
+        XCTAssertEqual(LibraryModel.status(of: document), "Text not recognized yet")
     }
 
     func testBelowTheFloorNothingWaitsForFindNames() {
         let document = DocumentSummary(
             id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
             pendingCount: 0, updated: .now)
-        XCTAssertEqual(HomeViewModel.status(of: document), "Ready to find names")
-        XCTAssertEqual(HomeViewModel.status(of: document, findsNames: false), "Ready to mark names")
+        XCTAssertEqual(LibraryModel.status(of: document), "Ready to find names")
+        XCTAssertEqual(LibraryModel.status(of: document, findsNames: false), "Ready to mark names")
     }
 
     func testDeleteRemovesTheDocument() throws {
         let seeded = try Fixture.seeded()
-        let home = HomeViewModel(library: seeded.library)
-        home.delete(seeded.tenancy)
+        let home = LibraryModel(library: seeded.library)
+        try home.delete(seeded.tenancy)
         XCTAssertFalse(home.documents.contains { $0.caseID == seeded.harbour })
     }
 }

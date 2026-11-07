@@ -31,8 +31,7 @@ struct ReviewBar: View {
     /// +1 stepping forward, -1 back: where the next card comes from.
     @State private var direction = 1
     @State private var grabberLift: CGFloat = 0
-    @AppStorage(ReviewHint.nudgedKey) private var nudged = false
-    @AppStorage(ReviewHint.grabberBouncedKey) private var grabberBounced = false
+    @Environment(\.preferences) private var preferences
 
     /// A drag on the card: its axis, fixed by the first movement, and how far.
     struct CardDrag: Equatable {
@@ -143,8 +142,8 @@ struct ReviewBar: View {
 
     /// Once: the card slides a little and back, so the swipe is seen.
     private func nudgeOnce() async {
-        guard ReviewHint.enabled, !nudged, !reduceMotion, model.reviewOrder.count > 1 else { return }
-        nudged = true
+        guard ReviewHint.enabled, !preferences.nudged, !reduceMotion, model.reviewOrder.count > 1 else { return }
+        preferences.nudged = true
         try? await Task.sleep(for: .milliseconds(600))
         withAnimation(.easeInOut(duration: 0.25)) { drag = -28 }
         try? await Task.sleep(for: .milliseconds(260))
@@ -154,8 +153,8 @@ struct ReviewBar: View {
     /// Once, on the third card: the grabber hops, so the pull is seen. No
     /// words; Reduce Motion skips it.
     private func bounceGrabberOnce() async {
-        guard ReviewHint.enabled, !grabberBounced, !reduceMotion, !model.barExpanded else { return }
-        grabberBounced = true
+        guard ReviewHint.enabled, !preferences.grabberBounced, !reduceMotion, !model.barExpanded else { return }
+        preferences.grabberBounced = true
         for _ in 0..<2 {
             withAnimation(.easeOut(duration: 0.16)) { grabberLift = -6 }
             try? await Task.sleep(for: .milliseconds(170))
@@ -350,14 +349,13 @@ private struct Peek: View {
 /// focus ("ORG_1 · 1 of 3 ×"). Tapping it opens Identities; × ends review.
 private struct ProgressLine: View {
     @Bindable var model: DocumentViewModel
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         let order = model.reviewOrder
         let index = (order.index(of: model.reviewing) ?? 0) + 1
         HStack(spacing: Space.xs) {
             Button {
-                model.showIdentities(true, compact: sizeClass == .compact)
+                model.showIdentities(true)
             } label: {
                 HStack(spacing: Space.xs) {
                     Track(fraction: order.count == 0 ? 0 : Double(order.decided) / Double(order.count))

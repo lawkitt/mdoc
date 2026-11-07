@@ -40,9 +40,6 @@ final class SlowJobs: DocumentSession, @unchecked Sendable {
         try base.decide(candidate, decision, scope: scope)
     }
     func replaceAllPending() throws -> DocumentSnapshot { try base.replaceAllPending() }
-    func addReplacement(_ range: SourceRange, category: mdoc.Category) throws -> DocumentSnapshot {
-        try base.addReplacement(range, category: category)
-    }
     func copyForAI() throws -> HandOff { try base.copyForAI() }
     func restoreReply(_ reply: String) throws -> DocumentSnapshot { try base.restoreReply(reply) }
     func clearReply() throws -> DocumentSnapshot { try base.clearReply() }

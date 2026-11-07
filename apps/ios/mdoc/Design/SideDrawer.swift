@@ -22,8 +22,12 @@ struct SideDrawer<Panel: View, Content: View>: View {
     @State private var drag: CGFloat = 0
     @State private var dragging = false
     /// The panel is drawn only while it shows, or is about to: closed, it
-    /// isn't there for VoiceOver, taps or tests.
+    /// isn't there for VoiceOver, taps or tests (its UIKit views would be,
+    /// hidden or not), and it is made fresh for each opening.
     @State private var showsPanel = false
+    /// Follows `isOpen` with the drawer's own motion, so the panel goes
+    /// once the screen has slid back over it (the animation's completion).
+    @State private var settled = false
 
     /// The sliver of the screen left showing while the panel is open.
     static var sliver: CGFloat { 72 }
@@ -48,18 +52,18 @@ struct SideDrawer<Panel: View, Content: View>: View {
             let progress = width > 0 ? shown / width : 0
             ZStack(alignment: side == .leading ? .leading : .trailing) {
                 if showsPanel || isOpen || dragging {
-                panel()
-                    .frame(width: width)
-                    .frame(maxHeight: .infinity)
-                    // A little parallax: the panel comes from under the content.
-                    .offset(x: sign * -(1 - progress) * 24)
-                    .opacity(reduceMotion ? Double(progress) : 1)
-                    .accessibilityAddTraits(isOpen ? .isModal : [])
-                    .accessibilityAction(.escape) { setOpen(false) }
-                    // Closed, it is not there for VoiceOver (or tests); last,
-                    // so nothing after it brings it back.
-                    .accessibilityHidden(!isOpen)
-                    .allowsHitTesting(isOpen || dragging)
+                    panel()
+                        .frame(width: width)
+                        .frame(maxHeight: .infinity)
+                        // A little parallax: the panel comes from under the content.
+                        .offset(x: sign * -(1 - progress) * 24)
+                        .opacity(reduceMotion ? Double(progress) : 1)
+                        .accessibilityAddTraits(isOpen ? .isModal : [])
+                        .accessibilityAction(.escape) { setOpen(false) }
+                        // Closed, it is not there for VoiceOver (or tests); last,
+                        // so nothing after it brings it back.
+                        .accessibilityHidden(!isOpen)
+                        .allowsHitTesting(isOpen || dragging)
                 }
                 content()
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -84,21 +88,31 @@ struct SideDrawer<Panel: View, Content: View>: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: side == .leading ? .leading : .trailing)
             .background(Palette.background.ignoresSafeArea())
+            // Nothing to see: what the settling animation moves, so its
+            // completion comes when the drawer's motion ends.
+            .background(Color.clear.frame(width: settled ? 1 : 0, height: 1).accessibilityHidden(true))
             .simultaneousGesture(isOpen ? dragGesture(width: width) : nil)
         }
         .onChange(of: isOpen) { _, open in
-            if open {
-                showsPanel = true
-            } else {
+            if open { showsPanel = true }
+            withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
+                settled = open
+            } completion: {
                 // Gone once the screen has slid back over it.
-                Task {
-                    try? await Task.sleep(for: .milliseconds(450))
-                    if !isOpen && !dragging { showsPanel = false }
-                }
+                if !isOpen && !dragging { showsPanel = false }
             }
         }
         .onChange(of: dragging) { _, now in
-            if now { showsPanel = true }
+            if now {
+                showsPanel = true
+            } else if !isOpen {
+                // A drag that ends shut: gone once the screen is back.
+                withAnimation(Motion.move(reduced: reduceMotion), completionCriteria: .removed) {
+                    settled.toggle()
+                } completion: {
+                    if !isOpen && !dragging { showsPanel = false }
+                }
+            }
         }
     }
 

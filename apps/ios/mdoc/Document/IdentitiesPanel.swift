@@ -5,25 +5,26 @@ import SwiftUI
 /// the iPhone drawer show the same panel.
 struct IdentitiesPanel: View {
     @Bindable var model: DocumentViewModel
-    /// Beside the text (iPad): nothing to close.
-    var isRegular: Bool
     @State private var sameAsSource: IdentityID?
+
+    /// In the drawer: a row closes it, and it has its own close button.
+    private var inDrawer: Bool { model.identitiesPlacement == .drawer }
 
     var body: some View {
         IdentitiesView(
             model: model,
             onOpen: { id in
-                if !isRegular { model.showIdentities(false, compact: true) }
+                if inDrawer { model.showIdentities(false) }
                 model.openIdentity(id)
             },
             onFocus: { focus in
-                if !isRegular { model.showIdentities(false, compact: true) }
+                if inDrawer { model.showIdentities(false) }
                 model.beginReview(focus: focus)
             },
             onPickSameAs: { sameAsSource = $0 },
-            onClose: isRegular ? nil : { withAnimation(Motion.snappy) { model.showIdentities(false, compact: true) } })
+            onClose: inDrawer ? { withAnimation(Motion.snappy) { model.showIdentities(false) } } : nil)
         // In the drawer the document's own toast is under the panel.
-        .modifier(DrawerToast(model: model, enabled: !isRegular && model.identitiesDrawerOpen))
+        .modifier(DrawerToast(model: model, enabled: inDrawer && model.identitiesDrawerOpen))
         .sheet(item: Binding(get: { sameAsSource.map(Source.init) }, set: { if $0 == nil { sameAsSource = nil } })) { source in
             if let identity = model.snapshot.identities.first(where: { $0.id == source.id }) {
                 SameAsPicker(
@@ -42,22 +43,23 @@ struct IdentitiesPanel: View {
 }
 
 /// iPhone: the open document's Identities as a drawer from the right edge,
-/// the mirror of the sidebar (2026-11-06 grill, Q8). Without a document
-/// the screen shows as it is.
+/// the mirror of the sidebar (2026-11-06 grill, Q8). Without a document,
+/// or in a regular window, the screen shows as it is.
 struct IdentitiesDrawer<Content: View>: View {
-    @Bindable var app: AppModel
+    let model: DocumentViewModel?
+    let layout: DocumentLayout
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if let id = app.selection, let model = app.documentModel(for: id) {
+        if let model, layout.identities(hasRightPane: model.hasRightPane) == .drawer {
             // The drawer, not the wish: a wide window that narrows keeps
             // the text in view (#674).
             SideDrawer(
                 side: .trailing,
-                isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0, compact: true) }),
+                isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0) }),
                 closeLabel: "Close Identities"
             ) {
-                IdentitiesPanel(model: model, isRegular: false)
+                IdentitiesPanel(model: model)
             } content: {
                 content()
             }

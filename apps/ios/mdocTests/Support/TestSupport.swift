@@ -43,6 +43,20 @@ enum Fixture {
         return copy
     }
 
+    /// Preferences of a test's own, in a fresh store.
+    static func preferences() -> Preferences {
+        Preferences(store: UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)")!)
+    }
+
+    /// The app's model over `seeded`, with preferences of its own.
+    @MainActor
+    static func app(_ seeded: Seeded) -> AppModel {
+        AppModel(
+            core: seeded.core, storage: seeded.storage,
+            background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
+            network: FakeNetwork(.wifi), preferences: preferences())
+    }
+
     /// The real core over fresh temporary storage, with a fixed case key.
     static func core(memory: UInt64 = belowFloor) throws -> (Core, MdocStorage) {
         let storage = try temporaryStorage()

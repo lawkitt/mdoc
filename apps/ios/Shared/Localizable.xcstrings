@@ -215,12 +215,6 @@
     "Add a document" : {
 
     },
-    "Add a letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
-
-    },
-    "Add a letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
-
-    },
     "Add another" : {
 
     },
@@ -382,6 +376,9 @@
 
     },
     "Delete" : {
+
+    },
+    "Deleted %@" : {
 
     },
     "Dismiss hint" : {
@@ -729,9 +726,6 @@
 
     },
     "No documents or cases match “%@”." : {
-
-    },
-    "No documents yet" : {
 
     },
     "No names found. Select text to mark one." : {
@@ -1121,9 +1115,6 @@
 
     },
     "Show sidebar" : {
-
-    },
-    "Show Sidebar" : {
 
     },
     "Shows the kept names." : {

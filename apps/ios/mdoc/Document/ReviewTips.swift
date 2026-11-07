@@ -26,17 +26,17 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         }
     }
 
-    private var learnedKey: String { "hint.\(rawValue).learned" }
+    private var learnedKey: Preferences.Key {
+        switch self {
+        case .swipe: .swipeLearned
+        case .longPress: .longPressLearned
+        }
+    }
 
-    /// Used once, or dismissed: never shown again.
-    var isLearned: Bool { UserDefaults.standard.bool(forKey: learnedKey) }
+    /// Used once, or dismissed: never shown again (`Preferences`).
+    var isLearned: Bool { Preferences.shared.isLearned(learnedKey) }
 
-    func learn() { UserDefaults.standard.set(true, forKey: learnedKey) }
-
-    /// The grabber's one bounce that says the bar pulls up.
-    static let grabberBouncedKey = "hint.grabber.bounced"
-    /// The card's one nudge that says it swipes.
-    static let nudgedKey = "reviewNudged"
+    func learn() { Preferences.shared.learn(learnedKey) }
 
     /// Off in UI tests, whose layout a hint would shift.
     nonisolated(unsafe) static var enabled = true
@@ -47,9 +47,7 @@ enum ReviewHint: String, CaseIterable, Identifiable {
 
     /// Settings › Review › Reset tips: every hint shows again, at once.
     static func resetAll() {
-        for hint in allCases { UserDefaults.standard.removeObject(forKey: hint.learnedKey) }
-        UserDefaults.standard.removeObject(forKey: grabberBouncedKey)
-        UserDefaults.standard.removeObject(forKey: nudgedKey)
+        Preferences.shared.resetTips()
     }
 }
 

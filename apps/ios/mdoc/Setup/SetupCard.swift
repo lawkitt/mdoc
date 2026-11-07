@@ -7,11 +7,11 @@ import UIKit
 /// (ADR 0090).
 struct SetupCard: View {
     @Bindable var model: SetupViewModel
-    /// The model the waiting job needs; nil (Home) offers every missing one.
+    /// The model the waiting job needs; nil (Start) offers every missing one.
     var needs: ModelPurpose?
     /// Shows Not now.
     var dismissible = true
-    /// What Not now does; on Home it hides the card until next launch.
+    /// What Not now does; on Start it hides the card for good.
     var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
     var then: (@MainActor () async -> Void)?
@@ -83,7 +83,7 @@ struct SetupCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The grouped row colour: white on Home's grey list in light mode, a
+        // The grouped row colour: white on the Documents page's grey list in light mode, a
         // lifted grey in dark (the plain secondary background matched the list).
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .cellularQuestion(model: model)

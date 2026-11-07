@@ -35,7 +35,7 @@ struct RestoreExtensionView: View {
             ActivityView(items: items.items)
         }
         // The app's theme, from the App Group (ADR 0099).
-        .preferredColorScheme(AppTheme.current.colorScheme)
+        .preferredColorScheme(Preferences.shared.theme.colorScheme)
     }
 
     @ViewBuilder

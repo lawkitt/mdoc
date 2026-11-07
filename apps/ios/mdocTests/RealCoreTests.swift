@@ -248,15 +248,6 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
     }
 
-    func testManualReplacementReplacesEveryRepeat() throws {
-        let session = try reviewed(core())
-        let text = session.snapshot().markdown
-        let range = try XCTUnwrap(text.range(of: "Ellison"))
-        let start = text.utf8.distance(from: text.utf8.startIndex, to: range.lowerBound)
-        let after = try session.addReplacement(SourceRange(start: start, end: start + "Ellison".utf8.count), category: .person)
-        XCTAssertFalse(after.markdown.contains("Ms Ellison's"))
-    }
-
     /// ADR 0098 through the real core: a mark proposes in the guessed
     /// category, decisions and identity changes undo one step at a time,
     /// and each saves into the case without taking an undone step back.

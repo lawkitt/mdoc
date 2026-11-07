@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A raised surface: the review card, Home's empty-state tiles, a
+/// A raised surface: the review card, Start's add tiles, a
 /// grouped block outside a List.
 struct CardStyle: ViewModifier {
     var padding: CGFloat = Space.m

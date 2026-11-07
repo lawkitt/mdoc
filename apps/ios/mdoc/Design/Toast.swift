@@ -19,11 +19,13 @@ struct Toast: View {
     /// render draws materials unevenly.
     var opaque = false
 
-    /// The action button: dismissed first, since the action may show a
-    /// toast of its own ("Undid … · Redo"), which must stay.
+    /// The action button. The action runs before the toast goes, so the
+    /// toast's end never acts first (Delete happens when its toast ends,
+    /// unless Undo was tapped); a toast the action shows of its own ("Undid
+    /// … · Redo") stays, as `dismiss` clears only this message.
     func perform() {
-        dismiss()
         message.action?()
+        dismiss()
     }
 
     var body: some View {
@@ -64,7 +66,9 @@ struct ToastPresenter: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
             if let message {
-                Toast(message: message) { self.message = nil }
+                Toast(message: message) {
+                    if self.message?.id == message.id { self.message = nil }
+                }
                     .padding(.bottom, Space.xs)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .task(id: message.id) {
