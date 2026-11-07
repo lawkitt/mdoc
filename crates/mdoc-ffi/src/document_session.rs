@@ -104,9 +104,44 @@ struct Document {
 #[derive(uniffi::Object)]
 pub struct DocumentSession {
     document: Mutex<Option<Document>>,
-    /// The running job's cancel flag.
-    job: Mutex<Arc<AtomicBool>>,
+    job: Mutex<Jobs>,
     generation: Mutex<u64>,
+}
+
+/// The session's jobs, one at a time: a new job stops the one before.
+#[derive(Default)]
+struct Jobs {
+    /// The latest job's cancel flag.
+    flag: Arc<AtomicBool>,
+    /// Bumped by every job, so a job that ends knows whether it is the latest.
+    id: u64,
+    /// The latest job has not ended.
+    running: bool,
+    /// `cancel` came while no job ran: the next job starts cancelled.
+    pending: bool,
+}
+
+/// A running job's cancel flag; dropping it ends the job.
+struct Job<'a> {
+    session: &'a DocumentSession,
+    id: u64,
+    flag: Arc<AtomicBool>,
+}
+
+impl std::ops::Deref for Job<'_> {
+    type Target = Arc<AtomicBool>;
+    fn deref(&self) -> &Arc<AtomicBool> {
+        &self.flag
+    }
+}
+
+impl Drop for Job<'_> {
+    fn drop(&mut self) {
+        let mut jobs = self.session.lock_job();
+        if jobs.id == self.id {
+            jobs.running = false;
+        }
+    }
 }
 
 #[uniffi::export]
@@ -115,7 +150,7 @@ impl DocumentSession {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             document: Mutex::new(None),
-            job: Mutex::new(Arc::new(AtomicBool::new(false))),
+            job: Mutex::new(Jobs::default()),
             generation: Mutex::new(0),
         })
     }
@@ -208,8 +243,15 @@ impl DocumentSession {
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
     /// at its next checkpoint (model loads and native calls finish first).
+    /// With no job running, the next job to start stops at once: a cancel
+    /// the platform passes on just before the job starts is never lost.
     pub fn cancel(&self) {
-        self.lock_job().store(true, Ordering::Relaxed);
+        let mut jobs = self.lock_job();
+        if jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        } else {
+            jobs.pending = true;
+        }
     }
 
     pub fn snapshot(&self) -> Result<ReviewSnapshot, CoreError> {
@@ -647,11 +689,11 @@ impl DocumentSession {
     fn open(
         &self,
         imported: intake::Imported,
-        cancel: &Arc<AtomicBool>,
+        cancel: &Job,
         opened: Option<Opened>,
     ) -> Result<ReviewSnapshot, CoreError> {
         let job = self.lock_job();
-        if !Arc::ptr_eq(&job, cancel) || cancel.load(Ordering::Relaxed) {
+        if job.id != cancel.id || cancel.load(Ordering::Relaxed) {
             return Err(CoreError::Cancelled);
         }
         let generation = {
@@ -694,15 +736,22 @@ impl DocumentSession {
         Ok(snapshot)
     }
 
-    /// A new job: the one before stops at its next checkpoint.
-    fn start_job(&self) -> Arc<AtomicBool> {
-        let mut job = self.lock_job();
-        job.store(true, Ordering::Relaxed);
-        *job = Arc::new(AtomicBool::new(false));
-        job.clone()
+    /// A new job: the one before stops at its next checkpoint, and a
+    /// cancel that came while none ran stops this one.
+    fn start_job(&self) -> Job<'_> {
+        let mut jobs = self.lock_job();
+        jobs.flag.store(true, Ordering::Relaxed);
+        jobs.flag = Arc::new(AtomicBool::new(std::mem::take(&mut jobs.pending)));
+        jobs.id += 1;
+        jobs.running = true;
+        Job {
+            session: self,
+            id: jobs.id,
+            flag: jobs.flag.clone(),
+        }
     }
 
-    fn lock_job(&self) -> MutexGuard<'_, Arc<AtomicBool>> {
+    fn lock_job(&self) -> MutexGuard<'_, Jobs> {
         self.job.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -845,6 +894,32 @@ mod tests {
             assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
         }
         assert_eq!(session.snapshot().unwrap().text, "Newer");
+        // A cancel during that job stopped it, and only it.
+        let next = session.import_file(path.display().to_string(), ImportOptions::default(), None);
+        assert_eq!(next.unwrap().text, "Older");
+    }
+
+    /// #680: a cancel the platform passes on just before the job starts
+    /// stops it, for an import and for a scan; the job after it runs.
+    #[test]
+    fn a_cancel_just_before_a_job_stops_it() {
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee, ann@example.com.").unwrap();
+        let session = session("Current", "Current");
+        session.cancel();
+        let result =
+            session.import_file(path.display().to_string(), ImportOptions::default(), None);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        session
+            .import_file(path.display().to_string(), ImportOptions::default(), None)
+            .unwrap();
+        session.cancel();
+        let result = session.scan(None, None);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert!(session.snapshot().unwrap().mentions.is_empty());
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
     }
 
     /// Save → reopen from the library → share → restore → save: the file
