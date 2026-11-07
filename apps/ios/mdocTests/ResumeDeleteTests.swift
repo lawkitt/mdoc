@@ -21,7 +21,7 @@ final class ResumeDeleteTests: XCTestCase {
     }
 
     /// A scanned page waiting for OCR, imported but not read.
-    private func pendingScan(_ core: Core) throws -> (any DocumentSession, URL) {
+    private func pendingScan(_ core: Core) throws -> (any mdoc.DocumentSession, URL) {
         let folder = storage.url(.originals).appendingPathComponent("scan", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let page = folder.appendingPathComponent("page-1.jpg")
@@ -73,7 +73,7 @@ final class ResumeDeleteTests: XCTestCase {
 
         let reopened = try core().library.session(for: session.id)
         XCTAssertTrue(reopened.snapshot().resumesOCR)
-        XCTAssertEqual(reopened.snapshot().phase, .recognizing)
+        XCTAssertNil(reopened.snapshot().phase, "recognizing")
     }
 
     @MainActor

@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 /// Converts the core's UTF-8 source offsets to the UTF-16 offsets UIKit uses,
 /// and back. Built once per Markdown text.
@@ -31,6 +32,10 @@ struct TextOffsets: Sendable {
     func nsRange(_ range: SourceRange) -> NSRange {
         let start = utf16(range.start)
         return NSRange(location: start, length: utf16(range.end) - start)
+    }
+
+    func nsRange(_ range: TextRange) -> NSRange {
+        nsRange(SourceRange(range))
     }
 
     /// The first UTF-8 offset at or after a UTF-16 offset.

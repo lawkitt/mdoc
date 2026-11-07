@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import XCTest
 @testable import mdoc
@@ -9,8 +10,8 @@ final class ScreenSnapshotTests: XCTestCase {
     private let today = Calendar.current.date(bySettingHour: 17, minute: 24, second: 0, of: .now)!
     private let earlier = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 12))!
 
-    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, caseID: String? = nil) -> DocumentSummary {
-        DocumentSummary(
+    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, caseID: String? = nil) -> LibraryDocument {
+        LibraryDocument(
             id: DocumentID(rawValue: title), title: title, caseID: caseID.map(CaseID.init), kind: kind, phase: phase,
             pendingCount: pending, updated: updated, candidateCount: candidates)
     }

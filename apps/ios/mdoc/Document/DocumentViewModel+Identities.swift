@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 /// Identities as a drawer (2026-11-06 grill, round 2): the list's state
 /// buttons, Replace N, Looks like, and Select's bulk Replace, Keep and Same
@@ -13,10 +14,10 @@ extension DocumentViewModel {
 
     /// Merge hints whose two identities are both still there: the Looks
     /// like cards.
-    var identityHints: [(hint: MergeHint, from: Identity, into: Identity)] {
+    var identityHints: [(hint: LinkHint, from: Identity, into: Identity)] {
         snapshot.mergeHints.compactMap { hint in
-            guard let from = snapshot.identities.first(where: { $0.id == hint.from }),
-                  let into = snapshot.identities.first(where: { $0.id == hint.into }) else { return nil }
+            guard let from = snapshot.identities.first(where: { $0.id == hint.fromID }),
+                  let into = snapshot.identities.first(where: { $0.id == hint.intoID }) else { return nil }
             return (hint, from, into)
         }
     }

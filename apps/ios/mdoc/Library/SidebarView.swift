@@ -19,13 +19,13 @@ struct SidebarView: View {
     /// Recent stops at this many; the Documents page has the rest.
     static let recentLimit = 20
 
-    private var toReview: [DocumentSummary] { library.toReview }
+    private var toReview: [LibraryDocument] { library.toReview }
 
-    private var recent: [DocumentSummary] {
+    private var recent: [LibraryDocument] {
         Array(library.documents.filter { $0.phase != .reviewing }.prefix(Self.recentLimit))
     }
 
-    private var matches: (documents: [DocumentSummary], cases: [CaseSummary]) {
+    private var matches: (documents: [LibraryDocument], cases: [CaseSummary]) {
         library.search(query)
     }
 
@@ -200,7 +200,7 @@ struct SidebarView: View {
 
     // MARK: Document rows
 
-    private func row(_ document: DocumentSummary) -> some View {
+    private func row(_ document: LibraryDocument) -> some View {
         Button {
             app.open(document.id)
             query = ""
@@ -236,7 +236,7 @@ struct SidebarView: View {
     /// Working: a spinner. To review: how many names are left, in orange.
     /// Ready: a green dot. Otherwise nothing.
     @ViewBuilder
-    private func trailing(_ document: DocumentSummary) -> some View {
+    private func trailing(_ document: LibraryDocument) -> some View {
         if app.workingDocument == document.id {
             ProgressView()
                 .controlSize(.small)
@@ -259,7 +259,7 @@ struct SidebarView: View {
         }
     }
 
-    private func spoken(_ document: DocumentSummary) -> String {
+    private func spoken(_ document: LibraryDocument) -> String {
         var parts = [document.title]
         if app.workingDocument == document.id {
             parts.append(String(localized: "working"))

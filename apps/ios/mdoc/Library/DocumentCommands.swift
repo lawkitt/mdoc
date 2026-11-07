@@ -5,7 +5,7 @@ import SwiftUI
 /// command asks for is presented by `Presenter`.
 struct DocumentMenuItems: View {
     let app: AppModel
-    let document: DocumentSummary
+    let document: LibraryDocument
 
     var body: some View {
         Button {

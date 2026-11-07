@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 /// The review bar's model (ADR 0098): which candidate is under review,
 /// stepping in document order, deciding, undo, and the identity tools.
@@ -59,7 +60,7 @@ extension DocumentViewModel {
         // A name outside the focused group ends the focus.
         if let focus, !focus.contains(candidate) { self.focus = nil }
         if candidate.identityID != scopeIdentity {
-            reviewScope = .allOccurrences
+            reviewScope = .all
             scopeIdentity = candidate.identityID
         }
         // A new card, not the same one found again after its range moved.
@@ -98,7 +99,7 @@ extension DocumentViewModel {
 
     /// The other mentions All N reaches, outlined in the text.
     var scopedMentions: Set<CandidateID> {
-        guard reviewScope == .allOccurrences, let candidate = reviewedCandidate else { return [] }
+        guard reviewScope == .all, let candidate = reviewedCandidate else { return [] }
         return Set(snapshot.mentions(of: candidate.identityID).map(\.id)).subtracting([candidate.id])
     }
 
@@ -175,7 +176,7 @@ extension DocumentViewModel {
     func decideMention(_ id: CandidateID, _ decision: Decision) {
         guard let current = reviewedCandidate, !reviewWaitsForJob() else { return }
         let index = reviewOrder.index(of: current.id)
-        guard performReview({ try session.decide(id, decision, scope: .justThisOne) }) else { return }
+        guard performReview({ try session.decide(id, decision, scope: .this) }) else { return }
         decisionsHere += 1
         Haptics.decision()
         reselect(near: current, index: index)
@@ -289,11 +290,11 @@ extension DocumentViewModel {
     /// After undo or redo: back onto the mention the step acted on, opening
     /// the bar if review had ended.
     private func moveBar(to step: HistoryStep?) {
-        if let id = step?.candidateID, snapshot.candidate(id) != nil {
-            if let focus, let candidate = snapshot.candidate(id), !focus.contains(candidate) { self.focus = nil }
-            select(id, counts: false)
+        if let candidate = snapshot.candidate(of: step) {
+            if let focus, !focus.contains(candidate) { self.focus = nil }
+            select(candidate.id, counts: false)
             revealReviewed()
-        } else if let range = step?.range, let near = ReviewOrder(snapshot).candidate(near: range.start) {
+        } else if let range = step?.range, let near = ReviewOrder(snapshot).candidate(near: Int(range.start)) {
             focus = nil
             select(near.id, counts: false)
             revealReviewed()
@@ -307,13 +308,13 @@ extension DocumentViewModel {
     /// The category menu: each category with the alias it would give.
     func categoryChoices(for candidate: Candidate) -> [CategoryChoice] {
         (try? session.categoryChoices(for: candidate, scope: reviewScope))
-            ?? Category.allCases.map { CategoryChoice(category: $0, alias: nil, isCurrent: $0 == candidate.category) }
+            ?? Category.allCases.map { CategoryChoice(category: $0, alias: nil, current: $0 == candidate.category) }
     }
 
     func setCategory(_ category: Category) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
         let index = reviewOrder.index(of: candidate.id)
-        let splits = reviewScope == .justThisOne && mentionPosition(of: candidate).count > 1
+        let splits = reviewScope == .this && mentionPosition(of: candidate).count > 1
         guard performReview({ try session.setCategory(candidate.id, scope: reviewScope, to: category) }) else { return }
         Haptics.decision()
         reselect(near: candidate, index: index)
@@ -399,7 +400,7 @@ extension DocumentViewModel {
     func sameAsTargets(forIdentity id: IdentityID, category: Category) -> SameAsTargets {
         let others = snapshot.identities.filter { $0.id != id }
         let hinted = mergeHints(for: id).compactMap { hint in
-            others.first { $0.id == (hint.from == id ? hint.into : hint.from) }
+            others.first { $0.id == (hint.fromID == id ? hint.intoID : hint.fromID) }
         }
         let rest = others.filter { identity in !hinted.contains { $0.id == identity.id } }
             .sorted { firstMention(of: $0.id) < firstMention(of: $1.id) }
@@ -410,21 +411,21 @@ extension DocumentViewModel {
     }
 
     /// The merge hint the card shows for this mention's identity, if any.
-    func mergeHint(for candidate: Candidate) -> MergeHint? {
+    func mergeHint(for candidate: Candidate) -> LinkHint? {
         mergeHints(for: candidate.identityID).first
     }
 
     /// The identity a hint points the card's identity at.
-    func hintTarget(_ hint: MergeHint, for candidate: Candidate) -> IdentityID {
-        hint.from == candidate.identityID ? hint.into : hint.from
+    func hintTarget(_ hint: LinkHint, for candidate: Candidate) -> IdentityID {
+        hint.fromID == candidate.identityID ? hint.intoID : hint.fromID
     }
 
-    func dismissHint(_ hint: MergeHint) {
+    func dismissHint(_ hint: LinkHint) {
         performReview(isStep: false) { try session.dismissHint(hint) }
     }
 
-    private func mergeHints(for identity: IdentityID) -> [MergeHint] {
-        snapshot.mergeHints.filter { $0.from == identity || $0.into == identity }
+    private func mergeHints(for identity: IdentityID) -> [LinkHint] {
+        snapshot.mergeHints.filter { $0.fromID == identity || $0.intoID == identity }
     }
 
     private func firstMention(of identity: IdentityID) -> Int {
@@ -452,7 +453,7 @@ extension DocumentViewModel {
     /// Proposals that come with the document (Try a sample), as a scan's.
     /// Before the text is read they wait for recognition to finish.
     func proposeStored(_ names: [SampleDocument.Name]) {
-        guard snapshot.phase != .recognizing else {
+        guard snapshot.phase != nil else {
             storedNames = names
             return
         }

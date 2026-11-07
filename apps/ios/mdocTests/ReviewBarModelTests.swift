@@ -1,3 +1,4 @@
+import MdocFFI
 import XCTest
 @testable import mdoc
 
@@ -16,7 +17,7 @@ final class ReviewBarModelTests: XCTestCase {
         model.beginReview()
         let first = model.snapshot.candidates.filter { $0.state == .proposed }.min { $0.range.start < $1.range.start }
         XCTAssertEqual(model.reviewing, first?.id)
-        XCTAssertEqual(model.reviewScope, .allOccurrences)
+        XCTAssertEqual(model.reviewScope, .all)
     }
 
     func testSteppingStopsAtTheEnds() throws {
@@ -73,10 +74,10 @@ final class ReviewBarModelTests: XCTestCase {
     func testScopeResetsOnTheNextIdentity() throws {
         let model = try model()
         model.beginReview()
-        model.reviewScope = .justThisOne
+        model.reviewScope = .this
         let identity = model.reviewedCandidate?.identityID
         while model.reviewedCandidate?.identityID == identity, model.step(1) {}
-        XCTAssertEqual(model.reviewScope, .allOccurrences)
+        XCTAssertEqual(model.reviewScope, .all)
     }
 
     func testFocusKeepsSteppingInsideTheIdentity() throws {

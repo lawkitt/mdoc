@@ -77,7 +77,7 @@ final class DocumentViewModelTests: XCTestCase {
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.open(maya.id)
         XCTAssertEqual(model.reviewing, maya.id)
-        model.decide(maya.id, .replace, scope: .allOccurrences)
+        model.decide(maya.id, .replace, scope: .all)
         XCTAssertTrue(model.snapshot.markdown.contains(maya.alias))
         XCTAssertEqual(model.snapshot.identities.first { $0.id == maya.identityID }?.state, .replaced)
     }
@@ -251,7 +251,7 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNil(model.reviewing)
         XCTAssertEqual(model.notice, "Finding names. Review when it finishes.")
         XCTAssertEqual(model.noticeSymbol, "hourglass")
-        model.decide(candidate.id, .replace, scope: .allOccurrences)
+        model.decide(candidate.id, .replace, scope: .all)
         model.replaceAllPending()
         XCTAssertEqual(model.snapshot.pendingCount, pending)
         model.markSelection(candidate.range)
@@ -319,7 +319,7 @@ final class LibraryModelTests: XCTestCase {
 
     /// A scan that found nothing says so in the lists (ADR 0087).
     func testStatusSaysWhenNothingWasFound() {
-        var document = DocumentSummary(
+        var document = LibraryDocument(
             id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .ready,
             pendingCount: 0, updated: .now, candidateCount: 0)
         XCTAssertEqual(LibraryModel.status(of: document), "Nothing found")
@@ -330,8 +330,8 @@ final class LibraryModelTests: XCTestCase {
     /// An interrupted import reads as one; scans and photos keep the
     /// recognition wording (ADR 0088).
     func testStatusSaysWhenAnImportIsNotFinished() {
-        var document = DocumentSummary(
-            id: DocumentID(rawValue: "quotation"), title: "Quotation", caseID: nil, kind: .docx, phase: .recognizing,
+        var document = LibraryDocument(
+            id: DocumentID(rawValue: "quotation"), title: "Quotation", caseID: nil, kind: .docx, phase: nil,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(LibraryModel.status(of: document), "Import not finished")
         document.kind = .pdf
@@ -343,7 +343,7 @@ final class LibraryModelTests: XCTestCase {
     }
 
     func testBelowTheFloorNothingWaitsForFindNames() {
-        let document = DocumentSummary(
+        let document = LibraryDocument(
             id: DocumentID(rawValue: "letter"), title: "Letter", caseID: nil, kind: .text, phase: .unscanned,
             pendingCount: 0, updated: .now)
         XCTAssertEqual(LibraryModel.status(of: document), "Ready to find names")
@@ -409,8 +409,8 @@ final class RestoreViewModelTests: XCTestCase {
 /// A library with no cases at all.
 private final class EmptyLibrary: Library {
     func snapshot() -> LibrarySnapshot { .empty }
-    func session(for document: DocumentID) throws -> any DocumentSession { throw CoreError.notFound }
-    func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any DocumentSession {
+    func session(for document: DocumentID) throws -> any mdoc.DocumentSession { throw CoreError.notFound }
+    func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any mdoc.DocumentSession {
         throw CoreError.notFound
     }
     func deleteDocument(_ document: DocumentID) throws {}

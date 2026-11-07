@@ -29,7 +29,7 @@ final class LibraryModel {
     }
 
     /// Every document, most recently changed first.
-    var documents: [DocumentSummary] {
+    var documents: [LibraryDocument] {
         snapshot.documents.filter { !hidden.contains($0.id) }.sorted { $0.updated > $1.updated }
     }
 
@@ -37,24 +37,24 @@ final class LibraryModel {
 
     var isEmpty: Bool { documents.isEmpty }
 
-    func caseSummary(of document: DocumentSummary) -> CaseSummary? {
+    func caseSummary(of document: LibraryDocument) -> CaseSummary? {
         snapshot.cases.first { $0.id == document.caseID }
     }
 
-    func document(_ id: DocumentID) -> DocumentSummary? {
+    func document(_ id: DocumentID) -> LibraryDocument? {
         documents.first { $0.id == id }
     }
 
     // MARK: Lists
 
     /// The sidebar's *To review*.
-    var toReview: [DocumentSummary] {
+    var toReview: [LibraryDocument] {
         documents.filter { $0.phase == .reviewing }
     }
 
     /// The document most worth going back to: the newest with names left to
     /// review (Start's Continue).
-    var continueDocument: DocumentSummary? {
+    var continueDocument: LibraryDocument? {
         toReview.max { $0.updated < $1.updated }
     }
 
@@ -67,7 +67,7 @@ final class LibraryModel {
     /// The one search over titles and case names, for the sidebar and the
     /// Documents page: the documents whose title or case matches, and the
     /// cases whose name does. An empty query matches nothing.
-    func search(_ query: String) -> (documents: [DocumentSummary], cases: [CaseSummary]) {
+    func search(_ query: String) -> (documents: [LibraryDocument], cases: [CaseSummary]) {
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return ([], []) }
         let documents = documents.filter { document in
@@ -93,7 +93,7 @@ final class LibraryModel {
     var offersCaseFilter: Bool { cases.count >= 2 || caseFilter != nil }
 
     /// The documents the page lists: the case filter, then the search.
-    var shownDocuments: [DocumentSummary] {
+    var shownDocuments: [LibraryDocument] {
         let filtered = documents.filter { caseFilter == nil || $0.caseID == caseFilter }
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return filtered }
         let found = Set(search(query).documents.map(\.id))
@@ -210,10 +210,10 @@ final class LibraryModel {
     /// One line under a document's title. An interrupted import of a file
     /// that needs no recognition says so (ADR 0088); below the detector
     /// floor nothing waits for Find names.
-    static func status(of document: DocumentSummary, findsNames: Bool = true) -> String {
+    static func status(of document: LibraryDocument, findsNames: Bool = true) -> String {
         switch document.phase {
-        case .recognizing where !document.kind.needsRecognition: String(localized: "Import not finished")
-        case .recognizing: String(localized: "Text not recognized yet")
+        case nil where !document.kind.needsRecognition: String(localized: "Import not finished")
+        case nil: String(localized: "Text not recognized yet")
         case .unscanned where !findsNames: String(localized: "Ready to mark names")
         case .unscanned: String(localized: "Ready to find names")
         case .reviewing: String(localized: "\(document.pendingCount) to review")
@@ -224,7 +224,7 @@ final class LibraryModel {
 
     /// The status's color (ADR 0099): to review orange, ready green, the
     /// rest neutral.
-    static func statusKind(of document: DocumentSummary) -> StatusPill.Kind {
+    static func statusKind(of document: LibraryDocument) -> StatusPill.Kind {
         switch document.phase {
         case .reviewing: .toReview
         case .ready where document.candidateCount > 0: .ready
@@ -233,10 +233,10 @@ final class LibraryModel {
     }
 
     /// The status's symbol, beside its words and color.
-    static func statusSymbol(of document: DocumentSummary, findsNames: Bool = true) -> String {
+    static func statusSymbol(of document: LibraryDocument, findsNames: Bool = true) -> String {
         switch document.phase {
-        case .recognizing where !document.kind.needsRecognition: "doc.badge.clock"
-        case .recognizing: "text.viewfinder"
+        case nil where !document.kind.needsRecognition: "doc.badge.clock"
+        case nil: "text.viewfinder"
         case .unscanned where !findsNames: "character.cursor.ibeam"
         case .unscanned: "text.magnifyingglass"
         case .reviewing: "exclamationmark.circle"

@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 
 // The rendered view (ADR 0096): the Markdown source in one TextKit 2 text
@@ -70,7 +71,7 @@ struct RenderedTable {
     var rows: [[RenderedCell]]
     var columns: [CGFloat]
     var heights: [CGFloat]
-    var style: MarkdownTable.Style
+    var style: MarkdownTableStyle
     var rtl: Bool
     /// Space around a cell's text.
     var padding: UIEdgeInsets
@@ -154,10 +155,10 @@ struct BlockLayout {
         return styling.tables.compactMap { table -> RenderedTable? in
             let tableRange = offsets.nsRange(table.range)
             guard tableRange.length > 0, !table.rows.isEmpty else { return nil }
-            let count = max(table.aligns.count, table.rows.map(\.count).max() ?? 0)
+            let count = max(table.aligns.count, table.rows.map(\.cells.count).max() ?? 0)
             guard count > 0 else { return nil }
             var rows: [[RenderedCell]] = []
-            for (rowIndex, row) in table.rows.enumerated() {
+            for (rowIndex, row) in table.rows.map(\.cells).enumerated() {
                 var cells: [RenderedCell] = []
                 for column in 0..<count {
                     let range = column < row.count ? offsets.nsRange(row[column]) : nil
@@ -211,7 +212,7 @@ struct BlockLayout {
             let floors = zip(natural, words).map { max(min($0, minimum), $1) }
             natural = zip(natural, floors).map { max($0, $1) }
             var columns: [CGFloat]
-            if let stored = table.widths, stored.count == count, stored.reduce(0, +) > 0 {
+            if let stored = table.widths?.map(Double.init), stored.count == count, stored.reduce(0, +) > 0 {
                 let total = stored.reduce(0, +)
                 let span = max(width, CGFloat(count) * minimum * 0.75)
                 columns = zip(stored, floors).map { max(CGFloat($0 / total) * span, $1) }
@@ -253,7 +254,7 @@ struct BlockLayout {
 
     /// A cell's text: the document's styling at the cell's size, the header
     /// bold, aligned as its column.
-    private func style(cell: NSMutableAttributedString, ratio: CGFloat, header: Bool, align: MarkdownTable.Align, rtl: Bool) {
+    private func style(cell: NSMutableAttributedString, ratio: CGFloat, header: Bool, align: MarkdownAlign, rtl: Bool) {
         let whole = NSRange(location: 0, length: cell.length)
         cell.enumerateAttribute(.font, in: whole) { value, part, _ in
             guard let font = value as? UIFont, cell.attribute(.mdocHidden, at: part.location, effectiveRange: nil) == nil else { return }
@@ -283,7 +284,7 @@ struct BlockLayout {
         case blank
         case heading(Int)
         case quote
-        case alert(MarkdownBlock.Alert, title: Bool)
+        case alert(MarkdownAlertKind, title: Bool)
         case fence(open: Bool)
         case code
         case rule
@@ -296,7 +297,7 @@ struct BlockLayout {
     /// decoration; `tables` hold the grids whose gaps the table lines leave.
     mutating func apply(tables: [RenderedTable]) {
         let length = text.length
-        var lineKinds: [Int: MarkdownLine.Kind] = [:]
+        var lineKinds: [Int: MarkdownLineKind] = [:]
         for line in styling.lines {
             lineKinds[offsets.nsRange(line.range).location] = line.kind
         }
@@ -304,7 +305,7 @@ struct BlockLayout {
         for item in styling.listItems {
             items[offsets.nsRange(item.range).location] = item
         }
-        var blocks: [Int: MarkdownBlock.Kind] = [:]
+        var blocks: [Int: MarkdownBlockKind] = [:]
         for block in styling.blocks {
             blocks[offsets.nsRange(block.range).location] = block.kind
         }
@@ -338,7 +339,7 @@ struct BlockLayout {
             } else if let item = items[start] {
                 role = .list(item)
             } else if case .heading(let level) = lineKinds[start] {
-                role = .heading(level)
+                role = .heading(Int(level))
             } else if lineKinds[start] == .quote {
                 role = .quote
             } else if blocks[start] == .muted {
@@ -350,7 +351,7 @@ struct BlockLayout {
         }
 
         // Ordered lists share one label width per list.
-        var labelWidths: [Int: CGFloat] = [:]
+        var labelWidths: [UInt32: CGFloat] = [:]
         for item in styling.listItems {
             guard let list = item.list else { continue }
             labelWidths[list] = max(labelWidths[list] ?? 0, labelWidth(item.label))
@@ -545,7 +546,7 @@ struct BlockLayout {
         String(localized: "Image", comment: "Chip in place of a Markdown image with no description")
     }
 
-    static func colour(of alert: MarkdownBlock.Alert) -> UIColor {
+    static func colour(of alert: MarkdownAlertKind) -> UIColor {
         switch alert {
         case .note: .systemBlue
         case .tip: .systemGreen
@@ -555,7 +556,7 @@ struct BlockLayout {
         }
     }
 
-    static func name(of alert: MarkdownBlock.Alert) -> String {
+    static func name(of alert: MarkdownAlertKind) -> String {
         switch alert {
         case .note: String(localized: "Note", comment: "A Markdown alert's title")
         case .tip: String(localized: "Tip", comment: "A Markdown alert's title")
@@ -565,7 +566,7 @@ struct BlockLayout {
         }
     }
 
-    static func symbol(of alert: MarkdownBlock.Alert) -> String {
+    static func symbol(of alert: MarkdownAlertKind) -> String {
         switch alert {
         case .note: "info.circle"
         case .tip: "lightbulb"

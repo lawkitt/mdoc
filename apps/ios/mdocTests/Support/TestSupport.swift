@@ -109,7 +109,7 @@ struct Seeded {
 
     var library: any Library { core.library }
 
-    func session(_ id: DocumentID) throws -> any DocumentSession {
+    func session(_ id: DocumentID) throws -> any mdoc.DocumentSession {
         try core.library.session(for: id)
     }
 

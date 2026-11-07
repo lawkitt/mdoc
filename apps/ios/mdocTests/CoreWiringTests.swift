@@ -110,7 +110,7 @@ final class CoreWiringTests: XCTestCase {
         let session = try imported(core())
         let scanned = try session.scan(observer: TestObserver())
         let email = try XCTUnwrap(scanned.candidates.first { $0.category == .email })
-        let replaced = try session.decide(email.id, .replace, scope: .justThisOne)
+        let replaced = try session.decide(email.id, .replace, scope: .this)
         XCTAssertEqual(replaced.candidate(email.id)?.state, .replaced)
         XCTAssertEqual(try session.undo().candidate(email.id)?.state, .proposed)
     }
@@ -123,12 +123,12 @@ final class CoreWiringTests: XCTestCase {
         let revision = try XCTUnwrap(scanned.textRevision)
         let candidates = scanned.candidates.filter { $0.state == .proposed }
         XCTAssertGreaterThan(candidates.count, 1)
-        let kept = try session.decide(candidates[0].id, .keep, scope: .justThisOne)
+        let kept = try session.decide(candidates[0].id, .keep, scope: .this)
         XCTAssertEqual(kept.textRevision, revision)
         XCTAssertEqual(kept.styling, scanned.styling)
-        let replaced = try session.decide(candidates[1].id, .replace, scope: .justThisOne)
+        let replaced = try session.decide(candidates[1].id, .replace, scope: .this)
         XCTAssertNotEqual(replaced.textRevision, revision)
-        XCTAssertEqual(replaced.styling, MarkdownStyling(markdown: replaced.markdown))
+        XCTAssertEqual(replaced.styling, .init(markdown: replaced.markdown))
     }
 
     /// Rename to an alias another name has: refused by the core, with that
@@ -138,11 +138,11 @@ final class CoreWiringTests: XCTestCase {
         let scanned = try session.scan(observer: TestObserver())
         let email = try XCTUnwrap(scanned.candidates.first { $0.category == .email })
         let other = try XCTUnwrap(scanned.candidates.first { $0.identityID != email.identityID })
-        XCTAssertThrowsError(try session.rename(other.id, scope: .allOccurrences, to: email.alias)) { error in
+        XCTAssertThrowsError(try session.rename(other.id, scope: .all, to: email.alias)) { error in
             XCTAssertEqual(error as? CoreError, .aliasTaken(alias: email.alias, by: email.identityID))
         }
         // With spaces around it, the same alias.
-        XCTAssertThrowsError(try session.rename(other.id, scope: .allOccurrences, to: " \(email.alias) ")) { error in
+        XCTAssertThrowsError(try session.rename(other.id, scope: .all, to: " \(email.alias) ")) { error in
             XCTAssertEqual(error as? CoreError, .aliasTaken(alias: email.alias, by: email.identityID))
         }
     }
@@ -153,7 +153,7 @@ final class CoreWiringTests: XCTestCase {
         let session = try imported(core(), text: "Write to ann@example.com. Again: ann@example.com.")
         let scanned = try session.scan(observer: TestObserver())
         let email = try XCTUnwrap(scanned.candidates.first)
-        let kept = try session.decide(email.id, .keep, scope: .allOccurrences)
+        let kept = try session.decide(email.id, .keep, scope: .all)
         let row = try XCTUnwrap(kept.identities.first { $0.id == email.identityID })
         XCTAssertEqual(row.state, .kept)
         XCTAssertEqual(row.mentionCount, 2)
@@ -188,7 +188,7 @@ final class CoreWiringTests: XCTestCase {
         let documents = storage.url(.documents)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path) }
-        XCTAssertThrowsError(try session.decide(email.id, .replace, scope: .allOccurrences)) { error in
+        XCTAssertThrowsError(try session.decide(email.id, .replace, scope: .all)) { error in
             guard case .saveFailed = error as? CoreError else { return XCTFail("\(error)") }
             let message = error.localizedDescription
             XCTAssertTrue(message.hasPrefix("mdoc could not save this change"), message)
@@ -268,12 +268,12 @@ final class CoreWiringTests: XCTestCase {
         let core = try core()
         let first = try imported(core, text: "Write to ann@example.com.")
         let email = try XCTUnwrap(try first.scan(observer: TestObserver()).candidates.first)
-        let caseID = try XCTUnwrap(try first.decide(email.id, .replace, scope: .allOccurrences).caseID)
+        let caseID = try XCTUnwrap(try first.decide(email.id, .replace, scope: .all).caseID)
         let second = try core.library.importDocument(.text("Ann: ann@example.com."), title: "Note", into: .existing(caseID))
         let read = try second.recognize(observer: TestObserver())
         let proposal = try XCTUnwrap(read.candidates.first)
         XCTAssertEqual(read.pendingCount, 1)
-        XCTAssertEqual(try second.decide(proposal.id, .keep, scope: .allOccurrences).pendingCount, 0)
+        XCTAssertEqual(try second.decide(proposal.id, .keep, scope: .all).pendingCount, 0)
         let row = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == second.id })
         XCTAssertEqual(row.pendingCount, 0)
         XCTAssertEqual(row.candidateCount, 1)
@@ -314,14 +314,14 @@ final class CoreWiringTests: XCTestCase {
         var times: [Double] = []
         for _ in 0..<20 {
             let start = DispatchTime.now()
-            _ = try session.decide(first.id, .replace, scope: .justThisOne)
+            _ = try session.decide(first.id, .replace, scope: .this)
             times.append(Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e6)
             _ = try session.undo()
         }
         times.sort()
         print("REVIEW-TAP mentions=\(proposed.candidates.count) bytes=\(text.utf8.count) median=\(times[times.count / 2]) ms min=\(times[0]) ms")
         measure(metrics: [XCTClockMetric()]) {
-            _ = try? session.decide(first.id, .replace, scope: .justThisOne)
+            _ = try? session.decide(first.id, .replace, scope: .this)
             _ = try? session.undo()
         }
     }

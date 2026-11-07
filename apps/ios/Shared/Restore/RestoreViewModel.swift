@@ -30,13 +30,13 @@ final class RestoreViewModel {
         cases.first { $0.id == selectedCase }?.name
     }
 
-    var documentsInCase: [DocumentSummary] {
+    var documentsInCase: [LibraryDocument] {
         guard let selectedCase else { return [] }
         return snapshot.documents(in: selectedCase)
     }
 
     /// Save to document's default: the case's most recently changed document.
-    var defaultSaveTarget: DocumentSummary? {
+    var defaultSaveTarget: LibraryDocument? {
         documentsInCase.first
     }
 

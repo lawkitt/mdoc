@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 // The three coarse objects `crates/mdoc-ffi` exports (ADR 0085). Rust owns
 // document, review, case and restore state; these calls return snapshots.
@@ -100,17 +101,17 @@ protocol DocumentSession: AnyObject, Sendable {
     /// its category. Try a sample uses it, so the sample reviews before the
     /// name finder is downloaded (ADR 0099).
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot
-    /// Rename…: the alias of this mention (`.justThisOne` splits it off
-    /// under the alias) or of its identity. Throws `.aliasTaken` with the
+    /// Rename…: the alias of this mention (`.this` splits it off under the
+    /// alias) or of its identity. Throws `.aliasTaken` with the
     /// identity that has the alias already: Same as is the way to it.
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot
     /// The category menu: each category with the alias choosing it gives.
     func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice]
     /// The category of this mention (split off in it) or of its identity.
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot
-    /// Same as…: `.allOccurrences` links the mention's identity into
-    /// `target`, which keeps its alias and restore wording; `.justThisOne`
-    /// moves only this mention. Replaces nothing by itself.
+    /// Same as…: `.all` links the mention's identity into `target`, which
+    /// keeps its alias and restore wording; `.this` moves only this mention.
+    /// Replaces nothing by itself.
     func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot
     /// Same as… for a whole identity: an Identities row, or a merge hint.
     func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot
@@ -120,7 +121,7 @@ protocol DocumentSession: AnyObject, Sendable {
     /// organization; nil clears it.
     func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot
     /// × on a merge hint: hidden from now on, in the case too. Not a step.
-    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot
+    func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot
 }
 
 /// Models that fit the device, and verifying and installing downloads.
