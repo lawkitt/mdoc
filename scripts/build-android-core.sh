@@ -15,6 +15,8 @@
 # Runtime 1.27.0 (Microsoft's Maven AAR) and PDFium 7988 (bblanchon) are pinned, checksum-verified downloads; nothing is
 # downloaded at run time. Fails if any library is not aligned for 16 KB pages
 # or needs a shared library Android does not provide.
+# MDOC_FFI_FEATURES adds the core's cargo features: tools/android-spike
+# needs `spike` (scripts/android-spike-device.sh sets it); the app needs none.
 # Windows x64, Apple Silicon macOS or Linux x86_64.
 source "$(dirname "$0")/lib.sh"
 
@@ -80,7 +82,8 @@ for slice in "${slices[@]}"; do
   export "CARGO_TARGET_${upper}_RUSTFLAGS=-C link-arg=--target=$target$api -C link-arg=-Wl,-z,max-page-size=16384"
   echo "build-android-core: mdoc-ffi for $target" >&2
   # cdylib only here: desktop and iOS keep the crate's lib and staticlib.
-  cargo rustc --locked --profile mobile -p mdoc-ffi --lib --target "$target" --crate-type cdylib
+  cargo rustc --locked --profile mobile -p mdoc-ffi --lib --target "$target" --crate-type cdylib \
+    ${MDOC_FFI_FEATURES:+--features "$MDOC_FFI_FEATURES"}
 
   dir=$out/jniLibs/$abi
   mkdir -p "$dir"
@@ -109,7 +112,8 @@ done
 # The same core for this computer: the app's JVM parity tests call it
 # through the same Kotlin bindings (ADR 0089).
 echo "build-android-core: mdoc-ffi for this computer" >&2
-cargo rustc --locked --profile mobile -p mdoc-ffi --lib --crate-type cdylib
+cargo rustc --locked --profile mobile -p mdoc-ffi --lib --crate-type cdylib \
+  ${MDOC_FFI_FEATURES:+--features "$MDOC_FFI_FEATURES"}
 cp "$cargo_target/mobile/$host_lib" "$out/host/"
 
 # Kotlin bindings from the library's UniFFI metadata, the same in each ABI's

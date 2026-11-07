@@ -5,6 +5,7 @@
 //! case. Long jobs report their
 //! stage to the platform and stop when it cancels; the platform runs them
 //! off its main thread.
+mod actions;
 mod intake;
 mod review;
 mod snapshot;
@@ -14,12 +15,13 @@ use crate::{
     library::{CaseInfo, Library, RenamedDocument, RestoredReply, TextRange},
     setup::{DetectorPaths, OcrPaths},
 };
+pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 use mdoc_pii::restore::RestoreMap;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use snapshot::{
-    Category, CategoryChoice, HistoryStep, IdentityRow, LinkHint, Mention, MentionState,
-    ReviewSnapshot,
+    Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
+    MentionState, ReviewSnapshot,
 };
 use std::{
     collections::HashSet,
@@ -99,14 +101,58 @@ struct Document {
     /// while the case still holds exactly these, no other document changed
     /// it, and saving needs no join that could undo this one's own steps.
     synced: Option<Vec<mdoc_store::cases::StoredIdentity>>,
+    /// Scanned, or names proposed some other way, even if none were found.
+    scanned: bool,
+    /// `ReviewText::change_key` at the last save: equal now, nothing
+    /// changed since, and a save would write what is there.
+    saved: Option<((u64, u64, usize), bool)>,
 }
 
 #[derive(uniffi::Object)]
 pub struct DocumentSession {
     document: Mutex<Option<Document>>,
-    /// The running job's cancel flag.
-    job: Mutex<Arc<AtomicBool>>,
+    job: Mutex<Jobs>,
     generation: Mutex<u64>,
+}
+
+/// The session's jobs, one at a time: a new job stops the one before. Its
+/// lock is held only for a moment, never across a job's work nor while
+/// waiting for another lock, so `cancel`, `cancel_job` and `next_job`
+/// return at once from any thread.
+#[derive(Default)]
+struct Jobs {
+    /// The latest job's cancel flag.
+    flag: Arc<AtomicBool>,
+    /// Bumped by every job, so a job that ends knows whether it is the latest.
+    id: u64,
+    /// The latest job has not ended.
+    running: bool,
+    /// `cancel_job` named the next job before it started: it starts
+    /// cancelled.
+    pending: Option<u64>,
+}
+
+/// A running job's cancel flag; dropping it ends the job.
+struct Job<'a> {
+    session: &'a DocumentSession,
+    id: u64,
+    flag: Arc<AtomicBool>,
+}
+
+impl std::ops::Deref for Job<'_> {
+    type Target = Arc<AtomicBool>;
+    fn deref(&self) -> &Arc<AtomicBool> {
+        &self.flag
+    }
+}
+
+impl Drop for Job<'_> {
+    fn drop(&mut self) {
+        let mut jobs = self.session.lock_job();
+        if jobs.id == self.id {
+            jobs.running = false;
+        }
+    }
 }
 
 #[uniffi::export]
@@ -115,7 +161,7 @@ impl DocumentSession {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             document: Mutex::new(None),
-            job: Mutex::new(Arc::new(AtomicBool::new(false))),
+            job: Mutex::new(Jobs::default()),
             generation: Mutex::new(0),
         })
     }
@@ -202,14 +248,39 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
+            scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
         };
         self.open(imported, &cancel, Some(opened))
     }
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
     /// at its next checkpoint (model loads and native calls finish first).
+    /// With no job running it does nothing, so a cancel that comes late
+    /// never stops a later job; to stop a job that may not have started
+    /// yet, use `cancel_job(next_job())`.
     pub fn cancel(&self) {
-        self.lock_job().store(true, Ordering::Relaxed);
+        let jobs = self.lock_job();
+        if jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// The id the next job (import, open or scan) gets: take it just
+    /// before the call, and `cancel_job` stops that job whenever the cancel
+    /// comes, before it starts or while it runs (#680).
+    pub fn next_job(&self) -> u64 {
+        self.lock_job().id + 1
+    }
+
+    /// Stop job `job` (`next_job`): the running one now, the next one as
+    /// it starts; one that ended, or a later one, is left alone.
+    pub fn cancel_job(&self, job: u64) {
+        let mut jobs = self.lock_job();
+        if job == jobs.id && jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        } else if job == jobs.id + 1 {
+            jobs.pending = Some(job);
+        }
     }
 
     pub fn snapshot(&self) -> Result<ReviewSnapshot, CoreError> {
@@ -445,15 +516,7 @@ impl DocumentSession {
     /// A name for the shared `.md` file: the title with this document's
     /// known originals replaced by their aliases.
     pub fn share_file_name(&self) -> Result<String, CoreError> {
-        self.read_document(|document| {
-            let map = RestoreMap::new(document.review.review.export_identities());
-            let (title, _) = map.pseudonymize(&document.title);
-            let title: String = title
-                .chars()
-                .map(|c| if "/\\:".contains(c) { '-' } else { c })
-                .collect();
-            format!("{}.md", title.trim())
-        })
+        self.read_document(Document::share_file_name)
     }
 
     /// Restore an AI reply with this document's mapping, as desktop's reply
@@ -500,66 +563,7 @@ impl DocumentSession {
     /// free numbers; one library write lock covers the whole save.
     pub fn save(&self, library: Arc<Library>) -> Result<SavedDocument, CoreError> {
         let mut guard = self.lock_document();
-        let document = guard.as_mut().ok_or_else(no_document)?;
-        let lock = library.lock()?;
-        let path = match &document.path {
-            Some(path) => path.clone(),
-            None => {
-                let path = library.reserve_document_path(&document.title)?;
-                document.path = Some(path.clone());
-                path
-            }
-        };
-        let member = library.member(&path);
-        library.refuse_other_case(&member, document.case.as_deref().unwrap_or_default())?;
-        let case = match document.case.clone() {
-            Some(id) => library.edit_locked(&lock, &id, |case| {
-                // Only a case another document changed since is joined
-                // again: joining against this document's own last save would
-                // take back what Undo just reverted.
-                if document.synced.as_ref() != Some(&case.identities) {
-                    document
-                        .review
-                        .join(&case.exported(), &case.reserved_aliases())?;
-                    document.review.dismiss_pairs(&case.dismissed_hints);
-                }
-                document.stored.save(path.clone(), &document.review.text)?;
-                let before = case.clone();
-                case.merge(&document.review.review.export_identities());
-                if !case.members.contains(&member) {
-                    case.members.push(member.clone());
-                }
-                for (a, b) in document.review.dismissed_pairs() {
-                    let pair = (a, b);
-                    let flipped = (pair.1.clone(), pair.0.clone());
-                    if !case.dismissed_hints.contains(&pair)
-                        && !case.dismissed_hints.contains(&flipped)
-                    {
-                        case.dismissed_hints.push(pair);
-                    }
-                }
-                document.synced = Some(case.identities.clone());
-                Ok(*case != before)
-            })?,
-            None => {
-                document.stored.save(path.clone(), &document.review.text)?;
-                let mut case = mdoc_store::cases::Case::new(
-                    document.title.clone(),
-                    &document.review.review.export_identities(),
-                    Some(member),
-                );
-                // Hints dismissed before the case existed stay dismissed.
-                case.dismissed_hints = document.review.dismissed_pairs();
-                document.synced = Some(case.identities.clone());
-                library.create_locked(&lock, case)?
-            }
-        };
-        document.case = Some(case.id.clone());
-        Ok(SavedDocument {
-            path: path.display().to_string(),
-            case,
-            review: document.snapshot(),
-        })
+        guard.as_mut().ok_or_else(no_document)?.save(&library)
     }
 
     /// Rename…: this document's title, as `Library::rename_document` does
@@ -621,39 +625,133 @@ struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
     case: Option<mdoc_store::cases::Case>,
+    /// What its last save recorded; `None` for a document saved before
+    /// the library kept it.
+    scanned: Option<bool>,
 }
 
 impl Document {
-    fn snapshot(&self) -> ReviewSnapshot {
+    /// `DocumentSession::share_file_name`.
+    fn share_file_name(&self) -> String {
+        let map = RestoreMap::new(self.review.review.export_identities());
+        let (title, _) = map.pseudonymize(&self.title);
+        let title: String = title
+            .chars()
+            .map(|c| if "/\\:".contains(c) { '-' } else { c })
+            .collect();
+        format!("{}.md", title.trim())
+    }
+
+    /// Changes when the review does, or when the document is first scanned.
+    fn change_key(&self) -> ((u64, u64, usize), bool) {
+        (self.review.change_key(), self.scanned)
+    }
+
+    fn snapshot(&mut self) -> ReviewSnapshot {
+        self.review.sync_ids();
         snapshot::of(
             &self.title,
             self.warning.as_deref(),
             &self.review,
             self.case.as_deref(),
+            self.scanned,
         )
     }
 
     /// Scan results, minus the categories the case skips
-    /// (`complete_pii_scan`).
+    /// (`complete_pii_scan`). The document counts as scanned after.
     fn ingest(&mut self, mut detections: Vec<mdoc_pii::Detection>) -> Result<(), CoreError> {
         detections.retain(|d| !self.skip.contains(&d.category));
-        self.review.ingest(detections)
+        self.review.ingest(detections)?;
+        self.scanned = true;
+        Ok(())
+    }
+
+    /// `DocumentSession::save`.
+    fn save(&mut self, library: &Library) -> Result<SavedDocument, CoreError> {
+        let lock = library.lock()?;
+        let path = match &self.path {
+            Some(path) => path.clone(),
+            None => {
+                let path = library.reserve_document_path(&self.title)?;
+                self.path = Some(path.clone());
+                path
+            }
+        };
+        let member = library.member(&path);
+        library.refuse_other_case(&member, self.case.as_deref().unwrap_or_default())?;
+        let case = match self.case.clone() {
+            Some(id) => library.edit_locked(&lock, &id, |case| {
+                // Only a case another document changed since is joined
+                // again: joining against this document's own last save would
+                // take back what Undo just reverted.
+                if self.synced.as_ref() != Some(&case.identities) {
+                    self.review
+                        .join(&case.exported(), &case.reserved_aliases())?;
+                    self.review.dismiss_pairs(&case.dismissed_hints);
+                }
+                self.stored.save(path.clone(), &self.review.text)?;
+                let before = case.clone();
+                case.merge(&self.review.review.export_identities());
+                if !case.members.contains(&member) {
+                    case.members.push(member.clone());
+                }
+                for (a, b) in self.review.dismissed_pairs() {
+                    let pair = (a, b);
+                    let flipped = (pair.1.clone(), pair.0.clone());
+                    if !case.dismissed_hints.contains(&pair)
+                        && !case.dismissed_hints.contains(&flipped)
+                    {
+                        case.dismissed_hints.push(pair);
+                    }
+                }
+                self.synced = Some(case.identities.clone());
+                Ok(*case != before)
+            })?,
+            None => {
+                self.stored.save(path.clone(), &self.review.text)?;
+                let mut case = mdoc_store::cases::Case::new(
+                    self.title.clone(),
+                    &self.review.review.export_identities(),
+                    Some(member),
+                );
+                // Hints dismissed before the case existed stay dismissed.
+                case.dismissed_hints = self.review.dismissed_pairs();
+                self.synced = Some(case.identities.clone());
+                library.create_locked(&lock, case)?
+            }
+        };
+        self.case = Some(case.id.clone());
+        // The document and its case are saved: an entry that cannot be
+        // written only makes it reopen as one saved before entries were.
+        let _ = library.set_document_state(
+            &lock,
+            &path,
+            Some(crate::library::DocumentState {
+                scanned: self.scanned,
+            }),
+        );
+        self.saved = Some(self.change_key());
+        Ok(SavedDocument {
+            path: path.display().to_string(),
+            case,
+            review: self.snapshot(),
+        })
     }
 }
 
 impl DocumentSession {
     /// Make `imported` the session's document, unless its job was
-    /// cancelled or a newer job started: then the current one stays.
+    /// cancelled or a newer job started: then the current one stays. The
+    /// document is built first, with no lock held: the job lock is only
+    /// ever held for a moment, so `cancel` from the platform's main thread
+    /// never waits on a job's work.
     fn open(
         &self,
         imported: intake::Imported,
-        cancel: &Arc<AtomicBool>,
+        cancel: &Job,
         opened: Option<Opened>,
     ) -> Result<ReviewSnapshot, CoreError> {
-        let job = self.lock_job();
-        if !Arc::ptr_eq(&job, cancel) || cancel.load(Ordering::Relaxed) {
-            return Err(CoreError::Cancelled);
-        }
         let generation = {
             let mut generation = self.generation.lock().unwrap_or_else(|e| e.into_inner());
             *generation += 1;
@@ -670,6 +768,8 @@ impl DocumentSession {
             stored: mdoc_store::document::Document::default(),
             generation,
             synced: None,
+            scanned: false,
+            saved: None,
         };
         if let Some(opened) = opened {
             document.path = opened.path;
@@ -683,26 +783,50 @@ impl DocumentSession {
                 document.synced = Some(case.identities.clone());
                 document.case = Some(case.id);
             }
+            // Saved before scans were recorded: scanned when it has
+            // mentions, as the apps used to tell.
+            document.scanned = opened
+                .scanned
+                .unwrap_or_else(|| !document.review.mention_ranges().is_empty());
+            // As saved: nothing to save until something changes.
+            document.saved = Some(document.change_key());
         }
         let snapshot = document.snapshot();
-        *self.lock_document() = Some(document);
+        // The document lock, then the job's check: a newer job that starts
+        // after the check opens its document after this one, in this order.
+        let mut slot = self.lock_document();
+        {
+            let jobs = self.lock_job();
+            if jobs.id != cancel.id || cancel.load(Ordering::Relaxed) {
+                return Err(CoreError::Cancelled);
+            }
+        }
+        *slot = Some(document);
+        drop(slot);
         // Taken: an import rejected before this point keeps its OCR pages.
         if let Some(kept) = imported_kept {
             kept.remove();
         }
-        drop(job);
         Ok(snapshot)
     }
 
-    /// A new job: the one before stops at its next checkpoint.
-    fn start_job(&self) -> Arc<AtomicBool> {
-        let mut job = self.lock_job();
-        job.store(true, Ordering::Relaxed);
-        *job = Arc::new(AtomicBool::new(false));
-        job.clone()
+    /// A new job: the one before stops at its next checkpoint, and a
+    /// `cancel_job` that named this one before it started stops it.
+    fn start_job(&self) -> Job<'_> {
+        let mut jobs = self.lock_job();
+        jobs.flag.store(true, Ordering::Relaxed);
+        jobs.id += 1;
+        let cancelled = jobs.pending.take() == Some(jobs.id);
+        jobs.flag = Arc::new(AtomicBool::new(cancelled));
+        jobs.running = true;
+        Job {
+            session: self,
+            id: jobs.id,
+            flag: jobs.flag.clone(),
+        }
     }
 
-    fn lock_job(&self) -> MutexGuard<'_, Arc<AtomicBool>> {
+    fn lock_job(&self) -> MutexGuard<'_, Jobs> {
         self.job.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -845,6 +969,123 @@ mod tests {
             assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
         }
         assert_eq!(session.snapshot().unwrap().text, "Newer");
+        // A cancel during that job stopped it, and only it.
+        let next = session.import_file(path.display().to_string(), ImportOptions::default(), None);
+        assert_eq!(next.unwrap().text, "Older");
+    }
+
+    /// #680: a cancel for the job about to start stops it, for an import
+    /// and for a scan; the job after it runs.
+    #[test]
+    fn a_cancel_just_before_a_job_stops_it() {
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee, ann@example.com.").unwrap();
+        let import = |session: &DocumentSession| {
+            session.import_file(path.display().to_string(), ImportOptions::default(), None)
+        };
+        let session = session("Current", "Current");
+        session.cancel_job(session.next_job());
+        let result = import(&session);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        import(&session).unwrap();
+        session.cancel_job(session.next_job());
+        let result = session.scan(None, None);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert!(session.snapshot().unwrap().mentions.is_empty());
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+    }
+
+    /// A job blocked in its progress callback, until released.
+    struct Blocked {
+        entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl JobProgress for Blocked {
+        fn stage(&self, _: JobStage) {
+            if let Some(entered) = self.entered.lock().unwrap().take() {
+                entered.send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+            }
+        }
+        fn advanced(&self, _: u64, _: u64) {}
+    }
+
+    /// What the platforms call from their main thread returns at once
+    /// while a job runs: Android cancels from it, and a blocked main thread
+    /// misses the system's deadlines.
+    #[test]
+    fn main_thread_calls_never_wait_for_a_running_job() {
+        use std::{
+            sync::mpsc,
+            time::{Duration, Instant},
+        };
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee wrote.").unwrap();
+        let session = session("Current", "Current");
+        let (entered, on_enter) = mpsc::channel();
+        let (release, on_release) = mpsc::channel();
+        let progress = Blocked {
+            entered: Mutex::new(Some(entered)),
+            release: Mutex::new(on_release),
+        };
+        let job = {
+            let session = session.clone();
+            let path = path.display().to_string();
+            std::thread::spawn(move || {
+                session.import_file(path, ImportOptions::default(), Some(Box::new(progress)))
+            })
+        };
+        on_enter.recv_timeout(Duration::from_secs(10)).unwrap();
+        let began = Instant::now();
+        session.cancel();
+        let next = session.next_job();
+        session.cancel_job(next - 1);
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        assert_eq!(session.info().unwrap().title, "Current");
+        let took = began.elapsed();
+        assert!(took < Duration::from_millis(500), "{took:?}");
+        release.send(()).unwrap();
+        let result = job.join().unwrap();
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+    }
+
+    /// The cancel calls never wait for the document, which a save or a
+    /// scan's last step holds.
+    #[test]
+    fn cancel_never_waits_for_the_document() {
+        use std::{sync::mpsc, time::Duration};
+        let session = session("Current", "Current");
+        let held = session.lock_document();
+        let (done, finished) = mpsc::channel();
+        let other = session.clone();
+        std::thread::spawn(move || {
+            other.cancel();
+            other.cancel_job(other.next_job());
+            done.send(()).unwrap();
+        });
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+        drop(held);
+    }
+
+    /// may while the app saves, never stops the next job.
+    #[test]
+    fn a_cancel_after_a_job_ended_leaves_the_next_one() {
+        let session = DocumentSession::new();
+        let job = session.next_job();
+        session
+            .import_text("Ann Lee, ann@example.com.".into(), "Letter".into())
+            .unwrap();
+        session.cancel_job(job);
+        session.cancel();
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+        // A ticket for a job two ahead is no ticket.
+        session.cancel_job(session.next_job() + 1);
+        session.scan(None, None).unwrap();
     }
 
     /// Save → reopen from the library → share → restore → save: the file

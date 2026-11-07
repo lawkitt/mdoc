@@ -15,6 +15,10 @@ crate-type = ["lib", "staticlib"]
 [features]
 # The Swift binding generator (src/bin/uniffi-bindgen.rs); off in the app.
 bindgen = ["uniffi/cli"]
+# The feasibility spike's calls (src/spike.rs, src/memory.rs) in the
+# bindings: the tools/ harnesses build with it (MDOC_FFI_FEATURES=spike); the
+# apps' bindings leave them out. The Rust code builds and tests either way.
+spike = []
 
 [[bin]]
 name = "uniffi-bindgen"

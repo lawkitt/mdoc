@@ -5,14 +5,15 @@
 //! detector budget against.
 
 /// Bytes; zero where the platform has no footprint ledger.
-#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct Memory {
     pub footprint_bytes: u64,
     /// The highest footprint since the process started.
     pub peak_footprint_bytes: u64,
 }
 
-#[uniffi::export]
+#[cfg_attr(feature = "spike", uniffi::export)]
 pub fn memory() -> Memory {
     imp::memory()
 }

@@ -84,6 +84,30 @@ pub struct Mention {
     pub alias: Option<String>,
     pub category: Category,
     pub identity: Option<u64>,
+    /// Stays the same while the mention does, across Replace, Keep, edits
+    /// elsewhere, Undo and Redo (ADR 0104); transitions by id take it.
+    pub id: u64,
+}
+
+/// Where a document's review stands, as lists and the review bar show it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum DocumentPhase {
+    /// Never scanned, nor proposed names some other way.
+    Unscanned,
+    /// Scanned, with proposals waiting.
+    Reviewing,
+    /// Scanned, nothing waiting: ready for Copy for AI.
+    Ready,
+}
+
+impl DocumentPhase {
+    pub(crate) fn of(scanned: bool, proposed: u64) -> Self {
+        match (scanned, proposed) {
+            (false, _) => Self::Unscanned,
+            (true, 0) => Self::Ready,
+            (true, _) => Self::Reviewing,
+        }
+    }
 }
 
 /// One identity: an alias and the wordings it stands for.
@@ -100,6 +124,12 @@ pub struct IdentityRow {
     /// Belongs to…: the person or organization a contact or identifier
     /// belongs to.
     pub owner: Option<u64>,
+    /// Proposed while any mention is; kept when every mention is kept;
+    /// replaced otherwise.
+    pub state: MentionState,
+    /// What the identity list counts: `mentions`, or every mention of it in
+    /// the text when more (kept ones included).
+    pub mention_count: u64,
 }
 
 /// One row of the category menu: choosing `category` gives `alias`, or
@@ -161,14 +191,32 @@ pub struct ReviewSnapshot {
     pub undo_step: Option<HistoryStep>,
     /// The step Redo makes again; after an undo, the step it undid.
     pub redo_step: Option<HistoryStep>,
+    /// Scanned, or names proposed some other way, even if none were found;
+    /// kept with the document.
+    pub scanned: bool,
+    pub phase: DocumentPhase,
+    /// Names kept everywhere: no identity in `identities` any more, but
+    /// their kept mentions still name them, so the list shows them as kept.
+    /// In order of first mention.
+    pub kept_identities: Vec<IdentityRow>,
+    /// Changes when `text` does, and only then: an app keeps what it built
+    /// from the text (its Markdown styling) while this stays.
+    pub text_revision: u64,
 }
 
+/// The snapshot of `document`, whose ids are synced (`ReviewText::sync_ids`).
 pub(super) fn of(
     title: &str,
     warning: Option<&str>,
     document: &ReviewText,
     case_id: Option<&str>,
+    scanned: bool,
 ) -> ReviewSnapshot {
+    let id = |range: &std::ops::Range<usize>| {
+        let id = document.ids.id(range);
+        debug_assert!(id.is_some(), "mention ids are synced");
+        id.unwrap_or_default()
+    };
     let review = &document.review;
     let alias = |identity: Option<u64>| {
         identity
@@ -191,6 +239,7 @@ pub(super) fn of(
                 .map_or(variant.category, |i| i.category)
                 .into(),
             identity,
+            id: id(&candidate.range),
         });
     }
     for applied in review.applied() {
@@ -201,6 +250,7 @@ pub(super) fn of(
             alias: Some(applied.step.after.to_string()),
             category: applied.step.category.into(),
             identity: Some(applied.step.identity).filter(|id| *id != 0),
+            id: id(&applied.range),
         });
     }
     let kept = review.kept_mentions();
@@ -215,9 +265,31 @@ pub(super) fn of(
                 .map_or(mdoc_pii::Category::Other, |i| i.category)
                 .into(),
             identity: *identity,
+            id: id(range),
         });
     }
     mentions.sort_by_key(|m| (m.range.start, m.range.end));
+    // Each identity's mentions: how many, and in which states.
+    #[derive(Default)]
+    struct Tally {
+        count: u64,
+        proposed: u64,
+        kept: u64,
+    }
+    let mut tallies: HashMap<u64, Tally> = HashMap::new();
+    for m in &mentions {
+        if let Some(identity) = m.identity {
+            let tally = tallies.entry(identity).or_default();
+            tally.count += 1;
+            tally.proposed += u64::from(m.state == MentionState::Proposed);
+            tally.kept += u64::from(m.state == MentionState::Kept);
+        }
+    }
+    let state = |tally: Option<&Tally>| match tally {
+        Some(t) if t.proposed > 0 => MentionState::Proposed,
+        Some(t) if t.kept == t.count => MentionState::Kept,
+        _ => MentionState::Replaced,
+    };
 
     let exported: HashMap<_, _> = review.export_identities_with_ids().into_iter().collect();
     let first: HashMap<u64, u64> = mentions.iter().rev().fold(HashMap::new(), |mut first, m| {
@@ -241,18 +313,20 @@ pub(super) fn of(
                 },
                 |e| e.originals.iter().map(|o| o.to_string()).collect(),
             );
-            let proposed = mentions
-                .iter()
-                .filter(|m| m.identity == Some(id) && m.state == MentionState::Proposed)
-                .count() as u64;
+            let tally = tallies.get(&id);
+            // `Review::identity_count`, from the mentions already found: it
+            // walks every mention for each identity.
+            let mentions = tally.map_or(0, |t| t.count - t.kept);
             Some(IdentityRow {
                 id,
                 alias: identity.alias.clone(),
                 category: identity.category.into(),
                 originals,
-                mentions: review.identity_count(id) as u64,
-                proposed,
+                mentions,
+                proposed: tally.map_or(0, |t| t.proposed),
                 owner: identity.owner,
+                state: state(tally),
+                mention_count: mentions.max(tally.map_or(0, |t| t.count)),
             })
         })
         .collect();
@@ -268,7 +342,39 @@ pub(super) fn of(
             first.get(&row.id).copied().unwrap_or(u64::MAX),
         )
     });
+    // Names kept everywhere, which no active identity lists.
+    let listed: std::collections::HashSet<u64> = identities.iter().map(|row| row.id).collect();
+    let mut kept_identities: Vec<IdentityRow> = Vec::new();
+    for m in &mentions {
+        let Some(id) = m.identity.filter(|id| !listed.contains(id)) else {
+            continue;
+        };
+        if m.state != MentionState::Kept || m.alias.is_none() {
+            continue;
+        }
+        match kept_identities.iter_mut().find(|row| row.id == id) {
+            Some(row) => {
+                if !row.originals.contains(&m.original) {
+                    row.originals.push(m.original.clone());
+                }
+                row.mentions += 1;
+                row.mention_count += 1;
+            }
+            None => kept_identities.push(IdentityRow {
+                id,
+                alias: m.alias.clone().unwrap_or_default(),
+                category: m.category,
+                originals: vec![m.original.clone()],
+                mentions: 1,
+                proposed: 0,
+                owner: None,
+                state: MentionState::Kept,
+                mention_count: 1,
+            }),
+        }
+    }
     let count = |state| mentions.iter().filter(|m| m.state == state).count() as u64;
+    let proposed = count(MentionState::Proposed);
     let step = |(step, focus): (&Step, &Focus)| {
         let mention = focus
             .range
@@ -301,11 +407,15 @@ pub(super) fn of(
                 wording: hint.wording.to_string(),
             })
             .collect(),
-        proposed: count(MentionState::Proposed),
+        proposed,
         replaced: count(MentionState::Replaced),
         kept: count(MentionState::Kept),
         identities,
         mentions,
         case_id: case_id.map(str::to_owned),
+        scanned,
+        phase: DocumentPhase::of(scanned, proposed),
+        kept_identities,
+        text_revision: document.text_revision,
     }
 }
