@@ -77,8 +77,12 @@ breaks that in three ways:
 ### Timing
 
 - No fixed delays in app code (`Task.sleep`, `asyncAfter`) except to work
-  around a named platform bug, with the issue on the same line. `just lint`
-  checks it. UI tests wait for elements, not for time.
+  around a named platform bug, or in place of an event that is missing
+  until its issue is fixed, with the issue on the line or the comment just
+  above. A deliberate on-screen duration (how long a toast stays, a hint's
+  beats) is not a wait for an event; it names the ADR that defines the
+  behaviour instead. `just lint` checks it. UI tests wait for elements, not
+  for time.
 
 ## Invariants
 

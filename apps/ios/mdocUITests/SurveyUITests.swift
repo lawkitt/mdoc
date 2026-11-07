@@ -377,13 +377,15 @@ final class SurveyUITests: XCTestCase {
             .matching(NSPredicate(format: "label IN {'Restore with mdoc', 'mdoc'}"))
             .firstMatch
         XCTAssertTrue(restore.waitForExistence(timeout: 5), "Restore with mdoc is not in the share sheet")
+        let sharing = XCUIScreen.main.screenshot()
         restore.tap()
         // The extension runs in its own process; its sheet shows in the
-        // app's tree once it is up, by its title or its Done button.
+        // app's tree once it is up, by its title. Either way, the screen
+        // must have left the share sheet before shot waits for it to settle.
         let shown = MdocUITest.firstToAppear(
-            [app.navigationBars["Restore with mdoc"], app.staticTexts["Restore with mdoc"], app.buttons["Done"]],
-            timeout: 10)
+            [app.navigationBars["Restore with mdoc"], app.staticTexts["Restore with mdoc"]], timeout: 10)
         print("survey: Restore with mdoc shown by \(shown?.debugDescription ?? "nothing")")
+        MdocUITest.settledScreen(unlike: sharing, timeout: 10)
         shot("22-restore-extension")
         let done = app.buttons["Done"].firstMatch
         if done.waitForExistence(timeout: 3) {

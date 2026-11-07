@@ -53,6 +53,14 @@ calls=(
   'try await clock.sleep(for: .seconds(1))'
   'perform(#selector(go), with: nil, afterDelay: 1)'
   'Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { _ in go() }'
+  'let timer = Timer(timeInterval: 1, repeats: false) { _ in go() }'
+  'Timer.publish(every: 1, on: .main, in: .common)'
+  'scheduler.schedule(after: .init(.now() + 1)) { go() }'
+  'RunLoop.current.run(until: Date().addingTimeInterval(1))'
+  'withAnimation(.easeOut.delay(0.2)) { shown = true }'
+  'try await Task.sleep (for: .seconds(1))'
+  '/* why */ try await Task.sleep(for: .seconds(1))'
+  'let url = "https://example.com"; try await Task.sleep(for: .seconds(1))'
 )
 for call in "${calls[@]}"; do
   tree swift
@@ -62,7 +70,8 @@ for call in "${calls[@]}"; do
   expect 1 swift
   grep -qF "apps/ios/mdoc/Wait.swift:2: $call" "$tmp/out" || fail "swift '$call' not named: $(cat "$tmp/out")"
 done
-for call in 'delay(250)' 'kotlinx.coroutines.delay(250)' 'Thread.sleep(2_000)' 'SystemClock.sleep(100)' 'handler.postDelayed({ go() }, 100)'; do
+for call in 'delay(250)' 'kotlinx.coroutines.delay(250)' 'Thread.sleep(2_000)' 'SystemClock.sleep(100)' \
+  'handler.postDelayed({ go() }, 100)' 'handler.sendEmptyMessageDelayed(1, 100)' 'object : CountDownTimer(1000, 100) {}'; do
   tree kotlin
   put kotlin apps/android/app/src/main/kotlin/Wait.kt "fun go() {
     $call
@@ -70,12 +79,26 @@ for call in 'delay(250)' 'kotlinx.coroutines.delay(250)' 'Thread.sleep(2_000)' '
   expect 1 kotlin
   grep -qF "Wait.kt:2: $call" "$tmp/out" || fail "kotlin '$call' not named: $(cat "$tmp/out")"
 done
-# The Shared and RestoreExtension folders are app code too.
-for dir in apps/ios/Shared apps/ios/RestoreExtension; do
+# The other app folders are app code too, Java is read, and a path may
+# have spaces.
+for dir in apps/ios/Shared apps/ios/RestoreExtension apps/ios/MdocFFI; do
   tree shared
   put shared "$dir/Wait.swift" 'try await Task.sleep(for: .seconds(1))'
   expect 1 shared
 done
+tree java
+put java apps/android/app/src/main/java/Wait.java 'Thread.sleep(100);'
+expect 1 java
+tree spaces
+put spaces "apps/ios/mdoc/Some Folder/A Wait.swift" 'try await Task.sleep(for: .seconds(1))'
+expect 1 spaces
+grep -qF 'Some Folder/A Wait.swift:1:' "$tmp/out" || fail "a path with spaces not named: $(cat "$tmp/out")"
+# A Windows line ending changes nothing.
+tree crlf
+printf '// timing: a bug (#1)\r\ntry await Task.sleep(for: .seconds(1))\r\nsleep(1)\r\n' >"$tmp/crlf/apps/ios/mdoc/W.swift"
+expect 1 crlf
+grep -qF 'W.swift:3:' "$tmp/out" || fail "CRLF: the unmarked call passed: $(cat "$tmp/out")"
+grep -qF 'W.swift:2:' "$tmp/out" && fail "CRLF: the marked call failed: $(cat "$tmp/out")"
 
 # Marked on the line, or in the comment block just above: passes.
 tree marked
@@ -85,7 +108,8 @@ try? await Task.sleep(for: .milliseconds(250))
 try? await Task.sleep(for: .milliseconds(250)) // timing: the same bug (#634)
 // timing: how long a toast stays,
 // which the UI system sets (ADR 0099)
-try? await Task.sleep(for: .seconds(4))'
+try? await Task.sleep(for: .seconds(4))
+withAnimation(.easeOut.delay(0.2)) { shown = true } // timing: the hint fades in late (ADR 0101)'
 put marked apps/android/app/src/main/kotlin/Net.kt '    // timing: polls for a network (#697)
     Thread.sleep(2_000)'
 expect 0 marked
@@ -107,6 +131,30 @@ put code apps/ios/mdoc/C.swift 'let x = 1 // timing: a bug (#1)
 try await Task.sleep(for: .seconds(1))'
 expect 1 code
 grep -qF 'C.swift:2:' "$tmp/out" || fail "a marker on a line of code covered the next: $(cat "$tmp/out")"
+# A reference must be a number: no bare #, no three-digit ADR.
+for marker in '// timing: a bug (#)' '// timing: a duration (ADR 101)'; do
+  tree badref
+  put badref apps/ios/mdoc/F.swift "$marker
+try await Task.sleep(for: .seconds(1))"
+  expect 1 badref
+done
+# A marker at the end of one file does not cover the next file's first line.
+tree files
+put files apps/ios/mdoc/G1.swift 'go()
+// timing: a bug (#1)'
+put files apps/ios/mdoc/G2.swift 'try await Task.sleep(for: .seconds(1))'
+expect 1 files
+grep -qF 'G2.swift:1:' "$tmp/out" || fail "a marker covered the next file: $(cat "$tmp/out")"
+# A block comment over several lines is not code, and the block comment
+# state does not leak past its end.
+tree block
+put block apps/ios/mdoc/H.swift '/*
+ Task.sleep(for: .seconds(1))
+ sleep(1) */ go()
+try await Task.sleep(for: .seconds(1))'
+expect 1 block
+grep -qF 'H.swift:4:' "$tmp/out" || fail "the call after a block comment passed: $(cat "$tmp/out")"
+[ "$(grep -c 'H.swift' "$tmp/out")" = 1 ] || fail "a block comment counted as code: $(cat "$tmp/out")"
 # One marked call does not cover the next one in the same file.
 tree next
 put next apps/ios/mdoc/D.swift '// timing: a bug (#1)
@@ -125,7 +173,9 @@ put other apps/ios/mdoc/E.swift '/// No `Task.sleep` here: wait for the event.
 /* asyncAfter */
 let startDelay(x) = 1
 func animationDelay() {}
-go() // then Task.sleep(for: .seconds(1)) in a comment'
+go() // then Task.sleep(for: .seconds(1)) in a comment
+Text("Retry after a delay(s)")
+let help = "Call sleep(1) and Task.sleep(for:)"'
 put other apps/ios/mdocTests/WaitTests.swift 'Thread.sleep(forTimeInterval: 0.01)'
 put other apps/ios/mdocUITests/SurveyUITests.swift 'sleep(1)'
 put other apps/android/app/src/test/kotlin/WaitTest.kt 'Thread.sleep(500)'

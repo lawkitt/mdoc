@@ -23,7 +23,8 @@ final class LargeTextExploreUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 30))
         save(app, "01-home")
         MdocUITest.openSettings(app)
-        XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
+        // Its rows may be below the fold at this size; its title is not.
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         save(app, "02-settings")
         app.swipeUp()
         save(app, "03-settings-end")

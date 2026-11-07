@@ -36,10 +36,10 @@ final class OCRResumeUITests: XCTestCase {
             cellular.tap()
         }
 
-        // Cancel once the first page is recognized, so there is text to
-        // keep and pages to resume.
+        // Cancel once the first page is recognized and before the last
+        // starts, so there is text to keep and pages to resume.
         let progress = app.descendants(matching: .any)["job-progress"]
-        let pastFirstPage = NSPredicate(format: "label MATCHES '.*page [2-4] of 4.*'")
+        let pastFirstPage = NSPredicate(format: "label MATCHES '.*page [23] of 4.*'")
         expectation(for: pastFirstPage, evaluatedWith: progress)
         waitForExpectations(timeout: 300)
         app.buttons["Cancel"].firstMatch.tap()

@@ -212,13 +212,15 @@ apps displaying. For code in `apps/ios` and `apps/android`:
 - **No Swift or Kotlin copy of a core rule.** A rule found in app code moves
   into `crates/mdoc-ffi` or below; it is not fixed in place.
 - **No fixed delays** (`Task.sleep`, `asyncAfter`, `Thread.sleep`, Kotlin's
-  `delay`) in app code: wait for the event. A delay that works around a
-  platform bug, or stands in for a missing event, says so with its issue on
-  its line or the comment just above: `// timing: <why> (#NNN)`; a
-  deliberate on-screen duration (a toast's life, a hint's beats) names the
-  ADR that sets it: `(ADR NNNN)`. `just lint` checks it
-  (`scripts/fixed-delays.sh`; tests and UI tests are exempt). UI tests wait
-  for an element, its state or a settled screen, not for time.
+  `delay`, an animation's `.delay`) in app code: wait for the event. A delay
+  that works around a platform bug, or stands in for an event that is
+  missing until its issue is fixed, says so with the issue on its line or
+  the comment just above: `// timing: <why> (#NNN)`; a deliberate on-screen
+  duration (a toast's life, a hint's beats) names the ADR that defines the
+  behaviour: `(ADR NNNN)`. `just lint` checks it (`scripts/fixed-delays.sh`;
+  tests and UI tests are exempt). The iOS UI tests wait for an element, its
+  state or a settled screen (`apps/ios/mdocUITests/Waits.swift`), not for
+  time; Android's follow when it next moves.
 - **Every bug fix comes with a test that fails without it.**
 - **A fresh reviewer agent reviews every iOS PR**, whether or not Codex is
   available.
