@@ -1408,6 +1408,71 @@ fn character_reference(text: &str) -> Option<(usize, String)> {
     Some((end, decoded))
 }
 
+/// Every occurrence of `wording` in `source`, left to right without
+/// overlaps, as source byte ranges. Canonically equivalent spellings match,
+/// as the platforms' own string search matches them: a letter with its
+/// accent composed (NFC) or as a combining mark (NFD) is the same letter,
+/// and a match never splits a letter from its marks.
+pub fn occurrences(source: &str, wording: &str) -> Vec<Range<usize>> {
+    let wording: String = wording.nfc().collect();
+    if wording.is_empty() {
+        return Vec::new();
+    }
+    // The source in NFC, one piece per letter and the marks after it, and
+    // where each piece starts in both.
+    let mut text = String::with_capacity(source.len());
+    let mut starts = Vec::new();
+    let mut chars = source.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        let mut end = at + c.len_utf8();
+        while let Some((i, mark)) = chars.next_if(|&(_, mark)| {
+            unicode_normalization::char::canonical_combining_class(mark) != 0
+        }) {
+            end = i + mark.len_utf8();
+        }
+        starts.push((text.len(), at));
+        text.extend(source[at..end].nfc());
+    }
+    starts.push((text.len(), source.len()));
+    let source_at = |offset: usize| {
+        starts
+            .binary_search_by_key(&offset, |(text, _)| *text)
+            .ok()
+            .map(|i| starts[i].1)
+    };
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(i) = text[from..].find(&wording) {
+        let start = from + i;
+        let end = start + wording.len();
+        if let (Some(source_start), Some(source_end)) = (source_at(start), source_at(end)) {
+            found.push(source_start..source_end);
+            from = end;
+        } else {
+            from = start + text[start..].chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod occurrence_tests {
+    use super::occurrences;
+
+    #[test]
+    fn nfc_and_nfd_spellings_find_each_other() {
+        let nfc = "Zo\u{eb} met Zo\u{eb} and Zoe.";
+        let nfd = "Zoe\u{308} met Zoe\u{308} and Zoe.";
+        assert_eq!(occurrences(nfc, "Zoe\u{308}"), [0..4, 9..13]);
+        assert_eq!(occurrences(nfd, "Zo\u{eb}"), [0..5, 10..15]);
+        // "Zoe" never matches the letter without its mark.
+        assert_eq!(occurrences(nfd, "Zoe"), vec![20..23]);
+        assert_eq!(occurrences("Анна Анна", "Анна"), [0..8, 9..17]);
+        assert!(occurrences("text", "").is_empty());
+        assert_eq!(occurrences("aaaa", "aa"), [0..2, 2..4]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

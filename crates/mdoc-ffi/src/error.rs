@@ -30,6 +30,39 @@ pub enum CoreError {
     Io { message: String },
 }
 
+/// Why a review call (`DocumentSession::review`, `hand_off`) did not
+/// apply, typed so each shows its own message (ADR 0104).
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum ReviewError {
+    /// Copy for AI and Share wait until every proposal is replaced or kept.
+    #[error("Review the {count} proposals left first.")]
+    PendingProposals { count: u64 },
+    /// Rename to an alias another identity has: Same as is the way to it.
+    #[error("{alias} is another name's alias.")]
+    AliasTaken { alias: String, identity: u64 },
+    /// The mention or identity named is not in the review now.
+    #[error("That name is no longer in the document.")]
+    NotFound,
+    /// The core refused the change (a retired or malformed alias, a
+    /// mention that moved, no document), in its own words.
+    #[error("{message}")]
+    Refused { message: String },
+    /// Reading or writing the document or its case failed.
+    #[error("{message}")]
+    Storage { message: String },
+}
+
+impl From<CoreError> for ReviewError {
+    fn from(error: CoreError) -> Self {
+        match error {
+            CoreError::Io { message } => Self::Storage { message },
+            error => Self::Refused {
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
 impl CoreError {
     pub(crate) fn review(message: impl Into<String>) -> Self {
         Self::Review {

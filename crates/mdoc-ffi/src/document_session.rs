@@ -5,6 +5,7 @@
 //! case. Long jobs report their
 //! stage to the platform and stop when it cancels; the platform runs them
 //! off its main thread.
+mod actions;
 mod intake;
 mod review;
 mod snapshot;
@@ -14,12 +15,13 @@ use crate::{
     library::{CaseInfo, Library, RenamedDocument, RestoredReply, TextRange},
     setup::{DetectorPaths, OcrPaths},
 };
+pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 use mdoc_pii::restore::RestoreMap;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
 pub use snapshot::{
-    Category, CategoryChoice, HistoryStep, IdentityRow, LinkHint, Mention, MentionState,
-    ReviewSnapshot,
+    Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
+    MentionState, ReviewSnapshot,
 };
 use std::{
     collections::HashSet,
@@ -99,6 +101,11 @@ struct Document {
     /// while the case still holds exactly these, no other document changed
     /// it, and saving needs no join that could undo this one's own steps.
     synced: Option<Vec<mdoc_store::cases::StoredIdentity>>,
+    /// Scanned, or names proposed some other way, even if none were found.
+    scanned: bool,
+    /// `ReviewText::change_key` at the last save: equal now, nothing
+    /// changed since, and a save would write what is there.
+    saved: Option<((u64, u64, usize), bool)>,
 }
 
 #[derive(uniffi::Object)]
@@ -487,15 +494,7 @@ impl DocumentSession {
     /// A name for the shared `.md` file: the title with this document's
     /// known originals replaced by their aliases.
     pub fn share_file_name(&self) -> Result<String, CoreError> {
-        self.read_document(|document| {
-            let map = RestoreMap::new(document.review.review.export_identities());
-            let (title, _) = map.pseudonymize(&document.title);
-            let title: String = title
-                .chars()
-                .map(|c| if "/\\:".contains(c) { '-' } else { c })
-                .collect();
-            format!("{}.md", title.trim())
-        })
+        self.read_document(Document::share_file_name)
     }
 
     /// Restore an AI reply with this document's mapping, as desktop's reply
@@ -542,66 +541,7 @@ impl DocumentSession {
     /// free numbers; one library write lock covers the whole save.
     pub fn save(&self, library: Arc<Library>) -> Result<SavedDocument, CoreError> {
         let mut guard = self.lock_document();
-        let document = guard.as_mut().ok_or_else(no_document)?;
-        let lock = library.lock()?;
-        let path = match &document.path {
-            Some(path) => path.clone(),
-            None => {
-                let path = library.reserve_document_path(&document.title)?;
-                document.path = Some(path.clone());
-                path
-            }
-        };
-        let member = library.member(&path);
-        library.refuse_other_case(&member, document.case.as_deref().unwrap_or_default())?;
-        let case = match document.case.clone() {
-            Some(id) => library.edit_locked(&lock, &id, |case| {
-                // Only a case another document changed since is joined
-                // again: joining against this document's own last save would
-                // take back what Undo just reverted.
-                if document.synced.as_ref() != Some(&case.identities) {
-                    document
-                        .review
-                        .join(&case.exported(), &case.reserved_aliases())?;
-                    document.review.dismiss_pairs(&case.dismissed_hints);
-                }
-                document.stored.save(path.clone(), &document.review.text)?;
-                let before = case.clone();
-                case.merge(&document.review.review.export_identities());
-                if !case.members.contains(&member) {
-                    case.members.push(member.clone());
-                }
-                for (a, b) in document.review.dismissed_pairs() {
-                    let pair = (a, b);
-                    let flipped = (pair.1.clone(), pair.0.clone());
-                    if !case.dismissed_hints.contains(&pair)
-                        && !case.dismissed_hints.contains(&flipped)
-                    {
-                        case.dismissed_hints.push(pair);
-                    }
-                }
-                document.synced = Some(case.identities.clone());
-                Ok(*case != before)
-            })?,
-            None => {
-                document.stored.save(path.clone(), &document.review.text)?;
-                let mut case = mdoc_store::cases::Case::new(
-                    document.title.clone(),
-                    &document.review.review.export_identities(),
-                    Some(member),
-                );
-                // Hints dismissed before the case existed stay dismissed.
-                case.dismissed_hints = document.review.dismissed_pairs();
-                document.synced = Some(case.identities.clone());
-                library.create_locked(&lock, case)?
-            }
-        };
-        document.case = Some(case.id.clone());
-        Ok(SavedDocument {
-            path: path.display().to_string(),
-            case,
-            review: document.snapshot(),
-        })
+        guard.as_mut().ok_or_else(no_document)?.save(&library)
     }
 
     /// Rename…: this document's title, as `Library::rename_document` does
@@ -666,20 +606,103 @@ struct Opened {
 }
 
 impl Document {
-    fn snapshot(&self) -> ReviewSnapshot {
+    /// `DocumentSession::share_file_name`.
+    fn share_file_name(&self) -> String {
+        let map = RestoreMap::new(self.review.review.export_identities());
+        let (title, _) = map.pseudonymize(&self.title);
+        let title: String = title
+            .chars()
+            .map(|c| if "/\\:".contains(c) { '-' } else { c })
+            .collect();
+        format!("{}.md", title.trim())
+    }
+
+    /// Changes when the review does, or when the document is first scanned.
+    fn change_key(&self) -> ((u64, u64, usize), bool) {
+        (self.review.change_key(), self.scanned)
+    }
+
+    fn snapshot(&mut self) -> ReviewSnapshot {
+        self.review.sync_ids();
         snapshot::of(
             &self.title,
             self.warning.as_deref(),
             &self.review,
             self.case.as_deref(),
+            self.scanned,
         )
     }
 
     /// Scan results, minus the categories the case skips
-    /// (`complete_pii_scan`).
+    /// (`complete_pii_scan`). The document counts as scanned after.
     fn ingest(&mut self, mut detections: Vec<mdoc_pii::Detection>) -> Result<(), CoreError> {
         detections.retain(|d| !self.skip.contains(&d.category));
-        self.review.ingest(detections)
+        self.review.ingest(detections)?;
+        self.scanned = true;
+        Ok(())
+    }
+
+    /// `DocumentSession::save`.
+    fn save(&mut self, library: &Library) -> Result<SavedDocument, CoreError> {
+        let lock = library.lock()?;
+        let path = match &self.path {
+            Some(path) => path.clone(),
+            None => {
+                let path = library.reserve_document_path(&self.title)?;
+                self.path = Some(path.clone());
+                path
+            }
+        };
+        let member = library.member(&path);
+        library.refuse_other_case(&member, self.case.as_deref().unwrap_or_default())?;
+        let case = match self.case.clone() {
+            Some(id) => library.edit_locked(&lock, &id, |case| {
+                // Only a case another document changed since is joined
+                // again: joining against this document's own last save would
+                // take back what Undo just reverted.
+                if self.synced.as_ref() != Some(&case.identities) {
+                    self.review
+                        .join(&case.exported(), &case.reserved_aliases())?;
+                    self.review.dismiss_pairs(&case.dismissed_hints);
+                }
+                self.stored.save(path.clone(), &self.review.text)?;
+                let before = case.clone();
+                case.merge(&self.review.review.export_identities());
+                if !case.members.contains(&member) {
+                    case.members.push(member.clone());
+                }
+                for (a, b) in self.review.dismissed_pairs() {
+                    let pair = (a, b);
+                    let flipped = (pair.1.clone(), pair.0.clone());
+                    if !case.dismissed_hints.contains(&pair)
+                        && !case.dismissed_hints.contains(&flipped)
+                    {
+                        case.dismissed_hints.push(pair);
+                    }
+                }
+                self.synced = Some(case.identities.clone());
+                Ok(*case != before)
+            })?,
+            None => {
+                self.stored.save(path.clone(), &self.review.text)?;
+                let mut case = mdoc_store::cases::Case::new(
+                    self.title.clone(),
+                    &self.review.review.export_identities(),
+                    Some(member),
+                );
+                // Hints dismissed before the case existed stay dismissed.
+                case.dismissed_hints = self.review.dismissed_pairs();
+                self.synced = Some(case.identities.clone());
+                library.create_locked(&lock, case)?
+            }
+        };
+        self.case = Some(case.id.clone());
+        self.saved = Some(self.change_key());
+        Ok(SavedDocument {
+            path: path.display().to_string(),
+            case,
+            review: self.snapshot(),
+        })
     }
 }
 
@@ -712,6 +735,8 @@ impl DocumentSession {
             stored: mdoc_store::document::Document::default(),
             generation,
             synced: None,
+            scanned: false,
+            saved: None,
         };
         if let Some(opened) = opened {
             document.path = opened.path;

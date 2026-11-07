@@ -20,7 +20,7 @@ pub mod setup;
 pub mod spike;
 
 pub use document_session::DocumentSession;
-pub use error::CoreError;
+pub use error::{CoreError, ReviewError};
 pub use library::Library;
 pub use setup::Setup;
 
