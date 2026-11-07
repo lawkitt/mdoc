@@ -88,6 +88,22 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertNil(app.home.errorMessage)
     }
 
+    /// An import not yet read (the tenancy scan) can be neither renamed nor
+    /// moved: each says why, and the document stays as it was.
+    func testAnImportNotYetReadRefusesRenameAndMove() throws {
+        let app = try app()
+        let before = try XCTUnwrap(app.home.documents.first { $0.id == seeded.tenancy })
+        app.rename(seeded.tenancy, to: "Lease")
+        XCTAssertEqual(app.home.errorMessage, "Rename the document once it is read.")
+        app.home.errorMessage = nil
+        app.move(seeded.tenancy, to: .existing(seeded.ellison))
+        XCTAssertNotNil(app.home.errorMessage)
+        XCTAssertNil(app.toast)
+        let after = try XCTUnwrap(app.home.documents.first { $0.id == seeded.tenancy })
+        XCTAssertEqual(after.title, before.title)
+        XCTAssertEqual(after.caseID, seeded.harbour)
+    }
+
     func testMoveOffersUndoThatMovesBack() throws {
         let app = try app()
         let before = app.home.documents.first { $0.id == seeded.letter }?.caseID

@@ -101,11 +101,16 @@ final class AppModel {
         }
         do {
             let (storage, core) = try open()
-            let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
+            var models: any ModelDownloader = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
+            #if DEBUG
+            // UI tests download nothing unless they ask; they run Debug builds.
+            if testing && !CoreFactory.realDownloadsInUITests {
+                models = FakeModelDownloader(seconds: 0)
+            }
+            #endif
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
-                downloader: testing && !CoreFactory.realDownloadsInUITests ? FakeModelDownloader(seconds: 0) : models,
-                network: NetworkMonitor(), defaults: defaults)
+                downloader: models, network: NetworkMonitor(), defaults: defaults)
             if testing, let seed = ProcessInfo.processInfo.environment["MDOC_SEED_FILE"] {
                 app.seedForUITesting(uiTestingFixture(seed))
             }
@@ -114,7 +119,7 @@ final class AppModel {
             let storage = MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-unavailable"))
             return AppModel(
                 core: Core(library: UnavailableLibrary(), setup: UnavailableSetup()), storage: storage,
-                background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
+                background: NoBackgroundContinuation(), downloader: NoModelDownloader(),
                 network: NetworkMonitor(), defaults: defaults, startupError: error.localizedDescription)
         }
     }

@@ -11,9 +11,16 @@ enum Fixture {
     /// tests never download, so it asks for setup.
     static let detectorTier: UInt64 = 8 * gigabyte
 
+    /// Where every test's library goes. Most tests leave theirs; the first
+    /// use in a run clears what earlier runs left.
+    private static let temporaryFolder: URL = {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-tests", isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        return folder
+    }()
+
     static func temporaryStorage() throws -> MdocStorage {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mdoc-tests-\(UUID().uuidString)", isDirectory: true)
+        let root = temporaryFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let storage = MdocStorage(root: root)
         try storage.prepare()
         return storage
@@ -62,6 +69,14 @@ enum Fixture {
         let letter = try library.importDocument(.text(Letters.letter), title: Letters.letterTitle, into: .existing(ellison))
         _ = try letter.recognize(observer: TestObserver())
         _ = try letter.propose(Letters.names)
+        // The core dates a saved document by its file, to the second: the
+        // letter an hour ago and the quotation two, so the order is the
+        // fixture's (the tenancy, an import not yet read, dates from now).
+        for (session, hours) in [(letter, 1.0), (quotation, 2.0)] {
+            let path = try XCTUnwrap((session as? RealSession)?.path)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-hours * 3600)], ofItemAtPath: path)
+        }
         return Seeded(
             core: core, storage: storage, ellison: ellison, harbour: try XCTUnwrap(tenancy.snapshot().caseID),
             letter: letter.id, quotation: quotation.id, tenancy: tenancy.id)

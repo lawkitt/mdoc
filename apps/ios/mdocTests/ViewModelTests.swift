@@ -231,7 +231,7 @@ final class DocumentViewModelTests: XCTestCase {
 
     /// A cancelled recognition ends the job and offers it again. Resume,
     /// after OCR kept pages, is `ResumeDeleteTests`' and `OCRResumeTests`'.
-    func testCancelledRecognitionCanResume() async throws {
+    func testACancelledRecognitionCanStartAgain() async throws {
         let (model, _) = try model(\.tenancy, slow: 30)
         let run = Task { await model.recognize() }
         while model.runningJob == nil { await Task.yield() }
@@ -277,8 +277,7 @@ final class HomeViewModelTests: XCTestCase {
         let seeded = try Fixture.seeded()
         let home = HomeViewModel(library: seeded.library)
         let documents = home.documents
-        XCTAssertEqual(Set(documents.map(\.id)), [seeded.letter, seeded.quotation, seeded.tenancy])
-        XCTAssertEqual(documents.map(\.updated), documents.map(\.updated).sorted(by: >))
+        XCTAssertEqual(documents.map(\.id), [seeded.tenancy, seeded.letter, seeded.quotation])
         let tenancy = try XCTUnwrap(documents.first { $0.id == seeded.tenancy })
         XCTAssertEqual(home.caseSummary(of: tenancy)?.id, seeded.harbour)
         let letter = try XCTUnwrap(documents.first { $0.id == seeded.letter })
@@ -380,9 +379,8 @@ final class RestoreViewModelTests: XCTestCase {
         XCTAssertEqual(model.selectedCase, seeded.ellison)
         XCTAssertEqual(model.result?.text, "Maya Ellison agrees.")
         // Save to document's default: the case's most recently changed one.
-        XCTAssertEqual(Set(model.documentsInCase.map(\.id)), [seeded.letter, seeded.quotation])
-        XCTAssertEqual(model.documentsInCase.map(\.updated), model.documentsInCase.map(\.updated).sorted(by: >))
-        XCTAssertEqual(model.defaultSaveTarget?.id, model.documentsInCase.first?.id)
+        XCTAssertEqual(model.documentsInCase.map(\.id), [seeded.letter, seeded.quotation])
+        XCTAssertEqual(model.defaultSaveTarget?.id, seeded.letter)
     }
 
     func testPickingAnotherCaseRestoresWithItsNamesOnly() throws {

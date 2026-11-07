@@ -154,11 +154,14 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 - **Tests run the real core** ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)):
   over temporary storage with a fixed case key, below the detector floor so
   no model is needed, the fixture's names proposed as Try a sample proposes
-  its own (`mdocTests/Support`). The only stand-ins are a fake `Setup` for
-  the download tests and `SlowJobs`, a real session whose long jobs wait
-  first, for the timing tests. Previews use the real core and the sample
-  document behind `#if DEBUG`; no fake or fixture ships in the app or the
-  extension.
+  its own (`mdocTests/Support`). No test fakes the library or a document:
+  the core's stand-ins are a fake `Setup` for the download tests and
+  `SlowJobs`, a real session whose long jobs wait first, for the timing
+  tests; the platform's are the downloaders and the network
+  (`FakeModelDownloader`, `HeldDownloader`, `FakeNetwork`). Previews use the
+  real core and the sample document. Fakes, the fixed case key and the
+  previews' core are behind `#if DEBUG` or in the test targets: none ships
+  in the app or the extension.
 - **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
   offsets into the Markdown source; `TextOffsets` converts them for UIKit.
 - **The core recognizes Markdown.** `MarkdownStyling` asks the core for a
