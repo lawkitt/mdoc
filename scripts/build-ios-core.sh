@@ -9,6 +9,8 @@
 # ONNX Runtime and PDFium are pinned, checksum-verified downloads; nothing
 # is downloaded at run time. The app must export _OrtGetApiBase and keep it
 # through stripping (tools/ios-spike shows the build settings).
+# MDOC_FFI_FEATURES adds the core's cargo features: tools/ios-spike needs
+# `spike` (scripts/ios-spike-device.sh sets it); the app needs none.
 source "$(dirname "$0")/lib.sh"
 [ "$(platform)" = macos-arm64 ] || die "the iOS core builds only on Apple Silicon macOS"
 
@@ -46,7 +48,8 @@ ort=$deps/onnxruntime/onnxruntime.xcframework
 
 # Both targets in one cargo run, so one's single-threaded LTO overlaps the
 # other's compiling.
-cargo build --locked --profile mobile -p mdoc-ffi --lib "${targets[@]/#/--target=}"
+cargo build --locked --profile mobile -p mdoc-ffi --lib "${targets[@]/#/--target=}" \
+  ${MDOC_FFI_FEATURES:+--features "$MDOC_FFI_FEATURES"}
 
 # slice <rust-target> <ort-slice> <pdfium-archive> <pdfium-sha>
 slice() {

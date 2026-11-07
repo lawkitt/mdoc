@@ -6,7 +6,9 @@
 //! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
 //! text, saving into a case) and [`setup`] (models that fit the device,
 //! verifying and installing downloads). [`spike`] holds the feasibility
-//! measurements and [`memory`] the footprint they report.
+//! measurements and [`memory`] the footprint they report; they reach the
+//! bindings only with the `spike` feature, which the `tools/` harnesses
+//! turn on and the apps leave off.
 uniffi::setup_scaffolding!();
 
 pub mod document_session;

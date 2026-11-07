@@ -37,7 +37,7 @@ reports=target/android-spike/reports
 mkdir -p "$reports"
 stamp=$(date +%Y%m%d-%H%M%S)
 
-scripts/build-android-core.sh >/dev/null
+MDOC_FFI_FEATURES=spike scripts/build-android-core.sh >/dev/null
 scripts/android-spike-data.sh >/dev/null
 (cd tools/android-spike && ./gradlew --quiet assembleDebug assembleDebugAndroidTest)
 apk=tools/android-spike/app/build/outputs/apk/debug/app-debug.apk
