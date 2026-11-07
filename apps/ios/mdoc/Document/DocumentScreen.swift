@@ -1,5 +1,4 @@
 import SwiftUI
-import TipKit
 import UIKit
 
 /// One document: Text and Original switch on iPhone and sit side by side on
@@ -200,13 +199,7 @@ struct DocumentScreen: View {
     }
 
     private var markdownText: some View {
-        VStack(spacing: 0) {
-            if model.snapshot.pendingCount > 0 && !model.isReviewing {
-                TipView(LongPressTip())
-                    .padding(.horizontal)
-            }
-            markdownTextView
-        }
+        markdownTextView
     }
 
     private var markdownTextView: some View {
@@ -258,6 +251,8 @@ struct DocumentScreen: View {
     /// header with the name and its alias. Each action puts the bar on it.
     private func candidateMenu(_ id: CandidateID) -> UIMenu? {
         guard let candidate = model.snapshot.candidate(id) else { return nil }
+        // The long press was found: its hint isn't needed.
+        model.learn(.longPress)
         func act(_ scope: Scope = .allOccurrences, _ body: @escaping () -> Void) -> () -> Void {
             { model.select(id); model.reviewScope = scope; body() }
         }
@@ -400,7 +395,7 @@ struct DocumentScreen: View {
     @ViewBuilder
     private var bottomBar: some View {
         if model.isReviewing && model.runningJob == nil {
-            ReviewBar(model: model, detailsHeight: max(120, screenHeight * 0.45 - 170))
+            ReviewBar(model: model, detailsHeight: max(160, screenHeight * 0.6 - 190))
         } else {
             actionBottomBar
         }
@@ -591,6 +586,17 @@ private struct ActionBar: View {
                 pasteReply(accessibilityLabel: "Paste another reply")
             }
         case .handOff:
+            VStack(spacing: Space.xs) {
+                if !model.snapshot.candidates.isEmpty {
+                    AllReviewedLine(candidates: model.snapshot.candidates)
+                }
+                handOffButtons
+            }
+        }
+    }
+
+    /// Share, Copy and Paste once every name is decided.
+    private var handOffButtons: some View {
             layout {
                 // One tap shares the text; the file is a long press away.
                 Button {
@@ -622,7 +628,6 @@ private struct ActionBar: View {
                 .accessibilityIdentifier("copy-for-ai")
                 pasteReply(accessibilityLabel: "Paste reply")
             }
-        }
     }
 
     /// Paste, which opens the reply sheet.
@@ -679,6 +684,38 @@ private struct ActionBar: View {
             case .install: return String(localized: "Installing")
             }
         }
+    }
+}
+
+/// Above Share once review is done: "All 15 reviewed", with how many were
+/// replaced and kept, so the moment reads as finished.
+struct AllReviewedLine: View {
+    let candidates: [Candidate]
+
+    var body: some View {
+        let replaced = candidates.filter { $0.state == .replaced }.count
+        let kept = candidates.filter { $0.state == .kept }.count
+        let pill = StatusPill(Text("All \(candidates.count) reviewed"), systemImage: "checkmark.seal.fill", kind: .ready)
+        let counts = Text("\(replaced) replaced · \(kept) kept")
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+        // One line when it fits, else two: nothing truncates.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.xs) {
+                pill
+                counts
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                pill
+                counts
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("all-reviewed")
     }
 }
 

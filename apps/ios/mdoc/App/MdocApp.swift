@@ -11,7 +11,7 @@ struct MdocApp: App {
     private var appTheme: AppTheme { AppTheme(rawValue: theme) ?? .automatic }
 
     init() {
-        ReviewTips.configure(testing: CoreFactory.isUITesting)
+        ReviewHint.configure(testing: CoreFactory.isUITesting)
     }
 
     var body: some Scene {

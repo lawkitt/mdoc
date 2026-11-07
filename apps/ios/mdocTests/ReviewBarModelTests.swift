@@ -176,4 +176,63 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertEqual(trimmed, SourceRange(start: 8, end: 13))
         XCTAssertEqual(DocumentViewModel.trimmed(SourceRange(start: 13, end: 14), in: text).length, 0)
     }
+
+    // MARK: Full view and decided cards (2026-11-06 grill)
+
+    func testAMentionPillChangesOnlyThatMentionAndTheBarStays() throws {
+        let model = try model()
+        let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
+        let mentions = model.snapshot.mentions(of: repeated.id).sorted { $0.range.start < $1.range.start }
+        model.select(mentions[0].id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.decideMention(mentions[1].id, .replace)
+        let now = model.snapshot.mentions(of: repeated.id).sorted { $0.range.start < $1.range.start }
+        XCTAssertEqual(now.map(\.state).filter { $0 == .replaced }.count, 1, "only the one mention")
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "the bar stays where it was")
+        XCTAssertTrue(model.canUndo)
+    }
+
+    func testInsteadKeepsTheCardAndNextMovesOn() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.replace)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.changeCurrent(.keep)
+        XCTAssertEqual(model.reviewedCandidate?.state, .kept)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Keep instead stays on the card")
+        model.goToNextUndecided()
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
+    }
+
+    func testNextOnTheLastDecidedCardEndsReview() throws {
+        let model = try model()
+        model.beginReview()
+        model.replaceAllPending()
+        model.beginReview()
+        XCTAssertTrue(model.reviewOrder.isDone)
+        model.goToNextUndecided()
+        XCTAssertFalse(model.isReviewing)
+    }
+
+    func testOneHintPerDocumentAtItsMoment() throws {
+        let wasEnabled = ReviewHint.enabled
+        ReviewHint.resetAll()
+        ReviewHint.enabled = true
+        defer {
+            ReviewHint.resetAll()
+            ReviewHint.enabled = wasEnabled
+        }
+        let model = try model()
+        model.beginReview()
+        XCTAssertNil(model.hint, "not on the first card")
+        model.step(1)
+        XCTAssertEqual(model.hint, .swipe, "after the second card")
+        model.learn(.swipe)
+        XCTAssertNil(model.hint, "gone once used")
+        for _ in 0..<3 where model.isReviewing { model.decideCurrent(.keep) }
+        XCTAssertNil(model.hint, "no second hint in this document")
+        XCTAssertTrue(ReviewHint.swipe.isLearned)
+    }
 }

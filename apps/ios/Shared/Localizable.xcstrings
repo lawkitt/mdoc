@@ -100,6 +100,16 @@
     "%lld replaced" : {
 
     },
+    "%lld replaced · %lld kept" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld replaced · %2$lld kept"
+          }
+        }
+      }
+    },
     "%lld reviewed" : {
 
     },
@@ -261,13 +271,13 @@
     "Change category" : {
 
     },
-    "Changed your mind?" : {
-
-    },
     "Checking and installing" : {
 
     },
     "Choose a document, or add one with +." : {
+
+    },
+    "Clear" : {
 
     },
     "Converting" : {
@@ -363,10 +373,13 @@
     "End review" : {
 
     },
-    "Enough memory to find names on this device." : {
+    "End review " : {
 
     },
-    "Every mention of this name, and Keep or Replace for all of them." : {
+    "Ends review." : {
+
+    },
+    "Enough memory to find names on this device." : {
 
     },
     "Failed · %@" : {
@@ -402,10 +415,10 @@
     "Finish import" : {
 
     },
-    "Haptics" : {
+    "Goes to the next name to decide." : {
 
     },
-    "Hide details" : {
+    "Haptics" : {
 
     },
     "Hide mentions" : {
@@ -414,7 +427,7 @@
     "Hide name" : {
 
     },
-    "Hide name marks it, and every exact repeat, as one name to review." : {
+    "Hide tip" : {
 
     },
     "Identities" : {
@@ -462,6 +475,9 @@
     "Keeps the reply with %@." : {
 
     },
+    "Keeps this one." : {
+
+    },
     "kept" : {
 
     },
@@ -474,13 +490,16 @@
     "Light" : {
 
     },
-    "Long-press a name" : {
+    "Long-press any name for more" : {
 
     },
     "Looks like" : {
 
     },
     "Looks like %@" : {
+
+    },
+    "Marks the first unmarked match, and every exact repeat, as one name to review." : {
 
     },
     "mdoc" : {
@@ -549,9 +568,6 @@
           }
         }
       }
-    },
-    "Mentions (%lld)" : {
-
     },
     "Models" : {
 
@@ -709,9 +725,6 @@
     "Proposed" : {
 
     },
-    "Pull up for details" : {
-
-    },
     "Reading the document. Review when it finishes." : {
 
     },
@@ -803,13 +816,13 @@
     "Replace instead" : {
 
     },
-    "Replace, keep, say who it is, or change its category without the bar." : {
-
-    },
     "replaced" : {
 
     },
     "Replaced" : {
+
+    },
+    "Replaces this one." : {
 
     },
     "Reply" : {
@@ -946,9 +959,6 @@
     "Show" : {
 
     },
-    "Show details" : {
-
-    },
     "Show Markdown" : {
 
     },
@@ -976,10 +986,7 @@
     "Stopped." : {
 
     },
-    "Swipe for the next one" : {
-
-    },
-    "Swipe the card sideways, or tap the edge, to step through the names." : {
+    "Swipe the card for the next name" : {
 
     },
     "System" : {
@@ -1018,7 +1025,7 @@
     "The scanned pages could not be read." : {
 
     },
-    "The tips show again the next time you open mdoc." : {
+    "The tips show again as you review." : {
 
     },
     "Theme" : {
@@ -1060,9 +1067,6 @@
     "Undo" : {
 
     },
-    "Undo is beside Keep; you can also shake the phone. A long press on Undo redoes." : {
-
-    },
     "Undone" : {
 
     },
@@ -1088,9 +1092,6 @@
       "comment" : "A Markdown alert's title"
     },
     "Web address" : {
-
-    },
-    "Which name is %@?" : {
 
     },
     "Your carrier may charge for the data." : {

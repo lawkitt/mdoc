@@ -43,6 +43,7 @@ extension DocumentViewModel {
         reviewing = nil
         focus = nil
         barExpanded = false
+        hint = nil
     }
 
     func clearFocus() {
@@ -53,7 +54,7 @@ extension DocumentViewModel {
     }
 
     /// Puts the bar on `id`, resetting the scope when the identity changes.
-    func select(_ id: CandidateID) {
+    func select(_ id: CandidateID, counts: Bool = true) {
         guard let candidate = snapshot.candidate(id) else { return }
         // A name outside the focused group ends the focus.
         if let focus, !focus.contains(candidate) { self.focus = nil }
@@ -61,7 +62,32 @@ extension DocumentViewModel {
             reviewScope = .allOccurrences
             scopeIdentity = candidate.identityID
         }
+        // A new card, not the same one found again after its range moved.
+        if counts && id != reviewing { cardsSeen += 1 }
         reviewing = id
+        updateHint()
+    }
+
+    // MARK: Hints
+
+    /// Shows at most one hint line per document, once its moment comes:
+    /// swipe after the second card, the long press after three decisions.
+    /// A learned hint goes at once.
+    func updateHint() {
+        if let hint, hint.isLearned { self.hint = nil }
+        guard ReviewHint.enabled, isReviewing, hint == nil, !hintShownHere else { return }
+        if !ReviewHint.swipe.isLearned, cardsSeen >= 2, reviewOrder.count > 2 {
+            hint = .swipe
+        } else if !ReviewHint.longPress.isLearned, decisionsHere >= 3 {
+            hint = .longPress
+        }
+        if hint != nil { hintShownHere = true }
+    }
+
+    /// The gesture was used, or × tapped: that hint never shows again.
+    func learn(_ hint: ReviewHint) {
+        hint.learn()
+        updateHint()
     }
 
     /// Scrolls the text back to the candidate under review.
@@ -105,6 +131,12 @@ extension DocumentViewModel {
         Haptics.selection()
     }
 
+    /// The full view's row for a mention: the name in its original
+    /// wording, with the words around it and its heading.
+    func snippet(of candidate: Candidate) -> MentionSnippet {
+        MentionSnippet(markdown: snapshot.markdown, range: candidate.range, name: candidate.original)
+    }
+
     /// About 40 characters either side of a mention, on one line.
     func context(of candidate: Candidate) -> String {
         let bytes = Array(snapshot.markdown.utf8)
@@ -126,19 +158,45 @@ extension DocumentViewModel {
         let index = reviewOrder.index(of: candidate.id)
         let ok = performReview { try session.decide(candidate.id, decision, scope: reviewScope) }
         guard ok else { return }
-        UndoTip.decided = true
+        decisionsHere += 1
         Haptics.decision()
         advance(from: index)
     }
 
-    /// The expanded view's Keep all n or Replace all n for the identity.
-    func decideIdentity(_ decision: Decision) {
+    /// A state pill in the full view: that one mention changes, and the bar
+    /// stays where it is.
+    func decideMention(_ id: CandidateID, _ decision: Decision) {
+        guard let current = reviewedCandidate, !reviewWaitsForJob() else { return }
+        let index = reviewOrder.index(of: current.id)
+        guard performReview({ try session.decide(id, decision, scope: .justThisOne) }) else { return }
+        decisionsHere += 1
+        Haptics.decision()
+        reselect(near: current, index: index)
+    }
+
+    /// "Keep instead" or "Replace instead" on a decided card, in the bar's
+    /// scope: the card stays, showing its new state, until Next.
+    func changeCurrent(_ decision: Decision) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
         let index = reviewOrder.index(of: candidate.id)
-        guard performReview({ try session.decide(candidate.id, decision, scope: .allOccurrences) }) else { return }
+        guard performReview({ try session.decide(candidate.id, decision, scope: reviewScope) }) else { return }
+        decisionsHere += 1
         Haptics.decision()
-        advance(from: index)
+        reselect(near: candidate, index: index)
     }
+
+    /// Next on a decided card: the next undecided candidate, or the end of
+    /// review when none is left.
+    func goToNextUndecided() {
+        // As after a decision: the group's next, then the document's, then
+        // All reviewed.
+        advance(from: reviewOrder.index(of: reviewing))
+        Haptics.selection()
+    }
+
+    /// Whether every candidate in the document is decided: Next then reads
+    /// Done.
+    var documentIsDone: Bool { ReviewOrder(snapshot).isDone }
 
     /// After a decision: the next undecided candidate, or All reviewed.
     func advance(from index: Int?) {
@@ -215,11 +273,11 @@ extension DocumentViewModel {
     private func moveBar(to step: HistoryStep?) {
         if let id = step?.candidateID, snapshot.candidate(id) != nil {
             if let focus, let candidate = snapshot.candidate(id), !focus.contains(candidate) { self.focus = nil }
-            select(id)
+            select(id, counts: false)
             revealReviewed()
         } else if let range = step?.range, let near = ReviewOrder(snapshot).candidate(near: range.start) {
             focus = nil
-            select(near.id)
+            select(near.id, counts: false)
             revealReviewed()
         } else if let reviewing, snapshot.candidate(reviewing) == nil {
             self.reviewing = reviewOrder.nextUndecided(after: nil)?.id
@@ -361,13 +419,13 @@ extension DocumentViewModel {
 
     /// After an identity change moved ranges: the same mention by position,
     /// keeping the bar on it.
-    private func reselect(near candidate: Candidate, index: Int?) {
+    func reselect(near candidate: Candidate, index: Int?) {
         let order = reviewOrder
         if let index, let same = order.candidate(at: index) {
-            select(same.id)
+            select(same.id, counts: false)
         } else if let near = ReviewOrder(snapshot).candidate(near: candidate.range.start) {
             focus = nil
-            select(near.id)
+            select(near.id, counts: false)
         }
     }
 

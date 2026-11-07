@@ -612,6 +612,19 @@ Identities.
 **Mentions chip**: "1 of 3 ›" on the review card when an identity has more
 than one mention; each tap scrolls the text to the next.
 
+**Full view** (mobile review): the review bar dragged up: one row per
+mention of the identity under review, each with its heading, the words of
+its paragraph, the original name highlighted and a state mark
+([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md)). Also called the
+expanded bar.
+
+**State mark**: a mention's or identity's state as a round mark: a dashed
+ring while proposed, an accent disc once replaced, an eye once kept. In
+the full view it is also the button that changes that one mention.
+
+**Hint line**: the review bar's one-line tip, at most one per document,
+gone once its gesture is used; it replaced TipKit's popovers.
+
 **Focus** (mobile review): stepping limited to one identity or one
 category, started from Identities, shown on the progress line with ×.
 
