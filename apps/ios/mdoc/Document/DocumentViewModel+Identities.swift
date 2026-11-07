@@ -59,7 +59,7 @@ extension DocumentViewModel {
         var steps = 0
         for identity in identities where identity.id != target.id {
             let before = snapshot.undoStep
-            guard performReview({ try session.link(identity.id, into: target.id) }) else { break }
+            guard perform({ try session.link(identity.id, into: target.id) }) else { break }
             if snapshot.undoStep != before { steps += 1 }
         }
         guard steps > 0 else { return }
@@ -70,11 +70,13 @@ extension DocumentViewModel {
     /// A tap on a name in the list: the bar's full view on its first
     /// undecided mention, or its first.
     func openIdentity(_ id: IdentityID) {
-        let mentions = snapshot.mentions(of: id).sorted { $0.range.start < $1.range.start }
+        let mentions = sortedMentions(of: id)
         guard let first = mentions.first(where: { $0.state == .proposed }) ?? mentions.first else { return }
         open(first.id)
-        barExpanded = true
-        revealReviewed()
+        updateReview {
+            $0.setExpanded(true)
+            $0.revealReviewed()
+        }
     }
 
     private func undoToast(_ text: String, steps: Int) -> ToastMessage {

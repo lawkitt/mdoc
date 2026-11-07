@@ -975,15 +975,27 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         setNeedsLayout()
     }
 
+    /// Called at the end of a layout pass whose text and tables are placed:
+    /// where a scroll to a range can trust the text's rects. A pass that
+    /// rendered again for a new width skips it; the next pass calls it.
+    var onLayout: (() -> Void)?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let width = textWidth
+        var renderedAgain = false
         if width > 0, abs(width - shownWidth) > 0.5 {
             shownWidth = width
             onWidth?(width)
+            renderedAgain = true
         }
         if !tableViews.isEmpty {
             placeTables()
+        }
+        if renderedAgain {
+            setNeedsLayout()
+        } else {
+            onLayout?()
         }
     }
 

@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import UIKit
 
@@ -6,15 +7,19 @@ import UIKit
 /// Markdown is on (ADR 0096). Candidates are links: a tap opens the
 /// candidate sheet, in a table cell too; VoiceOver reaches them through the
 /// Candidates rotor, and the edit menu adds Replace… for a selection.
+///
+/// Two kinds of change reach it (ADR 0104). A content change (the text, the
+/// candidates' states, the look) builds the styled document again, keyed by
+/// the core's `text_revision`. A decoration change (the name under review
+/// and the mentions its scope reaches) recolours those names in place, in
+/// table cells too, so a card change never builds the document again.
 struct MarkdownTextView: UIViewRepresentable {
     let snapshot: DocumentSnapshot
     let selected: CandidateID?
     /// The mentions the bar's scope reaches besides `selected`.
     var scoped: Set<CandidateID> = []
-    /// Bumped by the review bar to scroll back to `selected`.
-    var revealRequest = 0
-    /// A Find match to scroll to when `revealRequest` changes.
-    var revealRange: SourceRange?
+    /// The scroll the model asks for, run once after the next layout.
+    var reveal: RevealRequest?
     /// Markers hidden and blocks drawn; false shows the source.
     var rendered = true
     /// Document font › Serif; the styler reads it, the key restyles on it.
@@ -22,6 +27,8 @@ struct MarkdownTextView: UIViewRepresentable {
     let onCandidate: (CandidateID) -> Void
     let onReplace: (SourceRange) -> Void
     let onReviewNext: () -> Void
+    /// A candidate's long press opens its menu.
+    var onMenu: (CandidateID) -> Void = { _ in }
     /// A candidate's long-press menu (ADR 0098); nil leaves none.
     var menu: (CandidateID) -> UIMenu? = { _ in nil }
 
@@ -44,75 +51,104 @@ struct MarkdownTextView: UIViewRepresentable {
         view.accessibilityIdentifier = "document-text"
         view.accessibilityHint = String(localized: "Underlined words are names mdoc found. Use the Candidates rotor to move between them.")
         view.installAccessibility()
-        let coordinator = context.coordinator
-        view.configureCell = { [weak coordinator] cell in
-            cell.delegate = coordinator
-            cell.allowsCopy = false
-        }
-        view.onWidth = { [weak coordinator, weak view] width in
-            guard let coordinator, let view else { return }
-            coordinator.render(view, width: width)
-        }
+        context.coordinator.attach(to: view)
         return view
     }
 
     func updateUIView(_ view: CandidateTextView, context: Context) {
-        let coordinator = context.coordinator
-        coordinator.parent = self
-        view.onReviewNext = onReviewNext
-        let key = StyleKey(
-            snapshot: snapshot, selected: selected, scoped: scoped, rendered: rendered, serif: serif,
-            dynamicTypeSize: context.environment.dynamicTypeSize,
+        context.coordinator.update(
+            view, with: self, dynamicTypeSize: context.environment.dynamicTypeSize,
             colorScheme: context.environment.colorScheme)
-        if revealRequest != coordinator.revealRequest {
-            coordinator.revealRequest = revealRequest
-            if let range = revealRange, selected.flatMap({ snapshot.candidate($0) }).map({ $0.range.start > range.start || $0.range.end < range.end }) ?? true {
-                coordinator.reveal(range: range, in: view)
-                // The match selected, so the reader sees which words.
-                let found = coordinator.offsets.nsRange(range)
-                if found.location + found.length <= view.attributedText.length { view.selectedRange = found }
-            } else if let selected, key == coordinator.styled {
-                coordinator.reveal(selected, in: view, always: true)
-            }
-        }
-        guard key != coordinator.styled else {
-            coordinator.pending = nil
-            return
-        }
-        // iOS draws a backgrounded app again in light and dark for the app
-        // switcher. Restyling then rebuilt every table's cells twice, and
-        // with Find names using the CPU it ran past the 10 s iOS allows, so
-        // iOS stopped mdoc. The text catches up on return.
-        if view.window?.windowScene?.activationState == .background {
-            coordinator.restyleOnReturn(key, view)
-            return
-        }
-        coordinator.restyle(key, view)
     }
 
-    struct StyleKey: Equatable {
-        var snapshot: DocumentSnapshot
-        var selected: CandidateID?
-        var scoped: Set<CandidateID>
+    /// What the styled document is built from: a change here builds it
+    /// again. The text is compared by the core's revision when it has one.
+    struct ContentKey: Equatable {
+        var textRevision: UInt64?
+        /// Compared only without a revision.
+        var markdown: String
+        var styling: MarkdownStyling
+        var candidates: [Candidate]
         var rendered: Bool
         var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
+
+        init(_ view: MarkdownTextView, dynamicTypeSize: DynamicTypeSize, colorScheme: ColorScheme) {
+            textRevision = view.snapshot.textRevision
+            markdown = view.snapshot.markdown
+            styling = view.snapshot.styling
+            candidates = view.snapshot.candidates
+            rendered = view.rendered
+            serif = view.serif
+            self.dynamicTypeSize = dynamicTypeSize
+            self.colorScheme = colorScheme
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            guard lhs.candidates == rhs.candidates, lhs.rendered == rhs.rendered, lhs.serif == rhs.serif,
+                  lhs.dynamicTypeSize == rhs.dynamicTypeSize, lhs.colorScheme == rhs.colorScheme else { return false }
+            if let left = lhs.textRevision, let right = rhs.textRevision { return left == right }
+            return lhs.textRevision == rhs.textRevision && lhs.markdown == rhs.markdown && lhs.styling == rhs.styling
+        }
+
+        /// Whether the text itself changed, not only how it is drawn.
+        func textDiffers(from other: ContentKey?) -> Bool {
+            guard let other else { return true }
+            if let revision = textRevision, let previous = other.textRevision { return revision != previous }
+            return markdown != other.markdown
+        }
+    }
+
+    /// What is recoloured in place.
+    struct DecorationKey: Equatable {
+        var selected: CandidateID?
+        var scoped: Set<CandidateID>
+    }
+
+    /// A stretch of one candidate in the main text or a table cell, with
+    /// the decoration keys it has undecorated.
+    struct DecoratedRun {
+        enum Place: Hashable {
+            case text
+            case cell(table: Int, row: Int, column: Int)
+        }
+
+        let place: Place
+        let range: NSRange
+        let base: [NSAttributedString.Key: Any]
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextView
-        var styled: StyleKey?
-        var revealRequest = 0
+        /// What the view shows.
+        private(set) var content: ContentKey?
+        private(set) var decoration = DecorationKey(selected: nil, scoped: [])
+        /// How many times the styled document was built: a test hook.
+        private(set) var rebuilds = 0
         var offsets = TextOffsets("")
         /// False until the first text is shown, so a new document starts at the top.
         var keepsScroll = false
-        /// The style the view waits to show until mdoc is back on screen.
-        var pending: StyleKey?
+        /// The content the view waits to show until mdoc is back on screen.
+        private(set) var pending: ContentKey?
+        /// The last reveal request taken, so each runs once.
+        private var takenReveal: Int?
+        /// The scroll owed once the next layout is done. `always` scrolls
+        /// even when the target is in view already: a request does, a newly
+        /// selected name only when it is out of view.
+        private(set) var pendingReveal: (target: RevealRequest.Target, always: Bool)?
+        /// Each candidate's stretches, as built, for recolouring in place.
+        private var runs: [CandidateID: [DecoratedRun]] = [:]
+        /// Inside `render`, whose own layout pass shows a scroll it will
+        /// undo: no reveal runs there.
+        private var rendering = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
 
         init(parent: MarkdownTextView) {
             self.parent = parent
+            // A request made before this view existed (another pane showed,
+            // or the document was closed) is not this view's to run.
+            takenReveal = parent.reveal?.id
         }
 
         deinit {
@@ -121,27 +157,91 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
-        func restyle(_ key: StyleKey, _ view: CandidateTextView) {
-            pending = nil
-            // The core's revision says whether the text changed, without
-            // comparing it; a snapshot without one compares the text.
-            let textChanged = key.snapshot.textRevision.map { $0 != styled?.snapshot.textRevision }
-                ?? (styled?.snapshot.markdown != key.snapshot.markdown)
-            let newlySelected = key.selected != styled?.selected ? key.selected : nil
-            if textChanged || styled == nil {
-                offsets = TextOffsets(key.snapshot.markdown)
+        func attach(to view: CandidateTextView) {
+            view.configureCell = { [weak self] cell in
+                cell.delegate = self
+                cell.allowsCopy = false
             }
-            styled = key
+            view.onWidth = { [weak self, weak view] width in
+                guard let self, let view else { return }
+                self.render(view, width: width)
+            }
+            view.onLayout = { [weak self, weak view] in
+                guard let self, let view else { return }
+                self.layoutDone(view)
+            }
+        }
+
+        func update(_ view: CandidateTextView, with parent: MarkdownTextView, dynamicTypeSize: DynamicTypeSize, colorScheme: ColorScheme) {
+            self.parent = parent
+            view.onReviewNext = parent.onReviewNext
+            let content = ContentKey(parent, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme)
+            let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)
+            if let reveal = parent.reveal, reveal.id != takenReveal {
+                takenReveal = reveal.id
+                pendingReveal = (reveal.target, true)
+            }
+            if content != self.content {
+                // iOS draws a backgrounded app again in light and dark for
+                // the app switcher. Building then made every table's cells
+                // twice, and with Find names using the CPU it ran past the
+                // 10 s iOS allows, so iOS stopped mdoc. The text catches up
+                // on return, and so does a reveal.
+                if view.window?.windowScene?.activationState == .background {
+                    restyleOnReturn(content, view)
+                    return
+                }
+                rebuild(content, view)
+            } else {
+                pending = nil
+                if decoration != self.decoration {
+                    let previous = self.decoration.selected
+                    redecorate(to: decoration, in: view)
+                    afterSelection(from: previous, in: view)
+                }
+            }
+            if pendingReveal != nil { view.setNeedsLayout() }
+        }
+
+        /// Builds the styled document for `content`.
+        func rebuild(_ content: ContentKey, _ view: CandidateTextView) {
+            pending = nil
+            let textChanged = content.textDiffers(from: self.content)
+            if textChanged {
+                offsets = TextOffsets(content.markdown)
+            }
+            let previous = decoration.selected
+            self.content = content
             render(view, width: view.textWidth, keepsScroll: !textChanged || keepsScroll)
             keepsScroll = true
-            if let newlySelected {
-                // After the tables are placed, which follows the layout.
-                DispatchQueue.main.async { [weak self, weak view] in
-                    guard let self, let view else { return }
-                    self.reveal(newlySelected, in: view)
-                }
-            } else if key.selected == nil {
+            afterSelection(from: previous, in: view)
+        }
+
+        /// A newly selected name scrolls into view once laid out; with none
+        /// selected, the room a reveal added below the text goes.
+        private func afterSelection(from previous: CandidateID?, in view: CandidateTextView) {
+            if let selected = decoration.selected, selected != previous {
+                if pendingReveal?.always != true { pendingReveal = (.candidate(selected), false) }
+                view.setNeedsLayout()
+            } else if decoration.selected == nil {
                 dropRevealRoom(in: view)
+            }
+        }
+
+        /// The end of a layout pass: the pending reveal runs, once, when the
+        /// view is on screen with a size to measure in.
+        func layoutDone(_ view: CandidateTextView) {
+            guard !rendering, pending == nil, let reveal = pendingReveal,
+                  view.window != nil, view.textWidth > 0, view.bounds.height > 0 else { return }
+            pendingReveal = nil
+            switch reveal.target {
+            case .candidate(let id):
+                self.reveal(id, in: view, always: reveal.always)
+            case .range(let range):
+                self.reveal(range: range, in: view)
+                // The match selected, so the reader sees which words.
+                let found = offsets.nsRange(range)
+                if found.location + found.length <= view.attributedText.length { view.selectedRange = found }
             }
         }
 
@@ -214,28 +314,56 @@ struct MarkdownTextView: UIViewRepresentable {
             return rect.isNull || rect.isInfinite ? nil : rect
         }
 
-        func restyleOnReturn(_ key: StyleKey, _ view: CandidateTextView) {
-            pending = key
+        func restyleOnReturn(_ content: ContentKey, _ view: CandidateTextView) {
+            pending = content
             guard foreground == nil else { return }
             foreground = NotificationCenter.default.addObserver(
                 forName: UIScene.willEnterForegroundNotification, object: nil, queue: .main
             ) { [weak self, weak view] _ in
                 MainActor.assumeIsolated {
-                    guard let self, let view, let key = self.pending, key != self.styled else { return }
-                    self.restyle(key, view)
+                    guard let self, let view, let content = self.pending, content != self.content else { return }
+                    self.rebuild(content, view)
+                    if self.pendingReveal != nil { view.setNeedsLayout() }
                 }
             }
         }
 
         /// Styles the snapshot for a text column `width` wide (tables need
-        /// one) and points the Candidates rotor at the text and the cells.
+        /// one), decorates the name under review and its scope, and points
+        /// the Candidates rotor at the text and the cells.
         func render(_ view: CandidateTextView, width: CGFloat, keepsScroll: Bool = true) {
+            rendering = true
+            defer { rendering = false }
+            rebuilds += 1
             let snapshot = parent.snapshot
             let offset = view.contentOffset
+            // Built undecorated, its candidates' stretches noted, then
+            // decorated as a selection change recolours them, so the two
+            // never differ; the view gets the text decorated already.
             let styler = MarkdownStyler(
-                traits: view.traitCollection, selected: parent.selected, scoped: parent.scoped, rendered: parent.rendered,
+                traits: view.traitCollection, selected: nil, scoped: [], rendered: parent.rendered,
                 width: width > 0 ? width : nil)
-            view.show(styler.document(for: snapshot), width: width)
+            var document = styler.document(for: snapshot)
+            let text = NSMutableAttributedString(attributedString: document.text)
+            var cells: [DecoratedRun.Place: NSMutableAttributedString] = [:]
+            for (table, rendered) in document.tables.enumerated() {
+                for (row, rowCells) in rendered.rows.enumerated() {
+                    for (column, cell) in rowCells.enumerated() {
+                        cells[.cell(table: table, row: row, column: column)] = NSMutableAttributedString(attributedString: cell.text)
+                    }
+                }
+            }
+            func string(_ place: DecoratedRun.Place) -> NSMutableAttributedString? {
+                place == .text ? text : cells[place]
+            }
+            collectRuns(text: text, cells: cells)
+            decoration = DecorationKey(selected: nil, scoped: [])
+            decorate(DecorationKey(selected: parent.selected, scoped: parent.scoped), dark: view.traitCollection.userInterfaceStyle == .dark, in: string)
+            document.text = text
+            for (place, cell) in cells {
+                if case .cell(let table, let row, let column) = place { document.tables[table].rows[row][column].text = cell }
+            }
+            view.show(document, width: width)
             var items: [CandidateTextView.RotorItem] = []
             for (order, candidate) in snapshot.candidates.enumerated() {
                 let range = offsets.nsRange(candidate.range)
@@ -255,6 +383,72 @@ struct MarkdownTextView: UIViewRepresentable {
             }
         }
 
+        /// Where each candidate's link runs are, in the text and in each
+        /// table cell (a folded table line has none), with their colours.
+        private func collectRuns(text: NSAttributedString, cells: [DecoratedRun.Place: NSMutableAttributedString]) {
+            runs = [:]
+            let keys = MarkdownStyler.decorationKeys
+            func collect(_ string: NSAttributedString, _ place: DecoratedRun.Place) {
+                string.enumerateAttribute(.link, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+                    guard let url = value as? URL, let id = MarkdownStyler.candidateID(from: url) else { return }
+                    string.enumerateAttributes(in: range) { attributes, part, _ in
+                        let base = attributes.filter { keys.contains($0.key) }
+                        runs[id, default: []].append(DecoratedRun(place: place, range: part, base: base))
+                    }
+                }
+            }
+            collect(text, .text)
+            for (place, cell) in cells { collect(cell, place) }
+        }
+
+        /// Recolours the names whose decoration changed, in place: the one
+        /// under review and the mentions its scope reaches, the text kept
+        /// as it is laid out.
+        func redecorate(to new: DecorationKey, in view: CandidateTextView) {
+            var edited: [DecoratedRun.Place: NSTextStorage] = [:]
+            decorate(new, dark: view.traitCollection.userInterfaceStyle == .dark) { place in
+                if let storage = edited[place] { return storage }
+                let textView: UITextView? = switch place {
+                case .text: view
+                case .cell(let table, let row, let column):
+                    view.tableViews.indices.contains(table) && view.tableViews[table].cells.indices.contains(row)
+                        && view.tableViews[table].cells[row].indices.contains(column)
+                        ? view.tableViews[table].cells[row][column] : nil
+                }
+                guard let storage = textView?.textStorage else { return nil }
+                storage.beginEditing()
+                edited[place] = storage
+                return storage
+            }
+            for storage in edited.values { storage.endEditing() }
+        }
+
+        /// Sets the decoration keys of each candidate whose decoration
+        /// changes from the current one to `new`, in the strings `string`
+        /// gives for each place.
+        private func decorate(
+            _ new: DecorationKey, dark: Bool, in string: (DecoratedRun.Place) -> NSMutableAttributedString?
+        ) {
+            let old = decoration
+            decoration = new
+            let changed = Set([old.selected, new.selected].compactMap { $0 }).union(old.scoped.symmetricDifference(new.scoped))
+            for id in changed {
+                guard let candidate = parent.snapshot.candidate(id), let runs = runs[id] else { continue }
+                let added = MarkdownStyler.decoration(
+                    of: candidate, selected: id == new.selected, scoped: new.scoped.contains(id), dark: dark)
+                for run in runs {
+                    guard let text = string(run.place), NSMaxRange(run.range) <= text.length else { continue }
+                    for key in MarkdownStyler.decorationKeys {
+                        if let value = added[key] ?? run.base[key] {
+                            text.addAttribute(key, value: value, range: run.range)
+                        } else {
+                            text.removeAttribute(key, range: run.range)
+                        }
+                    }
+                }
+            }
+        }
+
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
             guard case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) else {
                 return nil
@@ -267,6 +461,7 @@ struct MarkdownTextView: UIViewRepresentable {
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             // A candidate's tap opens the bar; its long press, its menu.
             if case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
+                parent.onMenu(id)
                 return parent.menu(id).map { UITextItem.MenuConfiguration(menu: $0) }
             }
             return UITextItem.MenuConfiguration(menu: defaultMenu)

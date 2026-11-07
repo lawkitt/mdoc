@@ -186,7 +186,7 @@ struct ReviewCard: View {
     @ViewBuilder
     private var sameAsMenu: some View {
         let targets = model.sameAsTargets(for: candidate)
-        if targets.all.count > 8 {
+        if targets.all.count > DocumentViewModel.sameAsListLimit {
             Button {
                 showsSameAsList = true
             } label: {
@@ -224,7 +224,7 @@ struct ReviewCard: View {
     private var scopeMenu: some View {
         let count = identity?.mentionCount ?? 1
         return Menu {
-            Picker("Scope", selection: $model.reviewScope) {
+            Picker("Scope", selection: Binding(get: { model.reviewScope }, set: { model.setScope($0) })) {
                 Text("All \(count)").tag(Scope.all)
                 Text("This one").tag(Scope.this)
             }
@@ -401,16 +401,13 @@ struct ReviewDetails: View {
     let candidate: Candidate
 
     var body: some View {
-        let mentions = model.snapshot.mentions(of: candidate.identityID).sorted { $0.range.start < $1.range.start }
+        let mentions = model.sortedMentions(of: candidate.identityID)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(mentions.enumerated()), id: \.element.id) { offset, mention in
                 MentionRow(
                     snippet: model.snippet(of: mention), state: mention.state,
                     isCurrent: mention.id == candidate.id, tint: candidate.category.color,
-                    onOpen: {
-                        model.select(mention.id)
-                        model.revealReviewed()
-                    },
+                    onOpen: { model.openMention(mention.id) },
                     onToggle: {
                         model.decideMention(mention.id, mention.state == .replaced ? .keep : .replace)
                     })

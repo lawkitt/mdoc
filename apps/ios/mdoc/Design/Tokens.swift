@@ -38,6 +38,25 @@ enum Size {
     static let tile: CGFloat = 30
 }
 
+/// The review bar's measures (ADR 0098, 0101, docs/mobile-ui.md).
+enum ReviewBarMetrics {
+    /// The bar's widest: centred beyond it on iPad.
+    static let maxWidth: CGFloat = 560
+    /// A card dragged sideways further than this steps to its neighbor.
+    static let swipeThreshold: CGFloat = 60
+    /// How far a card slides as the next one comes in.
+    static let cardSlide: CGFloat = 60
+    /// The progress line's track.
+    static let trackWidth: CGFloat = 56
+
+    /// The most the mentions may take when pulled up: about 60% of the
+    /// screen with the compact bar (about 190 pt) below, never under 160 pt,
+    /// so the active name stays in view.
+    static func detailsHeight(screen height: CGFloat) -> CGFloat {
+        max(160, height * 0.6 - 190)
+    }
+}
+
 /// Named colors. System colors adapt to dark mode and Increase Contrast.
 enum Palette {
     /// The primary action and the active mention's outline.

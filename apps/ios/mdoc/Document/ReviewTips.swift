@@ -41,6 +41,12 @@ enum ReviewHint: String, CaseIterable, Identifiable {
     /// Off in UI tests, whose layout a hint would shift.
     nonisolated(unsafe) static var enabled = true
 
+    /// The hints still to teach: none while hints are off, else those not
+    /// yet learned. `ReviewState` shows one of them at its moment.
+    static var teachable: Set<ReviewHint> {
+        enabled ? Set(allCases.filter { !$0.isLearned }) : []
+    }
+
     static func configure(testing: Bool) {
         enabled = !testing
     }

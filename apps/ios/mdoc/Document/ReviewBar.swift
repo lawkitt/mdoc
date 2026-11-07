@@ -28,6 +28,8 @@ struct ReviewBar: View {
     /// The mentions' own height, when less than the cap.
     @State private var contentHeight: CGFloat = 0
     @State private var detailsAtTop = true
+    /// The mentions' scroll, back at the top each time they open.
+    @State private var detailsScroll = ScrollPosition(edge: .top)
     /// +1 stepping forward, -1 back: where the next card comes from.
     @State private var direction = 1
     @State private var grabberLift: CGFloat = 0
@@ -79,15 +81,18 @@ struct ReviewBar: View {
                         .transition(.opacity)
                 }
                 pager(candidate)
-                // Kept while a finger drags them shut, so the drag isn't cut off.
-                if shownHeight > 0 || detailsPull != 0 {
+                VStack(spacing: 0) {
+                    // Always built, at no height while the bar is compact, so
+                    // the bar knows where full is before it opens; spaced
+                    // like the rest while open or while a finger drags it.
                     details(candidate)
+                        .padding(.bottom, detailsShown ? 6 : 0)
+                    ReviewButtons(model: model, candidate: candidate)
                 }
-                ReviewButtons(model: model, candidate: candidate)
             }
             .padding(.horizontal, Space.m)
             .padding(.bottom, Space.xs)
-            .frame(maxWidth: 560)
+            .frame(maxWidth: ReviewBarMetrics.maxWidth)
             .frame(maxWidth: .infinity)
             .background(.bar)
             .offset(y: sag)
@@ -95,22 +100,11 @@ struct ReviewBar: View {
             // a long press shows a label in the large content viewer.
             .dynamicTypeSize(...DynamicTypeSize.accessibility2)
             .animation(Motion.fade, value: model.hint)
-            // The mentions' height, measured whether or not they show, so the
-            // bar knows where full is before it opens.
-            .background(alignment: .top) {
-                ReviewDetails(model: model, candidate: candidate)
-                    .padding(.horizontal, Space.m)
-                    .frame(maxWidth: 560)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .hidden()
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-                    .accessibilityHidden(true)
-            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("review-bar")
             .background { keyboardShortcuts(candidate) }
             .task(id: candidate.id) { await nudgeOnce() }
-            .onChange(of: model.cardsSeen) { _, seen in
+            .onChange(of: model.review.cardsSeen) { _, seen in
                 if seen == 3 { Task { await bounceGrabberOnce() } }
             }
         }
@@ -121,9 +115,9 @@ struct ReviewBar: View {
     /// manager.
     private func keyboardShortcuts(_ candidate: Candidate) -> some View {
         Group {
-            Button("Replace") { model.returnKey() }
+            Button("Replace") { key(.return, candidate) }
                 .keyboardShortcut(.return, modifiers: [])
-            Button("Keep") { model.decideCurrent(.keep) }
+            Button("Keep") { key(.keep, candidate) }
                 .keyboardShortcut("k", modifiers: [])
             Button("Previous") { step(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
@@ -138,6 +132,11 @@ struct ReviewBar: View {
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
+    }
+
+    /// A key's action on the card, as the model gives it for its state.
+    private func key(_ key: ReviewKey, _ candidate: Candidate) {
+        if let action = model.keyAction(key, for: candidate) { model.perform(action) }
     }
 
     /// Once: the card slides a little and back, so the swipe is seen.
@@ -176,13 +175,12 @@ struct ReviewBar: View {
         let was = model.barExpanded
         let target = (was ? fullHeight : 0) - dy
         let expand = target > fullHeight / 2
+        // Opening it, the text keeps the name in view above the taller bar.
         withAnimation(reduceMotion ? Motion.fade : Self.settle) {
-            model.barExpanded = expand
+            model.setBarExpanded(expand)
         }
         if expand != was {
             Haptics.selection()
-            // The text keeps the name in view above the taller bar.
-            if expand { model.revealReviewed() }
         }
     }
 
@@ -224,22 +222,33 @@ struct ReviewBar: View {
     }
 
     private func toggle() {
-        withAnimation(Motion.move(reduced: reduceMotion)) { model.barExpanded.toggle() }
+        withAnimation(Motion.move(reduced: reduceMotion)) { model.setBarExpanded(!model.barExpanded) }
         Haptics.selection()
-        if model.barExpanded { model.revealReviewed() }
     }
 
     // MARK: Mentions
+
+    /// The mentions show, or a finger drags them: kept while it drags them
+    /// shut, so the drag isn't cut off.
+    private var detailsShown: Bool { shownHeight > 0 || detailsPull != 0 }
 
     private func details(_ candidate: Candidate) -> some View {
         ScrollView {
             ReviewDetails(model: model, candidate: candidate)
         }
+        .scrollPosition($detailsScroll)
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(detailsPull != 0)
         .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 0.5 } action: { _, top in detailsAtTop = top }
-        // A new scroll view starts at the top.
-        .onAppear { detailsAtTop = true }
+        // Their own height, measured while compact too.
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in contentHeight = height }
+        // Shut, they open at the top again.
+        .onChange(of: detailsShown) { _, shown in
+            if !shown {
+                detailsScroll.scrollTo(edge: .top)
+                detailsAtTop = true
+            }
+        }
         // At the top, a drag down closes the bar as the grabber's does.
         .simultaneousGesture(
             DragGesture(minimumDistance: 10, coordinateSpace: .global)
@@ -253,7 +262,10 @@ struct ReviewBar: View {
                 })
         .frame(height: shownHeight, alignment: .top)
         .clipped()
-        .transition(.opacity)
+        .opacity(detailsShown ? 1 : 0)
+        .allowsHitTesting(detailsShown)
+        .disabled(!detailsShown)
+        .accessibilityHidden(!detailsShown)
     }
 
     // MARK: Pager
@@ -270,8 +282,8 @@ struct ReviewBar: View {
             .transition(reduceMotion
                 ? .opacity
                 : .asymmetric(
-                    insertion: .offset(x: CGFloat(direction) * 60).combined(with: .opacity),
-                    removal: .offset(x: CGFloat(-direction) * 60).combined(with: .opacity)))
+                    insertion: .offset(x: CGFloat(direction) * ReviewBarMetrics.cardSlide).combined(with: .opacity),
+                    removal: .offset(x: CGFloat(-direction) * ReviewBarMetrics.cardSlide).combined(with: .opacity)))
             .offset(x: drag + (cardDrag.axis == .horizontal ? cardDrag.dx : 0))
             .padding(.horizontal, 14)
             .background(alignment: .leading) {
@@ -300,7 +312,7 @@ struct ReviewBar: View {
                         pullEnded(predicted: value.predictedEndTranslation.height)
                         return
                     }
-                    let threshold: CGFloat = 60
+                    let threshold = ReviewBarMetrics.swipeThreshold
                     if dx < -threshold, hasNext {
                         swiped(1)
                     } else if dx > threshold, hasPrevious {
@@ -424,11 +436,11 @@ private struct Track: View {
     var body: some View {
         Capsule()
             .fill(Palette.chipFill)
-            .frame(width: 56, height: 4)
+            .frame(width: ReviewBarMetrics.trackWidth, height: 4)
             .overlay(alignment: .leading) {
                 Capsule()
                     .fill(Palette.accent)
-                    .frame(width: 56 * max(0, min(1, fraction)), height: 4)
+                    .frame(width: ReviewBarMetrics.trackWidth * max(0, min(1, fraction)), height: 4)
             }
             .accessibilityHidden(true)
     }
@@ -448,57 +460,47 @@ private struct ReviewButtons: View {
     private var all: Bool { model.reviewScope == .all && count > 1 }
 
     var body: some View {
+        let actions = model.cardActions(for: candidate)
         HStack(spacing: Space.s) {
             undo
-            switch candidate.state {
-            case .proposed:
-                Button {
-                    model.decideCurrent(.keep)
-                } label: {
-                    Text(all ? "Keep all \(count)" : "Keep")
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("review-keep")
-                Button {
-                    model.decideCurrent(.replace)
-                } label: {
-                    Text(all ? "Replace all \(count)" : "Replace")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("review-replace")
-            case .replaced, .kept:
-                let keep = candidate.state == .replaced
-                Button {
-                    model.changeCurrent(keep ? .keep : .replace)
-                } label: {
-                    Text(keep ? "Keep instead" : "Replace instead")
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier(keep ? "review-keep" : "review-replace")
-                Button {
-                    model.goToNextUndecided()
-                } label: {
-                    HStack(spacing: Space.xxs) {
-                        Text(model.documentIsDone ? "Done" : "Next")
-                        if !model.documentIsDone {
-                            Image(systemName: "arrow.right")
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity, minHeight: Size.barButton)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityHint(Text(model.documentIsDone ? "Ends review." : "Goes to the next name to decide."))
-                .accessibilityIdentifier("review-next")
-            }
+            button(actions.other, filled: false)
+            button(actions.filled, filled: true)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.8)
+    }
+
+    /// One of the card's buttons, its words by the action.
+    @ViewBuilder
+    private func button(_ action: CandidateAction, filled: Bool) -> some View {
+        let label = Group {
+            switch action {
+            case .keep: Text(all ? "Keep all \(count)" : "Keep")
+            case .replace: Text(all ? "Replace all \(count)" : "Replace")
+            case .keepInstead: Text("Keep instead")
+            case .replaceInstead: Text("Replace instead")
+            case .next:
+                HStack(spacing: Space.xxs) {
+                    Text(model.documentIsDone ? "Done" : "Next")
+                    if !model.documentIsDone {
+                        Image(systemName: "arrow.right")
+                            .accessibilityHidden(true)
+                    }
+                }
+            case .replaceThisOne, .showOriginal, .sameAs, .changeCategory:
+                EmptyView()
+            }
+        }
+        .fontWeight(filled ? .semibold : nil)
+        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+        let tap = Button { model.perform(action) } label: { label }
+        if filled {
+            tap.buttonStyle(.borderedProminent)
+                .modifier(ButtonAccessibility(action: action, documentIsDone: model.documentIsDone))
+        } else {
+            tap.buttonStyle(.bordered)
+                .modifier(ButtonAccessibility(action: action, documentIsDone: model.documentIsDone))
+        }
     }
 
     private var undo: some View {
@@ -522,5 +524,26 @@ private struct ReviewButtons: View {
         .accessibilityLabel(Text("Undo"))
         .accessibilityAction(named: Text("Redo")) { model.redoTapped() }
         .accessibilityIdentifier("review-undo")
+    }
+}
+
+/// A card button's hint and test identifier.
+private struct ButtonAccessibility: ViewModifier {
+    let action: CandidateAction
+    let documentIsDone: Bool
+
+    func body(content: Content) -> some View {
+        switch action {
+        case .next:
+            content
+                .accessibilityHint(Text(documentIsDone ? "Ends review." : "Goes to the next name to decide."))
+                .accessibilityIdentifier("review-next")
+        case .keep, .keepInstead:
+            content.accessibilityIdentifier("review-keep")
+        case .replace, .replaceInstead:
+            content.accessibilityIdentifier("review-replace")
+        case .replaceThisOne, .showOriginal, .sameAs, .changeCategory:
+            content
+        }
     }
 }

@@ -87,7 +87,7 @@ final class DocumentViewModelTests: XCTestCase {
         let pending = model.snapshot.candidates.filter { $0.state == .proposed }.sorted { $0.range.start < $1.range.start }
         model.reviewNext()
         XCTAssertEqual(model.reviewing, pending.first?.id)
-        model.reviewing = pending.last?.id
+        model.select(try XCTUnwrap(pending.last).id)
         model.reviewNext()
         XCTAssertEqual(model.reviewing, pending.first?.id)
     }
