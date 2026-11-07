@@ -78,7 +78,13 @@ struct SideDrawer<Panel: View, Content: View>: View {
                     .overlay {
                         sliverOverlay(progress: progress)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: progress > 0 ? Radius.screen : 0, style: .continuous))
+                    // Out to the screen's edges: a shape this frame's size
+                    // cut off what the screen draws in the safe areas, the
+                    // bottom toolbar's buttons among them.
+                    .mask {
+                        RoundedRectangle(cornerRadius: progress > 0 ? Radius.screen : 0, style: .continuous)
+                            .ignoresSafeArea()
+                    }
                     .shadow(color: .black.opacity(0.18 * progress), radius: 24 * progress)
                     .offset(x: reduceMotion ? 0 : sign * shown)
                     .opacity(reduceMotion ? Double(1 - 0.85 * progress) : 1)
@@ -119,6 +125,7 @@ struct SideDrawer<Panel: View, Content: View>: View {
     private func sliverOverlay(progress: CGFloat) -> some View {
         if progress > 0 {
             Color.black.opacity(0.22 * progress)
+                .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { setOpen(false) }
                 .accessibilityElement()
