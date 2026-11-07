@@ -382,9 +382,8 @@ final class SurveyUITests: XCTestCase {
         // The extension runs in its own process; its sheet shows in the
         // app's tree once it is up, by its title. Either way, the screen
         // must have left the share sheet before shot waits for it to settle.
-        let shown = MdocUITest.firstToAppear(
+        MdocUITest.firstToAppear(
             [app.navigationBars["Restore with mdoc"], app.staticTexts["Restore with mdoc"]], timeout: 10)
-        print("survey: Restore with mdoc shown by \(shown?.debugDescription ?? "nothing")")
         MdocUITest.settledScreen(unlike: sharing, timeout: 10)
         shot("22-restore-extension")
         let done = app.buttons["Done"].firstMatch
