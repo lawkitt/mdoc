@@ -281,3 +281,78 @@ fn code_with_backticks_at_its_edges_keeps_them() {
     assert_eq!(md("<p><code>a`b</code></p>"), "``a`b``");
     assert_eq!(md("<p><code>plain</code></p>"), "`plain`");
 }
+
+#[test]
+fn nested_marks_never_split_an_alias() {
+    assert_eq!(md("<p><b><i>ORG</i></b>_3</p>"), "ORG_3");
+    assert_eq!(md("<p>ORG_<b><i>3</i></b></p>"), "ORG_3");
+    assert_eq!(
+        md("<p><b><i><del>ORG</del></i></b>_3 pays</p>"),
+        "ORG_3 pays"
+    );
+    assert_eq!(md("<p>By <b><i>ORG_3</i></b>.</p>"), "By ***ORG_3***.");
+}
+
+#[test]
+fn custom_aliases_stay_whole() {
+    for alias in ["CLIENT__1", "A-B_C", "CASE_-_1", "X---Y__Z"] {
+        assert_eq!(
+            md(&format!("<h2>T</h2><p>Paid {alias} today</p>")),
+            format!("## T\n\nPaid {alias} today")
+        );
+        assert_eq!(
+            md(&format!("<p><b>{alias}</b></p>")),
+            format!("**{alias}**")
+        );
+        assert_eq!(
+            md(&format!("<table><tr><td>{alias}</td></tr></table>")),
+            format!("| {alias} |\n| --- |")
+        );
+    }
+    assert_eq!(md("<p><b>CLIENT</b>-1</p>"), "CLIENT-1");
+}
+
+#[test]
+fn bold_next_to_letters_is_markdown() {
+    let html = "<p>这是<b>重点</b>内容</p>";
+    assert_eq!(
+        pasted_markdown(html, Some("这是**重点**内容")).as_deref(),
+        Some("这是**重点**内容")
+    );
+    let table = "<table><tr><td>x</td></tr></table>";
+    assert!(
+        pasted_markdown(table, Some("x**2 + y**2"))
+            .unwrap()
+            .starts_with('|')
+    );
+}
+
+/// Every word survives however the markup nests.
+#[test]
+fn no_text_is_lost_inside_any_markup() {
+    for (open, close) in [
+        (r#"<a href="https://example.com">"#, "</a>"),
+        ("<b>", "</b>"),
+        ("<i>", "</i>"),
+        ("<code>", "</code>"),
+        ("<h2>", "</h2>"),
+        ("<pre>", "</pre>"),
+        ("<blockquote>", "</blockquote>"),
+        ("<ul><li>", "</li></ul>"),
+        ("<table><tr><td>", "</td></tr></table>"),
+        ("<div>", "</div>"),
+    ] {
+        for body in [
+            "<p>ORG_3 owes</p>",
+            "<ul><li>ORG_3 owes</li></ul>",
+            "ORG_3 owes",
+            "<div><p>ORG_3 owes</p></div>",
+        ] {
+            let html = format!("<p>before</p>{open}{body}{close}<p>after</p>");
+            let markdown = md(&html);
+            for word in ["before", "ORG_3", "owes", "after"] {
+                assert!(markdown.contains(word), "{html} lost {word}: {markdown}");
+            }
+        }
+    }
+}

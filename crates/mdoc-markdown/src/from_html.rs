@@ -52,10 +52,19 @@ fn is_markdown(plain: &str) -> bool {
     })
 }
 
-/// `marker` opening after a non-word character and closing before one, with
-/// no space just inside it.
+/// `marker` in a pair with no space just inside it, and not against a word
+/// on its outer sides: for `**` a word in ASCII, as `x**2`, since Chinese has
+/// no spaces to set bold off with; for `__` any word, which it can't open in.
 fn has_bold_pair(line: &str, marker: &str) -> bool {
-    let is_word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let is_word = |c: Option<char>| {
+        c.is_some_and(|c| {
+            if marker == "__" {
+                c.is_alphanumeric()
+            } else {
+                c.is_ascii_alphanumeric()
+            }
+        })
+    };
     let mut from = 0;
     while let Some(found) = line[from..].find(marker) {
         let start = from + found;
@@ -216,8 +225,10 @@ struct Frame {
     cells: Vec<String>,
     /// A table's rows.
     rows: Vec<Vec<String>>,
-    /// Where the marks last added to `inline` are, while they end it.
-    marks: Option<Marks>,
+    /// The marks that end `inline`, innermost first.
+    marks: Vec<Marks>,
+    /// An inline frame opened right after a word.
+    after_word: bool,
 }
 
 /// The byte ranges of one inline mark's opening and closing in `inline`.
@@ -227,9 +238,10 @@ struct Marks {
     close: std::ops::Range<usize>,
 }
 
-/// What an alias is made of: marks between these would split one.
+/// What an alias is made of (`valid_replacement` in mdoc-pii), and words:
+/// marks between these would split one.
 fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
+    c.is_alphanumeric() || c == '_' || c == '-'
 }
 
 impl Frame {
@@ -240,20 +252,31 @@ impl Frame {
             blocks: Vec::new(),
             cells: Vec::new(),
             rows: Vec::new(),
-            marks: None,
+            marks: Vec::new(),
+            after_word: false,
         }
     }
 
     /// Marks that would end in the middle of a word go, or `<b>ORG</b>_3`
     /// would hide the alias ORG_3 from Restore.
     fn unsplit(&mut self, next: char) {
-        let Some(marks) = self.marks.take() else {
+        let marks = std::mem::take(&mut self.marks);
+        let (Some(innermost), Some(outermost)) = (marks.first(), marks.last()) else {
             return;
         };
-        let inner_end = self.inline[..marks.close.start].chars().next_back();
-        if marks.close.end == self.inline.len() && is_word(next) && inner_end.is_some_and(is_word) {
-            self.inline.replace_range(marks.close, "");
-            self.inline.replace_range(marks.open, "");
+        let content_end = self.inline[..innermost.close.start].chars().next_back();
+        if outermost.close.end == self.inline.len()
+            && is_word(next)
+            && content_end.is_some_and(is_word)
+        {
+            let mut ranges: Vec<_> = marks
+                .into_iter()
+                .flat_map(|mark| [mark.open, mark.close])
+                .collect();
+            ranges.sort_by_key(|range| std::cmp::Reverse(range.start));
+            for range in ranges {
+                self.inline.replace_range(range, "");
+            }
         }
     }
 
@@ -265,7 +288,7 @@ impl Frame {
             self.blocks.push(Done { text, list: false });
         }
         self.inline.clear();
-        self.marks = None;
+        self.marks.clear();
     }
 
     /// The frame's blocks, with a blank line between them; in a list item, a
@@ -425,7 +448,14 @@ impl Converter {
         if !kind.is_inline() {
             self.top().flush();
         }
-        self.stack.push(Frame::new(kind));
+        let top = self.top();
+        let after_word = match top.inline.chars().next_back() {
+            Some(last) => is_word(last),
+            None => top.after_word,
+        };
+        let mut frame = Frame::new(kind);
+        frame.after_word = frame.kind.is_inline() && after_word;
+        self.stack.push(frame);
     }
 
     /// An open `p` ends where a block starts, as in HTML.
@@ -519,18 +549,30 @@ impl Converter {
             last_space = false;
             let c = if c == '\u{a0}' { ' ' } else { c };
             top.unsplit(c);
-            if !raw {
-                let doubled = matches!(c, '~' | '=') && chars.peek() == Some(&c);
-                // `_` inside a word is no emphasis, and every alias has one. At
-                // the edge of a mark its neighbour is still unknown: it may
+            if c == '_' && !raw {
+                // Inside a word it is no emphasis, and an alias holds runs of
+                // it. At a mark's edge the neighbour is still unknown: it may
                 // be an alias split by marks, so it stays.
-                let before = top.inline.chars().next_back();
-                let starts_loose = match before {
-                    Some(before) => !before.is_alphanumeric(),
+                let run = 1 + chars.clone().take_while(|next| *next == '_').count();
+                let word = |c: char| c.is_alphanumeric() || c == '-';
+                let starts_loose = match top.inline.chars().next_back() {
+                    Some(before) => !word(before),
                     None => !top.kind.is_inline(),
                 };
-                let ends_loose = chars.peek().is_some_and(|next| !next.is_alphanumeric());
-                let loose_underscore = c == '_' && (starts_loose || ends_loose);
+                let ends_loose = chars.clone().nth(run - 1).is_some_and(|next| !word(next));
+                for _ in 1..run {
+                    chars.next();
+                }
+                for _ in 0..run {
+                    if starts_loose || ends_loose {
+                        top.inline.push('\\');
+                    }
+                    top.inline.push('_');
+                }
+                continue;
+            }
+            if !raw {
+                let doubled = matches!(c, '~' | '=') && chars.peek() == Some(&c);
                 let entity = c == '&' && {
                     let rest: String = chars.clone().take(32).collect();
                     let name = rest.split(';').next().unwrap_or("");
@@ -538,11 +580,7 @@ impl Converter {
                         && !name.is_empty()
                         && name.chars().all(|n| n.is_ascii_alphanumeric() || n == '#')
                 };
-                if matches!(c, '\\' | '*' | '`' | '<' | '[' | ']')
-                    || entity
-                    || doubled
-                    || loose_underscore
-                {
+                if matches!(c, '\\' | '*' | '`' | '<' | '[' | ']') || entity || doubled {
                     top.inline.push('\\');
                 }
             }
@@ -560,12 +598,23 @@ impl Converter {
         });
         let quiet_em = self.inside(|kind| *kind == Kind::Em);
         let code = self.inside(|kind| *kind == Kind::Code);
+        // A block inside a mark or link (`<a><p>…</p></a>`): the blocks go up
+        // as they are; there is no Markdown for the mark around them.
+        if frame.kind.is_inline() && !frame.blocks.is_empty() {
+            frame.flush();
+            let parent = self.top();
+            parent.flush();
+            parent.blocks.append(&mut frame.blocks);
+            return;
+        }
+        let marks = std::mem::take(&mut frame.marks);
+        let after_word = frame.after_word;
         match frame.kind.clone() {
             Kind::Root => unreachable!("the root is never popped"),
             Kind::Skip(_) => {}
-            Kind::Strong => self.wrap(frame.inline, "**", "**", quiet_bold),
-            Kind::Em => self.wrap(frame.inline, "*", "*", quiet_em),
-            Kind::Strike => self.wrap(frame.inline, "~~", "~~", false),
+            Kind::Strong => self.wrap(frame.inline, marks, after_word, "**", "**", quiet_bold),
+            Kind::Em => self.wrap(frame.inline, marks, after_word, "*", "*", quiet_em),
+            Kind::Strike => self.wrap(frame.inline, marks, after_word, "~~", "~~", false),
             Kind::Code => {
                 let fence = "`".repeat(longest_run(&frame.inline, '`') + 1);
                 // A space keeps a backtick at the code's edge out of the fence.
@@ -577,6 +626,8 @@ impl Converter {
                 };
                 self.wrap(
                     frame.inline.clone(),
+                    marks,
+                    after_word,
                     &format!("{fence}{pad}"),
                     &format!("{pad}{fence}"),
                     code,
@@ -585,9 +636,9 @@ impl Converter {
             Kind::Link(href) => match href.filter(|href| safe_link(href)) {
                 Some(href) => {
                     let close = format!("]({})", href.replace(' ', "%20").replace(')', "%29"));
-                    self.wrap(frame.inline, "[", &close, false);
+                    self.wrap(frame.inline, marks, after_word, "[", &close, false);
                 }
-                None => self.wrap(frame.inline, "", "", true),
+                None => self.wrap(frame.inline, marks, after_word, "", "", true),
             },
             Kind::Block(_) => {
                 frame.flush();
@@ -596,11 +647,9 @@ impl Converter {
                 parent.blocks.append(&mut frame.blocks);
             }
             Kind::Heading(level) => {
-                let text = frame
-                    .inline
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                // Not `flush`: "1. Parties" under a heading is no list.
+                let text = format!("{} {}", frame.joined(), frame.inline);
+                let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
                 self.add_block(
                     (!text.is_empty()).then(|| format!("{} {text}", "#".repeat(level))),
                     false,
@@ -700,7 +749,8 @@ impl Converter {
                 self.top().cells.push(escape_pipes(&text));
             }
             Kind::Pre => {
-                let text = frame.inline.trim_matches('\n');
+                let text = format!("{}\n{}", frame.joined(), frame.inline);
+                let text = text.trim_matches('\n');
                 let fence = "`".repeat(longest_run(text, '`').max(2) + 1);
                 self.add_block(
                     (!text.is_empty()).then(|| format!("{fence}\n{text}\n{fence}")),
@@ -719,11 +769,20 @@ impl Converter {
     }
 
     /// Adds inline text with its markers, any space at its ends outside them.
-    /// None inside a word: `ORG_<b>3</b>` keeps the alias whole.
-    fn wrap(&mut self, inner: String, open: &str, close: &str, quiet: bool) {
-        let trimmed = inner.trim();
-        let lead = inner.len() - inner.trim_start().len();
-        let trail = inner.len() - inner.trim_end().len();
+    /// None inside a word: `ORG_<b>3</b>` keeps the alias whole. `inner` are
+    /// the marks ending the text, which the outer ones end together with.
+    fn wrap(
+        &mut self,
+        text: String,
+        inner: Vec<Marks>,
+        after_word: bool,
+        open: &str,
+        close: &str,
+        quiet: bool,
+    ) {
+        let trimmed = text.trim();
+        let lead = text.len() - text.trim_start().len();
+        let trail = text.len() - text.trim_end().len();
         let parent = self.top();
         if lead > 0 && !parent.inline.is_empty() && !parent.inline.ends_with([' ', '\n']) {
             parent.inline.push(' ');
@@ -734,26 +793,42 @@ impl Converter {
         if lead == 0 {
             parent.unsplit(first);
         } else {
-            parent.marks = None;
+            parent.marks.clear();
         }
-        let inside_word =
-            lead == 0 && is_word(first) && parent.inline.chars().next_back().is_some_and(is_word);
-        if quiet || inside_word {
-            parent.inline.push_str(trimmed);
-            parent.marks = None;
-        } else {
-            let open_at = parent.inline.len();
+        let inside_word = lead == 0
+            && is_word(first)
+            && (after_word || parent.inline.chars().next_back().is_some_and(is_word));
+        let plain = quiet || inside_word;
+        let open_at = parent.inline.len();
+        if !plain {
             parent.inline.push_str(open);
-            parent.inline.push_str(trimmed);
-            let close_at = parent.inline.len();
+        }
+        let text_at = parent.inline.len();
+        parent.inline.push_str(trimmed);
+        let close_at = parent.inline.len();
+        if !plain {
             parent.inline.push_str(close);
-            parent.marks = Some(Marks {
-                open: open_at..open_at + open.len(),
+        }
+        let shift = |range: std::ops::Range<usize>| {
+            range.start - lead + text_at..range.end - lead + text_at
+        };
+        let mut marks: Vec<Marks> = inner
+            .into_iter()
+            .map(|mark| Marks {
+                open: shift(mark.open),
+                close: shift(mark.close),
+            })
+            .collect();
+        if !plain {
+            marks.push(Marks {
+                open: open_at..text_at,
                 close: close_at..close_at + close.len(),
             });
         }
+        parent.marks = marks;
         if trail > 0 {
             parent.inline.push(' ');
+            parent.marks.clear();
         }
     }
 
