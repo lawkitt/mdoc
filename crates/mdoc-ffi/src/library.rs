@@ -982,6 +982,14 @@ fn file_stem(title: &str) -> String {
     }
 }
 
+/// The file stem the core gives a document titled `title` (`file_stem`), so
+/// the apps name the files they keep beside it, such as a source PDF, by
+/// the same rule.
+#[uniffi::export]
+pub fn file_name_stem(title: String) -> String {
+    file_stem(&title)
+}
+
 /// The stem documents were saved under before `file_stem`: every character
 /// a file name cannot hold became `-`.
 fn legacy_file_stem(title: &str) -> String {
@@ -1193,6 +1201,27 @@ mod tests {
             &path.with_file_name("Sample\u{A789} services agreement.md")
         ));
         assert!(!named_after("Sample", &legacy));
+    }
+
+    /// The exported rule is the one the library names documents by.
+    #[test]
+    fn the_exported_file_name_stem_is_the_librarys() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let long = "ж".repeat(200);
+        for title in [
+            "Claim: Bennett",
+            ".hidden",
+            "Tab\there",
+            "  ",
+            long.as_str(),
+        ] {
+            let path = library.new_document_path(title);
+            let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+            assert_eq!(file_name_stem(title.into()), stem);
+        }
+        assert_eq!(file_name_stem(".hidden".into()), "hidden");
+        assert_eq!(file_name_stem(long).len(), 240);
     }
 
     /// Rename takes everything a case keeps by the file along: membership

@@ -29,9 +29,46 @@ final class SidebarModelTests: XCTestCase {
     func testSearchOpensTheSidebar() throws {
         let app = try app()
         let before = app.searchRequest
-        app.requestSearch()
+        app.requestSearch(inDrawer: true)
         XCTAssertTrue(app.showsSidebar)
         XCTAssertEqual(app.searchRequest, before + 1)
+    }
+
+    /// ⌘K (#675): a sidebar built after the request still focuses its
+    /// search, once; on iPad the split view shows the column, and the
+    /// drawer's flag stays down, so a narrower window opens nothing.
+    func testSearchWaitsForTheSidebarAndLeavesTheDrawerOnIPad() throws {
+        let app = try app()
+        app.requestSearch(inDrawer: false)
+        XCTAssertFalse(app.showsSidebar, "the split view ignores the drawer's flag")
+        XCTAssertTrue(app.takeSearchRequest(), "a sidebar built now focuses its search")
+        XCTAssertFalse(app.takeSearchRequest(), "only once")
+    }
+
+    /// The Documents row lists every document, whatever case was tapped
+    /// before (#676).
+    func testTheDocumentsRowClearsACasesFilter() throws {
+        let app = try app()
+        app.openCase(Fixture.harbour)
+        XCTAssertEqual(app.section, .documents)
+        XCTAssertEqual(app.home.caseFilter, Fixture.harbour)
+        app.open(.documents)
+        XCTAssertNil(app.home.caseFilter)
+        XCTAssertEqual(app.home.shownDocuments.count, app.home.documents.count)
+    }
+
+    /// Move to case › New case… names the case as every new case is named
+    /// (#677): trimmed, a blank name refused, a taken one numbered.
+    func testMoveToANewCaseTrimsAndNumbersTheName() throws {
+        let app = try app()
+        let before = app.home.cases.count
+        app.move(Fixture.letter, to: .newCase(name: "   "))
+        XCTAssertEqual(app.home.cases.count, before, "a blank name makes no case")
+        XCTAssertNil(app.toast)
+        app.move(Fixture.letter, to: .newCase(name: "  Harbour Street lease "))
+        let moved = try XCTUnwrap(app.home.documents.first { $0.id == Fixture.letter }?.caseID)
+        XCTAssertEqual(app.home.cases.first { $0.id == moved }?.name, "Harbour Street lease 2")
+        XCTAssertEqual(app.home.cases.map(\.name).filter { $0 == "Harbour Street lease" }.count, 1)
     }
 
     func testContinueIsTheNewestDocumentWithNamesLeft() throws {

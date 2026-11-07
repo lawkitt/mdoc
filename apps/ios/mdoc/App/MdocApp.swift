@@ -120,7 +120,7 @@ struct RootView: View {
     /// something new, as in the Claude app.
     private var keyboardShortcuts: some View {
         Group {
-            Button("Search documents and cases") { app.requestSearch() }
+            Button("Search documents and cases") { app.requestSearch(inDrawer: sizeClass == .compact) }
                 .keyboardShortcut("k", modifiers: .command)
             Button("New document") { app.showStart() }
                 .keyboardShortcut("n", modifiers: .command)
@@ -178,6 +178,10 @@ struct RootView: View {
             if changes { fitColumns(narrow: isNarrow(width)) }
         }
         .onChange(of: app.selection) { fitColumns(narrow: isNarrow) }
+        // ⌘K shows the sidebar column where it is hidden (#675).
+        .onChange(of: app.searchRequest) {
+            if columns != .all { columns = .all }
+        }
         .onChange(of: sizeClass) { fitColumns(narrow: isNarrow) }
     }
 

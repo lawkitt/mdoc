@@ -12,6 +12,21 @@ final class IdentitiesModelTests: XCTestCase {
         return DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
     }
 
+    /// Identities wanted (a wide iPad's inspector) is not the drawer: a
+    /// window that narrows never opens it over the text (ADR 0104, #674).
+    /// Only opening Identities in a compact window does.
+    func testWantingIdentitiesNeverOpensTheDrawer() throws {
+        let model = try model()
+        model.showIdentities(true, compact: false)
+        XCTAssertTrue(model.showsIdentities)
+        XCTAssertFalse(model.identitiesDrawerOpen, "the inspector's wish is not the drawer")
+        model.showIdentities(true, compact: true)
+        XCTAssertTrue(model.identitiesDrawerOpen)
+        model.showIdentities(false, compact: true)
+        XCTAssertFalse(model.identitiesDrawerOpen)
+        XCTAssertFalse(model.showsIdentities, "closing the drawer is not wanting them")
+    }
+
     func testTheStateButtonReplacesThenSwitchesToKept() throws {
         let model = try model()
         let identity = try XCTUnwrap(model.snapshot.identities.first { $0.state == .proposed })

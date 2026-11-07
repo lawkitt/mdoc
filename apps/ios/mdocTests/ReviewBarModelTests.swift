@@ -206,6 +206,120 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
     }
 
+    /// The long press's Keep instead and Replace instead, and K and Return
+    /// on a decided card, change it in place, as the card's own buttons do
+    /// (ADR 0101, #678).
+    func testChangingADecidedNameStaysOnItFromEveryEntryPoint() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.replace)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.decideCurrent(.keep)
+        XCTAssertEqual(model.reviewedCandidate?.state, .kept)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Keep instead stays on the name")
+        model.decideCurrent(.replace)
+        XCTAssertEqual(model.reviewedCandidate?.state, .replaced)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Replace instead stays on the name")
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// Return is the card's filled button: Replace on a proposed name,
+    /// Replace instead on a kept one (which stays), and Next on a replaced
+    /// one, as the decided card's filled Next (ADR 0101, review of #678).
+    func testReturnReplacesThenMovesOnFromAReplacedName() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.keep)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.returnKey()
+        XCTAssertEqual(model.reviewedCandidate?.state, .replaced, "Replace instead")
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "and stays")
+        model.returnKey()
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed, "then Next, to the next undecided name")
+    }
+
+    /// Each document has its own undo history (ADR 0104, #672): after a
+    /// change in one document, the window's undo in another never reaches
+    /// it, and back in the first its step undoes again.
+    func testSwitchingDocumentsNeverUndoesTheOthersStep() throws {
+        let core = Fixture.core()
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let storage = MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let letter = DocumentViewModel(session: try core.library.session(for: Fixture.letter), jobs: jobs, storage: storage)
+        let other = DocumentViewModel(session: try core.library.session(for: Fixture.quotation), jobs: jobs, storage: storage)
+        let window = UndoManager()
+        window.groupsByEvent = false
+        let letterScreen = UUID(), otherScreen = UUID()
+        letter.attachSystemUndo(window, for: letterScreen)
+        letter.beginReview()
+        let first = try XCTUnwrap(letter.reviewedCandidate)
+        func state() -> MentionState? { letter.snapshot.candidates.first { $0.original == first.original }?.state }
+        window.beginUndoGrouping()
+        letter.decideCurrent(.replace)
+        window.endUndoGrouping()
+        XCTAssertEqual(state(), .replaced)
+
+        // The other document opens in the same window.
+        letter.detachSystemUndo(for: letterScreen)
+        other.attachSystemUndo(window, for: otherScreen)
+        XCTAssertFalse(window.canUndo, "the window holds no step of the letter's")
+        other.undoTapped()
+        XCTAssertEqual(state(), .replaced, "the other document's Undo leaves the letter alone")
+
+        // Back to the letter: ⌘Z reaches its step again.
+        other.detachSystemUndo(for: otherScreen)
+        letter.attachSystemUndo(window, for: UUID())
+        XCTAssertTrue(window.canUndo)
+        window.undo()
+        XCTAssertEqual(state(), .proposed)
+    }
+
+    /// A size-class change builds a new screen for the same document, and
+    /// the old one may leave after the new one appeared: its leaving keeps
+    /// the document's steps in the window (review of #672).
+    func testANewScreenForTheSameDocumentKeepsItsSteps() throws {
+        let model = try model()
+        let window = UndoManager()
+        window.groupsByEvent = false
+        let wide = UUID(), compact = UUID()
+        model.attachSystemUndo(window, for: wide)
+        model.beginReview()
+        window.beginUndoGrouping()
+        model.decideCurrent(.replace)
+        window.endUndoGrouping()
+        model.attachSystemUndo(window, for: compact)
+        model.detachSystemUndo(for: wide)
+        XCTAssertTrue(window.canUndo, "the old screen leaving takes nothing")
+        window.beginUndoGrouping()
+        model.decideCurrent(.keep)
+        window.endUndoGrouping()
+        window.undo()
+        window.undo()
+        XCTAssertFalse(window.canUndo)
+        XCTAssertEqual(model.snapshot.pendingCount, try self.model().snapshot.pendingCount, "both steps undone")
+    }
+
+    /// Find's previews cut on characters, never inside a letter (#679).
+    func testFindPreviewsCutOnCharacters() throws {
+        let core = Fixture.core()
+        let text = String(repeating: "а", count: 60) + " Иван " + String(repeating: "б", count: 60)
+        let session = try core.library.importDocument(.text(text), title: "Письмо", into: .newCase(name: "Петров"))
+        _ = try session.recognize(observer: TestObserver())
+        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let match = try XCTUnwrap(model.matches(of: "Иван").first)
+        let bytes = Array(model.snapshot.markdown.utf8)
+        XCTAssertEqual(bytes[match.start - 50] & 0xC0, 0x80, "50 bytes back is inside a letter")
+        let preview = model.context(of: match)
+        XCTAssertFalse(preview.contains("\u{FFFD}"), preview)
+        XCTAssertTrue(preview.contains("а Иван б"), preview)
+        XCTAssertTrue(preview.hasPrefix("…") && preview.hasSuffix("…"), preview)
+        XCTAssertEqual(preview, "…" + String(repeating: "а", count: 49) + " Иван " + String(repeating: "б", count: 49) + "…")
+    }
+
     func testNextOnTheLastDecidedCardEndsReview() throws {
         let model = try model()
         model.beginReview()

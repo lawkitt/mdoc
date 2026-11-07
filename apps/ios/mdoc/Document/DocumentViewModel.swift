@@ -58,12 +58,24 @@ final class DocumentViewModel {
     /// `revealRange` (a Find match).
     var revealRequest = 0
     var revealRange: SourceRange?
-    /// The window's undo manager (ADR 0098's system undo).
+    /// The window's undo manager while this document shows in it
+    /// (ADR 0098's system undo); `attachSystemUndo` sets it.
     weak var systemUndo: UndoManager?
+    /// This document's steps on the window's undo stack, put back when it
+    /// shows again: the window holds the shown document's steps only (#672).
+    var systemUndoSteps = 0
+    /// The screen the window's steps belong to (`attachSystemUndo`).
+    var systemUndoScreen: UUID?
     var showsFind = false
     /// Try a sample's names, proposed once recognition has read the text.
     var storedNames: [SampleDocument.Name]?
+    /// Identities wanted: a regular window shows them in the inspector or
+    /// the right column. The user's intent, apart from how it shows
+    /// (ADR 0104).
     var showsIdentities = false
+    /// The right-edge drawer of a compact window is open. Only opening
+    /// Identities there opens it: a window that narrows never does (#674).
+    private(set) var identitiesDrawerOpen = false
     var pane: Pane = .text
     var showsReplySheet = false
     var share: ShareItems?
@@ -397,6 +409,21 @@ final class DocumentViewModel {
         if pane == .reply {
             pane = .text
         }
+    }
+
+    // MARK: Identities
+
+    /// Opens or closes Identities as the user asked; in a compact window
+    /// that is the drawer.
+    func showIdentities(_ show: Bool, compact: Bool) {
+        showsIdentities = show
+        identitiesDrawerOpen = show && compact
+    }
+
+    /// The window changed size class: the drawer closes, and what the user
+    /// wanted stays for the inspector.
+    func closeIdentitiesDrawer() {
+        identitiesDrawerOpen = false
     }
 
     // MARK: Helpers

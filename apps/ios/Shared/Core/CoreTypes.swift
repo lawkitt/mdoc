@@ -30,9 +30,10 @@ struct SourceRange: Hashable, Sendable {
     var length: Int { end - start }
 }
 
-/// What a replacement stands for, in `mdoc_pii::Category` order.
+/// What a replacement stands for, in `mdoc_pii::Category`'s order
+/// (`crates/mdoc-pii/src/lib.rs`), which the category menus list.
 enum Category: String, CaseIterable, Sendable {
-    case person, organization, email, url, phone, address, date, caseNumber, identity, tax, bank, other
+    case person, organization, email, url, phone, address, identity, tax, bank, caseNumber, date, other
 
     var label: String {
         switch self {

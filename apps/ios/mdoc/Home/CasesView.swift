@@ -19,8 +19,7 @@ struct CasesView: View {
             }
             ForEach(home.cases) { summary in
                 Button {
-                    home.caseFilter = summary.id
-                    app.open(.documents)
+                    app.openCase(summary.id)
                 } label: {
                     HStack(spacing: Space.s) {
                         CaseDot(colour: summary.colour)
