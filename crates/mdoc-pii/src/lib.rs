@@ -155,9 +155,10 @@ pub struct Variant {
     /// mentions mid-sentence count.
     mid_sentence: bool,
     /// A scan's date of birth: only its mentions after one of these words
-    /// count ([`discovery::cue_before`], "DOB", "рождения"), so the same
+    /// count ([`discovery::cue_before`], "DOB", "рождения"), or before one
+    /// ([`discovery::cue_after`], "birth date", "г р"; #363), so the same
     /// date elsewhere stays (#466, GUIDE rule 4). `None`: every mention.
-    cues: Option<Vec<String>>,
+    cues: Option<Vec<discovery::Cue>>,
     /// Propagation decides its identity: its one candidate full name's, or
     /// `own` while there is none; checked again as names come and go.
     managed: bool,
@@ -253,7 +254,8 @@ fn safe_span(value: &str) -> bool {
 /// `*`, `#`, `~` or `\` inside a value ("Fennel*Orbit Ltd", "LC#713624")
 /// is text when replacing the span leaves its block's structure as it was,
 /// and so is a line break inside a wrapped value ("Brin-\nsett", "Lane<br>Norwich")
-/// or between the lines of an address the rule pack found whole. Adjacent
+/// or between the lines of an address the rule pack found whole, or of a date
+/// its label proposed ("March 9,\n1984 birth date"; #363). Adjacent
 /// emphasis runs and paired inline `<sup>`/`<sub>` tags inside it are text too.
 ///
 /// A web address keeps its own characters (ADR 0094): a final `_` and
@@ -261,8 +263,13 @@ fn safe_span(value: &str) -> bool {
 /// a link's own bracket.
 fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
-    let address =
-        detection.recognizer == Recognizer::Span && detection.category == Category::Address;
+    // Found whole by its parts or its label, so text may follow its last line.
+    let whole = (detection.recognizer == Recognizer::Span
+        && detection.category == Category::Address)
+        || (matches!(
+            detection.recognizer,
+            Recognizer::Context | Recognizer::ContextAfter
+        ) && detection.category == Category::Date);
     let value = &source[range.clone()];
     let url = detection.category == Category::Url;
     let forbidden = if url { "`|" } else { "[]`|" };
@@ -273,7 +280,7 @@ fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detect
         && !value.chars().any(|ch| forbidden.contains(ch))
         && !(url && (value.contains("](") || value.contains("][")))
         && !outside_value_syntax(source, markup, range).contains(['<', '>'])
-        && view::wrapped_value(source, range, address)
+        && view::wrapped_value(source, range, whole)
         && plain_text_span(source, markup, range.clone())
 }
 /// `range` of `source` without the formatting detection reads as text.
@@ -342,6 +349,10 @@ pub enum Recognizer {
     /// A value beside its label: a `context` rule of the rule pack
     /// ("Claim No 6001842/2026", ADR 0092).
     Context,
+    /// A value before its label: a `context` rule's `after` form ("a March
+    /// 9, 1984 birth date", «01.01.1980 года рождения»; #363). A date of
+    /// birth's repeats count before the same label, never after a word.
+    ContextAfter,
     /// A whole span by a pattern of the rule pack's `span` section: an
     /// address (ADR 0092).
     Span,
@@ -819,14 +830,19 @@ impl Review {
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
-        // every mention (ADR 0092), and so does a date whose label is not
-        // found, rather than every other unlabelled date.
+        // every mention (ADR 0092), and so does a date whose label before
+        // it is not found, rather than every other unlabelled date. A date
+        // before its label is limited by that label (#363): what precedes
+        // it ("суда от", a paragraph's start) is no label.
         let unlimited: HashSet<&str> = selected
             .iter()
             .filter(|detection| {
-                detection.recognizer != Recognizer::Context
-                    || (detection.category == Category::Date
-                        && discovery::cue_before(source, detection.range.start).is_empty())
+                !matches!(
+                    detection.recognizer,
+                    Recognizer::Context | Recognizer::ContextAfter
+                ) || (detection.recognizer == Recognizer::Context
+                    && detection.category == Category::Date
+                    && discovery::cue_before(source, detection.range.start).is_empty())
             })
             .map(|detection| &source[detection.range.clone()])
             .collect();
@@ -845,7 +861,11 @@ impl Review {
                         variant.cues = None;
                     }
                 } else if detection.category == Category::Date {
-                    let cue = discovery::cue_before(source, detection.range.start);
+                    let cue = if detection.recognizer == Recognizer::ContextAfter {
+                        discovery::Cue::After(discovery::cue_after(source, detection.range.end))
+                    } else {
+                        discovery::Cue::Before(discovery::cue_before(source, detection.range.start))
+                    };
                     self.cued(id, first, cue);
                 }
             }
@@ -883,7 +903,7 @@ impl Review {
     /// Date variant `id` counts mentions after `cue` too. One this scan
     /// created counts only those; a marked, case or restored date keeps
     /// every mention.
-    fn cued(&mut self, id: u64, first: u64, cue: String) {
+    fn cued(&mut self, id: u64, first: u64, cue: discovery::Cue) {
         let Some(variant) = self.candidates.variant_mut(id) else {
             return;
         };
