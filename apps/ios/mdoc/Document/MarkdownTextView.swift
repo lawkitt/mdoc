@@ -297,11 +297,16 @@ struct MarkdownTextView: UIViewRepresentable {
             guard revealRoom > 0 else { return }
             view.contentInset.bottom -= revealRoom
             revealRoom = 0
-            let insets = view.adjustedContentInset
-            let lowest = max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height)
+            let lowest = Self.lowestOffset(in: view)
             if view.contentOffset.y > lowest {
                 view.setContentOffset(CGPoint(x: view.contentOffset.x, y: lowest), animated: !UIAccessibility.isReduceMotionEnabled)
             }
+        }
+
+        /// How far down the text can rest, its top when all of it fits.
+        private static func lowestOffset(in view: UIScrollView) -> CGFloat {
+            let insets = view.adjustedContentInset
+            return max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height)
         }
 
         private static func firstRect(in view: UITextView, location: Int, length: Int) -> CGRect? {
@@ -379,7 +384,9 @@ struct MarkdownTextView: UIViewRepresentable {
             view.rotorItems = items.sorted { $0.order < $1.order }
             if keepsScroll {
                 view.layoutIfNeeded()
-                view.setContentOffset(offset, animated: false)
+                // Replacing can shorten the text below the old place; left
+                // there, a text that now fits is stuck, as it doesn't pan.
+                view.setContentOffset(CGPoint(x: offset.x, y: min(offset.y, Self.lowestOffset(in: view))), animated: false)
             }
         }
 
