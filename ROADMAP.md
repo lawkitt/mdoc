@@ -123,17 +123,6 @@ Features are frozen until items 13–19 land (Q4).
     what is left, state buttons, Replace N, Looks like, Select
     ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
     merged and checked on the device.
-13. **[Mobile] Review and shell bugs.** *From the
-    [refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q8.*
-    Bugs 1–9, 12 and 13 of the record: undo across documents, a scan that
-    found nothing, Identities opening on iPad, ⌘K, the stale case filter,
-    New case… names, Keep instead moving on, Find previews, category order,
-    file names. *Done when:* merged, each with a test that fails without it.
-14. **[Mobile] Tests on the real core.** *From Q9 and
-    [ADR 0104](docs/adr/0104-mobile-app-structure.md).* View-model and
-    snapshot tests run the real core over temporary storage; the fake
-    library and session go, and test fakes leave the shipping targets.
-    *Done when:* merged with an empty survey diff (Q22).
 15. **[Mobile] The core owns its rules.** *From Q10 and Q12.* The snapshot's
     `scanned`, identity states, kept list and stable ids; Copy for AI's
     refusal and typed errors in Rust; document summaries, the file-name
