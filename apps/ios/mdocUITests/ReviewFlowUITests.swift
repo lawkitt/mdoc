@@ -149,20 +149,19 @@ enum MdocUITest {
 
     /// Waits up to `timeout` for `done` while a download runs, answering Use
     /// cellular whenever mdoc holds it for Wi-Fi: a phone can move between
-    /// Wi-Fi and its own data during the run. Checks once a second.
+    /// Wi-Fi and its own data during the run. Checks once a second: each
+    /// check reads the screen, which costs a phone more than a Simulator.
     @MainActor
     static func waitThroughDownload(_ app: XCUIApplication, timeout: TimeInterval, until done: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
         let held = app.buttons["setup-use-cellular"].firstMatch
-        while deadline.timeIntervalSinceNow > 0 {
+        return wait(timeout: timeout, every: 1) {
             if done() { return true }
             if held.exists {
                 held.tap()
                 answerCellularQuestion(app)
             }
-            Thread.sleep(forTimeInterval: 1)
+            return false
         }
-        return done()
     }
 
     /// The scan's pages are being recognized, or already are: a fast phone

@@ -143,8 +143,10 @@ struct ReviewBar: View {
     private func nudgeOnce() async {
         guard ReviewHint.enabled, !preferences.nudged, !reduceMotion, model.reviewOrder.count > 1 else { return }
         preferences.nudged = true
+        // timing: the nudge's beats, a pause after the card shows, then out and back (ADR 0098)
         try? await Task.sleep(for: .milliseconds(600))
         withAnimation(.easeInOut(duration: 0.25)) { drag = -28 }
+        // timing: the nudge's beats (ADR 0098)
         try? await Task.sleep(for: .milliseconds(260))
         withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { drag = 0 }
     }
@@ -156,8 +158,10 @@ struct ReviewBar: View {
         preferences.grabberBounced = true
         for _ in 0..<2 {
             withAnimation(.easeOut(duration: 0.16)) { grabberLift = -6 }
+            // timing: the grabber's hop, up and down (ADR 0101)
             try? await Task.sleep(for: .milliseconds(170))
             withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { grabberLift = 0 }
+            // timing: the grabber's hop (ADR 0101)
             try? await Task.sleep(for: .milliseconds(320))
         }
     }

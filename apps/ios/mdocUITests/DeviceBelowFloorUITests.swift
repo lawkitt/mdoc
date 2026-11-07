@@ -144,6 +144,8 @@ final class DeviceBelowFloorUITests: XCTestCase {
         XCTAssertTrue(
             app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended,
             "mdoc did not go to the background")
+        // The stay itself is the test: a fixed time in the background, not
+        // a wait for something to happen.
         sleep(seconds)
         XCTAssertNotEqual(app.state, .notRunning, "mdoc stopped in the background")
         app.activate()
