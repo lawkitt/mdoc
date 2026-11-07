@@ -72,11 +72,16 @@ final class DocumentViewModel {
     /// Identities wanted: a regular window shows them in the inspector or
     /// the right column. The user's intent, apart from how it shows
     /// (ADR 0104).
-    var showsIdentities = false
+    private(set) var wantsIdentities = false
     /// The right-edge drawer of a compact window is open. Only opening
     /// Identities there opens it: a window that narrows never does (#674).
     private(set) var identitiesDrawerOpen = false
-    var pane: Pane = .text
+    /// The window this document shows in, which `windowChanged` sets.
+    private(set) var layout: DocumentLayout = .compact
+    /// Where Identities showed when the last change settled; nil before the
+    /// document first showed in a regular window.
+    private var settledPlacement: IdentitiesPlacement?
+    private(set) var pane: Pane = .text
     var showsReplySheet = false
     var share: ShareItems?
     var errorMessage: String?
@@ -388,7 +393,7 @@ final class DocumentViewModel {
         perform { try session.restoreReply(reply) }
         if snapshot.reply != nil {
             showsReplySheet = false
-            pane = .reply
+            show(.reply)
         }
     }
 
@@ -413,17 +418,65 @@ final class DocumentViewModel {
 
     // MARK: Identities
 
-    /// Opens or closes Identities as the user asked; in a compact window
-    /// that is the drawer.
-    func showIdentities(_ show: Bool, compact: Bool) {
-        showsIdentities = show
-        identitiesDrawerOpen = show && compact
+    /// iPad's right pane beside the text: the original or the reply.
+    var hasRightPane: Bool { hasOriginal || snapshot.reply != nil }
+
+    /// Where Identities shows in this window (`DocumentLayout`).
+    var identitiesPlacement: IdentitiesPlacement {
+        layout.identities(hasRightPane: hasRightPane)
     }
 
-    /// The window changed size class: the drawer closes, and what the user
-    /// wanted stays for the inspector.
-    func closeIdentitiesDrawer() {
+    /// Identities show now, wherever they show.
+    var identitiesShowing: Bool {
+        identitiesPlacement == .drawer ? identitiesDrawerOpen : wantsIdentities
+    }
+
+    /// Opens or closes Identities as the user asked; in a compact window
+    /// that is the drawer. In the right column they cover the reply, so the
+    /// hand-off bar goes back to acting on the document, the text in view.
+    func showIdentities(_ show: Bool) {
+        let placement = identitiesPlacement
+        if show && placement == .column && pane == .reply { pane = .text }
+        wantsIdentities = show
+        identitiesDrawerOpen = show && placement == .drawer
+    }
+
+    /// Shows `pane`. In the right column a pane takes Identities' place.
+    func show(_ pane: Pane) {
+        if identitiesPlacement == .column { wantsIdentities = false }
+        self.pane = pane
+    }
+
+    /// The document shows in a window of `layout`: on appearing, after a
+    /// rotation, a size-class change or a narrowing window.
+    func windowChanged(to layout: DocumentLayout) {
+        self.layout = layout
+        settleIdentities()
+    }
+
+    /// Where Identities shows changed (the window, or a right pane coming
+    /// or going): the drawer closes, so a window that narrows never opens
+    /// it over the text (#674). Entering a regular window shows the
+    /// inspector unless the document waits for recognition; turning between
+    /// the inspector and the right column (a rotation, a reply restored)
+    /// shows the original in the column and the list in the inspector.
+    private func settleIdentities() {
+        let placement = identitiesPlacement
+        guard placement != settledPlacement else { return }
+        defer { settledPlacement = placement }
         identitiesDrawerOpen = false
+        switch (settledPlacement, placement) {
+        case (_, .drawer):
+            break
+        case (nil, .inspector), (.drawer, .inspector):
+            if snapshot.phase != .recognizing { wantsIdentities = true }
+        case (nil, .column), (.drawer, .column):
+            break
+        case (_, .inspector):
+            wantsIdentities = true
+        case (_, .column):
+            wantsIdentities = false
+        }
     }
 
     // MARK: Helpers
@@ -450,6 +503,7 @@ final class DocumentViewModel {
         if new.reply == nil && pane == .reply {
             pane = .text
         }
+        settleIdentities()
         onChange()
     }
 }

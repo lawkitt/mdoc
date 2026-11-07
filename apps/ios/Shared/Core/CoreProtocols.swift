@@ -74,9 +74,6 @@ protocol DocumentSession: AnyObject, Sendable {
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
-    /// Replace…: a manual identity for the selected source text, replaced
-    /// in every exact repeat.
-    func addReplacement(_ range: SourceRange, category: Category) throws -> DocumentSnapshot
     /// Copy for AI's text, through the same export path as desktop. Fails
     /// while proposals are pending. Records the document as shared last.
     func copyForAI() throws -> HandOff

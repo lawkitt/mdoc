@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// A white symbol on a colored rounded square, as in iOS Settings; Home
+/// A white symbol on a colored rounded square, as in iOS Settings; Start
 /// uses a tinted variant for a document's source.
 struct IconTile: View {
     var systemImage: String
     var color: Color
-    /// Tinted: a light fill with the symbol in the color (Home rows).
+    /// Tinted: a light fill with the symbol in the color (document rows).
     var tinted = false
     var size: CGFloat = Size.tile
 

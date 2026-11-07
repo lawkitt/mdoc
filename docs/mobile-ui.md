@@ -58,7 +58,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
 | `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. |
-| `IconTile` | Settings: white symbol on a colored square. Home: tinted fill, colored symbol. |
+| `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
 | `ReviewHintLine` | The review's one hint line: symbol, words, ×. |
@@ -67,12 +67,14 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 ## Screens
 
 - **Theme:** Settings › Appearance › Theme (Automatic, Light, Dark), stored
-  in the App Group (`AppTheme`, `Shared/UI/MarkdownDisplay.swift`); the app
+  in `Preferences` (`Shared/UI/Preferences.swift`), the App Group's one store
+  for every preference (theme, document font, Show Markdown, haptics, the
+  hints and the setup card); the app
   sets it on every window and the Restore extension reads it.
 - **Accent:** teal green, `#336b5c` light and `#82b9a7` dark, in the asset
   catalog's `AccentColor`.
 - **Document font:** System or Serif (New York) at the same sizes
-  (`MarkdownDisplay.serif`, read by `MarkdownStyler.font`).
+  (`Preferences.serif`, read by `MarkdownStyler.font`).
 - **Settings:** inset grouped with `SettingsLabel` icon tiles; Appearance,
   Review, Models (plain names, details one tap deeper), Privacy, About.
 - **Documents** (was Home): `DocumentRow`, a tinted source tile, the title
@@ -87,22 +89,24 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 ## Sidebar
 
 [ADR 0102](adr/0102-mobile-sidebar.md); code in
-[`apps/ios/mdoc/Home/SidebarView.swift`](../apps/ios/mdoc/Home/SidebarView.swift)
+[`apps/ios/mdoc/Library/SidebarView.swift`](../apps/ios/mdoc/Library/SidebarView.swift)
 and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 
 - **Motion:** on iPhone the screen slides right over the sidebar,
   following the finger from ☰ or the left edge (22 pt), leaving a dimmed
   72 pt sliver with `Radius.screen` corners; a tap on it or a swipe left
   closes it. Reduce Motion fades. On a wide iPad it is the standing first
-  column.
+  column; on a narrow one (portrait, Slide Over, a split) it slides over as
+  on iPhone (`DocumentLayout`).
 - **Layout:** search (titles and cases) at the top, no title; the Cases
   and Documents rows; *To review* (orange count of names left) and
   *Recent* (20 at most, green dot when ready); a spinner while a job works
   on a document; the open row highlighted with `Palette.chipFill`. ⚙ and
   "+ New" float at the bottom over a fade.
 - **Rows:** `SidebarRowLabel`, one line, 44 pt high; a long press gives
-  Rename, Move to case, Share and Delete.
-- **Keys:** ⌘K search, ⌘N Start.
+  Rename, Move to case, Share and Delete. Delete's toast offers Undo; the
+  document goes when the toast does or mdoc leaves the screen.
+- **Keys:** ⌘K search, ⌘N Start, scene commands, so iPad lists them.
 
 ## Review bar
 

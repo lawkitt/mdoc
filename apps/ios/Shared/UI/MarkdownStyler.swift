@@ -253,7 +253,7 @@ struct MarkdownStyler {
     /// With Document font › Serif it is New York at the same size (ADR 0099).
     static func font(_ style: UIFont.TextStyle, traits: UITraitCollection, weight: UIFont.Weight = .regular) -> UIFont {
         let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
-        guard MarkdownDisplay.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
+        guard Preferences.shared.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
         return UIFont(descriptor: serif, size: 0)
     }
 

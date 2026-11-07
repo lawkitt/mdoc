@@ -651,7 +651,7 @@ sample"; also the UI tests' and previews' fixture, so screenshots of it are
 safe to share.
 
 **UI survey**: light and dark screenshots of every mobile screen, taken by
-`ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
+`SurveyUITests` (`just ios-survey`) on iOS and `just android-survey` on Android, and kept
 under `docs/evidence/ios-app/current` and `docs/evidence/android-app/current`,
 replaced by each UI PR ([ADR 0099](docs/adr/0099-mobile-ui-system.md)).
 

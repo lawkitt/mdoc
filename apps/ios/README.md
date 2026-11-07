@@ -97,7 +97,7 @@ The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
 every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
 `DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
 UI tests take the tier from a stand-in memory size. Below the floor, Settings
-says the phone cannot find names and Home has no setup card; the scan's
+says the phone cannot find names and Start has no setup card; the scan's
 Download & continue fetches text recognition and recognizes the pages
 while the test leaves for ten seconds; where Find names would be, the
 document says so; a word selected and replaced as a person becomes
@@ -107,7 +107,7 @@ document says so; a word selected and replaced as a person becomes
 
 ### Accessibility audit
 
-`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Home,
+`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Start,
 the review, the candidate sheet, Identities, the replaced document and the
 reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
 failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
@@ -128,7 +128,7 @@ synchronized group, so adding a file needs no project edit.
 | --- | --- | --- |
 | `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's error |
 | `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
-| `mdoc/` | app | Home, the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
+| `mdoc/` | app | `App/`: the app model, the navigator and its one presenter, the open documents' models, the UI tests' seed; `Library/`: the library model, file intake, the sidebar, Start, Cases and Documents; the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
 | `RestoreExtension/` | Restore with mdoc | The share extension's entry point |
 | `mdocTests/`, `mdocUITests/` | tests | View models on the real core over temporary storage, with the fixtures and test doubles in `mdocTests/Support`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
 | `Config/` | — | Info.plist additions and entitlements |
@@ -222,9 +222,10 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`); every visible string goes there.
 
-UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
-in the App Group (the extension follows it), its own case key, and a device
-below the detector floor, so no model is needed. The app imports the file in
+UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration`
+reads every UI-test flag once): a fresh library of its own in the App Group
+(the extension follows it), its own case key, its own preferences, and a
+device below the detector floor, so no model is needed. The app imports the file in
 `MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
 `tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
 JPEG pages as a scan) and scans it at launch with the structured rules alone:

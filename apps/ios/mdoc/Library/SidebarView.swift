@@ -13,27 +13,20 @@ struct SidebarView: View {
     /// The icon column grows with the text.
     @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 24
 
-    private var home: HomeViewModel { app.home }
+    private var library: LibraryModel { app.library }
+    private var navigator: Navigator { app.navigator }
 
     /// Recent stops at this many; the Documents page has the rest.
     static let recentLimit = 20
 
-    private var toReview: [DocumentSummary] {
-        home.documents.filter { $0.phase == .reviewing }
-    }
+    private var toReview: [DocumentSummary] { library.toReview }
 
     private var recent: [DocumentSummary] {
-        Array(home.documents.filter { $0.phase != .reviewing }.prefix(Self.recentLimit))
+        Array(library.documents.filter { $0.phase != .reviewing }.prefix(Self.recentLimit))
     }
 
     private var matches: (documents: [DocumentSummary], cases: [CaseSummary]) {
-        let needle = query.trimmingCharacters(in: .whitespaces)
-        guard !needle.isEmpty else { return ([], []) }
-        let documents = home.documents.filter { document in
-            document.title.localizedStandardContains(needle)
-                || (home.caseSummary(of: document)?.name.localizedStandardContains(needle) ?? false)
-        }
-        return (documents, home.cases.filter { $0.name.localizedStandardContains(needle) })
+        library.search(query)
     }
 
     private var isSearching: Bool { searching || !query.isEmpty }
@@ -64,10 +57,10 @@ struct SidebarView: View {
             }
         }
         .background(Palette.background)
-        // ⌘K: on appear too, since the drawer builds this view only once
-        // it opens, after the request (#675).
-        .task(id: app.searchRequest) {
-            if app.takeSearchRequest() { searching = true }
+        // ⌘K: the request waits until a sidebar takes it, on appearing too,
+        // since the drawer makes this view only once it opens (#675).
+        .onChange(of: navigator.searchPending, initial: true) { _, pending in
+            if pending && navigator.takeSearchRequest() { searching = true }
         }
         // A container: its rows and buttons keep identifiers of their own.
         .accessibilityElement(children: .contain)
@@ -115,7 +108,7 @@ struct SidebarView: View {
         let found = matches
         if query.isEmpty {
             header("Recent")
-            ForEach(home.documents.prefix(8)) { row($0) }
+            ForEach(library.documents.prefix(8)) { row($0) }
         } else if found.documents.isEmpty && found.cases.isEmpty {
             Text("No documents or cases match “\(query)”.")
                 .font(Typography.caption)
@@ -149,7 +142,7 @@ struct SidebarView: View {
             header("Recent")
             ForEach(recent) { row($0) }
         }
-        if home.isEmpty {
+        if library.isEmpty {
             Text("Documents you add show here.")
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
@@ -172,21 +165,21 @@ struct SidebarView: View {
         Button {
             app.open(section)
         } label: {
-            SidebarRowLabel(isSelected: app.section == section && app.selection == nil) {
+            SidebarRowLabel(isSelected: navigator.section == section) {
                 Image(systemName: systemImage)
                     .frame(width: iconWidth)
                     .accessibilityHidden(true)
                 Text(title)
                 Spacer(minLength: 0)
-                if section == .cases, !home.cases.isEmpty {
-                    Text("\(home.cases.count)")
+                if section == .cases, !library.cases.isEmpty {
+                    Text("\(library.cases.count)")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(app.section == section ? .isSelected : [])
+        .accessibilityAddTraits(navigator.section == section ? .isSelected : [])
         .accessibilityIdentifier("sidebar-\(section.rawValue)")
     }
 
@@ -209,11 +202,11 @@ struct SidebarView: View {
 
     private func row(_ document: DocumentSummary) -> some View {
         Button {
-            app.selection = document.id
+            app.open(document.id)
             query = ""
             searching = false
         } label: {
-            SidebarRowLabel(isSelected: app.selection == document.id) {
+            SidebarRowLabel(isSelected: navigator.openDocument == document.id) {
                 // At accessibility sizes the title takes the icon's room too.
                 if !dynamicTypeSize.isAccessibilitySize {
                     Image(systemName: DocumentRow.symbol(of: document.kind))
@@ -236,7 +229,7 @@ struct SidebarView: View {
         .buttonStyle(.plain)
         .contextMenu { DocumentMenuItems(app: app, document: document) }
         .accessibilityLabel(Text(spoken(document)))
-        .accessibilityAddTraits(app.selection == document.id ? .isSelected : [])
+        .accessibilityAddTraits(navigator.openDocument == document.id ? .isSelected : [])
         .accessibilityIdentifier("document-row")
     }
 
@@ -271,8 +264,8 @@ struct SidebarView: View {
         if app.workingDocument == document.id {
             parts.append(String(localized: "working"))
         }
-        parts.append(HomeViewModel.status(of: document, findsNames: home.findsNames))
-        if let summary = home.caseSummary(of: document) {
+        parts.append(LibraryModel.status(of: document, findsNames: library.findsNames))
+        if let summary = library.caseSummary(of: document) {
             parts.append(String(localized: "case \(summary.name)"))
         }
         return parts.joined(separator: ", ")
@@ -284,7 +277,7 @@ struct SidebarView: View {
     private var bottomBar: some View {
         HStack {
             Button {
-                app.showsSettings = true
+                navigator.present(.settings)
             } label: {
                 Image(systemName: "gearshape")
                     .font(.title3)

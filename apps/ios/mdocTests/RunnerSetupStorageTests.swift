@@ -103,15 +103,15 @@ final class SetupViewModelTests: XCTestCase {
         memory: UInt64 = 8 * Fixture.gigabyte,
         downloadSeconds: Double = 0,
         downloader: (any ModelDownloader)? = nil
-    ) -> (SetupViewModel, UserDefaults) {
-        let defaults = UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)")!
+    ) -> (SetupViewModel, Preferences) {
+        let preferences = Fixture.preferences()
         let model = SetupViewModel(
             setup: FakeSetup(memory: memory),
             downloader: downloader ?? FakeModelDownloader(seconds: downloadSeconds),
             network: network,
             jobs: LongJobRunner(background: NoBackgroundContinuation()),
-            defaults: defaults)
-        return (model, defaults)
+            preferences: preferences)
+        return (model, preferences)
     }
 
     func testWiFiDownloadsAndInstalls() async {
@@ -261,10 +261,10 @@ final class SetupViewModelTests: XCTestCase {
     }
 
     func testNotNowIsRemembered() {
-        let (model, defaults) = model()
+        let (model, preferences) = model()
         model.dismissCard()
         XCTAssertFalse(model.showsCard)
-        XCTAssertTrue(defaults.bool(forKey: SetupViewModel.dismissedKey))
+        XCTAssertTrue(preferences.setupCardDismissed)
     }
 }
 

@@ -57,6 +57,18 @@ final class SurveyUITests: XCTestCase {
         goHome(app)
         XCTAssertTrue(app.descendants(matching: .any)["document-row"].firstMatch.waitForExistence(timeout: 10))
         shot("08-home-one-document")
+        // Delete from the row's menu: the toast offers Undo (Q17), which
+        // brings the document back, open.
+        app.descendants(matching: .any)["document-row"].firstMatch.press(forDuration: 1.0)
+        let delete = app.buttons["Delete"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        delete.tap()
+        let undo = app.buttons["toast-action"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        shot("40-delete-undo")
+        undo.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        goHome(app)
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
         shot("09-settings")

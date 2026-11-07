@@ -34,7 +34,7 @@ enum Size {
     static let barButton: CGFloat = 40
     /// A chip's height at default text size.
     static let chip: CGFloat = 30
-    /// Settings and Home icon tiles.
+    /// Settings and Start icon tiles.
     static let tile: CGFloat = 30
 }
 
@@ -48,7 +48,7 @@ enum Palette {
     static let separator = Color(uiColor: .separator)
     static let secondaryText = Color.secondary
 
-    /// A document's state on Home and in the review bar.
+    /// A document's state on the Documents page and in the review bar.
     static let toReview = Color.orange
     static let ready = Color.green
     static let restored = Color.blue

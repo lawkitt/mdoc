@@ -715,18 +715,6 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         try change { try ffi.replaceAll() }
     }
 
-    func addReplacement(_ range: SourceRange, category: Category) throws -> DocumentSnapshot {
-        guard range.length > 0 else { throw CoreError.emptySelection }
-        let selection = TextRange(start: UInt64(range.start), end: UInt64(range.end))
-        return try change {
-            let proposed = try ffi.addSelection(range: selection, category: category.ffi)
-            guard let mention = proposed.mentions.first(where: { $0.range.start <= selection.start && $0.range.end >= selection.end }) else {
-                return proposed
-            }
-            return try ffi.replace(range: mention.range, scope: .all)
-        }
-    }
-
     func copyForAI() throws -> HandOff {
         let current = snapshot()
         guard current.pendingCount == 0 else { throw CoreError.pendingReview(current.pendingCount) }

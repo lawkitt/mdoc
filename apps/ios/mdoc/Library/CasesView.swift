@@ -6,18 +6,18 @@ struct CasesView: View {
     @Bindable var app: AppModel
     @Environment(\.showSidebar) private var showSidebar
 
-    private var home: HomeViewModel { app.home }
+    private var library: LibraryModel { app.library }
 
     var body: some View {
         List {
-            if home.cases.isEmpty {
+            if library.cases.isEmpty {
                 ContentUnavailableView(
                     "No cases yet",
                     systemImage: "briefcase",
                     description: Text("Each document you add starts a case, or joins one you choose."))
                     .listRowBackground(Color.clear)
             }
-            ForEach(home.cases) { summary in
+            ForEach(library.cases) { summary in
                 Button {
                     app.openCase(summary.id)
                 } label: {
@@ -44,16 +44,16 @@ struct CasesView: View {
                 .accessibilityElement(children: .combine)
                 .contextMenu {
                     Button {
-                        app.renamingCase = summary.id
+                        app.navigator.present(.renameCase(summary.id))
                     } label: {
                         Label("Rename…", systemImage: "pencil")
                     }
                 }
                 .swipeActions {
-                    Button("Rename") { app.renamingCase = summary.id }
+                    Button("Rename") { app.navigator.present(.renameCase(summary.id)) }
                         .tint(Palette.accent)
                 }
-                .accessibilityAction(named: Text("Rename")) { app.renamingCase = summary.id }
+                .accessibilityAction(named: Text("Rename")) { app.navigator.present(.renameCase(summary.id)) }
                 .accessibilityIdentifier("case-row")
             }
         }
@@ -66,7 +66,7 @@ struct CasesView: View {
     }
 
     private func count(_ summary: CaseSummary) -> String {
-        let documents = app.home.documents.filter { $0.caseID == summary.id }
+        let documents = library.documents.filter { $0.caseID == summary.id }
         let toReview = documents.filter { $0.phase == .reviewing }.count
         let base = documents.count == 1 ? String(localized: "1 document") : String(localized: "\(documents.count) documents")
         return toReview > 0 ? base + " · " + String(localized: "\(toReview) to review") : base

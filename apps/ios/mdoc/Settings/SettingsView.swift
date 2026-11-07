@@ -5,14 +5,11 @@ import UIKit
 /// inset-grouped rows with icon tiles.
 struct SettingsView: View {
     @Bindable var setup: SetupViewModel
+    @Bindable var preferences: Preferences
     /// About's Try a sample: closes Settings and opens the sample.
     var onTrySample: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @AppStorage(AppTheme.key, store: MarkdownDisplay.store) private var theme = AppTheme.automatic.rawValue
-    @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
-    @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
-    @AppStorage(Haptics.enabledKey) private var haptics = true
     @State private var tipsReset = false
 
     var body: some View {
@@ -20,7 +17,7 @@ struct SettingsView: View {
             Form {
                 appearance
                 Section {
-                    Toggle(isOn: $haptics) {
+                    Toggle(isOn: $preferences.haptics) {
                         SettingsLabel("Haptics", systemImage: "hand.tap", color: .pink)
                     }
                     .accessibilityIdentifier("settings-haptics")
@@ -73,8 +70,8 @@ struct SettingsView: View {
         Section("Appearance") {
             // Segments while they fit; a menu at accessibility sizes.
             if dynamicTypeSize.isAccessibilitySize {
-                Picker(selection: $theme) {
-                    ForEach(AppTheme.allCases) { Text($0.title).tag($0.rawValue) }
+                Picker(selection: $preferences.theme) {
+                    ForEach(AppTheme.allCases) { Text($0.title).tag($0) }
                 } label: {
                     SettingsLabel("Theme", systemImage: "circle.lefthalf.filled", color: .indigo)
                 }
@@ -83,8 +80,8 @@ struct SettingsView: View {
             } else {
                 VStack(alignment: .leading, spacing: Space.s) {
                     SettingsLabel("Theme", systemImage: "circle.lefthalf.filled", color: .indigo)
-                    Picker("Theme", selection: $theme) {
-                        ForEach(AppTheme.allCases) { Text($0.title).tag($0.rawValue) }
+                    Picker("Theme", selection: $preferences.theme) {
+                        ForEach(AppTheme.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -92,7 +89,7 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, Space.xxs)
             }
-            Picker(selection: $serif) {
+            Picker(selection: $preferences.serif) {
                 Text("System").tag(false)
                 Text("Serif").tag(true)
             } label: {
@@ -101,7 +98,7 @@ struct SettingsView: View {
             .pickerStyle(.menu)
             .accessibilityIdentifier("settings-document-font")
             // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-            Toggle(isOn: $showsSource) {
+            Toggle(isOn: $preferences.showsSource) {
                 SettingsLabel("Show Markdown", systemImage: "number", color: .blue)
             }
             .accessibilityIdentifier("settings-show-markdown")
@@ -405,11 +402,11 @@ struct AboutView: View {
 
 #if DEBUG
 #Preview("Settings") {
-    SettingsView(setup: PreviewFixtures.app().setup)
+    SettingsView(setup: PreviewFixtures.app().setup, preferences: .shared)
 }
 
 #Preview("Settings, dark, AX5") {
-    SettingsView(setup: PreviewFixtures.app().setup)
+    SettingsView(setup: PreviewFixtures.app().setup, preferences: .shared)
         .preferredColorScheme(.dark)
         .environment(\.dynamicTypeSize, .accessibility5)
 }

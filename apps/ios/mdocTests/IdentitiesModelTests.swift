@@ -16,14 +16,18 @@ final class IdentitiesModelTests: XCTestCase {
     /// Only opening Identities in a compact window does.
     func testWantingIdentitiesNeverOpensTheDrawer() throws {
         let model = try model()
-        model.showIdentities(true, compact: false)
-        XCTAssertTrue(model.showsIdentities)
+        model.windowChanged(to: .wide)
+        model.showIdentities(true)
+        XCTAssertTrue(model.wantsIdentities)
         XCTAssertFalse(model.identitiesDrawerOpen, "the inspector's wish is not the drawer")
-        model.showIdentities(true, compact: true)
+        model.windowChanged(to: .compact)
+        XCTAssertFalse(model.identitiesDrawerOpen, "a window that narrows opens nothing")
+        XCTAssertFalse(model.identitiesShowing)
+        model.showIdentities(true)
         XCTAssertTrue(model.identitiesDrawerOpen)
-        model.showIdentities(false, compact: true)
+        model.showIdentities(false)
         XCTAssertFalse(model.identitiesDrawerOpen)
-        XCTAssertFalse(model.showsIdentities, "closing the drawer is not wanting them")
+        XCTAssertFalse(model.wantsIdentities, "closing the drawer is not wanting them")
     }
 
     func testTheStateButtonReplacesThenSwitchesToKept() throws {
