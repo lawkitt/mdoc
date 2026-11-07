@@ -251,8 +251,9 @@ impl DocumentSession {
             scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
         };
         let snapshot = self.open(imported, &cancel, Some(opened))?;
-        // Its summary, as it opened; best effort, as only lists read it.
-        if let Ok(lock) = library.lock() {
+        // Its summary, as it opened; best effort, as only lists read it,
+        // and never waiting for a save in progress.
+        if let Some(lock) = library.try_lock() {
             let _ = library.record_document(
                 &lock,
                 Path::new(&path),

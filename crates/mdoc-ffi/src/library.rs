@@ -337,13 +337,13 @@ impl Library {
         }
         summaries.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.title.cmp(&b.title)));
         // Records brought up to date, and those of files gone dropped;
-        // best effort, as a list never fails for them.
+        // best effort, as a list never fails nor waits for them.
         let gone = states
             .documents
             .keys()
             .any(|key| !self.root.join(key).exists());
         if (!changed.is_empty() || gone)
-            && let Ok(_lock) = self.lock()
+            && let Some(_lock) = self.try_lock()
         {
             states = self.states();
             states
