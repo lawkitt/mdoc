@@ -343,6 +343,97 @@ fn a_name_another_member_adds_is_counted() {
     assert_eq!(counts(first_now), reopened(&library, &first));
 }
 
+/// A Keep is not saved: the summary of a document with one counts what
+/// opening it gives, in a case that knows the kept name (proposed again)
+/// and in one that does not (nothing).
+#[test]
+fn a_kept_name_lists_as_opening_gives_it() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (_, letter) = saved(&library, "Ann Lee wrote.", "Letter", Some(&["Ann Lee"]), 1);
+    let keep_first = |session: &DocumentSession, snapshot: &ReviewSnapshot| {
+        let action = ReviewAction::Keep {
+            mention: snapshot.mentions[0].id,
+            scope: Scope::All,
+        };
+        session.review(action, Some(library.clone())).unwrap();
+        session.info().unwrap().path.unwrap()
+    };
+    // In Letter's case, which knows Ann Lee.
+    let note = DocumentSession::new();
+    note.import_text("Ann Lee phoned.".into(), "Note".into())
+        .unwrap();
+    note.join_case(library.clone(), letter.case_id.unwrap())
+        .unwrap();
+    let names = vec![ProposedName {
+        wording: "Ann Lee".into(),
+        category: Category::Person,
+    }];
+    let scanned = note
+        .review(ReviewAction::ProposeNames { names }, None)
+        .unwrap();
+    assert_eq!(scanned.proposed, 1);
+    let note = keep_first(&note, &scanned);
+    // In a case of its own, which never learns Bob Hart.
+    let memo = DocumentSession::new();
+    memo.import_text("Bob Hart phoned.".into(), "Memo".into())
+        .unwrap();
+    let names = vec![ProposedName {
+        wording: "Bob Hart".into(),
+        category: Category::Person,
+    }];
+    let proposed = memo
+        .review(ReviewAction::ProposeNames { names }, None)
+        .unwrap();
+    let memo = keep_first(&memo, &proposed);
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(
+        opens(&library),
+        1,
+        "only Letter, whose case Note's save wrote"
+    );
+    let listed = counts(summary(&summaries, &note));
+    assert_eq!(listed, (1, 0, 0, DocumentPhase::Reviewing));
+    assert_eq!(listed, reopened(&library, &note));
+    let listed = counts(summary(&summaries, &memo));
+    assert_eq!(listed, (0, 0, 0, DocumentPhase::Ready));
+    assert_eq!(listed, reopened(&library, &memo));
+}
+
+/// Two windows on one document: a save in one while the other opens it
+/// keeps what the save wrote; the open records only when it opened.
+#[test]
+fn an_open_racing_a_save_keeps_the_save() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (path, _) = saved(&library, "Ann Lee wrote.", "Letter", None, 0);
+    assert!(!library.document_state(Path::new(&path)).unwrap().scanned);
+    let other = DocumentSession::new();
+    other.open_document(library.clone(), path.clone()).unwrap();
+    let (saving, names) = (
+        library.clone(),
+        vec![ProposedName {
+            wording: "Ann Lee".into(),
+            category: Category::Person,
+        }],
+    );
+    *library.before_record.lock().unwrap() = Some(Box::new(move || {
+        other
+            .review(ReviewAction::ProposeNames { names }, Some(saving))
+            .unwrap();
+    }));
+    let opened = DocumentSession::new()
+        .open_document(library.clone(), path.clone())
+        .unwrap();
+    assert!(!opened.scanned, "as read before the save");
+    let state = library.document_state(Path::new(&path)).unwrap();
+    assert!(state.scanned, "the save's scanned stays");
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 0, "the save's counts stay, and are fresh");
+    assert_eq!(counts(&summaries[0]), (1, 0, 0, DocumentPhase::Reviewing));
+    assert_eq!(counts(&summaries[0]), reopened(&library, &path));
+}
+
 /// The library list for 50 documents of about 10 KB and 20 names each:
 /// today's path (`documents`, then `open_document` for each, as the iOS
 /// app's list does) against `document_summaries` with every record fresh,

@@ -135,11 +135,10 @@ impl Library {
         self.states().documents.remove(&self.key(path))
     }
 
-    /// The document at `path` saved or opened now. `summary`, its counts
-    /// with the file and case they were counted from, is recorded only
-    /// while both are still as they were: a save that came between leaves
-    /// the next list to count it again.
-    pub(crate) fn record_document(
+    /// The document at `path` saved now, under the lock its save holds:
+    /// `summary` is its counts with the file and case they were counted
+    /// from.
+    pub(crate) fn record_saved(
         &self,
         lock: &WriteLock,
         path: &Path,
@@ -150,6 +149,38 @@ impl Library {
             scanned,
             summary: summary.filter(|summary| self.still(path, summary)),
             opened: Some(now()),
+        };
+        self.set_document_state(lock, path, Some(state))
+    }
+
+    /// The document at `path` opened now, from the entry `read` before it
+    /// was read. While the entry is still that one, it takes `scanned` and
+    /// `summary` (the counts, kept only while the file and case are still
+    /// as counted). An entry a save wrote since keeps what the save wrote,
+    /// and only `opened` changes.
+    pub(crate) fn record_opened(
+        &self,
+        lock: &WriteLock,
+        path: &Path,
+        read: Option<&DocumentState>,
+        scanned: bool,
+        summary: Option<Recorded>,
+    ) -> Result<(), CoreError> {
+        let current = self.document_state(path);
+        let state = if current.as_ref() == read {
+            DocumentState {
+                scanned,
+                summary: summary.filter(|summary| self.still(path, summary)),
+                opened: Some(now()),
+            }
+        } else {
+            match current {
+                Some(current) => DocumentState {
+                    opened: Some(now()),
+                    ..current
+                },
+                None => return Ok(()),
+            }
         };
         self.set_document_state(lock, path, Some(state))
     }

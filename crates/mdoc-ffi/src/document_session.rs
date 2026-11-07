@@ -237,6 +237,7 @@ impl DocumentSession {
         // are never of anything newer.
         let stamp = Stamp::of_file(Path::new(&path));
         let case_stamps = library.case_stamps();
+        let read = library.document_state(Path::new(&path));
         let stored = mdoc_store::document::Document::open(PathBuf::from(&path))?;
         let member = library.member(Path::new(&path));
         let case = library
@@ -256,9 +257,18 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
-            scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
+            scanned: read.as_ref().map(|s| s.scanned),
         };
         let snapshot = self.open(imported, &cancel, Some(opened))?;
+        #[cfg(test)]
+        if let Some(hook) = library
+            .before_record
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            hook();
+        }
         // Its summary, as it opened; best effort, as only lists read it,
         // and never waiting for a save in progress.
         if let Some(lock) = library.try_lock() {
@@ -268,7 +278,13 @@ impl DocumentSession {
                 kept: snapshot.kept,
             };
             let summary = Recorded::of(counts, stamp, case_mark);
-            let _ = library.record_document(&lock, Path::new(&path), snapshot.scanned, summary);
+            let _ = library.record_opened(
+                &lock,
+                Path::new(&path),
+                read.as_ref(),
+                snapshot.scanned,
+                summary,
+            );
         }
         Ok(snapshot)
     }
@@ -715,6 +731,8 @@ impl Document {
         };
         let member = library.member(&path);
         library.refuse_other_case(&member, self.case.as_deref().unwrap_or_default())?;
+        // The case as this save stores it.
+        let mut stored = None;
         let case = match self.case.clone() {
             Some(id) => library.edit_locked(&lock, &id, |case| {
                 // Only a case another document changed since is joined
@@ -741,6 +759,7 @@ impl Document {
                     }
                 }
                 self.synced = Some(case.identities.clone());
+                stored = Some(case.clone());
                 Ok(*case != before)
             })?,
             None => {
@@ -753,6 +772,7 @@ impl Document {
                 // Hints dismissed before the case existed stay dismissed.
                 case.dismissed_hints = self.review.dismissed_pairs();
                 self.synced = Some(case.identities.clone());
+                stored = Some(case.clone());
                 library.create_locked(&lock, case)?
             }
         };
@@ -761,12 +781,19 @@ impl Document {
         // The document and its case are saved: an entry that cannot be
         // written only makes it reopen, and list, as one saved before
         // entries were.
+        // What opening it gives, as lists show: Keep decisions are not
+        // saved, so with any the saved text and case are counted as a
+        // reopen counts them (a kept name the case knows is proposed again).
+        let mut counts = self.review.counts();
+        if counts.kept > 0 {
+            counts = reopened_counts(self.review.text.clone(), stored.as_ref()).0;
+        }
         let summary = Recorded::of(
-            self.review.counts(),
+            counts,
             Stamp::of_file(&path),
             Some((case.id.clone(), library.case_stamp(&case.id))),
         );
-        let _ = library.record_document(&lock, &path, self.scanned, summary);
+        let _ = library.record_saved(&lock, &path, self.scanned, summary);
         self.saved = Some(self.change_key());
         Ok(SavedDocument {
             path: path.display().to_string(),
