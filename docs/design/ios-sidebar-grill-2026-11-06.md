@@ -220,3 +220,29 @@ All seven recommendations were accepted.
 ### Q14. Where it ships
 
 - PR 4, after the sidebar, sharing its drawer.
+
+## Ideas from the journey (not decided)
+
+From walking the sample through Start, review, hand-off and restore in
+the Simulator, and from the Claude app. Each would become a ROADMAP
+"To grill" item if the maintainer wants it.
+
+1. **Long jobs in the Dynamic Island.** Claude shows its running work
+   there; mdoc's OCR and name finding (minutes on a long scan) could show
+   "Recognizing page 3 of 12" as a Live Activity, beside the system's
+   background-task progress.
+2. **Peek at the originals.** Press and hold an eye in the toolbar to see
+   the original names in place of the aliases, released to hide them: a
+   quick check before sharing, without undoing anything.
+3. **Paste a reply from Start.** After sharing, Start offers "Got a reply?
+   Paste it" for the case shared last, so the restore step is one tap from
+   where the user lands.
+4. **A case's page.** Tapping a case shows its names (the case-wide
+   identities with aliases), its documents and its replies, the phone's
+   version of desktop's case page (ADR 0077).
+5. **Shortcuts and App Intents.** "Scan into mdoc" and "Restore a reply"
+   as Shortcuts actions and Spotlight entries; Home Screen quick actions
+   are already a ROADMAP item.
+6. **Document thumbnails** on the Documents page: the first page of a PDF
+   or scan, so lawyers find a document by sight.
+7. **A widget:** "3 documents to review", opening the first.

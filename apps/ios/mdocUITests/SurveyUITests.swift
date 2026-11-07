@@ -327,6 +327,13 @@ final class SurveyUITests: XCTestCase {
 
     @MainActor
     private func closeSheet(_ app: XCUIApplication) {
+        // Identities is a drawer on iPhone: its own close button.
+        let drawer = app.buttons["identities-done"].firstMatch
+        if drawer.exists {
+            drawer.tap()
+            sleep(1)
+            return
+        }
         let done = app.buttons["Done"].firstMatch
         if done.waitForExistence(timeout: 1) {
             done.tap()

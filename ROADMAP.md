@@ -131,8 +131,8 @@ cannot drive them. Android takes the same decisions in its own milestone
     checked on the device.
 12. **[Mobile] Identities as a drawer.** The right-edge drawer, ordered by
     what is left, state buttons, Replace N, Looks like, Select
-    ([record](docs/design/ios-sidebar-grill-2026-11-06.md) round 2).
-    *Done when:* built and checked on the device.
+    ([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)). *Done when:*
+    merged and checked on the device.
 
 ## Android 0.1
 
