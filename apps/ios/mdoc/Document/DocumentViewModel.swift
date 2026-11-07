@@ -64,6 +64,8 @@ final class DocumentViewModel {
     /// This document's steps on the window's undo stack, put back when it
     /// shows again: the window holds the shown document's steps only (#672).
     var systemUndoSteps = 0
+    /// The screen the window's steps belong to (`attachSystemUndo`).
+    var systemUndoScreen: UUID?
     var showsFind = false
     /// Try a sample's names, proposed once recognition has read the text.
     var storedNames: [SampleDocument.Name]?

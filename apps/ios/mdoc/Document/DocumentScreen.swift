@@ -23,6 +23,9 @@ struct DocumentScreen: View {
     @State private var sameAsCandidate: CandidateID?
     /// Identities' Same as…: the identity it starts from.
     @State private var sameAsIdentity: IdentityID?
+    /// This screen, for the window's undo: a size-class change builds a new
+    /// one for the same document (#672).
+    @State private var screenID = UUID()
 
     /// iPad's right column: the original or the reply beside the text.
     private var hasRightPane: Bool { model.hasOriginal || model.snapshot.reply != nil }
@@ -72,7 +75,7 @@ struct DocumentScreen: View {
             }
             .onAppear {
                 // The window's undo holds this document's steps only (#672).
-                model.attachSystemUndo(undoManager)
+                model.attachSystemUndo(undoManager, for: screenID)
                 model.refresh()
                 // The root swaps layouts on a size-class change, so this
                 // screen is new: a drawer opened in a compact window stays
@@ -83,7 +86,7 @@ struct DocumentScreen: View {
                     model.showsIdentities = true
                 }
             }
-            .onDisappear { model.detachSystemUndo() }
+            .onDisappear { model.detachSystemUndo(for: screenID) }
             .onChange(of: sizeClass) { model.closeIdentitiesDrawer() }
             .onChange(of: identitiesInPane) { _, inPane in
                 // Rotating to portrait shows the original; to landscape, the list.

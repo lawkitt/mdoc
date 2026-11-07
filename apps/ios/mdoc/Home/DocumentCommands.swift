@@ -103,6 +103,8 @@ struct DocumentCommandsPresenter: ViewModifier {
                 Button("Move") {
                     if let id = app.movingToNewCase { app.move(id, to: .newCase(name: draft)) }
                 }
+                // A case needs a name (#677).
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } message: {
                 Text("The document leaves its case. Replies already sent still restore with the old case.")
             }

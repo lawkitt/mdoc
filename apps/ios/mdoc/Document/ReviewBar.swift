@@ -122,7 +122,7 @@ struct ReviewBar: View {
     /// manager.
     private func keyboardShortcuts(_ candidate: Candidate) -> some View {
         Group {
-            Button("Replace") { model.decideCurrent(.replace) }
+            Button("Replace") { model.returnKey() }
                 .keyboardShortcut(.return, modifiers: [])
             Button("Keep") { model.decideCurrent(.keep) }
                 .keyboardShortcut("k", modifiers: [])

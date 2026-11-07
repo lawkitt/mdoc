@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// ⌘K from a hardware keyboard (#675): with a document open, the sidebar
@@ -16,10 +17,12 @@ final class SidebarSearchUITests: XCTestCase {
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
-        // On iPhone the row's tap closes the drawer: press once it is shut.
-        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
-        let gone = NSPredicate(format: "exists == false")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: sidebar)], timeout: 5), .completed)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            // The row's tap closes the drawer: press once it is shut.
+            let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+            let gone = NSPredicate(format: "exists == false")
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: gone, evaluatedWith: sidebar)], timeout: 5), .completed)
+        }
 
         // After a test typed with the software keyboard, the Simulator
         // drops the next launch's first hardware key: Shift alone, which

@@ -181,6 +181,17 @@ extension DocumentViewModel {
         reselect(near: current, index: index)
     }
 
+    /// Return, the card's filled button: Replace on a proposed name, Replace
+    /// instead on a kept one, and Next on a replaced one, as the decided
+    /// card's filled Next (ADR 0101).
+    func returnKey() {
+        if reviewedCandidate?.state == .replaced {
+            goToNextUndecided()
+        } else {
+            decideCurrent(.replace)
+        }
+    }
+
     /// "Keep instead" or "Replace instead" on a decided card, in the bar's
     /// scope: the card stays, showing its new state, until Next.
     func changeCurrent(_ decision: Decision) {
@@ -518,12 +529,15 @@ extension DocumentViewModel {
     /// As many steps as the core keeps (`DocumentSession`, 256).
     static let systemUndoLevels = 256
 
-    /// The document shows in a window: its steps go back on the window's
-    /// undo stack, each its own group, so ⌘Z and shake reach them again.
-    /// Redo starts empty there; the bar's Redo still reaches the core.
-    func attachSystemUndo(_ manager: UndoManager?) {
+    /// The document shows in a window, on `screen`: its steps go back on the
+    /// window's undo stack, each its own group, so ⌘Z and shake reach them
+    /// again. Redo starts empty there; the bar's Redo still reaches the core.
+    /// A new screen for the same window (a size-class change rebuilds it)
+    /// takes the steps over as they are.
+    func attachSystemUndo(_ manager: UndoManager?, for screen: UUID) {
+        systemUndoScreen = screen
         guard manager !== systemUndo else { return }
-        detachSystemUndo()
+        releaseSystemUndo()
         systemUndo = manager
         guard let manager else { return }
         manager.levelsOfUndo = Self.systemUndoLevels
@@ -543,9 +557,16 @@ extension DocumentViewModel {
         manager.groupsByEvent = byEvent
     }
 
-    /// The document leaves the window: its steps leave the window's stacks,
-    /// so another document's ⌘Z or Undo never reaches them (#672).
-    func detachSystemUndo() {
+    /// `screen` leaves the window: unless a newer screen of this document
+    /// took it over, the steps leave the window's stacks, so another
+    /// document's ⌘Z or Undo never reaches them (#672).
+    func detachSystemUndo(for screen: UUID) {
+        guard screen == systemUndoScreen else { return }
+        systemUndoScreen = nil
+        releaseSystemUndo()
+    }
+
+    private func releaseSystemUndo() {
         systemUndo?.removeAllActions(withTarget: self)
         systemUndo = nil
     }

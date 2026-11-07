@@ -180,7 +180,7 @@ struct RootView: View {
         .onChange(of: app.selection) { fitColumns(narrow: isNarrow) }
         // ⌘K shows the sidebar column where it is hidden (#675).
         .onChange(of: app.searchRequest) {
-            if columns == .detailOnly { columns = .all }
+            if columns != .all { columns = .all }
         }
         .onChange(of: sizeClass) { fitColumns(narrow: isNarrow) }
     }
