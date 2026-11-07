@@ -36,37 +36,40 @@ final class OCRResumeUITests: XCTestCase {
             cellular.tap()
         }
 
-        // Cancel once recognition has run a while.
+        // Cancel once the first page is recognized, so there is text to
+        // keep and pages to resume.
         let progress = app.descendants(matching: .any)["job-progress"]
-        let recognizing = NSPredicate(format: "label CONTAINS 'Recogniz'")
-        expectation(for: recognizing, evaluatedWith: progress)
+        let pastFirstPage = NSPredicate(format: "label MATCHES '.*page [2-4] of 4.*'")
+        expectation(for: pastFirstPage, evaluatedWith: progress)
         waitForExpectations(timeout: 300)
-        sleep(6)
         app.buttons["Cancel"].firstMatch.tap()
         let primary = app.buttons["primary-action"]
         expectation(for: NSPredicate(format: "label == 'Resume recognition'"), evaluatedWith: primary)
         waitForExpectations(timeout: 60)
-        keep("ocr-stopped-light")
+        let stopped = keep("ocr-stopped-light")
         XCUIDevice.shared.appearance = .dark
-        sleep(1)
-        keep("ocr-stopped-dark")
+        keep("ocr-stopped-dark", unlike: stopped)
 
         primary.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 300))
         expectation(for: NSPredicate(format: "value CONTAINS 'Harbour Street'"), evaluatedWith: text)
         waitForExpectations(timeout: 300)
-        keep("ocr-resumed-dark")
+        let resumed = keep("ocr-resumed-dark")
         XCUIDevice.shared.appearance = .light
-        sleep(1)
-        keep("ocr-resumed-light")
+        keep("ocr-resumed-light", unlike: resumed)
     }
 
+    /// The settled screen as an attachment; with `unlike`, once it differs
+    /// from that one (an appearance change draws a moment later).
     @MainActor
-    private func keep(_ name: String) {
-        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    @discardableResult
+    private func keep(_ name: String, unlike previous: XCUIScreenshot? = nil) -> XCUIScreenshot {
+        let screen = MdocUITest.settledScreen(unlike: previous)
+        let shot = XCTAttachment(screenshot: screen)
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+        return screen
     }
 }

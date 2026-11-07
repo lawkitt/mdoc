@@ -181,27 +181,28 @@ final class SurveyUITests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         if isPad {
-            sleep(2)
             // A portrait iPad shows the original beside the text, Identities
             // over it from the picker.
             shot("26-pdf-text-original")
             let segment = app.segmentedControls.buttons["Identities"].firstMatch
             if segment.exists {
                 segment.tap()
-                sleep(1)
+                segment.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
                 shot("26-pdf-text-identities")
             }
             // Landscape keeps Home, the text, the original and Identities
             // side by side (ADR 0085).
             XCUIDevice.shared.orientation = .landscapeLeft
             defer { XCUIDevice.shared.orientation = .portrait }
-            sleep(2)
+            let window = app.windows.firstMatch
+            MdocUITest.wait(timeout: 10) { window.frame.width > window.frame.height }
             shot("26-pdf-landscape")
             return
         }
         shot("26-pdf-text")
-        app.buttons["Original"].firstMatch.tap()
-        sleep(2)
+        let original = app.buttons["Original"].firstMatch
+        original.tap()
+        original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
         shot("27-pdf-original")
     }
 
@@ -216,7 +217,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         shot("28-markdown-review")
         text.swipeUp(velocity: .fast)
-        sleep(1)
+        // shot waits for the scroll to come to rest.
         shot("29-markdown-review-end")
 
         let large = launch(seed: MdocUITest.markdownFixture, contentSize: "UICTContentSizeCategoryAccessibilityXL")
@@ -334,16 +335,17 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     private func goHome(_ app: XCUIApplication) {
         MdocUITest.revealSidebar(app)
-        sleep(1)
+        app.buttons["settings-button"].firstMatch.waitUntilHittable(timeout: 5)
     }
 
     @MainActor
     private func closeSheet(_ app: XCUIApplication) {
         // Identities is a drawer on iPhone: its own close button.
+        // The drawer's panel goes once it has slid shut.
         let drawer = app.buttons["identities-done"].firstMatch
         if drawer.exists {
             drawer.tap()
-            sleep(1)
+            XCTAssertTrue(drawer.waitForNonExistence(timeout: 5), "Identities stayed open")
             return
         }
         let done = app.buttons["Done"].firstMatch
@@ -352,7 +354,7 @@ final class SurveyUITests: XCTestCase {
         } else {
             app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
         }
-        sleep(1)
+        XCTAssertTrue(app.staticTexts["Identities"].waitForNonExistence(timeout: 5), "Identities stayed open")
     }
 
     /// Share: one tap, or the older Share menu's "Share text".
@@ -364,8 +366,8 @@ final class SurveyUITests: XCTestCase {
             shot("20-share-menu")
             menuItem.tap()
         }
+        // shot waits for the sheet to finish sliding up.
         XCTAssertTrue(app.otherElements["ActivityListView"].firstMatch.waitForExistence(timeout: 10))
-        sleep(1)
     }
 
     @MainActor
@@ -376,10 +378,12 @@ final class SurveyUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(restore.waitForExistence(timeout: 5), "Restore with mdoc is not in the share sheet")
         restore.tap()
-        // The extension runs in its own process; its title may not be in
-        // the app's tree, so give its sheet time to show.
-        _ = app.staticTexts["Restore with mdoc"].waitForExistence(timeout: 10)
-        sleep(2)
+        // The extension runs in its own process; its sheet shows in the
+        // app's tree once it is up, by its title or its Done button.
+        let shown = MdocUITest.firstToAppear(
+            [app.navigationBars["Restore with mdoc"], app.staticTexts["Restore with mdoc"], app.buttons["Done"]],
+            timeout: 10)
+        print("survey: Restore with mdoc shown by \(shown?.debugDescription ?? "nothing")")
         shot("22-restore-extension")
         let done = app.buttons["Done"].firstMatch
         if done.waitForExistence(timeout: 3) {
@@ -397,17 +401,25 @@ final class SurveyUITests: XCTestCase {
         }
     }
 
-    /// The screen in light, then in dark.
+    /// The screen in light, then in dark, each once it has settled: dark
+    /// once it differs from light, and back to light the same way.
     @MainActor
     private func shot(_ name: String) {
-        for (appearance, suffix) in [(XCUIDevice.Appearance.light, "light"), (.dark, "dark")] {
-            XCUIDevice.shared.appearance = appearance
-            sleep(1)
-            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            attachment.name = "\(name)-\(suffix)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-        }
         XCUIDevice.shared.appearance = .light
+        let light = MdocUITest.settledScreen()
+        keep(light, "\(name)-light")
+        XCUIDevice.shared.appearance = .dark
+        let dark = MdocUITest.settledScreen(unlike: light)
+        keep(dark, "\(name)-dark")
+        XCUIDevice.shared.appearance = .light
+        MdocUITest.settledScreen(unlike: dark, timeout: 3)
+    }
+
+    @MainActor
+    private func keep(_ screenshot: XCUIScreenshot, _ name: String) {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }
