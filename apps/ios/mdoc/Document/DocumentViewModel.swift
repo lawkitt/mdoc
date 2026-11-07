@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 import Observation
 
 /// One document screen. It holds the core's latest snapshot and view state
@@ -38,7 +39,7 @@ final class DocumentViewModel {
     var reviewing: CandidateID?
     /// The bar's scope chip: All by default, held within an identity and
     /// reset to All on the next one.
-    var reviewScope: Scope = .allOccurrences
+    var reviewScope: Scope = .all
     /// The identity the scope was chosen for.
     var scopeIdentity: IdentityID?
     /// Pulled up: the identity's mentions, one row each.
@@ -98,7 +99,7 @@ final class DocumentViewModel {
     /// counts even when recognition began on it, since the core starts it
     /// for every PDF once the model is in; Finish import keeps its pages.
     var importNotFinished: Bool {
-        snapshot.phase == .recognizing && !snapshot.kind.needsRecognition && runningJob == nil
+        snapshot.phase == nil && !snapshot.kind.needsRecognition && runningJob == nil
     }
 
     /// Recognition or the scan needs a model the device has not downloaded.
@@ -151,11 +152,11 @@ final class DocumentViewModel {
             // Nothing to find here: marking by selection, then the hand-off.
             // A case's names can still come in as proposals on import.
             return snapshot.pendingCount > 0 ? .replaceAll(snapshot.pendingCount) : .handOff
-        case .recognizing where jobs.current != nil, .unscanned where jobs.current != nil:
+        case nil where jobs.current != nil, .unscanned where jobs.current != nil:
             return .waiting
-        case .recognizing where importNotFinished:
+        case nil where importNotFinished:
             return .finishImport
-        case .recognizing:
+        case nil:
             return .recognize(resume: snapshot.pagesDone > 0 || snapshot.resumesOCR)
         case .unscanned:
             return .findNames
@@ -241,7 +242,7 @@ final class DocumentViewModel {
         switch outcome {
         case .finished(let snapshot):
             applyReview(snapshot)
-            if let names = storedNames, snapshot.phase != .recognizing {
+            if let names = storedNames, snapshot.phase != nil {
                 proposeStored(names)
             }
         case .cancelled:
@@ -292,7 +293,7 @@ final class DocumentViewModel {
 
     func decide(identity: IdentityID, _ decision: Decision) {
         guard let first = snapshot.mentions(of: identity).first else { return }
-        decide(first.id, decision, scope: .allOccurrences)
+        decide(first.id, decision, scope: .all)
     }
 
     func replaceAllPending() {
@@ -469,7 +470,7 @@ final class DocumentViewModel {
         case (_, .drawer):
             break
         case (nil, .inspector), (.drawer, .inspector):
-            if snapshot.phase != .recognizing { wantsIdentities = true }
+            if snapshot.phase != nil { wantsIdentities = true }
         case (nil, .column), (.drawer, .column):
             break
         case (_, .inspector):

@@ -10,7 +10,7 @@ final class RenderedMarkdownTests: XCTestCase {
 
     private func render(_ text: String, width: CGFloat? = 360, candidates: [Candidate] = []) -> RenderedDocument {
         MarkdownStyler(traits: traits, selected: nil, width: width)
-            .document(markdown: text, styling: MarkdownStyling(markdown: text), candidates: candidates)
+            .document(markdown: text, styling: .init(markdown: text), candidates: candidates)
     }
 
     private func candidate(_ word: String, in text: String, _ index: Int = 1) throws -> Candidate {
@@ -238,7 +238,7 @@ final class RenderedMarkdownTests: XCTestCase {
         let width = view.textWidth
         func show(_ candidates: [Candidate]) {
             let document = MarkdownStyler(traits: view.traitCollection, selected: nil, width: width)
-                .document(markdown: text, styling: MarkdownStyling(markdown: text), candidates: candidates)
+                .document(markdown: text, styling: .init(markdown: text), candidates: candidates)
             view.show(document, width: width)
             view.layoutIfNeeded()
         }

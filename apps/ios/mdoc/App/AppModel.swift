@@ -227,7 +227,7 @@ final class AppModel {
             if case .importing = navigator.presentation { navigator.dismiss() }
             open(session.id)
             guard let model = documents.model(for: session.id) else { return nil }
-            if model.snapshot.phase == .recognizing {
+            if model.snapshot.phase == nil {
                 Task { await model.recognize() }
             }
             return model

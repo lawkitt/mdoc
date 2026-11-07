@@ -28,75 +28,6 @@ enum RealCore {
 
 // MARK: - Conversions
 
-extension Category {
-    init(_ category: MdocFFI.Category) {
-        self = switch category {
-        case .person: .person
-        case .organization: .organization
-        case .email: .email
-        case .url: .url
-        case .phone: .phone
-        case .address: .address
-        case .identity: .identity
-        case .tax: .tax
-        case .bank: .bank
-        case .caseNumber: .caseNumber
-        case .date: .date
-        case .other: .other
-        }
-    }
-
-    var ffi: MdocFFI.Category {
-        switch self {
-        case .person: .person
-        case .organization: .organization
-        case .email: .email
-        case .url: .url
-        case .phone: .phone
-        case .address: .address
-        case .identity: .identity
-        case .tax: .tax
-        case .bank: .bank
-        case .caseNumber: .caseNumber
-        case .date: .date
-        case .other: .other
-        }
-    }
-}
-
-extension Scope {
-    var ffi: MdocFFI.Scope {
-        self == .allOccurrences ? .all : .this
-    }
-}
-
-extension HistoryStepKind {
-    init(_ kind: MdocFFI.StepKind) {
-        self = switch kind {
-        case .replace: .replace
-        case .keep: .keep
-        case .replaceAll: .replaceAll
-        case .mark: .mark
-        case .rename: .rename
-        case .category: .category
-        case .sameAs: .sameAs
-        case .newAlias: .newAlias
-        case .owner: .owner
-        case .joinCase: .joinCase
-        }
-    }
-}
-
-extension MentionState {
-    init(_ state: MdocFFI.MentionState) {
-        self = switch state {
-        case .proposed: .proposed
-        case .replaced: .replaced
-        case .kept: .kept
-        }
-    }
-}
-
 extension CaseColour {
     /// The swatch nearest a case's stored hue (ADR 0077).
     init(hue: UInt32) {
@@ -185,21 +116,15 @@ extension CaseSummary {
 private final class StageReporter: MdocFFI.JobProgress, @unchecked Sendable {
     let observer: any JobObserver
     private let lock = NSLock()
-    private var current = CoreStage.reading
+    private var current = JobStage.reading
 
     init(_ observer: any JobObserver) {
         self.observer = observer
     }
 
     func stage(stage: JobStage) {
-        let mapped: CoreStage = switch stage {
-        case .reading: .reading
-        case .converting: .converting
-        case .recognizing: .recognizing
-        case .scanning: .scanning
-        }
-        lock.withLock { current = mapped }
-        observer.progress(JobUpdate(stage: mapped))
+        lock.withLock { current = stage }
+        observer.progress(JobUpdate(stage: stage))
     }
 
     /// The fraction also reaches the background task, whose progress iOS
@@ -265,9 +190,9 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
         var documents = rows.map { summary, id, session in
             let updated = Date(timeIntervalSince1970: TimeInterval(summary.modified))
-            return session?.loadedSummary(updated: updated) ?? DocumentSummary(
+            return session?.loadedSummary(updated: updated) ?? LibraryDocument(
                 id: id, title: summary.title, caseID: summary.caseId.map(CaseID.init), kind: kinds(summary.path),
-                phase: DocumentPhase(summary.phase), pendingCount: Int(summary.proposed), updated: updated,
+                phase: summary.phase, pendingCount: Int(summary.proposed), updated: updated,
                 candidateCount: Int(summary.proposed + summary.replaced + summary.kept))
         }
         let listed = Set(documents.map(\.id))
@@ -490,16 +415,6 @@ final class RealLibrary: Library, @unchecked Sendable {
 
 // MARK: - Session
 
-extension DocumentPhase {
-    init(_ phase: MdocFFI.DocumentPhase) {
-        self = switch phase {
-        case .unscanned: .unscanned
-        case .reviewing: .reviewing
-        case .ready: .ready
-        }
-    }
-}
-
 /// One review tap, as Instruments shows it (refactor grill Q12): the core
 /// call and the snapshot the app makes of its result.
 private let reviewSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc", category: "Review")
@@ -584,9 +499,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     /// The list row of an import not saved yet.
-    fileprivate func summary(updated: Date) -> DocumentSummary {
+    fileprivate func summary(updated: Date) -> LibraryDocument {
         let snapshot = snapshot()
-        return DocumentSummary(
+        return LibraryDocument(
             id: id, title: snapshot.title, caseID: snapshot.caseID, kind: snapshot.kind,
             phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated,
             candidateCount: snapshot.candidates.count)
@@ -594,12 +509,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     /// The list row of a document this session holds, from the core's
     /// review without the reply or the styling; nil before it is read.
-    fileprivate func loadedSummary(updated: Date) -> DocumentSummary? {
+    fileprivate func loadedSummary(updated: Date) -> LibraryDocument? {
         guard let review = try? ffi.snapshot() else { return nil }
         let caseID = review.caseId ?? chosen.caseID
-        return DocumentSummary(
+        return LibraryDocument(
             id: id, title: review.title, caseID: caseID.map(CaseID.init), kind: lock.withLock { kind },
-            phase: DocumentPhase(review.phase), pendingCount: Int(review.proposed), updated: updated,
+            phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
             candidateCount: review.mentions.count)
     }
 
@@ -628,7 +543,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             let (kind, original, ocrStarted) = lock.withLock { (self.kind, self.original, self.ocrStarted) }
             return DocumentSnapshot(
                 id: id, title: chosen.title, caseID: chosen.caseID.map(CaseID.init), caseName: library.caseName(chosen.caseID),
-                kind: kind, phase: .recognizing, markdown: "", styling: .empty, candidates: [], identities: [],
+                kind: kind, phase: nil, markdown: "", styling: .empty, candidates: [], identities: [],
                 original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted)
         }
         return snapshot(of: review, path: ffi.info()?.path)
@@ -651,40 +566,26 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let candidates = review.mentions.map { mention in
             Candidate(
                 id: CandidateID(rawValue: String(mention.id)),
-                identityID: IdentityID(rawValue: mention.identity.map(String.init) ?? "mention-\(mention.id)"),
-                range: SourceRange(start: Int(mention.range.start), end: Int(mention.range.end)),
-                original: mention.original, alias: mention.alias ?? "",
-                category: Category(mention.category), state: MentionState(mention.state))
+                identityID: mention.identity.map(IdentityID.init) ?? IdentityID(rawValue: "mention-\(mention.id)"),
+                range: SourceRange(mention.range), original: mention.original, alias: mention.alias ?? "",
+                category: mention.category, state: mention.state)
         }
         // Names kept everywhere follow the active identities, under Kept
         // (ADR 0098's Show filter).
         let identities = (review.identities + review.keptIdentities).map { row in
             Identity(
-                id: IdentityID(rawValue: String(row.id)), alias: row.alias, category: Category(row.category),
+                id: IdentityID(row.id), alias: row.alias, category: row.category,
                 primaryWording: row.originals.first ?? row.alias, variants: row.originals,
-                mentionCount: Int(row.mentionCount), state: MentionState(row.state),
-                owner: row.owner.map { IdentityID(rawValue: String($0)) })
-        }
-        let step = { (step: MdocFFI.HistoryStep) -> HistoryStep in
-            let range = step.range.map { SourceRange(start: Int($0.start), end: Int($0.end)) }
-            return HistoryStep(
-                kind: HistoryStepKind(step.kind), label: step.label, subject: step.subject, range: range,
-                candidateID: range.flatMap { range in candidates.first { $0.range == range }?.id },
-                identityID: step.identity.map { IdentityID(rawValue: String($0)) })
+                mentionCount: Int(row.mentionCount), state: row.state, owner: row.owner.map(IdentityID.init))
         }
         return DocumentSnapshot(
             id: id, title: review.title, caseID: caseID.map(CaseID.init),
-            caseName: library.caseName(caseID), kind: kind, phase: DocumentPhase(review.phase),
+            caseName: library.caseName(caseID), kind: kind, phase: review.phase,
             markdown: review.text, styling: styling(review), textRevision: review.textRevision,
             candidates: candidates, identities: identities, original: original,
             pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning,
-            mergeHints: review.linkHints.map { hint in
-                MergeHint(
-                    from: IdentityID(rawValue: String(hint.from)), into: IdentityID(rawValue: String(hint.into)),
-                    wording: hint.wording)
-            },
-            canUndo: review.canUndo, canRedo: review.canRedo,
-            undoStep: review.undoStep.map(step), redoStep: review.redoStep.map(step),
+            mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
+            undoStep: review.undoStep, redoStep: review.redoStep,
             counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)))
     }
 
@@ -785,8 +686,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot {
         let mention = try Self.mention(candidate)
         return try review(decision == .replace
-            ? .replace(mention: mention, scope: scope.ffi)
-            : .keep(mention: mention, scope: scope.ffi))
+            ? .replace(mention: mention, scope: scope)
+            : .keep(mention: mention, scope: scope))
     }
 
     func replaceAllPending() throws -> DocumentSnapshot {
@@ -796,8 +697,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// The core refuses while proposals are pending, and makes the
     /// document's case the current one.
     func copyForAI() throws -> HandOff {
-        let handOff = try core { try ffi.handOff(library: library.ffi) }
-        return HandOff(text: handOff.text, fileName: handOff.fileName)
+        try core { try ffi.handOff(library: library.ffi) }
     }
 
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
@@ -826,7 +726,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// Try a sample's names, proposed where they occur, as a scan's: the
     /// core finds them and counts the document as scanned.
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot {
-        let names = names.map { ProposedName(wording: $0.wording, category: $0.category.ffi) }
+        let names = names.map { ProposedName(wording: $0.wording, category: $0.category) }
         _ = try core { try ffi.review(action: .proposeNames(names: names), library: nil) }
         // Stored proposals stand in for the scan, and save as its result
         // does: when the phone locks first, once it unlocks.
@@ -837,25 +737,23 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func markSelection(_ range: SourceRange) throws -> DocumentSnapshot {
         guard range.length > 0 else { throw CoreError.emptySelection }
         // No category: the core's guess, as desktop's Replace on a selection.
-        return try review(.mark(range: Self.range(range), category: nil))
+        return try review(.mark(range: range.textRange, category: nil))
     }
 
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
-        try review(.rename(mention: Self.mention(candidate), scope: scope.ffi, alias: alias))
+        try review(.rename(mention: Self.mention(candidate), scope: scope, alias: alias))
     }
 
     func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice] {
-        try core { try ffi.categoryChoices(range: Self.range(candidate.range), scope: scope.ffi) }.map { choice in
-            CategoryChoice(category: Category(choice.category), alias: choice.alias, isCurrent: choice.current)
-        }
+        try core { try ffi.categoryChoices(range: candidate.range.textRange, scope: scope) }
     }
 
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot {
-        try review(.setCategory(mention: Self.mention(candidate), scope: scope.ffi, category: category.ffi))
+        try review(.setCategory(mention: Self.mention(candidate), scope: scope, category: category))
     }
 
     func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot {
-        try review(.sameAs(mention: Self.mention(candidate), scope: scope.ffi, target: Self.identity(target)))
+        try review(.sameAs(mention: Self.mention(candidate), scope: scope, target: Self.identity(target)))
     }
 
     func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot {
@@ -870,18 +768,14 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         try review(.setOwner(identity: Self.identity(identity), owner: owner.map(Self.identity)))
     }
 
-    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot {
-        try review(.dismissHint(from: Self.identity(hint.from), into: Self.identity(hint.into)))
+    func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot {
+        try review(.dismissHint(from: hint.from, into: hint.into))
     }
 
     /// The core's id of a mention.
     private static func mention(_ id: CandidateID) throws -> UInt64 {
         guard let value = UInt64(id.rawValue) else { throw CoreError.nameNotFound }
         return value
-    }
-
-    private static func range(_ range: SourceRange) -> TextRange {
-        TextRange(start: UInt64(range.start), end: UInt64(range.end))
     }
 
     /// The core's id of an identity; a mention without one has none.

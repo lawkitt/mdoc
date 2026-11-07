@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import UIKit
 
@@ -214,7 +215,7 @@ struct DocumentScreen: View {
         guard let candidate = model.snapshot.candidate(id) else { return nil }
         // The long press was found: its hint isn't needed.
         model.learn(.longPress)
-        func act(_ scope: Scope = .allOccurrences, _ body: @escaping () -> Void) -> () -> Void {
+        func act(_ scope: Scope = .all, _ body: @escaping () -> Void) -> () -> Void {
             { model.select(id); model.reviewScope = scope; body() }
         }
         func action(_ title: String, _ image: String, attributes: UIMenuElement.Attributes = [], _ run: @escaping () -> Void) -> UIAction {
@@ -246,7 +247,7 @@ struct DocumentScreen: View {
             children = [
                 action(String(localized: "Replace"), "eye.slash", act { model.decideCurrent(.replace) }),
                 action(String(localized: "Keep"), "eye", act { model.decideCurrent(.keep) }),
-                action(String(localized: "Just this one"), "1.circle", act(.justThisOne) { model.decideCurrent(.replace) }),
+                action(String(localized: "Just this one"), "1.circle", act(.this) { model.decideCurrent(.replace) }),
             ]
             if !targets.isEmpty { children.append(sameAs) }
             children.append(categories)
@@ -683,7 +684,6 @@ private struct ActionBar: View {
         case .converting: return String(localized: "Converting")
         case .recognizing: return String(localized: "Recognizing text")
         case .scanning: return String(localized: "Finding names")
-        case .installing: return String(localized: "Installing")
         case nil:
             switch kind {
             case .recognize: return String(localized: "Reading the file")

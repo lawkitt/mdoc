@@ -34,7 +34,7 @@ struct StartView: View {
     }
 
     /// "Continue · Services agreement · 3 left".
-    private func continueCard(_ document: DocumentSummary) -> some View {
+    private func continueCard(_ document: LibraryDocument) -> some View {
         Button {
             app.open(document.id)
         } label: {

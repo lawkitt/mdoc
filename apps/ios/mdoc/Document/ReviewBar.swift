@@ -441,7 +441,7 @@ private struct ReviewButtons: View {
         model.snapshot.identities.first { $0.id == candidate.identityID }?.mentionCount ?? 1
     }
 
-    private var all: Bool { model.reviewScope == .allOccurrences && count > 1 }
+    private var all: Bool { model.reviewScope == .all && count > 1 }
 
     var body: some View {
         HStack(spacing: Space.s) {

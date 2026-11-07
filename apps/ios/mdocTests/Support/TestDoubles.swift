@@ -1,20 +1,21 @@
 import Foundation
 @testable import mdoc
+import MdocFFI
 
 /// A real session whose long jobs (recognize, scan) first take `seconds`,
 /// for the timing tests: a job the test can see running and cancel. A
 /// cancel during the wait ends the job as the core's cancel does; every
 /// other call goes straight to the real session.
-final class SlowJobs: DocumentSession, @unchecked Sendable {
-    let base: any DocumentSession
+final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
+    let base: any mdoc.DocumentSession
     let seconds: Double
 
-    init(_ base: any DocumentSession, seconds: Double) {
+    init(_ base: any mdoc.DocumentSession, seconds: Double) {
         self.base = base
         self.seconds = seconds
     }
 
-    private func wait(_ observer: any JobObserver, stage: CoreStage) throws {
+    private func wait(_ observer: any JobObserver, stage: JobStage) throws {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
             if observer.isCancelled() { throw CoreError.cancelled }
@@ -50,7 +51,7 @@ final class SlowJobs: DocumentSession, @unchecked Sendable {
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
         try base.rename(candidate, scope: scope, to: alias)
     }
-    func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice] {
+    func categoryChoices(for candidate: mdoc.Candidate, scope: Scope) throws -> [CategoryChoice] {
         try base.categoryChoices(for: candidate, scope: scope)
     }
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: mdoc.Category) throws -> DocumentSnapshot {
@@ -66,14 +67,14 @@ final class SlowJobs: DocumentSession, @unchecked Sendable {
     func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot {
         try base.setOwner(identity, to: owner)
     }
-    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot { try base.dismissHint(hint) }
+    func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot { try base.dismissHint(hint) }
 }
 
 /// Model setup without the real files: the setup tests' downloads are
 /// empty files (`FakeModelDownloader`), which the real core's checksum
 /// check refuses. It offers what the real core offers for the memory,
 /// with fixed sizes, and installs whatever it is given.
-final class FakeSetup: Setup, @unchecked Sendable {
+final class FakeSetup: mdoc.Setup, @unchecked Sendable {
     static let detectorID = "gliner2-fp16"
     static let ocrID = "pp-ocr-v5"
     static let detectorBytes: Int64 = 1_190_000_000

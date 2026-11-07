@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 import XCTest
 @testable import mdoc
@@ -24,25 +25,29 @@ final class MarkdownStylingTests: XCTestCase {
         return String(decoding: bytes, as: UTF8.self)
     }
 
+    private func source(_ range: TextRange, in text: String) -> String {
+        source(SourceRange(range), in: text)
+    }
+
     func testTheCoreFindsEveryKindInTheFixture() {
         let text = Self.fixture
         XCTAssertFalse(text.isEmpty, "the fixture is missing")
         let styling = MarkdownStyling(markdown: text)
-        func spans(_ kind: MarkdownSpan.Kinds) -> [String] {
-            styling.spans.filter { $0.kinds.contains(kind) }.map { source($0.range, in: text) }
+        func spans(_ kind: KeyPath<MarkdownSpan, Bool>) -> [String] {
+            styling.spans.filter { $0[keyPath: kind] }.map { source($0.range, in: text) }
         }
-        XCTAssertTrue(spans(.emphasis).contains("Анна Смирнова"))
-        XCTAssertTrue(spans(.link).contains("реестр"))
-        XCTAssertTrue(spans(.code).contains("пункт 4.2"))
-        XCTAssertTrue(spans(.strong).contains("monthly"))
-        XCTAssertTrue(spans(.strikethrough).contains("old"))
-        XCTAssertTrue(spans(.highlight).contains("check"))
-        XCTAssertTrue(spans(.marker).contains("| --- | ---: |"))
+        XCTAssertTrue(spans(\.emphasis).contains("Анна Смирнова"))
+        XCTAssertTrue(spans(\.link).contains("реестр"))
+        XCTAssertTrue(spans(\.code).contains("пункт 4.2"))
+        XCTAssertTrue(spans(\.strong).contains("monthly"))
+        XCTAssertTrue(spans(\.strikethrough).contains("old"))
+        XCTAssertTrue(spans(\.highlight).contains("check"))
+        XCTAssertTrue(spans(\.marker).contains("| --- | ---: |"))
         // A converter's `1\.`: only the backslash is a marker.
-        XCTAssertTrue(spans(.marker).contains("\\"))
+        XCTAssertTrue(spans(\.marker).contains("\\"))
         XCTAssertEqual(styling.spans.compactMap(\.color), [0xC039_2BFF])
         let kinds = styling.lines.map(\.kind)
-        for kind: MarkdownLine.Kind in [.heading(level: 1), .heading(level: 2), .quote, .tableHeader, .tableRow, .codeBlock, .rule] {
+        for kind: MarkdownLineKind in [.heading(level: 1), .heading(level: 2), .quote, .tableHeader, .tableRow, .codeBlock, .rule] {
             XCTAssertTrue(kinds.contains(kind), "no \(kind) line")
         }
     }
@@ -58,7 +63,7 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertEqual(units, (text as NSString).length)
 
         var expected = Array(repeating: Expected(), count: units)
-        func mark(_ range: SourceRange, _ change: (inout Expected) -> Void) {
+        func mark(_ range: TextRange, _ change: (inout Expected) -> Void) {
             let ns = offsets.nsRange(range)
             for unit in ns.location..<(ns.location + ns.length) {
                 change(&expected[unit])
@@ -74,12 +79,12 @@ final class MarkdownStylingTests: XCTestCase {
         }
         for span in styling.spans {
             mark(span.range) { unit in
-                if span.kinds.contains(.strong) { unit.bold = true }
-                if span.kinds.contains(.emphasis) { unit.italic = true }
-                if span.kinds.contains(.code) { unit.monospaced = true }
-                if span.kinds.contains(.marker) { unit.marker = true }
-                if span.kinds.contains(.link) { unit.link = true }
-                if span.kinds.contains(.strikethrough) { unit.struck = true }
+                if span.strong { unit.bold = true }
+                if span.emphasis { unit.italic = true }
+                if span.code { unit.monospaced = true }
+                if span.marker { unit.marker = true }
+                if span.link { unit.link = true }
+                if span.strikethrough { unit.struck = true }
             }
         }
 
@@ -126,7 +131,7 @@ final class MarkdownStylingTests: XCTestCase {
             let bytes = Array(text.utf8)
             let needle = Array(word.utf8)
             let start = try XCTUnwrap((0...(bytes.count - needle.count)).first { Array(bytes[$0..<($0 + needle.count)]) == needle })
-            return Candidate(
+            return mdoc.Candidate(
                 id: CandidateID(rawValue: "c\(index)"), identityID: IdentityID(rawValue: "i\(index)"),
                 range: SourceRange(start: start, end: start + needle.count),
                 original: word, alias: "PERSON_\(index + 1)", category: .person, state: .proposed)
@@ -146,9 +151,9 @@ final class MarkdownStylingTests: XCTestCase {
     func testAReplacedAliasKeepsItsTablesFont() throws {
         let text = "| Name | Role |\n| --- | --- |\n| Maya Bennett | Tenant |"
         let styling = MarkdownStyling(markdown: text)
-        func candidate(_ word: String, _ index: Int) throws -> Candidate {
+        func candidate(_ word: String, _ index: Int) throws -> mdoc.Candidate {
             let start = try XCTUnwrap(text.range(of: word)).lowerBound.utf16Offset(in: text)
-            return Candidate(
+            return mdoc.Candidate(
                 id: CandidateID(rawValue: "c\(index)"), identityID: IdentityID(rawValue: "i\(index)"),
                 range: SourceRange(start: start, end: start + word.utf8.count),
                 original: word, alias: "PERSON_\(index)", category: .person, state: .replaced)

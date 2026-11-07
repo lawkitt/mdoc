@@ -153,7 +153,7 @@ private struct DocumentsSearch: ViewModifier {
 /// A document on the Documents page (ADR 0099): a source tile, the title, then the state
 /// in its color, when it last changed, and the case as a tag.
 struct DocumentRow: View {
-    let document: DocumentSummary
+    let document: LibraryDocument
     let caseSummary: CaseSummary?
     let findsNames: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -267,7 +267,7 @@ struct DocumentRow: View {
 
 /// The long-press preview of a document: its row, larger.
 private struct DocumentPreview: View {
-    let document: DocumentSummary
+    let document: LibraryDocument
     let caseSummary: CaseSummary?
     let findsNames: Bool
 

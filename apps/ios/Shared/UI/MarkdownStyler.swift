@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 
 /// Builds the document's attributed Markdown source from the core's spans,
@@ -82,10 +83,12 @@ struct MarkdownStyler {
             }
             index = NSMaxRange(line)
         }
-        func clamp(_ range: SourceRange) -> NSRange? {
-            let clipped = NSIntersectionRange(offsets.nsRange(range), NSRange(location: 0, length: length))
+        func clamp(_ range: NSRange) -> NSRange? {
+            let clipped = NSIntersectionRange(range, NSRange(location: 0, length: length))
             return clipped.length > 0 ? clipped : nil
         }
+        func clamp(_ range: TextRange) -> NSRange? { clamp(offsets.nsRange(range)) }
+        func clamp(_ range: SourceRange) -> NSRange? { clamp(offsets.nsRange(range)) }
 
         let tableFont = UIFont.monospacedSystemFont(
             ofSize: Self.font(.footnote, traits: traits).pointSize, weight: .regular)
@@ -94,8 +97,8 @@ struct MarkdownStyler {
             guard let range = clamp(line.range) else { continue }
             switch line.kind {
             case .heading(let level):
-                text.addAttribute(.font, value: headingFont(level: level), range: range)
-                text.addAttribute(.accessibilityTextHeadingLevel, value: level, range: range)
+                text.addAttribute(.font, value: headingFont(level: Int(level)), range: range)
+                text.addAttribute(.accessibilityTextHeadingLevel, value: Int(level), range: range)
             case .quote:
                 text.addAttribute(.foregroundColor, value: UIColor.secondaryLabel, range: range)
             case .codeBlock:
@@ -122,12 +125,12 @@ struct MarkdownStyler {
 
         // Inline spans add to the line's font: bold in a heading stays the
         // heading's size.
-        for span in styling.spans where !span.kinds.contains(.marker) {
+        for span in styling.spans where !span.marker {
             guard let range = clamp(span.range) else { continue }
             var added: UIFontDescriptor.SymbolicTraits = []
-            if span.kinds.contains(.strong) { added.insert(.traitBold) }
-            if span.kinds.contains(.emphasis) { added.insert(.traitItalic) }
-            let code = span.kinds.contains(.code)
+            if span.strong { added.insert(.traitBold) }
+            if span.emphasis { added.insert(.traitItalic) }
+            let code = span.code
             if code || !added.isEmpty {
                 text.enumerateAttribute(.font, in: range) { value, part, _ in
                     var font = value as? UIFont ?? body
@@ -140,16 +143,16 @@ struct MarkdownStyler {
             if code {
                 text.addAttribute(.backgroundColor, value: UIColor.tertiarySystemFill, range: range)
             }
-            if span.kinds.contains(.strikethrough) {
+            if span.strikethrough {
                 text.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
-            if span.kinds.contains(.underline) {
+            if span.underline {
                 text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
-            if span.kinds.contains(.link) {
+            if span.link {
                 text.addAttribute(.foregroundColor, value: UIColor.tintColor, range: range)
             }
-            if span.kinds.contains(.highlight) {
+            if span.highlight {
                 text.addAttribute(.backgroundColor, value: Self.highlight, range: range)
             }
             // The document's own colours, as the desktop draws them.
@@ -162,7 +165,7 @@ struct MarkdownStyler {
         }
         // Markers last, so they stay dimmed, or hidden, whatever they sit in.
         var hidden: [NSRange] = []
-        for span in styling.spans where span.kinds.contains(.marker) {
+        for span in styling.spans where span.marker {
             guard let range = clamp(span.range) else { continue }
             if rendered {
                 text.addAttributes(Self.hiddenAttributes, range: range)

@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 
 /// The swipeable card under review (ADR 0098): the category icon, the name
@@ -115,7 +116,7 @@ struct ReviewCard: View {
                         Image(systemName: choice.category.symbol)
                     }
                 }
-                .disabled(choice.isCurrent)
+                .disabled(choice.current)
             }
             // Belongs to… for contacts and identifiers, or once an owner is
             // set (ADR 0032).
@@ -224,14 +225,14 @@ struct ReviewCard: View {
         let count = identity?.mentionCount ?? 1
         return Menu {
             Picker("Scope", selection: $model.reviewScope) {
-                Text("All \(count)").tag(Scope.allOccurrences)
-                Text("This one").tag(Scope.justThisOne)
+                Text("All \(count)").tag(Scope.all)
+                Text("This one").tag(Scope.this)
             }
         } label: {
-            Chip(model.reviewScope == .allOccurrences ? Text("All \(count)") : Text("This one"), opensMenu: true)
+            Chip(model.reviewScope == .all ? Text("All \(count)") : Text("This one"), opensMenu: true)
         }
         .disabled(count < 2)
-        .accessibilityLabel(Text(model.reviewScope == .allOccurrences ? "Scope, all \(count) mentions" : "Scope, this one"))
+        .accessibilityLabel(Text(model.reviewScope == .all ? "Scope, all \(count) mentions" : "Scope, this one"))
         .accessibilityIdentifier("review-scope")
     }
 
@@ -294,7 +295,7 @@ struct ReviewCard: View {
 
     // MARK: Merge hint
 
-    private func hintLine(_ hint: MergeHint) -> some View {
+    private func hintLine(_ hint: LinkHint) -> some View {
         HStack(spacing: Space.xs) {
             Image(systemName: "sparkles")
                 .foregroundStyle(.secondary)
