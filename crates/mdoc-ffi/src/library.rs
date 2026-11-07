@@ -254,6 +254,7 @@ impl Library {
             });
         }
         documents.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.title.cmp(&b.title)));
+        self.prune_document_states();
         Ok(documents)
     }
 

@@ -750,4 +750,127 @@ mod tests {
             session.review(action, Some(library.clone())).unwrap();
         });
     }
+
+    /// documents.json that cannot be written never stops a save, nor the
+    /// saves after it.
+    #[test]
+    fn an_unwritable_index_never_stops_saving() {
+        let scratch = Scratch::new();
+        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        // Its temporary file is a folder: every write of it fails.
+        std::fs::create_dir_all(scratch.path().join("documents.json.part")).unwrap();
+        let (session, start) = session("Ann Lee met Bob Hart.", &["Ann Lee", "Bob Hart"]);
+        let first = session.save(library.clone()).unwrap();
+        assert_eq!(session.info().unwrap().case_id, Some(first.case.id.clone()));
+        let keep = ReviewAction::Keep {
+            mention: id(&start, "Bob Hart", 0),
+            scope: Scope::This,
+        };
+        let kept = session.review(keep, Some(library.clone())).unwrap();
+        assert_eq!(kept.case_id, Some(first.case.id));
+        assert!(!scratch.path().join("documents.json").exists());
+    }
+
+    /// Ids stay through the identity tools too: Rename, Category, New
+    /// alias and Same as rewrite aliases in the text; a mark adds a mention
+    /// with an id of its own.
+    #[test]
+    fn mention_ids_survive_the_identity_tools() {
+        let text = "Ann Lee met Ann Lee and Bob Hart. Mia paid.";
+        let (session, _) = session(text, &["Ann Lee", "Bob Hart"]);
+        let start = session.review(ReviewAction::ReplaceAll, None).unwrap();
+        let column = |snapshot: &ReviewSnapshot| -> Vec<u64> {
+            snapshot.mentions.iter().map(|m| m.id).collect()
+        };
+        let before = column(&start);
+        let (ann, again, bob) = (before[0], before[1], before[2]);
+        let bob_identity = start.mentions[2].identity.unwrap();
+        let steps = [
+            ReviewAction::Rename {
+                mention: ann,
+                scope: Scope::All,
+                alias: "CLIENT".into(),
+            },
+            ReviewAction::SetCategory {
+                mention: bob,
+                scope: Scope::All,
+                category: Category::Organization,
+            },
+            ReviewAction::NewAlias { mention: again },
+            ReviewAction::SameAs {
+                mention: again,
+                scope: Scope::This,
+                target: bob_identity,
+            },
+        ];
+        let mut texts = vec![start.text.clone()];
+        for step in steps {
+            let after = session.review(step.clone(), None).unwrap();
+            assert_eq!(column(&after), before, "{step:?}");
+            texts.push(after.text);
+        }
+        texts.dedup();
+        assert_eq!(texts.len(), 5, "each tool rewrote the text: {texts:?}");
+        let mia = texts[4].find("Mia").unwrap() as u64;
+        let marked = session
+            .review(
+                ReviewAction::Mark {
+                    range: TextRange {
+                        start: mia,
+                        end: mia + 3,
+                    },
+                    category: Some(Category::Person),
+                },
+                None,
+            )
+            .unwrap();
+        let ids = column(&marked);
+        assert_eq!(ids[..3], before[..]);
+        assert!(!before.contains(&ids[3]));
+    }
+
+    /// Refused for its pending proposals, Copy for AI leaves the current
+    /// case as it was.
+    #[test]
+    fn a_refused_hand_off_keeps_the_current_case() {
+        let scratch = Scratch::new();
+        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let (shared, _) = session("Ann Lee wrote.", &["Ann Lee"]);
+        let shared = shared
+            .review(ReviewAction::ReplaceAll, Some(library.clone()))
+            .unwrap();
+        let first = DocumentSession::new();
+        first
+            .import_text("Ann Lee wrote.".into(), "First".into())
+            .unwrap();
+        first
+            .review(ReviewAction::ReplaceAll, Some(library.clone()))
+            .unwrap();
+        first.hand_off(Some(library.clone())).unwrap();
+        let current = library.current_case().unwrap().id;
+        let (pending, _) = session("Bob Hart wrote.", &["Bob Hart"]);
+        pending.save(library.clone()).unwrap();
+        assert!(matches!(
+            pending.hand_off(Some(library.clone())),
+            Err(ReviewError::PendingProposals { count: 1 })
+        ));
+        assert_eq!(library.current_case().unwrap().id, current);
+        assert_ne!(shared.case_id, Some(current));
+    }
+
+    /// An entry whose file is gone goes when the library lists documents.
+    #[test]
+    fn the_index_forgets_documents_that_are_gone() {
+        let scratch = Scratch::new();
+        let library = Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap();
+        let index = || std::fs::read_to_string(scratch.path().join("documents.json")).unwrap();
+        let (session, _) = session("Ann Lee wrote.", &["Ann Lee"]);
+        let path = session.save(library.clone()).unwrap().path;
+        assert!(index().contains("Letter"));
+        library.documents().unwrap();
+        assert!(index().contains("Letter"), "its file is there");
+        std::fs::remove_file(&path).unwrap();
+        assert!(library.documents().unwrap().is_empty());
+        assert!(!index().contains("Letter"));
+    }
 }

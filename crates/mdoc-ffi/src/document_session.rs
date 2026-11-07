@@ -124,8 +124,9 @@ struct Jobs {
     id: u64,
     /// The latest job has not ended.
     running: bool,
-    /// `cancel` came while no job ran: the next job starts cancelled.
-    pending: bool,
+    /// `cancel_job` named the next job before it started: it starts
+    /// cancelled.
+    pending: Option<u64>,
 }
 
 /// A running job's cancel flag; dropping it ends the job.
@@ -251,14 +252,31 @@ impl DocumentSession {
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
     /// at its next checkpoint (model loads and native calls finish first).
-    /// With no job running, the next job to start stops at once: a cancel
-    /// the platform passes on just before the job starts is never lost.
+    /// With no job running it does nothing, so a cancel that comes late
+    /// never stops a later job; to stop a job that may not have started
+    /// yet, use `cancel_job(next_job())`.
     pub fn cancel(&self) {
-        let mut jobs = self.lock_job();
+        let jobs = self.lock_job();
         if jobs.running {
             jobs.flag.store(true, Ordering::Relaxed);
-        } else {
-            jobs.pending = true;
+        }
+    }
+
+    /// The id the next job (import, open or scan) gets: take it just
+    /// before the call, and `cancel_job` stops that job whenever the cancel
+    /// comes, before it starts or while it runs (#680).
+    pub fn next_job(&self) -> u64 {
+        self.lock_job().id + 1
+    }
+
+    /// Stop job `job` (`next_job`): the running one now, the next one as
+    /// it starts; one that ended, or a later one, is left alone.
+    pub fn cancel_job(&self, job: u64) {
+        let mut jobs = self.lock_job();
+        if job == jobs.id && jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        } else if job == jobs.id + 1 {
+            jobs.pending = Some(job);
         }
     }
 
@@ -700,14 +718,16 @@ impl Document {
                 library.create_locked(&lock, case)?
             }
         };
-        library.set_document_state(
+        self.case = Some(case.id.clone());
+        // The document and its case are saved: an entry that cannot be
+        // written only makes it reopen as one saved before entries were.
+        let _ = library.set_document_state(
             &lock,
             &path,
             Some(crate::library::DocumentState {
                 scanned: self.scanned,
             }),
-        )?;
-        self.case = Some(case.id.clone());
+        );
         self.saved = Some(self.change_key());
         Ok(SavedDocument {
             path: path.display().to_string(),
@@ -780,12 +800,13 @@ impl DocumentSession {
     }
 
     /// A new job: the one before stops at its next checkpoint, and a
-    /// cancel that came while none ran stops this one.
+    /// `cancel_job` that named this one before it started stops it.
     fn start_job(&self) -> Job<'_> {
         let mut jobs = self.lock_job();
         jobs.flag.store(true, Ordering::Relaxed);
-        jobs.flag = Arc::new(AtomicBool::new(std::mem::take(&mut jobs.pending)));
         jobs.id += 1;
+        let cancelled = jobs.pending.take() == Some(jobs.id);
+        jobs.flag = Arc::new(AtomicBool::new(cancelled));
         jobs.running = true;
         Job {
             session: self,
@@ -942,27 +963,44 @@ mod tests {
         assert_eq!(next.unwrap().text, "Older");
     }
 
-    /// #680: a cancel the platform passes on just before the job starts
-    /// stops it, for an import and for a scan; the job after it runs.
+    /// #680: a cancel for the job about to start stops it, for an import
+    /// and for a scan; the job after it runs.
     #[test]
     fn a_cancel_just_before_a_job_stops_it() {
         let scratch = Scratch::new();
         let path = scratch.path().join("old.md");
         std::fs::write(&path, "Ann Lee, ann@example.com.").unwrap();
+        let import = |session: &DocumentSession| {
+            session.import_file(path.display().to_string(), ImportOptions::default(), None)
+        };
         let session = session("Current", "Current");
-        session.cancel();
-        let result =
-            session.import_file(path.display().to_string(), ImportOptions::default(), None);
+        session.cancel_job(session.next_job());
+        let result = import(&session);
         assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
         assert_eq!(session.snapshot().unwrap().text, "Current");
-        session
-            .import_file(path.display().to_string(), ImportOptions::default(), None)
-            .unwrap();
-        session.cancel();
+        import(&session).unwrap();
+        session.cancel_job(session.next_job());
         let result = session.scan(None, None);
         assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
         assert!(session.snapshot().unwrap().mentions.is_empty());
         assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+    }
+
+    /// A cancel that comes after its job ended, as the platform's handler
+    /// may while the app saves, never stops the next job.
+    #[test]
+    fn a_cancel_after_a_job_ended_leaves_the_next_one() {
+        let session = DocumentSession::new();
+        let job = session.next_job();
+        session
+            .import_text("Ann Lee, ann@example.com.".into(), "Letter".into())
+            .unwrap();
+        session.cancel_job(job);
+        session.cancel();
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+        // A ticket for a job two ahead is no ticket.
+        session.cancel_job(session.next_job() + 1);
+        session.scan(None, None).unwrap();
     }
 
     /// Save → reopen from the library → share → restore → save: the file

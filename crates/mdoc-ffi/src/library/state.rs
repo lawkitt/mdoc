@@ -1,8 +1,11 @@
 //! What the library keeps beside each document that neither its file nor
 //! its case holds: whether it was scanned, so a scan that found nothing
 //! reopens as scanned (ADR 0104). `documents.json` at the root, keyed as
-//! cases name members (`Library::member`); it holds no names and no text.
-//! Written under the library's write lock.
+//! cases name members (`Library::member`): file paths, whose names are the
+//! documents' titles and can hold originals, as the files' own names do.
+//! It holds no text and nothing more of a document. Written under the
+//! library's write lock; entries whose file is gone (removed outside the
+//! app, or by desktop) go when the library lists its documents.
 use super::{Library, WriteLock};
 use crate::CoreError;
 use std::{collections::BTreeMap, path::Path};
@@ -59,6 +62,28 @@ impl Library {
             self.set_document_state(lock, new, state)?;
         }
         Ok(())
+    }
+
+    /// Forget the entries whose file is gone; best effort, as a listing
+    /// calls it.
+    pub(crate) fn prune_document_states(&self) {
+        let gone = |states: &States| {
+            states
+                .documents
+                .keys()
+                .filter(|key| !self.root.join(key).exists())
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if gone(&self.states()).is_empty() {
+            return;
+        }
+        let Ok(_lock) = self.lock() else { return };
+        let mut states = self.states();
+        for key in gone(&states) {
+            states.documents.remove(&key);
+        }
+        let _ = self.write_states(&states);
     }
 
     fn key(&self, path: &Path) -> String {

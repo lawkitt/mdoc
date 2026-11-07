@@ -1409,29 +1409,25 @@ fn character_reference(text: &str) -> Option<(usize, String)> {
 }
 
 /// Every occurrence of `wording` in `source`, left to right without
-/// overlaps, as source byte ranges. Canonically equivalent spellings match,
-/// as the platforms' own string search matches them: a letter with its
-/// accent composed (NFC) or as a combining mark (NFD) is the same letter,
-/// and a match never splits a letter from its marks.
+/// overlaps, as source byte ranges. As the platforms' own string search,
+/// it matches whole characters (extended grapheme clusters) and treats
+/// canonically equivalent spellings as equal: a letter with its accent
+/// composed (NFC) or as a combining mark (NFD), Hangul as syllables or as
+/// jamo. A match never splits a character, so a letter is never found
+/// without its marks or vowel signs.
 pub fn occurrences(source: &str, wording: &str) -> Vec<Range<usize>> {
+    use unicode_segmentation::UnicodeSegmentation;
     let wording: String = wording.nfc().collect();
     if wording.is_empty() {
         return Vec::new();
     }
-    // The source in NFC, one piece per letter and the marks after it, and
-    // where each piece starts in both.
+    // The source in NFC, one piece per character, and where each piece
+    // starts in both.
     let mut text = String::with_capacity(source.len());
     let mut starts = Vec::new();
-    let mut chars = source.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        let mut end = at + c.len_utf8();
-        while let Some((i, mark)) = chars
-            .next_if(|&(_, mark)| unicode_normalization::char::canonical_combining_class(mark) != 0)
-        {
-            end = i + mark.len_utf8();
-        }
+    for (at, character) in source.grapheme_indices(true) {
         starts.push((text.len(), at));
-        text.extend(source[at..end].nfc());
+        text.extend(character.nfc());
     }
     starts.push((text.len(), source.len()));
     let source_at = |offset: usize| {
@@ -1470,6 +1466,16 @@ mod occurrence_tests {
         assert_eq!(occurrences("Анна Анна", "Анна"), [0..8, 9..17]);
         assert!(occurrences("text", "").is_empty());
         assert_eq!(occurrences("aaaa", "aa"), [0..2, 2..4]);
+        // Hangul: jamo (NFD) and syllables (NFC) find each other.
+        let jamo = "\u{1100}\u{1161}\u{11a8} \u{1100}\u{1161}\u{11a8}";
+        assert_eq!(occurrences(jamo, "\u{ac01}"), [0..9, 10..19]);
+        assert_eq!(
+            occurrences("\u{ac01}", "\u{1100}\u{1161}\u{11a8}"),
+            vec![0..3]
+        );
+        // A vowel sign stays with its letter: "कि" holds no "क".
+        assert!(occurrences("\u{915}\u{93f}", "\u{915}").is_empty());
+        assert_eq!(occurrences("\u{915} \u{915}\u{93f}", "\u{915}"), vec![0..3]);
     }
 }
 
