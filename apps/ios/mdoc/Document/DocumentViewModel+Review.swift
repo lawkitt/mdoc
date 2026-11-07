@@ -306,7 +306,7 @@ extension DocumentViewModel {
 
     /// The category menu: each category with the alias it would give.
     func categoryChoices(for candidate: Candidate) -> [CategoryChoice] {
-        (try? session.categoryChoices(for: candidate.id, scope: reviewScope))
+        (try? session.categoryChoices(for: candidate, scope: reviewScope))
             ?? Category.allCases.map { CategoryChoice(category: $0, alias: nil, isCurrent: $0 == candidate.category) }
     }
 

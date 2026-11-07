@@ -114,7 +114,11 @@ final class RealCoreTests: XCTestCase {
     func testShareWaitsForReviewThenRestoresWithTheCase() throws {
         let core = try core()
         let session = try reviewed(core)
-        XCTAssertThrowsError(try session.copyForAI())
+        // The core refuses while proposals wait, with how many.
+        let pending = session.snapshot().pendingCount
+        XCTAssertThrowsError(try session.copyForAI()) { error in
+            XCTAssertEqual(error as? CoreError, .pendingReview(pending))
+        }
         let ready = try session.replaceAllPending()
         XCTAssertEqual(ready.phase, .ready)
         let handOff = try session.copyForAI()
@@ -289,7 +293,7 @@ final class RealCoreTests: XCTestCase {
         XCTAssertFalse(reopened.markdown.contains("CONTACT"))
         XCTAssertTrue(try session.redo().markdown.contains("CONTACT"))
 
-        let choices = try session.categoryChoices(for: name.id, scope: .allOccurrences)
+        let choices = try session.categoryChoices(for: name, scope: .allOccurrences)
         XCTAssertEqual(choices.count, Category.allCases.count)
         XCTAssertEqual(choices.filter(\.isCurrent).map(\.category), [name.category])
         var person = name
@@ -346,7 +350,7 @@ final class RealCoreTests: XCTestCase {
         _ = try session.scan(observer: TestObserver())
         XCTAssertEqual(try session.replaceAllPending().phase, .ready)
         XCTAssertThrowsError(try core.library.renameDocument(session.id, to: "  ")) { error in
-            XCTAssertEqual(error as? CoreError, .refused("A document needs a title."))
+            XCTAssertEqual(error as? CoreError, .invalid("A document needs a title."))
         }
 
         try core.library.renameCase(try XCTUnwrap(renamed.cases.first?.id), to: "Ellison")

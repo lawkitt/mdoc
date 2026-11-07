@@ -474,6 +474,9 @@
     "Find names" : {
 
     },
+    "Find names stopped: %@" : {
+
+    },
     "Find names, or select words in the text and choose Hide name." : {
 
     },
@@ -614,6 +617,12 @@
 
     },
     "mdoc could not read its case key from the Keychain (%lld)." : {
+
+    },
+    "mdoc could not read or write a file: %@" : {
+
+    },
+    "mdoc could not save this change: %@" : {
 
     },
     "mdoc downloads its name detector and text recognition once (%@). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first." : {
@@ -1159,6 +1168,12 @@
     "Text recognition (PP-OCR)" : {
 
     },
+    "Text recognition stopped: %@" : {
+
+    },
+    "That name is no longer in the document." : {
+
+    },
     "The document and its names stay as they are." : {
 
     },
@@ -1172,6 +1187,9 @@
 
     },
     "The import stopped when mdoc left the screen." : {
+
+    },
+    "The model could not be installed: %@" : {
 
     },
     "The scanned pages could not be read." : {

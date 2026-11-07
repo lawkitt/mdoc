@@ -50,7 +50,7 @@ final class SlowJobs: DocumentSession, @unchecked Sendable {
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot {
         try base.rename(candidate, scope: scope, to: alias)
     }
-    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice] {
+    func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice] {
         try base.categoryChoices(for: candidate, scope: scope)
     }
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: mdoc.Category) throws -> DocumentSnapshot {

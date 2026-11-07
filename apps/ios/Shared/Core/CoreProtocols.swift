@@ -6,8 +6,8 @@ import Foundation
 // thing the core calls back into the platform for.
 
 /// Progress and cooperative cancellation for a long core call: the real
-/// core reports stages through its `JobProgress` callback and stops when its
-/// session's `cancel()` is called.
+/// core reports stages through its `JobProgress` callback, and `onCancel`
+/// stops the job by its id (`cancel_job`), even one not started yet.
 protocol JobObserver: AnyObject, Sendable {
     func progress(_ update: JobUpdate)
     /// Polled between units of work; true ends the call with `CoreError.cancelled`.
@@ -74,8 +74,8 @@ protocol DocumentSession: AnyObject, Sendable {
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
-    /// Copy for AI's text, through the same export path as desktop. Fails
-    /// while proposals are pending. Records the document as shared last.
+    /// Copy for AI's text, through the same export path as desktop. The core
+    /// refuses while proposals are pending. Records the document as shared last.
     func copyForAI() throws -> HandOff
     /// Restores `reply` with this document's case and keeps it as the
     /// document's reply.
@@ -105,7 +105,7 @@ protocol DocumentSession: AnyObject, Sendable {
     /// identity that has the alias already: Same as is the way to it.
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot
     /// The category menu: each category with the alias choosing it gives.
-    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice]
+    func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice]
     /// The category of this mention (split off in it) or of its identity.
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot
     /// Same as…: `.allOccurrences` links the mention's identity into
