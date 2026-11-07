@@ -12,7 +12,9 @@ const CHATGPT_MD: &str = include_str!("../fixtures/from_html/chatgpt-ios.md");
 
 #[test]
 fn the_chatgpt_ios_copy_comes_back_as_markdown() {
-    assert_eq!(md(CHATGPT), CHATGPT_MD.trim_end());
+    // A Windows checkout may give the file CRLF.
+    let expected = CHATGPT_MD.replace("\r\n", "\n");
+    assert_eq!(md(CHATGPT), expected.trim_end());
 }
 
 #[test]
