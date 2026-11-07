@@ -11,8 +11,12 @@
 //! - [`syntax`]: the grammar the reader shares with the editor: alerts,
 //!   table styles, writing direction, links, highlight and styled tags.
 //!
+//! - [`from_html`]: Markdown from the HTML an app's Copy puts on the
+//!   clipboard (ADR 0105).
+//!
 //! Offsets are UTF-8 byte offsets into the source; markers are ASCII.
 
+pub mod from_html;
 pub mod lines;
 pub mod spans;
 pub mod syntax;
