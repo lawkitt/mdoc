@@ -143,6 +143,12 @@ at the top of the sidebar).
   recent cases, then New case… and All cases…; a toast says "Moved to
   <case> · Undo".
 - The core gains rename document, rename case and move to case.
+- **Amended in review (#660):** an emptied case is not deleted. Deleting
+  it lost the case an unsaved import was joining, and a case shared
+  before the current one, whose replies then no longer restored. The case
+  a document leaves stays, as on desktop (`delete_document` already
+  keeps one); deleting a case is a confirmed step of its own (ADR 0041),
+  for later.
 
 ### Q7. iPad, extras and PRs
 
@@ -158,4 +164,59 @@ at the top of the sidebar).
 
 ## Round 2: Identities
 
-Asked 2026-11-06; see the answers below once given.
+Identities today, on the sample: at half height the sheet fits two names
+under a title row, a search field with a stray underline and a four-way
+segmented filter. Each row has three lines and a "Replaced/Proposed" pill
+with words, grouped by category, so what is left to decide is spread over
+the sections. On the maintainer's own document (not quoted) one person
+appears twice, once in Latin and once in Cyrillic letters, as two
+identities. `mdoc-pii`'s merge hints treat transliteration as no signal on
+purpose (`initials_alone_and_transliteration_are_not_signals`), so nothing
+suggests they are one person.
+
+All seven recommendations were accepted.
+
+### Q8. Where Identities lives on iPhone
+
+- A **right-edge drawer**, the mirror of the sidebar: the documents on the
+  left, this document's names on the right. It slides in from the right
+  edge or the 🪪 button, with the same motion (`SideDrawer`, trailing). On
+  a wide iPad it stays the standing right column.
+- A tap on a name closes it and opens the review bar's full view on that
+  identity: the full view is the identity's detail.
+
+### Q9. Order
+
+- By what is left: *To review* first, then *Replaced*, then *Kept*
+  (folded). Each row shows its category's icon; a chip row filters by
+  category ("Person 2 · Organization 2 · Address 3").
+
+### Q10. Rows
+
+- Two lines at most: the category icon in its colour, the name, and its
+  other spellings in grey ("· Ms Bennett"); then the alias and "3×".
+- A trailing round state button, like Reminders' checkbox and the full
+  view's state marks: a tap replaces a proposed name, then switches
+  Replaced and Kept, with an Undo toast. Swipes and the long press stay.
+
+### Q11. Top of the panel
+
+- A summary line ("15 names · 4 to review") with a small progress ring, a
+  filled **Replace 4** for the names left, and a search circle that widens
+  across the panel, as in Claude. No title row, Done or segmented filter.
+
+### Q12. Merging and bulk
+
+- A **Looks like** card at the top for the core's merge hints ("Maya
+  Bennett · Ms Bennett", Same as, ×).
+- **Select:** tick rows, then Replace, Keep or Same as (merge them into
+  one). Drag a row onto another to merge stays on iPad.
+
+### Q13. Transliterated pairs
+
+- Not in this run: a ROADMAP item for its own grill, since it changes
+  recognition on desktop too. Select and Same as fix a pair by hand.
+
+### Q14. Where it ships
+
+- PR 4, after the sidebar, sharing its drawer.

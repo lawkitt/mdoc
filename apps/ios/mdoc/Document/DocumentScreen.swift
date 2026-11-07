@@ -12,6 +12,8 @@ struct DocumentScreen: View {
     var isNarrow = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.showSidebar) private var showSidebar
+    @Environment(\.appModel) private var app
     @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
     @AppStorage(MarkdownDisplay.serifKey, store: MarkdownDisplay.store) private var serif = false
 
@@ -324,8 +326,52 @@ struct DocumentScreen: View {
         return panes
     }
 
+    @ViewBuilder
+    private var titleMenu: some View {
+        if model.snapshot.phase == .ready {
+            Button {
+                model.copyForAI { UIPasteboard.general.string = $0 }
+            } label: {
+                Label("Copy for AI", systemImage: "doc.on.doc")
+            }
+        }
+        if let app, let document = app.home.documents.first(where: { $0.id == model.id }) {
+            DocumentMenuItems(app: app, document: document)
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if let showSidebar {
+            SidebarButton(action: showSidebar)
+        }
+        if panes.count == 1 {
+            // Tapping the title: the document's menu, as in Claude. A title
+            // of its own truncates, so Identities and ⋯ keep their place.
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    titleMenu
+                } label: {
+                    HStack(spacing: Space.xxs) {
+                        Text(model.snapshot.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            // Room for ☰ and the trailing buttons on a phone.
+                            .frame(maxWidth: isRegular ? 420 : 170)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .accessibilityLabel(Text(model.snapshot.title))
+                .accessibilityHint(Text("Rename, move, share or delete the document."))
+                .accessibilityIdentifier("title-menu")
+            }
+        }
         if panes.count > 1 {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: paneBinding) {
@@ -343,7 +389,8 @@ struct DocumentScreen: View {
                 .accessibilityIdentifier("pane-picker")
             }
         }
-        ToolbarItem(placement: .primaryAction) {
+        // One group: beside a title menu, separate items overflow into More.
+        ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
                 showIdentities(!model.showsIdentities)
             } label: {
@@ -351,8 +398,6 @@ struct DocumentScreen: View {
             }
             .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
             .accessibilityIdentifier("identities-button")
-        }
-        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button {
                     model.showsFind = true
@@ -366,6 +411,10 @@ struct DocumentScreen: View {
                     Label("Show Markdown", systemImage: "number")
                 }
                 .accessibilityIdentifier("show-markdown")
+                // The title's menu too, where the title shows Text and Original.
+                if panes.count > 1 {
+                    Section { titleMenu }
+                }
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }

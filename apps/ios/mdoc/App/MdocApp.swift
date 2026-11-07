@@ -83,6 +83,7 @@ struct RootView: View {
     @State private var windowWidth: CGFloat = 0
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Narrower than every iPad in landscape, wider than every iPad in portrait.
     static let narrowWindow: CGFloat = 1100
@@ -96,40 +97,78 @@ struct RootView: View {
     }
 
     var body: some View {
+        Group {
+            if sizeClass == .compact {
+                compact
+            } else {
+                regular
+            }
+        }
+        .modifier(IntakeFlows(app: app))
+        .modifier(DocumentCommandsPresenter(app: app))
+        .environment(\.appModel, app)
+        .background { keyboardShortcuts }
+        .sheet(isPresented: $app.showsSettings) {
+            SettingsView(setup: app.setup) {
+                app.showsSettings = false
+                app.trySample()
+            }
+        }
+    }
+
+    /// A hardware keyboard: ⌘K searches documents and cases, ⌘N starts
+    /// something new, as in the Claude app.
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("Search documents and cases") { app.requestSearch() }
+                .keyboardShortcut("k", modifiers: .command)
+            Button("New document") { app.showStart() }
+                .keyboardShortcut("n", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// iPhone (and a narrow iPad window): the sidebar lies under the screen,
+    /// which slides aside to show it (docs/mobile-ui.md, Sidebar).
+    private var compact: some View {
+        SideDrawer(isOpen: $app.showsSidebar) {
+            SidebarView(app: app)
+        } content: {
+            NavigationStack {
+                main
+            }
+            .environment(\.showSidebar) {
+                withAnimation(Motion.move(reduced: reduceMotion)) { app.showsSidebar = true }
+            }
+        }
+    }
+
+    /// A wide iPad: the same sidebar as the standing first column.
+    private var regular: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            HomeView(app: app)
+            SidebarView(app: app)
                 // At accessibility sizes a wider sidebar keeps titles whole.
                 .navigationSplitViewColumnWidth(
                     min: 280, ideal: dynamicTypeSize.isAccessibilitySize ? 420 : 320, max: 480)
+                .toolbar(.hidden, for: .navigationBar)
         } detail: {
-            if let error = app.startupError {
-                ContentUnavailableView(
-                    "mdoc could not open its documents",
-                    systemImage: "exclamationmark.lock",
-                    description: Text(error))
-            } else if let id = app.selection, let model = app.documentModel(for: id) {
-                DocumentScreen(model: model, setup: app.setup, isNarrow: isNarrow)
-                    .id(id)
-                    .toolbar {
-                        // The system's sidebar button does not show beside
-                        // the document's inspector, so it gets its own.
-                        if isNarrow && columns == .detailOnly {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button {
-                                    columns = .all
-                                } label: {
-                                    Label("Show Sidebar", systemImage: "sidebar.leading")
-                                }
-                                .accessibilityIdentifier("show-sidebar")
+            main
+                .toolbar {
+                    // The system's sidebar button does not show beside
+                    // the document's inspector, so it gets its own.
+                    if isNarrow && columns == .detailOnly {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                columns = .all
+                            } label: {
+                                Label("Show Sidebar", systemImage: "sidebar.leading")
                             }
+                            .accessibilityIdentifier("show-sidebar")
                         }
                     }
-            } else {
-                ContentUnavailableView(
-                    "No document open",
-                    systemImage: "doc.text",
-                    description: Text("Choose a document, or add one with +."))
-            }
+                }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
             let changes = isNarrow(width) != isNarrow
@@ -138,10 +177,24 @@ struct RootView: View {
         }
         .onChange(of: app.selection) { fitColumns(narrow: isNarrow) }
         .onChange(of: sizeClass) { fitColumns(narrow: isNarrow) }
-        .sheet(isPresented: $app.showsSettings) {
-            SettingsView(setup: app.setup) {
-                app.showsSettings = false
-                app.trySample()
+    }
+
+    /// The main area: a document, a section's page, or Start.
+    @ViewBuilder
+    private var main: some View {
+        if let error = app.startupError {
+            ContentUnavailableView(
+                "mdoc could not open its documents",
+                systemImage: "exclamationmark.lock",
+                description: Text(error))
+        } else if let id = app.selection, let model = app.documentModel(for: id) {
+            DocumentScreen(model: model, setup: app.setup, isNarrow: isNarrow)
+                .id(id)
+        } else {
+            switch app.section {
+            case .cases: CasesView(app: app)
+            case .documents: HomeView(app: app)
+            case nil: StartView(app: app)
             }
         }
     }

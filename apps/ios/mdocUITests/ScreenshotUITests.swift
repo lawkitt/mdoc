@@ -65,6 +65,7 @@ final class ScreenshotUITests: XCTestCase {
         app.launchEnvironment["MDOC_REAL_DOWNLOADS"] = "1"
         app.launch()
 
+        MdocUITest.revealSidebar(app)
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'Tenancy scan'"))
             .firstMatch

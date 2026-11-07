@@ -26,7 +26,7 @@ final class RenderedMarkdownUITests: XCTestCase {
             app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo
                 .appendingPathComponent("tests/fixtures/mobile-markdown/rendering/\(name).md").path
             app.launch()
-            let row = app.descendants(matching: .any).matching(identifier: "document-row").firstMatch
+            let row = MdocUITest.anyDocumentRow(app)
             XCTAssertTrue(row.waitForExistence(timeout: 60), name)
             let started = Date()
             row.tap()

@@ -193,11 +193,40 @@ enum MdocUITest {
         element.tap()
     }
 
+    /// The sidebar holds the documents and Settings (docs/mobile-ui.md,
+    /// Sidebar): on iPhone it slides out from ☰; on a wide iPad it stands
+    /// beside the screen already.
+    @MainActor
+    static func revealSidebar(_ app: XCUIApplication) {
+        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+        if sidebar.exists && sidebar.isHittable { return }
+        let button = app.buttons["show-sidebar"].firstMatch
+        if button.waitForExistence(timeout: 5) {
+            button.tap()
+            _ = sidebar.waitForExistence(timeout: 3)
+        }
+    }
+
+    /// Settings, from the sidebar's ⚙.
+    @MainActor
+    static func openSettings(_ app: XCUIApplication) {
+        revealSidebar(app)
+        app.buttons["settings-button"].firstMatch.tap()
+    }
+
+    /// The first document row in the sidebar, which it slides out for.
+    @MainActor
+    static func anyDocumentRow(_ app: XCUIApplication) -> XCUIElement {
+        revealSidebar(app)
+        return app.descendants(matching: .any).matching(identifier: "document-row").firstMatch
+    }
+
     @MainActor
     static func documentRow(_ app: XCUIApplication, title: String = title) -> XCUIElement {
+        revealSidebar(app)
         // Rows read "<title>, <status>"; the row is ready to open once it
         // has candidates to review.
-        app.descendants(matching: .any)
+        return app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@ AND label CONTAINS 'to review'", title))
             .firstMatch
     }

@@ -592,6 +592,14 @@ memory, scan time, heat, OCR output) that come before mobile UI work.
 Copy and Paste reply; it replaces the review actions once nothing is left
 to decide.
 
+**Sidebar** (mobile): the panel under the screen on iPhone, and the first
+column on a wide iPad: search, Cases, Documents, To review, Recent, Settings
+and New ([ADR 0102](docs/adr/0102-mobile-sidebar.md)). The screen slides
+aside to show it.
+
+**Start** (mobile): the main area with no document open: setup, Continue,
+the add tiles and Try a sample.
+
 **Review bar**: the docked bar a phone reviews in, in place of the
 hand-off bar: progress line, review card, then Undo, Keep and Replace. The
 text stays scrollable under it; it replaces the candidate sheet

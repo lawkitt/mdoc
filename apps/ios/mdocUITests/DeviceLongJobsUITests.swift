@@ -162,10 +162,11 @@ final class DeviceLongJobsUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [found], timeout: timeout), .completed, "\(element) never matched \(predicate)")
     }
 
-    /// A Home row by title, whatever its status.
+    /// A sidebar row by title, whatever its status.
     @MainActor
     private static func row(_ app: XCUIApplication, title: String) -> XCUIElement {
-        app.descendants(matching: .any)
+        MdocUITest.revealSidebar(app)
+        return app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
             .firstMatch
     }

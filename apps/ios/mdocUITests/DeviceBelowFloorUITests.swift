@@ -32,6 +32,7 @@ final class DeviceBelowFloorUITests: XCTestCase {
     @MainActor
     private func scanRecognizeAndMark() throws {
         let app = launch(seed: MdocUITest.deviceScan)
+        MdocUITest.revealSidebar(app)
         let settings = app.buttons["settings-button"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists, "a setup card on Home below the floor")
@@ -155,10 +156,11 @@ final class DeviceBelowFloorUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [found], timeout: timeout), .completed, "\(element) never matched \(predicate)")
     }
 
-    /// A Home row by title, whatever its status.
+    /// A sidebar row by title, whatever its status.
     @MainActor
     private static func row(_ app: XCUIApplication, title: String) -> XCUIElement {
-        app.descendants(matching: .any)
+        MdocUITest.revealSidebar(app)
+        return app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
             .firstMatch
     }

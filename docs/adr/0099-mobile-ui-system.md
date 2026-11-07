@@ -1,6 +1,7 @@
 # Mobile UI system
 
-Status: Accepted, 2026-11-05. Amends [ADR 0087](0087-ios-ui-polish.md)
+Status: Accepted, 2026-11-05; Home became the sidebar, Start and the
+Documents page in [ADR 0102](0102-mobile-sidebar.md). Amends [ADR 0087](0087-ios-ui-polish.md)
 (Settings and Home) and [ADR 0085](0085-mobile-apps.md) (theme). Written for
 iOS first; Android follows the same decisions.
 
