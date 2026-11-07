@@ -250,7 +250,17 @@ impl DocumentSession {
             case,
             scanned: library.document_state(Path::new(&path)).map(|s| s.scanned),
         };
-        self.open(imported, &cancel, Some(opened))
+        let snapshot = self.open(imported, &cancel, Some(opened))?;
+        // Its summary, as it opened; best effort, as only lists read it.
+        if let Ok(lock) = library.lock() {
+            let _ = library.record_document(
+                &lock,
+                Path::new(&path),
+                snapshot.scanned,
+                counts(&snapshot),
+            );
+        }
+        Ok(snapshot)
     }
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
@@ -620,6 +630,37 @@ pub(crate) fn realias(
     Ok((review.text, exported))
 }
 
+/// A snapshot's counts, for the library's summary of the document.
+fn counts(snapshot: &ReviewSnapshot) -> crate::library::Counts {
+    crate::library::Counts {
+        proposed: snapshot.proposed,
+        replaced: snapshot.replaced,
+        kept: snapshot.kept,
+    }
+}
+
+/// The counts `open_document` would give a stored document with `text`,
+/// in `case` if any, without a session: what a summary falls back to.
+pub(crate) fn reopened_counts(
+    text: String,
+    case: Option<&mdoc_store::cases::Case>,
+) -> crate::library::Counts {
+    let mut review = ReviewText::new(text);
+    if let Some(case) = case {
+        review.open_case(&case.exported(), &case.reserved_aliases());
+    }
+    let review = &review.review;
+    crate::library::Counts {
+        proposed: review
+            .candidates()
+            .iter()
+            .filter(|c| review.variant(c.variant).is_some())
+            .count() as u64,
+        replaced: review.applied().len() as u64,
+        kept: review.kept_mentions().len() as u64,
+    }
+}
+
 /// What a document the library keeps brings when it is opened.
 struct Opened {
     path: Option<PathBuf>,
@@ -722,20 +763,16 @@ impl Document {
             }
         };
         self.case = Some(case.id.clone());
+        let review = self.snapshot();
         // The document and its case are saved: an entry that cannot be
-        // written only makes it reopen as one saved before entries were.
-        let _ = library.set_document_state(
-            &lock,
-            &path,
-            Some(crate::library::DocumentState {
-                scanned: self.scanned,
-            }),
-        );
+        // written only makes it reopen, and list, as one saved before
+        // entries were.
+        let _ = library.record_document(&lock, &path, self.scanned, counts(&review));
         self.saved = Some(self.change_key());
         Ok(SavedDocument {
             path: path.display().to_string(),
             case,
-            review: self.snapshot(),
+            review,
         })
     }
 }

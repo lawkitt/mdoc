@@ -1,0 +1,261 @@
+//! `Library::document_summaries`: counts from the library's record while
+//! each file is as recorded, and from the file otherwise.
+use super::*;
+use crate::{
+    DocumentSession,
+    document_session::{
+        Category, DocumentPhase, ProposedName, ReviewAction, ReviewSnapshot, Scope,
+    },
+    test_support::Scratch,
+};
+use std::sync::atomic::Ordering;
+
+fn library(scratch: &Scratch) -> Arc<Library> {
+    Library::new(scratch.path().display().to_string(), vec![3; 32]).unwrap()
+}
+
+/// `text` saved as `title`, with `names` proposed (a scan) unless `None`,
+/// and the first `replace` of its mentions replaced.
+fn saved(
+    library: &Arc<Library>,
+    text: &str,
+    title: &str,
+    names: Option<&[&str]>,
+    replace: usize,
+) -> (String, ReviewSnapshot) {
+    let session = DocumentSession::new();
+    session.import_text(text.into(), title.into()).unwrap();
+    let mut snapshot = session.snapshot().unwrap();
+    if let Some(names) = names {
+        let names = names
+            .iter()
+            .map(|wording| ProposedName {
+                wording: (*wording).into(),
+                category: Category::Person,
+            })
+            .collect();
+        snapshot = session
+            .review(ReviewAction::ProposeNames { names }, None)
+            .unwrap();
+    }
+    for mention in snapshot.mentions.clone().iter().take(replace) {
+        let action = ReviewAction::Replace {
+            mention: mention.id,
+            scope: Scope::This,
+        };
+        session.review(action, None).unwrap();
+    }
+    let saved = session.save(library.clone()).unwrap();
+    (saved.path, saved.review)
+}
+
+fn opens(library: &Library) -> usize {
+    library.summary_opens.load(Ordering::Relaxed)
+}
+
+fn summary<'a>(summaries: &'a [DocumentSummary], path: &str) -> &'a DocumentSummary {
+    summaries.iter().find(|s| s.path == path).unwrap()
+}
+
+/// What opening the document gives, which a summary must agree with.
+fn reopened(library: &Arc<Library>, path: &str) -> (u64, u64, u64, DocumentPhase) {
+    let snapshot = DocumentSession::new()
+        .open_document(library.clone(), path.into())
+        .unwrap();
+    (
+        snapshot.proposed,
+        snapshot.replaced,
+        snapshot.kept,
+        snapshot.phase,
+    )
+}
+
+fn counts(summary: &DocumentSummary) -> (u64, u64, u64, DocumentPhase) {
+    (
+        summary.proposed,
+        summary.replaced,
+        summary.kept,
+        summary.phase,
+    )
+}
+
+/// Documents as saved list from their records: nothing is opened.
+#[test]
+fn fresh_documents_list_without_opening_any() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (letter, review) = saved(
+        &library,
+        "Ann Lee met Bob Hart.",
+        "Letter",
+        Some(&["Ann Lee", "Bob Hart"]),
+        1,
+    );
+    let (empty, _) = saved(&library, "Nothing here.", "Empty", Some(&["Ann Lee"]), 0);
+    let (unscanned, _) = saved(&library, "Not scanned.", "Draft", None, 0);
+    for _ in 0..2 {
+        let summaries = library.document_summaries().unwrap();
+        assert_eq!(opens(&library), 0);
+        assert_eq!(summaries.len(), 3);
+        let letter = summary(&summaries, &letter);
+        assert_eq!(letter.title, "Letter");
+        assert_eq!(letter.case_id, review.case_id);
+        assert_eq!(counts(letter), (1, 1, 0, DocumentPhase::Reviewing));
+        assert!(letter.scanned && letter.opened.is_some());
+        let empty = summary(&summaries, &empty);
+        assert_eq!(counts(empty), (0, 0, 0, DocumentPhase::Ready));
+        assert_eq!(
+            summary(&summaries, &unscanned).phase,
+            DocumentPhase::Unscanned
+        );
+    }
+    let summaries = library.document_summaries().unwrap();
+    for path in [&letter, &empty, &unscanned] {
+        assert_eq!(counts(summary(&summaries, path)), reopened(&library, path));
+    }
+    // Paths and order as `documents` lists them.
+    let listed: Vec<_> = library
+        .documents()
+        .unwrap()
+        .into_iter()
+        .map(|d| d.path)
+        .collect();
+    let summarized: Vec<_> = summaries.into_iter().map(|s| s.path).collect();
+    assert_eq!(listed, summarized);
+}
+
+/// A file changed since its record (edited elsewhere, moved into another
+/// case) is read and counted as opening it would, once.
+#[test]
+fn a_changed_file_is_counted_again_once() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (letter, review) = saved(
+        &library,
+        "Ann Lee met Bob Hart.",
+        "Letter",
+        Some(&["Ann Lee", "Bob Hart"]),
+        2,
+    );
+    assert_eq!(review.text, "PERSON_1 met PERSON_2.");
+    std::fs::write(&letter, "PERSON_1 met PERSON_2, and Ann Lee again.").unwrap();
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 1);
+    let edited = summary(&summaries, &letter);
+    assert_eq!(counts(edited), (1, 2, 0, DocumentPhase::Reviewing));
+    assert!(edited.scanned, "its record still says scanned");
+    library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 1, "the record was brought up to date");
+    assert_eq!(counts(edited), reopened(&library, &letter));
+    // Moved into another case: rewritten for it, so counted again.
+    let (_, memo) = saved(&library, "Bob Hart wrote.", "Memo", Some(&["Bob Hart"]), 1);
+    let memo_case = memo.case_id.unwrap();
+    library
+        .move_document(letter.clone(), memo_case.clone())
+        .unwrap();
+    let before = opens(&library);
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), before + 1);
+    let moved = summary(&summaries, &letter);
+    assert_eq!(moved.case_id, Some(memo_case));
+    assert_eq!(counts(moved), reopened(&library, &letter));
+}
+
+/// Renamed or removed outside the app: the new file is counted, and the
+/// records of files gone are dropped.
+#[test]
+fn files_renamed_or_removed_outside_the_app() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let index = || std::fs::read_to_string(scratch.path().join("documents.json")).unwrap();
+    let (letter, _) = saved(&library, "Ann Lee wrote.", "Letter", Some(&["Ann Lee"]), 1);
+    let (memo, _) = saved(&library, "Bob Hart wrote.", "Memo", Some(&["Bob Hart"]), 0);
+    let renamed = library.documents_dir().join("Renamed.md");
+    std::fs::rename(&letter, &renamed).unwrap();
+    std::fs::remove_file(&memo).unwrap();
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 1);
+    assert_eq!(summaries.len(), 1);
+    let renamed = &summaries[0];
+    assert_eq!(renamed.title, "Renamed");
+    // Its case names the old file: in no case now, its alias as text.
+    assert_eq!(renamed.case_id, None);
+    assert!(!index().contains("Letter") && !index().contains("Memo"));
+    assert!(index().contains("Renamed"));
+}
+
+/// Saved before the library kept records: each is counted once, and
+/// scanned when it has mentions, as `open_document` tells it.
+#[test]
+fn documents_saved_before_records_are_counted_once() {
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let (letter, _) = saved(
+        &library,
+        "Ann Lee met Bob Hart.",
+        "Letter",
+        Some(&["Ann Lee", "Bob Hart"]),
+        1,
+    );
+    let (empty, _) = saved(&library, "Nothing here.", "Empty", Some(&["Ann Lee"]), 0);
+    std::fs::remove_file(scratch.path().join("documents.json")).unwrap();
+    let summaries = library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 2);
+    let letter = summary(&summaries, &letter);
+    assert_eq!(counts(letter), (1, 1, 0, DocumentPhase::Reviewing));
+    assert_eq!((letter.scanned, letter.opened), (true, None));
+    assert_eq!(summary(&summaries, &empty).phase, DocumentPhase::Unscanned);
+    library.document_summaries().unwrap();
+    assert_eq!(opens(&library), 2);
+    assert!(library.document_summaries().unwrap().len() == 2);
+}
+
+/// The library list for 50 documents of about 10 KB and 20 names each:
+/// today's path (`documents`, then `open_document` for each, as the iOS
+/// app's list does) against `document_summaries` with every record fresh,
+/// and with none (the first list after this change). `cargo test --release
+/// -p mdoc-ffi --lib measure_the_library_list -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement; run it in release"]
+fn measure_the_library_list() {
+    use std::time::Instant;
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let names: Vec<String> = (0..20).map(|n| format!("Name{n} Family{n}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    for d in 0..50 {
+        let mut text = String::new();
+        for i in 0..160 {
+            text += &format!("Clause {i}: {} agrees with the terms. ", names[i % 20]);
+        }
+        saved(&library, &text, &format!("Document {d}"), Some(&names), 30);
+    }
+    let time = |label: &str, run: &mut dyn FnMut()| {
+        let runs = 5;
+        let began = Instant::now();
+        for _ in 0..runs {
+            run();
+        }
+        eprintln!(
+            "{label}: {:.1} ms",
+            began.elapsed().as_secs_f64() * 1e3 / runs as f64
+        );
+    };
+    time("today: documents + open_document each", &mut || {
+        for document in library.documents().unwrap() {
+            DocumentSession::new()
+                .open_document(library.clone(), document.path)
+                .unwrap();
+        }
+    });
+    time("document_summaries, records fresh", &mut || {
+        assert_eq!(library.document_summaries().unwrap().len(), 50);
+    });
+    let index = scratch.path().join("documents.json");
+    let kept = std::fs::read(&index).unwrap();
+    time("document_summaries, no records", &mut || {
+        std::fs::remove_file(&index).unwrap();
+        library.document_summaries().unwrap();
+    });
+    std::fs::write(&index, kept).unwrap();
+}

@@ -4,11 +4,14 @@
 //! (`mdoc_store::cases::Store`) under the key the platform passes in; Rust
 //! never touches a keychain here.
 mod state;
+#[cfg(test)]
+mod summary_tests;
 
 use crate::CoreError;
 use mdoc_pii::restore::RestoreMap;
 use mdoc_store::cases::{Case, CaseLink, Store};
-pub(crate) use state::DocumentState;
+pub(crate) use state::Counts;
+use state::{DocumentState, Recorded, Stamp};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -35,6 +38,9 @@ pub struct Library {
     store: Store,
     /// One load, change and save at a time in this process.
     writes: Mutex<()>,
+    /// Documents `document_summaries` read to count them.
+    #[cfg(test)]
+    pub(crate) summary_opens: std::sync::atomic::AtomicUsize,
 }
 
 /// The longest file stem a title makes, in bytes: room for " 99.md" in a
@@ -95,6 +101,27 @@ pub struct StoredDocument {
     pub case_id: Option<String>,
     /// Seconds since the Unix epoch.
     pub modified: u64,
+}
+
+/// A document as lists show it (ADR 0104): its review's counts and phase
+/// without opening it. Nothing in it names a person beyond the title, which
+/// the file name holds already.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct DocumentSummary {
+    pub path: String,
+    pub title: String,
+    pub case_id: Option<String>,
+    pub phase: crate::document_session::DocumentPhase,
+    pub scanned: bool,
+    /// Proposals left, as the snapshot counts them.
+    pub proposed: u64,
+    pub replaced: u64,
+    pub kept: u64,
+    /// The file's last change, in seconds since the Unix epoch.
+    pub modified: u64,
+    /// When it was last opened or saved, in seconds since the Unix epoch;
+    /// `None` for one not opened since the library began keeping it.
+    pub opened: Option<u64>,
 }
 
 /// Where `rename_document` left a document.
@@ -197,6 +224,8 @@ impl Library {
             store: Store::with_key(root.join(CASES), &key),
             root,
             writes: Mutex::new(()),
+            #[cfg(test)]
+            summary_opens: Default::default(),
         }))
     }
 
@@ -226,23 +255,10 @@ impl Library {
     /// each with the case it belongs to.
     pub fn documents(&self) -> Result<Vec<StoredDocument>, CoreError> {
         let (cases, _) = self.store.list();
-        let entries = match std::fs::read_dir(self.documents_dir()) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(error.into()),
-        };
         let mut documents = Vec::new();
-        for entry in entries {
-            let path = entry?.path();
-            if !mdoc_store::document::is_markdown(&path) || !path.is_file() {
-                continue;
-            }
+        for (path, metadata) in self.markdown_files()? {
             let member = self.member(&path);
-            let modified = std::fs::metadata(&path)?
-                .modified()
-                .ok()
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |since| since.as_secs());
+            let modified = Stamp::of(&metadata).modified;
             documents.push(StoredDocument {
                 title: title_of(&path),
                 case_id: cases
@@ -256,6 +272,87 @@ impl Library {
         documents.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.title.cmp(&b.title)));
         self.prune_document_states();
         Ok(documents)
+    }
+
+    /// Every document in the documents folder, most recently changed first,
+    /// with its case and its review's counts and phase as of its last save
+    /// or open, read from the library's record without opening it. Only a
+    /// document whose file changed since (moved between cases, edited
+    /// elsewhere) or that has no record (saved before the library kept
+    /// one) is read and counted, as opening it would count it; its record
+    /// is brought up to date for the next list. The cases are read once.
+    pub fn document_summaries(&self) -> Result<Vec<DocumentSummary>, CoreError> {
+        let (cases, _) = self.store.list();
+        let mut states = self.states();
+        let mut changed = Vec::new();
+        let mut summaries = Vec::new();
+        for (path, metadata) in self.markdown_files()? {
+            let member = self.member(&path);
+            let case = cases.iter().find(|case| case.members.contains(&member));
+            let key = self.key(&path);
+            let stamp = Stamp::of(&metadata);
+            let state = states.documents.get(&key);
+            let (counts, scanned) = match state {
+                Some(DocumentState {
+                    scanned,
+                    summary: Some(recorded),
+                    ..
+                }) if recorded.stamp == stamp => (recorded.counts, *scanned),
+                _ => {
+                    #[cfg(test)]
+                    self.summary_opens
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let text = match std::fs::read_to_string(&path) {
+                        Ok(text) => text,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(error) => return Err(error.into()),
+                    };
+                    let counts = crate::document_session::reopened_counts(text, case);
+                    // As `open_document` tells a document without a record.
+                    let scanned = state
+                        .map_or(counts.proposed + counts.replaced + counts.kept > 0, |s| {
+                            s.scanned
+                        });
+                    let fresh = DocumentState {
+                        scanned,
+                        summary: Some(Recorded { counts, stamp }),
+                        opened: state.and_then(|s| s.opened),
+                    };
+                    changed.push((key.clone(), fresh));
+                    (counts, scanned)
+                }
+            };
+            summaries.push(DocumentSummary {
+                title: title_of(&path),
+                case_id: case.map(|case| case.id.clone()),
+                phase: crate::document_session::DocumentPhase::of(scanned, counts.proposed),
+                scanned,
+                proposed: counts.proposed,
+                replaced: counts.replaced,
+                kept: counts.kept,
+                modified: stamp.modified,
+                opened: states.documents.get(&key).and_then(|s| s.opened),
+                path: path.display().to_string(),
+            });
+        }
+        summaries.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.title.cmp(&b.title)));
+        // Records brought up to date, and those of files gone dropped;
+        // best effort, as a list never fails for them.
+        let gone = states
+            .documents
+            .keys()
+            .any(|key| !self.root.join(key).exists());
+        if (!changed.is_empty() || gone)
+            && let Ok(_lock) = self.lock()
+        {
+            states = self.states();
+            states
+                .documents
+                .retain(|key, _| self.root.join(key).exists());
+            states.documents.extend(changed);
+            let _ = self.write_states(&states);
+        }
+        Ok(summaries)
     }
 
     /// A new, empty case. Documents usually start their own case when they
@@ -901,6 +998,30 @@ impl Library {
             left: Some(left),
             added,
         })
+    }
+
+    /// The documents folder's Markdown files; none without the folder.
+    fn markdown_files(&self) -> Result<Vec<(PathBuf, std::fs::Metadata)>, CoreError> {
+        let entries = match std::fs::read_dir(self.documents_dir()) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let mut files = Vec::new();
+        for entry in entries {
+            let path = entry?.path();
+            if !mdoc_store::document::is_markdown(&path) {
+                continue;
+            }
+            // One removed while the folder is read is passed over.
+            match std::fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => files.push((path, metadata)),
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(files)
     }
 
     pub(crate) fn documents_dir(&self) -> PathBuf {
