@@ -111,12 +111,6 @@ Features are frozen until items 13–19 land (Q4).
    a first look from a Release dev build right after they merge (Q3).
    *Done when:* that build passes the check, or its findings are `ui`
    issues.
-9. **[Mobile] Rename and Move to case.** Grilled 2026-11-06
-   ([record](docs/design/ios-sidebar-grill-2026-11-06.md) Q6,
-   [ADR 0102](docs/adr/0102-mobile-sidebar.md)): Move follows desktop's
-   leave-then-join rule (ADR 0041), the old case keeping its mapping. The
-   core calls, then the sidebar's and the title's menus. *Done when:*
-   built.
 10. **[Mobile] The review bar follows the finger.** The drag, the full
     view's mention rows, Keep instead and Next, hint lines in place of
     TipKit, All reviewed ([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md),
