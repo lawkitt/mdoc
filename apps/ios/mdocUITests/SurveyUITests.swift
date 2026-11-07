@@ -315,6 +315,7 @@ final class SurveyUITests: XCTestCase {
         if detectorTier {
             app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1"
         }
+        app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
         app.launch()
         return app
     }

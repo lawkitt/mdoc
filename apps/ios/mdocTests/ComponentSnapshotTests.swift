@@ -76,6 +76,59 @@ final class ComponentSnapshotTests: XCTestCase {
         XCTAssertEqual(shown?.text, "Undid Replace all")
     }
 
+    func testToastCountdownCountsTheSecondsLeft() {
+        let start = Date(timeIntervalSinceReferenceDate: 1000)
+        let countdown = ToastCountdown(start: start, duration: 6)
+        XCTAssertEqual(countdown.seconds(at: start), 6)
+        XCTAssertEqual(countdown.fraction(at: start), 1)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(0.5)), 6)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(5.5)), 1)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(3)), 0.5)
+        XCTAssertEqual(countdown.seconds(at: start.addingTimeInterval(9)), 0, "never below zero")
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(9)), 0)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(-1)), 1, "never above full")
+    }
+
+    /// The ring at default size, and at the largest, where "Undo" stays whole.
+    func testToastCountdownRing() {
+        let undo = ToastMessage(text: "Same as Maya Bennett", actionTitle: "Undo", action: {})
+        let view = VStack(spacing: Space.m) {
+            Toast(message: undo, duration: 6, frozenAt: undo.created.addingTimeInterval(2), opaque: true)
+            Toast(message: undo, duration: 6, frozenAt: undo.created.addingTimeInterval(2), opaque: true)
+                .environment(\.dynamicTypeSize, .accessibility5)
+        }
+        .padding()
+        .background(Palette.background)
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(view, named: "toast-countdown", appearance: appearance)
+        }
+    }
+
+    /// A toast's view going (the Identities drawer closing) ends its wait,
+    /// not the toast: the message stays for the screen still showing it.
+    func testACancelledToastWaitLeavesTheToast() async {
+        let wait = Task { await ToastPresenter.waitOut(ToastCountdown(start: .now, duration: 60)) }
+        wait.cancel()
+        let ranOut = await wait.value
+        XCTAssertFalse(ranOut)
+    }
+
+    /// One shown again carries on the same clock: nothing left, it ends now.
+    func testAToastWaitRunsOnItsOwnClock() async {
+        let start = Date.now.addingTimeInterval(-10)
+        let began = Date.now
+        let ranOut = await ToastPresenter.waitOut(ToastCountdown(start: start, duration: 6))
+        XCTAssertTrue(ranOut)
+        XCTAssertLessThan(Date.now.timeIntervalSince(began), 1)
+    }
+
+    /// The ring shows the time the toast really stays.
+    func testToastStaysLongerWithAnAction() {
+        let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo", action: {})
+        XCTAssertEqual(ToastPresenter.duration(of: undo, seconds: 4), 6)
+        XCTAssertEqual(ToastPresenter.duration(of: ToastMessage(text: "All 15 reviewed"), seconds: 4), 4)
+    }
+
     func testSampleChoosesItsLanguage() {
         XCTAssertEqual(SampleDocument.forLanguages(["ru-RU", "en-GB"]), .russian)
         XCTAssertEqual(SampleDocument.forLanguages(["en-GB", "ru-RU"]), .english)

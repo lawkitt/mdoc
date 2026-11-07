@@ -36,6 +36,9 @@ enum Size {
     static let chip: CGFloat = 30
     /// Settings and Start icon tiles.
     static let tile: CGFloat = 30
+    /// A toast's countdown ring at default text size, and its line.
+    static let toastRing: CGFloat = 26
+    static let toastRingLine: CGFloat = 2.5
 }
 
 /// The review bar's measures (ADR 0098, 0101, docs/mobile-ui.md).
