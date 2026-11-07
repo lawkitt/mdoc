@@ -426,6 +426,7 @@ struct DocumentScreen: View {
                         // Long enough to read: two seconds, more for a sentence.
                         // A newer notice cancels this wait and must stay.
                         do {
+                            // timing: how long a notice stays to be read, not a wait for an event (ADR 0099)
                             try await Task.sleep(for: .seconds(min(4, max(2, Double(notice.count) / 12))))
                             model.clearNotice()
                         } catch {}

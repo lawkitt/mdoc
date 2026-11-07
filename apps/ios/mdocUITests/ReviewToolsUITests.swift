@@ -105,7 +105,8 @@ final class ReviewToolsUITests: XCTestCase {
         let first = progress.label
         app.typeKey(.rightArrow, modifierFlags: [])
         expectChange(of: progress, from: first)
-        sleep(1)
+        // The next card slides in; ← waits until it has come to rest.
+        MdocUITest.settledScreen()
         app.typeKey(.leftArrow, modifierFlags: [])
         if UIDevice.current.userInterfaceIdiom == .pad {
             // lawkitt/mdoc#610: on iPad ← straight after → is dropped.
