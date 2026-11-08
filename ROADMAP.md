@@ -84,7 +84,7 @@ app (#266–#278, [mobile grill](docs/design/mobile-grill-2026-10-31.md)) and
 (#604–#609, [ADR 0098](docs/adr/0098-mobile-review-bar.md),
 [ADR 0099](docs/adr/0099-mobile-ui-system.md),
 [review grill](docs/design/ios-review-grill-2026-11-05.md)). 0.1 is not
-released on its own: the next TestFlight build is `ios-v0.2.0-rc.1` and
+released on its own: the next TestFlight build is `ios-v0.2.0-rc.3` and
 runs 0.1's acceptance rows too
 ([refactor grill](docs/design/ios-refactor-grill-2026-11-07.md) Q24).
 Features are frozen until items 13–19 land (Q4).
@@ -103,11 +103,12 @@ Features are frozen until items 13–19 land (Q4).
    failed on the export key, now NO). Section 13's Simulator rows and P12
    ran on 2026-11-04 ([evidence](docs/evidence/mobile/2026-11-04/ios.md)):
    all pass except P13, a Later item. Left: the Device rows, and P18's
-   device half, by hand on `ios-v0.2.0-rc.1`.
+   device half, by hand on `ios-v0.2.0-rc.3` (`rc.1` and `rc.2` were
+   tagged on 2026-11-05, builds 750 and 751).
    *Done when:* section 13 passes on a TestFlight build.
 8. **[Mobile] Device check and TestFlight.** The maintainer checks the
    review bar, undo, theme, Settings, the sidebar and Identities on the
-   iPhone 17 Pro from `ios-v0.2.0-rc.1`, after items 13–19. Items 10–12 get
+   iPhone 17 Pro from `ios-v0.2.0-rc.3`, after items 13–19. Items 10–12 get
    a first look from a Release dev build right after they merge (Q3).
    *Done when:* that build passes the check, or its findings are `ui`
    issues.
@@ -193,13 +194,18 @@ touch separate files and run as parallel lanes; 5 builds on both.
    and the hosted mobile jobs move to CI redesign item 2
    ([ADR 0095](docs/adr/0095-ci-on-a-merge-queue.md)). *Done when:* a
    Gradle Dependabot PR goes green after its metadata commit.
-6. **[Release] iOS release workflow.** After ROADMAP iOS item 1's first
-   TestFlight build by hand: `just release-ios`, `ios-v*` tags from `main`,
-   hosted tests on the Release configuration, Apple-managed signing,
-   TestFlight upload with What to Test from the iOS CHANGELOG (joining
-   `changes/ios/`), build number from `main`'s commit count, the core
-   commit in Settings. *Done when:* an agent ships a TestFlight build to
-   internal testers with no maintainer step.
+6. **[Release] iOS release workflow.** *From the
+   [agents TestFlight grill](docs/design/ios-testflight-agents-grill-2026-11-08.md)
+   ([ADR 0107](docs/adr/0107-agents-publish-ios-betas.md)).* The key is in
+   `release-ios` (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, body only).
+   One PR: `ios-release.yml` on `ios-v*` tags (checks, `ci-ios.yml` on the
+   tag, a full-history archive with Apple-managed signing, upload, the
+   processing wait, What to Test from the tag's annotation, a run summary)
+   with a validate mode dispatched from `main`; `just release-ios
+   <x.y.z>-rc.N <file>`, which tags the gated `main` commit with no commit
+   of its own; a shell test of the recipe's checks. Codex reviews it.
+   *Done when:* a validate run from `main` passes and `ios-v0.2.0-rc.3`
+   reaches "Maintainer" from the workflow with no maintainer step.
 7. **[Release] Android release workflow.** After the Play account (Android
    item 8): `just release-android`, `android-v*` tags, the minified variant
    on the hosted emulator, the AAB to Play's internal track, Play's signed

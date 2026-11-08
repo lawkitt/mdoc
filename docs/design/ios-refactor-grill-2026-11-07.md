@@ -282,6 +282,10 @@ items.
 **Decision:** `ios-v0.2.0-rc.1`, after the refactor. 0.1 is not released on
 its own; its remaining acceptance rows run on this build.
 
+*Note, 2026-11-08:* `ios-v0.2.0-rc.1` and `rc.2` were already tagged on
+2026-11-05, so this build is `ios-v0.2.0-rc.3`
+([agents TestFlight grill](ios-testflight-agents-grill-2026-11-08.md) Q2).
+
 ### Q25. Android
 
 **Decision:** Android follows ADR 0104 when it next moves; no Android work

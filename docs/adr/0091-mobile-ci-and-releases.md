@@ -11,7 +11,9 @@ job runs hosted, Android falls back to hosted, no Mac takeover, no "NOT
 tested" status, a recognition-code area; releases, signing and changelogs
 unchanged. Amended by [ADR 0097](0097-ios-testflight-beta.md) (2026-11-03):
 beta builds are `ios-v<x.y.z>-rc.N` tags; build 1 is the only manual
-upload.
+upload. Amended by [ADR 0107](0107-agents-publish-ios-betas.md)
+(2026-11-08): an iOS `rc` is a tag on a tested `main` commit with no release
+commit, and the iOS workflow has a validate mode.
 
 ## Problem
 
