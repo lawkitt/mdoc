@@ -3190,8 +3190,15 @@ impl Pack {
         let defined = self.defined_terms(&view.text);
         let named = self.named_words(view, detections);
         // A name-part header establishes the cell's name even when the
-        // spelling is also a role ("Trustee", "Должник"; #575).
-        let name_cells = mdoc_pii::columns::name_cells(source);
+        // spelling is also a role ("Trustee", "Должник"; #575), and so does
+        // a name part's label before a value when a neighbouring name part's
+        // label holds a name ("Given name: Edda / Surname: Trustee"; #601).
+        // A lone "Full name: Claimant" is a form's placeholder.
+        let mut name_cells = mdoc_pii::columns::name_cells(source);
+        name_cells.extend(mdoc_pii::columns::backed_labelled_names(source, &|range| {
+            let text = &view.text[view.view_range(range)];
+            self.identifying_named(text, Category::Person, &|_| false, false)
+        }));
         let people: Vec<usize> = detections
             .iter()
             .filter(|d| d.category == Category::Person)

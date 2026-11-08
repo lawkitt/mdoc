@@ -2058,6 +2058,37 @@ mod tests {
             ["Alvora", "Nerian", "McVellin", "O’Kell–Venn"]
         );
         assert!(people("Фамилия: Истец\n").is_empty());
+        // #601: a name part's label establishes a role-like surname too when
+        // a neighbouring name part's label holds a name.
+        for (source, expected) in [
+            ("Given name: Edda\nSurname: Trustee\n", ["Edda", "Trustee"]),
+            ("Given name: Edda  Surname: Trustee\n", ["Edda", "Trustee"]),
+            ("Имя: Лада\nФамилия: Должник\n", ["Лада", "Должник"]),
+        ] {
+            assert_eq!(people(source), expected, "{source}");
+        }
+    }
+
+    /// #601: a role word after a lone name part's label is a form's
+    /// placeholder, and its other mentions are no names either.
+    #[test]
+    fn labelled_role_placeholders_stay_roles() {
+        for source in [
+            "Full name: Claimant\n\nThe Claimant seeks damages from the Defendant.\n",
+            "CLAIM FORM\n\nFull name: Claimant\nAddress: ____\n\n\
+             Full name: Defendant\nAddress: ____\n\n\
+             1. The Claimant claims from the Defendant the sum due.\n",
+            "Full name: Claimant\nFull name: Defendant\n",
+            "Full name: Director\n\nThe Director signed.\n",
+            "Фамилия: Истец\n\nИстец просит взыскать долг с ответчика.\n",
+            "ЗАЯВЛЕНИЕ\n\nФамилия: Заявитель\nИмя: ________\n\n\
+             Заявитель просит выдать справку.\n",
+            "Full name: The Claimant\n",
+            "Full name: Applicant Name\nDate: Date\n",
+        ] {
+            let proposed = recognition::proposals(source, &[]).expect("proposals");
+            assert!(proposed.is_empty(), "{source}: {proposed:?}");
+        }
     }
 
     /// A wording the model gave two categories is copied to its other
