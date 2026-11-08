@@ -247,6 +247,11 @@ struct ContextEntry {
     /// a phrase, not a noun of a longer one: "birth date records").
     #[serde(default)]
     follow: Option<String>,
+    /// Before its value only: no label joined to another by a slash, just
+    /// before or after it, spaces aside ("ИНН/ОГРН", "ОКТМО / ОКПО"): such
+    /// a list's values form one run the model reads whole (#563).
+    #[serde(default)]
+    unless_slashed: bool,
 }
 
 #[derive(Deserialize)]
@@ -937,6 +942,9 @@ struct Context {
     only_after: Vec<String>,
     /// What follows an `after` label, anchored at its end.
     follow: Option<Regex>,
+    /// With `unless_slashed`: the labels, longest first, anchored at a
+    /// match's start, to find where its label ends.
+    unless_slashed: Option<Regex>,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1412,6 +1420,11 @@ impl Pack {
                         "only a label after its value takes only_after or follow".into(),
                     ));
                 }
+                if entry.after && entry.unless_slashed {
+                    return Err(at(
+                        "only a label before its value takes unless_slashed".into()
+                    ));
+                }
                 if let Some(label) = entry
                     .labels
                     .iter()
@@ -1472,6 +1485,15 @@ impl Pack {
                     .map(|follow| Regex::new(&format!("^(?:{})", rust_classes(follow))))
                     .transpose()
                     .map_err(|e| at(e.to_string()))?;
+                let unless_slashed = entry
+                    .unless_slashed
+                    .then(|| {
+                        let mut longest = labels.clone();
+                        longest.sort_by_key(|label| std::cmp::Reverse(label.len()));
+                        Regex::new(&format!(r"(?i)^(?:{})\b", longest.join("|")))
+                    })
+                    .transpose()
+                    .map_err(|e| at(e.to_string()))?;
                 let unless_guessed = entry
                     .unless_guessed
                     .iter()
@@ -1507,6 +1529,7 @@ impl Pack {
                     after: entry.after,
                     only_after: entry.only_after.clone(),
                     follow,
+                    unless_slashed,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -3816,12 +3839,24 @@ impl Pack {
                         && label.next() == Some('.')
                         && back.next() == Some('.')
                         && back.next().is_some_and(char::is_alphabetic);
+                    // A label joined to another by a slash ("ИНН/ОГРН
+                    // 7701234567/1027700132195") leaves the run to the
+                    // model: its value may be the other label's.
+                    let slashed = context.unless_slashed.as_ref().is_some_and(|label| {
+                        let blank = [' ', '\t', '\u{a0}'];
+                        let end = label.find(&source[start..]).map_or(0, |found| found.end());
+                        source[..start].trim_end_matches(blank).ends_with('/')
+                            || source[start + end..]
+                                .trim_start_matches(blank)
+                                .starts_with('/')
+                    });
                     if !ends
                         || !starts
                         || !led
                         || !followed
                         || !wrapped
                         || inside
+                        || slashed
                         || context.unless_after.contains(&before)
                         || (context.line_start && !opens())
                         || !self.takes(context, value.as_str())
@@ -17120,6 +17155,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "is not one lowercase word or 's",
             ),
             (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nunless_slashed = true\nbetween = ' '\nvalue = '\\d{4}'",
+                "only a label before its value takes unless_slashed",
+            ),
+            (
                 "[[never]]\nmatch = \"plural\"\nwords = [\"Ms\"]",
                 "not lowercase",
             ),
@@ -17757,19 +17796,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "за основным государственным регистрационным номером 1029900000017",
                 &["1029900000017"],
             ),
-            // A slash list: the other values are the model's (#600); a
-            // twelve-digit ИНН reads as a damaged ОГРНИП, TAX either way.
-            ("ОГРН/ИНН 1029900000017/9901000017", &["1029900000017"]),
-            ("ИНН/ОГРН 9901000017/1029900000017", &["1029900000017"]),
-            ("ИНН / ОГРН 9901000017 / 1029900000017", &["1029900000017"]),
-            (
-                "ИНН/КПП/ОГРН 9901000017/990101001/1029900000017",
-                &["1029900000017"],
-            ),
-            (
-                "ИНН/ОГРНИП 990100001700/329990000000012",
-                &["990100001700", "329990000000012"],
-            ),
+            // English labels, any case.
+            ("OGRN: 1029900000017", &["1029900000017"]),
+            ("ogrnip 329990000000012", &["329990000000012"]),
+            ("PSRN 1029900000017", &["1029900000017"]),
             ("ОКПО: 99887766", &["99887766"]),
             ("код ОКПО 9988776655", &["9988776655"]),
             ("код по ОКПО 99887766", &["99887766"]),
@@ -17784,6 +17814,71 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             let tax: Vec<(&str, &str)> = values.iter().map(|value| (*value, "TAX")).collect();
             assert_eq!(shown(source, &[]), pairs(&tax), "{source}");
         }
+    }
+
+    /// #563: labels joined by a slash leave their run of values to the
+    /// model, as before: a span over the whole run keeps its category and
+    /// its range, spans over each value stay TAX, and with no span nothing
+    /// is proposed. A budget code before "/ОКПО" is never ОКПО's value.
+    #[test]
+    fn state_register_slash_lists_stay_the_models() {
+        for (source, run) in [
+            (
+                "ИНН/КПП/ОГРН 9901000017/990101001/1029900000017",
+                "9901000017/990101001/1029900000017",
+            ),
+            (
+                "ИНН / КПП / ОГРН 9901000017 / 990101001 / 1029900000017",
+                "9901000017 / 990101001 / 1029900000017",
+            ),
+            (
+                "ИНН/ОГРН 9901000017/1029900000017",
+                "9901000017/1029900000017",
+            ),
+            (
+                "ИНН/ОГРН: 9901000017/1029900000017",
+                "9901000017/1029900000017",
+            ),
+            (
+                "ОГРН/ИНН 1029900000017/9901000017",
+                "1029900000017/9901000017",
+            ),
+            (
+                "ОГРН/ИНН/КПП 1029900000017/9901000017/990101001",
+                "1029900000017/9901000017/990101001",
+            ),
+            (
+                "ОГРН/КПП 1029900000017/990101001",
+                "1029900000017/990101001",
+            ),
+            ("ОГРН/ОКПО 1029900000017/99887766", "1029900000017/99887766"),
+            ("ИНН/ОКПО 9901000017/99887766", "9901000017/99887766"),
+            (
+                "ИНН/КПП/ОКПО 9901000017/990101001/99887766",
+                "9901000017/990101001/99887766",
+            ),
+            (
+                "ИНН/ОГРНИП 990100001700/329990000000012",
+                "990100001700/329990000000012",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(run, "tax_id")]),
+                pairs(&[(run, "TAX")]),
+                "{source}"
+            );
+            assert_eq!(shown(source, &[]), pairs(&[]), "{source}");
+            let values: Vec<&str> = run.split('/').map(str::trim).collect();
+            let raw: Vec<(&str, &str)> = values.iter().map(|value| (*value, "tax_id")).collect();
+            let tax: Vec<(&str, &str)> = values.iter().map(|value| (*value, "TAX")).collect();
+            assert_eq!(shown(source, &raw), pairs(&tax), "{source}");
+        }
+        let source = "ОКТМО/ОКПО 45382000/99887766";
+        assert_eq!(shown(source, &[]), pairs(&[]));
+        assert_eq!(
+            shown(source, &[("99887766", "tax_id")]),
+            pairs(&[("99887766", "TAX")])
+        );
     }
 
     /// #563 guards: an ИНН stays TAX, a БИК and an account BANK; an amount

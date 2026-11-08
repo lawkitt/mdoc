@@ -809,52 +809,38 @@ min_digits = 8
 
 # ОГРН and ОГРНИП are TAX like ИНН, a public body's own too (guide rule 6,
 # the maintainer's decisions on #484 item 6 and #553 item 1; #563): "ОГРН
-# 1027700132195", "(ОГРНИП: 322213000038573)", "ОГРН ИП № …", "основной
-# государственный регистрационный номер (ОГРН) …", "за основным
-# государственным регистрационным номером …". The model's IDENTITY or
-# BANK guess on the value gives way. Thirteen or fifteen digits, and one
-# fewer or more: the guide marks an invalid or damaged value too, and OCR
-# may read a digit as a letter. Labels joined by a slash come before the
-# value ("ОГРН/ИНН 1027700132195/7701234567"); after them see below.
+# 1027700132195", "(ОГРНИП: 322213000038573)", "ОГРН ИП № …", "OGRN …",
+# "PSRN …", "основной государственный регистрационный номер (ОГРН) …", "за
+# основным государственным регистрационным номером …". The model's
+# IDENTITY or BANK guess on the value gives way. Thirteen or fifteen
+# digits, and one fewer or more: the guide marks an invalid or damaged
+# value too, and OCR may read a digit as a letter. A label joined to
+# another by a slash ("ИНН/ОГРН 7701234567/1027700132195") leaves the run
+# to the model, as its value there may be the other label's.
 [[context]]
 category = "TAX"
 labels = [
-    "огрн", "огрнип", "огрн ип", "основной государственный регистрационный номер",
+    "огрн", "огрнип", "огрн ип", "ogrn", "ogrnip", "psrn",
+    "основной государственный регистрационный номер",
     "основным государственным регистрационным номером",
 ]
-between = '(?:[\p{Zs}\t]+индивидуального[\p{Zs}\t]+предпринимателя)?(?:[\p{Zs}\t]*\((?:ОГРН|ОГРНИП)\))?(?:[\p{Zs}\t]*/[\p{Zs}\t]*(?:ИНН|КПП|ОКПО))*[\p{Zs}\t:*_№#.(]{1,8}'
+between = '(?:[\p{Zs}\t]+индивидуального[\p{Zs}\t]+предпринимателя)?(?:[\p{Zs}\t]*\((?:ОГРН|ОГРНИП)\))?[\p{Zs}\t:*_№#.(]{1,8}'
 value = '[0-9OОoIlІ]{12,16}'
 min_digits = 11
-
-# The same number last in a slash-joined list of labels, after the values
-# before it: "ИНН/ОГРН 7701234567/1027700132195", "ИНН/КПП/ОГРН
-# 7701234567/770101001/1027700132195", with spaces around the slashes or
-# not (#563). The values before it are the model's or their own rules'.
-[[context]]
-category = "TAX"
-labels = ["инн/огрн", "инн / огрн", "инн/огрнип", "инн / огрнип"]
-between = '[\p{Zs}\t:*_№#.]{1,8}[0-9OОoIlІ]{10,12}[\p{Zs}\t]*/[\p{Zs}\t]*'
-value = '[0-9OОoIlІ]{12,16}'
-min_digits = 11
-
-# The same after "ИНН/КПП/ОГРН" and its first two values.
-[[context]]
-category = "TAX"
-labels = ["инн/кпп/огрн", "инн / кпп / огрн"]
-between = '[\p{Zs}\t:*_№#.]{1,8}[0-9OОoIlІ]{10,12}[\p{Zs}\t]*/[\p{Zs}\t]*[0-9OОoIlІ]{9}[\p{Zs}\t]*/[\p{Zs}\t]*'
-value = '[0-9OОoIlІ]{12,16}'
-min_digits = 11
+unless_slashed = true
 
 # ОКПО is TAX too (#484 item 6, #563): "ОКПО 99887766", "код ОКПО: …",
 # eight digits for a company, ten for an entrepreneur, and one fewer or
 # more for a damaged value. A classifier's code (ОКТМО, ОКВЭД, КБК) is a
-# reference, not this (guide rule 6, #553 item 1).
+# reference, not this (guide rule 6, #553 item 1), and a slash-joined
+# label ("ОКТМО/ОКПО 45382000/99887766") leaves the run to the model.
 [[context]]
 category = "TAX"
 labels = ["окпо", "код окпо", "код по окпо"]
 between = '[\p{Zs}\t:*_№#.(]{1,8}'
 value = '[0-9OОoIlІ]{7,11}'
 min_digits = 6
+unless_slashed = true
 
 # СНИЛС: "123-456-789 00" or eleven digits.
 [[context]]
