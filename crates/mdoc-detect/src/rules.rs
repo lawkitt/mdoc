@@ -4255,11 +4255,12 @@ impl Pack {
                                 .collect(),
                             None => vec![(range, None)],
                         })
-                        .filter_map(move |range| {
+                        .filter_map(move |(range, whole)| {
                             if category != Category::Address || range.is_empty() {
-                                return Some(range);
+                                return Some((range, whole));
                             }
                             self.address_beside(source, names, pattern, range)
+                                .map(|range| (range, whole))
                         })
                         // An address match before a colon ends in a field's
                         // label ("12 Oak Road, Email: …"), not the address's
