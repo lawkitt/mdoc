@@ -162,6 +162,10 @@ smoke-update *args:
 release version *flags:
     scripts/release.sh {{version}} {{flags}}
 
+# Tag an iOS TestFlight build (x.y.z-rc.N) on a main commit the iPhone 12 Pro gate passed; ios-release.yml uploads it (ADR 0107)
+release-ios version notes *flags:
+    scripts/ios-release.sh {{quote(version)}} {{quote(notes)}} {{flags}}
+
 # Build the iOS app, its extension and test targets on the core for the Simulator, unsigned (ADR 0085)
 [macos]
 ios-app: ios-core

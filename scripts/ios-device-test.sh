@@ -27,25 +27,23 @@ fixtures=target/ios/device-fixtures
 # AppModel.deviceFixturesFolder: the seed's folder in the data container.
 container_fixtures=Library/mdoc-ui-fixtures
 result=target/ios/device-test-$(date +%Y%m%d-%H%M%S).xcresult
+# A pass on a clean checkout is recorded by commit (scripts/ios-gate.sh);
+# `just release-ios` tags only a commit with a below-floor pass on a phone
+# below the floor (ADR 0107).
+commit=$(git rev-parse HEAD)
+clean=no
+! bash scripts/ios-gate.sh clean || clean=yes
 
-# The detector floor is 8 GB (ADR 0088): the iPhone 15 Pro (iPhone16,x) and
-# every iPhone from the 16 (iPhone17,x) on; earlier models have 6 GB or less.
-if [ "$tier" = auto ]; then
-  details=$(mktemp)
-  xcrun devicectl device info details --device "$device" --json-output "$details" >/dev/null 2>&1 ||
-    die "could not read the phone's model"
-  model=$(/usr/bin/python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["result"]["hardwareProperties"]["productType"])' "$details")
-  rm -f "$details"
-  case "$model" in
-    iPhone*)
-      major=${model#iPhone}
-      major=${major%%,*}
-      ;;
-    *) die "not an iPhone: $model" ;;
-  esac
-  if [ "$major" -ge 16 ]; then tier=detector; else tier=below-floor; fi
-  echo "$model: $tier tier"
-fi
+# The phone's model, always: the record names the real phone even when the
+# tier is forced. The detector floor is 8 GB (ADR 0088).
+details=$(mktemp)
+xcrun devicectl device info details --device "$device" --json-output "$details" >/dev/null 2>&1 ||
+  die "could not read the phone's model"
+model=$(/usr/bin/python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["result"]["hardwareProperties"]["productType"])' "$details")
+rm -f "$details"
+phone_tier=$(bash scripts/ios-gate.sh tier "$model")
+[ "$tier" != auto ] || tier=$phone_tier
+echo "$model: $phone_tier phone, $tier tier"
 case "$tier" in
   detector) tier_test=DeviceLongJobsUITests ;;
   below-floor) tier_test=DeviceBelowFloorUITests ;;
@@ -106,4 +104,13 @@ elif new=$(comm -13 <(sort <<<"$before") <(sort <<<"$after")) && [ -n "$new" ]; 
   status=1
 fi
 echo "results: $result"
+
+# The gate record: the commit must not have changed or gained edits during
+# the run.
+if [ "$status" = 0 ] && [ "$clean" = yes ] && bash scripts/ios-gate.sh clean &&
+  [ "$(git rev-parse HEAD)" = "$commit" ]; then
+  bash scripts/ios-gate.sh record "$commit" "$device" "$model" "$tier"
+elif [ "$status" = 0 ]; then
+  echo "no gate record: the checkout had changes or untracked files, or its commit changed during the run" >&2
+fi
 exit "$status"
