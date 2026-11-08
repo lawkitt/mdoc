@@ -148,6 +148,8 @@ struct NeverEntry {
     form: Form,
     /// For `stem`: how many letters may follow the stem.
     ending: Option<usize>,
+    /// For `suffix`: how many letters at least come before the suffix.
+    stem: Option<usize>,
     #[serde(default)]
     words: Vec<String>,
     /// For `pattern`: regexes; a span matching one outside quotes is a
@@ -204,6 +206,9 @@ enum Form {
     Plural,
     /// The stem and up to `ending` letters.
     Stem,
+    /// A word ending in the suffix, with `stem` letters at least before
+    /// it ("Librarians", "Hospitalists").
+    Suffix,
     /// No words: `patterns` that match a phrase in the span.
     Pattern,
 }
@@ -948,6 +953,7 @@ struct Defined {
 struct Never {
     form: Form,
     ending: usize,
+    stem: usize,
     words: Vec<String>,
     patterns: Vec<Regex>,
     last_word_of: Vec<Category>,
@@ -976,6 +982,9 @@ impl Never {
                 ending.chars().count() <= self.ending
                     && ending.chars().all(char::is_alphabetic)
                     && !self.not_endings.iter().any(|not| not == ending)
+            }),
+            Form::Suffix => word.strip_suffix(listed.as_str()).is_some_and(|stem| {
+                stem.chars().count() >= self.stem && stem.chars().all(char::is_alphabetic)
             }),
             Form::Pattern => false,
         })
@@ -1073,6 +1082,22 @@ impl Pack {
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
+                let stem = match (entry.form, entry.stem) {
+                    (Form::Suffix, Some(stem)) if stem > 0 => stem,
+                    (Form::Suffix, _) => return Err(at("a suffix needs a stem above 0".into())),
+                    (_, Some(_)) => return Err(at("only a suffix takes a stem".into())),
+                    (_, None) => 0,
+                };
+                // A suffix is a common word's, never a role's or a body's:
+                // a person's span with any other name keeps it.
+                if entry.form == Form::Suffix
+                    && (!entry.unless_named
+                        || entry.person_role
+                        || entry.phrase_only
+                        || !entry.last_word_of.is_empty())
+                {
+                    return Err(at("a suffix needs unless_named alone".into()));
+                }
                 if entry.form != Form::Stem
                     && !(entry.not_endings.is_empty() && entry.person_endings.is_empty())
                 {
@@ -1166,6 +1191,7 @@ impl Pack {
                 pack.never.push(Never {
                     form: entry.form,
                     ending,
+                    stem,
                     words: entry.words,
                     patterns,
                     last_word_of: tokens(&entry.last_word_of)?,
@@ -1185,6 +1211,9 @@ impl Pack {
                     (Form::Stem, Some(ending)) if ending > 0 => ending,
                     (Form::Stem, _) => return Err(at("a stem needs an ending above 0".into())),
                     (Form::Pattern, _) => return Err(at("a pattern entry takes no words".into())),
+                    (Form::Suffix, _) => {
+                        return Err(at("only a never entry takes a suffix".into()));
+                    }
                     (_, Some(_)) => return Err(at("only a stem takes an ending".into())),
                     (_, None) => 0,
                 };
@@ -1209,6 +1238,7 @@ impl Pack {
                     list: Never {
                         form: entry.form,
                         ending,
+                        stem: 0,
                         words: entry.words,
                         patterns: Vec::new(),
                         last_word_of: Vec::new(),
@@ -2602,7 +2632,12 @@ impl Pack {
             && !shape.case.iter().any(|pattern| pattern.is_match(text))
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
-                    || self.names(text, words().filter(|w| pattern.is_match(w)), named)
+                    || self.names(
+                        text,
+                        words().filter(|w| pattern.is_match(w)),
+                        named,
+                        category == Category::Person,
+                    )
             })
     }
 
@@ -2676,12 +2711,17 @@ impl Pack {
     /// Whether `words`, those a shape's `word` takes, name someone: one is
     /// no never word, or a common word context names. Initials alone name
     /// someone ("Ms B.", "J. R. French"), but one letter before a common
-    /// word is an outline letter: "B. General Terms".
+    /// word is an outline letter: "B. General Terms". For a `person`, a
+    /// role or heading modifier names someone only without a common word
+    /// beside it: "General" and "B. General" may, "General Program" and
+    /// "Lead Plan" do not, nor do they make "Program" or "Plan" a name
+    /// elsewhere (#500). A company keeps one ("General Accident").
     fn names<'a>(
         &self,
         text: &str,
         words: impl Iterator<Item = &'a str>,
         named: &dyn Fn(&str) -> bool,
+        person: bool,
     ) -> bool {
         let initial = |word: &str| {
             word.split('.')
@@ -2697,13 +2737,13 @@ impl Pack {
                 .iter()
                 .any(|entry| entry.person_role && entry.has(&word.to_lowercase()))
         });
-        let (mut name, mut letters, mut common) = (false, 0, false);
+        let (mut name, mut letters, mut common, mut weak) = (false, 0, false, false);
         for (index, word) in words.enumerate() {
-            let modifier = role_head
-                && self
-                    .never
-                    .iter()
-                    .any(|entry| entry.phrase_only && entry.has(&word.to_lowercase()));
+            let phrase = self
+                .never
+                .iter()
+                .any(|entry| entry.phrase_only && entry.has(&word.to_lowercase()));
+            let modifier = role_head && phrase;
             if self.common(word) || modifier {
                 if named(&word.to_lowercase()) {
                     name = true;
@@ -2715,12 +2755,14 @@ impl Pack {
             } else if !self.never(word) {
                 if initial(word) {
                     letters += word.split('.').count();
+                } else if person && phrase {
+                    weak = true;
                 } else {
                     name = true;
                 }
             }
         }
-        name || letters > 1 || letters == 1 && !common
+        name || letters > 1 || (letters == 1 || weak) && !common
     }
 
     /// The `span` fixes on `detections` in `source`: each grows to an
@@ -7646,6 +7688,226 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "St. Louis",
             ]
         );
+    }
+
+    /// Template and heading words, group nouns for people, deities, a pay
+    /// grade and a programme's title name no one alone (#500, round 2);
+    /// plural surnames, given names in the plural, initials and any other
+    /// name word stay.
+    #[test]
+    fn template_words_group_nouns_and_deities_are_no_names() {
+        let pack = pack();
+        for (text, category) in [
+            ("Fire", Category::Person),
+            ("Fires", Category::Person),
+            ("Class A fires", Category::Person),
+            ("Location", Category::Person),
+            ("Index", Category::Person),
+            ("Indices", Category::Person),
+            ("Manual", Category::Person),
+            ("Briefing", Category::Person),
+            ("Accident", Category::Person),
+            ("Investigation", Category::Person),
+            ("OPERATING", Category::Person),
+            ("OPERATING MANUAL", Category::Person),
+            ("Serious Accident Investigation", Category::Person),
+            ("Serious Accident Investigation Team", Category::Person),
+            ("Fire Safety", Category::Organization),
+            ("Librarians", Category::Person),
+            ("Hospitalists", Category::Person),
+            ("Physicians", Category::Person),
+            ("Biologists", Category::Person),
+            ("Investors", Category::Person),
+            ("Issuers", Category::Person),
+            ("Importers", Category::Person),
+            ("Intermediaries", Category::Person),
+            ("Adults", Category::Person),
+            ("Dashers", Category::Person),
+            ("Founding Fathers", Category::Person),
+            ("Female employees", Category::Person),
+            ("God", Category::Person),
+            ("Jesus", Category::Person),
+            ("Jesus Christ", Category::Person),
+            ("Allah", Category::Organization),
+            ("the Almighty", Category::Person),
+            ("the Holy Spirit", Category::Person),
+            ("GS-14", Category::Person),
+            ("GS-13/14", Category::Person),
+            ("GS 9", Category::Organization),
+            ("Consumer Price Index", Category::Person),
+            (
+                "CAFTA-DR Environmental Cooperation Program",
+                Category::Person,
+            ),
+            ("Bright Paths Reading Initiative", Category::Person),
+        ] {
+            assert!(!pack.identifying(text, category), "{text}");
+        }
+        for (text, category) in [
+            ("the Smiths", Category::Person),
+            ("Jones", Category::Person),
+            ("Williams", Category::Person),
+            ("Adams", Category::Person),
+            ("Roberts", Category::Person),
+            ("Rogers", Category::Person),
+            ("Myers", Category::Person),
+            ("Summers", Category::Person),
+            ("Adrians", Category::Person),
+            ("Julians", Category::Person),
+            ("Brians", Category::Person),
+            ("Edda Fire", Category::Person),
+            ("Rhea Gillians", Category::Person),
+            ("Jesus Navas", Category::Person),
+            ("Paul Program", Category::Person),
+            ("J. R. Plan", Category::Person),
+            ("A. Smith", Category::Person),
+            ("K Ashdale", Category::Person),
+            ("Ivo Plot", Category::Person),
+            ("Ossian Draycott", Category::Person),
+            ("General Accident", Category::Organization),
+            ("Acme Fire Safety Ltd", Category::Organization),
+            ("Index Ventures", Category::Organization),
+            ("Physicians Mutual", Category::Organization),
+            ("GS-14 Holdings Ltd", Category::Organization),
+        ] {
+            assert!(pack.identifying(text, category), "{text}");
+        }
+    }
+
+    /// The issue's round 2 reproduction through the review: a contract's
+    /// headings, group nouns, plot labels, the article they would spread
+    /// to and the short "Ex p" of a caption name no one; the parties stay
+    /// (#500). A programme's title spreads no "Program", and a heading the
+    /// model marks ("FRANCHISE AGREEMENT") seeds no "Agreement" (#416).
+    #[test]
+    fn the_round_two_reproduction_proposes_only_the_parties() {
+        let source = "FRANCHISE AGREEMENT\n\n11. OPERATING MANUAL\n\nSection Two: Program \
+            Description\n\nThis Agreement binds the parties. Librarians and Hospitalists \
+            briefed the Investigation Team. Plot B lies east of Plot A.\n\nA short note \
+            follows on this application, Ex p Ossian Draycott; Ms Edda Brannock signed. \
+            The CAFTA-DR Environmental Cooperation Program runs; the Program pays.\n\n\
+            J. Recommendations\n\nM.\n\nGS-14 staff, Female employees and the Founding \
+            Fathers prayed to God.";
+        let raw = [
+            ("FRANCHISE AGREEMENT", 0, "person"),
+            ("OPERATING", 0, "person"),
+            ("Program", 0, "person"),
+            ("Agreement", 0, "person"),
+            ("Librarians", 0, "person"),
+            ("Hospitalists", 0, "person"),
+            ("Investigation Team", 0, "person"),
+            ("A short", 0, "person"),
+            ("Ex p Ossian Draycott", 0, "person"),
+            ("Edda Brannock", 0, "person"),
+            ("CAFTA-DR Environmental Cooperation Program", 0, "person"),
+            ("Program", 2, "person"),
+            ("J.", 0, "person"),
+            ("M.", 0, "person"),
+            ("GS-14", 0, "person"),
+            ("Female employees", 0, "person"),
+            ("Founding Fathers", 0, "person"),
+            ("God", 0, "person"),
+        ];
+        // The plots' letters, not a "B" or an "A" inside another word.
+        let letter = |label: &str| source.find(label).unwrap() + "Plot ".len();
+        let mut raw: Vec<crate::RawEntity> = raw
+            .iter()
+            .map(|(text, n, label)| {
+                let (start, _) = source
+                    .match_indices(text)
+                    .nth(*n)
+                    .unwrap_or_else(|| panic!("{text:?} #{n} not in the source"));
+                // The article alone, as the model gives it.
+                let text = text.strip_suffix(" short").unwrap_or(text);
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.8,
+                    text: text.into(),
+                }
+            })
+            .collect();
+        for label in ["Plot B", "Plot A"] {
+            let start = letter(label);
+            raw.push(crate::RawEntity {
+                start,
+                end: start + 1,
+                label: "person".into(),
+                score: 0.8,
+                text: source[start..start + 1].into(),
+            });
+        }
+        let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect();
+        assert_eq!(
+            shown,
+            pairs(&[("Ossian Draycott", "PERSON"), ("Edda Brannock", "PERSON")])
+        );
+    }
+
+    /// In context the same words stay a person's name: after a title, or
+    /// where a person span has them beside a name (#500). A plot's letter
+    /// leaves the name after it, and an initial before a surname stays.
+    #[test]
+    fn template_words_and_group_nouns_stay_names_in_context() {
+        let source = "Mr Manual and Ms Gillians met Edda Fire, Rhea Gillians and Jesus \
+            Navas. Fire, Gillians and Jesus signed. Ivo Plot, Judge K Ashdale and A. \
+            Smith agreed.";
+        let raw = [
+            ("Manual", 0, "person"),
+            ("Gillians", 0, "person"),
+            ("Edda Fire", 0, "person"),
+            ("Rhea Gillians", 0, "person"),
+            ("Jesus Navas", 0, "person"),
+            ("Fire", 1, "person"),
+            ("Gillians", 2, "person"),
+            ("Jesus", 1, "person"),
+            ("Ivo Plot", 0, "person"),
+            ("Ashdale", 0, "person"),
+            ("A. Smith", 0, "person"),
+        ];
+        assert_eq!(
+            shown_at(source, &raw),
+            pairs(&[
+                ("Manual", "PERSON"),
+                ("Gillians", "PERSON"),
+                ("Edda Fire", "PERSON"),
+                ("Rhea Gillians", "PERSON"),
+                ("Jesus Navas", "PERSON"),
+                ("Fire", "PERSON"),
+                ("Gillians", "PERSON"),
+                ("Jesus", "PERSON"),
+                ("Ivo Plot", "PERSON"),
+                ("K Ashdale", "PERSON"),
+                ("A. Smith", "PERSON"),
+            ])
+        );
+    }
+
+    /// A person span with a common word needs a word of its own, a name or
+    /// an initial, not a role or heading modifier: the model's "General
+    /// Program" names no one, and so neither makes nor spreads a lone
+    /// "Program"; "Paul Program" does both (#500).
+    #[test]
+    fn only_a_name_word_makes_a_common_word_a_name() {
+        for (source, raw, expected) in [
+            (
+                "The General Program met. Section Two: Program Description.",
+                [("General Program", 0, "person"), ("Program", 1, "person")],
+                vec![],
+            ),
+            (
+                "Paul Program met. Section Two: Program Description.",
+                [("Paul Program", 0, "person"), ("Program", 1, "person")],
+                vec![("Paul Program", "PERSON"), ("Program", "PERSON")],
+            ),
+        ] {
+            assert_eq!(shown_at(source, &raw), pairs(&expected), "{source}");
+        }
     }
 
     /// Every whole-word occurrence of each text in `spans`, as a model
@@ -16829,6 +17091,26 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[never]]\nmatch = \"whole\"\nwords = [\"vice\"]\nunless_named = true\nphrase_only = true\nlast_word_of = [\"ORG\"]",
                 "phrase_only needs unless_named alone",
+            ),
+            (
+                "[[never]]\nmatch = \"suffix\"\nwords = [\"ians\"]\nunless_named = true",
+                "a suffix needs a stem above 0",
+            ),
+            (
+                "[[never]]\nmatch = \"plural\"\nstem = 4\nwords = [\"adult\"]\nunless_named = true",
+                "only a suffix takes a stem",
+            ),
+            (
+                "[[never]]\nmatch = \"suffix\"\nstem = 4\nwords = [\"ians\"]",
+                "a suffix needs unless_named alone",
+            ),
+            (
+                "[[never]]\nmatch = \"suffix\"\nstem = 4\nwords = [\"ians\"]\nunless_named = true\nperson_role = true",
+                "a suffix needs unless_named alone",
+            ),
+            (
+                "[[defined]]\nmatch = \"suffix\"\nwords = [\"ians\"]",
+                "only a never entry takes a suffix",
             ),
             (
                 "[[shape]]\ncategory = \"NAME\"\nrequire = ['x']",

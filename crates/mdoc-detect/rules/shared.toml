@@ -49,7 +49,8 @@
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
-# `s`) or as a `stem` with up to `ending` letters. An entry matched as
+# `s`), as a `stem` with up to `ending` letters or as a `suffix` with `stem`
+# letters at least before it (`unless_named` alone). An entry matched as
 # `pattern` lists `patterns` instead, regexes: a model span of its
 # `anywhere_in` categories (required) that matches one outside quotes goes
 # like a court ("Department of Labor", "Massachusetts" alone). Optionally:
