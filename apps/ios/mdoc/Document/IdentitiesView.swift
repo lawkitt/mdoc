@@ -84,8 +84,6 @@ struct IdentitiesView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, selecting ? 72 : Space.m, for: .scrollContent)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.list = $0 }
-            // Select's ≡ handles: drag a name onto another (ADR 0106).
-            .gesture(HandleDragGesture(tracking: dragTracking, onEvent: handleDrag))
             .overlay { liftedCopy }
         }
         .background(Palette.background)

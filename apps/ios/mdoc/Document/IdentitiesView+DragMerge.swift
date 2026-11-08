@@ -12,6 +12,8 @@ extension IdentitiesView {
     /// A row's ≡ handle, where the state mark is outside Select.
     func dragHandle(_ identity: Identity) -> some View {
         HandleSymbol()
+            // The drag itself is on the list (`HandleDragRecognizer`).
+            .background(HandleDragInstaller(recognizer: dragTracking.recognizer, onEvent: handleDrag))
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.handles[identity.id] = $0 }
             .onDisappear { dragTracking.handles[identity.id] = nil }
             .accessibilityElement()
@@ -50,9 +52,8 @@ extension IdentitiesView {
     /// The handle's finger, from down to up.
     func handleDrag(_ event: HandleDragEvent) {
         switch event {
-        case let .began(id, point, scrollView):
+        case let .began(id, point):
             guard selecting, drag == nil || drag?.returning == true, let frame = dragTracking.rows[id] else { return }
-            dragTracking.autoScroll.scrollView = scrollView
             dragTracking.autoScroll.onScroll = { retarget() }
             withAnimation(Motion.move(reduced: reduceMotion)) {
                 drag = IdentityDragState(dragged: id, frame: frame, start: point, location: point)

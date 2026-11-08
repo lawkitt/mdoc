@@ -82,6 +82,7 @@ final class IdentityDragTracking {
     /// The top of the selection bar over the list's bottom, while it shows.
     var barTop: CGFloat?
     let autoScroll = IdentityAutoScroll()
+    private(set) lazy var recognizer = HandleDragRecognizer(tracking: self)
 
     /// The part of the list on screen, above the selection bar.
     var visible: CGRect {
@@ -137,60 +138,61 @@ final class IdentityAutoScroll: NSObject {
 
 /// What the handle's finger does.
 enum HandleDragEvent {
-    /// Down on `id`'s handle, in the list that scrolls under it.
-    case began(IdentityID, CGPoint, UIScrollView?)
+    /// Down on `id`'s handle at the point, now lifted.
+    case began(IdentityID, CGPoint)
     case moved(CGPoint)
     case ended(CGPoint)
     case cancelled
 }
 
-/// The handles' drag, on the list as a whole so that it lives on while the
-/// lifted row scrolls out of view: a touch that starts on a ≡ handle takes
-/// the finger at once (no press to wait out), so the list neither scrolls nor
-/// swipes the row; any other touch is the list's.
-struct HandleDragGesture: UIGestureRecognizerRepresentable {
-    let tracking: IdentityDragTracking
-    let onEvent: (HandleDragEvent) -> Void
+/// The handles' drag, a UIKit gesture on the list's own scroll view: a touch
+/// that starts on a ≡ handle takes the finger (no press to wait out), so the
+/// list neither scrolls nor swipes the row, and the drag lives on
+/// while the lifted row scrolls out of view; any other touch is the list's.
+/// SwiftUI's gestures can't do it: one on the List never begins for a touch
+/// that starts in a row, and one on the handle ends when its row scrolls
+/// away.
+@MainActor
+final class HandleDragRecognizer: NSObject, UIGestureRecognizerDelegate {
+    var onEvent: (HandleDragEvent) -> Void = { _ in }
+    private let tracking: IdentityDragTracking
+    private let recognizer = UILongPressGestureRecognizer()
+    /// The handle the finger went down on, and where.
+    private var started: (id: IdentityID, at: CGPoint)?
 
-    @MainActor
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        let tracking: IdentityDragTracking
-        var started: IdentityID?
-        weak var scrollView: UIScrollView?
-
-        init(tracking: IdentityDragTracking) {
-            self.tracking = tracking
-        }
-
-        func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            // SwiftUI's global points are the window's.
-            started = tracking.handle(at: touch.location(in: nil))
-            guard started != nil else { return false }
-            var view = touch.view
-            while let current = view, !(current is UIScrollView) { view = current.superview }
-            scrollView = view as? UIScrollView
-            return true
-        }
-    }
-
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
-        Coordinator(tracking: tracking)
-    }
-
-    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
-        let recognizer = UILongPressGestureRecognizer()
+    init(tracking: IdentityDragTracking) {
+        self.tracking = tracking
+        super.init()
+        recognizer.addTarget(self, action: #selector(changed))
         recognizer.minimumPressDuration = 0
         recognizer.allowableMovement = .greatestFiniteMagnitude
-        recognizer.delegate = context.coordinator
-        return recognizer
+        recognizer.delegate = self
     }
 
-    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
-        let point = context.converter.location(in: .global)
+    /// Puts the gesture on `scrollView`, the List's, once.
+    func install(on scrollView: UIScrollView) {
+        guard recognizer.view !== scrollView else { return }
+        recognizer.view?.removeGestureRecognizer(recognizer)
+        scrollView.addGestureRecognizer(recognizer)
+        tracking.autoScroll.scrollView = scrollView
+    }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // SwiftUI's global points are the window's.
+        let point = touch.location(in: nil)
+        started = tracking.handle(at: point).map { ($0, point) }
+        return started != nil
+    }
+
+    @objc private func changed(_ recognizer: UILongPressGestureRecognizer) {
+        let point = recognizer.location(in: nil)
         switch recognizer.state {
         case .began:
-            guard let id = context.coordinator.started else { return }
-            onEvent(.began(id, point, context.coordinator.scrollView))
+            // From where the finger went down: iOS begins the press once
+            // the finger has moved a little.
+            guard let started else { return }
+            onEvent(.began(started.id, started.at))
+            onEvent(.moved(point))
         case .changed:
             onEvent(.moved(point))
         case .ended:
@@ -198,5 +200,34 @@ struct HandleDragGesture: UIGestureRecognizerRepresentable {
         default:
             onEvent(.cancelled)
         }
+    }
+}
+
+/// Finds the List's scroll view from inside a row and puts the handles'
+/// drag on it.
+struct HandleDragInstaller: UIViewRepresentable {
+    let recognizer: HandleDragRecognizer
+    let onEvent: (HandleDragEvent) -> Void
+
+    final class Probe: UIView {
+        var found: ((UIScrollView) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            var view = superview
+            while let current = view, !(current is UIScrollView) { view = current.superview }
+            if let scrollView = view as? UIScrollView { found?(scrollView) }
+        }
+    }
+
+    func makeUIView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.isUserInteractionEnabled = false
+        probe.found = { [recognizer] in recognizer.install(on: $0) }
+        return probe
+    }
+
+    func updateUIView(_ probe: Probe, context: Context) {
+        recognizer.onEvent = onEvent
     }
 }

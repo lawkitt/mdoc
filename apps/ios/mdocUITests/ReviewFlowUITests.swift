@@ -99,11 +99,14 @@ enum MdocUITest {
     static let markdownEmail = "anna.smirnova@example.com"
 
     /// Launches with a fresh library that imports `seed` from the repository.
+    /// `slowToasts`: a toast stays 15 s, for a test that checks a lot before
+    /// it taps Undo.
     @MainActor
-    static func launch(seed: String = defaultSeed) -> XCUIApplication {
+    static func launch(seed: String = defaultSeed, slowToasts: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path
+        if slowToasts { app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1" }
         app.launch()
         return app
     }

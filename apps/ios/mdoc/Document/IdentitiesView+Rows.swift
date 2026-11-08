@@ -47,37 +47,44 @@ extension IdentitiesView {
         .listRowInsets(EdgeInsets(top: Space.xxs, leading: Space.m, bottom: Space.xxs, trailing: Space.xs))
         // Right: Replace, a full swipe too. Left: Keep and Same as…, never
         // a full swipe: Keep sends the original to the AI, so it is a tap
-        // (ADR 0106).
+        // (ADR 0106). In Select neither, nor the long press's menu: a row
+        // there ticks, and its ≡ handle drags.
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Replace") { decide(identity, .replace) }
-                .tint(Palette.swipeAccent)
+            if !selecting {
+                Button("Replace") { decide(identity, .replace) }
+                    .tint(Palette.swipeAccent)
+            }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Keep") { decide(identity, .keep) }
-                .tint(.gray)
-            Button("Same as…") { onPickSameAs(identity.id) }
-                .tint(.indigo)
+            if !selecting {
+                Button("Keep") { decide(identity, .keep) }
+                    .tint(.gray)
+                Button("Same as…") { onPickSameAs(identity.id) }
+                    .tint(.indigo)
+            }
         }
         .contextMenu {
-            Button {
-                onFocus(.identity(identity.id))
-            } label: {
-                Label("Review this identity", systemImage: "rectangle.stack")
-            }
-            Button {
-                decide(identity, .replace)
-            } label: {
-                Label("Replace all", systemImage: "eye.slash")
-            }
-            Button {
-                decide(identity, .keep)
-            } label: {
-                Label("Keep all", systemImage: "eye")
-            }
-            Button {
-                onPickSameAs(identity.id)
-            } label: {
-                Label("Same as…", systemImage: "link")
+            if !selecting {
+                Button {
+                    onFocus(.identity(identity.id))
+                } label: {
+                    Label("Review this identity", systemImage: "rectangle.stack")
+                }
+                Button {
+                    decide(identity, .replace)
+                } label: {
+                    Label("Replace all", systemImage: "eye.slash")
+                }
+                Button {
+                    decide(identity, .keep)
+                } label: {
+                    Label("Keep all", systemImage: "eye")
+                }
+                Button {
+                    onPickSameAs(identity.id)
+                } label: {
+                    Label("Same as…", systemImage: "link")
+                }
             }
         }
     }
