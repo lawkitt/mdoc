@@ -33,6 +33,10 @@
 #   line_start     = true        the label opens its line: only whitespace
 #                                and Markdown marks (#, >, *, _, |) before
 #                                it (a caption's "No.")
+#   unless_slashed = true        no label joined to another by a slash,
+#                                just before or after it, spaces aside
+#                                ("ИНН/ОГРН"): the list's values are one run
+#                                left to the model; not with `after`
 #   after          = true        the labels follow the value instead ("a
 #                                March 9, 1984 birth date"): `between` is
 #                                what sits after the value; the labels are

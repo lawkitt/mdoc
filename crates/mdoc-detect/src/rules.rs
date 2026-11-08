@@ -290,6 +290,11 @@ struct ContextEntry {
     /// a phrase, not a noun of a longer one: "birth date records").
     #[serde(default)]
     follow: Option<String>,
+    /// Before its value only: no label joined to another by a slash, just
+    /// before or after it, spaces aside ("ИНН/ОГРН", "ОКТМО / ОКПО"): such
+    /// a list's values form one run the model reads whole (#563).
+    #[serde(default)]
+    unless_slashed: bool,
 }
 
 #[derive(Deserialize)]
@@ -1070,6 +1075,9 @@ struct Context {
     only_after: Vec<String>,
     /// What follows an `after` label, anchored at its end.
     follow: Option<Regex>,
+    /// With `unless_slashed`: the labels, longest first, anchored at a
+    /// match's start, to find where its label ends.
+    unless_slashed: Option<Regex>,
 }
 
 /// A `defined` entry: its words, as a `never` entry holds them.
@@ -1587,6 +1595,11 @@ impl Pack {
                         "only a label after its value takes only_after or follow".into(),
                     ));
                 }
+                if entry.after && entry.unless_slashed {
+                    return Err(at(
+                        "only a label before its value takes unless_slashed".into()
+                    ));
+                }
                 if let Some(label) = entry
                     .labels
                     .iter()
@@ -1647,6 +1660,15 @@ impl Pack {
                     .map(|follow| Regex::new(&format!("^(?:{})", rust_classes(follow))))
                     .transpose()
                     .map_err(|e| at(e.to_string()))?;
+                let unless_slashed = entry
+                    .unless_slashed
+                    .then(|| {
+                        let mut longest = labels.clone();
+                        longest.sort_by_key(|label| std::cmp::Reverse(label.len()));
+                        Regex::new(&format!(r"(?i)^(?:{})\b", longest.join("|")))
+                    })
+                    .transpose()
+                    .map_err(|e| at(e.to_string()))?;
                 let unless_guessed = entry
                     .unless_guessed
                     .iter()
@@ -1682,6 +1704,7 @@ impl Pack {
                     after: entry.after,
                     only_after: entry.only_after.clone(),
                     follow,
+                    unless_slashed,
                 });
             }
             for (index, entry) in file.span.iter().enumerate() {
@@ -4499,12 +4522,24 @@ impl Pack {
                         && label.next() == Some('.')
                         && back.next() == Some('.')
                         && back.next().is_some_and(char::is_alphabetic);
+                    // A label joined to another by a slash ("ИНН/ОГРН
+                    // 7701234567/1027700132195") leaves the run to the
+                    // model: its value may be the other label's.
+                    let slashed = context.unless_slashed.as_ref().is_some_and(|label| {
+                        let blank = [' ', '\t', '\u{a0}'];
+                        let end = label.find(&source[start..]).map_or(0, |found| found.end());
+                        source[..start].trim_end_matches(blank).ends_with('/')
+                            || source[start + end..]
+                                .trim_start_matches(blank)
+                                .starts_with('/')
+                    });
                     if !ends
                         || !starts
                         || !led
                         || !followed
                         || !wrapped
                         || inside
+                        || slashed
                         || context.unless_after.contains(&before)
                         || (context.line_start && !opens())
                         || !self.takes(context, value.as_str())
@@ -13460,8 +13495,8 @@ Privacy Act (“BIPA”). BIPA applies.",
                 ("Лидия Брюн", "PERSON"),
                 ("7701234567", "TAX"),
                 ("770101001", "TAX"),
-                // The structured ОГРН rule's category, as before #480.
-                ("1027700132195", "IDENTITY"),
+                // ОГРН is TAX like ИНН (#484 item 6, #563).
+                ("1027700132195", "TAX"),
                 ("40702810900000012345", "BANK"),
                 ("4512 345678", "IDENTITY"),
                 ("+7 (495) 123-45-67", "PHONE"),
@@ -18367,6 +18402,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "is not one lowercase word or 's",
             ),
             (
+                "[[context]]\ncategory = \"DATE\"\nlabels = [\"birth date\"]\nafter = true\nunless_slashed = true\nbetween = ' '\nvalue = '\\d{4}'",
+                "only a label before its value takes unless_slashed",
+            ),
+            (
                 "[[never]]\nmatch = \"plural\"\nwords = [\"Ms\"]",
                 "not lowercase",
             ),
@@ -18951,5 +18990,234 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             listed += 1;
         }
         assert_eq!(listed, 2);
+    }
+
+    /// #563: ОГРН, ОГРНИП and ОКПО are TAX like ИНН, a public body's own
+    /// too; the model's IDENTITY or BANK guess on one gives way, and with no
+    /// guess the label proposes it. КБК and ОКТМО are budget codes and stay
+    /// unmarked; the account and БИК stay BANK (guide rule 6, #484 item 6,
+    /// #553 item 1).
+    #[test]
+    fn state_register_numbers_are_tax_numbers() {
+        // The issue's reproduction; its ИНН differs by a digit, as
+        // `shown` would find "9900000017" inside "1029900000017".
+        let source = "ООО «Север» (ОГРН 1029900000017, ОКПО 99887766), ИП Ветлин Н. О. \
+            (ОГРНИП 329990000000012); получатель: УФК по Ольховской области, ИНН \
+            9901000017, БИК 049999999, р/с 03100643000000019900, КБК \
+            18210102010011000110, ОКТМО 99701000.";
+        let expected = pairs(&[
+            ("ООО «Север»", "ORG"),
+            ("1029900000017", "TAX"),
+            ("99887766", "TAX"),
+            ("Ветлин Н. О.", "PERSON"),
+            ("329990000000012", "TAX"),
+            ("9901000017", "TAX"),
+            ("049999999", "BANK"),
+            ("03100643000000019900", "BANK"),
+        ]);
+        let common = [
+            ("ООО «Север»", "organization"),
+            ("Ветлин Н. О.", "person"),
+            ("9901000017", "tax_id"),
+            ("049999999", "routing_number"),
+            ("03100643000000019900", "bank_account"),
+            ("18210102010011000110", "bank_account"),
+            ("99701000", "tax_id"),
+        ];
+        for guesses in [
+            [
+                ("1029900000017", "national_id_number"),
+                ("99887766", "bank_account"),
+                ("329990000000012", "national_id_number"),
+            ],
+            [
+                ("ОГРН 1029900000017", "bank_account"),
+                ("ОКПО 99887766", "national_id_number"),
+                ("329990000000012", "passport_number"),
+            ],
+            [
+                ("1029900000017", "bank_account"),
+                ("99887766", "passport_number"),
+                ("ОГРНИП 329990000000012", "national_id_number"),
+            ],
+        ] {
+            let raw: Vec<_> = common.iter().chain(&guesses).copied().collect();
+            assert_eq!(shown(source, &raw), expected, "{guesses:?}");
+        }
+        // With no model span the labels still propose the numbers.
+        assert_eq!(
+            shown(source, &[]),
+            pairs(&[
+                ("1029900000017", "TAX"),
+                ("99887766", "TAX"),
+                ("Ветлин Н. О.", "PERSON"),
+                ("329990000000012", "TAX"),
+                ("9901000017", "TAX"),
+            ])
+        );
+        // A valid ОГРН's structured rule says TAX too.
+        let source = "ОГРН 1027700132195; OGRN 1027700132195";
+        assert_eq!(
+            shown(source, &[("1027700132195", "national_id_number")]),
+            pairs(&[("1027700132195", "TAX"), ("1027700132195", "TAX")])
+        );
+    }
+
+    /// #563: the labels' forms, and an invalid or damaged value of one
+    /// digit fewer or more, which the guide marks too (rule 6).
+    #[test]
+    fn state_register_labels_take_their_forms() {
+        for (source, values) in [
+            ("ОГРН: 1027700132195.", &["1027700132195"][..]),
+            ("ОГРНИП № 322213000038573", &["322213000038573"]),
+            ("ОГРН ИП 322213000038573", &["322213000038573"]),
+            ("ОГРН ИП: 322213000038573", &["322213000038573"]),
+            ("(ОГРН:1027700132195)", &["1027700132195"]),
+            ("**ОГРН:** 1027700132195", &["1027700132195"]),
+            ("ОГРН (1029900000017)", &["1029900000017"]),
+            (
+                "основной государственный регистрационный номер (ОГРН) 1029900000017",
+                &["1029900000017"],
+            ),
+            (
+                "основной государственный регистрационный номер индивидуального \
+                    предпринимателя 329990000000012",
+                &["329990000000012"],
+            ),
+            (
+                "за основным государственным регистрационным номером 1029900000017",
+                &["1029900000017"],
+            ),
+            // English labels, any case.
+            ("OGRN: 1029900000017", &["1029900000017"]),
+            ("ogrnip 329990000000012", &["329990000000012"]),
+            ("PSRN 1029900000017", &["1029900000017"]),
+            ("ОКПО: 99887766", &["99887766"]),
+            ("код ОКПО 9988776655", &["9988776655"]),
+            ("код по ОКПО 99887766", &["99887766"]),
+            // One digit fewer or more, and OCR's letter for a digit.
+            ("ОГРН 102990000001", &["102990000001"]),
+            ("ОГРН 10299000000170", &["10299000000170"]),
+            ("ОГРНИП 3299900000000123", &["3299900000000123"]),
+            ("ОГРН 1О29900000017", &["1О29900000017"]),
+            ("ОКПО 9988776", &["9988776"]),
+            ("ОКПО 998877665", &["998877665"]),
+        ] {
+            let tax: Vec<(&str, &str)> = values.iter().map(|value| (*value, "TAX")).collect();
+            assert_eq!(shown(source, &[]), pairs(&tax), "{source}");
+        }
+    }
+
+    /// #563: labels joined by a slash leave their run of values to the
+    /// model, as before: a span over the whole run keeps its category and
+    /// its range, spans over each value stay TAX, and with no span nothing
+    /// is proposed. A budget code before "/ОКПО" is never ОКПО's value.
+    #[test]
+    fn state_register_slash_lists_stay_the_models() {
+        for (source, run) in [
+            (
+                "ИНН/КПП/ОГРН 9901000017/990101001/1029900000017",
+                "9901000017/990101001/1029900000017",
+            ),
+            (
+                "ИНН / КПП / ОГРН 9901000017 / 990101001 / 1029900000017",
+                "9901000017 / 990101001 / 1029900000017",
+            ),
+            (
+                "ИНН/ОГРН 9901000017/1029900000017",
+                "9901000017/1029900000017",
+            ),
+            (
+                "ИНН/ОГРН: 9901000017/1029900000017",
+                "9901000017/1029900000017",
+            ),
+            (
+                "ОГРН/ИНН 1029900000017/9901000017",
+                "1029900000017/9901000017",
+            ),
+            (
+                "ОГРН/ИНН/КПП 1029900000017/9901000017/990101001",
+                "1029900000017/9901000017/990101001",
+            ),
+            (
+                "ОГРН/КПП 1029900000017/990101001",
+                "1029900000017/990101001",
+            ),
+            ("ОГРН/ОКПО 1029900000017/99887766", "1029900000017/99887766"),
+            ("ИНН/ОКПО 9901000017/99887766", "9901000017/99887766"),
+            (
+                "ИНН/КПП/ОКПО 9901000017/990101001/99887766",
+                "9901000017/990101001/99887766",
+            ),
+            (
+                "ИНН/ОГРНИП 990100001700/329990000000012",
+                "990100001700/329990000000012",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(run, "tax_id")]),
+                pairs(&[(run, "TAX")]),
+                "{source}"
+            );
+            assert_eq!(shown(source, &[]), pairs(&[]), "{source}");
+            let values: Vec<&str> = run.split('/').map(str::trim).collect();
+            let raw: Vec<(&str, &str)> = values.iter().map(|value| (*value, "tax_id")).collect();
+            let tax: Vec<(&str, &str)> = values.iter().map(|value| (*value, "TAX")).collect();
+            assert_eq!(shown(source, &raw), pairs(&tax), "{source}");
+        }
+        let source = "ОКТМО/ОКПО 45382000/99887766";
+        assert_eq!(shown(source, &[]), pairs(&[]));
+        assert_eq!(
+            shown(source, &[("99887766", "tax_id")]),
+            pairs(&[("99887766", "TAX")])
+        );
+    }
+
+    /// #563 guards: an ИНН stays TAX, a БИК and an account BANK; an amount
+    /// or a date beside an ОГРН is no part of it (#600); a run too short or
+    /// too long is no ОГРН or ОКПО; КБК, ОКТМО and other classifiers' codes
+    /// stay unmarked, whatever the model guessed.
+    #[test]
+    fn state_register_labels_take_nothing_else() {
+        let source = "ИНН 9901000017, ОГРН 1029900000017 от 12.03.2031, БИК 049999999, \
+            р/с 03100643000000019900; ОГРН 1199900000011 500 руб.";
+        let raw = [
+            ("9901000017", "tax_id"),
+            ("1029900000017 от 12.03.2031", "national_id_number"),
+            ("049999999", "bank_account"),
+            ("03100643000000019900", "bank_account"),
+            ("1199900000011 500", "tax_id"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("9901000017", "TAX"),
+                ("1029900000017", "TAX"),
+                ("049999999", "BANK"),
+                ("03100643000000019900", "BANK"),
+                ("1199900000011", "TAX"),
+            ])
+        );
+        for source in [
+            "ОГРН 10299000017",
+            "ОГРН 10299000000170123",
+            "ОКПО 998877",
+            "ОКПО 998877665544",
+            "ОГРН (при наличии) не указан",
+            "номер 1029900000017",
+        ] {
+            assert_eq!(shown(source, &[]), pairs(&[]), "{source}");
+        }
+        let source = "КБК: 18210102010011000110, ОКТМО: 99701000, ОКАТО 99401000000, \
+            ОКВЭД 47.11; (КБК 18210102010011000110, ОКТМО 99701000)";
+        let raw = [
+            ("18210102010011000110", "bank_account"),
+            ("99701000", "tax_id"),
+            ("99401000000", "tax_id"),
+            ("47.11", "tax_id"),
+            ("КБК 18210102010011000110", "bank_account"),
+            ("ОКТМО 99701000", "national_id_number"),
+        ];
+        assert_eq!(shown(source, &raw), pairs(&[]));
     }
 }
