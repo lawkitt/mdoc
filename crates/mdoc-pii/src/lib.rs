@@ -306,7 +306,8 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
         && source[..range.start]
             .chars()
             .next_back()
-            .is_some_and(char::is_alphanumeric);
+            .is_some_and(char::is_alphanumeric)
+        && !(mrz_head_before(source, range.start) && source[range.end..].starts_with('<'));
     let right = original
         .chars()
         .next_back()
@@ -316,6 +317,26 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
             .next()
             .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c));
     !left && !right
+}
+/// Whether `at` in `text` follows a machine-readable zone's document head
+/// alone on its line (ICAO 9303; issue #495): the code (`P`, or `I`, `A`,
+/// `C` for an ID card), the type (`<` or a capital) and the issuing state
+/// (three characters, `<`-padded: `RUS`, `D<<`), after which the surname
+/// starts with no separator ("P<RUSKRENC<<LIDIIA"). The surname is a word
+/// of its own there.
+fn mrz_head_before(text: &str, at: usize) -> bool {
+    let line = &text[text[..at].rfind('\n').map_or(0, |i| i + 1)..at];
+    let head = line.trim_start_matches([' ', '\t']).as_bytes();
+    let capital = |b: u8| b.is_ascii_uppercase();
+    head.len() == 5
+        && matches!(head[0], b'P' | b'I' | b'A' | b'C')
+        && (head[1] == b'<' || capital(head[1]))
+        && capital(head[2])
+        && match (head[3], head[4]) {
+            (third, fourth) if capital(third) => capital(fourth) || fourth == b'<',
+            (b'<', b'<') => true,
+            _ => false,
+        }
 }
 fn interval_conflict(occupied: &BTreeMap<usize, usize>, range: &Range<usize>) -> bool {
     occupied

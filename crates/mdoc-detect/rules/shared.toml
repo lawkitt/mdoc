@@ -82,7 +82,17 @@
 # span leaves out ("адресу " before a city). A match wins over a model
 # span inside it and gives way to a model span of its category that
 # reaches past it, a span of another category across its edge and any
-# other rule's span in it; a match before a colon (a field's label) goes. Without a pattern an entry
+# other rule's span in it; a match before a colon (a field's label) goes.
+# A pattern entry may also have:
+#   split       = regex       the match, `lead` and `tail` left out, is cut
+#                             at each of its matches: every piece between
+#                             them is a span of its own (a passport's name
+#                             fields between their `<` fillers); no
+#                             continuation
+#   line_length = [least, most]  each line of the whole match, `lead` and
+#                             `tail` included and the whitespace at its
+#                             ends left out, has least to most characters
+# Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
@@ -196,8 +206,9 @@
 # Context rules are per language.
 context = []
 
-# Span patterns and fixes are per language.
-span = []
+# Span patterns and fixes are per language, but for a machine-readable
+# zone's names, which ICAO 9303 writes the same in every language (end
+# of this file).
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
 variants = []
@@ -514,3 +525,39 @@ forbid_unlabelled = ['^\s*\d\.\d{1,3}\.\d{2}\s*$']
 # a lone " R " is a street, block or passport letter ("1500 R Street").
 [[reference]]
 pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+(?:[.,]\d+)?[\p{Zs}\t]+R[\p{Zs}\t]+to[\p{Zs}\t]+inside\b'
+
+# The names in a passport's or an ID card's machine-readable zone (ICAO
+# 9303; issue #495). Each surname and given-name part between the «<»
+# fillers is its own PERSON span, without them (fixture guide:
+# "P<RUS⟦PERSON|KRENC⟧<<⟦PERSON|LIDIIA⟧<⟦PERSON|ARSENEVNA⟧<<<"); a
+# surname of several parts gives a span per part. A passport's first line
+# (TD3, 44 characters) and a TD2 card's (36) open with the document's
+# code («P», or «I», «A», «C» for a card), its type («<» or a capital) and
+# the issuing state (three characters, «<»-padded: «RUS», «D<<»), then the
+# surname, «<<» and the given names, padded with «<» to the line's end; the
+# line holds capitals and «<» alone. OCR may lose or add some fillers, so
+# 32 to 52 characters do. The second line (number, dates, check digits)
+# stays unmarked, and so do visas («V…»), left out for now. A lone «<<» in
+# prose, HTML or code, a row of «<» and a line of capitals without the
+# head and «<<» match nothing.
+[[span]]
+category = "PERSON"
+pattern = '(?m)(?P<lead>^[\p{Zs}\t]*[PIAC][A-Z<]{state})(?:{names}<<(?:{names})?)(?P<tail><*[\p{Zs}\t\r]*)$'
+parts.state = '[A-Z]{3}|[A-Z]{2}<|[A-Z]<<'
+parts.names = '[A-Z]+(?:<[A-Z]+)*'
+split = '<+'
+line_length = [32, 52]
+
+# The names on a TD1 ID card's third line (30 characters), under its first
+# line (the code «I», «A» or «C», type, state and document number) and its
+# second (birth date, check digit, sex, expiry date, check digit,
+# nationality): "ERIKSSON<<ANNA<MARIA<<<<<<<<<<". Each part is a PERSON
+# span as on a passport (above); the first two lines stay unmarked. Each
+# line has 26 to 34 characters, for OCR's lost or extra fillers.
+[[span]]
+category = "PERSON"
+pattern = '(?m)(?P<lead>^[\p{Zs}\t]*[IAC][A-Z<]{state}[A-Z0-9<]+[\p{Zs}\t\r]*\n[\p{Zs}\t]*[0-9]{6}[0-9<][MFX<][0-9]{6}[0-9<][A-Z<]{3}[A-Z0-9<]*[\p{Zs}\t\r]*\n[\p{Zs}\t]*)(?:{names}<<(?:{names})?)(?P<tail><*[\p{Zs}\t\r]*)$'
+parts.state = '[A-Z]{3}|[A-Z]{2}<|[A-Z]<<'
+parts.names = '[A-Z]+(?:<[A-Z]+)*'
+split = '<+'
+line_length = [26, 34]

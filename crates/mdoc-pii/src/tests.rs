@@ -2634,3 +2634,25 @@ fn an_always_listed_date_counts_every_mention() {
     review.refresh(&edited);
     assert_eq!(mention_count(&review, "14/03/1988"), 2);
 }
+
+/// #495: a surname right after a machine-readable zone's document head
+/// ("P<RUSKRENC<<") is a word of its own: proposed, found again in another
+/// such line and markable by hand; glued to any other letters it is not.
+#[test]
+fn a_surname_after_a_machine_readable_zones_head_is_a_word_of_its_own() {
+    let source = "P<RUSKRENC<<LIDIIA<ARSENEVNA<<<<<<<<<<<<<<<<\n\
+                  P<UTOKRENC<<LIDIIA<<<<<<<<<<<<<<<<<<<<<<<<<<\n\
+                  THEKRENC<< and PARTYKRENC.\n";
+    let review = ingest_names(source, &["KRENC", "LIDIIA", "ARSENEVNA"]);
+    let line = source.find("P<UTO").unwrap();
+    assert_eq!(
+        proposed(&review, "KRENC").mentions,
+        [5..10, line + 5..line + 10]
+    );
+    assert_eq!(mention_count(&review, "LIDIIA"), 2);
+    assert_eq!(mention_count(&review, "ARSENEVNA"), 1);
+    let mut review = Review::default();
+    review.refresh(source);
+    let mark = review.add_manual(source, 5..10, Category::Person).unwrap();
+    assert_eq!(review.variant(mark).unwrap().mentions.len(), 2);
+}

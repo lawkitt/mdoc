@@ -493,8 +493,11 @@ impl Restoration {
 fn word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
+/// A token starts at a non-word character, or right after a
+/// machine-readable zone's document head, where the surname's alias stands
+/// glued ("P<RUSPERSON_1<<PERSON_2", #495).
 fn word_start(text: &str, at: usize) -> bool {
-    !text[..at].chars().next_back().is_some_and(word_char)
+    !text[..at].chars().next_back().is_some_and(word_char) || super::mrz_head_before(text, at)
 }
 /// A token ends at a non-word character, or where Cyrillic letters are glued
 /// on as an inflection (`PERSON_1у`). Latin letters continue the word.
