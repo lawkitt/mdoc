@@ -45,10 +45,14 @@ enum Size {
 enum ReviewBarMetrics {
     /// The bar's widest: centred beyond it on iPad.
     static let maxWidth: CGFloat = 560
-    /// A card dragged sideways further than this steps to its neighbor.
+    /// A card dragged sideways further than this, or a third of its width
+    /// if more, steps to its neighbor; at either end it bumps.
     static let swipeThreshold: CGFloat = 60
-    /// How far a card slides as the next one comes in.
-    static let cardSlide: CGFloat = 60
+    /// The room each side of the card, inside the bar's padding, where a
+    /// neighbor peeks in.
+    static let cardInset: CGFloat = 14
+    /// Between two cards in the strip.
+    static let cardGap: CGFloat = Space.s
     /// The progress line's track.
     static let trackWidth: CGFloat = 56
 

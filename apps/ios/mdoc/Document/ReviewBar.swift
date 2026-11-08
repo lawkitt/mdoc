@@ -30,15 +30,13 @@ struct ReviewBar: View {
     @State private var detailsAtTop = true
     /// The mentions' scroll, back at the top each time they open.
     @State private var detailsScroll = ScrollPosition(edge: .top)
-    /// +1 stepping forward, -1 back: where the next card comes from.
-    @State private var direction = 1
     @State private var grabberLift: CGFloat = 0
     @Environment(\.preferences) private var preferences
 
-    /// A drag on the card: its axis, fixed by the first movement, and how far.
+    /// A drag on the card: its axis, fixed by the first movement, and how
+    /// far up or down (the pager moves its strip sideways).
     struct CardDrag: Equatable {
         var axis: Axis?
-        var dx: CGFloat = 0
         var dy: CGFloat = 0
     }
 
@@ -80,7 +78,9 @@ struct ReviewBar: View {
                     ReviewHintLine(hint: hint) { model.learn(hint) }
                         .transition(.opacity)
                 }
-                pager(candidate)
+                ReviewPager(
+                    model: model, candidate: candidate, nudge: drag, pull: $cardDrag,
+                    onPullEnded: { pullEnded(predicted: $0) })
                 VStack(spacing: 0) {
                     // Always built, at no height while the bar is compact, so
                     // the bar knows where full is before it opens; spaced
@@ -119,9 +119,9 @@ struct ReviewBar: View {
                 .keyboardShortcut(.return, modifiers: [])
             Button("Keep") { key(.keep, candidate) }
                 .keyboardShortcut("k", modifiers: [])
-            Button("Previous") { step(-1) }
+            Button("Previous") { ReviewPager.step(model, -1, reduceMotion: reduceMotion) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-            Button("Next") { step(1) }
+            Button("Next") { ReviewPager.step(model, 1, reduceMotion: reduceMotion) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
             Button("End review") { model.endReview() }
                 .keyboardShortcut(".", modifiers: .command)
@@ -266,98 +266,6 @@ struct ReviewBar: View {
         .allowsHitTesting(detailsShown)
         .disabled(!detailsShown)
         .accessibilityHidden(!detailsShown)
-    }
-
-    // MARK: Pager
-
-    private func pager(_ candidate: Candidate) -> some View {
-        let order = model.reviewOrder
-        let index = order.index(of: candidate.id) ?? 0
-        let hasPrevious = index > 0
-        let hasNext = index < order.count - 1
-        // The neighbors peek out at the edges, as tall as the card and no
-        // taller: overlays, so they never stretch the bar.
-        return ReviewCard(model: model, candidate: candidate)
-            .id(candidate.id)
-            .transition(reduceMotion
-                ? .opacity
-                : .asymmetric(
-                    insertion: .offset(x: CGFloat(direction) * ReviewBarMetrics.cardSlide).combined(with: .opacity),
-                    removal: .offset(x: CGFloat(-direction) * ReviewBarMetrics.cardSlide).combined(with: .opacity)))
-            .offset(x: drag + (cardDrag.axis == .horizontal ? cardDrag.dx : 0))
-            .padding(.horizontal, 14)
-            .background(alignment: .leading) {
-                Peek(visible: hasPrevious) { swiped(-1) }
-                    .accessibilityHidden(true)
-            }
-            .background(alignment: .trailing) {
-                Peek(visible: hasNext) { swiped(1) }
-                    .accessibilityHidden(true)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .contentShape(Rectangle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 12, coordinateSpace: .global)
-                .updating($cardDrag) { value, card, _ in
-                    let dx = value.translation.width, dy = value.translation.height
-                    if card.axis == nil { card.axis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
-                    card.dy = dy
-                    // Rubber-band resistance where there is nothing to swipe to.
-                    let blocked = (dx > 0 && !hasPrevious) || (dx < 0 && !hasNext)
-                    card.dx = blocked ? dx / 4 : dx
-                }
-                .onEnded { value in
-                    let dx = value.translation.width, dy = value.translation.height
-                    if abs(dy) > abs(dx) {
-                        pullEnded(predicted: value.predictedEndTranslation.height)
-                        return
-                    }
-                    let threshold = ReviewBarMetrics.swipeThreshold
-                    if dx < -threshold, hasNext {
-                        swiped(1)
-                    } else if dx > threshold, hasPrevious {
-                        swiped(-1)
-                    } else if abs(dx) > threshold {
-                        Haptics.edge()
-                    }
-                })
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: Text("Previous")) { step(-1) }
-        .accessibilityAction(named: Text("Next")) { step(1) }
-    }
-
-    /// A swipe or a tap on a peek: the gesture is found, so its hint goes.
-    private func swiped(_ delta: Int) {
-        model.learn(.swipe)
-        step(delta)
-    }
-
-    private func step(_ delta: Int) {
-        direction = delta
-        withAnimation(Motion.move(reduced: reduceMotion)) {
-            if model.step(delta) {
-                Haptics.selection()
-            } else {
-                Haptics.edge()
-            }
-        }
-    }
-}
-
-/// The sliver of the previous or next card at the bar's edge: it shows
-/// there is more to swipe to, and a tap steps.
-private struct Peek: View {
-    let visible: Bool
-    let action: () -> Void
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-            .fill(Palette.surface)
-            .opacity(visible ? 0.7 : 0)
-            .frame(width: 22)
-            .padding(.vertical, Space.s)
-            .contentShape(Rectangle().inset(by: -8))
-            .onTapGesture { if visible { action() } }
     }
 }
 
