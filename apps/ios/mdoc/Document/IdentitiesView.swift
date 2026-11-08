@@ -30,8 +30,7 @@ struct IdentitiesView: View {
     /// Names just decided, at the state whose section they stay in while
     /// their marks turn (`IdentitiesView+Gestures`).
     @State var held: [IdentityID: MentionState] = [:]
-    /// The row being dragged, and the row a drag is over.
-    @State var dragged: IdentityID?
+    /// The row a drag is over.
     @State var dropTarget: IdentityID?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
@@ -158,7 +157,7 @@ struct IdentitiesView: View {
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
             }
-            if model.showsDragMergeHint && !selecting {
+            if IdentityDrop.reachesRows && model.showsDragMergeHint && !selecting {
                 ReviewHintLine(hint: .dragMerge) { model.learn(.dragMerge) }
             }
         }
@@ -411,7 +410,7 @@ struct IdentitiesView: View {
             }
         }
         // Drag one row onto another: the same name (ADR 0106).
-        .modifier(IdentityDrop(identity: identity, model: model, dragged: $dragged, target: $dropTarget))
+        .modifier(IdentityDrop(identity: identity, model: model, target: $dropTarget))
     }
 
     // MARK: Select

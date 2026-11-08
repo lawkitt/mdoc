@@ -1,8 +1,6 @@
-- **Identities' swipes and drag-to-merge.** In the drawer a row's swipe is
-  the row's: right replaces (a full swipe too), left shows Same as… and
-  Keep without a full-swipe Keep, and the drawer closes from ›, its sliver
-  or its inner edge. A decided row's mark turns before the row moves.
-  Dragging a name onto another makes them one, on iPhone too, with an
-  outline, "Same as PERSON_1" and an Undo toast; a one-time hint line says
-  so. Undo shows no toast
+- **Identities' swipes are the rows'.** In the drawer, swipe right on a
+  name replaces it (a full swipe too) and swipe left shows Same as… and
+  Keep, with no full-swipe Keep; the drawer closes from ›, its sliver or
+  its inner edge. A decided name's mark turns before the row moves, and
+  Undo shows no toast
   ([ADR 0106](docs/adr/0106-mobile-identities-gestures.md)).

@@ -173,10 +173,11 @@ that only the view model changes; views send intents
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
 - **Top:** progress ring, "Identities", "9 names · 4 left", search circle,
-  Select, › close; then Replace N, filled; then, while Looks like has a
-  card or two names share a category, the hint line "Drag a name onto
-  another to make them one" (`ReviewHint.dragMerge`), gone for good after
-  the first drag-merge or Same as, or ×.
+  Select, › close; then Replace N, filled. Once a drop reaches a row (see
+  Drag-to-merge), the hint line "Drag a name onto another to make them
+  one" (`ReviewHint.dragMerge`) goes here while Looks like has a card or
+  two names share a category, gone for good after the first drag-merge or
+  Same as, or ×.
 - **Then:** Looks like cards (Same as, Not the same), category chips, and
   the names by what is left: To review, Replaced, Kept (folded).
 - **Rows:** category icon, the name (wrapped at words), the alias, "3×"
@@ -187,13 +188,15 @@ that only the view model changes; views send intents
 - **Swipes:** right is Replace, a full swipe too; left shows Same as… and
   Keep, never as a full swipe, since Keep sends the original to the AI.
   In the drawer the rows own sideways swipes.
-- **Drag-to-merge** (iPhone and iPad): drag a row onto another. The row
+- **Drag-to-merge** (`IdentityDrop`): drag a row onto another. The row
   under the finger gets an accent outline and "Same as PERSON_1" in its
-  alias line; the row being dragged takes no drop. The drop is the core's
-  link, as desktop's drag: the target keeps its alias and restore
-  wording, another category takes the target's, one undo step, a haptic
-  and "PERSON_3 is now PERSON_1 · Undo". Mention drags and drop-to-split
-  are desktop's only.
+  alias line; a row's drop of itself does nothing. The drop is the core's
+  link, as desktop's drag: the target keeps its alias, another category
+  takes the target's, one undo step, a haptic and "PERSON_3 is now
+  PERSON_1 · Undo". Mention drags and drop-to-split are desktop's only.
+  On iOS 26 the List keeps a drag that starts in it to itself: the row
+  lifts and the list scrolls near its edges, but the drop reaches no
+  row, so the gesture does not work yet.
 - **Select:** tick rows, then Replace, Keep or Same as (into the name
   mentioned most); one Undo takes the selection back.
 
@@ -208,7 +211,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
 | Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
-| Identities row | Long press, then drag onto another row | Same as: the two names become one |
+| Identities row | Long press, then drag onto another row | Same as: the two names become one (the drop does not reach a row on iOS 26 yet) |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
 | Left edge (iPhone) | Swipe right | The sidebar; tap the sliver, or swipe left from it or the panel's inner edge, to close |
 | Right edge (iPhone, a document open) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |

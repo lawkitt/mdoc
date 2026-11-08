@@ -40,9 +40,9 @@ extension IdentitiesView {
         reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity)
     }
 
-    /// "Same as PERSON_1" while a drag that this row can take is over it.
+    /// "Same as PERSON_1" while a drag is over the row.
     func dropHint(on identity: Identity) -> String? {
-        guard dropTarget == identity.id, model.canMerge(dragged, into: identity.id) else { return nil }
+        guard dropTarget == identity.id else { return nil }
         return String(localized: "Same as \(identity.alias)")
     }
 }
@@ -60,40 +60,38 @@ struct DropHintLabel: View {
 }
 
 /// A row's part in drag-to-merge (ADR 0106, desktop's ADR 0025): it lifts
-/// as a drag, and takes another row's drop, outlined while the drag is
-/// over it. The row being dragged takes no drop of itself. The drop is the
-/// core's link: one undo step, with a haptic and an Undo toast.
+/// as a drag and takes another row's drop, outlined while a drag is over
+/// it. The drop is `DocumentViewModel.dragMerge`: the core's link, one undo
+/// step, a haptic and an Undo toast; a row's drop of itself does nothing.
+///
+/// On iOS 26 a List keeps a drag that starts in it to itself, so the drop
+/// never reaches a row, nor the list's or the panel's own drop destination
+/// (seen on the iPhone 17 Pro Simulator, 2026-11-08): the hint line that
+/// teaches the gesture waits until it does.
 struct IdentityDrop: ViewModifier {
+    /// Whether a drop reaches the row under the finger; the hint line shows
+    /// only then.
+    static let reachesRows = false
+
     let identity: Identity
     let model: DocumentViewModel
-    @Binding var dragged: IdentityID?
     @Binding var target: IdentityID?
-
-    private var takes: Bool {
-        target == identity.id && model.canMerge(dragged, into: identity.id)
-    }
 
     func body(content: Content) -> some View {
         content
             .overlay {
-                if takes {
+                if target == identity.id {
                     RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
                         .strokeBorder(Palette.accent, lineWidth: 2)
                         .padding(.horizontal, -Space.xxs)
                         .accessibilityHidden(true)
                 }
             }
-            .onDrag {
-                dragged = identity.id
-                return NSItemProvider(object: identity.id.rawValue as NSString)
-            }
+            .draggable(identity.id.rawValue)
             .dropDestination(for: String.self) { items, _ in
-                let dropped = items.first.map(IdentityID.init(rawValue:))
-                defer {
-                    dragged = nil
-                    target = nil
-                }
-                guard let dropped, model.canMerge(dropped, into: identity.id) else { return false }
+                target = nil
+                guard let dropped = items.first.map(IdentityID.init(rawValue:)),
+                      model.canMerge(dropped, into: identity.id) else { return false }
                 model.dragMerge(dropped, into: identity.id)
                 return true
             } isTargeted: { over in
