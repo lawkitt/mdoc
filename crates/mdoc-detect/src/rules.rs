@@ -331,10 +331,15 @@ struct SpanEntry {
     /// their `<` fillers).
     #[serde(default)]
     split: Option<String>,
-    /// The least and most characters of each line of a whole match, `lead`
-    /// and `tail` included, the whitespace at its ends left out.
+    /// The least and most characters of each line of a whole match that is
+    /// not blank, `lead` and `tail` included, without the whitespace at its
+    /// ends, its backslashes and its `mark` groups.
     #[serde(default)]
     line_length: Option<[usize; 2]>,
+    /// A regex: a span in which it matches is not proposed (a masked name,
+    /// "XXXXX").
+    #[serde(default)]
+    skip: Option<String>,
     #[serde(default)]
     trim: Vec<String>,
     /// ORG role trims need an explicit separator and an identifying remainder.
@@ -463,8 +468,18 @@ enum Span {
         split: Option<Regex>,
         /// How many characters each line of a whole match has.
         line_length: Option<std::ops::RangeInclusive<usize>>,
+        /// A span in which it matches is not proposed.
+        skip: Option<Regex>,
     },
     Fix(SpanFix),
+}
+
+/// A `span` pattern's span, and for a split one the whole match it was cut
+/// from, `lead` and `tail` included: a model span inside that match is no
+/// evidence against its pieces ("KRENC<<LIDIIA" holds two of them).
+pub(crate) struct SpanMatch {
+    pub(crate) detection: Detection,
+    pub(crate) whole: Option<std::ops::Range<usize>>,
 }
 
 /// A boundary fix for one category's spans.
@@ -1473,7 +1488,14 @@ impl Pack {
                             "a pattern takes no trim, trim_start, extend, strip_end, person_before or list_letter".into(),
                         ));
                     }
-                    let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
+                    // A sized pattern's `mark` groups are what its lines'
+                    // lengths leave out.
+                    let groups: &[&str] = if entry.line_length.is_some() {
+                        &["lead", "tail", "mark"]
+                    } else {
+                        &["lead", "tail"]
+                    };
+                    let pattern = with_groups(pattern, &entry.parts, groups, false).map_err(at)?;
                     let continuation_after = entry
                         .continuation_after
                         .as_ref()
@@ -1535,6 +1557,15 @@ impl Pack {
                         Some([least, most]) => Some(least..=most),
                         None => None,
                     };
+                    let skip = entry
+                        .skip
+                        .as_ref()
+                        .map(|skip| Regex::new(&rust_classes(skip)).map_err(|e| e.to_string()))
+                        .transpose()
+                        .map_err(at)?;
+                    if skip.as_ref().is_some_and(|skip| skip.is_match("")) {
+                        return Err(at("skip matches every span".into()));
+                    }
                     pack.spans.push(Span::Pattern {
                         category,
                         pattern,
@@ -1543,6 +1574,7 @@ impl Pack {
                         continuation_stop,
                         split,
                         line_length,
+                        skip,
                     });
                     continue;
                 }
@@ -1552,9 +1584,10 @@ impl Pack {
                     || entry.continuation_stop.is_some()
                     || entry.split.is_some()
                     || entry.line_length.is_some()
+                    || entry.skip.is_some()
                 {
                     return Err(at(
-                        "parts, absorbs, continuations, split and line_length need a pattern"
+                        "parts, absorbs, continuations, split, line_length and skip need a pattern"
                             .into(),
                     ));
                 }
@@ -4014,12 +4047,15 @@ impl Pack {
     #[cfg(test)]
     pub(crate) fn spans(&self, source: &str) -> Vec<Detection> {
         self.spans_beside(source, &[])
+            .into_iter()
+            .map(|found| found.detection)
+            .collect()
     }
 
     /// Matches beside existing evidence, all in view coordinates. Definite
     /// street/building components may contain names; a guessed town tail
     /// never consumes an independent PERSON/ORG or a contact field.
-    pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<Detection> {
+    pub(crate) fn spans_beside(&self, source: &str, names: &[Detection]) -> Vec<SpanMatch> {
         self.spans
             .iter()
             .filter_map(|span| match span {
@@ -4030,22 +4066,30 @@ impl Pack {
                     continuation_stop,
                     split,
                     line_length,
+                    skip,
                     ..
                 } => Some((
                     *category,
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    split,
+                    (split, skip),
                     line_length,
                 )),
                 Span::Fix(_) => None,
             })
             .flat_map(
-                |(category, pattern, continuation_after, continuation_stop, split, line_length)| {
+                |(
+                    category,
+                    pattern,
+                    continuation_after,
+                    continuation_stop,
+                    (split, skip),
+                    line_length,
+                )| {
                     span_ranges_sized(pattern, source, line_length.as_ref())
                         .into_iter()
-                        .map(move |mut range| {
+                        .map(move |(mut range, whole)| {
                             if let Some(core) = continuation_after
                                 .as_ref()
                                 .and_then(|pattern| pattern.find(&source[range.clone()]))
@@ -4063,7 +4107,7 @@ impl Pack {
                                         && range.start < name.range.end
                                 }) {
                                     range.end = range.start;
-                                    return range;
+                                    return (range, whole);
                                 }
                                 let name = names
                                     .iter()
@@ -4099,30 +4143,40 @@ impl Pack {
                                     }
                                 }
                             }
-                            range
+                            (range, whole)
                         })
                         // A split match's spans are the pieces between the
-                        // split's matches ("KRENC<<LIDIIA" is two names).
-                        .flat_map(move |range| match split {
-                            Some(split) => pieces(split, source, range),
-                            None => vec![range],
+                        // split's matches ("KRENC<<LIDIIA" is two names); the
+                        // whole match goes with each.
+                        .flat_map(move |(range, whole)| match split {
+                            Some(split) => pieces(split, source, range)
+                                .into_iter()
+                                .map(|piece| (piece, Some(whole.clone())))
+                                .collect(),
+                            None => vec![(range, None)],
                         })
                         // An address match before a colon ends in a field's
                         // label ("12 Oak Road, Email: …"), not the address's
                         // last part; a name before one is a speaker's ("ФИО1
                         // А. Б.: …").
-                        .filter(move |range| {
+                        .filter(move |(range, _)| {
                             !range.is_empty()
+                                && skip
+                                    .as_ref()
+                                    .is_none_or(|skip| !skip.is_match(&source[range.clone()]))
                                 && (category != Category::Address
                                     || !source[range.end..]
                                         .trim_start_matches([' ', '\t'])
                                         .starts_with(':'))
                         })
-                        .map(move |range| Detection {
-                            range,
-                            category,
-                            score: CONTEXT_SCORE,
-                            recognizer: Recognizer::Span,
+                        .map(move |(range, whole)| SpanMatch {
+                            detection: Detection {
+                                range,
+                                category,
+                                score: CONTEXT_SCORE,
+                                recognizer: Recognizer::Span,
+                            },
+                            whole,
                         })
                 },
             )
@@ -4250,13 +4304,15 @@ fn with_groups(
     if pattern.is_match("") {
         return Err("the pattern matches an empty span".into());
     }
-    if let Some(group) = pattern
-        .capture_names()
-        .flatten()
-        .find(|group| !groups.contains(group) && !(parties && is_party(group)))
-    {
+    if let Some(group) = pattern.capture_names().flatten().find(|group| {
+        !groups.contains(group)
+            && !(parties && is_party(group))
+            && !(groups.contains(&"mark") && numbered(group, "mark"))
+    }) {
         return Err(if parties {
             format!("group {group:?} is not `lead`, `tail`, `docket` or a `party`")
+        } else if groups.contains(&"mark") {
+            format!("group {group:?} is not `lead`, `tail` or a `mark`")
         } else {
             format!("group {group:?} is not `lead` or `tail`")
         });
@@ -4346,16 +4402,26 @@ fn joins_numeric_fields(
 /// one's lead.
 fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
     span_ranges_sized(pattern, source, None)
+        .into_iter()
+        .map(|(range, _)| range)
+        .collect()
 }
 
-/// [`span_ranges`] of the matches each of whose lines, `lead` and `tail`
-/// included, has `line_length` characters, the whitespace at its ends left
-/// out.
+/// [`span_ranges`] of the matches each of whose lines that is not blank,
+/// `lead` and `tail` included, has `line_length` characters, without the
+/// whitespace at its ends, its backslashes (Markdown's escapes and hard
+/// breaks) and its `mark` groups (a blockquote's or a table's marks, a
+/// label), each with its whole match.
 fn span_ranges_sized(
     pattern: &Regex,
     source: &str,
     line_length: Option<&std::ops::RangeInclusive<usize>>,
-) -> Vec<std::ops::Range<usize>> {
+) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+    let marks: Vec<&str> = pattern
+        .capture_names()
+        .flatten()
+        .filter(|group| numbered(group, "mark"))
+        .collect();
     let mut ranges = Vec::new();
     let mut at = 0;
     while at <= source.len()
@@ -4363,10 +4429,25 @@ fn span_ranges_sized(
     {
         let whole = found.get(0).expect("group 0 is the match");
         let sized = line_length.is_none_or(|length| {
-            whole
+            let marked: Vec<_> = marks
+                .iter()
+                .filter_map(|mark| found.name(mark))
+                .map(|mark| mark.range())
+                .collect();
+            let counted: String = whole
                 .as_str()
+                .char_indices()
+                .filter(|(i, c)| {
+                    let i = whole.start() + i;
+                    *c != '\\' && !marked.iter().any(|mark| mark.contains(&i))
+                })
+                .map(|(_, c)| c)
+                .collect();
+            counted
                 .lines()
-                .all(|line| length.contains(&line.trim().chars().count()))
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .all(|line| length.contains(&line.chars().count()))
         });
         let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
         let end = found
@@ -4382,7 +4463,7 @@ fn span_ranges_sized(
             continue;
         }
         if start < end {
-            ranges.push(start..end);
+            ranges.push((start..end, whole.range()));
         }
         at = if end > at {
             end
@@ -4395,6 +4476,13 @@ fn span_ranges_sized(
         };
     }
     ranges
+}
+
+/// Whether `group` is `base` or `base` with a number (`mark`, `mark2`).
+fn numbered(group: &str, base: &str) -> bool {
+    group
+        .strip_prefix(base)
+        .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// The pieces of `range` in `source` between the matches of `split`, none
@@ -14476,6 +14564,26 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "line_length",
             ),
             (
+                "[[span]]\ncategory = \"PERSON\"\npattern = 'x'\nline_length = [0, 4]",
+                "least 1",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\npattern = 'x'\nskip = 'X*'",
+                "every span",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nskip = 'X'",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\npattern = '(?P<mark>a)x'",
+                "is not `lead` or `tail`",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\npattern = '(?P<marker>a)x'\nline_length = [1, 4]",
+                "or a `mark`",
+            ),
+            (
                 "[[span]]\ncategory = \"ADDRESS\"\npattern = '\\d+'\nparts = { street = 'x' }",
                 "never used",
             ),
@@ -14597,15 +14705,34 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         );
     }
 
-    /// The names the review shows for `source` without a model: what the
-    /// machine-readable zone rules propose (#495).
-    fn mrz_names(source: &str) -> Vec<String> {
-        crate::recognition::proposals(source, &[])
+    /// The names the review shows for `source` with the model's `entities`
+    /// (`label` and text): what the machine-readable zone rules propose
+    /// (#495).
+    fn mrz_names_beside(source: &str, entities: &[(&str, &str)]) -> Vec<String> {
+        let raw: Vec<crate::RawEntity> = entities
+            .iter()
+            .map(|(label, text)| {
+                let start = source.find(text).unwrap();
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
             .unwrap()
             .into_iter()
             .filter(|span| span.category == "PERSON")
             .map(|span| source[span.range].to_owned())
             .collect()
+    }
+
+    /// The names the review shows for `source` without a model.
+    fn mrz_names(source: &str) -> Vec<String> {
+        mrz_names_beside(source, &[])
     }
 
     /// `head` padded with `<` fillers to `length` characters, as an MRZ
@@ -14625,76 +14752,196 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         );
         assert_eq!(mrz_names(&russian), ["KRENC", "LIDIIA", "ARSENEVNA"]);
         let foreign = format!(
-            "{}\nX0042917<6UTO8807145M3307019<<<<<<<<<<<<<<02",
-            mrz_line("P<UTOVELLAMO<<TESSA<MARIT", 44)
+            "{}\nX0042917<6NOR8807145M3307019<<<<<<<<<<<<<<02",
+            mrz_line("P<NORVELLAMO<<TESSA<MARIT", 44)
         );
         assert_eq!(mrz_names(&foreign), ["VELLAMO", "TESSA", "MARIT"]);
-        // A state of one letter ("D<<"), a surname of three parts, a
-        // diplomatic passport's type letter, and no given name at all.
+        // Germany's "D<<", a surname of three parts, a diplomatic
+        // passport's type letter, a United Nations laissez-passer, and no
+        // given name at all.
         assert_eq!(
             mrz_names(&mrz_line("P<D<<VAN<DER<BRUGGE<<ORLA", 44)),
             ["VAN", "DER", "BRUGGE", "ORLA"]
         );
         assert_eq!(
-            mrz_names(&mrz_line("PDUTOHALVARD<<SIGNE", 44)),
+            mrz_names(&mrz_line("PDFINHALVARD<<SIGNE", 44)),
             ["HALVARD", "SIGNE"]
         );
-        assert_eq!(mrz_names(&mrz_line("P<UTOOSTRANDER<<", 44)), ["OSTRANDER"]);
+        assert_eq!(
+            mrz_names(&mrz_line("P<UNOHALVARD<<SIGNE", 44)),
+            ["HALVARD", "SIGNE"]
+        );
+        assert_eq!(mrz_names(&mrz_line("P<NOROSTRANDER<<", 44)), ["OSTRANDER"]);
         // A name too long for the line ends at its edge, with no filler.
         assert_eq!(
-            mrz_names("P<UTOVANDERBRUGGEHALVERSTAM<<KORNELIA<ADRIANA"),
+            mrz_names("P<NLDVANDERBRUGGEHALVERSTAM<<KORNELIA<ADRIANA"),
             ["VANDERBRUGGEHALVERSTAM", "KORNELIA", "ADRIANA"]
         );
-        // Indented, in a blockquote-free OCR page, with CRLF line ends.
+        // Indented, with CRLF line ends.
         assert_eq!(
             mrz_names(&format!(
                 "Page 2\r\n   {}  \r\nend",
-                mrz_line("P<UTOTARN<<EDA", 44)
+                mrz_line("P<NORTARN<<EDA", 44)
             )),
             ["TARN", "EDA"]
         );
+        // An extra filler between given names (OCR, or the issuer's).
+        assert_eq!(
+            mrz_names(&mrz_line("P<NORVELLAMO<<TESSA<<MARIT", 44)),
+            ["VELLAMO", "TESSA", "MARIT"]
+        );
     }
 
-    /// #495: OCR loses or adds some fillers; a line of 32 to 52 characters
-    /// still reads as a passport's, as in hunt-ru-r7-05 (38).
+    /// #495: OCR loses or adds some fillers, or the type's; a line of 32 to
+    /// 52 characters still reads as a passport's, as in hunt-ru-r7-05 (38),
+    /// and a lost type leaves the state whole ("PRUSKRENC" is RUS, KRENC).
     #[test]
     fn a_machine_readable_line_shortened_or_lengthened_by_ocr_still_proposes() {
         assert_eq!(
             mrz_names("P<RUSKRENC<<LIDIIA<ARSENEVNA<<<<<<<<<<"),
             ["KRENC", "LIDIIA", "ARSENEVNA"]
         );
-        assert_eq!(mrz_names(&mrz_line("P<UTOTARN<<EDA", 50)), ["TARN", "EDA"]);
-        assert!(mrz_names(&mrz_line("P<UTOTARN<<EDA", 30)).is_empty());
-        assert!(mrz_names(&mrz_line("P<UTOTARN<<EDA", 54)).is_empty());
+        assert_eq!(mrz_names(&mrz_line("P<NORTARN<<EDA", 50)), ["TARN", "EDA"]);
+        assert!(mrz_names(&mrz_line("P<NORTARN<<EDA", 30)).is_empty());
+        assert!(mrz_names(&mrz_line("P<NORTARN<<EDA", 54)).is_empty());
+        assert_eq!(
+            mrz_names(&mrz_line("PRUSKRENC<<LIDIIA<ARSENEVNA", 43)),
+            ["KRENC", "LIDIIA", "ARSENEVNA"]
+        );
+        // A state OCR shortened is no state: nothing, rather than a cut
+        // surname ("RENC").
+        assert!(mrz_names(&mrz_line("P<RUKRENC<<LIDIIA<ARSENEVNA", 43)).is_empty());
     }
 
     /// #495: an ID card's names, on a TD2 card's first line (36
     /// characters) and on a TD1 card's third (30, under its two other
-    /// lines); the number and date lines stay unmarked.
+    /// lines, in a paragraph each too); the number and date lines stay
+    /// unmarked.
     #[test]
     fn an_id_cards_machine_readable_zone_proposes_each_name_part() {
         assert_eq!(
             mrz_names(&format!(
-                "{}\nD23145890<UTO8807145F3307019<<<<<<<4",
-                mrz_line("I<UTOHALDOR<<VESKA<INGRID", 36)
+                "{}\nD23145890<NOR8807145F3307019<<<<<<<4",
+                mrz_line("I<NORHALDOR<<VESKA<INGRID", 36)
             )),
             ["HALDOR", "VESKA", "INGRID"]
         );
-        let td1 = format!(
-            "Оборот карты:\n{}\n{}\n{}\n",
-            mrz_line("I<UTOD231458907", 30),
-            mrz_line("8807145F3307019UTO", 29) + "6",
-            mrz_line("QUILLAN<<ODA<RENATE", 30)
-        );
+        let lines = [
+            mrz_line("I<NORD231458907", 30),
+            mrz_line("8807145F3307019NOR", 29) + "6",
+            mrz_line("QUILLAN<<ODA<RENATE", 30),
+        ];
+        let td1 = format!("Оборот карты:\n{}\n", lines.join("\n"));
         assert_eq!(mrz_names(&td1), ["QUILLAN", "ODA", "RENATE"]);
-        // The names line alone is no card's.
-        assert!(mrz_names(&mrz_line("QUILLAN<<ODA<RENATE", 30)).is_empty());
+        assert_eq!(mrz_names(&lines.join("\n\n")), ["QUILLAN", "ODA", "RENATE"]);
+        assert_eq!(
+            mrz_names(&format!("> {}", lines.join("\n> "))),
+            ["QUILLAN", "ODA", "RENATE"]
+        );
+    }
+
+    /// #495: a TD1 card's names need its two other lines, each of 26 to 34
+    /// characters: the names line alone, at a card's length or a
+    /// passport's, names no one ("PETROVA" would read as a head and cut
+    /// "VA", which then marks "the VA hospital").
+    #[test]
+    fn a_td1_names_line_without_its_card_proposes_nothing() {
+        for source in [
+            mrz_line("QUILLAN<<ODA<RENATE", 30),
+            format!(
+                "{}\nThe VA hospital, VA form.",
+                mrz_line("PETROVA<<ANNA", 32)
+            ),
+            mrz_line("CHRISTENSEN<<ANNA", 34),
+            format!(
+                "{}\n{}\n{}",
+                mrz_line("I<NORD231458907", 38),
+                mrz_line("8807145F3307019NOR", 29) + "6",
+                mrz_line("QUILLAN<<ODA<RENATE", 30)
+            ),
+            format!(
+                "{}\n{}\n{}",
+                mrz_line("I<NORD231458907", 30),
+                mrz_line("8807145F3307019NOR", 29) + "6",
+                mrz_line("QUILLAN<<ODA<RENATE", 24)
+            ),
+        ] {
+            assert!(mrz_names(&source).is_empty(), "{source}");
+        }
+    }
+
+    /// #495: imported text writes a filler escaped (`\<`, anydoc's RTF
+    /// and DOCX output) or as an entity, ends a line in a hard break and
+    /// indents with no-break spaces; the names are the same.
+    #[test]
+    fn a_machine_readable_line_in_imported_text_proposes_each_name_part() {
+        let line = mrz_line("P<RUSKRENC<<LIDIIA<ARSENEVNA", 44);
+        for source in [
+            // anydoc::to_markdown_bytes of an RTF passport copy, as is.
+            "Passport copy\n\nP\\<RUSKRENC<\\<LIDIIA\\<ARSENEVNA<<<<<<<<<<<<<<<<<\\\n7605318428RUS9104123F3102154<<<<<<<<<<<<<<06\n".to_owned(),
+            line.replace('<', "\\<"),
+            line.replace('<', "&lt;"),
+            format!("{line}\\\n7605318428RUS9104123F3102154<<<<<<<<<<<<<<06"),
+            format!("\u{a0}\u{a0}{line}"),
+        ] {
+            assert_eq!(
+                mrz_names(&source),
+                ["KRENC", "LIDIIA", "ARSENEVNA"],
+                "{source}"
+            );
+        }
+    }
+
+    /// #495: a machine-readable line in Markdown's structure or after a
+    /// label is still one: a blockquote, a list item, a table cell, bold,
+    /// inline code, "MRZ: ".
+    #[test]
+    fn a_machine_readable_line_in_markdown_or_after_a_label_proposes_each_name_part() {
+        let line = mrz_line("P<RUSKRENC<<LIDIIA<ARSENEVNA", 44);
+        for source in [
+            format!("> {line}"),
+            format!("- {line}"),
+            format!("* {line}"),
+            format!("1. {line}"),
+            format!("| Field | Value |\n|---|---|\n| MRZ | {line} |"),
+            format!("**{line}**"),
+            format!("`{line}`"),
+            format!("MRZ: {line}"),
+            format!("Note: {line}"),
+            format!("Нижняя строка: {line}"),
+        ] {
+            assert_eq!(
+                mrz_names(&source),
+                ["KRENC", "LIDIIA", "ARSENEVNA"],
+                "{source}"
+            );
+        }
+    }
+
+    /// #495: the model's span across a filler ("KRENC<<LIDIIA"), which the
+    /// review turns down for its `<`, takes none of the names the rule
+    /// cuts from the line it is inside.
+    #[test]
+    fn a_model_span_across_fillers_leaves_the_machine_readable_names() {
+        let source = format!(
+            "Holder:\n{}\n",
+            mrz_line("P<RUSKRENC<<LIDIIA<ARSENEVNA", 44)
+        );
+        for span in ["KRENC<<LIDIIA", "LIDIIA<ARSENEVNA", "RUSKRENC"] {
+            assert_eq!(
+                mrz_names_beside(&source, &[("full_name", span)]),
+                ["KRENC", "LIDIIA", "ARSENEVNA"],
+                "{span}"
+            );
+        }
     }
 
     /// #495: what only looks like a machine-readable line names no one: a
     /// lone `<<` in prose, HTML, code, a row of fillers, capitals without
-    /// the head or the `<<`, a short line, lower case, a digit in a name, a
-    /// visa's line, a line with a label before it.
+    /// a state's head (which would cut "N" or "IFIED" off a word and mark
+    /// each "N" in the text) or the `<<`, a short line, lower case, a digit
+    /// in a name, a visa's line, a masked line, whose "XXXXX" would mark
+    /// every mask.
     #[test]
     fn text_with_fillers_that_is_no_machine_readable_zone_proposes_nothing() {
         for source in [
@@ -14702,19 +14949,49 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             "<div class=\"mrz\"><<KRENC<<LIDIIA<<</div>".to_owned(),
             "<p>P<RUSKRENC<<LIDIIA</p>".to_owned(),
             "```\nstd::cout << KRENC << LIDIIA;\ncat <<EOF\nPRINT<<EOF\n```".to_owned(),
-            "`P<RUSKRENC<<LIDIIA<ARSENEVNA<<<<<<<<<<<<<<<<`".to_owned(),
             "<".repeat(44),
             mrz_line("P<", 44),
             "PARTIES TO THE AGREEMENT AND RECITALS HEREIN".to_owned(),
             "P<RUSKRENC LIDIIA ARSENEVNA AND OTHERS HEREIN".to_owned(),
             "PRUSSIA<<KING".to_owned(),
             "P<RUSKRENC<<LIDIIA".to_owned(),
+            format!(
+                "{}\nSection N applies; N = 5.",
+                mrz_line("ACTION<<REQUIRED", 44)
+            ),
+            mrz_line("CLASSIFIED<<NOTICE", 40),
+            mrz_line("PAGE<<TWO", 40),
             mrz_line("P<RUSKrenc<<Lidiia", 44),
-            mrz_line("V<UTOVELLAMO<<TESSA<MARIT", 44),
-            mrz_line("P<UTOVELL4MO<<TESSA<MARIT", 44),
-            format!("Note: {}", mrz_line("P<UTOVELLAMO<<TESSA", 44)),
+            mrz_line("V<NORVELLAMO<<TESSA<MARIT", 44),
+            mrz_line("P<NORVELL4MO<<TESSA<MARIT", 44),
+            format!(
+                "{}\nXXXXX and passport XXXXXX.",
+                mrz_line("P<RUSXXXXX<<XXXXXX<XXXXXXXX", 44)
+            ),
+            "AXXXXXXXX<XRUSXXXXXXX<XXXXXXXXX<<<<<<<<<<<<<<".to_owned(),
         ] {
             assert!(mrz_names(&source).is_empty(), "{source}");
         }
+    }
+
+    /// #495: the zone rules' states are mdoc-pii's, which reads a
+    /// surname's boundary after the same head.
+    #[test]
+    fn the_machine_readable_zone_rules_list_mdoc_piis_states() {
+        let file: File = toml::from_str(FILES[0].1).unwrap();
+        let mut expected: Vec<&str> = mdoc_pii::mrz::STATES.to_vec();
+        expected.sort_unstable();
+        let mut listed = 0;
+        for entry in &file.span {
+            let Some(states) = entry.parts.get("state") else {
+                continue;
+            };
+            let states = states.replace("\\\\?<", "<");
+            let mut states: Vec<&str> = states.split('|').collect();
+            states.sort_unstable();
+            assert_eq!(states, expected);
+            listed += 1;
+        }
+        assert_eq!(listed, 2);
     }
 }
