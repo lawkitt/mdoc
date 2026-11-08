@@ -988,8 +988,14 @@ parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic
 # A settlement's type is lowercase before its name ("с. Кедровка", "г.о.
 # Кедровск"); in capitals it goes only before a name in capitals, as a
 # register extract writes it ("Г.О. КЕДРОВСК"), so a person's initials
-# ("А.С. Петров", "И.П. Петров", "Д. Петров") are no settlement.
-parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
+# ("А.С. Петров", "И.П. Петров", "Д. Петров") are no settlement. A
+# workers' settlement is «р. п.» or «р.п.» as well as «рп», so the address
+# keeps its index and region before it ("431999, Энская область, р. п.
+# Кедровка, улица Садовая, дом 8"), not only "п. Кедровка, …" (#482).
+# Here a name's words are all capitalised: a lowercase second word after
+# an adjective ("п. Кедровый ключ") is the other entries' only, as this
+# pattern is at the regex size limit.
+parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|Р\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
 parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
 parts.street = '{street_type}[\p{Zs}\t]*(?:{street_name}|{street_mask})|\b\p{Uppercase}[\p{Alphabetic}-]*(?:[\p{Zs}\t]+\p{Uppercase}[\p{Alphabetic}-]*)?[\p{Zs}\t]+(?:\([^()\n]{1,20}\)[\p{Zs}\t]+)?{street_after}'
 # Dotless «ул» and the capitals of a register extract («УЛ», «ПР-Т»).
@@ -1030,12 +1036,68 @@ parts.index = '\b\d{6}'
 parts.country = '\b(?:Россия|РОССИЯ|Российская[\p{Zs}\t]+Федерация|РОССИЙСКАЯ[\p{Zs}\t]+ФЕДЕРАЦИЯ)\b'
 parts.gsp = '\bГСП(?:-\d{1,3})?\b'
 parts.mask = '<(?:\.{3}|…|\*{1,5}|данные[\p{Zs}\t]+изъяты|ДАННЫЕ[\p{Zs}\t]+ИЗЪЯТЫ|адрес)>|\*{3,}|[\[(](?:данные[\p{Zs}\t]+изъяты|изъято)[\])]'
+# The places are the forward entry's, «р. п.» too, and a settlement's
+# name may have a lowercase second word after an adjective ("п. Кедровый
+# ключ"; #482).
 parts.area = '{region}|{district}|{city}|{settlement}|{country}|{gsp}'
 parts.region = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:область|обл\.|край|ОБЛАСТЬ|ОБЛ\.|КРАЙ)|\b(?:Республика|РЕСПУБЛИКА)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*(?:[\p{Zs}\t]+\([\p{Cyrillic}\p{Latin}-]+\))?'
 parts.district = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:р-н|район|Р-Н|РАЙОН|(?:муниципальный|городской)[\p{Zs}\t]+(?:район|округ))\b'
 parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
-parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
+parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Cyrillic}\p{Latin}\d-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Cyrillic}\p{Latin}\d-]*)(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}|(?:\b(?:Ч|П|С|Х|Д|СТ|ПОС|ДЕР|ТЕР)\.|\b(?:ПГТ|РП|МКР)\b\.?|\b(?:Г\.[\p{Zs}\t]?[ОП]|С\.[\p{Zs}\t]?П|Р\.[\p{Zs}\t]?П|М\.[\p{Zs}\t]?Р-Н|ВН\.[\p{Zs}\t]?ТЕР\.[\p{Zs}\t]?Г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][[\p{Lu}&&[\p{Cyrillic}\p{Latin}]]\d-]+){0,3}'
 parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+
+# Addresses (ADR 0092, guide rule 3, #482): a settlement by its type, then
+# a house right after it with no street, then buildings and flats, as a
+# village or a garrison writes it: "с. Кедровка, д. 5, кв. 2", "п.
+# Кедровый ключ ДОС № 1, кв. 2" (a «ДОС» is an officers' house), with the
+# index and places before the settlement when there are any ("431999,
+# Энская область, с. Кедровка, д. 5"). Only typed places lead, so a bare
+# word before them is a name ("Истец: Иванов, с. Кедровка, д. 5" is "с.
+# Кедровка, д. 5"). A settlement alone, with no house, is no match (guide
+# rule 3); a street between the settlement and the house is the forward
+# entry's.
+[[span]]
+category = "ADDRESS"
+pattern = '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep})?(?:{area}{sep})*{settlement}(?:{sep}|[\p{Zs}\t]+){house}(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*'
+parts.sep = ',(?:[\p{Zs}\t]*,)*\s*'
+parts.index = '\b\d{6}'
+parts.country = '\b(?:Россия|РОССИЯ|Российская[\p{Zs}\t]+Федерация|РОССИЙСКАЯ[\p{Zs}\t]+ФЕДЕРАЦИЯ)\b'
+parts.gsp = '\bГСП(?:-\d{1,3})?\b'
+parts.area = '{region}|{district}|{city}|{settlement}|{country}|{gsp}'
+parts.region = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:область|обл\.|край|ОБЛАСТЬ|ОБЛ\.|КРАЙ)|\b(?:Республика|РЕСПУБЛИКА)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*(?:[\p{Zs}\t]+\([\p{Cyrillic}\p{Latin}-]+\))?'
+parts.district = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:р-н|район|Р-Н|РАЙОН|(?:муниципальный|городской)[\p{Zs}\t]+(?:район|округ))\b'
+parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
+# The forward entry's settlement, lowercase types only: a capital one
+# here is an initial ("С. Петров, д. 5"). A lowercase second word follows
+# an adjective only ("п. Кедровый ключ").
+parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Cyrillic}\p{Latin}\d-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Cyrillic}\p{Latin}\d-]*)(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}'
+# A house, the forward entry's, or an officers' house («ДОС № 1», «ДОС-12»).
+parts.house = '\bд[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}(?:[\p{Zs}\t]+к[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?\b)?|(?:\b(?:д|Д|дом|ДОМ|вл|влд|ВЛД)\b\.?|\bДОС\b-?)[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}'
+parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?(?:[\p{Zs}\t][А-ЙЛ-РТ-ЯЁ]\b)?'
+parts.building = '\b(?:корп|КОРП|стр|СТР|К)\b\.?[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\bк\.[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:корпус|КОРПУС|строение|СТРОЕНИЕ)\b[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?|\b(?:лит|ЛИТ)(?:\.|ера|ЕРА|ер|ЕР|\b)[\p{Zs}\t]*\p{Uppercase}\b|\b(?:эт|ЭТ)\.[\p{Zs}\t]*\d+|\bэтаж[\p{Zs}\t]*\d+'
+parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ком|КОМ|комн|КОМН)\b\.?[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)|\b(?:квартира|КВАРТИРА|офис|ОФИС|помещение|ПОМЕЩЕНИЕ|комната|КОМНАТА)\b[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?(?:\d+(?:-?\p{Alphabetic})?(?:/\d+)?|[IVX]{1,5}\b)'
+
+# A settlement's type before a place is no person's initial (guide rule 1,
+# #482): a model person "а. Новый Хутор" in "уроженец а. Новый Хутор", "г.
+# Северск" in "районного суда г. Северск" or "проведено в г. Северск",
+# "п. Кедровый ключ" in a housing list. The type is lowercase («а.», «г.»,
+# «п.», «пос.», «ст.», «х.», «с.»), before one capitalised word, or two
+# when the first is an adjective, whose second may be lowercase ("Новый
+# Хутор", "Кедровый ключ"); a name after the place stays ("в г. Северск
+# Иванов"). The first pattern takes any place after a word that leads one:
+# «уроженец» and its forms, «в», «во», «из», «суд» and its forms. The
+# second takes a place with no such word only when it has a place's ending
+# and no surname's («-ск», «-ка», «-во», «-но», «-ое», «-град», …; or an
+# adjective and a lowercase word), never after a digit, where «г.» is a
+# year ("2026 г. Иванка"). Initials are capitals and stay ("Иванов А. Б.",
+# "А. Петров"), and so do a title's name ("г-н Петров") and a surname in
+# the instrumental after a stray dot ("с. Петровым").
+[[shape]]
+category = "PERSON"
+forbid_in = [
+    '(?P<lead>(?i:\b(?:уроженец|уроженц(?:а|у|ем|е|ы|ев|ам|ами|ах)|уроженк(?:а|и|е|у|ой|ою|ам|ами|ах)?|в|во|из|суд(?:а|у|ом|е)?)\b)[\p{Zs}\t]+)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}(?:[\p{Ll}-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{L}[\p{Ll}-]{2,}|[\p{Ll}-]{2,})',
+    '(?P<lead>(?:^|[^\d\p{Zs}\t])[\p{Zs}\t]*)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}[\p{Ll}-]*(?:(?:ск|ка|во|но|ое|ее|ье|град|бург|поль)\b|(?:ый|ий|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*)',
+]
 
 # The model's address that runs on into the next field ends before its
 # label: "…, лит. Б, кадастровый №" ends at "лит. Б", and a residue that is
