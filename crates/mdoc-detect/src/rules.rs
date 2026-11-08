@@ -730,6 +730,31 @@ fn bare(word: &str) -> &str {
 /// one ("Contract Corporation", "Acme Holdings Limited").
 const SPELLED_FORMS: &[&str] = &["corporation", "company", "incorporated", "limited"];
 
+/// Generic business words, lowercase: after one other word in a company's
+/// name they make that word its short name ("Pellam" of "Pellam Bank",
+/// "Quillon" of "Quillon Freight Corp"; #548). Not "Motor", "Controls" or
+/// "Law": "Ford", "Johnson" and "Stewarts" may be people's names there.
+const BUSINESS_WORDS: &[&str] = &[
+    "resources",
+    "maritime",
+    "freight",
+    "holdings",
+    "group",
+    "shipping",
+    "bank",
+    "airline",
+    "airlines",
+    "capital",
+    "industries",
+    "logistics",
+    "energy",
+    "mining",
+];
+
+/// Russian party roles, lowercase: a name before one in a caption is a
+/// party's, a person as often as a company ("ИВАНОВ, истец").
+const RU_PARTY_ROLES: &[&str] = &["истец", "ответчик", "заявитель", "истца", "ответчика"];
+
 /// Russian words of a legal form spelled out, lowercase: «Общество с
 /// ограниченной ответственностью», «Акционерное общество».
 const SPELLED_FORMS_RU: &[&str] = &["ответственностью", "акционерное"];
@@ -3779,8 +3804,9 @@ impl Pack {
     /// Where the name ends in `text`, a span that is a capitalized name
     /// and an `org_before` noun written lowercase ("Pellam airlines",
     /// "Pellam air fares"): a company's name with a common noun after it,
-    /// which stays outside (guide rule 2, #548). `None` for anything else,
-    /// "Pellam Bank" included.
+    /// which stays outside (guide rule 2, #548). `None` for anything else:
+    /// a capitalized noun ("Pellam Airlines"), or a lowercase word or a
+    /// joiner before the noun ("Pellam College of airlines").
     pub(crate) fn org_noun_name(&self, text: &str) -> Option<usize> {
         let (nouns, _) = self.org_phrases();
         let words: Vec<(usize, &str)> = text
@@ -3797,20 +3823,28 @@ impl Pack {
             .then(|| words.len() - noun.len())
         })?;
         let (last, word) = words[at - 1];
+        let before = bare(word);
+        if !before.starts_with(char::is_uppercase)
+            || JOINERS.contains(&before.to_lowercase().as_str())
+        {
+            return None;
+        }
         let end = last + word.trim_end_matches([',', ';', ':']).len();
         text.trim_start()
             .starts_with(char::is_uppercase)
             .then_some(end)
     }
 
-    /// A model person's span that ends in an `org_before` word or phrase,
-    /// or follows an `org_after` phrase, is a company's (guide rule 2,
-    /// #548): "Pellam airlines" is "Pellam" with a common noun after it,
-    /// "Pellam Bank" the company's whole name, and "Brindle Harriers" in
-    /// "the team known as the Brindle Harriers" a team. Never after a
-    /// person's title ("Ms Ada Bank"), and only a capitalized name.
-    /// Returns those companies' names as lowercase words: each is a short
-    /// name elsewhere in the document ([`Self::company_short_names`]).
+    /// A model person's span that is one capitalized word and an
+    /// `org_before` noun, or a name right after an `org_after` phrase that
+    /// ends there, is a company's (guide rule 2, #548): "Pellam airlines"
+    /// is "Pellam" with a common noun after it, "Pellam Airlines" the
+    /// company's whole name, and "Brindle Harriers" in "the team known as
+    /// the Brindle Harriers." a team. Never after a person's title, nor two
+    /// words before a noun ("Ada Pellam airlines tickets" is a person's),
+    /// nor a name a lowercase word carries on ("the team known as the Ada
+    /// Pellam fan club"). Returns the one-word names: each is a short name
+    /// elsewhere in the document ([`Self::company_short_names`]).
     fn company_nouns(
         &self,
         source: &str,
@@ -3841,10 +3875,10 @@ impl Pack {
                 .iter()
                 .map(|(_, word)| bare(word).trim_end_matches('.').to_lowercase())
                 .collect();
-            // Written capitalized, the noun is the name's own word.
-            let capitalized = before.iter().any(|phrase| {
+            // One name word, then the noun.
+            let noun = before.iter().any(|phrase| {
                 let phrase: Vec<&str> = phrase.split(' ').collect();
-                lower.len() > phrase.len() && lower[lower.len() - phrase.len()..] == phrase[..]
+                lower.len() == phrase.len() + 1 && lower[1..] == phrase[..]
             });
             let after_phrase = || {
                 let before_span: Vec<String> = text[..seen.start]
@@ -3853,31 +3887,42 @@ impl Pack {
                     .take(5)
                     .map(str::to_lowercase)
                     .collect();
-                after.iter().any(|phrase| {
+                // The team's name ends with the span: "(", ",", "." or
+                // the line's end, never "fan club".
+                let ends = !text[seen.end..]
+                    .trim_start_matches([' ', '\t'])
+                    .starts_with(char::is_alphanumeric);
+                ends && after.iter().any(|phrase| {
                     let phrase: Vec<&str> = phrase.split(' ').rev().collect();
                     before_span.len() >= phrase.len()
                         && before_span.iter().zip(&phrase).all(|(a, b)| a == b)
                 })
             };
-            let name = match self.org_noun_name(span) {
-                // A lowercase noun stays outside: "⟦ORG|Pellam⟧ airlines".
-                Some(end) => 0..end,
-                None if capitalized => 0..span.len(),
-                None if after_phrase() => {
-                    // "the team known as the Brindle Harriers" read as
-                    // "the Brindle Harriers": the article stays outside.
-                    let start = match words.first() {
-                        Some((_, "the")) if words.len() > 1 => words[1].0,
-                        _ => 0,
-                    };
-                    start..span.len()
+            let name = if noun {
+                match self.org_noun_name(span) {
+                    // A lowercase noun stays outside: "⟦ORG|Pellam⟧ airlines".
+                    Some(end) => 0..end,
+                    None if words[1].1.starts_with(char::is_uppercase) => 0..span.len(),
+                    None => continue,
                 }
-                None => continue,
+            } else if after_phrase() {
+                // "the team known as the Brindle Harriers" read as "the
+                // Brindle Harriers": the article stays outside.
+                let start = match words.first() {
+                    Some((_, "the")) if words.len() > 1 => words[1].0,
+                    _ => 0,
+                };
+                start..span.len()
+            } else {
+                continue;
             };
             if !span[name.clone()].starts_with(char::is_uppercase) {
                 continue;
             }
-            named.push(plain_words(&span[name.clone()]));
+            let words = plain_words(&span[name.clone()]);
+            if words.len() == 1 {
+                named.push(words);
+            }
             detection.range = view.source_range(seen.start + name.start..seen.start + name.end);
             detection.category = Category::Organization;
         }
@@ -3886,20 +3931,32 @@ impl Pack {
 
     /// A model person whose words are a company's short name in the same
     /// document is that company (guide rule 2, #506 items 10 and 11, #548),
-    /// a possessive included ("Pellam’s"): a name the document defines for
-    /// a company that shares a word with it ("Quillon Freight Corp.
-    /// (“Quillon”)"; a generic term such as “the Company” shares none), a
-    /// company's name before its legal form or an `org_before` noun, and
-    /// its first word ("Quillon Freight" and "Quillon" of "Quillon Freight
-    /// Corp", "Pellam" of "Pellam Bank"), a company's whole name of two
-    /// words or more in any letter case ("Brindle Harriers" beside
-    /// "BRINDLE HARRIERS"), or a name `named` by an industry noun or a team
-    /// phrase ([`Self::company_nouns`]). Never where the words are a
-    /// person's too: after a title ("Mr Pellam"), or in a longer person's
-    /// span beside another name ("Ada Pellam", "John Smith" beside "Smith
-    /// LLP"); then each span of them stays as the model gave it. Nor bare
-    /// capitals of three letters or fewer no definition names, which may
-    /// be a person's initials (#387).
+    /// a possessive included ("Pellam’s"), only on strong evidence:
+    /// - a name the document defines for a company right after it, sharing
+    ///   a word with it ("Quillon Freight Corp. (“Quillon”)"; a generic
+    ///   term such as “the Company” shares none);
+    /// - a company's name before its legal form ("Quillon Freight" of
+    ///   "Quillon Freight Corp"), unless a person's span has those words
+    ///   ("Ada Pellam" of "Ada Pellam LLC");
+    /// - its first word where the rest is a [`BUSINESS_WORDS`] word and no
+    ///   joiner ("Pellam" of "Pellam Bank", "Quillon" of "Quillon Freight
+    ///   Corp"; not "Davis" of "Davis Polk & Wardwell LLP", "Ford" of "Ford
+    ///   Motor Co", nor "Ada" of "Ada Pellam LLC");
+    /// - a company's whole name of two words or more in any letter case
+    ///   where that mention has a legal form, a definition, an `org_before`
+    ///   noun or an `org_after` phrase beside it ("Brindle Harriers" beside
+    ///   "BRINDLE HARRIERS LLC"), never one a party role follows ("ADA
+    ///   PELLAM, Plaintiff");
+    /// - a one-word company's name before an `org_before` noun ("Pellam"
+    ///   of "Pellam airlines"), or one [`Self::company_nouns`] `named`.
+    ///
+    /// A company in a cited precedent gives no short name; «ИП» is no legal
+    /// form here (guide rule 1). Never where the words are a person's too:
+    /// after a title ("Mr Pellam"), or in a longer person's span beside
+    /// another name ("Ada Pellam", "John Smith" beside "Smith LLP"), which
+    /// a title always makes a person's; then each span of them stays as
+    /// the model gave it. Nor bare capitals of three letters or fewer no
+    /// definition names, which may be a person's initials (#387).
     fn company_short_names(
         &self,
         source: &str,
@@ -3919,15 +3976,45 @@ impl Pack {
         };
         let lower =
             |words: &[String]| -> Vec<String> { words.iter().map(|w| w.to_lowercase()).collect() };
-        let (nouns, _) = self.org_phrases();
+        let (nouns, after) = self.org_phrases();
         let nouns: Vec<Vec<&str>> = nouns.iter().map(|noun| noun.split(' ').collect()).collect();
+        let people: Vec<(usize, bool, Vec<String>)> = detections
+            .iter()
+            .filter(|d| d.category == Category::Person)
+            .map(|d| {
+                let words = written(&text[view.view_range(d.range.clone())]);
+                (d.range.start, self.titled(source, d.range.start), words)
+            })
+            .collect();
+        let a_person = |words: &[String]| {
+            let words = lower(words);
+            people.iter().any(|(_, _, person)| lower(person) == words)
+        };
         // Each short name as written, and whether a definition gives it.
         let mut known: Vec<(Vec<String>, bool)> =
             named.iter().map(|name| (name.clone(), false)).collect();
         // A span the model gave both categories ("Grant Pellover" as a
         // person and a company) is no company's evidence: the review's
-        // conflict rules choose there.
-        let organizations: Vec<(std::ops::Range<usize>, Vec<String>)> = detections
+        // conflict rules choose there. Nor is an individual entrepreneur
+        // («ИП Иванов») a company (guide rule 1).
+        let entrepreneur = |words: &[String]| {
+            let words = lower(words);
+            words.iter().any(|word| word == "ип")
+                || words.windows(2).any(|pair| {
+                    pair[0] == "индивидуальный" && pair[1].starts_with("предпринимател")
+                })
+        };
+        let cited: Vec<std::ops::Range<usize>> = self
+            .cited(text)
+            .into_iter()
+            .map(|case| case.range)
+            .collect();
+        struct Company {
+            seen: std::ops::Range<usize>,
+            words: Vec<String>,
+            cited: bool,
+        }
+        let organizations: Vec<Company> = detections
             .iter()
             .filter(|d| {
                 d.category == Category::Organization
@@ -3938,59 +4025,18 @@ impl Pack {
             .map(|d| {
                 let seen = view.view_range(d.range.clone());
                 let words = written(&text[seen.clone()]);
-                (seen, words)
+                let cited = cited
+                    .iter()
+                    .any(|case| case.start <= seen.start && seen.end <= case.end);
+                Company { seen, words, cited }
             })
+            .filter(|company| !company.words.is_empty() && !entrepreneur(&company.words))
             .collect();
         let form = |word: &String| {
             self.legal_form(word) || SPELLED_FORMS.contains(&word.to_lowercase().as_str())
         };
-        for (seen, words) in &organizations {
-            if words.len() >= 2 {
-                known.push((words.clone(), false));
-            }
-            // "Pellam" before "airlines": a company's name with its noun
-            // outside ([`Self::org_noun_name`]).
-            let next: Vec<&str> = text[seen.end..]
-                .split_whitespace()
-                .take(2)
-                .map(|word| bare(word).trim_end_matches('.'))
-                .collect();
-            if text[seen.end..].starts_with(char::is_whitespace)
-                && nouns.iter().any(|noun| {
-                    noun.len() <= next.len() && next.iter().zip(noun).all(|(a, b)| a == b)
-                })
-            {
-                known.push((words.clone(), false));
-            }
-            let mut core = &words[..];
-            while let Some((first, rest)) = core.split_first()
-                && (first.eq_ignore_ascii_case("the") || form(first))
-            {
-                core = rest;
-            }
-            loop {
-                let lowered = lower(core);
-                if let Some((last, rest)) = core.split_last()
-                    && !rest.is_empty()
-                    && form(last)
-                {
-                    core = rest;
-                } else if let Some(noun) = nouns.iter().find(|noun| {
-                    lowered.len() > noun.len() && lowered[lowered.len() - noun.len()..] == noun[..]
-                }) {
-                    core = &core[..core.len() - noun.len()];
-                } else {
-                    break;
-                }
-            }
-            if core.is_empty() || core.len() == words.len() {
-                continue;
-            }
-            known.push((core.to_vec(), false));
-            if core.len() >= 2 {
-                known.push((core[..1].to_vec(), false));
-            }
-        }
+        // Definitions right after a company: (its words, the term).
+        let mut defined: Vec<(&Company, Vec<String>)> = Vec::new();
         for definition in definitions(text) {
             // Where the subject ends in `text`; an empty one may be no
             // slice of it.
@@ -4001,9 +4047,9 @@ impl Pack {
             else {
                 continue;
             };
-            let Some((_, words)) = organizations.iter().find(|(seen, _)| {
-                seen.end <= end
-                    && text[seen.end..end]
+            let Some(company) = organizations.iter().find(|company| {
+                company.seen.end <= end
+                    && text[company.seen.end..end]
                         .chars()
                         .all(|c| c.is_whitespace() || c == '.' || c == ',')
             }) else {
@@ -4016,11 +4062,104 @@ impl Pack {
             {
                 term.remove(0);
             }
-            let company = lower(words);
-            if lower(&term).iter().any(|word| company.contains(word)) {
-                known.push((term, true));
+            if entrepreneur(&term) {
+                continue;
+            }
+            let words = lower(&company.words);
+            if lower(&term).iter().any(|word| words.contains(word)) {
+                defined.push((company, term));
             }
         }
+        for company in &organizations {
+            let words = &company.words;
+            let rest = &text[company.seen.end..];
+            let next: Vec<String> = rest
+                .split_whitespace()
+                .take(2)
+                .map(|word| bare(word).trim_end_matches('.').to_lowercase())
+                .collect();
+            let spaced = rest.starts_with(char::is_whitespace);
+            // "Pellam" before "airlines": a company's name with its noun
+            // outside ([`Self::org_noun_name`]).
+            let noun = spaced
+                && nouns.iter().any(|noun| {
+                    noun.len() <= next.len() && next.iter().zip(noun).all(|(a, b)| a == b)
+                });
+            if noun && words.len() == 1 {
+                known.push((words.clone(), false));
+            }
+            let definition = defined
+                .iter()
+                .any(|(defining, _)| std::ptr::eq(*defining, company));
+            // The whole name in another mention, on evidence beside this
+            // one; a party role after it is a caption's person.
+            let role = rest
+                .trim_start_matches(|c: char| c.is_whitespace() || c == ',')
+                .split(|c: char| !c.is_alphanumeric())
+                .next()
+                .map(str::to_lowercase)
+                .is_some_and(|word| {
+                    self.party_roles.contains(&word) || RU_PARTY_ROLES.contains(&word.as_str())
+                });
+            let after_phrase = || {
+                let before: Vec<String> = text[..company.seen.start]
+                    .split_whitespace()
+                    .rev()
+                    .take(5)
+                    .map(str::to_lowercase)
+                    .collect();
+                after.iter().any(|phrase| {
+                    let phrase: Vec<&str> = phrase.split(' ').rev().collect();
+                    before.len() >= phrase.len() && before.iter().zip(&phrase).all(|(a, b)| a == b)
+                })
+            };
+            let legal = words.iter().any(form)
+                || spaced && next.first().is_some_and(|word| self.legal_form(word));
+            if words.len() >= 2 && !role && (legal || definition || noun || after_phrase()) {
+                known.push((words.clone(), false));
+            }
+            // A precedent's company gives its whole name only.
+            if company.cited {
+                continue;
+            }
+            let mut core = &words[..];
+            while let Some((first, rest)) = core.split_first()
+                && (first.eq_ignore_ascii_case("the") || form(first))
+            {
+                core = rest;
+            }
+            while let Some((last, rest)) = core.split_last()
+                && !rest.is_empty()
+                && form(last)
+            {
+                core = rest;
+            }
+            if core.is_empty() {
+                continue;
+            }
+            // Before its legal form, unless a person's span has those words
+            // and no definition makes them the company's.
+            let owner = core.len() >= 2 && a_person(core) && !definition;
+            if core.len() < words.len() && !owner {
+                known.push((core.to_vec(), false));
+            }
+            // The first word, where the rest is a business word: no
+            // joiner, as in a firm of partners' names.
+            let joined = text[company.seen.clone()].contains(['&', '+'])
+                || lower(core)
+                    .iter()
+                    .any(|word| ["and", "и", "&", "+"].contains(&word.as_str()));
+            if core.len() >= 2
+                && !owner
+                && !joined
+                && lower(&core[1..])
+                    .iter()
+                    .all(|word| BUSINESS_WORDS.contains(&word.as_str()))
+            {
+                known.push((core[..1].to_vec(), false));
+            }
+        }
+        known.extend(defined.into_iter().map(|(_, term)| (term, true)));
         // A name's words alone: no title, role or joiner only, a capital
         // first, never a person's initials unless the document defines them.
         known.retain(|(words, defined)| {
@@ -4038,24 +4177,17 @@ impl Pack {
         if known.is_empty() {
             return;
         }
-        let people: Vec<(usize, Vec<String>)> = detections
-            .iter()
-            .filter(|d| d.category == Category::Person)
-            .map(|d| {
-                let words = written(&text[view.view_range(d.range.clone())]);
-                (d.range.start, words)
-            })
-            .collect();
         // A person's word in this document: a span of it after a title, or
-        // a longer person's span with it and another name.
+        // a longer person's span with it and another name; a longer span
+        // that is a company's name counts only after a title.
         let personal = |name: &Vec<String>| {
-            people.iter().any(|(start, words)| {
+            people.iter().any(|(_, titled, words)| {
                 let lowered = lower(words);
                 if lowered == *name {
-                    return self.titled(source, *start);
+                    return *titled;
                 }
                 lowered.len() > name.len()
-                    && !known.contains(&lowered)
+                    && (*titled || !known.contains(&lowered))
                     && lowered.windows(name.len()).any(|run| run == &name[..])
                     && words.iter().zip(&lowered).any(|(word, lowered)| {
                         !name.contains(lowered)
@@ -11345,6 +11477,328 @@ Privacy Act (“BIPA”). BIPA applies.",
             .into_iter()
             .map(|span| (source[span.range].to_owned(), span.category))
             .collect()
+    }
+
+    /// #482: a settlement's type inside a Russian address keeps the
+    /// address whole, from its index to its last part, and a settlement
+    /// with a house and no street is an address too.
+    #[test]
+    fn russian_settlement_types_keep_an_address_whole() {
+        // The model's address cut at «ст.» grows to the whole of it.
+        let source = "Ответчик проживает: 353999, Энский край, ст. Кедровская, ул. Садовая, д. 5.";
+        assert_eq!(
+            shown(source, &[("353999, Энский край, ст", "address")]),
+            pairs(&[(
+                "353999, Энский край, ст. Кедровская, ул. Садовая, д. 5",
+                "ADDRESS"
+            )]),
+        );
+        // A workers' settlement keeps the index and the region before it,
+        // its dot spaced, unspaced or dropped, and in capitals.
+        for address in [
+            "431999, Энская область, р. п. Кедровка, улица Садовая, дом 8",
+            "431999, Энская область, р.п. Кедровка, улица Садовая, дом 8",
+            "431999, Энская область, рп Кедровка, улица Садовая, дом 8",
+            "431999, ЭНСКАЯ ОБЛАСТЬ, Р.П. КЕДРОВКА, УЛ САДОВАЯ, Д. 8",
+        ] {
+            let source = format!("Адрес: {address}.");
+            // The model's address from the street on.
+            let street = source.find("ул").or_else(|| source.find("УЛ")).unwrap();
+            let model = &source[street..source.len() - 1];
+            assert_eq!(
+                shown(&source, &[(model, "address")]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        // Every settlement type before a street.
+        for settlement in [
+            "ст. Кедровская",
+            "ст-ца Кедровская",
+            "станица Кедровская",
+            "а. Новый Хутор",
+            "аул Новый Хутор",
+            "х. Тихий",
+            "пгт Кедровый",
+            "с. Кедровка",
+            "д. Кедровка",
+            "п. Кедровый",
+            "пос. Кедровый",
+            "ч. Кедровка",
+        ] {
+            let address = format!("353999, Энский край, {settlement}, ул. Садовая, д. 5");
+            let source = format!("Ответчик проживает: {address}; уроженец а. Новый Хутор.");
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(&address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        // A settlement with a house and no street, a garrison's officers'
+        // house («ДОС») too, with or without an index before it; the
+        // model's person in it is the address's.
+        for (source, raw, expected) in [
+            (
+                "Квартиры: п. Кедровый ключ ДОС № 1, кв. 2.",
+                &[("п. Кедровый ключ", "person")][..],
+                &["п. Кедровый ключ ДОС № 1, кв. 2"][..],
+            ),
+            (
+                "Квартиры: п. Кедровый ключ ДОС № 1, кв. 2; п. Кедровый ключ ДОС-3, кв. 7.",
+                &[],
+                &[
+                    "п. Кедровый ключ ДОС № 1, кв. 2",
+                    "п. Кедровый ключ ДОС-3, кв. 7",
+                ],
+            ),
+            (
+                "Адрес: 431999, Энская область, с. Кедровка, д. 5.",
+                &[],
+                &["431999, Энская область, с. Кедровка, д. 5"],
+            ),
+            (
+                "Адрес: Кедровский район, д. Тихая, д. 12, кв. 3.",
+                &[],
+                &["Кедровский район, д. Тихая, д. 12, кв. 3"],
+            ),
+        ] {
+            let expected: Vec<_> = expected.iter().map(|text| (*text, "ADDRESS")).collect();
+            assert_eq!(shown(source, raw), pairs(&expected), "{source}");
+        }
+        // A bare word before the settlement is a name, outside the address.
+        assert_eq!(
+            shown(
+                "Истец: Иванов, с. Кедровка, д. 5, кв. 2.",
+                &[("Иванов", "person")]
+            ),
+            pairs(&[
+                ("Иванов", "PERSON"),
+                ("с. Кедровка, д. 5, кв. 2", "ADDRESS")
+            ]),
+        );
+    }
+
+    /// #482 guards: a place alone is no address, and initials or a house
+    /// after a person's name make no settlement.
+    #[test]
+    fn russian_settlements_alone_and_initials_make_no_address() {
+        for source in [
+            "Ответчик, уроженец а. Новый Хутор, явился.",
+            "Решение районного суда г. Ольховск.",
+            "Ответчик проживает в с. Кедровка с 2020 года.",
+            "Квартиры: п. Кедровый ключ.",
+            "согласно п. 3 ч. 2 ст. 5, д. 5 по делу",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+        assert_eq!(
+            shown(
+                "Свидетель А.С. Петров, д. 5 по делу.",
+                &[("А.С. Петров", "person")]
+            ),
+            pairs(&[("А.С. Петров", "PERSON")]),
+        );
+        assert_eq!(
+            shown(
+                "Свидетель С. Петров, д. 5, кв. 2.",
+                &[("С. Петров", "person")]
+            ),
+            pairs(&[("С. Петров", "PERSON")]),
+        );
+    }
+
+    /// #482: a settlement's type before a place is no person's initial,
+    /// after a word that leads a place or with a place's ending.
+    #[test]
+    fn settlement_types_before_a_place_are_no_initials() {
+        for (source, person) in [
+            (
+                "Ответчик, уроженец а. Новый Хутор, явился.",
+                "а. Новый Хутор",
+            ),
+            ("Ответчик, уроженец а. Новый Хутор, явился.", "Хутор"),
+            ("Ответчица, уроженка с. Кедровка, явилась.", "с. Кедровка"),
+            ("Письмо из х. Тихий получено.", "х. Тихий"),
+            (
+                "Решение районного суда г. Ольховск; проведено в г. Ольховск.",
+                "г. Ольховск",
+            ),
+            (
+                "Решение Районного суда г. Пёнсан вступило в силу.",
+                "г. Пёнсан",
+            ),
+            (
+                "Осмотр проведен в пос. Кедровый ключ.",
+                "пос. Кедровый ключ",
+            ),
+            ("Обыск проведен в ст. Кедровская.", "ст. Кедровская"),
+            ("Список: с. Кедровка.", "с. Кедровка"),
+            ("Список: г. Ольховск.", "г. Ольховск"),
+        ] {
+            assert!(
+                shown(source, &[(person, "person")]).is_empty(),
+                "{source}: {person}"
+            );
+        }
+    }
+
+    /// #482 review: a lowercase «г.» is a title or a year's end, and «с.»,
+    /// «ст.» a stray dot, before a real surname, which stays PERSON: a
+    /// genitive («-ука», «-ака», «-ка»), an adjective and a verb, a year on
+    /// the line before or with its ending («1990-х г.»), an instrumental
+    /// after «с.», a capitalised word after an adjective after «в».
+    #[test]
+    fn surnames_after_lowercase_types_stay_people() {
+        for (source, person) in [
+            (
+                "Постановлением от 12 марта 2020
+г. Ковальская признана потерпевшей.",
+                "Ковальская",
+            ),
+            (
+                "Постановлением от 12 марта 2020
+г. Ковальчука признали потерпевшим.",
+                "Ковальчука",
+            ),
+            (
+                "Постановлением от 12 марта 2020
+г. Кедровка признана потерпевшей.",
+                "Кедровка",
+            ),
+            ("в 1990-х г. Ковальская переехала.", "Ковальская"),
+            ("в 2020-м г. Ковальская работала.", "Ковальская"),
+            ("в 2020-м г. Кедровка работала.", "Кедровка"),
+            (
+                "В судебном заседании г. Ковальская пояснила, что иск не признает.",
+                "Ковальская",
+            ),
+            (
+                "В судебном заседании г. Ковальская пояснила, что иск не признает.",
+                "г. Ковальская",
+            ),
+            ("Возражения г. Ковальский поддержал.", "Ковальский"),
+            ("Документы получены от г. Ковальчука лично.", "Ковальчука"),
+            (
+                "Документы получены от г. Ковальчука лично.",
+                "г. Ковальчука",
+            ),
+            ("Подпись г. Новака заверена нотариусом.", "Новака"),
+            ("Согласно показаниям г. Бойка установлено.", "Бойка"),
+            ("Иск подан в интересах г. Марка.", "Марка"),
+            ("Подписал ст. Ковальчука не видел.", "Ковальчука"),
+            ("Показания с. Ковальчука оглашены.", "Ковальчука"),
+            ("Показания с. Ковальчука оглашены.", "с. Ковальчука"),
+            ("Суд с. Ковальчуком согласился.", "Ковальчуком"),
+            ("Суд с. Ковальчуком согласился.", "с. Ковальчуком"),
+            ("проведено в г. Нижний Ковальчук.", "Ковальчук"),
+            // A place alone, with no word that leads one and no address
+            // part after it, keeps the model's person: the price of
+            // keeping a title's name ("г. Ковальская пояснила").
+            ("Список: п. Кедровый ключ.", "п. Кедровый ключ"),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(person, "PERSON")]),
+                "{source}: {person}"
+            );
+        }
+    }
+
+    /// #482 review: a settlement-and-house address takes no surname after
+    /// «с.» or «д.» (a case file), no name after the place and no phone's
+    /// digits as its index.
+    #[test]
+    fn settlement_addresses_take_no_names_or_phones() {
+        for (source, person) in [
+            ("Договорился с. Петровым, д. 5 и прочее.", "Петровым"),
+            ("Договорился с. Петровым, д. 5 и прочее.", "с. Петровым"),
+            ("Материалы д. Ковальчука, д. 3 приобщены.", "Ковальчука"),
+            (
+                "проживает в с. Кедровка Ковальчук Иван, д. 5",
+                "Ковальчук Иван",
+            ),
+            ("Квартиры: п. Кедровый ключ Ковальчук ДОС № 1", "Ковальчук"),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(person, "PERSON")]),
+                "{source}: {person}"
+            );
+        }
+        assert_eq!(
+            shown("Проживает: 8-999-123456, с. Кедровка, д. 5", &[]),
+            pairs(&[("с. Кедровка, д. 5", "ADDRESS")]),
+        );
+        assert_eq!(
+            shown("Проживает: 8–999–123456, с. Кедровка, д. 5", &[]),
+            pairs(&[("с. Кедровка, д. 5", "ADDRESS")]),
+        );
+        // A place's name of two capitalised words, or a village's that
+        // ends as no surname does, is still the address's.
+        for address in [
+            "с. Новое Село, д. 5, кв. 2",
+            "д. Иваново, д. 5, кв. 2",
+            "с. Кедровка, д. 5",
+            "а. Новый Хутор, д. 7",
+        ] {
+            let source = format!("Проживает: {address}.");
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// #482 guards: initials, a title's name, a surname after a stray dot
+    /// and a name after the place stay PERSON.
+    #[test]
+    fn initials_beside_settlement_guards_stay_people() {
+        for (source, person, expected) in [
+            (
+                "Ответчик Иванов А. Б. явился.",
+                "Иванов А. Б.",
+                "Иванов А. Б.",
+            ),
+            ("Договор подписал А. Петров.", "А. Петров", "А. Петров"),
+            ("Заявление подал г-н Петров.", "г-н Петров", "Петров"),
+            (
+                "Договорился с. Петровым о встрече.",
+                "с. Петровым",
+                "с. Петровым",
+            ),
+            (
+                "Договорился с П. Петровым о встрече.",
+                "П. Петровым",
+                "П. Петровым",
+            ),
+            (
+                "Договор подписан в г. Ольховск Ивановым.",
+                "Ивановым",
+                "Ивановым",
+            ),
+            (
+                "Протокол от 12.03.2026 г. Иванка Петрова подписала.",
+                "Иванка",
+                "Иванка",
+            ),
+            (
+                "Свидетель А.С. Петров явился.",
+                "А.С. Петров",
+                "А.С. Петров",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
     }
 
     fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
