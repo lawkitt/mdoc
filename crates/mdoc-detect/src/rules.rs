@@ -10988,6 +10988,328 @@ Privacy Act (“BIPA”). BIPA applies.",
             .collect()
     }
 
+    /// #482: a settlement's type inside a Russian address keeps the
+    /// address whole, from its index to its last part, and a settlement
+    /// with a house and no street is an address too.
+    #[test]
+    fn russian_settlement_types_keep_an_address_whole() {
+        // The model's address cut at «ст.» grows to the whole of it.
+        let source = "Ответчик проживает: 353999, Энский край, ст. Кедровская, ул. Садовая, д. 5.";
+        assert_eq!(
+            shown(source, &[("353999, Энский край, ст", "address")]),
+            pairs(&[(
+                "353999, Энский край, ст. Кедровская, ул. Садовая, д. 5",
+                "ADDRESS"
+            )]),
+        );
+        // A workers' settlement keeps the index and the region before it,
+        // its dot spaced, unspaced or dropped, and in capitals.
+        for address in [
+            "431999, Энская область, р. п. Кедровка, улица Садовая, дом 8",
+            "431999, Энская область, р.п. Кедровка, улица Садовая, дом 8",
+            "431999, Энская область, рп Кедровка, улица Садовая, дом 8",
+            "431999, ЭНСКАЯ ОБЛАСТЬ, Р.П. КЕДРОВКА, УЛ САДОВАЯ, Д. 8",
+        ] {
+            let source = format!("Адрес: {address}.");
+            // The model's address from the street on.
+            let street = source.find("ул").or_else(|| source.find("УЛ")).unwrap();
+            let model = &source[street..source.len() - 1];
+            assert_eq!(
+                shown(&source, &[(model, "address")]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        // Every settlement type before a street.
+        for settlement in [
+            "ст. Кедровская",
+            "ст-ца Кедровская",
+            "станица Кедровская",
+            "а. Новый Хутор",
+            "аул Новый Хутор",
+            "х. Тихий",
+            "пгт Кедровый",
+            "с. Кедровка",
+            "д. Кедровка",
+            "п. Кедровый",
+            "пос. Кедровый",
+            "ч. Кедровка",
+        ] {
+            let address = format!("353999, Энский край, {settlement}, ул. Садовая, д. 5");
+            let source = format!("Ответчик проживает: {address}; уроженец а. Новый Хутор.");
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(&address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+        // A settlement with a house and no street, a garrison's officers'
+        // house («ДОС») too, with or without an index before it; the
+        // model's person in it is the address's.
+        for (source, raw, expected) in [
+            (
+                "Квартиры: п. Кедровый ключ ДОС № 1, кв. 2.",
+                &[("п. Кедровый ключ", "person")][..],
+                &["п. Кедровый ключ ДОС № 1, кв. 2"][..],
+            ),
+            (
+                "Квартиры: п. Кедровый ключ ДОС № 1, кв. 2; п. Кедровый ключ ДОС-3, кв. 7.",
+                &[],
+                &[
+                    "п. Кедровый ключ ДОС № 1, кв. 2",
+                    "п. Кедровый ключ ДОС-3, кв. 7",
+                ],
+            ),
+            (
+                "Адрес: 431999, Энская область, с. Кедровка, д. 5.",
+                &[],
+                &["431999, Энская область, с. Кедровка, д. 5"],
+            ),
+            (
+                "Адрес: Кедровский район, д. Тихая, д. 12, кв. 3.",
+                &[],
+                &["Кедровский район, д. Тихая, д. 12, кв. 3"],
+            ),
+        ] {
+            let expected: Vec<_> = expected.iter().map(|text| (*text, "ADDRESS")).collect();
+            assert_eq!(shown(source, raw), pairs(&expected), "{source}");
+        }
+        // A bare word before the settlement is a name, outside the address.
+        assert_eq!(
+            shown(
+                "Истец: Иванов, с. Кедровка, д. 5, кв. 2.",
+                &[("Иванов", "person")]
+            ),
+            pairs(&[
+                ("Иванов", "PERSON"),
+                ("с. Кедровка, д. 5, кв. 2", "ADDRESS")
+            ]),
+        );
+    }
+
+    /// #482 guards: a place alone is no address, and initials or a house
+    /// after a person's name make no settlement.
+    #[test]
+    fn russian_settlements_alone_and_initials_make_no_address() {
+        for source in [
+            "Ответчик, уроженец а. Новый Хутор, явился.",
+            "Решение районного суда г. Ольховск.",
+            "Ответчик проживает в с. Кедровка с 2020 года.",
+            "Квартиры: п. Кедровый ключ.",
+            "согласно п. 3 ч. 2 ст. 5, д. 5 по делу",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+        assert_eq!(
+            shown(
+                "Свидетель А.С. Петров, д. 5 по делу.",
+                &[("А.С. Петров", "person")]
+            ),
+            pairs(&[("А.С. Петров", "PERSON")]),
+        );
+        assert_eq!(
+            shown(
+                "Свидетель С. Петров, д. 5, кв. 2.",
+                &[("С. Петров", "person")]
+            ),
+            pairs(&[("С. Петров", "PERSON")]),
+        );
+    }
+
+    /// #482: a settlement's type before a place is no person's initial,
+    /// after a word that leads a place or with a place's ending.
+    #[test]
+    fn settlement_types_before_a_place_are_no_initials() {
+        for (source, person) in [
+            (
+                "Ответчик, уроженец а. Новый Хутор, явился.",
+                "а. Новый Хутор",
+            ),
+            ("Ответчик, уроженец а. Новый Хутор, явился.", "Хутор"),
+            ("Ответчица, уроженка с. Кедровка, явилась.", "с. Кедровка"),
+            ("Письмо из х. Тихий получено.", "х. Тихий"),
+            (
+                "Решение районного суда г. Ольховск; проведено в г. Ольховск.",
+                "г. Ольховск",
+            ),
+            (
+                "Решение Районного суда г. Пёнсан вступило в силу.",
+                "г. Пёнсан",
+            ),
+            (
+                "Осмотр проведен в пос. Кедровый ключ.",
+                "пос. Кедровый ключ",
+            ),
+            ("Обыск проведен в ст. Кедровская.", "ст. Кедровская"),
+            ("Список: с. Кедровка.", "с. Кедровка"),
+            ("Список: г. Ольховск.", "г. Ольховск"),
+        ] {
+            assert!(
+                shown(source, &[(person, "person")]).is_empty(),
+                "{source}: {person}"
+            );
+        }
+    }
+
+    /// #482 review: a lowercase «г.» is a title or a year's end, and «с.»,
+    /// «ст.» a stray dot, before a real surname, which stays PERSON: a
+    /// genitive («-ука», «-ака», «-ка»), an adjective and a verb, a year on
+    /// the line before or with its ending («1990-х г.»), an instrumental
+    /// after «с.», a capitalised word after an adjective after «в».
+    #[test]
+    fn surnames_after_lowercase_types_stay_people() {
+        for (source, person) in [
+            (
+                "Постановлением от 12 марта 2020
+г. Ковальская признана потерпевшей.",
+                "Ковальская",
+            ),
+            (
+                "Постановлением от 12 марта 2020
+г. Ковальчука признали потерпевшим.",
+                "Ковальчука",
+            ),
+            (
+                "Постановлением от 12 марта 2020
+г. Кедровка признана потерпевшей.",
+                "Кедровка",
+            ),
+            ("в 1990-х г. Ковальская переехала.", "Ковальская"),
+            ("в 2020-м г. Ковальская работала.", "Ковальская"),
+            ("в 2020-м г. Кедровка работала.", "Кедровка"),
+            (
+                "В судебном заседании г. Ковальская пояснила, что иск не признает.",
+                "Ковальская",
+            ),
+            (
+                "В судебном заседании г. Ковальская пояснила, что иск не признает.",
+                "г. Ковальская",
+            ),
+            ("Возражения г. Ковальский поддержал.", "Ковальский"),
+            ("Документы получены от г. Ковальчука лично.", "Ковальчука"),
+            (
+                "Документы получены от г. Ковальчука лично.",
+                "г. Ковальчука",
+            ),
+            ("Подпись г. Новака заверена нотариусом.", "Новака"),
+            ("Согласно показаниям г. Бойка установлено.", "Бойка"),
+            ("Иск подан в интересах г. Марка.", "Марка"),
+            ("Подписал ст. Ковальчука не видел.", "Ковальчука"),
+            ("Показания с. Ковальчука оглашены.", "Ковальчука"),
+            ("Показания с. Ковальчука оглашены.", "с. Ковальчука"),
+            ("Суд с. Ковальчуком согласился.", "Ковальчуком"),
+            ("Суд с. Ковальчуком согласился.", "с. Ковальчуком"),
+            ("проведено в г. Нижний Ковальчук.", "Ковальчук"),
+            // A place alone, with no word that leads one and no address
+            // part after it, keeps the model's person: the price of
+            // keeping a title's name ("г. Ковальская пояснила").
+            ("Список: п. Кедровый ключ.", "п. Кедровый ключ"),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(person, "PERSON")]),
+                "{source}: {person}"
+            );
+        }
+    }
+
+    /// #482 review: a settlement-and-house address takes no surname after
+    /// «с.» or «д.» (a case file), no name after the place and no phone's
+    /// digits as its index.
+    #[test]
+    fn settlement_addresses_take_no_names_or_phones() {
+        for (source, person) in [
+            ("Договорился с. Петровым, д. 5 и прочее.", "Петровым"),
+            ("Договорился с. Петровым, д. 5 и прочее.", "с. Петровым"),
+            ("Материалы д. Ковальчука, д. 3 приобщены.", "Ковальчука"),
+            (
+                "проживает в с. Кедровка Ковальчук Иван, д. 5",
+                "Ковальчук Иван",
+            ),
+            ("Квартиры: п. Кедровый ключ Ковальчук ДОС № 1", "Ковальчук"),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(person, "PERSON")]),
+                "{source}: {person}"
+            );
+        }
+        assert_eq!(
+            shown("Проживает: 8-999-123456, с. Кедровка, д. 5", &[]),
+            pairs(&[("с. Кедровка, д. 5", "ADDRESS")]),
+        );
+        assert_eq!(
+            shown("Проживает: 8–999–123456, с. Кедровка, д. 5", &[]),
+            pairs(&[("с. Кедровка, д. 5", "ADDRESS")]),
+        );
+        // A place's name of two capitalised words, or a village's that
+        // ends as no surname does, is still the address's.
+        for address in [
+            "с. Новое Село, д. 5, кв. 2",
+            "д. Иваново, д. 5, кв. 2",
+            "с. Кедровка, д. 5",
+            "а. Новый Хутор, д. 7",
+        ] {
+            let source = format!("Проживает: {address}.");
+            assert_eq!(
+                shown(&source, &[]),
+                pairs(&[(address, "ADDRESS")]),
+                "{source}"
+            );
+        }
+    }
+
+    /// #482 guards: initials, a title's name, a surname after a stray dot
+    /// and a name after the place stay PERSON.
+    #[test]
+    fn initials_beside_settlement_guards_stay_people() {
+        for (source, person, expected) in [
+            (
+                "Ответчик Иванов А. Б. явился.",
+                "Иванов А. Б.",
+                "Иванов А. Б.",
+            ),
+            ("Договор подписал А. Петров.", "А. Петров", "А. Петров"),
+            ("Заявление подал г-н Петров.", "г-н Петров", "Петров"),
+            (
+                "Договорился с. Петровым о встрече.",
+                "с. Петровым",
+                "с. Петровым",
+            ),
+            (
+                "Договорился с П. Петровым о встрече.",
+                "П. Петровым",
+                "П. Петровым",
+            ),
+            (
+                "Договор подписан в г. Ольховск Ивановым.",
+                "Ивановым",
+                "Ивановым",
+            ),
+            (
+                "Протокол от 12.03.2026 г. Иванка Петрова подписала.",
+                "Иванка",
+                "Иванка",
+            ),
+            (
+                "Свидетель А.С. Петров явился.",
+                "А.С. Петров",
+                "А.С. Петров",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(person, "person")]),
+                pairs(&[(expected, "PERSON")]),
+                "{source}"
+            );
+        }
+    }
+
     fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
         expected
             .iter()
