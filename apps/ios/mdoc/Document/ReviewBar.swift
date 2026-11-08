@@ -414,13 +414,13 @@ private struct ReviewButtons: View {
             }
         }
         .fontWeight(filled ? .semibold : nil)
-        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+        .frame(maxWidth: .infinity)
         let tap = Button { model.perform(action) } label: { label }
         if filled {
-            tap.accentProminent()
+            tap.primaryAction()
                 .modifier(ButtonAccessibility(action: action, documentIsDone: model.documentIsDone))
         } else {
-            tap.buttonStyle(.bordered)
+            tap.secondaryAction()
                 .modifier(ButtonAccessibility(action: action, documentIsDone: model.documentIsDone))
         }
     }
@@ -431,9 +431,8 @@ private struct ReviewButtons: View {
         } label: {
             Label("Undo", systemImage: "arrow.uturn.backward")
                 .labelStyle(.iconOnly)
-                .frame(width: Size.barButton, height: Size.barButton)
         }
-        .buttonStyle(.bordered)
+        .secondaryAction(circle: true)
         .disabled(!model.canUndo)
         .contextMenu {
             Button {

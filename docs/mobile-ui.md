@@ -38,7 +38,7 @@ Android: `apps/android/.../ui/theme` under the same names (to come).
 |---|---|---|
 | `Space` | 4, 8, 12, 16, 24 (`xxs`…`l`) | Padding and gaps; nothing off the 4 pt grid |
 | `Radius` | chip (capsule), control 12, card 20, tile 8, screen 44 | Continuous corners; screen for the sliding screen beside a drawer |
-| `Size` | target 44, bar button 40, chip 30, tile 30 | Hit targets never under 44 pt |
+| `Size` | target 44, bar button 44, chip 30, tile 30 | Every big button is 44 pt high (bar button); hit targets never under 44 pt |
 | `Palette` | accent, on accent, swipe accent, surface, background, chip fill, separator; to review (orange), ready (green), restored (blue) | Only named colors; system colors adapt to dark mode and Increase Contrast |
 | `Typography` | title, body, caption, chip, alias (monospaced), progress | Dynamic Type text styles only |
 | `Motion` | snappy spring 0.25 s; fade 0.2 s under Reduce Motion | `Motion.move(reduced:)` picks one |
@@ -74,11 +74,27 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 - **Accent:** ink, `#1c1c1e` light and `#f2f2f7` dark, in the asset
   catalog's `AccentColor` (`Palette.accent`, `UIColor.ink`), like the app
   icon. Words and symbols on an accent fill use `Palette.onAccent`, white in
-  light mode and black in dark mode: a filled button is `.accentProminent()`
-  (the system's filled button keeps white words), a selected filter is
+  light mode and black in dark mode; a selected filter is
   `Chip(…, filled: true)`. Swipe actions draw their words white in both
   modes, so their accent is `Palette.swipeAccent`, a dark grey in dark mode.
   `AccentContrastTests` holds each pair to 4.5:1.
+- **Big buttons** are Liquid Glass, 44 pt high
+  ([`Shared/UI/ButtonStyles.swift`](../apps/ios/Shared/UI/ButtonStyles.swift)):
+  the primary, `.primaryAction()`, is the system's prominent glass tinted
+  ink with on-accent words (the system's keeps white words, which vanish
+  on the near-white ink of dark mode); every other big button,
+  `.secondaryAction()`, is clear glass with ink words, and Undo and
+  Settings are clear glass circles (`secondaryAction(circle: true)`). A
+  `Menu` or a toolbar item takes only the system's styles, so "+ New",
+  Save to document and Documents' Scan use `primaryGlass()` /
+  `secondaryGlass()`, a Menu with `bigButtonLabel(prominent:)` on its
+  label. Primary words are semibold. Disabled buttons are clear
+  glass with words in the secondary colour. At
+  most one primary per view, a drawer or an iPad column counting as its
+  own view: on the Documents page Scan is the one, so the setup card's
+  Download there is secondary. Screens use these two styles only, no
+  literal material or colour; the system's glass adapts to dark mode,
+  Increase Contrast and Reduce Transparency.
 - **Text buttons** ("Select", "Not now", "Try a sample", Settings' Download
   rows, the toast's Undo) are the primary text colour at medium weight
   (`.textAction()`), not the accent; links in the document are the accent,
@@ -116,8 +132,9 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 - **Layout:** search (titles and cases) at the top, no title; the Cases
   and Documents rows; *To review* (orange count of names left) and
   *Recent* (20 at most, green dot when ready); a spinner while a job works
-  on a document; the open row highlighted with `Palette.chipFill`. ⚙ and
-  "+ New" float at the bottom over a fade.
+  on a document; the open row highlighted with `Palette.chipFill`. ⚙ (a
+  clear glass circle) and "+ New" (the sidebar's primary) float at the
+  bottom over a fade.
 - **Rows:** `SidebarRowLabel`, one line, 44 pt high; a long press gives
   Rename, Move to case, Share and Delete. Delete's toast offers Undo; the
   document goes when the toast does or mdoc leaves the screen.
@@ -158,9 +175,10 @@ that only the view model changes; views send intents
   it, the words of its own paragraph cut at words, and the original name
   bold on its category's highlight. A tap on the row goes there; a tap on
   its state mark changes that mention only, and the bar stays.
-- **Buttons:** Undo, Keep and Replace ("Keep all 3", "Replace all 3" with
-  scope All). A decided card: Undo, Keep instead (or Replace instead),
-  and Next → filled ("Done" when nothing is left).
+- **Buttons:** Undo (a clear glass circle), Keep and Replace, the primary
+  ("Keep all 3", "Replace all 3" with scope All), all 44 pt high. A
+  decided card: Undo, Keep instead (or Replace instead), and Next → as
+  the primary ("Done" when nothing is left).
 - **Moving on:** a decision steps to the next undecided candidate; the
   last ends review with "All N reviewed · Undo", and a line above Share
   says "All 15 reviewed · 12 replaced · 3 kept". Candidate ids are source
@@ -198,7 +216,8 @@ that only the view model changes; views send intents
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
 - **Top:** progress ring, "Identities", "9 names · 4 left", search circle,
-  Select, › close; then Replace N, filled. Outside Select, the hint line
+  Select, › close; then Replace N, full width in clear glass (a bulk
+  shortcut, not the drawer's loudest thing). Outside Select, the hint line
   "In Select, drag ≡ onto a name to make them one" (`ReviewHint.dragMerge`)
   goes here while Looks like has a card or two names share a category,
   gone for good after the first drag-merge or Same as, or ×.

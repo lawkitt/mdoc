@@ -44,6 +44,14 @@ final class ReviewPagerUITests: XCTestCase {
         hide.tap()
         let card = app.descendants(matching: .any)["review-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // The bar's buttons are 44 pt high, Undo a 44 pt circle
+        // (ADR 0099, amended 2026-11-08).
+        for id in ["review-undo", "review-keep", "review-replace"] {
+            let button = app.buttons[id]
+            XCTAssertTrue(button.exists, id)
+            XCTAssertEqual(button.frame.height, 44, accuracy: 0.5, id)
+        }
+        XCTAssertEqual(app.buttons["review-undo"].frame.width, 44, accuracy: 0.5, "Undo is a circle")
         let progress = app.buttons["review-progress"]
         // "3 of 15, 0 decided": two steps one way, then two back, toward the
         // side with room for them (a swipe left is the next card).

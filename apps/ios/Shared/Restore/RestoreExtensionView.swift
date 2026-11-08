@@ -99,7 +99,7 @@ struct RestoreExtensionView: View {
             HStack(spacing: 12) { buttons(model, result: result) }
             VStack(spacing: 12) { buttons(model, result: result) }
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .labelStyle(.titleAndIcon)
         .lineLimit(1)
         .padding()
@@ -116,7 +116,7 @@ struct RestoreExtensionView: View {
             Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 .frame(maxWidth: .infinity)
         }
-        .accentProminent()
+        .primaryAction()
         Button {
             share = ShareItems(items: [result.text])
         } label: {
@@ -138,11 +138,13 @@ struct RestoreExtensionView: View {
         } label: {
             Label(model.savedTo == nil ? "Save to document" : "Saved", systemImage: model.savedTo == nil ? "tray.and.arrow.down" : "checkmark")
                 .frame(maxWidth: .infinity)
+                .bigButtonLabel(prominent: false)
         } primaryAction: {
             if let target = model.defaultSaveTarget {
                 model.save(to: target.id)
             }
         }
+        .secondaryGlass()
         .disabled(model.documentsInCase.isEmpty)
         .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
     }

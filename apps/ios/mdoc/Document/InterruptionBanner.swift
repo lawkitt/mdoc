@@ -14,7 +14,7 @@ struct InterruptionBanner: View {
                 .font(.footnote)
             Spacer()
             Button(button, action: resume)
-                .buttonStyle(.bordered)
+                .secondaryAction()
                 .accessibilityIdentifier("interruption-resume")
         }
     }

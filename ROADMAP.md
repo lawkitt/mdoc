@@ -136,12 +136,6 @@ Features are frozen until items 13–19 land (Q4).
 22. **[Mobile] To grill: a case's page.** *From the sidebar grill ideas.*
     A case's names, documents and replies (desktop's ADR 0077), with Delete
     a case (Later) on it. *Done when:* grilled and built, after 20 and 21.
-23. **[Mobile] Glass buttons.** Every big button Liquid Glass and 44 pt
-    high: one ink-tinted primary per view, the rest clear glass, Identities'
-    "Replace N" included, through two shared styles
-    ([buttons grill](docs/design/ios-buttons-grill-2026-11-08.md), ADR 0099
-    amended). *Done when:* merged after the review bar fixes and checked
-    on the iPhone 17 Pro.
 
 ## Android
 

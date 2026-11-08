@@ -161,10 +161,11 @@ struct IdentitiesView: View {
                     deciding(identities.filter { $0.state == .proposed }.map(\.id)) { model.replaceAllPending() }
                 } label: {
                     Label("Replace \(counts.toReview)", systemImage: "eye.slash")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+                        .frame(maxWidth: .infinity)
                 }
-                .accentProminent()
+                // A bulk shortcut past looking at each name: clear glass,
+                // not the drawer's loudest thing (buttons grill Q2).
+                .secondaryAction()
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
             }
@@ -318,23 +319,23 @@ struct IdentitiesView: View {
                 model.decide(identities: ids, .replace)
                 selection = []
             } label: {
-                Text("Replace").frame(maxWidth: .infinity, minHeight: Size.barButton)
+                Text("Replace").frame(maxWidth: .infinity)
             }
-            .accentProminent()
+            .primaryAction()
             Button {
                 model.decide(identities: ids, .keep)
                 selection = []
             } label: {
-                Text("Keep").frame(maxWidth: .infinity, minHeight: Size.barButton)
+                Text("Keep").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .secondaryAction()
             Button {
                 model.merge(ids)
                 selection = []
             } label: {
-                Text("Same as").frame(maxWidth: .infinity, minHeight: Size.barButton)
+                Text("Same as").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .secondaryAction()
             .disabled(ids.count < 2)
             .accessibilityHint(Text("Makes the selected names one name."))
         }

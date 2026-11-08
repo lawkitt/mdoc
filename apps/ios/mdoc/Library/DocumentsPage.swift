@@ -20,7 +20,9 @@ struct DocumentsPage: View {
         List(selection: selection) {
             if showsSetupCard {
                 Section {
-                    SetupCard(model: app.setup)
+                    // Scan, in the bottom bar, is the page's one primary
+                    // button (ADR 0099).
+                    SetupCard(model: app.setup, prominent: false)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -82,7 +84,7 @@ struct DocumentsPage: View {
                         Label("Scan", systemImage: "doc.viewfinder")
                             .labelStyle(.titleAndIcon)
                     }
-                    .accentProminent()
+                    .primaryGlass()
                     .accessibilityIdentifier("scan-button")
                 }
                 Spacer()

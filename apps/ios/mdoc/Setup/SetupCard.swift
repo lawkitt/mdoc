@@ -11,6 +11,9 @@ struct SetupCard: View {
     var needs: ModelPurpose?
     /// Shows Not now.
     var dismissible = true
+    /// Download is the view's one primary button; false where the screen
+    /// has its own (Scan on the Documents page), and it is clear glass.
+    var prominent = true
     /// What Not now does; on Start it hides the card for good.
     var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
@@ -36,7 +39,7 @@ struct SetupCard: View {
                     Button("Cancel", role: .cancel) {
                         model.cancel()
                     }
-                    .buttonStyle(.bordered)
+                    .secondaryAction()
                     .accessibilityIdentifier("setup-cancel")
                 }
                 .lineLimit(1)
@@ -51,7 +54,7 @@ struct SetupCard: View {
                             Text("Download \(size) & continue")
                         }
                     }
-                    .accentProminent()
+                    .modifier(DownloadButtonStyle(prominent: prominent))
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
@@ -215,6 +218,19 @@ struct ModelRow: View {
     }
 }
 
+/// Download's weight: primary, or secondary beside a screen's own primary.
+private struct DownloadButtonStyle: ViewModifier {
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.primaryAction()
+        } else {
+            content.secondaryAction()
+        }
+    }
+}
+
 /// Use cellular, while a download waits for Wi-Fi: it asks the cellular
 /// question (ADR 0088).
 struct UseCellularButton: View {
@@ -226,7 +242,7 @@ struct UseCellularButton: View {
         } label: {
             Label("Use cellular", systemImage: "antenna.radiowaves.left.and.right")
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .accessibilityHint(Text("Asks before downloading over cellular."))
         .accessibilityIdentifier("setup-use-cellular")
     }

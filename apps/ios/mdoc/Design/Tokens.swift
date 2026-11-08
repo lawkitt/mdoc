@@ -30,8 +30,9 @@ enum Radius {
 enum Size {
     /// Minimum hit target (Apple's 44 pt).
     static let target: CGFloat = 44
-    /// The review bar's Undo, Keep and Replace.
-    static let barButton: CGFloat = 40
+    /// Every big button's height, the review bar's Undo, Keep and Replace
+    /// included: `primaryAction()` and `secondaryAction()` keep it.
+    static let barButton: CGFloat = BigButton.height
     /// A chip's height at default text size.
     static let chip: CGFloat = 30
     /// Settings and Start icon tiles.

@@ -28,6 +28,9 @@ document history ([ADR 0079](0079-decision-history.md)).
   a thin track that fills with the decided share); the review card; the
   buttons Undo, Keep and Replace (40 pt high, 14 pt below the card; Replace
   is the one filled button).
+  *Amended 2026-11-08 ([buttons grill](../design/ios-buttons-grill-2026-11-08.md)):*
+  44 pt high, Liquid Glass; Replace is the one ink glass button and Undo a
+  clear glass circle (ADR 0099).
 - **The review card** has two lines: the category icon and original → alias,
   ending in a mentions chip ("1 of 3 ›") when the identity has more than
   one; then the chips (category ▾, alias ▾, scope All N ▾). A merge hint
@@ -53,6 +56,9 @@ document history ([ADR 0079](0079-decision-history.md)).
   and can be changed. A decision moves to the next undecided candidate. The
   text glides to keep the name in its top third and the card cross-fades;
   nothing closes and reopens.
+  *Amended 2026-11-08 (#723):* the card no longer cross-fades: the previous, current
+  and next cards sit in one strip that follows the finger and settles on
+  the neighbor with one spring; Reduce Motion cross-fades.
 - **Focus.** "Review this identity" or "Review 3 people" (from Identities)
   limits stepping to that group; the progress line shows it with ×. When the
   group is done, or on ×, review returns to the whole document.
