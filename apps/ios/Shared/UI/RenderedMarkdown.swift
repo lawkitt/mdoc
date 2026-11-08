@@ -717,33 +717,55 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
         }
     }
 
-    /// A rounded box around each outlined stretch on each line it covers,
-    /// over the text and its fill, from the line's baseline and the font's
-    /// height there (a heading's name gets a taller box).
     private func drawOutlines(at point: CGPoint, in context: CGContext) {
-        let outlines = outlines
-        guard !outlines.isEmpty else { return }
+        let boxes = outlineBoxes(at: point)
+        guard !boxes.isEmpty else { return }
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
+        for (box, colour) in boxes {
+            let path = UIBezierPath(roundedRect: box, cornerRadius: 4)
+            path.lineWidth = Self.outlineWidth
+            colour.setStroke()
+            path.stroke()
+        }
+    }
+
+    /// A rounded box around each outlined stretch on each line it covers,
+    /// for a fragment drawn at `point`. Its sides span the stretch's text
+    /// segments on that line, which stay true where the stretch and its
+    /// line run in different directions (a Hebrew name in English text);
+    /// its height is the font's there, from the line's baseline, so a
+    /// heading's name gets a taller box.
+    func outlineBoxes(at point: CGPoint) -> [(box: CGRect, colour: UIColor)] {
+        let outlines = outlines
+        guard !outlines.isEmpty, let layout = textLayoutManager, let content = layout.textContentManager,
+              let start = textElement?.elementRange?.location else { return [] }
+        let origin = CGPoint(x: point.x - layoutFragmentFrame.minX, y: point.y - layoutFragmentFrame.minY)
+        var boxes: [(box: CGRect, colour: UIColor)] = []
         for outline in outlines {
             for line in textLineFragments {
                 let part = NSIntersectionRange(outline.range, line.characterRange)
-                guard part.length > 0 else { continue }
+                guard part.length > 0,
+                      let from = content.location(start, offsetBy: part.location),
+                      let to = content.location(from, offsetBy: part.length),
+                      let range = NSTextRange(location: from, end: to) else { continue }
+                var left = CGFloat.infinity, right = -CGFloat.infinity
+                layout.enumerateTextSegments(in: range, type: .standard, options: [.rangeNotRequired]) { _, frame, _, _ in
+                    left = min(left, frame.minX)
+                    right = max(right, frame.maxX)
+                    return true
+                }
+                guard left < right else { continue }
                 let font = line.attributedString.attribute(.font, at: part.location, effectiveRange: nil) as? UIFont
                 let baseline = point.y + line.typographicBounds.minY + line.glyphOrigin.y
                 let ascender = font?.ascender ?? line.typographicBounds.height * 0.8
                 let descender = font?.descender ?? 0
-                let start = line.locationForCharacter(at: part.location).x
-                let end = line.locationForCharacter(at: NSMaxRange(part)).x
-                let x = point.x + line.typographicBounds.minX + min(start, end)
-                let box = CGRect(x: x, y: baseline - ascender, width: abs(end - start), height: ascender - descender)
+                let box = CGRect(x: origin.x + left, y: baseline - ascender, width: right - left, height: ascender - descender)
                     .insetBy(dx: -Self.outlineOutset.width, dy: -Self.outlineOutset.height)
-                let path = UIBezierPath(roundedRect: box, cornerRadius: 4)
-                path.lineWidth = Self.outlineWidth
-                outline.colour.setStroke()
-                path.stroke()
+                boxes.append((box, outline.colour))
             }
         }
+        return boxes
     }
 }
 

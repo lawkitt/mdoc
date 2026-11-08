@@ -84,6 +84,13 @@ final class ComponentSnapshotTests: XCTestCase {
                 }
                 .buttonStyle(.bordered)
             }
+            // Disabled: grey words on the greyed fill, not white on grey.
+            Button {} label: {
+                Text(verbatim: "Replace")
+                    .frame(maxWidth: .infinity, minHeight: Size.barButton)
+            }
+            .accentProminent()
+            .disabled(true)
             HStack(spacing: Space.s) {
                 StateMark(state: .replaced)
                 StateMark(state: .kept)
