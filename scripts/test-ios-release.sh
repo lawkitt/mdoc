@@ -67,7 +67,7 @@ repo=$tmp/repo
 git init -q "$repo"
 g() { git -C "$repo" -c user.name=t -c user.email=t@example.invalid "$@"; }
 mkdir -p "$repo/scripts" "$repo/apps/ios/mdoc.xcodeproj" "$repo/apps/ios/Config"
-cp scripts/lib.sh scripts/ios-release.sh scripts/ios-what-to-test.sh "$repo/scripts/"
+cp scripts/lib.sh scripts/ios-release.sh scripts/ios-what-to-test.sh scripts/ios-gate.sh "$repo/scripts/"
 pbx() { printf '\t\t\t\tMARKETING_VERSION = %s;\n\t\t\t\tMARKETING_VERSION = %s;\n' "$1" "$1" >"$repo/apps/ios/mdoc.xcodeproj/project.pbxproj"; }
 key() { printf '<dict>\n\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<%s/>\n</dict>\n' "$1" >"$repo/apps/ios/Config/mdoc-Info.plist"; }
 pbx 0.2.0
@@ -82,14 +82,22 @@ good=$(g rev-parse HEAD)
 
 gates=$tmp/gates
 mkdir -p "$gates"
-gate() { printf 'phone=iPhone13,3\nudid=0000\ntier=%s\ncommit=%s\npassed=2026-11-08T00:00:00Z\n' "$2" "$1" >"$gates/$1"; }
+# gate <commit> <tier> [phone]: a gate record, on the iPhone 12 Pro unless named.
+gate() { printf 'phone=%s\nudid=0000\ntier=%s\ncommit=%s\npassed=2026-11-08T00:00:00Z\n' "${3:-iPhone13,3}" "$2" "$1" >"$gates/$1"; }
 release() { (cd "$repo" && MDOC_GATE_DIR="$gates" bash scripts/ios-release.sh "$@"); }
 
 refuses "no gate record" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "no gate record" "$tmp/out" || fail "no gate: $(cat "$tmp/out")"
 gate "$good" detector
 refuses "a detector-tier gate" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+gate "$good" below-floor iPhone17,1
+refuses "a below-floor run on a phone that meets the floor" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "meets the floor" "$tmp/out" || fail "forced tier: $(cat "$tmp/out")"
 gate "$good" below-floor
+touch "$repo/apps/ios/Untracked.swift"
+refuses "an untracked file" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "untracked" "$tmp/out" || fail "untracked: $(cat "$tmp/out")"
+rm "$repo/apps/ios/Untracked.swift"
 refuses "a plain version" release 0.2.0 "$tmp/good.txt" --yes
 refuses "another version" release 0.3.0-rc.1 "$tmp/good.txt" --yes
 grep -q "maintainer's" "$tmp/out" || fail "another version: $(cat "$tmp/out")"
@@ -108,6 +116,12 @@ g push -q origin main
 gate "$(g rev-parse HEAD)" below-floor
 refuses "the export key YES" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "ITSAppUsesNonExemptEncryption" "$tmp/out" || fail "export key: $(cat "$tmp/out")"
+
+# HEAD behind origin/main's tip: refused unless the commit is named.
+g checkout -q "$good"
+refuses "a stale HEAD" release 0.2.0-rc.3 "$tmp/good.txt" --yes
+grep -q "not origin/main's tip" "$tmp/out" || fail "stale HEAD: $(cat "$tmp/out")"
+g checkout -q main
 
 # The good commit: tagged and pushed with What to Test and the trailers.
 release 0.2.0-rc.3 "$tmp/good.txt" --commit "$good" --yes >"$tmp/out" 2>&1 || fail "release failed: $(cat "$tmp/out")"
@@ -137,6 +151,12 @@ refuses "a tag without the opening line" bash -c "cd '$repo' && bash scripts/ios
 g checkout -q "$good"
 (cd "$repo" && bash scripts/ios-release.sh --check-main) >"$tmp/check" 2>&1 || fail "--check-main failed: $(cat "$tmp/check")"
 grep -qx "build=2" "$tmp/check" || fail "--check-main printed: $(cat "$tmp/check")"
+
+# The tiers by model (ADR 0088).
+for pair in iPhone13,3:below-floor iPhone15,2:below-floor iPhone16,1:detector iPhone18,2:detector; do
+  [ "$(bash scripts/ios-gate.sh tier "${pair%%:*}")" = "${pair#*:}" ] || fail "tier of ${pair%%:*}"
+done
+refuses "an iPad model" bash scripts/ios-gate.sh tier iPad16,3
 
 # --- The key file ---------------------------------------------------------
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$tmp/ec.pem" 2>/dev/null

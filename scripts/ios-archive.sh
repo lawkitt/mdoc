@@ -57,8 +57,10 @@ do_archive() {
   codesign --force --sign - --entitlements "$work/RestoreExtension.plist" "$app/PlugIns/RestoreExtension.appex"
   codesign --force --sign - --entitlements "$work/mdoc.plist" "$app"
   rm -rf "$work"
-  echo "archived build $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist") to $archive"
+  echo "archived build $(build_number) to $archive"
 }
+
+build_number() { /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist"; }
 
 # options <destination>: the export options for an App Store build. Xcode
 # must not renumber the build (ADR 0091's number is the commit count).
@@ -94,8 +96,10 @@ do_export() {
   xcodebuild -exportArchive -archivePath "$archive" -exportPath "$export_dir" -exportOptionsPlist "$plist" \
     -allowProvisioningUpdates ${args[@]+"${args[@]}"} 2>&1 | tee "$log" || status=$?
   if [ "$status" = 0 ] && ! grep -q 'EXPORT SUCCEEDED' "$log"; then status=1; fi
+  # Apple's duplicate message names the build number; only this build's
+  # counts (a newer build uploaded first gives another refusal).
   if [ "$status" != 0 ] && [ "$destination" = upload ] &&
-    grep -qiE "redundant binary upload|already uploaded a build with build number" "$log"; then
+    grep -qi "already uploaded a build with build number '$(build_number)'" "$log"; then
     echo "App Store Connect already has this build; counted as uploaded"
     status=0
   fi

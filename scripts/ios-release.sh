@@ -4,9 +4,10 @@
 #        scripts/ios-release.sh --check-tag <tag>
 #        scripts/ios-release.sh --check-main
 # Tags an iOS TestFlight build (ADR 0107): an annotated `ios-v<x.y.z>-rc.<n>`
-# on a `main` commit (HEAD, or --commit) that passed the iPhone 12 Pro gate
-# (`just ios-device-test`, the below-floor tier, which records the pass in
-# target/ios/gate/<commit>). No commit is made. The annotation's body is
+# on a `main` commit that passed the iPhone 12 Pro gate (`just
+# ios-device-test`, which records the pass, scripts/ios-gate.sh): HEAD,
+# which must be origin/main's tip, or --commit. No commit is made, and the
+# checkout must be clean. The annotation's body is
 # What to Test (scripts/ios-what-to-test.sh checks it); below a `---` line,
 # trailers name the build and the gate. Pushing the tag starts
 # ios-release.yml, which uploads the build. Refuses a commit not on
@@ -25,7 +26,6 @@
 source "$(dirname "$0")/lib.sh"
 
 usage="usage: scripts/ios-release.sh <x.y.z>-rc.<n> <what-to-test file> [--commit <sha>] [--yes] [--no-push] | --check-tag <tag> | --check-main"
-gates=${MDOC_GATE_DIR:-target/ios/gate}
 project=apps/ios/mdoc.xcodeproj/project.pbxproj
 plist=apps/ios/Config/mdoc-Info.plist
 
@@ -128,8 +128,12 @@ split_version "$version"
 tag=ios-v$version
 
 bash scripts/ios-what-to-test.sh check "$notes"
+bash scripts/ios-gate.sh clean || die "the checkout has changes or untracked files; tag from a clean checkout"
 sha=$(git rev-parse --verify "$commit^{commit}") || die "no commit $commit"
 check_commit "$sha"
+# HEAD must be origin/main's tip; an older gated commit is named with --commit.
+[ "$commit" != HEAD ] || [ "$sha" = "$(git rev-parse origin/main)" ] ||
+  die "HEAD is not origin/main's tip; pull, or name the gated commit with --commit"
 current=$(marketing_version "$sha")
 [ "$current" = "$marketing" ] ||
   die "MARKETING_VERSION at $sha is $current, not $marketing; a new version is the maintainer's"
@@ -137,13 +141,9 @@ current=$(marketing_version "$sha")
 git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null && die "tag $tag exists here; tags are never reused"
 [ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || die "tag $tag exists on origin; tags are never reused"
 
-# The gate: a below-floor pass recorded for exactly this commit.
-gate=$gates/$sha
-[ -f "$gate" ] || die "no gate record for $sha: run \`just ios-device-test <12 Pro UDID>\` on it first"
-grep -qx 'tier=below-floor' "$gate" || die "the gate record for $sha is not the below-floor tier"
-grep -qx "commit=$sha" "$gate" || die "the gate record $gate names another commit"
-phone=$(sed -n 's/^phone=//p' "$gate")
-passed=$(sed -n 's/^passed=//p' "$gate")
+# The gate: a below-floor pass on a phone below the floor, for exactly
+# this commit.
+gate=$(bash scripts/ios-gate.sh check "$sha")
 
 build=$(git rev-list --count "$sha")
 message=$(mktemp)
@@ -156,7 +156,7 @@ trap 'rm -f "$message"' EXIT
   echo "---"
   echo "Build: $build"
   echo "Commit: $sha"
-  echo "Gate: just ios-device-test, below-floor tier, on $phone, passed $passed"
+  echo "Gate: $gate"
 } >"$message"
 
 git tag --annotate --cleanup=verbatim --file="$message" "$tag" "$sha"
