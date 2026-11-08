@@ -64,6 +64,11 @@ choice, while desktop has System, Light and Dark.
   buttons are the primary text colour at medium weight; the active name
   keeps its category tint with an ink outline. Desktop keeps the teal until
   its own grill; Android follows iOS.
+  *Amended 2026-11-08 ([buttons grill](../design/ios-buttons-grill-2026-11-08.md)):*
+  big buttons are Liquid Glass, 44 pt high: the primary is ink-tinted
+  prominent glass, at most one per view; the rest, Identities' "Replace N"
+  and the Undo circle included, are clear glass with ink words. Screens use
+  two shared styles only.
 - **Document font:** Settings › Appearance › Document font: System (the
   default) or Serif (New York), at the same Dynamic Type sizes; it changes
   the document text only.
