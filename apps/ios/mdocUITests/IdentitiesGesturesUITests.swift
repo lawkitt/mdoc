@@ -248,15 +248,16 @@ final class IdentitiesGesturesUITests: XCTestCase {
             ", \(target.alias),", dragged.name)).firstMatch
         XCTAssertTrue(merged.exists, "the target's alias names both")
         XCTAssertTrue(merged.isSelected, "the selection stays")
-        attach("identities-drag-merged")
         XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'identity-row' AND label CONTAINS %@", ", \(dragged.alias),")).firstMatch.exists)
 
-        // Undo: both again.
+        // Undo: both again. The toast goes after 6 s, so no screenshot
+        // before the tap: on a slow runner the toast was gone by then.
         undo.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { rows.count == count }, "Undo brings both back")
         XCTAssertTrue(row(dragged.name).label.contains(", \(dragged.alias),"))
         XCTAssertTrue(row(target.name).label.contains(", \(target.alias),"))
+        attach("identities-drag-undone")
     }
 
     /// The settled screen, kept with the result for a look.
