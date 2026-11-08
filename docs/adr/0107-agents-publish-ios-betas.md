@@ -28,16 +28,19 @@ What to Test's 4,000 characters.
   1. checks the tag is on `main`, its `x.y.z` is `MARKETING_VERSION` and
      `ITSAppUsesNonExemptEncryption` is NO;
   2. calls `ci-ios.yml` on the tag (tests and the Release configuration);
-  3. archives from a full-history checkout (`MDOC_REQUIRE_FULL_HISTORY=1`)
-     with `xcodebuild -allowProvisioningUpdates` and the API key;
-  4. exports with `destination=upload`;
+  3. archives the Release configuration unsigned from a full-history
+     checkout (`MDOC_REQUIRE_FULL_HISTORY=1`), then signs the archived app
+     and Restore extension ad hoc with their entitlements;
+  4. exports with `destination=upload`, `-allowProvisioningUpdates` and
+     the API key: Apple-managed signing replaces the ad hoc signatures;
   5. polls the App Store Connect API until processing ends (fails after
      45 minutes), sets What to Test and checks the build is in the
      internal group "Maintainer";
   6. writes a run summary: version, build, tag, processing state.
 - **Validate mode.** The workflow can be dispatched from `main` to run
-  steps 1–3, export and `altool --validate-app`, without uploading, so a
-  pipeline fault burns no `rc.N`.
+  step 1 (on `main`'s tip), step 3, an export to a file and `altool
+  --validate-app`, without uploading, so a pipeline fault burns no `rc.N`.
+  It skips step 2: `main`'s commits passed the merge queue's tests.
 - **No local release path** (ADR 0091 stands). If hosted macOS runners are
   down, the hub retries later. The maintainer's manual Xcode archive stays
   in [release-run.md](../release-run.md) as the last resort.
@@ -48,6 +51,12 @@ What to Test's 4,000 characters.
   key makes and renews the distribution certificate and the profiles of
   the app and the Restore extension. Apple accepts only Admin for cloud
   signing.
+- **No certificate on the runner.** The archive is unsigned and then
+  signed ad hoc, because an unsigned archive exports without its
+  entitlements (App Group, keychain group, increased memory limit) and
+  Xcode's automatic signing at archive time makes a development
+  certificate on every fresh runner. Checked on 2026-11-08: the export
+  gives "Apple Distribution" signatures with every entitlement.
 - **The key lives in `release-ios` only**: `ASC_KEY_ID`, `ASC_ISSUER_ID`
   and `ASC_KEY_P8`, entered by the maintainer on 2026-11-08. `ASC_KEY_P8`
   holds the key's base64 body without the `BEGIN`/`END PRIVATE KEY`
@@ -59,8 +68,10 @@ What to Test's 4,000 characters.
 
 - **`just release-ios <x.y.z>-rc.N <what-to-test file>`**, run by an agent
   on the macbook-air (the only machine with the gate's phone), tags an
-  existing `main` commit: the one the gate tested. It refuses a dirty or
-  stale `main` and a version other than `MARKETING_VERSION`, makes no
+  existing `main` commit: the one the gate tested (`origin/main`'s tip,
+  or an older one named with `--commit`). It refuses a checkout with
+  changes or untracked files, a stale HEAD and a version other than
+  `MARKETING_VERSION`, makes no
   commit, and pushes only the annotated tag. Its build number is that
   commit's count on `main` (ADR 0091).
 - **The annotation carries What to Test.** Subject: `mdoc for iOS <x.y.z>
@@ -92,7 +103,10 @@ What to Test's 4,000 characters.
 ### Gate and cadence
 
 - **The iPhone 12 Pro gates every build** (`just ios-device-test`, the
-  below-floor tier), on the commit to be tagged. It stays wired to the Mac
+  below-floor tier), on the commit to be tagged, from a clean checkout
+  (untracked files count). The test records the pass with the phone's
+  real model, and only a phone below the floor counts, never a forced
+  tier on a newer phone. It stays wired to the Mac
   and unlocked, with mobile data and Wi-Fi at times. If it is not
   reachable, the hub tells the maintainer and tags nothing; the gate is
   never skipped.
