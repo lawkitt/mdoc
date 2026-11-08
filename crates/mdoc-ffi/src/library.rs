@@ -51,6 +51,11 @@ pub struct Library {
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(crate) before_record: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Run once by a document's save once it holds the write lock, before
+    /// it writes.
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) during_save: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The longest file stem a title makes, in bytes: room for " 99.md" in a
@@ -240,6 +245,8 @@ impl Library {
             before_write_back: Mutex::new(None),
             #[cfg(test)]
             before_record: Mutex::new(None),
+            #[cfg(test)]
+            during_save: Mutex::new(None),
         }))
     }
 
