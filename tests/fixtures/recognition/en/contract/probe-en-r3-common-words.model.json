@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":347,"end":363,"label":"person","score":0.9333093,"text":"Ms Edda Brannock"},
+    {"start":328,"end":345,"label":"person","score":0.77424216,"text":"p Ossian Draycott"},
+    {"start":189,"end":199,"label":"person","score":0.56025267,"text":"Librarians"}
+  ]
+}
