@@ -2557,8 +2557,89 @@ fn ingest_birth_dates(source: &str, values: &[&str]) -> Review {
     review.ingest(source, detections).unwrap();
     review
 }
+/// #363: a date of birth its label proposed may wrap at a line break with
+/// the label after it on its last line, like an address found whole; the
+/// model's same span is two lines' text, and so is a date over a blank line.
+#[test]
+fn a_labelled_birth_date_may_wrap_before_its_label() {
+    let source = "He gave a March 9,\n1984 birth date.";
+    let review = ingest_birth_dates(source, &["March 9,\n1984"]);
+    assert_eq!(review.candidates().len(), 1);
+    let start = source.find("March").unwrap();
+    let mut review = Review::default();
+    let model = detection(start..start + "March 9,\n1984".len(), Category::Date);
+    review.ingest(source, vec![model]).unwrap();
+    assert!(review.candidates().is_empty());
+    let source = "He gave a March 9,\n\n1984 birth date.";
+    let review = ingest_birth_dates(source, &["March 9,\n\n1984"]);
+    assert!(review.candidates().is_empty());
+}
+
 fn mention_count(review: &Review, original: &str) -> usize {
     proposed(review, original).mentions.len()
+}
+
+/// #363 review P1-1: a date of birth a rule found before its label
+/// ("01.01.1980 года рождения") counts its repeats before the same label,
+/// never after the word before it ("от", "of") nor at a paragraph's start,
+/// where a label-before date's empty cue would count every mention.
+#[test]
+fn a_birth_date_before_its_label_counts_before_that_label() {
+    let ingest = |source: &str, value: &str, n: usize| {
+        let (start, _) = source.match_indices(value).nth(n).unwrap();
+        let mut found = detection(start..start + value.len(), Category::Date);
+        found.recognizer = Recognizer::ContextAfter;
+        let mut review = Review::default();
+        review.ingest(source, vec![found]).unwrap();
+        mention_count(&review, value)
+    };
+    for (source, value, n, count) in [
+        (
+            "Решение от 12.03.2026 вынесено. Заседание 12.03.2026 окончено.\n\n12.03.2026 г.     Р.А. Иванов",
+            "12.03.2026",
+            2,
+            1,
+        ),
+        (
+            "The hearing of 3 June 1961 was adjourned to 3 June 1961 at noon.\n\n3 June 1961 date of birth",
+            "3 June 1961",
+            2,
+            1,
+        ),
+        (
+            "по договору от 12.03.2026 г. Р.А. Иванов передал. Иск подан по договору от 12.03.2026 и принят.",
+            "12.03.2026",
+            0,
+            1,
+        ),
+        (
+            "He gave a 12 March 1984 birth date. He gave a 12 March 1984 address too.",
+            "12 March 1984",
+            0,
+            1,
+        ),
+        // The same label after a repeat, its dots and spaces as they come.
+        (
+            "Иванов, 01.01.1980 года рождения. Петров, 01.01.1980 года рождения.",
+            "01.01.1980",
+            0,
+            2,
+        ),
+        (
+            "Иванов, 01.01.1980 г.р. Петров, 01.01.1980 г. р. Сидоров, 01.01.1980 года.",
+            "01.01.1980",
+            0,
+            2,
+        ),
+        (
+            "a 12/04/1979 date of birth; a 12/04/1979 date-of-birth; a 12/04/1979 date of issue",
+            "12/04/1979",
+            0,
+            2,
+        ),
+    ] {
+        assert_eq!(ingest(source, value, n), count, "{source:?}");
+    }
 }
 
 /// #466 option 1: a scan's date of birth counts only after its label, so

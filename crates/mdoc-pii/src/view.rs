@@ -1281,14 +1281,16 @@ fn line_break(text: &str) -> Option<usize> {
 /// closing punctuation. "Delva Rosk\nExhibition company" before ": …" is two
 /// lines' text, not one wrapped value.
 ///
-/// An address the rule pack's `span` pattern found whole (`address`) is laid
+/// An address the rule pack's `span` pattern found whole (`whole`) is laid
 /// out over lines of its own, the pattern having read its parts on each
 /// ("4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999"), so text may
 /// follow it on its last line (", and to …") when it ends in its number (a
 /// postcode, ZIP or flat number, not a town that may be the next field's
 /// first word: "12 Oak Road,\nDate" of "Date of birth"), that text is a word
 /// apart ("Room 2" of "Room 2/3" is not) and it is no field's label (": …").
-pub fn wrapped_value(source: &str, range: &Range<usize>, address: bool) -> bool {
+/// So may a date of birth a `context` label proposed (#363): "a March
+/// 9,\n1984 birth date" is one date, its year a number before the label.
+pub fn wrapped_value(source: &str, range: &Range<usize>, whole: bool) -> bool {
     let value = &source[range.clone()];
     let plain = value.match_indices('\n').any(|(i, _)| {
         let at = range.start + i;
@@ -1305,7 +1307,7 @@ pub fn wrapped_value(source: &str, range: &Range<usize>, address: bool) -> bool 
         || rest
             .chars()
             .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
-        || (address && numbered_end(value, rest))
+        || (whole && numbered_end(value, rest))
 }
 
 /// Whether a value's last word holds a digit and the text after it on its
