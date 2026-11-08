@@ -1,0 +1,154 @@
+name: iOS release
+
+# TestFlight builds of the iOS app (ADR 0107). An `ios-v<x.y.z>-rc.<n>` tag
+# made by `just release-ios` checks the tag, runs the iOS tests and the
+# Release configuration on its commit (ci-ios.yml), archives it unsigned,
+# signs the archive ad hoc with its entitlements, and exports it to App
+# Store Connect: Apple-managed (cloud) signing with the App Store Connect
+# key replaces those signatures with the team's distribution certificate.
+# It then waits for Apple's processing, sets What to Test from the tag's
+# annotation and checks the build is in the internal group "Maintainer".
+# Dispatched from `main`, it validates instead: the same archive and export,
+# then Apple's validation, with no upload. The key lives only in the
+# `release-ios` environment, which only `main` and `ios-v*` tags reach.
+# Every step is a script, so a failure reproduces on a Mac.
+on:
+  push:
+    tags:
+      - "ios-v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch:
+
+# Each job declares its own permissions; none writes.
+permissions: {}
+
+# Queue, don't cancel: never interrupt an upload.
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      build: ${{ steps.check.outputs.build }}
+      commit: ${{ steps.check.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # actions/checkout can leave a pushed tag lightweight; the annotation
+      # holds What to Test, so fetch the tag object itself.
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+            scripts/ios-release.sh --check-tag "$TAG" | tee -a "$GITHUB_OUTPUT"
+          else
+            [ "$REF" = refs/heads/main ] || { echo "::error::validate runs are dispatched from main"; exit 1; }
+            scripts/ios-release.sh --check-main | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # The tag's commit came from main, but nothing tested it as a release:
+  # the iOS tests and the Release configuration, as the queue runs them.
+  tests:
+    name: tests
+    needs: check
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-ios.yml
+    with:
+      ref: ${{ needs.check.outputs.commit }}
+
+  build:
+    name: ${{ github.event_name == 'push' && 'upload' || 'validate' }}
+    needs: [check, tests]
+    # A validate run skips the tests; an upload needs them green.
+    if: >-
+      always() && needs.check.result == 'success' &&
+      (needs.tests.result == 'success' || (github.event_name != 'push' && needs.tests.result == 'skipped'))
+    runs-on: macos-26
+    environment: release-ios
+    # The archive takes about 15 minutes; Apple's processing up to 45.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      # The build number is the commit count (ADR 0091): never from a
+      # shallow clone.
+      MDOC_REQUIRE_FULL_HISTORY: "1"
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      VERSION: ${{ needs.check.outputs.version }}
+      BUILD: ${{ needs.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: ios
+
+      # Xcode and the iOS platform, which the image ships.
+      - run: scripts/ios-toolchain.sh >>"$GITHUB_ENV"
+
+      # main's built core, as in ci-ios.yml; this job never saves it.
+      - id: core-key
+        run: scripts/ios-core-cache.sh key >>"$GITHUB_OUTPUT"
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.core-key.outputs.paths }}
+          key: ${{ steps.core-key.outputs.key }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: just ios-core && scripts/ios-core-cache.sh check
+      - if: steps.core.outputs.cache-hit == 'true'
+        run: scripts/ios-build-info.sh
+
+      - name: The build number is the commit count
+        run: grep -qx "CURRENT_PROJECT_VERSION = $BUILD" target/ios/Build.xcconfig
+
+      - run: scripts/ios-archive.sh archive
+
+      - name: The App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: echo "ASC_KEY_PATH=$(scripts/ios-asc-key.sh "$RUNNER_TEMP/asc")" >>"$GITHUB_ENV"
+
+      - name: Validate
+        if: github.event_name != 'push'
+        run: |
+          scripts/ios-testflight.py check-auth
+          scripts/ios-archive.sh validate
+
+      - name: Upload
+        if: github.event_name == 'push'
+        run: scripts/ios-archive.sh upload
+
+      - name: Processing, What to Test and the Maintainer group
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+          scripts/ios-what-to-test.sh from-tag "$TAG" >"$RUNNER_TEMP/what-to-test.txt"
+          scripts/ios-testflight.py finish --version "$VERSION" --build "$BUILD" \
+            --notes "$RUNNER_TEMP/what-to-test.txt"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "${RUNNER_TEMP:?}/asc"
