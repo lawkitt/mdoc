@@ -42,6 +42,7 @@ final class SlowJobs: mdoc.DocumentSession, @unchecked Sendable {
     }
     func replaceAllPending() throws -> DocumentSnapshot { try base.replaceAllPending() }
     func copyForAI() throws -> HandOff { try base.copyForAI() }
+    func saveChanges() throws { try base.saveChanges() }
     func restoreReply(_ reply: String) throws -> DocumentSnapshot { try base.restoreReply(reply) }
     func clearReply() throws -> DocumentSnapshot { try base.clearReply() }
     func undo() throws -> DocumentSnapshot { try base.undo() }

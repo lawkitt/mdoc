@@ -180,7 +180,7 @@ final class CoreWiringTests: XCTestCase {
     // MARK: Typed errors
 
     /// A review change that cannot be saved says so, not "could not open
-    /// this file".
+    /// this file". The tap itself returns; its save fails.
     func testASaveFailureReadsAsOne() throws {
         let session = try imported(core())
         let scanned = try session.scan(observer: TestObserver())
@@ -188,7 +188,8 @@ final class CoreWiringTests: XCTestCase {
         let documents = storage.url(.documents)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: documents.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: documents.path) }
-        XCTAssertThrowsError(try session.decide(email.id, .replace, scope: .all)) { error in
+        XCTAssertNoThrow(try session.decide(email.id, .replace, scope: .all))
+        XCTAssertThrowsError(try session.saveChanges()) { error in
             guard case .saveFailed = error as? CoreError else { return XCTFail("\(error)") }
             let message = error.localizedDescription
             XCTAssertTrue(message.hasPrefix("mdoc could not save this change"), message)

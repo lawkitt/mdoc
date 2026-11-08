@@ -122,12 +122,16 @@ pub fn occurrences(text: String, wording: String) -> Vec<TextRange> {
 #[uniffi::export]
 impl DocumentSession {
     /// Apply `action`, then, given `library`, save as `save` does unless
-    /// nothing changed since the last save; the snapshot after.
+    /// nothing changed since the last save; the snapshot after. Without
+    /// `library` the change waits for `save_pending`, which saves every
+    /// action since the last save at once (ADR 0104: the save follows the
+    /// tap).
     pub fn review(
         &self,
         action: ReviewAction,
         library: Option<Arc<Library>>,
     ) -> Result<ReviewSnapshot, ReviewError> {
+        let _saving = library.as_ref().map(|_| self.lock_saving());
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
         document.apply(action)?;

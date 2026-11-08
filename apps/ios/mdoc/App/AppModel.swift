@@ -61,6 +61,7 @@ final class AppModel {
                 library?.refresh()
             }
         }
+        core.library.observeSaves { [weak self] event in self?.saved(event) }
     }
 
     /// The app's model over the real core. `open` opens the storage and the
@@ -132,8 +133,7 @@ final class AppModel {
             present(error)
             return
         }
-        navigator.show(.document(id))
-        evictClosedDocuments()
+        show(.document(id))
     }
 
     /// Opens a section's page and closes the sidebar on iPhone. The
@@ -143,8 +143,7 @@ final class AppModel {
         if section == .documents {
             library.caseFilter = nil
         }
-        navigator.show(.section(section))
-        evictClosedDocuments()
+        show(.section(section))
     }
 
     /// A case's row: the Documents page filtered to that case.
@@ -155,7 +154,17 @@ final class AppModel {
 
     /// Start: no document and no section (⌘N).
     func showStart() {
-        navigator.show(.start)
+        show(.start)
+    }
+
+    /// Every way the app moves: a document left for anything else is saved
+    /// first (ADR 0104: the save follows the tap), then the models of
+    /// documents no longer open go.
+    private func show(_ destination: Destination) {
+        if let open = navigator.openDocument, destination != .document(open) {
+            saveChanges(of: open)
+        }
+        navigator.show(destination)
         evictClosedDocuments()
     }
 
@@ -182,6 +191,46 @@ final class AppModel {
 
     /// The document a job is working on now, for the sidebar's spinner.
     var workingDocument: DocumentID? { jobs.current?.documentID }
+
+    // MARK: Saving (ADR 0104)
+
+    /// What the taps changed in `id`, saved now.
+    private func saveChanges(of id: DocumentID) {
+        do {
+            try documents.model(for: id)?.session.saveChanges()
+        } catch {
+            present(error)
+        }
+    }
+
+    /// What the taps changed in every document, saved now: mdoc leaves the
+    /// foreground. It runs before the phase change returns, so iOS does not
+    /// suspend mdoc in the middle of it.
+    func saveChanges() {
+        do {
+            try core.library.saveChanges()
+        } catch {
+            present(error)
+        }
+    }
+
+    /// A save that followed taps ended: the lists show the document as
+    /// saved, and a document whose case changed elsewhere shows its review
+    /// as joined again. A failure shows on the document, or over whatever
+    /// shows once it is closed.
+    func saved(_ event: SaveEvent) {
+        switch event {
+        case .saved(let id, let rejoined):
+            library.refresh()
+            if rejoined { documents.model(for: id)?.refresh() }
+        case .failed(let id, let error):
+            if let model = documents.model(for: id), navigator.openDocument == id {
+                model.errorMessage = error.localizedDescription
+            } else {
+                present(error)
+            }
+        }
+    }
 
     /// Saves what finished while the phone was locked, and shows it saved.
     func saveDeferred() {

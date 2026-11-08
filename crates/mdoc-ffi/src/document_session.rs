@@ -8,6 +8,7 @@
 mod actions;
 mod intake;
 mod review;
+mod saving;
 mod snapshot;
 
 use crate::{
@@ -20,6 +21,7 @@ use mdoc_pii::restore::RestoreMap;
 pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
+pub use saving::SavedChange;
 pub use snapshot::{
     Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
     MentionState, ReviewSnapshot,
@@ -107,6 +109,9 @@ struct Document {
     /// `ReviewText::change_key` at the last save: equal now, nothing
     /// changed since, and a save would write what is there.
     saved: Option<((u64, u64, usize), bool)>,
+    /// A `save_pending` joined the case again, and no save has told the
+    /// app yet (`SavedChange::rejoined`).
+    rejoined: bool,
 }
 
 #[derive(uniffi::Object)]
@@ -114,6 +119,8 @@ pub struct DocumentSession {
     document: Mutex<Option<Document>>,
     job: Mutex<Jobs>,
     generation: Mutex<u64>,
+    /// One save at a time (`lock_saving`).
+    saving: Mutex<()>,
 }
 
 /// The session's jobs, one at a time: a new job stops the one before. Its
@@ -164,6 +171,7 @@ impl DocumentSession {
             document: Mutex::new(None),
             job: Mutex::new(Jobs::default()),
             generation: Mutex::new(0),
+            saving: Mutex::new(()),
         })
     }
 
@@ -575,6 +583,7 @@ impl DocumentSession {
         case_id: String,
     ) -> Result<ReviewSnapshot, CoreError> {
         let case = library.load(&case_id)?;
+        let _saving = self.lock_saving();
         self.with_document(|document| match &document.case {
             Some(joined) if *joined == case_id => Ok(()),
             Some(_) => Err(CoreError::case("This document is in another case.")),
@@ -598,6 +607,7 @@ impl DocumentSession {
     /// document added meanwhile keep their aliases and this one's move to
     /// free numbers; one library write lock covers the whole save.
     pub fn save(&self, library: Arc<Library>) -> Result<SavedDocument, CoreError> {
+        let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         guard.as_mut().ok_or_else(no_document)?.save(&library)
     }
@@ -611,6 +621,7 @@ impl DocumentSession {
         library: Arc<Library>,
         title: String,
     ) -> Result<RenamedDocument, CoreError> {
+        let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
         let lock = library.lock()?;
@@ -717,90 +728,6 @@ impl Document {
         self.scanned = true;
         Ok(())
     }
-
-    /// `DocumentSession::save`.
-    fn save(&mut self, library: &Library) -> Result<SavedDocument, CoreError> {
-        let lock = library.lock()?;
-        let path = match &self.path {
-            Some(path) => path.clone(),
-            None => {
-                let path = library.reserve_document_path(&self.title)?;
-                self.path = Some(path.clone());
-                path
-            }
-        };
-        let member = library.member(&path);
-        library.refuse_other_case(&member, self.case.as_deref().unwrap_or_default())?;
-        // The case as this save stores it.
-        let mut stored = None;
-        let case = match self.case.clone() {
-            Some(id) => library.edit_locked(&lock, &id, |case| {
-                // Only a case another document changed since is joined
-                // again: joining against this document's own last save would
-                // take back what Undo just reverted.
-                if self.synced.as_ref() != Some(&case.identities) {
-                    self.review
-                        .join(&case.exported(), &case.reserved_aliases())?;
-                    self.review.dismiss_pairs(&case.dismissed_hints);
-                }
-                self.stored.save(path.clone(), &self.review.text)?;
-                let before = case.clone();
-                case.merge(&self.review.review.export_identities());
-                if !case.members.contains(&member) {
-                    case.members.push(member.clone());
-                }
-                for (a, b) in self.review.dismissed_pairs() {
-                    let pair = (a, b);
-                    let flipped = (pair.1.clone(), pair.0.clone());
-                    if !case.dismissed_hints.contains(&pair)
-                        && !case.dismissed_hints.contains(&flipped)
-                    {
-                        case.dismissed_hints.push(pair);
-                    }
-                }
-                self.synced = Some(case.identities.clone());
-                stored = Some(case.clone());
-                Ok(*case != before)
-            })?,
-            None => {
-                self.stored.save(path.clone(), &self.review.text)?;
-                let mut case = mdoc_store::cases::Case::new(
-                    self.title.clone(),
-                    &self.review.review.export_identities(),
-                    Some(member),
-                );
-                // Hints dismissed before the case existed stay dismissed.
-                case.dismissed_hints = self.review.dismissed_pairs();
-                self.synced = Some(case.identities.clone());
-                stored = Some(case.clone());
-                library.create_locked(&lock, case)?
-            }
-        };
-        self.case = Some(case.id.clone());
-        let review = self.snapshot();
-        // The document and its case are saved: an entry that cannot be
-        // written only makes it reopen, and list, as one saved before
-        // entries were.
-        // What opening it gives, as lists show: Keep decisions are not
-        // saved, so with any the saved text and case are counted as a
-        // reopen counts them (a kept name the case knows is proposed again).
-        let mut counts = self.review.counts();
-        if counts.kept > 0 {
-            counts = reopened_counts(self.review.text.clone(), stored.as_ref()).0;
-        }
-        let summary = Recorded::of(
-            counts,
-            Stamp::of_file(&path),
-            Some((case.id.clone(), library.case_stamp(&case.id))),
-        );
-        let _ = library.record_saved(&lock, &path, self.scanned, summary);
-        self.saved = Some(self.change_key());
-        Ok(SavedDocument {
-            path: path.display().to_string(),
-            case,
-            review,
-        })
-    }
 }
 
 impl DocumentSession {
@@ -833,6 +760,7 @@ impl DocumentSession {
             synced: None,
             scanned: false,
             saved: None,
+            rejoined: false,
         };
         if let Some(opened) = opened {
             document.path = opened.path;
