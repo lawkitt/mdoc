@@ -189,6 +189,13 @@ trim_start = [
     'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
 ]
 
+# A model span that starts inside a caption's short "Ex p" ("Ex ⟦p Ossian
+# Draycott⟧") loses the "p": a lower-case "p" before a capitalised word
+# never starts a name (#500).
+[[span]]
+category = "PERSON"
+trim_start = ['p\.?[\p{Zs}\t]+(?P<rest>\p{Lu})']
+
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
 [[never]]

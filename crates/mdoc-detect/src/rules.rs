@@ -7921,6 +7921,30 @@ Privacy Act (“BIPA”). BIPA applies.",
             shown,
             pairs(&[("Ossian Draycott", "PERSON"), ("Edda Brannock", "PERSON")])
         );
+        // The hosted model starts the span inside "Ex p": "p Ossian Draycott".
+        // A lower-case "p" before a name comes off; a capital initial
+        // ("P Ossian", #387) stays.
+        let source = "On this application, Ex p Ossian Draycott; and P Ossian signed.";
+        for (text, expected) in [
+            ("p Ossian Draycott", Some("Ossian Draycott")),
+            ("P Ossian", Some("P Ossian")),
+        ] {
+            let start = source.find(text).unwrap();
+            let raw = [crate::RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.8,
+                text: text.into(),
+            }];
+            let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .filter(|span| span.category == "PERSON")
+                .map(|span| source[span.range].to_owned())
+                .collect();
+            assert_eq!(shown.first().map(String::as_str), expected, "{text}");
+        }
     }
 
     /// In context the same words stay a person's name: after a title, or
