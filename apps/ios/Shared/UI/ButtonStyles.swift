@@ -23,15 +23,17 @@ extension View {
         buttonStyle(BigButtonStyle(prominent: false, circle: circle))
     }
 
-    /// `primaryAction()` and `secondaryAction()` for a `Menu`, whose label
-    /// takes only the system's button styles, not a custom one: the system's
-    /// glass here, with `bigButtonLabel(prominent:)` on the label.
-    func primaryMenu() -> some View {
+    /// `primaryAction()` and `secondaryAction()` for a `Menu` or a toolbar
+    /// item: a Menu's label takes only the system's button styles, and a
+    /// toolbar draws a custom style's button as a bare icon. The system's
+    /// glass here, with `bigButtonLabel(prominent:)` on the label of a Menu;
+    /// a toolbar sizes its own items.
+    func primaryGlass() -> some View {
         buttonStyle(.glassProminent)
             .tint(Color.ink)
     }
 
-    func secondaryMenu() -> some View {
+    func secondaryGlass() -> some View {
         buttonStyle(.glass)
     }
 

@@ -294,7 +294,7 @@ struct SidebarView: View {
                     .padding(.horizontal, Space.xs)
                     .bigButtonLabel(prominent: true)
             }
-            .primaryMenu()
+            .primaryGlass()
             .menuOrder(.priority)
             .accessibilityIdentifier("new-menu")
         }

@@ -144,7 +144,7 @@ struct RestoreExtensionView: View {
                 model.save(to: target.id)
             }
         }
-        .secondaryMenu()
+        .secondaryGlass()
         .disabled(model.documentsInCase.isEmpty)
         .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
     }

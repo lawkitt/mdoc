@@ -85,9 +85,10 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   on the near-white ink of dark mode); every other big button,
   `.secondaryAction()`, is clear glass with ink words, and Undo and
   Settings are clear glass circles (`secondaryAction(circle: true)`). A
-  `Menu` takes only the system's styles, so "+ New" and Save to document
-  use `primaryMenu()` / `secondaryMenu()` with `bigButtonLabel(prominent:)`
-  on the label. Primary words are semibold. Disabled buttons are clear
+  `Menu` or a toolbar item takes only the system's styles, so "+ New",
+  Save to document and Documents' Scan use `primaryGlass()` /
+  `secondaryGlass()`, a Menu with `bigButtonLabel(prominent:)` on its
+  label. Primary words are semibold. Disabled buttons are clear
   glass with words in the secondary colour. At
   most one primary per view, a drawer or an iPad column counting as its
   own view: on the Documents page Scan is the one, so the setup card's
