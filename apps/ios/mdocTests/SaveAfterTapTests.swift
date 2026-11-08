@@ -9,7 +9,8 @@ import XCTest
 /// leaving the document for another screen.
 @MainActor
 final class SaveAfterTapTests: XCTestCase {
-    private var seeded: Seeded!
+    // Set and cleared around each test, on the main thread.
+    nonisolated(unsafe) private var seeded: Seeded!
 
     override func setUpWithError() throws {
         seeded = try Fixture.seeded()
