@@ -6,7 +6,13 @@
 # (scripts/ios-release.sh), the key file from a throwaway key made here
 # (scripts/ios-asc-key.sh), and the App Store Connect steps against a local
 # fake of the API (scripts/ios-testflight.py). No network. Bash 3.2.
+# Skipped on Windows: these scripts run only on macOS and Linux, and Git
+# Bash there may lack python3 or a POSIX openssl.
 source "$(dirname "$0")/lib.sh"
+if [ "$(platform)" = windows-x64 ]; then
+  echo "skip: the iOS release scripts run only on macOS and Linux"
+  exit 0
+fi
 root=$(pwd)
 tmp=$(mktemp -d)
 mock_pid=
