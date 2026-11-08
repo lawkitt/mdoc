@@ -649,19 +649,29 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let mut detections: Vec<Detection> = raw
         .iter()
         .filter_map(|entity| {
-            let category = category_of(&entity.label)?;
+            let mut category = category_of(&entity.label)?;
             // Read as the model read it: "%41lice" in a link target is "Alice".
-            let text = &view.text[view.view_range(entity.start..entity.end)];
+            let mut seen = view.view_range(entity.start..entity.end);
+            let mut range = entity.start..entity.end;
+            // A court's docket guessed as a tax, bank or identity value is
+            // a case number (guide rule 5, #480): it stays hidden, and a
+            // reference or a cited case around it still removes it.
+            if let Some(case) = rules::pack().case_number(&view.text[seen.clone()], category) {
+                category = Category::CaseNumber;
+                seen = seen.start + case.start..seen.start + case.end;
+                range = view.source_range(seen.clone());
+            }
+            let text = &view.text[seen];
             rules::pack()
                 .identifying_with_organizations(
                     source,
-                    entity.start..entity.end,
+                    range.clone(),
                     text,
                     category,
                     &organizations,
                 )
                 .then_some(Detection {
-                    range: entity.start..entity.end,
+                    range,
                     category,
                     score: entity.score,
                     recognizer: mdoc_pii::Recognizer::Model,
