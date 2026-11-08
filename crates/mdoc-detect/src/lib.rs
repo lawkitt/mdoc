@@ -748,6 +748,15 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 seen = seen.start + case.start..seen.start + case.end;
                 range = view.source_range(seen.clone());
             }
+            // A company's name with a common noun after it: the model's
+            // "Pellam airlines" is "⟦ORG|Pellam⟧ airlines" (guide rule 2,
+            // #548), before the shape reads it as a heading's sentence case.
+            if category == Category::Organization
+                && let Some(end) = rules::pack().org_noun_name(&view.text[seen.clone()])
+            {
+                seen = seen.start..seen.start + end;
+                range = view.source_range(seen.clone());
+            }
             let text = &view.text[seen];
             rules::pack()
                 .identifying_with_organizations(
@@ -2207,6 +2216,743 @@ mod tests {
                 "{quoted}: {found:?}"
             );
         }
+    }
+
+    /// What the user is shown for model spans given as `(text, label,
+    /// nth)`: the `nth` whole-word occurrence of `text` in `source`.
+    fn shown_for(source: &str, model: &[(&str, &str, usize)]) -> Vec<(String, String)> {
+        let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        let raw: Vec<RawEntity> = model
+            .iter()
+            .map(|(text, label, nth)| {
+                let start = source
+                    .match_indices(text)
+                    .map(|(at, _)| at)
+                    .filter(|&at| {
+                        !word(source[..at].chars().next_back())
+                            && !word(source[at + text.len()..].chars().next())
+                    })
+                    .nth(*nth)
+                    .unwrap_or_else(|| panic!("{text} #{nth}"));
+                RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (span.category, source[span.range].to_owned()))
+            .collect()
+    }
+
+    fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
+        items
+            .iter()
+            .map(|(c, t)| ((*c).to_owned(), (*t).to_owned()))
+            .collect()
+    }
+
+    /// #548: a company's short name, a company with a common noun after
+    /// it and a team are no people (guide rule 2, #506 items 10 and 11).
+    #[test]
+    fn a_company_short_name_the_model_took_for_a_person_is_the_company() {
+        // The issue's synthetic reproductions.
+        let source = "Quillon Freight Corp. (“Quillon”) sued; Defendant Quillon replied. \
+                      Pellam airlines and Pellam air fares; the team known as the \
+                      Brindle Harriers (BRINDLE HARRIERS LLC).";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Quillon Freight Corp", "organization", 0),
+                    ("Quillon", "person", 1),
+                    ("Quillon", "person", 2),
+                    ("Pellam airlines", "person", 0),
+                    ("Pellam air fares", "person", 0),
+                    ("Brindle Harriers", "person", 0),
+                    ("BRINDLE HARRIERS LLC", "organization", 0),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Quillon Freight Corp"),
+                ("ORG", "Quillon"),
+                ("ORG", "Quillon"),
+                ("ORG", "Pellam"),
+                ("ORG", "Pellam"),
+                ("ORG", "Brindle Harriers"),
+                ("ORG", "BRINDLE HARRIERS LLC"),
+            ])
+        );
+        // The model may read the noun into a company's span instead; the
+        // name before it is a short name then too.
+        let source = "Pellam airlines and Pellam air fares; later Pellam flew.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam airlines", "organization", 0),
+                    ("Pellam air fares", "organization", 0),
+                    ("Pellam", "person", 2),
+                ]
+            ),
+            pairs(&[("ORG", "Pellam"), ("ORG", "Pellam"), ("ORG", "Pellam")])
+        );
+        // Not "Ostrand Medicine" proposed as a person and as a company with
+        // no legal form or definition beside it: the model's label alone is
+        // no evidence, and the review's conflict rules choose.
+        let source = "Pellam Bank sued. The court awarded Pellam attorney’s fees and \
+                      Pellam’s costs.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam Bank", "organization", 0),
+                    ("Pellam", "person", 1),
+                    ("Pellam’s", "person", 0),
+                ]
+            ),
+            pairs(&[("ORG", "Pellam Bank"), ("ORG", "Pellam"), ("ORG", "Pellam")])
+        );
+        // A team's name in capitals elsewhere with its legal form beside it
+        // (the model leaves "LLC" out); a short name a firm's definition
+        // gives; a Russian one after «далее».
+        let source = "BRINDLE HARRIERS LLC sponsor the cup. Brindle Harriers fans attend. \
+                      Stewarts Law LLP (“Stewarts”) acted; Stewarts wrote.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("BRINDLE HARRIERS", "organization", 0),
+                    ("Brindle Harriers", "person", 0),
+                    ("Stewarts Law LLP", "organization", 0),
+                    ("Stewarts", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "BRINDLE HARRIERS"),
+                ("ORG", "Brindle Harriers"),
+                ("ORG", "Stewarts Law LLP"),
+                ("ORG", "Stewarts"),
+                ("ORG", "Stewarts"),
+            ])
+        );
+        let source = "ООО «Кедр» (далее — «Кедр») поставило товар. Счёт выставил Кедр.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[("ООО «Кедр»", "organization", 0), ("Кедр", "person", 2)]
+            ),
+            pairs(&[("ORG", "ООО «Кедр»"), ("ORG", "Кедр"), ("ORG", "Кедр")])
+        );
+    }
+
+    /// #548 guards: people who share a company's word stay people.
+    #[test]
+    fn people_who_share_a_company_word_stay_people() {
+        // A title, or a given name, makes the word a person's here.
+        let source = "Frost Bank sued. Mr Frost replied, and Frost signed.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Frost Bank", "organization", 0),
+                    ("Mr Frost", "person", 0),
+                    ("Frost", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Frost Bank"),
+                ("PERSON", "Frost"),
+                ("PERSON", "Frost"),
+            ])
+        );
+        let source = "Pellam Bank sued. Ada Pellam testified; Pellam said the bank erred.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam Bank", "organization", 0),
+                    ("Ada Pellam", "person", 0),
+                    ("Pellam", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Pellam Bank"),
+                ("PERSON", "Ada Pellam"),
+                ("PERSON", "Pellam"),
+            ])
+        );
+        // A firm named after a partner: "Stewart" is another word than
+        // "Stewarts"; a bare "Smith" beside "John Smith" stays as the
+        // model gave it.
+        let source = "Stewarts Law LLP (“Stewarts”) acted. Mr Stewart signed for Stewarts. \
+                      Smith LLP acts for John Smith; later Smith signed.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Stewarts Law LLP", "organization", 0),
+                    ("Stewarts", "person", 1),
+                    ("Mr Stewart", "person", 0),
+                    ("Smith LLP", "organization", 0),
+                    ("John Smith", "person", 0),
+                    ("Smith", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Stewarts Law LLP"),
+                ("ORG", "Stewarts"),
+                ("PERSON", "Stewart"),
+                ("ORG", "Stewarts"),
+                ("ORG", "Smith LLP"),
+                ("PERSON", "John Smith"),
+                ("PERSON", "Smith"),
+            ])
+        );
+        // A defined generic term is no short name; a titled person whose
+        // surname is an industry noun's sentence stays; initials stay.
+        let source = "Larkfield Supply LLC (the “Company”) hired Ivo Penrow. Ms Ada Bank \
+                      and JB signed for JB Holdings Ltd.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Larkfield Supply LLC", "organization", 0),
+                    ("Ivo Penrow", "person", 0),
+                    ("Ada Bank", "person", 0),
+                    ("JB", "person", 0),
+                    ("JB Holdings Ltd", "organization", 0),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Larkfield Supply LLC"),
+                ("PERSON", "Ivo Penrow"),
+                ("PERSON", "Ada Bank"),
+                ("PERSON", "JB"),
+                ("ORG", "JB Holdings Ltd"),
+            ])
+        );
+    }
+
+    /// #548 review inputs (target/review-o2 cases): firms named after
+    /// people, a company named after its owner, a model ORG caption, «ИП»,
+    /// "Bank" and "Medicine" surnames, "bank" after a person's name, cut
+    /// "of medicine" companies and a team name carried on by a lowercase
+    /// word all stay as they were: people kept, nothing uncovered. Only
+    /// "Frost"/"Pellam" beside "Frost Bank"/"Pellam Bank" with no title or
+    /// full name become the bank, as the issue's "Frost" does.
+    #[test]
+    fn review_inputs_keep_people_who_share_a_company_word() {
+        #[allow(clippy::type_complexity)]
+        let cases: &[(&str, &str, &[(&str, &str, usize)], &[(&str, &str)])] = &[
+            (
+                "davis_bare",
+                "Davis Polk & Wardwell LLP represented the bank. Davis testified that he signed the note. Davis's affidavit was filed.",
+                &[
+                    ("Davis Polk & Wardwell LLP", "organization", 0),
+                    ("Davis", "person", 1),
+                    ("Davis's", "person", 0),
+                ],
+                &[
+                    ("ORG", "Davis Polk & Wardwell LLP"),
+                    ("PERSON", "Davis"),
+                    ("PERSON", "Davis's"),
+                ],
+            ),
+            (
+                "davis_full",
+                "Davis Polk & Wardwell LLP represented the bank. Witness John Davis was sworn. Davis testified that he signed the note.",
+                &[
+                    ("Davis Polk & Wardwell LLP", "organization", 0),
+                    ("John Davis", "person", 0),
+                    ("Davis", "person", 2),
+                ],
+                &[
+                    ("ORG", "Davis Polk & Wardwell LLP"),
+                    ("PERSON", "John Davis"),
+                    ("PERSON", "Davis"),
+                ],
+            ),
+            (
+                "davis_titled",
+                "Davis Polk & Wardwell LLP represented the bank. Mr. Davis was sworn. Davis testified that he signed the note.",
+                &[
+                    ("Davis Polk & Wardwell LLP", "organization", 0),
+                    ("Davis", "person", 1),
+                    ("Davis", "person", 2),
+                ],
+                &[
+                    ("ORG", "Davis Polk & Wardwell LLP"),
+                    ("PERSON", "Davis"),
+                    ("PERSON", "Davis"),
+                ],
+            ),
+            (
+                "smith_wesson",
+                "Smith & Wesson Brands, Inc. makes firearms. Smith told the jury she bought it. Smith's receipt was lost.",
+                &[
+                    ("Smith & Wesson Brands, Inc", "organization", 0),
+                    ("Smith", "person", 1),
+                    ("Smith's", "person", 0),
+                ],
+                &[
+                    ("ORG", "Smith & Wesson Brands, Inc"),
+                    ("PERSON", "Smith"),
+                    ("PERSON", "Smith's"),
+                ],
+            ),
+            (
+                "ford",
+                "Ford Motor Co. recalled the car. Ford testified at trial that the brakes failed.",
+                &[("Ford Motor Co", "organization", 0), ("Ford", "person", 1)],
+                &[("ORG", "Ford Motor Co"), ("PERSON", "Ford")],
+            ),
+            (
+                "ford_cited",
+                "Ford testified that the brakes failed. See Davis v. Ford Motor Co., 123 F.3d 456 (5th Cir. 2001). Ford's account was credible.",
+                &[
+                    ("Ford", "person", 0),
+                    ("Davis", "person", 0),
+                    ("Ford Motor Co", "organization", 0),
+                    ("Ford's", "person", 0),
+                ],
+                &[
+                    ("PERSON", "Ford"),
+                    ("ORG", "Ford Motor Co"),
+                    ("PERSON", "Ford's"),
+                ],
+            ),
+            (
+                "wells",
+                "Wells Fargo Bank, N.A. foreclosed on the house. Wells, the borrower, appealed.",
+                &[
+                    ("Wells Fargo Bank, N.A", "organization", 0),
+                    ("Wells", "person", 1),
+                ],
+                &[("ORG", "Wells Fargo Bank, N.A"), ("PERSON", "Wells")],
+            ),
+            (
+                "goldman",
+                "Goldman Sachs & Co. LLC underwrote the issue. Goldman, the plaintiff's expert, opined.",
+                &[
+                    ("Goldman Sachs & Co. LLC", "organization", 0),
+                    ("Goldman", "person", 1),
+                ],
+                &[("ORG", "Goldman Sachs & Co. LLC"), ("PERSON", "Goldman")],
+            ),
+            (
+                "johnson",
+                "Johnson Controls, Inc. hired the plaintiff. Johnson was her supervisor and Johnson fired her.",
+                &[
+                    ("Johnson Controls, Inc", "organization", 0),
+                    ("Johnson", "person", 1),
+                    ("Johnson", "person", 2),
+                ],
+                &[
+                    ("ORG", "Johnson Controls, Inc"),
+                    ("PERSON", "Johnson"),
+                    ("PERSON", "Johnson"),
+                ],
+            ),
+            (
+                "kim",
+                "Kim & Chang LLC advised the buyer. Kim's affidavit says otherwise.",
+                &[
+                    ("Kim & Chang LLC", "organization", 0),
+                    ("Kim's", "person", 0),
+                ],
+                &[("ORG", "Kim & Chang LLC"), ("PERSON", "Kim's")],
+            ),
+            (
+                "baker",
+                "Baker McKenzie LLP acted for the landlord. Baker signed the lease as tenant.",
+                &[
+                    ("Baker McKenzie LLP", "organization", 0),
+                    ("Baker", "person", 1),
+                ],
+                &[("ORG", "Baker McKenzie LLP"), ("PERSON", "Baker")],
+            ),
+            (
+                "llc_person",
+                "Ada Pellam LLC is owned by Ada Pellam. Ada Pellam testified at trial. Ada said no.",
+                &[
+                    ("Ada Pellam LLC", "organization", 0),
+                    ("Ada Pellam", "person", 1),
+                    ("Ada Pellam", "person", 2),
+                    ("Ada", "person", 3),
+                ],
+                &[
+                    ("ORG", "Ada Pellam LLC"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Ada"),
+                ],
+            ),
+            (
+                "llc_person_titled",
+                "Ada Pellam LLC is owned by Ms Ada Pellam. Ada Pellam testified at trial. Ada said no.",
+                &[
+                    ("Ada Pellam LLC", "organization", 0),
+                    ("Ada Pellam", "person", 1),
+                    ("Ada Pellam", "person", 2),
+                    ("Ada", "person", 3),
+                ],
+                &[
+                    ("ORG", "Ada Pellam LLC"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Ada"),
+                ],
+            ),
+            (
+                "org_mislabel_caption",
+                "ADA PELLAM, Plaintiff, v. QUILLON FREIGHT CORP, Defendant.\n\nAda Pellam testified. Ada Pellam then left.",
+                &[
+                    ("ADA PELLAM", "organization", 0),
+                    ("QUILLON FREIGHT CORP", "organization", 0),
+                    ("Ada Pellam", "person", 0),
+                    ("Ada Pellam", "person", 1),
+                ],
+                &[
+                    ("ORG", "ADA PELLAM"),
+                    ("ORG", "QUILLON FREIGHT CORP"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Ada Pellam"),
+                ],
+            ),
+            (
+                "ip_ru",
+                "Договор между ООО «Кедр» и ИП Иванов. Иванов обязуется поставить товар. Иванов подписал договор.",
+                &[
+                    ("ООО «Кедр»", "organization", 0),
+                    ("ИП Иванов", "organization", 0),
+                    ("Иванов", "person", 1),
+                    ("Иванов", "person", 2),
+                ],
+                &[
+                    ("ORG", "ООО «Кедр»"),
+                    ("ORG", "ИП Иванов"),
+                    ("PERSON", "Иванов"),
+                    ("PERSON", "Иванов"),
+                ],
+            ),
+            (
+                "ip_ru_defined",
+                "ИП Иванов (далее — «Иванов») обязуется поставить товар. Иванов подписал договор.",
+                &[("ИП Иванов", "organization", 0), ("Иванов", "person", 2)],
+                &[
+                    ("ORG", "ИП Иванов"),
+                    ("PERSON", "Иванов"),
+                    ("PERSON", "Иванов"),
+                ],
+            ),
+            (
+                "ru_partners",
+                "ООО «Иванов и партнёры» представляет истца. Иванов дал показания. Иванова допросили.",
+                &[
+                    ("ООО «Иванов и партнёры»", "organization", 0),
+                    ("Иванов", "person", 1),
+                    ("Иванова", "person", 0),
+                ],
+                &[
+                    ("ORG", "ООО «Иванов и партнёры»"),
+                    ("PERSON", "Иванов"),
+                    ("PERSON", "Иванова"),
+                ],
+            ),
+            (
+                "ru_partners_full",
+                "ООО «Иванов и партнёры» представляет истца. Иванов И.И. дал показания. Иванов подтвердил.",
+                &[
+                    ("ООО «Иванов и партнёры»", "organization", 0),
+                    ("Иванов И.И.", "person", 0),
+                    ("Иванов", "person", 2),
+                ],
+                &[
+                    ("ORG", "ООО «Иванов и партнёры»"),
+                    ("PERSON", "Иванов И.И."),
+                    ("PERSON", "Иванов"),
+                ],
+            ),
+            (
+                "ru_kedr",
+                "ООО «Кедр» (далее — «Кедр») поставило товар. Кедров подписал акт.",
+                &[("ООО «Кедр»", "organization", 0), ("Кедров", "person", 0)],
+                &[("ORG", "ООО «Кедр»"), ("PERSON", "Кедров")],
+            ),
+            (
+                "bank_surname",
+                "Melissa Bank testified for the defence. Bank said she saw it. Melissa left early.",
+                &[
+                    ("Melissa Bank", "person", 0),
+                    ("Bank", "person", 1),
+                    ("Melissa", "person", 1),
+                ],
+                &[
+                    ("PERSON", "Melissa Bank"),
+                    ("PERSON", "Bank"),
+                    ("PERSON", "Melissa"),
+                ],
+            ),
+            (
+                "pellam_bank_org",
+                "Pellam opened an account. Pellam bank statements show deposits. Pellam testified.",
+                &[
+                    ("Pellam", "person", 0),
+                    ("Pellam", "organization", 1),
+                    ("Pellam", "person", 2),
+                ],
+                &[
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Pellam"),
+                ],
+            ),
+            (
+                "pellam_bank_person_span",
+                "Pellam testified. The Pellam bank statements were produced. Pellam signed.",
+                &[
+                    ("Pellam", "person", 0),
+                    ("Pellam bank", "person", 0),
+                    ("Pellam", "person", 2),
+                ],
+                &[
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Pellam bank"),
+                    ("PERSON", "Pellam"),
+                ],
+            ),
+            (
+                "ms_pellam_bank",
+                "Ms Ada Pellam bank details were filed. Pellam testified.",
+                &[("Ada Pellam bank", "person", 0), ("Pellam", "person", 1)],
+                &[("PERSON", "Ada Pellam bank"), ("PERSON", "Pellam")],
+            ),
+            (
+                "dr_lee_medicine",
+                "Dr Lee medicine was prescribed. Lee medicine again. Lee testified.",
+                &[
+                    ("Lee medicine", "person", 0),
+                    ("Lee medicine", "person", 1),
+                    ("Lee", "person", 2),
+                ],
+                &[
+                    ("PERSON", "Lee medicine"),
+                    ("PERSON", "Lee medicine"),
+                    ("PERSON", "Lee"),
+                ],
+            ),
+            (
+                "org_school_of_medicine",
+                "She studied at Pellam College of medicine and Ostrand School of medicine.",
+                &[
+                    ("Pellam College of medicine", "organization", 0),
+                    ("Ostrand School of medicine", "organization", 0),
+                ],
+                &[
+                    ("ORG", "Pellam College of medicine"),
+                    ("ORG", "Ostrand School of medicine"),
+                ],
+            ),
+            (
+                "org_savings_bank",
+                "Funds sat in the Pellam savings bank and the Ostrand National bank.",
+                &[
+                    ("Pellam savings bank", "organization", 0),
+                    ("Ostrand National bank", "organization", 0),
+                ],
+                &[("ORG", "Ostrand National bank")],
+            ),
+            (
+                "team_person",
+                "Our captain, the team known as the Ada Pellam fan club, met Ada Pellam.",
+                &[("Ada Pellam", "person", 0), ("Ada Pellam", "person", 1)],
+                &[("PERSON", "Ada Pellam"), ("PERSON", "Ada Pellam")],
+            ),
+            (
+                "def_person",
+                "Pellam Holdings Ltd and Ada Pellam (together “Pellam”) sued. Pellam testified.",
+                &[
+                    ("Pellam Holdings Ltd", "organization", 0),
+                    ("Ada Pellam", "person", 0),
+                    ("Pellam", "person", 3),
+                ],
+                &[
+                    ("ORG", "Pellam Holdings Ltd"),
+                    ("PERSON", "Ada Pellam"),
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Pellam"),
+                ],
+            ),
+            (
+                "def_company_shares_word",
+                "Ada Pellam, director of Pellam Holdings Ltd (“Pellam”), testified. Pellam's director agreed.",
+                &[
+                    ("Ada Pellam", "person", 0),
+                    ("Pellam Holdings Ltd", "organization", 0),
+                    ("Pellam's", "person", 0),
+                ],
+                &[
+                    ("PERSON", "Ada Pellam"),
+                    ("ORG", "Pellam Holdings Ltd"),
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Pellam's"),
+                ],
+            ),
+            (
+                "def_holdings",
+                "Quillon Holdings Ltd (“Holdings”) sued. Mrs Holdings testified. Holdings agreed.",
+                &[
+                    ("Quillon Holdings Ltd", "organization", 0),
+                    ("Holdings", "person", 1),
+                    ("Holdings", "person", 2),
+                ],
+                &[
+                    ("ORG", "Quillon Holdings Ltd"),
+                    ("PERSON", "Holdings"),
+                    ("PERSON", "Holdings"),
+                    ("PERSON", "Holdings"),
+                ],
+            ),
+            (
+                "morgan",
+                "Morgan Stanley & Co. LLC advised. Morgan, the claimant, says the advice was wrong. Morgan's loss was large.",
+                &[
+                    ("Morgan Stanley & Co. LLC", "organization", 0),
+                    ("Morgan", "person", 1),
+                    ("Morgan's", "person", 0),
+                ],
+                &[
+                    ("ORG", "Morgan Stanley & Co. LLC"),
+                    ("PERSON", "Morgan"),
+                    ("PERSON", "Morgan's"),
+                ],
+            ),
+            (
+                "untitled_pellam_bank",
+                "Ada Pellam bank details were filed. Pellam testified. Ada Pellam left.",
+                &[
+                    ("Ada Pellam bank", "person", 0),
+                    ("Pellam", "person", 1),
+                    ("Ada Pellam", "person", 1),
+                ],
+                &[
+                    ("PERSON", "Ada Pellam bank"),
+                    ("PERSON", "Pellam"),
+                    ("PERSON", "Ada Pellam"),
+                ],
+            ),
+            (
+                "frost_bank_frost_person_only",
+                "Frost Bank sued the guarantor. Frost, the guarantor, testified that Frost never signed.",
+                &[
+                    ("Frost Bank", "organization", 0),
+                    ("Frost", "person", 1),
+                    ("Frost", "person", 2),
+                ],
+                &[("ORG", "Frost Bank"), ("ORG", "Frost"), ("ORG", "Frost")],
+            ),
+            (
+                "jlewis",
+                "John Lewis plc employs the claimant. John told the tribunal he was bullied. John Lewis, his manager, denied it.",
+                &[
+                    ("John Lewis plc", "organization", 0),
+                    ("John", "person", 1),
+                    ("John Lewis", "person", 1),
+                ],
+                &[
+                    ("ORG", "John Lewis plc"),
+                    ("PERSON", "John"),
+                    ("PERSON", "John Lewis"),
+                ],
+            ),
+            (
+                "airline_person",
+                "Ada Pellam airlines tickets were refunded. Pellam testified.",
+                &[
+                    ("Ada Pellam airlines", "person", 0),
+                    ("Pellam", "person", 1),
+                ],
+                &[("PERSON", "Ada Pellam airlines"), ("PERSON", "Pellam")],
+            ),
+            (
+                "bank_titled_later",
+                "Melissa Bank testified for the defence. Ms Bank said she saw it.",
+                &[("Melissa Bank", "person", 0), ("Bank", "person", 1)],
+                &[("PERSON", "Melissa Bank"), ("PERSON", "Bank")],
+            ),
+            (
+                "bank_model_org",
+                "Melissa Bank testified for the defence. Bank said she saw it.",
+                &[("Melissa Bank", "organization", 0), ("Bank", "person", 1)],
+                &[("ORG", "Melissa Bank")],
+            ),
+            (
+                "bank_titled_first",
+                "Ms Melissa Bank testified for the defence. Bank said she saw it.",
+                &[("Melissa Bank", "person", 0), ("Bank", "person", 1)],
+                &[("PERSON", "Melissa Bank"), ("PERSON", "Bank")],
+            ),
+            (
+                "pellam_bank_bare",
+                "Pellam Bank sued. Pellam, its manager, testified. Bank records were produced.",
+                &[("Pellam Bank", "organization", 0), ("Pellam", "person", 1)],
+                &[("ORG", "Pellam Bank"), ("ORG", "Pellam")],
+            ),
+            (
+                "medicine_surname",
+                "Ada Medicine testified. Medicine said she saw it.",
+                &[("Ada Medicine", "person", 0), ("Medicine", "person", 1)],
+                &[("PERSON", "Ada Medicine"), ("PERSON", "Medicine")],
+            ),
+            (
+                "marks",
+                "Marks and Spencer plc dismissed the claimant. Marks, her line manager, gave evidence.",
+                &[
+                    ("Marks and Spencer plc", "organization", 0),
+                    ("Marks", "person", 1),
+                ],
+                &[("ORG", "Marks and Spencer plc"), ("PERSON", "Marks")],
+            ),
+            (
+                "ru_ip_full_after",
+                "ИП Иванов заключил договор. Иванов Иван Иванович подписал. Иванов обязуется.",
+                &[
+                    ("ИП Иванов", "organization", 0),
+                    ("Иванов Иван Иванович", "person", 0),
+                    ("Иванов", "person", 2),
+                ],
+                &[
+                    ("ORG", "ИП Иванов"),
+                    ("PERSON", "Иванов Иван Иванович"),
+                    ("PERSON", "Иванов"),
+                ],
+            ),
+        ];
+        for (name, source, model, expected) in cases {
+            assert_eq!(shown_for(source, model), pairs(expected), "{name}");
+        }
+    }
+
+    /// #548 P3-1: only a capitalized name right before a lowercase airline
+    /// noun is cut from it.
+    #[test]
+    fn only_a_name_before_a_lowercase_airline_noun_comes_off() {
+        fn name(text: &str) -> Option<&str> {
+            rules::pack().org_noun_name(text).map(|end| &text[..end])
+        }
+        assert_eq!(name("Pellam airlines"), Some("Pellam"));
+        assert_eq!(name("Pellam air fares"), Some("Pellam"));
+        assert_eq!(name("Pellam Airlines"), None);
+        assert_eq!(name("Pellam College of airlines"), None);
+        assert_eq!(name("Pellam national airlines"), None);
+        assert_eq!(name("Pellam bank"), None);
+        assert_eq!(name("Pellam College of medicine"), None);
     }
 
     /// #500 and #492's English reproductions: pronouns, "In", headings,

@@ -1,0 +1,18 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":219,"end":235,"label":"full_name","score":0.63420355,"text":"Brindle Harriers"},
+    {"start":359,"end":375,"label":"organization","score":0.9889705,"text":"Ostrand Medicine"},
+    {"start":407,"end":423,"label":"organization","score":0.9771538,"text":"Ostrand Medicine"},
+    {"start":159,"end":174,"label":"organization","score":0.97399324,"text":"Pellam airlines"},
+    {"start":88,"end":109,"label":"organization","score":0.96820134,"text":"Quillon Freight Corp."},
+    {"start":261,"end":273,"label":"organization","score":0.94035304,"text":"Corvane Bank"},
+    {"start":237,"end":253,"label":"organization","score":0.9309621,"text":"BRINDLE HARRIERS"},
+    {"start":389,"end":405,"label":"organization","score":0.9224824,"text":"Ostrand Medicine"},
+    {"start":179,"end":195,"label":"organization","score":0.9116528,"text":"Pellam air fares"},
+    {"start":219,"end":235,"label":"organization","score":0.86838096,"text":"Brindle Harriers"},
+    {"start":114,"end":121,"label":"organization","score":0.5050619,"text":"Quillon"},
+    {"start":261,"end":273,"label":"iban","score":0.5107634,"text":"Corvane Bank"}
+  ]
+}
