@@ -2,9 +2,8 @@ import SwiftUI
 
 /// The review's hints (docs/mobile-ui.md, Tips): one quiet line inside the
 /// bar, at most one per document, gone once the gesture is used, and one in
-/// Identities (`dragMerge`). No
-/// popovers and no tip cards. Settings › Review › Reset tips shows them
-/// again; UI tests turn them off.
+/// Identities (`dragMerge`). No popovers and no tip cards. Settings ›
+/// Review › Reset tips shows them again; UI tests turn them off.
 enum ReviewHint: String, CaseIterable, Identifiable {
     /// After the second card: the card swipes.
     case swipe

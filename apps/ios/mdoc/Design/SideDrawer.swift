@@ -62,6 +62,20 @@ struct SideDrawer<Panel: View, Content: View>: View {
                     panel()
                         .frame(width: width)
                         .frame(maxHeight: .infinity)
+                        // The inner edge is the drawer's alone: a drag that
+                        // starts there closes it and never swipes a row too.
+                        .overlay(alignment: side == .leading ? .trailing : .leading) {
+                            if isOpen {
+                                // A gesture of its own makes it take the
+                                // touch from the List below; the drawer's
+                                // drag still runs beside it.
+                                Color.clear
+                                    .frame(width: DrawerDrag.innerEdge)
+                                    .contentShape(Rectangle())
+                                    .gesture(DragGesture(minimumDistance: 0))
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         // A little parallax: the panel comes from under the content.
                         .offset(x: sign * -(1 - progress) * 24)
                         .opacity(reduceMotion ? Double(progress) : 1)

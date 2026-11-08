@@ -34,14 +34,18 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertFalse(app.links[MdocUITest.email].exists)
 
         // The only proposal: All reviewed, with Undo in the toast; undo puts
-        // the bar back on it, and the next toast redoes.
+        // the bar back on it with no toast (ADR 0106), and the Undo button's
+        // long press redoes.
         let toastUndo = app.buttons["toast-action"]
         XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
         toastUndo.tap()
-        let redo = app.buttons["toast-action"].firstMatch
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == 'toast-action' AND label == 'Redo'")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.exists)
-        XCTAssertTrue(app.buttons["review-undo"].exists)
+        XCTAssertTrue(toastUndo.waitForNonExistence(timeout: 5), "no Redo toast")
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
+        let undo = app.buttons["review-undo"]
+        XCTAssertTrue(undo.exists)
+        undo.press(forDuration: 1.0)
+        let redo = app.buttons["Redo"].firstMatch
+        XCTAssertTrue(redo.waitForExistence(timeout: 5))
         redo.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }

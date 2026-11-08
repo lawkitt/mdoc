@@ -37,10 +37,10 @@ final class IdentitiesGesturesUITests: XCTestCase {
                     withVelocity: 500, thenHoldForDuration: 0.2)
     }
 
-    /// A drag on the screen from `x` points, across the middle of it.
+    /// A drag on the screen from `x` points, at `y` or across the middle.
     @MainActor
-    private func drag(_ app: XCUIApplication, fromX x: CGFloat, by dx: CGFloat) {
-        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: app.frame.height * 0.5))
+    private func drag(_ app: XCUIApplication, fromX x: CGFloat, y: CGFloat? = nil, by dx: CGFloat) {
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: y ?? app.frame.height * 0.5))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
                     withVelocity: 800, thenHoldForDuration: 0.1)
     }
@@ -86,10 +86,12 @@ final class IdentitiesGesturesUITests: XCTestCase {
         XCTAssertTrue(proposed.exists, "nothing decided")
 
         // A long swipe right replaces: Replace's full swipe.
+        let name = String(row.label.prefix { $0 != "," })
         drag(proposed, in: panel, from: 0.12, by: width * 0.85, app)
-        let replaced = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'identity-row' AND label ENDSWITH ', replaced'")).firstMatch
-        XCTAssertTrue(replaced.waitForExistence(timeout: 5), "a full swipe right replaces")
+        let replaced = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == 'identity-row' AND label BEGINSWITH %@ AND label ENDSWITH ', replaced'", name + ",")).firstMatch
+        XCTAssertTrue(proposed.waitForNonExistence(timeout: 5), "a full swipe right decides")
+        XCTAssertTrue(replaced.waitForExistence(timeout: 5), "and replaces")
         XCTAssertTrue(close.isHittable, "the drawer stays open")
     }
 
@@ -114,8 +116,19 @@ final class IdentitiesGesturesUITests: XCTestCase {
         drag(app, fromX: edge / 2, by: 200)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag from the sliver closes it")
         openIdentities()
-        drag(app, fromX: edge + 8, by: 200)
+        // Over a row: the edge closes the drawer and swipes no row too.
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'identity-row' AND label ENDSWITH ', proposed'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        let label = row.label
+        drag(app, fromX: edge + 8, y: row.frame.midY, by: 280)
         XCTAssertTrue(close.waitForNonExistence(timeout: 5), "a drag from the inner edge closes it")
+        openIdentities()
+        let same = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'identity-row' AND label == %@", label)).firstMatch
+        XCTAssertTrue(same.waitForExistence(timeout: 5), "the row under the edge stays to review")
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
 
         // The sidebar: the panel on the left; its inner edge on the right.
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch

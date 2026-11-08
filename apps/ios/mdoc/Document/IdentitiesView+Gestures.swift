@@ -21,6 +21,9 @@ extension IdentitiesView {
     /// completes, the rows move to their new sections. Under Reduce Motion
     /// both cross-fade.
     func deciding(_ ids: [IdentityID], _ change: () -> Void) {
+        // Names gone since (merged away) hold nothing.
+        let present = Set(identities.map(\.id))
+        held = held.filter { present.contains($0.key) }
         for identity in identities where ids.contains(identity.id) && held[identity.id] == nil {
             held[identity.id] = identity.state
         }

@@ -206,7 +206,7 @@ extension View {
 }
 
 #Preview("Toast, dark") {
-    Toast(message: ToastMessage(text: "Undid Replace · Riverside Holdings", actionTitle: "Redo", action: {}), duration: 6)
+    Toast(message: ToastMessage(text: "PERSON_3 is now PERSON_1", actionTitle: "Undo", action: {}), duration: 6)
         .padding()
         .preferredColorScheme(.dark)
 }
