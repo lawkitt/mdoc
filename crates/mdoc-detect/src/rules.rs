@@ -349,6 +349,9 @@ struct SpanEntry {
     /// A lowercase list marker at a line or list break is no initial.
     #[serde(default)]
     list_letter: bool,
+    /// With `extend`: lowercase words a span never grows over.
+    #[serde(default)]
+    unless_over: Vec<String>,
 }
 
 /// A legal reference or other marker no model span inside is (guide rule 8):
@@ -478,13 +481,28 @@ struct SpanFix {
     /// named Ostrand.
     person_before: Vec<String>,
     list_letter: bool,
+    /// Lowercase words a span never grows over ("exhibit" in "EXHIBIT A.
+    /// WELK").
+    unless_over: Vec<String>,
 }
 
 impl SpanFix {
     /// `range` without its `trim` words or phrases at either edge (a word's
     /// final period or colon with it; a comma before a trailing one goes
     /// with it), its `trim_start` prefixes and its `strip_end` characters.
-    fn trimmed(&self, source: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    /// An entry with `extend` patterns takes its `trim_start` prefixes off
+    /// only a span it `grew`: "HON WAI KEUNG" from the model stays whole.
+    fn trimmed(
+        &self,
+        source: &str,
+        mut range: std::ops::Range<usize>,
+        grew: bool,
+    ) -> std::ops::Range<usize> {
+        let trim_start = if self.extend.is_empty() || grew {
+            self.trim_start.as_slice()
+        } else {
+            &[]
+        };
         let plain = |word: &str| word.trim_end_matches(['.', ':', ',']).to_lowercase();
         let listed = |word: &str| self.trim.contains(&plain(word));
         let phrases: Vec<Vec<&str>> = self
@@ -521,8 +539,7 @@ impl SpanFix {
                     continue;
                 }
             }
-            if let Some(prefix) = self
-                .trim_start
+            if let Some(prefix) = trim_start
                 .iter()
                 .filter_map(|pattern| pattern.find(text))
                 .find(|prefix| 0 < prefix.end() && prefix.end() < text.len())
@@ -1464,11 +1481,12 @@ impl Pack {
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty()
-                    || entry.list_letter;
+                    || entry.list_letter
+                    || !entry.unless_over.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, extend, strip_end, person_before or list_letter".into(),
+                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, list_letter or unless_over".into(),
                         ));
                     }
                     let pattern = with_parts(pattern, &entry.parts).map_err(at)?;
@@ -1562,7 +1580,15 @@ impl Pack {
                         return Err(at(format!("{word:?} is not one word")));
                     }
                 }
-                for word in entry.trim.iter().chain(&entry.person_before) {
+                if !entry.unless_over.is_empty() && entry.extend.is_empty() {
+                    return Err(at("unless_over needs extend patterns".into()));
+                }
+                for word in entry
+                    .trim
+                    .iter()
+                    .chain(&entry.person_before)
+                    .chain(&entry.unless_over)
+                {
                     if *word != word.to_lowercase() {
                         return Err(at(format!("{word:?} is not lowercase")));
                     }
@@ -1578,6 +1604,13 @@ impl Pack {
                             Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))?;
                         match regex.capture_names().flatten().find(|g| *g != "lead") {
                             Some(group) => Err(at(format!("extend group {group:?} is not `lead`"))),
+                            // Only a person's growth reads a lead: the ORG
+                            // checks (`grows_to_company`) take whole matches.
+                            None if category != Category::Person
+                                && regex.capture_names().flatten().next().is_some() =>
+                            {
+                                Err(at("only a PERSON extend takes a `lead`".into()))
+                            }
                             None => Ok(regex),
                         }
                     })
@@ -1603,6 +1636,7 @@ impl Pack {
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
                     list_letter: entry.list_letter,
+                    unless_over: entry.unless_over.clone(),
                 }));
             }
             for (index, entry) in file.url.iter().enumerate() {
@@ -2630,18 +2664,37 @@ impl Pack {
                 continue;
             }
             // A `lead` group is context the grown span leaves out ("Judge "
-            // before "K Ashdale").
-            let matches: Vec<_> = fix
+            // before "K Ashdale"). The next match is searched for from just
+            // after this one's grown start, so its lead may be the end of
+            // this one ("K Ashdale and L Brown").
+            let matches: Vec<(std::ops::Range<usize>, bool)> = fix
                 .extend
                 .iter()
                 .flat_map(|pattern| {
-                    pattern.captures_iter(source).filter_map(|found| {
-                        let whole = found.get(0)?;
-                        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
-                        (start < whole.end()).then_some(start..whole.end())
-                    })
+                    if !pattern.capture_names().flatten().any(|g| g == "lead") {
+                        return pattern
+                            .find_iter(source)
+                            .map(|m| (m.range(), false))
+                            .collect();
+                    }
+                    let mut found = Vec::new();
+                    let mut at = 0;
+                    while at <= source.len()
+                        && let Some(captures) = pattern.captures_at(source, at)
+                    {
+                        let Some(whole) = captures.get(0) else { break };
+                        let start = captures
+                            .name("lead")
+                            .map_or(whole.start(), |lead| lead.end());
+                        if start < whole.end() {
+                            found.push((start..whole.end(), true));
+                        }
+                        // Past this match's first grown character at least.
+                        at = start + source[start..].chars().next().map_or(1, char::len_utf8);
+                    }
+                    found
                 })
-                .filter(|m| {
+                .filter(|(m, _)| {
                     if !source[m.clone()].contains(['«', '"'])
                         || !self.public_body(&source[m.clone()], fix.category, false)
                     {
@@ -2670,14 +2723,23 @@ impl Pack {
             order.sort_by_key(|&i| detections[i].range.start);
             for &i in &order {
                 let range = detections[i].range.clone();
-                let crosses = |m: &std::ops::Range<usize>| {
+                // A match after a `lead` (a person's, #387) never grows
+                // over any part of another category's span either: "ACME
+                // LLC" stays the company's. Others may: a person's
+                // institution grows over the model's organization in it.
+                let crosses = |(m, led): &(std::ops::Range<usize>, bool)| {
                     order.iter().any(|&j| {
                         let other = &detections[j].range;
                         j != i
                             && other.start < m.end
                             && m.start < other.end
                             && !(m.start <= other.start && other.end <= m.end)
-                    })
+                    }) || *led
+                        && detections.iter().any(|other| {
+                            other.category != fix.category
+                                && other.range.start < m.end
+                                && m.start < other.range.end
+                        })
                 };
                 // A person never grows back over a role or title before
                 // it ("Ответчик" in "Ответчик Н. О." for the model's "Н.
@@ -2686,7 +2748,11 @@ impl Pack {
                     fix.category == Category::Person
                         && source[m.start..range.start]
                             .split(|c: char| !c.is_alphanumeric() && c != '-')
-                            .any(|word| !word.is_empty() && self.never(word))
+                            .any(|word| {
+                            !word.is_empty()
+                                && (self.never(word)
+                                    || fix.unless_over.contains(&word.to_lowercase()))
+                        })
                         // A supported quoted institution may grow over
                         // its public head; extension patterns must first
                         // establish the institution, not an affiliation.
@@ -2695,16 +2761,18 @@ impl Pack {
                 };
                 let grown = matches
                     .iter()
-                    .filter(|m| {
+                    .filter(|found| {
+                        let m = &found.0;
                         m.start <= range.start
                             && range.end <= m.end
-                            && !crosses(m)
+                            && !crosses(found)
                             && !over_never(m)
                     })
+                    .map(|(m, _)| m)
                     .max_by_key(|m| m.len())
                     .cloned()
-                    .unwrap_or(range);
-                let trimmed = fix.trimmed(source, grown.clone());
+                    .unwrap_or(range.clone());
+                let trimmed = fix.trimmed(source, grown.clone(), grown != range);
                 // A trim never leaves a company's legal form alone: "АО ТТН"
                 // stays whole, "АЗС ООО «Бета-Ойл»" loses "АЗС".
                 // Nor may a job phrase consume a titled person's whole
@@ -5487,10 +5555,12 @@ mod tests {
             .collect()
     }
 
-    /// One initial before a surname joins it after a title, a connector or
-    /// a comma, with its period or without; an all-caps given name joins
-    /// "X. SURNAME" (#387). A list letter, a section letter, a sentence's
-    /// "A", the pronoun "I", a role and a signature's verb do not.
+    /// One initial before a surname joins it after a title, "by", "v",
+    /// "per", "and" after a word or a judge's "J,", with its period or
+    /// without; an all-caps given name joins "X. SURNAME" in a signature or
+    /// caption position (#387). A list letter, a section letter, a sentence's
+    /// "A", the pronoun "I", a comma, a colon, "to" or "(" before the letter,
+    /// a role and a signature's verb do not.
     #[test]
     fn one_initial_or_an_all_caps_given_name_joins_a_surname() {
         for (source, model, expected) in [
@@ -5514,19 +5584,35 @@ mod tests {
                 &["Ashdale"],
                 &["K Ashdale"],
             ),
-            (
-                "Present: Ivo Penrow, K Ashdale.",
-                &["Ivo Penrow", "Ashdale"],
-                &["Ivo Penrow", "K Ashdale"],
-            ),
             ("Dear Ms A Brannock,", &["Brannock"], &["A Brannock"]),
+            (
+                "Smith v A Jones [2020] EWHC 1",
+                &["Smith", "Jones"],
+                &["Smith", "A Jones"],
+            ),
+            (
+                "per K Ashdale-Brown",
+                &["Ashdale-Brown"],
+                &["K Ashdale-Brown"],
+            ),
+            (
+                "Before Judge K Ashdale, L Brown and M Green.",
+                &["Ashdale", "Brown", "Green"],
+                &["K Ashdale", "Brown", "M Green"],
+            ),
+            (
+                "Before: Smith J, K Brown and Green LJ",
+                &["Smith", "Brown", "Green"],
+                &["Smith", "K Brown", "Green"],
+            ),
             (
                 "/s/ DORIAN P. WELK\nMagistrate",
                 &["P. WELK"],
                 &["DORIAN P. WELK"],
             ),
             ("DORIAN P. WELK, Magistrate", &["WELK"], &["DORIAN P. WELK"]),
-            // A section letter, a list letter, a sentence's article and the
+            ("SIGNED P. WELK\n", &["P. WELK"], &["P. WELK"]),
+            // A section, list or answer letter, a sentence's article and the
             // pronoun stay out.
             ("under Part B Smith said", &["Smith"], &["Smith"]),
             ("See Exhibit A Smith for the plan.", &["Smith"], &["Smith"]),
@@ -5534,13 +5620,94 @@ mod tests {
             ("It ended. A Smith attended.", &["Smith"], &["Smith"]),
             ("B. Smith\nC. Jones", &["Smith"], &["Smith"]),
             ("Then I Penrow it.", &["Penrow"], &["Penrow"]),
-            // A role, a short word or a signature's verb before "X. SURNAME".
+            (
+                "See Schedule A and B Jones for the plan.",
+                &["Jones"],
+                &["Jones"],
+            ),
+            (
+                "In Annex A, B Smith states the terms.",
+                &["Smith"],
+                &["Smith"],
+            ),
+            (
+                "the holders of Class A and B Smith shares",
+                &["Smith"],
+                &["Smith"],
+            ),
+            ("Answer: A Smith attended.", &["Smith"], &["Smith"]),
+            ("Amendments to A Jones Trust deed", &["Jones"], &["Jones"]),
+            ("the witness ( B Smith ) said", &["Smith"], &["Smith"]),
+            ("Q. Who signed it? A. Smith did.", &["Smith"], &["Smith"]),
+            (
+                "Present: Ivo Penrow, K Ashdale.",
+                &["Ivo Penrow", "Ashdale"],
+                &["Ivo Penrow", "Ashdale"],
+            ),
+            // A role, a heading, a caption's party word, a short word, a
+            // "V." or a mid-line word before "X. SURNAME".
             ("JUDGE P. WELK presiding.", &["P. WELK"], &["P. WELK"]),
             ("BY P. WELK, counsel.", &["P. WELK"], &["P. WELK"]),
-            ("SIGNED P. WELK\n", &["P. WELK"], &["P. WELK"]),
             ("Mixed Case P. WELK here.", &["P. WELK"], &["P. WELK"]),
+            ("EXHIBIT A. WELK DECLARATION", &["WELK"], &["WELK"]),
+            ("SCHEDULE B. WELK", &["WELK"], &["WELK"]),
+            ("COUNT I. WELK", &["WELK"], &["WELK"]),
+            ("COMMONWEALTH V. WELK", &["WELK"], &["WELK"]),
+            ("PETITIONER J. DOE", &["J. DOE"], &["J. DOE"]),
+            (
+                "SMITH V. WELK, No. 21-cv-104",
+                &["SMITH", "WELK"],
+                &["SMITH", "WELK"],
+            ),
+            ("A note on DORIAN P. WELK here", &["P. WELK"], &["P. WELK"]),
+            // A model's own name keeps its start.
+            (
+                "Witness: HON WAI KEUNG",
+                &["HON WAI KEUNG"],
+                &["HON WAI KEUNG"],
+            ),
         ] {
             assert_eq!(proposed_people(source, model), expected, "{source}");
+        }
+        // A company's span is never grown into, whatever the initial.
+        for (source, company) in [
+            ("ACME LLC V. WELK, No. 21-cv-104", "ACME LLC"),
+            ("ACME CORP V. WELK, No. 21-cv-104", "ACME CORP"),
+            ("PELLOW HOLDINGS INC V. WELK", "PELLOW HOLDINGS INC"),
+            ("/s/ ACME LLC P. WELK", "ACME LLC"),
+            ("/s/ ACMECO P. WELK", "ACMECO"),
+        ] {
+            let start = source.find(company).unwrap();
+            let welk = source.find("WELK").unwrap();
+            let raw = [
+                crate::RawEntity {
+                    start,
+                    end: start + company.len(),
+                    label: "organization".into(),
+                    score: 0.9,
+                    text: company.into(),
+                },
+                crate::RawEntity {
+                    start: welk,
+                    end: welk + 4,
+                    label: "person".into(),
+                    score: 0.9,
+                    text: "WELK".into(),
+                },
+            ];
+            let shown: Vec<_> = crate::recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (span.category, source[span.range].to_owned()))
+                .collect();
+            assert_eq!(
+                shown,
+                [
+                    ("ORG".to_owned(), company.to_owned()),
+                    ("PERSON".to_owned(), "WELK".to_owned())
+                ],
+                "{source}"
+            );
         }
     }
 
@@ -15052,6 +15219,18 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "punctuation only",
             ),
             ("[[span]]\ncategory = \"ORG\"\nextend = ['(']", "span #1"),
+            (
+                "[[span]]\ncategory = \"ORG\"\nextend = ['(?P<lead>by )X Ltd']",
+                "only a PERSON extend takes a `lead`",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nextend = ['(?P<tail>x)y']",
+                "is not `lead`",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\nunless_over = [\"part\"]",
+                "unless_over needs extend",
+            ),
             (
                 "[[span]]\ncategory = \"BANK\"\nlist_letter = true",
                 "only PERSON or ORG",

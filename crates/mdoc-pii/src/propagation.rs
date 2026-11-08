@@ -697,6 +697,7 @@ pub(crate) struct People(Vec<Person>, Vec<Spelling>);
 /// makes them ambiguous.
 struct Spelling {
     owner: u64,
+    wording: String,
     spelled: Vec<Vec<char>>,
     full: bool,
 }
@@ -724,6 +725,7 @@ impl Spelling {
             let initials: Vec<char> = given.iter().filter_map(|g| first(g)).collect();
             return Some(Self {
                 owner,
+                wording: wording.to_owned(),
                 spelled: orders(initials, first(&surname)?, cyrillic(&surname)),
                 full: true,
             });
@@ -746,6 +748,7 @@ impl Spelling {
             let surname = surname.to_lowercase();
             return Some(Self {
                 owner,
+                wording: wording.to_owned(),
                 spelled: orders(initials, first(&surname)?, false),
                 full: true,
             });
@@ -755,6 +758,7 @@ impl Spelling {
         };
         Some(Self {
             owner,
+            wording: wording.to_owned(),
             spelled: orders(initials, first(&surname)?, cyrillic(&surname)),
             full: false,
         })
@@ -898,6 +902,14 @@ impl People {
         }
         found
     }
+    /// The written-out names that spell bare initials ("jb", lowercase).
+    fn spellers(&self, initials: &[char]) -> Vec<&str> {
+        self.1
+            .iter()
+            .filter(|s| s.full && s.spelled.iter().any(|s| s.as_slice() == initials))
+            .map(|s| s.wording.as_str())
+            .collect()
+    }
     /// The identity `wording` joins: its form's one candidate full name
     /// (`surname`: found only after a title), or, for bare initials, the
     /// one full name that spells them.
@@ -975,7 +987,7 @@ pub(crate) fn glued(source: &str, range: &Range<usize>) -> bool {
 /// and agency abbreviations, letter and document marks, currencies, and
 /// their Russian counterparts. mdoc-pii has no rule pack (ADR 0092), so the
 /// list lives here; a word missing from it is still held back by the
-/// position [`bare_initials_at`] asks of two letters.
+/// position [`bare_initials_at`] asks of all bare initials.
 #[rustfmt::skip]
 const ABBREVIATIONS: &[&str] = &[
     // US states, DC and territories.
@@ -1021,29 +1033,40 @@ pub(crate) fn bare_initials(word: &str) -> Option<Vec<char>> {
     .then(|| letters.iter().flat_map(|c| c.to_lowercase()).collect())
 }
 
-/// Whether bare initials at `range` end in a letter's reference line: a
-/// slash or colon and the typist's initials after them ("IDP/ms",
-/// "GDK:ns"), then the line's or the word's end. Only the signer's
-/// initials are a name; the typist's stay unmarked, as GUIDE has no case
-/// for them (#387).
+/// Whether bare initials at `range` end a letter's reference line: a
+/// slash and the typist's initials in lower case, which end the line
+/// ("IDP/ms"). Only the signer's initials are a name; the typist's stay
+/// unmarked, as GUIDE has no case for them (#387). "GP/LP" and "KYC/AML"
+/// are no reference line.
 pub(crate) fn reference_initials(source: &str, range: &Range<usize>) -> bool {
-    let Some(rest) = source[range.end..]
-        .strip_prefix('/')
-        .or_else(|| source[range.end..].strip_prefix(':'))
-    else {
+    let Some(rest) = source[range.end..].strip_prefix('/') else {
         return false;
     };
-    let typist = rest.chars().take_while(|c| c.is_alphabetic()).count();
+    let typist = rest.chars().take_while(char::is_ascii_lowercase).count();
+    let line_end = rest[typist..].split('\n').next().unwrap_or_default();
     bare_initials(&source[range.clone()]).is_some()
         && (1..=3).contains(&typist)
-        && rest
-            .chars()
-            .nth(typist)
-            .is_none_or(|c| c.is_whitespace() || ".,;)".contains(c))
+        && line_end.chars().all(|c| c == ' ' || c == '\t' || c == '\r')
         && !source[..range.start]
             .chars()
             .next_back()
             .is_some_and(|c| "_/@\\".contains(c) || c.is_alphanumeric())
+}
+
+/// Whether bare initials at `range` are glued into an identifier: a path,
+/// an address or a reference ([`glued`]) unless a reference line's
+/// ([`reference_initials`]), or a hyphen or period with a letter or digit
+/// beyond it ("JB-104", "JB.pdf", "2-EH"). A sentence's period ("EH.")
+/// is none.
+pub(crate) fn initials_glued(source: &str, range: &Range<usize>) -> bool {
+    let mut after = source[range.end..].chars();
+    let mut before = source[..range.start].chars().rev();
+    let joined = |mark: Option<char>, next: Option<char>| {
+        mark.is_some_and(|c| c == '-' || c == '.') && next.is_some_and(char::is_alphanumeric)
+    };
+    glued(source, range) && !reference_initials(source, range)
+        || joined(after.next(), after.next())
+        || joined(before.next(), before.next())
 }
 
 /// The text of `range`'s line before and after it.
@@ -1064,7 +1087,10 @@ fn line_around<'a>(source: &'a str, range: &Range<usize>) -> (&'a str, &'a str) 
 fn in_capitals(source: &str, range: &Range<usize>) -> bool {
     let (before, after) = line_around(source, range);
     let capital_word = |word: Option<&str>| {
-        word.is_some_and(|w| w.chars().count() > 1 && w.chars().all(char::is_uppercase))
+        word.is_some_and(|w| {
+            let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+            w.chars().count() > 1 && w.chars().all(char::is_uppercase)
+        })
     };
     capital_word(
         before
@@ -1073,26 +1099,127 @@ fn in_capitals(source: &str, range: &Range<usize>) -> bool {
     ) || capital_word(after.strip_prefix(' ').and_then(|a| a.split(' ').next()))
 }
 
+/// Table headers, as [`header_name`](crate::view::header_name) writes them
+/// without a final period, that make a column one of people's initials:
+/// "Lead", "Initials", "Подпись", "Исп.".
+const INITIALS_HEADERS: &[&str] = &[
+    "lead",
+    "leads",
+    "lead instructor",
+    "instructor",
+    "instructors",
+    "teacher",
+    "tutor",
+    "trainer",
+    "by",
+    "initials",
+    "signed",
+    "signed by",
+    "signature",
+    "approved by",
+    "checked by",
+    "reviewed by",
+    "prepared by",
+    "reviewer",
+    "author",
+    "owner",
+    "assignee",
+    "responsible",
+    "who",
+    "подпись",
+    "подписи",
+    "исполнитель",
+    "исполнители",
+    "исп",
+    "преподаватель",
+    "ответственный",
+    "отв",
+    "инициалы",
+    "проверил",
+    "утвердил",
+    "согласовал",
+    "составил",
+    "автор",
+    "кто",
+];
+
+/// Table cells of bare initials that a column places as a person's: under
+/// a header of [`INITIALS_HEADERS`], or where every other cell of the
+/// column is a known name's initials too ("| JB |" over "| EH |"). A
+/// "Country" column's "FR" beside "DE" is not (#387).
+fn initials_cells(source: &str, people: &People) -> Vec<Range<usize>> {
+    use crate::view::{cells, header_name, tables};
+    let known = |text: &str| bare_initials(text).is_some_and(|i| people.spelled(&i).proposed);
+    let mut out = Vec::new();
+    for table in tables(source) {
+        let (_, header) = table.header;
+        let rows: Vec<Vec<Range<usize>>> = table
+            .rows
+            .iter()
+            .map(|&(start, line)| {
+                cells(line)
+                    .into_iter()
+                    .map(|cell| {
+                        let text = &line[cell.clone()];
+                        let lead = text.len() - text.trim_start().len();
+                        start + cell.start + lead..start + cell.start + text.trim_end().len()
+                    })
+                    .collect()
+            })
+            .collect();
+        for (column, title) in table.columns.iter().enumerate() {
+            let title = header_name(&header[title.clone()]);
+            let labelled = INITIALS_HEADERS.contains(&title.trim_end_matches('.'));
+            let column: Vec<&Range<usize>> =
+                rows.iter().filter_map(|row| row.get(column)).collect();
+            for cell in &column {
+                if !known(&source[(*cell).clone()]) {
+                    continue;
+                }
+                let others: Vec<&str> = column
+                    .iter()
+                    .filter(|other| other != &cell)
+                    .map(|other| &source[(*other).clone()])
+                    .filter(|text| !matches!(*text, "" | "-" | "–" | "—"))
+                    .collect();
+                if labelled || !others.is_empty() && others.iter().all(|text| known(text)) {
+                    out.push((*cell).clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Whether bare initials at `range` stand where a person's initials do
-/// and an abbreviation seldom does: a table cell of their own ("| JB |"),
-/// a line of their own, a reference line ([`reference_initials`]), or after
-/// an "initials" label.
-fn bare_initials_at(source: &str, range: &Range<usize>) -> bool {
+/// and an abbreviation seldom does: a cell [`initials_cells`] places, a
+/// reference line ([`reference_initials`]), a line of their own right after
+/// a signature block that names the person, or after an "initials" label.
+fn bare_initials_at(
+    source: &str,
+    range: &Range<usize>,
+    people: &People,
+    cells: &[Range<usize>],
+) -> bool {
     let (before, after) = line_around(source, range);
-    let blank = |s: &str| s.chars().all(|c| c == ' ' || c == '\t');
-    let cell = before.trim_start().starts_with('|')
-        && before
-            .rsplit_once('|')
-            .is_some_and(|(_, inside)| blank(inside))
-        && after
-            .split_once('|')
-            .is_some_and(|(inside, _)| blank(inside));
-    let marks = |s: &str| s.chars().all(|c| c.is_whitespace() || "*_>#-".contains(c));
-    let alone = marks(before)
-        && after
-            .trim_start_matches(['.', ','])
-            .chars()
-            .all(|c| c.is_whitespace() || "*_".contains(c));
+    let alone = before
+        .chars()
+        .all(|c| c.is_whitespace() || "*_>".contains(c))
+        && after.chars().all(|c| c.is_whitespace() || "*_".contains(c));
+    // The block before: up to four lines, back to a blank one.
+    let block: Vec<&str> = source[..range.start - before.len()]
+        .lines()
+        .rev()
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| !line.trim().is_empty())
+        .take(4)
+        .collect();
+    let signed = bare_initials(&source[range.clone()]).is_some_and(|initials| {
+        let names = people.spellers(&initials);
+        block
+            .iter()
+            .any(|line| names.iter().any(|name| line.contains(name)))
+    });
     let label = before
         .trim_end()
         .trim_end_matches(':')
@@ -1101,7 +1228,7 @@ fn bare_initials_at(source: &str, range: &Range<usize>) -> bool {
     let labelled = ["initials", "инициалы"]
         .iter()
         .any(|word| label.ends_with(word));
-    cell || alone || labelled || reference_initials(source, range)
+    cells.contains(range) || reference_initials(source, range) || alone && signed || labelled
 }
 
 /// Whether `range` can be proposed: plain text outside protected syntax and
@@ -1193,24 +1320,26 @@ fn find_forms(
     covered: &[Range<usize>],
     fixed: &[Range<usize>],
 ) -> Vec<(Range<usize>, bool, bool)> {
-    find_forms_with(source, people, covered, fixed, None)
+    find_forms_with(source, people, covered, fixed, false)
 }
 
 /// [`find_forms`], and with `bare` bare initials too: a whole word of two
 /// or three capitals that spells a known name's initials ("JB" of "Jorin
 /// Brindle", "IDP" of "Ivo D. Penrow"; [`People::spelled`]) and is no
-/// abbreviation ([`bare_initials`]). Two letters match many words, so they
-/// count only where initials stand ([`bare_initials_at`]: a table cell, a
-/// line of their own, a reference line, an "initials" label), or anywhere
-/// once bare initials of a known name are a person already: `bare` is
-/// whether the review has some, and any found in place counts too. A
-/// reference line's typist ("IDP/ms") stays outside the span.
+/// abbreviation ([`bare_initials`]). Codes and acronyms spell names too
+/// ("CPR", "KYC", "WL"), so initials count only where they stand
+/// ([`bare_initials_at`]: a column of initials, a reference line, a line
+/// of their own after the person's signature, an "initials" label), and
+/// never glued into a code ([`initials_glued`]). Elsewhere a token is a
+/// person only as a repeat of the same wording found so, the same
+/// person's: one person's initials never make another's. A reference
+/// line's typist ("IDP/ms") stays outside the span.
 fn find_forms_with(
     source: &str,
     people: &People,
     covered: &[Range<usize>],
     fixed: &[Range<usize>],
-    bare: Option<bool>,
+    bare: bool,
 ) -> Vec<(Range<usize>, bool, bool)> {
     let protected = protected_syntax(source);
     // A word split by a line-end hyphen is one token, as the view reads it:
@@ -1248,38 +1377,38 @@ fn find_forms_with(
     };
     // A name word: a capital and more letters.
     let word = |k: usize| capital(k) && source[tokens[k].clone()].chars().count() > 1;
-    // Bare initials of a known name, each with whether it stands where
-    // initials do; two letters elsewhere only once some are in place.
-    let spelled: Vec<(usize, bool)> = match bare {
-        None => Vec::new(),
-        Some(_) => tokens
+    // Bare initials of a known name where initials stand; their repeats
+    // elsewhere are the same wording's mentions, the same person's.
+    let cells = if bare {
+        initials_cells(source, people)
+    } else {
+        Vec::new()
+    };
+    let spelled: Vec<usize> = if bare {
+        tokens
             .iter()
             .enumerate()
-            .filter_map(|(k, range)| {
-                let text = &source[range.clone()];
-                let initials = bare_initials(text)?;
-                let usable = (!glued(source, range) || reference_initials(source, range))
+            .filter(|(_, range)| {
+                let text = &source[(*range).clone()];
+                bare_initials(text).is_some_and(|initials| people.spelled(&initials).proposed)
+                    && !initials_glued(source, range)
                     && safe_span(text)
                     && !intersects(&protected, range)
                     && !intersects(covered, range)
                     && exact_boundary(source, range, text)
                     && !in_capitals(source, range)
-                    && people.spelled(&initials).proposed;
-                usable.then(|| (k, initials.len() == 3 || bare_initials_at(source, range)))
+                    && bare_initials_at(source, range, people, &cells)
             })
-            .collect(),
-    };
-    let anywhere = bare == Some(true) || spelled.iter().any(|(_, placed)| *placed);
-    let bare_at = |k: usize| {
-        spelled
-            .iter()
-            .any(|(at, placed)| *at == k && (*placed || anywhere))
+            .map(|(k, _)| k)
+            .collect()
+    } else {
+        Vec::new()
     };
     let mut found = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
         let start = tokens[i].start;
-        if bare_at(i) {
+        if spelled.contains(&i) {
             found.push((tokens[i].clone(), false, false));
             i += 1;
             continue;
@@ -1597,16 +1726,7 @@ impl Review {
         // Each wording once; a surname when every place it was found
         // follows a title ("Mr Paul": James Paul, not Paul Smith).
         let mut found: Vec<(&str, bool, bool)> = Vec::new();
-        // Bare initials already a person: a model's "JB" in a column.
-        let initials_known = self.variants().iter().any(|v| {
-            v.category == Category::Person
-                && !v.kept
-                && !v.mentions.is_empty()
-                && bare_initials(v.original.trim())
-                    .is_some_and(|initials| people.spelled(&initials).proposed)
-        });
-        for (range, common, after_title) in
-            find_forms_with(source, &people, &covered, &fixed, Some(initials_known))
+        for (range, common, after_title) in find_forms_with(source, &people, &covered, &fixed, true)
         {
             let wording = &source[range];
             match found.iter_mut().find(|(w, ..)| *w == wording) {
@@ -1969,32 +2089,61 @@ mod tests {
         assert_eq!(target(&["Edda Mae Hollin"], "H. E. M."), None);
     }
 
-    /// #387: two letters count only where initials stand, or once some are
-    /// in place; three anywhere outside a run of capitals.
+    /// #387: bare initials count only where initials stand: a table column
+    /// of people's initials, a reference line, a line of their own after a
+    /// signature naming the person, an "initials" label. Elsewhere, glued
+    /// into a code, in a run of capitals or as a slash pair, never.
     #[test]
     fn bare_initials_are_found_where_initials_stand() {
-        let names = ["Jorin Brindle", "Edda Hollin", "Ivo D. Penrow"];
-        let found = |source: &str, seen: bool| -> Vec<String> {
-            find_forms_with(source, &people(&names), &[], &[], Some(seen))
+        let names = [
+            "Jorin Brindle",
+            "Edda Hollin",
+            "Ivo D. Penrow",
+            "Felix Roth",
+        ];
+        let found = |source: &str| -> Vec<String> {
+            find_forms_with(source, &people(&names), &[], &[], true)
                 .into_iter()
                 .map(|(r, ..)| source[r].to_owned())
                 .filter(|text| bare_initials(text).is_some())
                 .collect()
         };
-        assert_eq!(found("| 1 | JB |\n| 2 | EH |", false), ["JB", "EH"]);
-        assert_eq!(found("Lead initials: EH", false), ["EH"]);
-        assert_eq!(found("Signed\nEH\n", false), ["EH"]);
-        assert_eq!(found("Yours. IDP/ms", false), ["IDP"]);
-        assert_eq!(found("Yours. EH/ms", false), ["EH"]);
-        assert_eq!(found("per IDP today", false), ["IDP"]);
-        assert!(found("EH agreed with JB.", false).is_empty());
-        assert_eq!(found("EH agreed with JB.", true), ["EH", "JB"]);
-        assert_eq!(found("EH agreed.\n| JB |", false), ["EH", "JB"]);
-        assert!(found("SEE IDP REPORT", false).is_empty());
-        assert!(found("files/IDP/x and EH_2", true).is_empty());
+        // A column of known initials, or under a person's header.
+        let table = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 | EH |\n";
+        assert_eq!(found(table), ["JB", "EH"]);
+        assert_eq!(found("| Week | Lead |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
+        assert_eq!(found("| Этап | Исп. |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
+        // A country column, a lone row, a code beside a known pair.
+        let country =
+            "| Director | Country |\n|---|---|\n| Felix Roth | FR |\n| Jorin Brindle | DE |\n";
+        assert!(found(country).is_empty());
+        assert!(found("| 1 | JB |\n").is_empty());
+        let mixed = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 | ZZ |\n";
+        assert!(found(mixed).is_empty());
+        // A reference line ends with the typist's lowercase initials.
+        assert_eq!(found("Yours. IDP/ms"), ["IDP"]);
+        assert_eq!(found("Yours.\n\nEH/ms\n"), ["EH"]);
+        assert!(found("The GP/LP split. IDP/LP rules. IDP/ms apply").is_empty());
+        // A line of its own right after a signature naming the person.
+        assert_eq!(found("Edda Hollin checked.\n\nEH\n"), ["EH"]);
+        assert!(found("Signed\n\nEH\n").is_empty());
+        assert!(found("Jorin Brindle checked.\n\nEH\n").is_empty());
+        // An "initials" label.
+        assert_eq!(found("Lead initials: EH"), ["EH"]);
+        // Prose, glue, capitals.
+        for source in [
+            "EH agreed with JB.",
+            "per IDP today",
+            "SEE IDP REPORT",
+            "Initials: JB-104",
+            "Initials: JB.pdf",
+            "files/IDP/x and EH_2",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
         // Off unless asked: the Always list's forms take no bare initials.
         assert!(
-            find_forms("| 1 | JB |", &people(&names), &[], &[])
+            find_forms(table, &people(&names), &[], &[])
                 .iter()
                 .all(|(r, ..)| r.len() != 2)
         );

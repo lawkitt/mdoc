@@ -104,11 +104,16 @@
 #                         a person's never over a `never` word (a role),
 #                         except to drop a quoted public institution's own
 #                         name ("МВД России «…»");
-#                         earlier spans grow first; a group named `lead`
-#                         (the only group allowed) is context the grown
-#                         span leaves out ("Judge " before "K Ashdale")
+#                         earlier spans grow first; for PERSON only, a
+#                         group named `lead` (the only group allowed) is
+#                         context the grown span leaves out ("Judge "
+#                         before "K Ashdale"), and such a match never grows
+#                         over any part of another category's span
+#   unless_over = […]     with extend: lowercase words a span never grows
+#                         over ("exhibit" in "EXHIBIT A. WELK")
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
-#                         with some name left after them
+#                         with some name left after them; in an entry with
+#                         `extend`, only off a span that entry grew
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period or colon with it, and
 #                         a comma before a trailing one; or phrases of them,

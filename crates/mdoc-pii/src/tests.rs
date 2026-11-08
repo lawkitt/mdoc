@@ -2293,60 +2293,158 @@ fn bare_initials_of_a_known_name_join_it() {
         );
     }
 
-    // Two letters in prose count once some initials are in place.
-    let source = "Leads: Jorin Brindle and Edda Hollin.\n\n| 1 | JB |\n\nLater EH agreed.";
+    // Placed initials repeat as the same person's; they never unlock
+    // another person's initials in prose, and a code is no repeat.
+    let source = "Leads: Jorin Brindle and Edda Hollin.\n\n| Week | Lead |\n|---|---|\n\
+        | 1 | JB |\n\nLater EH agreed, and so did JB. See JB-104 and JB.pdf.";
     let review = ingest_names(source, &["Jorin Brindle", "Edda Hollin"]);
-    assert_eq!(texts(&review, "EH"), ["EH"]);
+    assert_eq!(texts(&review, "JB"), ["JB", "JB"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "EH")
+    );
 }
 
 /// #387: bare initials stay unmarked as an abbreviation, a Roman numeral,
-/// two letters in prose alone, inside a run of capitals, glued into a
-/// path, or when no known name spells them.
+/// in prose, inside a run of capitals, glued into a path or a code, as a
+/// slash pair, in a column of codes, or when no known name spells them;
+/// one person's placed initials unlock no one else's (the pre-gate
+/// review's cases). `allowed`: the placed initials that are proposed.
 #[test]
 fn bare_initials_that_spell_no_one_or_are_abbreviations_stay() {
-    for (source, names) in [
+    let lead = |rows: &str| format!("| Week | Lead |\n|---|---|\n{rows}");
+    let cases: Vec<(String, &[&str], &[&str])> = vec![
+        ("The claimant, Clara P. Rowe, applied under CPR 31.6.".into(), &["Clara P. Rowe"], &[]),
         (
-            "Nadia York filed in NY.\n\n| 1 | NY |\n\nIvo Ditch has an ID.\n\n| ID |\n",
-            &["Nadia York", "Ivo Ditch"][..],
+            "This Master Services Agreement (the “MSA”) is signed by Mark S. Adams. \
+                Under the MSA, fees are due."
+                .into(),
+            &["Mark S. Adams"],
+            &[],
+        ),
+        ("Kevin Y. Cole leads compliance. KYC checks were completed.".into(), &["Kevin Y. Cole"], &[]),
+        ("Kevin Y. Cole wrote.\n\n## KYC POLICY\n\nKYC applies.".into(), &["Kevin Y. Cole"], &[]),
+        ("Kevin Y. Cole leads KYC/AML checks.".into(), &["Kevin Y. Cole"], &[]),
+        ("Alan M. Lewis leads compliance. AML screening passed.".into(), &["Alan M. Lewis"], &[]),
+        ("Adam D. Reed proposed ADR before trial.".into(), &["Adam D. Reed"], &[]),
+        ("Tara R. Owen moved for a TRO on Monday.".into(), &["Tara R. Owen"], &[]),
+        ("Fiona C. Allen reported the breach to the FCA.".into(), &["Fiona C. Allen"], &[]),
+        ("Uma S. Clarke sued under 42 USC 1983.".into(), &["Uma S. Clarke"], &[]),
+        (
+            "Alice B. Carter signed the ABC Agreement (the “ABC Agreement”).".into(),
+            &["Alice B. Carter"],
+            &[],
         ),
         (
-            "Ivo Ivanson and Ida Vex.\n\n| Part | II |\n| IV |\n",
-            &["Ivo Ivanson", "Ida Vex"],
-        ),
-        ("Jorin Brindle met us. JB said so.", &["Jorin Brindle"]),
-        (
-            "Ivo D. Penrow wrote.\n\nSEE IDP REPORT\n",
-            &["Ivo D. Penrow"],
+            "Истец Анна Андреевна Соколова обжаловала решение. Постановлением \
+                Девятого ААС жалоба оставлена без удовлетворения."
+                .into(),
+            &["Анна Андреевна Соколова"],
+            &[],
         ),
         (
-            "Ivo D. Penrow wrote.\n\nSaved as C:/files/IDP/letter.doc\n",
-            &["Ivo D. Penrow"],
+            "Ульяна Петровна Кузнецова заявила ходатайство по ст. 75 УПК РФ, оно отклонено."
+                .into(),
+            &["Ульяна Петровна Кузнецова"],
+            &[],
         ),
         (
-            "Jorin Brindle led.\n\n| 1 | QZ |\n| 2 | BJ |\n",
-            &["Jorin Brindle"],
+            "Марина Константиновна Дорофеева владеет квартирой в МКД.".into(),
+            &["Марина Константиновна Дорофеева"],
+            &[],
         ),
         (
-            "Ответственный Яков Викторович Ростов.\n\n| ВРЯ |\n",
+            format!(
+                "Instructors: Jorin Brindle and Wendy Lowe.\n\n{}\n\
+                    See Smith v Jones, 2020 WL 123456.",
+                lead("| 1 | JB |\n")
+            ),
+            &["Jorin Brindle", "Wendy Lowe"],
+            &["JB"],
+        ),
+        (
+            format!(
+                "TO: All staff\nFROM: Jorin Brindle\nCC: Tanya Owens\n\n{}",
+                lead("| 1 | JB |\n")
+            ),
+            &["Jorin Brindle", "Tanya Owens"],
+            &["JB"],
+        ),
+        (
+            format!(
+                "Bob Yates and Jorin Brindle signed.\n\n{}\nBY: ______\nName: Bob Yates",
+                lead("| 1 | JB |\n")
+            ),
+            &["Bob Yates", "Jorin Brindle"],
+            &["JB"],
+        ),
+        (
+            "Исполнитель: Татьяна Сергеевна Иванова.\n\n| Этап | Исп. |\n|---|---|\n\
+                | 1 | ТСИ |\n\nТС марки Лада принадлежит истцу."
+                .into(),
+            &["Татьяна Сергеевна Иванова"],
+            &["ТСИ"],
+        ),
+        (
+            "Исполнитель: Анна Андреевна Соколова.\n\n| Этап | Исп. |\n|---|---|\n\
+                | 1 | ААС |\n\nАС г. Москвы принял иск."
+                .into(),
+            &["Анна Андреевна Соколова"],
+            &["ААС"],
+        ),
+        (
+            "Directors: Felix Roth and Jorin Brindle.\n\n| Director | Country |\n|---|---|\n\
+                | Felix Roth | FR |\n| Jorin Brindle | DE |\n"
+                .into(),
+            &["Felix Roth", "Jorin Brindle"],
+            &[],
+        ),
+        ("Gary Price and Lena Park manage the fund.\n\nThe GP/LP split is 20/80.".into(), &["Gary Price", "Lena Park"], &[]),
+        ("Peter Evans invests. Returns for PE/VC funds fell.".into(), &["Peter Evans"], &[]),
+        (
+            format!("Edda Hollin led.\n\n{}\nSee report EH-2.", lead("| 1 | EH |\n")),
+            &["Edda Hollin"],
+            &["EH"],
+        ),
+        (
+            "Nadia York filed in NY.\n\n| 1 | NY |\n\nIvo Ditch has an ID.\n\n| ID |\n".into(),
+            &["Nadia York", "Ivo Ditch"],
+            &[],
+        ),
+        (lead("| 1 | II |\n| 2 | IV |\n") + "Ivo Ivanson and Ida Vex.", &["Ivo Ivanson", "Ida Vex"], &[]),
+        ("Jorin Brindle met us. JB said so.".into(), &["Jorin Brindle"], &[]),
+        ("Ivo D. Penrow wrote.\n\nSEE IDP REPORT\n".into(), &["Ivo D. Penrow"], &[]),
+        ("Ivo D. Penrow wrote.\n\nSaved as C:/files/IDP/letter.doc\n".into(), &["Ivo D. Penrow"], &[]),
+        (lead("| 1 | QZ |\n| 2 | BJ |\n") + "Jorin Brindle led.", &["Jorin Brindle"], &[]),
+        (
+            "Ответственный Яков Викторович Ростов.\n\n| Этап | Исполнитель |\n|---|---|\n| 1 | ВРЯ |\n".into(),
             &["Яков Викторович Ростов"],
+            &[],
         ),
-    ] {
+    ];
+    for (source, names, allowed) in &cases {
         let review = ingest_names(source, names);
         let unexpected: Vec<_> = review
             .variants()
             .iter()
             .map(|v| v.original.as_ref())
             .filter(|original| {
-                crate::propagation::bare_initials(original).is_some()
-                    || original.chars().all(char::is_uppercase)
+                (crate::propagation::bare_initials(original).is_some()
+                    || original.chars().all(char::is_uppercase))
+                    && !allowed.contains(original)
             })
             .collect();
         assert!(unexpected.is_empty(), "{source}: {unexpected:?}");
+        for initials in *allowed {
+            assert_eq!(proposed(&review, initials).mentions.len(), 1, "{source}");
+        }
     }
     // Two people spelling the same initials: proposed apart, joined to
     // neither.
-    let source = "Jorin Brindle and Jana Bell.\n\n| 1 | JB |\n";
-    let review = ingest_names(source, &["Jorin Brindle", "Jana Bell"]);
+    let source = format!("Jorin Brindle and Jana Bell.\n\n{}", lead("| 1 | JB |\n"));
+    let review = ingest_names(&source, &["Jorin Brindle", "Jana Bell"]);
     let initials = review.variant_identity(proposed(&review, "JB").id);
     for full in ["Jorin Brindle", "Jana Bell"] {
         assert_ne!(
