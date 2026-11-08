@@ -309,6 +309,107 @@ final class MarkdownTextViewTests: XCTestCase {
         XCTAssertEqual(harness.view.contentOffset.y, -insets.top, "back at the top")
     }
 
+    /// A long document of uneven blocks (headings, long and short
+    /// paragraphs, lists, tall tables) with Maya Bennett seventeen times,
+    /// two of them in table cells: TextKit 2 estimates the blocks it has not
+    /// laid out, and these estimates are far off.
+    private static let longText: String = {
+        var blocks: [String] = []
+        let long = Array(repeating: "The parties agree that the services are provided with reasonable care and skill, in line with good industry practice, and on the terms below.", count: 6).joined(separator: " ")
+        for section in 1...16 {
+            blocks.append("## \(section). Section \(section)")
+            blocks.append(section % 3 == 0 ? long : "Short line \(section).")
+            if section % 4 == 1 {
+                let rows = (1...14).map { "| Row \($0) of table \(section) | \(section == 9 && $0 == 7 ? "Maya Bennett" : "Somebody else") |" }
+                blocks.append((["| Name | Role |", "| --- | --- |"] + rows).joined(separator: "\n"))
+            }
+            blocks.append((1...(section % 5 + 1)).map { "- Item \($0) of the list, a line long." }.joined(separator: "\n"))
+            if section != 9 { blocks.append("Here Maya Bennett is mentioned in section \(section).") }
+            blocks.append(long)
+        }
+        blocks.append("| Signed | By |\n| --- | --- |\n| Today | Maya Bennett |")
+        return blocks.joined(separator: "\n\n") + "\n"
+    }()
+
+    /// Where the name is drawn now, in the text view's coordinates: its
+    /// text's or its table cell's rect, after the layout pass the scroll's
+    /// end brings.
+    private func drawnRect(of candidate: Candidate, in view: CandidateTextView, offsets: TextOffsets) -> CGRect? {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        let range = offsets.nsRange(candidate.range)
+        let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
+            NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+        }
+        if let cell {
+            let location = range.location - cell.location
+            guard let start = cell.position(from: cell.beginningOfDocument, offset: location),
+                  let end = cell.position(from: start, offset: range.length),
+                  let text = cell.textRange(from: start, to: end) else { return nil }
+            let rect = cell.firstRect(for: text)
+            return rect.isNull ? nil : cell.convert(rect, to: view)
+        }
+        // The frame its line is drawn in, as the viewport laid it out:
+        // `firstRect(for:)` can still answer with an estimate.
+        guard let layout = view.textLayoutManager, let content = layout.textContentManager,
+              let from = content.location(content.documentRange.location, offsetBy: range.location),
+              let to = content.location(from, offsetBy: range.length),
+              let target = NSTextRange(location: from, end: to) else { return nil }
+        var first: CGRect?
+        layout.enumerateTextSegments(in: target, type: .standard, options: []) { _, frame, _, _ in
+            first = frame
+            return false
+        }
+        return first.map { $0.offsetBy(dx: view.textContainerInset.left, dy: view.textContainerInset.top) }
+    }
+
+    /// Runs the run loop until the text stops scrolling.
+    private func settle(_ view: UIScrollView) {
+        let deadline = Date().addingTimeInterval(4)
+        var last = view.contentOffset
+        var still = Date()
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            if view.contentOffset != last {
+                last = view.contentOffset
+                still = Date()
+            } else if Date().timeIntervalSince(still) > 0.4 {
+                return
+            }
+        }
+    }
+
+    /// Stepping to a name far down a long document lands with the name in
+    /// the band above the docked bar, in the text and in a table cell: the
+    /// text is laid out up to the name before it is measured, and measured
+    /// again once the scroll lands. Before, the scroll trusted TextKit 2's
+    /// estimate and the name stayed off screen ("14 of 16").
+    func testSteppingFarDownKeepsTheNameInView() throws {
+        let probe = try harness(text: Self.longText)
+        let mentions = probe.session.snapshot().candidates.sorted { $0.range.start < $1.range.start }
+        XCTAssertEqual(mentions.count, 17)
+        for index in [13, 8, 16, 5] {
+            let harness = try harness(text: Self.longText)
+            let view = harness.view
+            // The docked bar, as the screen's safe area gives it.
+            view.contentInset.bottom = 190
+            let snapshot = harness.session.snapshot()
+            let offsets = TextOffsets(snapshot.markdown)
+            let sorted = snapshot.candidates.sorted { $0.range.start < $1.range.start }
+            show(harness, textView(snapshot, selected: sorted[0].id))
+            settle(view)
+            show(harness, textView(snapshot, selected: sorted[index].id))
+            settle(view)
+            let rect = try XCTUnwrap(drawnRect(of: sorted[index], in: view, offsets: offsets))
+            let insets = view.adjustedContentInset
+            let top = view.contentOffset.y + insets.top
+            // Above the bar; room added below the end is no bar.
+            let visible = view.bounds.height - insets.top - 190
+            XCTAssertGreaterThanOrEqual(rect.minY, top - 1, "mention \(index + 1) of 17 below the top: \(rect), top \(top)")
+            XCTAssertLessThanOrEqual(rect.maxY, top + visible / 3 + 1, "mention \(index + 1) of 17 in the top third above the bar: \(rect), top \(top)")
+        }
+    }
+
     /// A drag always takes, so a document that fits never feels frozen.
     func testADocumentThatFitsStillTakesADrag() {
         XCTAssertTrue(CandidateTextView().alwaysBounceVertical)

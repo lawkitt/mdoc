@@ -95,6 +95,22 @@ final class IdentitiesGesturesUITests: XCTestCase {
         XCTAssertTrue(close.isHittable, "the drawer stays open")
     }
 
+    /// With Identities open, a swipe right from the screen's left edge
+    /// closes Identities and shows the document; it never opens the
+    /// sidebar, whose edge lay under Identities' sliver.
+    @MainActor
+    func testASwipeFromTheLeftEdgeClosesIdentitiesNotOpensTheSidebar() throws {
+        let app = try openDocument()
+        let close = app.buttons["identities-done"].firstMatch
+        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+        XCTAssertTrue(MdocUITest.showIdentities(app))
+        XCTAssertTrue(close.waitUntilHittable(timeout: 5))
+        drag(app, fromX: 6, by: 240)
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "the swipe closes Identities")
+        XCTAssertTrue(app.textViews["document-text"].waitUntilHittable(timeout: 5), "the document shows")
+        XCTAssertFalse(sidebar.exists, "the sidebar stays shut")
+    }
+
     /// Both drawers still close from the sliver and from the panel's inner
     /// edge, and not from the middle of the panel.
     @MainActor

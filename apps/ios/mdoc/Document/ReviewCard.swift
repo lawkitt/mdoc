@@ -8,6 +8,10 @@ import SwiftUI
 struct ReviewCard: View {
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
+    /// False for a neighbor peeking in beside the card under review
+    /// (`ReviewPager`): drawn the same, but its controls take no taps, keys
+    /// or focus, and carry no test identifiers.
+    var isCurrent = true
 
     @State private var renaming = false
     @State private var draft = ""
@@ -37,12 +41,41 @@ struct ReviewCard: View {
                 categoryLabel: candidate.category.label) { model.sameAs($0) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("review-card")
+        .accessibilityIdentifier(id("review-card"))
+        .disabled(!isCurrent)
+        // A rename begun on this card ends when it slides aside, so its
+        // field never renames the card that took its place.
+        .onChange(of: isCurrent) { _, current in
+            if !current {
+                renaming = false
+                aliasFocused = false
+            }
+        }
+    }
+
+    /// A test identifier, on the card under review only: XCUITest also
+    /// lists the neighbors, which VoiceOver doesn't.
+    private func id(_ identifier: String) -> String {
+        isCurrent ? identifier : ""
     }
 
     // MARK: Line 1
 
+    /// One height whether or not the mentions chip shows: a hidden chip, no
+    /// wider than nothing, holds the row at the chip's height at every text
+    /// size, so the compact bar (and the text above it) keeps its height
+    /// from card to card.
     private var header: some View {
+        ZStack(alignment: .leading) {
+            Chip(Text(verbatim: "1 of 2"), systemImage: "arrow.down")
+                .fixedSize()
+                .frame(width: 0)
+                .hidden()
+            headerRow
+        }
+    }
+
+    private var headerRow: some View {
         HStack(spacing: Space.xs) {
             Image(systemName: candidate.category.symbol)
                 .foregroundStyle(candidate.category.color)
@@ -70,7 +103,7 @@ struct ReviewCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Mention \(mentions.index) of \(mentions.count)"))
                 .accessibilityHint(Text("Scrolls to this name's next mention."))
-                .accessibilityIdentifier("review-mentions")
+                .accessibilityIdentifier(id("review-mentions"))
             }
         }
     }
@@ -147,7 +180,7 @@ struct ReviewCard: View {
             Chip(candidate.category.label, systemImage: candidate.category.symbol, tint: candidate.category.color, opensMenu: true)
         }
         .accessibilityLabel(Text("Category, \(candidate.category.label)"))
-        .accessibilityIdentifier("review-category")
+        .accessibilityIdentifier(id("review-category"))
     }
 
     private var ownerTitle: String {
@@ -178,7 +211,7 @@ struct ReviewCard: View {
             Chip(candidate.alias, opensMenu: true, monospaced: true)
         }
         .accessibilityLabel(Text("Alias, \(candidate.alias)"))
-        .accessibilityIdentifier("review-alias")
+        .accessibilityIdentifier(id("review-alias"))
     }
 
     /// Hinted identities first, then the same category, then the others; a
@@ -233,7 +266,7 @@ struct ReviewCard: View {
         }
         .disabled(count < 2)
         .accessibilityLabel(Text(model.reviewScope == .all ? "Scope, all \(count) mentions" : "Scope, this one"))
-        .accessibilityIdentifier("review-scope")
+        .accessibilityIdentifier(id("review-scope"))
     }
 
     // MARK: Rename
@@ -251,7 +284,7 @@ struct ReviewCard: View {
                     .padding(.horizontal, Space.s)
                     .frame(minHeight: Size.chip)
                     .background(Palette.chipFill, in: Capsule())
-                    .accessibilityIdentifier("review-rename-field")
+                    .accessibilityIdentifier(id("review-rename-field"))
                 Button("Cancel") { renaming = false }
                     .frame(minHeight: Size.target)
                 Button("Rename", action: commitRename)
@@ -284,6 +317,7 @@ struct ReviewCard: View {
     }
 
     private func commitRename() {
+        guard isCurrent else { return }
         let outcome = model.rename(to: draft.trimmingCharacters(in: .whitespaces))
         if case .done = outcome {
             renaming = false
@@ -311,7 +345,7 @@ struct ReviewCard: View {
                 Chip("Same as", systemImage: "link", tint: Palette.accent)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("review-hint-same-as")
+            .accessibilityIdentifier(id("review-hint-same-as"))
             Button {
                 model.dismissHint(hint)
             } label: {
@@ -323,7 +357,7 @@ struct ReviewCard: View {
             .accessibilityLabel(Text("Dismiss hint"))
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("review-hint")
+        .accessibilityIdentifier(id("review-hint"))
     }
 }
 

@@ -57,7 +57,7 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Chip` | Anything tappable that isn't a button is a filled capsule. A chip that opens a menu ends in a chevron; plain text never acts. Neutral fill, or tinted by category or state. At least 44 pt of target. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
-| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. |
+| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. While a drawer inside its screen shows, its own edge leaves the swipe to that drawer. |
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
@@ -142,9 +142,18 @@ that only the view model changes; views send intents
   the screen); down on compact springs back. Opening it keeps the active
   name visible above the bar.
 - **Card:** category icon and the name (tap to scroll back to it), its
-  state mark once decided, the mentions chip when the name repeats; then
-  the category ▾, alias ▾ and scope ▾ chips; a merge hint line while the
-  core sees one.
+  state mark once decided, the mentions chip when the name repeats (the
+  line is the chip's height either way, so the compact bar keeps one
+  height); then the category ▾, alias ▾ and scope ▾ chips; a merge hint
+  line while the core sees one.
+- **Stepping** (`ReviewPager`): the previous, current and next cards sit
+  side by side in one strip, the neighbors peeking in at the bar's edges.
+  The finger moves the strip; let go past a third of the card or with a
+  fling and it settles on the neighbor with one spring, else springs
+  back; at either end it gives a little and bumps. Next, Previous, ← →
+  and a tap on a peek move the same strip; Reduce Motion cross-fades.
+  The text then scrolls the name into the top third above the bar,
+  measured where it is laid out, not where TextKit 2 estimates it.
 - **Mentions (full):** one row each, in document order: the heading above
   it, the words of its own paragraph cut at words, and the original name
   bold on its category's highlight. A tap on the row goes there; a tap on
@@ -228,7 +237,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
 | Identities row | Long press, then drag onto another row | Same as: the two names become one (the drop does not reach a row on iOS 26 yet) |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
-| Left edge (iPhone) | Swipe right | The sidebar; tap the sliver, or swipe left from it or the panel's inner edge, to close |
+| Left edge (iPhone) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left from it or the panel's inner edge, to close |
 | Right edge (iPhone, a document open) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
 
 No swipes on the document text.
