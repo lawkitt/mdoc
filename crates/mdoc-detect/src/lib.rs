@@ -2048,7 +2048,15 @@ mod tests {
             people(source),
             ["Alvora", "Nerian", "McVellin", "O’Kell–Venn"]
         );
-        assert!(people("Фамилия: Истец\n").is_empty());
+        // #601: a name part's label establishes a role-like surname too,
+        // as the header does for a cell above.
+        assert_eq!(people("Фамилия: Истец\n"), ["Истец"]);
+        for (source, expected) in [
+            ("Given name: Edda\nSurname: Trustee\n", ["Edda", "Trustee"]),
+            ("Имя: Лада\nФамилия: Должник\n", ["Лада", "Должник"]),
+        ] {
+            assert_eq!(people(source), expected, "{source}");
+        }
     }
 
     /// A wording the model gave two categories is copied to its other

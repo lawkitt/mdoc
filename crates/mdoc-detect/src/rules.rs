@@ -3028,8 +3028,10 @@ impl Pack {
         let defined = self.defined_terms(&view.text);
         let named = self.named_words(view, detections);
         // A name-part header establishes the cell's name even when the
-        // spelling is also a role ("Trustee", "Должник"; #575).
-        let name_cells = mdoc_pii::columns::name_cells(source);
+        // spelling is also a role ("Trustee", "Должник"; #575), and so does
+        // a name part's label before a value ("Surname: Trustee"; #601).
+        let mut name_cells = mdoc_pii::columns::name_cells(source);
+        name_cells.extend(mdoc_pii::columns::labelled_names(source));
         detections.retain(|d| {
             let text = &view.text[view.view_range(d.range.clone())];
             let titled = d.category == Category::Person && self.titled(source, d.range.start);
