@@ -121,6 +121,7 @@ struct IdentitiesView: View {
                         selection = []
                     }
                     .font(Typography.chip)
+                    .textAction()
                     .frame(minWidth: Size.target, minHeight: Size.target)
                     .accessibilityIdentifier("identities-select")
                 }
@@ -153,7 +154,7 @@ struct IdentitiesView: View {
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity, minHeight: Size.barButton)
                 }
-                .buttonStyle(.borderedProminent)
+                .accentProminent()
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
             }
@@ -218,7 +219,7 @@ struct IdentitiesView: View {
                 Button {
                     category = nil
                 } label: {
-                    Chip(Text("All"), tint: category == nil ? Palette.accent : nil)
+                    Chip(Text("All"), filled: category == nil)
                 }
                 ForEach(categories, id: \.0) { item in
                     Button {
@@ -379,7 +380,7 @@ struct IdentitiesView: View {
         // (ADR 0106).
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button("Replace") { decide(identity, .replace) }
-                .tint(Palette.accent)
+                .tint(Palette.swipeAccent)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button("Keep") { decide(identity, .keep) }
@@ -425,7 +426,7 @@ struct IdentitiesView: View {
             } label: {
                 Text("Replace").frame(maxWidth: .infinity, minHeight: Size.barButton)
             }
-            .buttonStyle(.borderedProminent)
+            .accentProminent()
             Button {
                 deciding(ids) { model.decide(identities: ids, .keep) }
                 selection = []

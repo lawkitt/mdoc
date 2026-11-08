@@ -103,14 +103,17 @@ struct Toast: View {
             if let duration, message.action != nil {
                 ToastCountdownRing(countdown: ToastCountdown(start: message.created, duration: duration), frozenAt: frozenAt)
             }
+            // The words regular and the action at medium weight in the
+            // primary text colour, so it stands out without a colour
+            // (ADR 0099).
             Text(message.text)
-                .font(Typography.chip)
+                .font(Typography.chip.weight(.regular))
                 .lineLimit(2)
             if let title = message.actionTitle, message.action != nil {
                 Button(title, action: perform)
                     .accessibilityIdentifier("toast-action")
-                .font(Typography.chip.weight(.semibold))
-                .foregroundStyle(Palette.accent)
+                .font(Typography.chip)
+                .foregroundStyle(.primary)
                 // Whole at any size: the words give way, not "Undo".
                 .fixedSize()
                 .frame(minHeight: Size.target)

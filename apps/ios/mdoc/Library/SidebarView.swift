@@ -294,10 +294,10 @@ struct SidebarView: View {
             } label: {
                 Label("New", systemImage: "plus")
                     .font(Typography.chip.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: .systemBackground))
+                    .foregroundStyle(Palette.onAccent)
                     .padding(.horizontal, Space.l)
                     .frame(height: 52)
-                    .background(Color.primary, in: Capsule())
+                    .background(Palette.accent, in: Capsule())
             }
             .menuOrder(.priority)
             .accessibilityIdentifier("new-menu")

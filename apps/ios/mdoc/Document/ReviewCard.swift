@@ -531,7 +531,7 @@ struct StateMark: View {
                 Circle().fill(Palette.accent)
                 Image(systemName: "eye.slash.fill")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.onAccent)
             case .kept:
                 Circle().fill(Palette.chipFill)
                 Image(systemName: "eye")

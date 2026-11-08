@@ -1,5 +1,6 @@
 import SwiftUI
 import XCTest
+@testable import mdoc
 
 /// Image snapshots of components and key screen states (ADR 0099), without
 /// a dependency: `ImageRenderer` draws the view at a fixed width and the
@@ -35,6 +36,7 @@ enum Snapshot {
         let content = view
             .frame(width: width)
             .background(Color(uiColor: .systemBackground))
+            .tint(Palette.accent)
             .environment(\.colorScheme, appearance.scheme)
             .environment(\.dynamicTypeSize, size)
         let renderer = ImageRenderer(content: content)
