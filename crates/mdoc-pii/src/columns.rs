@@ -218,10 +218,45 @@ const NAME_LABELS: &[&str] = &[
 /// is required") it is none. Code blocks, code spans and link targets are
 /// left alone.
 pub fn labelled_names(source: &str) -> Vec<Range<usize>> {
+    labelled_values(source)
+        .into_iter()
+        .map(|(_, range)| range)
+        .collect()
+}
+
+/// The values of [`labelled_names`] a neighbouring name part's label backs:
+/// another labelled value on the same line or the line just before or after
+/// that `named` judges a name by itself ("Given name: Edda" above "Surname:
+/// Trustee"). A lone value ("Full name: Claimant") or one beside only role
+/// words has none.
+pub fn backed_labelled_names(
+    source: &str,
+    named: &dyn Fn(Range<usize>) -> bool,
+) -> Vec<Range<usize>> {
+    let values = labelled_values(source);
+    let names: Vec<bool> = values
+        .iter()
+        .map(|(_, range)| named(range.clone()))
+        .collect();
+    values
+        .iter()
+        .enumerate()
+        .filter(|&(i, (line, _))| {
+            values
+                .iter()
+                .enumerate()
+                .any(|(j, (other, _))| j != i && names[j] && line.abs_diff(*other) <= 1)
+        })
+        .map(|(_, (_, range))| range.clone())
+        .collect()
+}
+
+/// [`labelled_names`] with the index of each value's line.
+fn labelled_values(source: &str) -> Vec<(usize, Range<usize>)> {
     let mut out = Vec::new();
     let mut at = 0;
     let mut in_fence: Option<&str> = None;
-    for raw in source.split_inclusive('\n') {
+    for (number, raw) in source.split_inclusive('\n').enumerate() {
         let start = at;
         at += raw.len();
         let line = raw.trim_end_matches(['\r', '\n']);
@@ -250,7 +285,7 @@ pub fn labelled_names(source: &str) -> Vec<Range<usize>> {
             let lower = header_name(text);
             if name_like(text) && !NOT_NAMES.contains(&lower.as_str()) && !name_header(text) {
                 let from = start + label.value_start;
-                out.push(from + value.start..from + value.end);
+                out.push((number, from + value.start..from + value.end));
             }
         }
     }
@@ -562,5 +597,36 @@ mod tests {
             labelled("~~~\nSurname: A\n~~~\nSurname: Lanmark\n"),
             ["Lanmark"]
         );
+    }
+
+    /// #601: a value is backed by another labelled name on its line or the
+    /// line next to it, never by itself or a role word.
+    #[test]
+    fn labelled_values_backed_by_a_neighbour() {
+        let backed = |source: &str| -> Vec<String> {
+            let named = |range: Range<usize>| {
+                !["Trustee", "Claimant", "Defendant", "Истец"].contains(&&source[range])
+            };
+            backed_labelled_names(source, &named)
+                .into_iter()
+                .map(|range| source[range].to_owned())
+                .collect()
+        };
+        assert_eq!(backed("Given name: Edda\nSurname: Trustee\n"), ["Trustee"]);
+        assert_eq!(backed("Given name: Edda  Surname: Trustee\n"), ["Trustee"]);
+        assert_eq!(
+            backed("Given name: Edda\nMiddle name: Ivo\nSurname: Trustee\n"),
+            ["Edda", "Ivo", "Trustee"]
+        );
+        // A role word backs nothing, a value never backs itself, and a
+        // blank line parts two labels.
+        for source in [
+            "Surname: Trustee\n",
+            "Фамилия: Истец\n",
+            "Full name: Claimant\nFull name: Defendant\n",
+            "Given name: Edda\n\nSurname: Trustee\n",
+        ] {
+            assert!(backed(source).is_empty(), "{source}");
+        }
     }
 }
