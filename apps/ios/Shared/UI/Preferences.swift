@@ -17,7 +17,7 @@ final class Preferences: @unchecked Sendable {
         case haptics
         case swipeLearned = "hint.swipe.learned"
         case longPressLearned = "hint.longPress.learned"
-        /// Identities' "Drag a name onto another" (ADR 0106).
+        /// Identities' "In Select, drag ≡ onto a name" (ADR 0106).
         case dragMergeLearned = "hint.dragMerge.learned"
         case grabberBounced = "hint.grabber.bounced"
         case nudged = "reviewNudged"

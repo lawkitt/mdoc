@@ -92,6 +92,12 @@ struct IdentitiesView: View {
         }
         .animation(Motion.snappy, value: selecting)
         .animation(Motion.snappy, value: searching)
+        // The handles drag only in Select; leaving it ends a drag.
+        .onChange(of: selecting, initial: true) { _, now in
+            dragTracking.active = now
+            if !now { endDrag() }
+        }
+        .onDisappear { forgetDrag() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("identities-panel")
     }

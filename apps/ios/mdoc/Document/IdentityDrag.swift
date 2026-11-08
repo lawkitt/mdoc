@@ -81,6 +81,8 @@ final class IdentityDragTracking {
     var list: CGRect = .zero
     /// The top of the selection bar over the list's bottom, while it shows.
     var barTop: CGFloat?
+    /// In Select: only then does a touch on a handle's place start a drag.
+    var active = false
     let autoScroll = IdentityAutoScroll()
     private(set) lazy var recognizer = HandleDragRecognizer(tracking: self)
 
@@ -90,9 +92,9 @@ final class IdentityDragTracking {
         return CGRect(x: list.minX, y: list.minY, width: list.width, height: max(0, barTop - list.minY))
     }
 
-    /// The name whose ≡ handle is at `point`.
+    /// The name whose ≡ handle is at `point`, in Select.
     func handle(at point: CGPoint) -> IdentityID? {
-        guard visible.contains(point) else { return nil }
+        guard active, visible.contains(point) else { return nil }
         return handles.first { $0.value.contains(point) }?.key
     }
 }
@@ -130,8 +132,9 @@ final class IdentityAutoScroll: NSObject {
             scrollView.contentOffset.y, by: speed * CGFloat(link.timestamp - last),
             lowest: -inset.top,
             highest: scrollView.contentSize.height + inset.bottom - scrollView.bounds.height)
-        guard y != scrollView.contentOffset.y else { return }
-        scrollView.contentOffset.y = y
+        if y != scrollView.contentOffset.y { scrollView.contentOffset.y = y }
+        // Every frame, even at the content's end: the rows report their
+        // new frames a frame late, and the target follows them.
         onScroll()
     }
 }
@@ -155,7 +158,8 @@ enum HandleDragEvent {
 @MainActor
 final class HandleDragRecognizer: NSObject, UIGestureRecognizerDelegate {
     var onEvent: (HandleDragEvent) -> Void = { _ in }
-    private let tracking: IdentityDragTracking
+    /// Weak: the tracking holds this.
+    private weak var tracking: IdentityDragTracking?
     private let recognizer = UILongPressGestureRecognizer()
     /// The handle the finger went down on, and where.
     private var started: (id: IdentityID, at: CGPoint)?
@@ -174,13 +178,13 @@ final class HandleDragRecognizer: NSObject, UIGestureRecognizerDelegate {
         guard recognizer.view !== scrollView else { return }
         recognizer.view?.removeGestureRecognizer(recognizer)
         scrollView.addGestureRecognizer(recognizer)
-        tracking.autoScroll.scrollView = scrollView
+        tracking?.autoScroll.scrollView = scrollView
     }
 
     func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         // SwiftUI's global points are the window's.
         let point = touch.location(in: nil)
-        started = tracking.handle(at: point).map { ($0, point) }
+        started = tracking?.handle(at: point).map { ($0, point) }
         return started != nil
     }
 
@@ -188,8 +192,8 @@ final class HandleDragRecognizer: NSObject, UIGestureRecognizerDelegate {
         let point = recognizer.location(in: nil)
         switch recognizer.state {
         case .began:
-            // From where the finger went down: iOS begins the press once
-            // the finger has moved a little.
+            // From where the finger went down: on the Simulator iOS
+            // begins the press only once the finger moves.
             guard let started else { return }
             onEvent(.began(started.id, started.at))
             onEvent(.moved(point))

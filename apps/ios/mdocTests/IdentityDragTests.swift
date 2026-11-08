@@ -79,11 +79,14 @@ final class IdentityDragTests: XCTestCase {
     }
 
     /// The selection bar covers the list's bottom: no handle or name under
-    /// it, and the list scrolls at its top.
+    /// it, and the list scrolls at its top. Outside Select no touch is a
+    /// handle's, even where one was.
     func testTheSelectionBarHidesTheListsBottom() {
         let tracking = IdentityDragTracking()
         tracking.list = list
         tracking.handles = [b: CGRect(x: 350, y: 274, width: 44, height: 44)]
+        XCTAssertNil(tracking.handle(at: CGPoint(x: 370, y: 296)), "outside Select")
+        tracking.active = true
         XCTAssertEqual(tracking.visible, list)
         XCTAssertEqual(tracking.handle(at: CGPoint(x: 370, y: 296)), b)
         XCTAssertNil(tracking.handle(at: CGPoint(x: 200, y: 296)), "the row, not its handle")

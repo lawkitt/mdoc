@@ -101,6 +101,7 @@ extension IdentitiesView {
             slideBack()
             return
         }
+        dragTracking.autoScroll.onScroll = {}
         withAnimation(Motion.move(reduced: reduceMotion)) {
             model.dragMerge(current.dragged, into: target)
             selection.remove(current.dragged)
@@ -109,14 +110,14 @@ extension IdentitiesView {
     }
 
     /// The copy slides back onto its row, where the row is now (the list may
-    /// have scrolled), then goes; under Reduce Motion it fades where it is.
+    /// have scrolled), then goes; it fades where it is under Reduce Motion,
+    /// or when its row has scrolled out of view.
     private func slideBack() {
         guard var current = drag else { return }
-        guard !reduceMotion else {
-            withAnimation(Motion.fade) { drag = nil }
+        guard !reduceMotion, let now = dragTracking.rows[current.dragged] else {
+            endDrag()
             return
         }
-        let now = dragTracking.rows[current.dragged] ?? current.frame
         current.target = nil
         current.returning = true
         current.location.y = current.start.y + (now.minY - current.frame.minY)
@@ -126,6 +127,20 @@ extension IdentitiesView {
         } completion: {
             if drag == returning { drag = nil }
         }
+    }
+
+    /// Select ended, or the panel went: no drag, and nothing of the view
+    /// left in the tracking's closures (they would hold the document).
+    func endDrag() {
+        dragTracking.autoScroll.speed = 0
+        dragTracking.autoScroll.onScroll = {}
+        if drag != nil { withAnimation(Motion.fade) { drag = nil } }
+    }
+
+    /// The panel went: the recognizer lets go of the view too.
+    func forgetDrag() {
+        endDrag()
+        dragTracking.recognizer.onEvent = { _ in }
     }
 }
 

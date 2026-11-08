@@ -88,7 +88,7 @@ extension DocumentViewModel {
         link(dragged, into: target) { from, into in String(localized: "\(from.alias) is now \(into.alias)") }
     }
 
-    /// Identities' hint line, "Drag a name onto another to make them one":
+    /// Identities' hint line, "In Select, drag ≡ onto a name to make them one":
     /// while Looks like has a card or two names share a category, until the
     /// first drag-merge or Same as (ADR 0106).
     var showsDragMergeHint: Bool {

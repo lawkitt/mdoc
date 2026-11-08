@@ -5,15 +5,16 @@ import XCTest
 /// its content; the drawer moves only from its sliver or its inner edge.
 /// In Identities, swipe right is Replace (a full swipe too); swipe left
 /// shows Same as… and Keep, and a long swipe left keeps nothing. iPhone
-/// only: on iPad Identities and the sidebar stand beside the text.
+/// only: on iPad Identities and the sidebar stand beside the text. Drag-to-
+/// merge runs on both.
 final class IdentitiesGesturesUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
     @MainActor
-    private func openDocument(slowToasts: Bool = false) throws -> XCUIApplication {
-        guard UIDevice.current.userInterfaceIdiom == .phone else {
+    private func openDocument(slowToasts: Bool = false, phoneOnly: Bool = true) throws -> XCUIApplication {
+        guard !phoneOnly || UIDevice.current.userInterfaceIdiom == .phone else {
             throw XCTSkip("the drawers are iPhone's")
         }
         let app = MdocUITest.launch(slowToasts: slowToasts)
@@ -150,11 +151,11 @@ final class IdentitiesGesturesUITests: XCTestCase {
     /// Drag-to-merge (ADR 0106): in Select, a row's ≡ handle drags it onto
     /// another name and the two become one, under the target's alias, with
     /// the selection kept; letting go over the row itself does nothing; one
-    /// Undo brings both back.
+    /// Undo brings both back. On iPad, in Identities beside the text.
     @MainActor
     func testDraggingAHandleOntoAnotherNameMakesThemOne() throws {
         // The agreement's email, and its surname marked from Find: two names.
-        let app = try openDocument(slowToasts: true)
+        let app = try openDocument(slowToasts: true, phoneOnly: false)
         app.buttons["document-menu"].tap()
         app.buttons["find-in-document"].tap()
         let field = app.searchFields.firstMatch
@@ -218,8 +219,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
         let undo = app.buttons["toast-action"].firstMatch
         XCTAssertTrue(undo.waitForExistence(timeout: 5), "the Undo toast")
         XCTAssertTrue(app.staticTexts["\(dragged.alias) is now \(target.alias)"].exists)
-        XCTAssertTrue(rows.element(boundBy: count - 2).waitForExistence(timeout: 5))
-        XCTAssertEqual(rows.count, count - 1, "one name fewer")
+        XCTAssertTrue(MdocUITest.wait(timeout: 5) { rows.count == count - 1 }, "one name fewer")
         let merged = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'identity-row' AND label CONTAINS %@ AND label CONTAINS %@",
             ", \(target.alias),", dragged.name)).firstMatch
@@ -231,8 +231,7 @@ final class IdentitiesGesturesUITests: XCTestCase {
 
         // Undo: both again.
         undo.tap()
-        XCTAssertTrue(rows.element(boundBy: count - 1).waitForExistence(timeout: 5))
-        XCTAssertEqual(rows.count, count, "Undo brings both back")
+        XCTAssertTrue(MdocUITest.wait(timeout: 5) { rows.count == count }, "Undo brings both back")
         XCTAssertTrue(row(dragged.name).label.contains(", \(dragged.alias),"))
         XCTAssertTrue(row(target.name).label.contains(", \(target.alias),"))
     }
