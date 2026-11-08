@@ -936,6 +936,37 @@ between = '[\p{Zs}\t:*_.,|]{0,10}(?:\r?\n[\p{Zs}\t|]*)?'
 value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\p{Zs}?г\.)?|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?\p{Zs}+\p{Alphabetic}+\p{Zs}+\d{4}(?:\p{Zs}*(?:г\.|года))?'
 only_guessed = ["DATE"]
 
+# A date before "года рождения" or "г.р." is a date of birth too, as
+# arbitration acts give a party's (#363): "Иванов И. И., 01.01.1980 года
+# рождения", "14 марта 1988 г.р.", "01.01.1980 г. р.". The "года" or "г."
+# belongs to the label, outside the span. A year alone ("1980 г.р.") is no
+# date, as the DATE guesses say, and stays. Only spaces on the date's line
+# sit between it and the label (unspaced, "01.01.1980г.р." is one word to
+# the review, which finds no date inside a word); a date may wrap at one
+# line break between its words. The label is lowercase, so "г." then an
+# initial is a date and a name ("от 12.03.2026 г. Р.А. Иванову",
+# "01.02.2020 Г.Р. Петровой").
+[[context]]
+category = "DATE"
+labels = ["года рождения", "г. рождения", "г.рождения"]
+after = true
+between = '[\p{Zs}\t]+'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+only_guessed = ["DATE"]
+
+# The same dates before "г.р." or "г. р." (#363), as above, the closing dot
+# written and a space, a comma, a bracket or the line's end after it: "р/с"
+# after "г." is an account ("оплачено 01.02.2020 г. р/с 4070…"), and an
+# initial's dot runs on into the name ("г. р.А. Иванову").
+[[context]]
+category = "DATE"
+labels = ["г.р", "г. р"]
+after = true
+between = '[\p{Zs}\t]+'
+follow = '\.(?:$|[\p{Zs}\t\r\n,;)\]»"])'
+value = '\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}|[«"]?\d{1,2}[»"]?(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\p{Alphabetic}+(?:[\p{Zs}\t]+|[\p{Zs}\t]*\r?\n[\p{Zs}\t]*)\d{4}'
+only_guessed = ["DATE"]
+
 # Russian courts, public bodies, laws and legal databases are never web
 # addresses to replace (ADR 0094, guide rule 8): "kad.arbitr.ru/Card/…",
 # "http://pravo.gov.ru/proxy/ips/?docbody=…", "www.consultant.ru/document/…",
