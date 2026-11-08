@@ -148,9 +148,13 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 ## Rules
 
 - **Rust owns state.** View models keep the snapshots the core returns and
-  view state only; every change is a core call, and a document saves into
-  its case after each one. `CoreFactory` opens `RealCore` for the app and
-  the extension.
+  view state only; every change is a core call. A review tap returns at
+  once and its change saves into the case right after, on a utility queue,
+  once the taps pause (`SaveScheduler`, the core's `save_pending`), or at
+  once when mdoc leaves the foreground, before Copy for AI and Share, and
+  when the document is left for another screen
+  ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)). `CoreFactory`
+  opens `RealCore` for the app and the extension.
 - **Tests run the real core** ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)):
   over temporary storage with a fixed case key, below the detector floor so
   no model is needed, the fixture's names proposed as Try a sample proposes
@@ -178,7 +182,8 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 - **A job that ends while the phone is locked** cannot write the library
   (Data Protection Complete). Its result stays in the session and is saved
   when the phone unlocks or mdoc comes back (`ProtectedData`,
-  `Library.saveDeferred`).
+  `Library.saveDeferred`), as is a tap's change whose save comes after the
+  lock.
 - **Locking the phone pauses a job.** Leaving mdoc does not: the continued
   processing task keeps Find names going (on the iPhone 17 Pro, 4% to 69%
   in 45 s away, which `DeviceLongJobsUITests` checks). With the phone

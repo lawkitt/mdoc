@@ -193,9 +193,12 @@ final class RealCoreTests: XCTestCase {
     }
 
     func testReopenedLibraryKeepsTheDocumentAndCase() throws {
-        let session = try reviewed(core())
+        let core = try core()
+        let session = try reviewed(core)
         _ = try session.replaceAllPending()
-        let reopened = try core().library.snapshot()
+        // Saved once mdoc leaves the foreground, if not before.
+        try core.library.saveChanges()
+        let reopened = try self.core().library.snapshot()
         XCTAssertEqual(reopened.documents.count, 1)
         XCTAssertEqual(reopened.documents.first?.phase, .ready)
         XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
@@ -354,6 +357,8 @@ final class RealCoreTests: XCTestCase {
         }
 
         try core.library.renameCase(try XCTUnwrap(renamed.cases.first?.id), to: "Ellison")
+        // Replace all is saved once mdoc leaves the foreground, if not before.
+        try core.library.saveChanges()
         let reopened = try self.core().library.snapshot()
         XCTAssertEqual(reopened.documents.map(\.title), ["Services: final"])
         XCTAssertEqual(reopened.documents.first?.phase, .ready)

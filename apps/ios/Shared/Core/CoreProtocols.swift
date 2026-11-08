@@ -33,6 +33,12 @@ protocol Library: AnyObject, Sendable {
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
+    /// Saves now what review taps left for their save (ADR 0104: the save
+    /// follows the tap), in every document: mdoc leaves the foreground.
+    func saveChanges() throws
+    /// Tells `observer`, on the main thread, how each save that follows
+    /// taps went.
+    func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void)
     /// Rename: the document's title, as typed (its file follows, numbered
     /// when another document has the title). A case holding only this
     /// document and named after it is renamed with it. Refused for a blank
@@ -56,8 +62,19 @@ protocol Library: AnyObject, Sendable {
     func undoMove(_ move: CaseMove) throws -> CaseMove
 }
 
+/// How a save that followed review taps went (`Library.observeSaves`).
+enum SaveEvent: Sendable {
+    /// Saved. `rejoined`: another document changed the case meanwhile, and
+    /// joining it again may have renumbered this one's aliases.
+    case saved(DocumentID, rejoined: Bool)
+    /// Not saved, and still to save.
+    case failed(DocumentID, CoreError)
+}
+
 extension Library {
     func saveDeferred() throws -> [DocumentID] { [] }
+    func saveChanges() throws {}
+    func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
     func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
     func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
@@ -76,8 +93,13 @@ protocol DocumentSession: AnyObject, Sendable {
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
     /// Copy for AI's text, through the same export path as desktop. The core
-    /// refuses while proposals are pending. Records the document as shared last.
+    /// refuses while proposals are pending. Records the document as shared
+    /// last. Saves the document first, so the case the Restore extension
+    /// reads has every alias the text has.
     func copyForAI() throws -> HandOff
+    /// Saves now what review taps left for their save (ADR 0104): before
+    /// the document is left for another, or mdoc leaves the foreground.
+    func saveChanges() throws
     /// Restores `reply` with this document's case and keeps it as the
     /// document's reply.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot
@@ -87,7 +109,9 @@ protocol DocumentSession: AnyObject, Sendable {
     //
     // Each change below, and `decide`, `replaceAllPending` and the marks, is
     // one undo step, held in memory while the session lives (256 steps).
-    // Copy for AI, Restore reply and Clear reply are not steps.
+    // Copy for AI, Restore reply and Clear reply are not steps. Each returns
+    // at once; its change is saved shortly after, on a utility queue,
+    // several taps in one save (ADR 0104).
 
     /// Undoes the last step. The snapshot's `redoStep` names what it undid
     /// and where, for the toast and to move the bar back.

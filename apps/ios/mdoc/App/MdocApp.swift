@@ -28,6 +28,12 @@ struct MdocApp: App {
                 .onChange(of: theme, initial: true) { theme.apply() }
         }
         .onChange(of: scenePhase) { _, phase in
+            // What the taps changed is saved before mdoc may be stopped: the
+            // app switcher (inactive) can end it without a background phase
+            // (ADR 0104).
+            if phase != .active {
+                app.saveChanges()
+            }
             // A Delete waiting on its toast happens before mdoc goes (Q17).
             if phase == .background {
                 app.leftForeground()

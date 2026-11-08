@@ -156,6 +156,11 @@ final class RealLibrary: Library, @unchecked Sendable {
     private let pending: PendingImports
     /// Saves that wait for the phone to unlock, by document.
     private var unsaved: [DocumentID: () throws -> Void] = [:]
+    /// Where the saves that follow taps run (ADR 0104).
+    fileprivate let saveQueue = DispatchQueue(label: "io.github.lawkitt.mdoc.save", qos: .utility)
+    /// How long taps pause before their save; the tests shorten it.
+    var savePause = SaveScheduler.pause
+    private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
         self.storage = storage
@@ -263,6 +268,7 @@ final class RealLibrary: Library, @unchecked Sendable {
             try core { try ffi.discardImport(source: source.path) }
         }
         lock.withLock { _ = sessions.removeValue(forKey: document) }
+        session?.cancelScheduledSave()
         pending.remove(document)
     }
 
@@ -307,6 +313,9 @@ final class RealLibrary: Library, @unchecked Sendable {
         guard let path = session.path else {
             throw CoreError.refused(String(localized: "Move the document once it is read."))
         }
+        // The move rewrites the file and the session opens it again: what
+        // the taps changed is in the file first.
+        try session.saveChanges()
         let moved = try core { try call(path) }
         // Its text and case changed on disk: the session opens it again.
         let original = originals.original(for: path)
@@ -332,9 +341,45 @@ final class RealLibrary: Library, @unchecked Sendable {
         try core { try ffi.saveReply(caseId: caseID, document: path, reply: reply) }
     }
 
-    /// OCR began on an import: once stopped, it resumes with the pages left.
-    fileprivate func saveOnUnlock(_ id: DocumentID, _ save: @escaping () throws -> Void) {
-        lock.withLock { unsaved[id] = save }
+    /// A save that waits for the phone to unlock. A job's save replaces
+    /// what waited for the document before it (it saves the taps' changes
+    /// too); the taps' save never replaces a job's, which may join the case
+    /// first.
+    fileprivate func saveOnUnlock(_ id: DocumentID, replacing: Bool = true, _ save: @escaping () throws -> Void) {
+        lock.withLock {
+            if replacing || unsaved[id] == nil {
+                unsaved[id] = save
+            }
+        }
+    }
+
+    /// Every document's taps saved now; the first failure is thrown once
+    /// all were tried.
+    func saveChanges() throws {
+        let open = lock.withLock { Array(sessions.values) }
+        var failure: (any Error)?
+        for session in open {
+            do {
+                try session.saveChanges()
+            } catch {
+                failure = failure ?? error
+            }
+        }
+        if let failure {
+            throw failure
+        }
+    }
+
+    func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {
+        lock.withLock { saveObserver = observer }
+    }
+
+    /// Tells the app how a save that followed taps went.
+    fileprivate func report(_ event: SaveEvent) {
+        guard let observer = lock.withLock({ saveObserver }) else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { observer(event) }
+        }
     }
 
     func saveDeferred() throws -> [DocumentID] {
@@ -450,6 +495,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     /// The Markdown styling of the text with this revision: a snapshot whose
     /// `text_revision` is the same reuses it instead of parsing again.
     private var styled: (revision: UInt64, styling: MarkdownStyling)?
+    /// The save that follows taps (ADR 0104).
+    private let saver: SaveScheduler
 
     fileprivate init(
         id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
@@ -460,6 +507,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         self.source = source
         chosen = (title, caseID)
         self.ocrStarted = ocrStarted
+        saver = SaveScheduler(queue: library.saveQueue)
         if let source {
             kind = source.kind
             original = source.original
@@ -695,9 +743,11 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     /// The core refuses while proposals are pending, and makes the
-    /// document's case the current one.
+    /// document's case the current one. Saved first: a reply pasted into
+    /// the Restore extension restores with the case as saved.
     func copyForAI() throws -> HandOff {
-        try core { try ffi.handOff(library: library.ffi) }
+        try saveChanges()
+        return try core { try ffi.handOff(library: library.ffi) }
     }
 
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
@@ -785,18 +835,63 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     /// A review tap in one core call (ADR 0104): the action by mention or
-    /// identity id, saved into the library and its case when it changed
-    /// something, and the snapshot after it, as a case member autosaves on
-    /// desktop.
+    /// identity id, and the snapshot after it. The change is saved into
+    /// the library and its case right after, off the main thread, as a
+    /// case member autosaves on desktop.
     private func review(_ action: ReviewAction) throws -> DocumentSnapshot {
         reopenIfPending()
+        defer { scheduleSave() }
+        return try tap(action)
+    }
+
+    /// The tap itself, as the "Review tap" signpost times it.
+    private func tap(_ action: ReviewAction) throws -> DocumentSnapshot {
         let interval = reviewSignposter.beginInterval("Review tap", id: reviewSignposter.makeSignpostID())
         defer { reviewSignposter.endInterval("Review tap", interval) }
-        let review = try core { try ffi.review(action: action, library: library.ffi) }
-        let path = ffi.info()?.path
+        let review = try core { try ffi.review(action: action, library: nil) }
+        return snapshot(of: review, path: ffi.info()?.path)
+    }
+
+    /// The taps' save, once they pause (`SaveScheduler`). Told to the app:
+    /// a failure shows as "could not save this change" and stays to save.
+    private func scheduleSave() {
+        saver.schedule(pause: library.savePause) { [weak self] in
+            guard let self else { return }
+            do {
+                try saveChanges()
+            } catch {
+                library.report(.failed(id, CoreError(error)))
+            }
+        }
+    }
+
+    /// What the taps changed, saved now. While the phone is locked the
+    /// library's files are unwritable: it saves once the phone unlocks.
+    func saveChanges() throws {
+        saver.cancel()
+        do {
+            try savePendingNow()
+        } catch {
+            guard !ProtectedData.isAvailable else { throw error }
+            library.saveOnUnlock(id, replacing: false) { [self] in try savePendingNow() }
+            // The phone may have unlocked since the check, its save already
+            // run with nothing queued: then this one saves now.
+            if ProtectedData.isAvailable {
+                _ = try? library.saveDeferred()
+            }
+        }
+    }
+
+    private func savePendingNow() throws {
+        guard let saved = try core({ try ffi.savePending(library: library.ffi) }) else { return }
         // A first save (one a locked phone held back) records the file.
-        if let path { recordSaved(path: path) }
-        return snapshot(of: review, path: path)
+        recordSaved(path: saved.path)
+        library.report(.saved(id, rejoined: saved.rejoined))
+    }
+
+    /// The document went: its scheduled save must not write it again.
+    fileprivate func cancelScheduledSave() {
+        saver.cancel()
     }
 
     private func save() throws {
