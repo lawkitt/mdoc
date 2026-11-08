@@ -1,0 +1,12 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":199,"end":210,"label":"person","score":0.9953544,"text":"Edda Hollin"},
+    {"start":273,"end":286,"label":"person","score":0.992062,"text":"Ivo D. Penrow"},
+    {"start":139,"end":153,"label":"person","score":0.98609793,"text":"DORIAN P. WELK"},
+    {"start":181,"end":194,"label":"person","score":0.98282325,"text":"Jorin Brindle"},
+    {"start":119,"end":134,"label":"person","score":0.9552357,"text":"Judge K Ashdale"},
+    {"start":298,"end":306,"label":"organization","score":0.8350805,"text":"Congress"}
+  ]
+}
