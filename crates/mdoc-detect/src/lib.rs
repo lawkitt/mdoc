@@ -620,6 +620,51 @@ fn to_source(
     raw
 }
 
+/// The model's organizations that are bare initials a column, a reference
+/// line or an "initials" label places as a known person's
+/// ([`mdoc_pii::placed_initials`]) are that person: "| ЯВР |" under
+/// "Исполнитель" beside «Яков Викторович Ростов» (guide rule 1, #387).
+/// Not where the document names an organization so: another of the model's
+/// organizations holds the word («ООО «ЯВР»»), or it is quoted.
+fn initials_are_people(source: &str, detections: &mut [Detection]) {
+    let organizations = || {
+        detections
+            .iter()
+            .filter(|d| d.category == Category::Organization)
+    };
+    if organizations().next().is_none() {
+        return;
+    }
+    let people: Vec<&str> = detections
+        .iter()
+        .filter(|d| d.category == Category::Person)
+        .map(|d| &source[d.range.clone()])
+        .collect();
+    let placed = mdoc_pii::placed_initials(source, &people);
+    if placed.is_empty() {
+        return;
+    }
+    let named: Vec<&str> = organizations()
+        .filter(|d| !placed.contains(&d.range))
+        .map(|d| &source[d.range.clone()])
+        .collect();
+    for detection in detections.iter_mut() {
+        let token = &source[detection.range.clone()];
+        let organization = named.iter().any(|name| {
+            name.split(|c: char| !c.is_alphanumeric())
+                .any(|word| word == token)
+        }) || ["«{}»", "\"{}\"", "“{}”"]
+            .iter()
+            .any(|quoted| source.contains(&quoted.replace("{}", token)));
+        if detection.category == Category::Organization
+            && placed.contains(&detection.range)
+            && !organization
+        {
+            detection.category = Category::Person;
+        }
+    }
+}
+
 /// The correction stage (ADR 0092): the model's raw entities through the
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
@@ -678,6 +723,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 })
         })
         .collect();
+    initials_are_people(source, &mut detections);
     // A cell under a name part's header, or a value after a name part's
     // label (#397): before the span fixes, so their filters judge it as
     // they judge the model's names.
@@ -1967,6 +2013,90 @@ mod tests {
     /// religions, group nouns, nationalities and a place's second word are
     /// no one; a person named by such a word keeps it beside a title or
     /// their full name.
+    /// #387: the model's organization "ЯВР" in a column of a known
+    /// person's initials is that person; the same letters a company's own
+    /// name, or outside a placed position, stay as the model read them.
+    #[test]
+    fn placed_initials_the_model_took_for_a_company_are_the_person() {
+        let shown = |source: &str, model: &[(&str, &str, usize)]| -> Vec<(String, String)> {
+            let raw: Vec<RawEntity> = model
+                .iter()
+                .map(|(text, label, nth)| {
+                    let start = source.match_indices(text).nth(*nth).unwrap().0;
+                    RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.9,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (span.category, source[span.range].to_owned()))
+                .collect()
+        };
+        let pairs = |items: &[(&str, &str)]| -> Vec<(String, String)> {
+            items
+                .iter()
+                .map(|(c, t)| ((*c).to_owned(), (*t).to_owned()))
+                .collect()
+        };
+        let table = "Ответственный исполнитель: Яков Викторович Ростов.\n\n\
+            | Этап | Исполнитель |\n|---|---|\n| 1 | ЯВР |\n| 2 | ЯВР |\n";
+        let name = ("Яков Викторович Ростов", "person", 0);
+        assert_eq!(
+            shown(
+                table,
+                &[name, ("ЯВР", "organization", 0), ("ЯВР", "organization", 1)]
+            ),
+            pairs(&[
+                ("PERSON", "Яков Викторович Ростов"),
+                ("PERSON", "ЯВР"),
+                ("PERSON", "ЯВР")
+            ])
+        );
+        // A company of that name in the document keeps the letters its own.
+        let company = format!("{table}\nПодрядчик: ООО «ЯВР».\n");
+        assert_eq!(
+            shown(
+                &company,
+                &[
+                    name,
+                    ("ЯВР", "organization", 0),
+                    ("ЯВР", "organization", 1),
+                    ("ООО «ЯВР»", "organization", 0)
+                ]
+            ),
+            pairs(&[
+                ("PERSON", "Яков Викторович Ростов"),
+                ("ORG", "ЯВР"),
+                ("ORG", "ЯВР"),
+                ("ORG", "ООО «ЯВР»")
+            ])
+        );
+        // Outside a placed position, or with no person they spell.
+        let prose = "Исполнитель Яков Викторович Ростов передал отчёт ЯВР заказчику.";
+        assert_eq!(
+            shown(prose, &[name, ("ЯВР", "organization", 0)]),
+            pairs(&[("PERSON", "Яков Викторович Ростов"), ("ORG", "ЯВР")])
+        );
+        let nobody = "Исполнитель: Ольга Ивановна Белова.\n\n\
+            | Этап | Исполнитель |\n|---|---|\n| 1 | ЯВР |\n";
+        assert_eq!(
+            shown(
+                nobody,
+                &[
+                    ("Ольга Ивановна Белова", "person", 0),
+                    ("ЯВР", "organization", 0)
+                ]
+            ),
+            pairs(&[("PERSON", "Ольга Ивановна Белова"), ("ORG", "ЯВР")])
+        );
+    }
+
     #[test]
     fn correction_drops_common_words_and_keeps_people_named_so() {
         let source = "He appeals. In this case the Tribunal accepted his Christian faith, \
