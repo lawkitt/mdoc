@@ -510,6 +510,10 @@ Android takes what applies. Its clipboard finding is
 - **[Mobile] To grill: quick actions.** Home Screen quick actions Scan,
   Paste, Paste reply (tips and haptics are built). *From the 2026-10-31
   mobile UX ideas.*
+- **[Desktop] To grill: an ink accent.** iOS moved from the teal to ink
+  (ADR 0099 as amended 2026-11-08); desktop's focus rings, toggles and
+  selection need their own look before it follows. *From the 2026-11-08
+  [gestures grill](docs/design/ios-identities-gestures-grill-2026-11-08.md) Q9.*
 - **[Mobile] To grill: kept names before sharing.** One line above Copy
   for AI, "Sharing with 2 names kept as they are: …", listing them on a tap,
   so an unmeant Keep shows at the step that can't be undone. *From the
