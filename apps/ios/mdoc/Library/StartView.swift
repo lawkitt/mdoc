@@ -98,6 +98,7 @@ struct AddSection: View {
                     app.trySample()
                 }
                 .font(Typography.chip)
+                .textAction()
                 .frame(minHeight: Size.target)
                 .accessibilityIdentifier("try-sample")
             }

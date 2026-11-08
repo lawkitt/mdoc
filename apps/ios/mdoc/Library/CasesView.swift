@@ -51,7 +51,7 @@ struct CasesView: View {
                 }
                 .swipeActions {
                     Button("Rename") { app.navigator.present(.renameCase(summary.id)) }
-                        .tint(Palette.accent)
+                        .tint(Palette.swipeAccent)
                 }
                 .accessibilityAction(named: Text("Rename")) { app.navigator.present(.renameCase(summary.id)) }
                 .accessibilityIdentifier("case-row")

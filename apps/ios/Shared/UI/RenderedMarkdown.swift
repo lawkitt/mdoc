@@ -14,6 +14,9 @@ extension NSAttributedString.Key {
     static let mdocHidden = NSAttributedString.Key("io.github.lawkitt.mdoc.hidden")
     /// What a rendered line draws beside or behind its text.
     static let mdocDecoration = NSAttributedString.Key("io.github.lawkitt.mdoc.decoration")
+    /// A `UIColor` to outline these characters with, a rounded box on each
+    /// line they cover: the name under review (ADR 0099).
+    static let mdocOutline = NSAttributedString.Key("io.github.lawkitt.mdoc.outline")
 }
 
 extension NSAttributedString {
@@ -86,7 +89,7 @@ final class LineDecoration: NSObject {
     /// A list bullet or number, drawn where the hidden marker was.
     var label: (text: NSAttributedString, x: CGFloat)?
     /// A task box.
-    var task: (checked: Bool, x: CGFloat, size: CGFloat, stroke: UIColor, fill: UIColor)?
+    var task: (checked: Bool, x: CGFloat, size: CGFloat, stroke: UIColor, fill: UIColor, tick: UIColor)?
     /// A quote's or alert's bar on the left.
     var bar: (x: CGFloat, width: CGFloat, color: UIColor)?
     /// A card behind the line, rounded at the card's first and last lines.
@@ -434,7 +437,7 @@ struct BlockLayout {
                 let marker = resolved(.secondaryLabel)
                 if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
-                    decoration.task = (checked, x, size, marker, resolved(.tintColor))
+                    decoration.task = (checked, x, size, marker, resolved(.tintColor), resolved(.onAccent))
                     column = size + 8 * scale
                 } else {
                     let label = NSAttributedString(string: item.label, attributes: [.font: body, .foregroundColor: marker])
@@ -590,17 +593,40 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
         textLayoutManager?.textContainer?.size.width ?? layoutFragmentFrame.width
     }
 
+    /// The paragraph's outlined stretches (`mdocOutline`), paragraph-relative.
+    private var outlines: [(range: NSRange, colour: UIColor)] {
+        guard let paragraph = textElement as? NSTextParagraph else { return [] }
+        let string = paragraph.attributedString
+        var found: [(range: NSRange, colour: UIColor)] = []
+        string.enumerateAttribute(.mdocOutline, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+            if let colour = value as? UIColor { found.append((range, colour)) }
+        }
+        return found
+    }
+
+    /// How far an outline stands off its characters, and its line.
+    private static let outlineOutset = CGSize(width: 2, height: 1)
+    private static let outlineWidth: CGFloat = 1.5
+
     override var renderingSurfaceBounds: CGRect {
-        guard decoration != nil else { return super.renderingSurfaceBounds }
-        let whole = CGRect(x: -layoutFragmentFrame.minX, y: 0, width: containerWidth, height: layoutFragmentFrame.height)
-        return super.renderingSurfaceBounds.union(whole)
+        var bounds = super.renderingSurfaceBounds
+        if decoration != nil {
+            bounds = bounds.union(CGRect(x: -layoutFragmentFrame.minX, y: 0, width: containerWidth, height: layoutFragmentFrame.height))
+        }
+        if !outlines.isEmpty {
+            let margin = Self.outlineOutset.width + Self.outlineWidth
+            bounds = bounds.insetBy(dx: -margin, dy: -margin)
+        }
+        return bounds
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
         guard let decoration else {
             super.draw(at: point, in: context)
+            drawOutlines(at: point, in: context)
             return
         }
+        defer { drawOutlines(at: point, in: context) }
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
         let left = point.x - layoutFragmentFrame.minX
@@ -643,7 +669,7 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
                 tick.addLine(to: CGPoint(x: box.minX + box.width * 0.42, y: box.minY + box.height * 0.70))
                 tick.addLine(to: CGPoint(x: box.minX + box.width * 0.76, y: box.minY + box.height * 0.28))
                 tick.lineWidth = 1.6
-                UIColor.white.setStroke()
+                task.tick.setStroke()
                 tick.stroke()
             } else {
                 task.stroke.setStroke()
@@ -689,6 +715,57 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
             }
             title.text.draw(at: CGPoint(x: x, y: middle - (font?.lineHeight ?? lineHeight) / 2))
         }
+    }
+
+    private func drawOutlines(at point: CGPoint, in context: CGContext) {
+        let boxes = outlineBoxes(at: point)
+        guard !boxes.isEmpty else { return }
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
+        for (box, colour) in boxes {
+            let path = UIBezierPath(roundedRect: box, cornerRadius: 4)
+            path.lineWidth = Self.outlineWidth
+            colour.setStroke()
+            path.stroke()
+        }
+    }
+
+    /// A rounded box around each outlined stretch on each line it covers,
+    /// for a fragment drawn at `point`. Its sides span the stretch's text
+    /// segments on that line, which stay true where the stretch and its
+    /// line run in different directions (a Hebrew name in English text);
+    /// its height is the font's there, from the line's baseline, so a
+    /// heading's name gets a taller box.
+    func outlineBoxes(at point: CGPoint) -> [(box: CGRect, colour: UIColor)] {
+        let outlines = outlines
+        guard !outlines.isEmpty, let layout = textLayoutManager, let content = layout.textContentManager,
+              let start = textElement?.elementRange?.location else { return [] }
+        let origin = CGPoint(x: point.x - layoutFragmentFrame.minX, y: point.y - layoutFragmentFrame.minY)
+        var boxes: [(box: CGRect, colour: UIColor)] = []
+        for outline in outlines {
+            for line in textLineFragments {
+                let part = NSIntersectionRange(outline.range, line.characterRange)
+                guard part.length > 0,
+                      let from = content.location(start, offsetBy: part.location),
+                      let to = content.location(from, offsetBy: part.length),
+                      let range = NSTextRange(location: from, end: to) else { continue }
+                var left = CGFloat.infinity, right = -CGFloat.infinity
+                layout.enumerateTextSegments(in: range, type: .standard, options: [.rangeNotRequired]) { _, frame, _, _ in
+                    left = min(left, frame.minX)
+                    right = max(right, frame.maxX)
+                    return true
+                }
+                guard left < right else { continue }
+                let font = line.attributedString.attribute(.font, at: part.location, effectiveRange: nil) as? UIFont
+                let baseline = point.y + line.typographicBounds.minY + line.glyphOrigin.y
+                let ascender = font?.ascender ?? line.typographicBounds.height * 0.8
+                let descender = font?.descender ?? 0
+                let box = CGRect(x: origin.x + left, y: baseline - ascender, width: right - left, height: ascender - descender)
+                    .insetBy(dx: -Self.outlineOutset.width, dy: -Self.outlineOutset.height)
+                boxes.append((box, outline.colour))
+            }
+        }
+        return boxes
     }
 }
 

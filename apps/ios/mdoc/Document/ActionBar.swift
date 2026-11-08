@@ -76,7 +76,7 @@ struct ActionBar: View {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .accentProminent()
                 .accessibilityLabel(Text("Share reply"))
                 .accessibilityIdentifier("share-reply")
                 Button {
@@ -110,7 +110,7 @@ struct ActionBar: View {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .accentProminent()
                 .contextMenu {
                     Button {
                         model.share(asFile: true)
@@ -168,7 +168,7 @@ struct ActionBar: View {
             Label(title, systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .accentProminent()
         .accessibilityIdentifier("primary-action")
     }
 

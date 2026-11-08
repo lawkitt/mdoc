@@ -96,6 +96,82 @@ final class MarkdownTextViewTests: XCTestCase {
         return snapshot.candidates.map { decoration(of: $0, in: other, offsets: offsets) }
     }
 
+    /// The name under review keeps its category's fill and gets an ink
+    /// outline, black in light mode and white in dark mode, in the text and
+    /// in a table cell; the mentions its scope reaches get none (ADR 0099).
+    func testTheNameUnderReviewIsOutlinedInInk() throws {
+        let harness = try harness()
+        harness.window.overrideUserInterfaceStyle = .light
+        let snapshot = harness.session.snapshot()
+        let mentions = snapshot.candidates.sorted { $0.range.start < $1.range.start }
+        let offsets = TextOffsets(snapshot.markdown)
+        let outline = MarkdownStyler.decorationKeys.firstIndex(of: .mdocOutline)!
+        let fill = MarkdownStyler.decorationKeys.firstIndex(of: .backgroundColor)!
+        func ink(_ style: UIUserInterfaceStyle) -> String {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            UIColor.ink.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return String(format: "%.3f %.3f %.3f %.3f", red, green, blue, alpha)
+        }
+        show(harness, textView(snapshot))
+        let plain = mentions.map { decoration(of: $0, in: harness.view, offsets: offsets) }
+        XCTAssertEqual(plain.map { $0[outline] }, ["none", "none", "none"])
+
+        for (index, selected) in mentions.prefix(2).enumerated() {
+            let others = Set(mentions.map(\.id)).subtracting([selected.id])
+            show(harness, textView(snapshot, selected: selected.id, scoped: others))
+            let decorated = mentions.map { decoration(of: $0, in: harness.view, offsets: offsets) }
+            XCTAssertEqual(decorated[index][outline], ink(.light), "mention \(index) under review")
+            XCTAssertNotEqual(decorated[index][fill], "none", "it keeps its category's fill")
+            for other in decorated.indices where other != index {
+                XCTAssertEqual(decorated[other][outline], "none", "mention \(other) in the scope")
+            }
+        }
+
+        let dark = MarkdownStyler.decoration(of: mentions[0], selected: true, scoped: false, dark: true)
+        var white: CGFloat = 0, alpha: CGFloat = 0
+        (dark[.mdocOutline] as? UIColor)?.getWhite(&white, alpha: &alpha)
+        XCTAssertGreaterThan(white, 0.9, "white in dark mode")
+        XCTAssertEqual(ink(.dark), "0.949 0.949 0.969 1.000")
+    }
+
+    /// The boxes the layout fragment draws for the outline at `location` of
+    /// a text view, in its text container's coordinates.
+    private func outlineBoxes(in textView: UITextView, at location: Int) -> [CGRect] {
+        guard let layout = textView.textLayoutManager, let content = layout.textContentManager,
+              let at = content.location(content.documentRange.location, offsetBy: location) else { return [] }
+        layout.ensureLayout(for: content.documentRange)
+        guard let fragment = layout.textLayoutFragment(for: at) as? MarkdownLayoutFragment else { return [] }
+        return fragment.outlineBoxes(at: fragment.layoutFragmentFrame.origin).map(\.box)
+    }
+
+    /// The outline spans the name: a Hebrew name in an English line, whose
+    /// two ends fall at one x where the directions meet (the box collapsed
+    /// when it ran from end to end), and a name that ends its table cell.
+    func testTheOutlineSpansTheName() throws {
+        let width: (String) -> CGFloat = { name in
+            (name as NSString).size(withAttributes: [.font: MarkdownStyler.font(.body, traits: UITraitCollection(userInterfaceStyle: .light))]).width
+        }
+        let hebrew = try harness(text: "Hello שלום world, and more words after it.\n", name: "שלום")
+        let snapshot = hebrew.session.snapshot()
+        let name = try XCTUnwrap(snapshot.candidates.first)
+        show(hebrew, textView(snapshot, selected: name.id))
+        let boxes = outlineBoxes(in: hebrew.view, at: TextOffsets(snapshot.markdown).nsRange(name.range).location)
+        XCTAssertEqual(boxes.count, 1)
+        XCTAssertGreaterThanOrEqual(boxes.first?.width ?? 0, width("שלום") * 0.9, "\(boxes)")
+
+        let table = try harness()
+        let tableSnapshot = table.session.snapshot()
+        let mentions = tableSnapshot.candidates.sorted { $0.range.start < $1.range.start }
+        show(table, textView(tableSnapshot, selected: mentions[1].id))
+        let range = TextOffsets(tableSnapshot.markdown).nsRange(mentions[1].range)
+        let cell = try XCTUnwrap(table.view.tableViews.flatMap { $0.cells.joined() }.first { cell in
+            NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
+        })
+        let cellBoxes = outlineBoxes(in: cell, at: range.location - cell.location)
+        XCTAssertEqual(cellBoxes.count, 1)
+        XCTAssertGreaterThanOrEqual(cellBoxes.first?.width ?? 0, width("Maya Bennett") * 0.9, "\(cellBoxes)")
+    }
+
     func testACardChangeRecoloursInPlaceAndNeverRebuilds() throws {
         let harness = try harness()
         let snapshot = harness.session.snapshot()

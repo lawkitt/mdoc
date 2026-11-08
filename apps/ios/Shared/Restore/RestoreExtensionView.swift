@@ -116,7 +116,7 @@ struct RestoreExtensionView: View {
             Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .accentProminent()
         Button {
             share = ShareItems(items: [result.text])
         } label: {

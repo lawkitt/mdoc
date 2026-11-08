@@ -121,6 +121,7 @@ struct SettingsView: View {
                 Button("Use cellular") {
                     setup.askCellular()
                 }
+                .textAction()
                 .accessibilityHint(Text("Asks before downloading over cellular."))
                 .accessibilityIdentifier("setup-use-cellular")
             }
@@ -128,12 +129,14 @@ struct SettingsView: View {
                 Button("Cancel download", role: .cancel) {
                     setup.cancel()
                 }
+                .textAction()
             } else if setup.snapshot.missing.count > 1 {
                 Button {
                     setup.download()
                 } label: {
                     Text("Download all (\(setup.snapshot.missingBytes.formatted(.byteCount(style: .file))))")
                 }
+                .textAction()
                 .accessibilityIdentifier("settings-download-all")
             }
         } header: {
@@ -316,6 +319,7 @@ private struct ModelDownloadButton: View {
             }
         }
         .buttonStyle(.borderless)
+        .textAction()
         .accessibilityLabel(Text("Download \(ModelRow.plainName(offer.purpose)), \(size)"))
         .accessibilityIdentifier("settings-download-\(offer.id)")
     }
@@ -367,6 +371,7 @@ struct AboutView: View {
                 } label: {
                     Label("Try a sample", systemImage: "doc.text.magnifyingglass")
                 }
+                .textAction()
                 .accessibilityIdentifier("about-try-sample")
             } footer: {
                 Text("A short agreement with made-up names, to try review without your own documents.")
@@ -381,6 +386,7 @@ struct AboutView: View {
                 Link(destination: build.sourceURL) {
                     Label("Source code", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
+                .textAction()
             } footer: {
                 Text("mdoc is free, has no accounts and collects no data. Nothing you open leaves this device unless you share it.")
             }
@@ -391,6 +397,7 @@ struct AboutView: View {
                     .font(.footnote)
                 Link("Permission text (LICENSE-APP-STORES.md)", destination: Self.permissionURL)
                     .font(.footnote)
+                    .textAction()
             } header: {
                 Text("License")
             }

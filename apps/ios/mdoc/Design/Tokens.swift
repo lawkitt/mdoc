@@ -62,8 +62,17 @@ enum ReviewBarMetrics {
 
 /// Named colors. System colors adapt to dark mode and Increase Contrast.
 enum Palette {
-    /// The primary action and the active mention's outline.
-    static let accent = Color.accentColor
+    /// The primary action and the active mention's outline: ink, near-black
+    /// in light mode and near-white in dark mode (ADR 0099).
+    static let accent = Color.ink
+    /// Words and symbols on an accent fill: white in light mode, black in
+    /// dark mode.
+    static let onAccent = Color.onAccent
+    /// A swipe action's accent fill. iOS draws a swipe action's words white
+    /// in both modes, so in dark mode the ink stays a dark grey.
+    static let swipeAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemGray3.resolvedColor(with: traits) : .ink.resolvedColor(with: traits)
+    })
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
     static let background = Color(uiColor: .systemGroupedBackground)
     static let chipFill = Color(uiColor: .tertiarySystemFill)
