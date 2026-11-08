@@ -421,14 +421,14 @@ struct IdentitiesView: View {
         let ids = identities.map(\.id).filter { selection.contains($0) }
         return HStack(spacing: Space.s) {
             Button {
-                deciding(ids) { model.decide(identities: ids, .replace) }
+                model.decide(identities: ids, .replace)
                 selection = []
             } label: {
                 Text("Replace").frame(maxWidth: .infinity, minHeight: Size.barButton)
             }
             .accentProminent()
             Button {
-                deciding(ids) { model.decide(identities: ids, .keep) }
+                model.decide(identities: ids, .keep)
                 selection = []
             } label: {
                 Text("Keep").frame(maxWidth: .infinity, minHeight: Size.barButton)
