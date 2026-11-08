@@ -63,6 +63,20 @@ trim = [
 ]
 list_letter = true
 
+# A judge's or an officer's title before a full name comes off it too:
+# the model's "Judge K Ashdale" is "K Ashdale", "Justice Mary Ashdale" is
+# "Mary Ashdale" (guide rule 1, #387). Only before an initial and a
+# surname or a given name and a surname (the `rest` it leaves): these
+# words are also surnames and given names (`role_surnames` above), so
+# "Judge" alone, "Mary Judge", "Mr Judge" and "Judge Reinhold" stay as
+# they are. "Hon" only with its period: "Hon Wai Keung" is a surname
+# first. Not `trim` words: those also mark a titled surname.
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:(?:Judge|Justice|Magistrate|Master|Recorder|Registrar|Dear|Officer|Detective|Constable|Sergeant|Inspector|Sheriff|Senator|Councillor|Commissioner)\.?|Hon\.)[ \t]+(?P<rest>(?:[A-HJ-Z]\.?|[A-Z][a-z]+)[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*)\z',
+]
+
 # Two initials before a surname belong to the name: the model's "Quill" in
 # "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after
 # it: "Smith J" is a judge's title. Only spaces between, never a line.

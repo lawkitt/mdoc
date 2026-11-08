@@ -113,7 +113,10 @@
 #                         over ("exhibit" in "EXHIBIT A. WELK")
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
 #                         with some name left after them; in an entry with
-#                         `extend`, only off a span that entry grew
+#                         `extend`, only off a span that entry grew; with a
+#                         group named `rest` (the only group allowed), only
+#                         what comes before it ("Judge " before "K
+#                         Ashdale")
 #   trim      = […]       lowercase words that come off either edge, a
 #                         word's own final period or colon with it, and
 #                         a comma before a trailing one; or phrases of them,

@@ -539,12 +539,21 @@ impl SpanFix {
                     continue;
                 }
             }
-            if let Some(prefix) = trim_start
+            // A `rest` group is the name the prefix must leave: only what
+            // is before it comes off.
+            if let Some(end) = trim_start
                 .iter()
-                .filter_map(|pattern| pattern.find(text))
-                .find(|prefix| 0 < prefix.end() && prefix.end() < text.len())
+                .filter_map(|pattern| {
+                    let found = pattern.captures(text)?;
+                    Some(
+                        found
+                            .name("rest")
+                            .map_or(found.get(0)?.end(), |rest| rest.start()),
+                    )
+                })
+                .find(|&end| 0 < end && end < text.len())
             {
-                range.start += prefix.end();
+                range.start += end;
                 continue;
             }
             // A phrase at either edge, with a word left beside it: "In re
@@ -1623,6 +1632,10 @@ impl Pack {
                             .map_err(|e| at(e.to_string()))?;
                         if regex.is_match("") {
                             return Err(at("trim_start matches an empty prefix".into()));
+                        }
+                        if let Some(group) = regex.capture_names().flatten().find(|g| *g != "rest")
+                        {
+                            return Err(at(format!("trim_start group {group:?} is not `rest`")));
                         }
                         Ok(regex)
                     })
@@ -5740,6 +5753,37 @@ mod tests {
                 "Witness: HON WAI KEUNG",
                 &["HON WAI KEUNG"],
                 &["HON WAI KEUNG"],
+            ),
+            (
+                "Witness: Hon Wai Keung",
+                &["Hon Wai Keung"],
+                &["Hon Wai Keung"],
+            ),
+            // A judge's title the model took in comes off before an initial
+            // and surname or a given name and surname; a role surname or a
+            // given name stays.
+            (
+                "Before Judge K Ashdale and DORIAN P. WELK, Magistrate.",
+                &["Judge K Ashdale", "DORIAN P. WELK"],
+                &["K Ashdale", "DORIAN P. WELK"],
+            ),
+            (
+                "Heard by Justice Mary Ashdale.",
+                &["Justice Mary Ashdale"],
+                &["Mary Ashdale"],
+            ),
+            (
+                "Heard by Hon. K Ashdale.",
+                &["Hon. K Ashdale"],
+                &["K Ashdale"],
+            ),
+            ("Judge", &["Judge"], &["Judge"]),
+            ("Mary Judge agreed.", &["Mary Judge"], &["Mary Judge"]),
+            ("Then Mr Judge agreed.", &["Mr Judge"], &["Judge"]),
+            (
+                "Judge Reinhold agreed.",
+                &["Judge Reinhold"],
+                &["Judge Reinhold"],
             ),
         ] {
             assert_eq!(proposed_people(source, model), expected, "{source}");
@@ -15105,7 +15149,8 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("Начальник", "Начальник"),
             ("Кузнецов", "Кузнецов"),
             ("Должников", "Должников"),
-            ("Judge Edda Brannock", "Judge Edda Brannock"),
+            // The title comes off a full name (guide rule 1, #387).
+            ("Judge Edda Brannock", "Edda Brannock"),
             ("Sheriff Brannock", "Sheriff Brannock"),
             ("John Smith, Chief", "John Smith, Chief"),
             ("ИП ФИО3 К-Л.М.", "К-Л.М."),
@@ -16654,6 +16699,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\nunless_over = [\"part\"]",
                 "unless_over needs extend",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim_start = ['(?P<name>Dr )x']",
+                "is not `rest`",
             ),
             (
                 "[[span]]\ncategory = \"BANK\"\nlist_letter = true",

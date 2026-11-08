@@ -1604,6 +1604,22 @@ pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
         .collect()
 }
 
+/// Bare initials in `source` that spell one of the full person names
+/// `names` and stand where initials do ([`find_forms_with`]): "ЯВР" in an
+/// "Исполнитель" column beside «Яков Викторович Ростов» (#387). The
+/// detector reads a model's organization there as the person.
+pub fn placed_initials(source: &str, names: &[&str]) -> Vec<Range<usize>> {
+    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
+    if people.is_empty() {
+        return Vec::new();
+    }
+    find_forms_with(source, &people, &[], &[], true)
+        .into_iter()
+        .map(|(range, ..)| range)
+        .filter(|range| bare_initials(&source[range.clone()]).is_some())
+        .collect()
+}
+
 impl Review {
     /// Full person names that propagate, as `(identity, wording)`: proposed
     /// (not kept) or applied. With a surname and initials, which only block.
