@@ -73,6 +73,15 @@ breaks that in three ways:
   cancellation reaches the running job.
 - If a review tap on the iPhone 12 Pro takes more than about 16 ms, core
   calls move to a background actor; until then they don't.
+- The save follows the tap. On the 12 Pro (iOS 27.2, optimized Swift) a tap
+  that also saved took 16.8–18.8 ms, most of it the save; the core call
+  alone takes 0.6–1.9 ms (`DeviceTapTimingUITests`, 2026-11-08). So a tap
+  returns its snapshot at once and its change is saved off the main thread
+  once the taps pause (300 ms, several taps in one save), and at once when
+  the app leaves the foreground, before Copy for AI and Share, before
+  another document or screen replaces the open one, and before Move to
+  case. A save holds the document only to take what to write. The
+  trade-off: a crash in that short window loses the last unsaved steps.
 
 ### Timing
 
