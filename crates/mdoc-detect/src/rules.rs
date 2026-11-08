@@ -268,6 +268,12 @@ struct ShapeEntry {
     require: Vec<String>,
     #[serde(default)]
     forbid: Vec<String>,
+    /// What a court's own case number looks like, the whole span: a model
+    /// span of this shape is no value of this category but a case number
+    /// (`CASE`), its group `case` if it has one ("3 А28-3207/2026" is
+    /// "А28-3207/2026"). A reference or a cited case still removes it.
+    #[serde(default)]
+    case: Vec<String>,
     /// Evidence that this entry's veto does not describe the value: a
     /// house number, or an explicit private-home naming cue before it.
     #[serde(default)]
@@ -973,6 +979,7 @@ struct Shape {
     forbid_unlabelled: Vec<Regex>,
     require: Vec<Regex>,
     forbid: Vec<Veto>,
+    case: Vec<Regex>,
     forbid_in: Vec<Regex>,
     unless_in: Vec<Regex>,
     word: Option<Regex>,
@@ -1214,6 +1221,7 @@ impl Pack {
                     && entry.forbid_unlabelled.is_empty()
                     && entry.require.is_empty()
                     && entry.forbid.is_empty()
+                    && entry.case.is_empty()
                     && entry.forbid_in.is_empty()
                     && entry.unless_in.is_empty()
                     && entry.word.is_none()
@@ -1279,6 +1287,7 @@ impl Pack {
                     unless: compile_all(&entry.forbid_unless, false)?,
                     unless_after: compile_all(&entry.forbid_unless_after, false)?,
                 };
+                let case = compile_all(&entry.case, false)?;
                 let forbid_in = entry
                     .forbid_in
                     .iter()
@@ -1305,6 +1314,7 @@ impl Pack {
                             forbid_unlabelled: Vec::new(),
                             require: Vec::new(),
                             forbid: Vec::new(),
+                            case: Vec::new(),
                             forbid_in: Vec::new(),
                             unless_in: Vec::new(),
                             word: None,
@@ -1325,6 +1335,7 @@ impl Pack {
                 shape.forbid_unlabelled.extend(forbid_unlabelled);
                 shape.require.extend(require);
                 shape.forbid.push(forbid);
+                shape.case.extend(case);
                 shape.forbid_in.extend(forbid_in);
                 shape.unless_in.extend(unless_in);
                 shape.word = shape.word.take().or(word);
@@ -1862,6 +1873,25 @@ impl Pack {
             .filter(|entry| entry.anywhere_in.is_empty() && !entry.phrase_only && entry.has(&word))
             .peekable();
         listing.peek().is_some() && listing.all(|entry| entry.unless_named)
+    }
+
+    /// Where in `text`, a model span of `category`, a court's case number
+    /// lies when the span has one of the category's `case` shapes: the
+    /// span is that number (`CASE`), no value of the category (guide rule
+    /// 5, #480).
+    pub(crate) fn case_number(
+        &self,
+        text: &str,
+        category: Category,
+    ) -> Option<std::ops::Range<usize>> {
+        let shape = self.shapes.iter().find(|s| s.category == category)?;
+        shape.case.iter().find_map(|pattern| {
+            let found = pattern.captures(text)?;
+            found.name("case").or_else(|| found.get(0)).map(|m| {
+                let start = m.start() + (m.as_str().len() - m.as_str().trim_start().len());
+                start..m.start() + m.as_str().trim_end().len()
+            })
+        })
     }
 
     /// Whether a model span has its category's `shape` and is not a role
@@ -2517,6 +2547,7 @@ impl Pack {
         };
         shape.require.iter().all(|pattern| pattern.is_match(text))
             && !shape.forbid.iter().any(|veto| veto.matches(text, before))
+            && !shape.case.iter().any(|pattern| pattern.is_match(text))
             && shape.word.as_ref().is_none_or(|pattern| {
                 category == Category::Person && self.role_person_name(text)
                     || self.names(text, words().filter(|w| pattern.is_match(w)), named)
@@ -4052,6 +4083,75 @@ impl Pack {
             .collect()
     }
 
+    /// An address match `range` of `pattern` beside the `names`, or none
+    /// (#362). One a name holds at its front edge ("ПЕТРОВ С. ИВАНОВИЧ, УЛ
+    /// ЛЕСНАЯ, Д. 5" with the name found, "ООО КЕДРОВСКИЙ РАЙОН, УЛ …")
+    /// starts where the pattern finds it again after the name, so neither
+    /// is lost; a name the match absorbs ("Harrow House, 12 …") is its own
+    /// part. A lone capital that ends it before a capitalised word is that
+    /// word's initial, no house letter ("д. 5 В Петров" ends at "д. 5"). One
+    /// that ends at "№ 2" before "-1234/2020" is a case number's head.
+    fn address_beside(
+        &self,
+        source: &str,
+        names: &[Detection],
+        pattern: &Regex,
+        mut range: std::ops::Range<usize>,
+    ) -> Option<std::ops::Range<usize>> {
+        let front = names
+            .iter()
+            .filter(|name| {
+                matches!(name.category, Category::Person | Category::Organization)
+                    && name.range.start <= range.start
+                    && range.start < name.range.end
+                    && name.range.end < range.end
+                    && !self.absorbs(
+                        source,
+                        Category::Address,
+                        range.clone(),
+                        name.category,
+                        name.range.clone(),
+                    )
+            })
+            .map(|name| name.range.end)
+            .max();
+        if let Some(after) = front {
+            let found = pattern.captures_at(source, after)?;
+            let whole = found.get(0).expect("group 0 is the match");
+            let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+            let end = found
+                .name("tail")
+                .map_or(whole.end(), |tail| tail.start())
+                .min(range.end);
+            if start >= end {
+                return None;
+            }
+            range = start..end;
+        }
+        let cyrillic_capital = |c: char| ('А'..='Я').contains(&c) || c == 'Ё';
+        let mut back = source[range.clone()].chars().rev();
+        let after = &source[range.end..];
+        if let (Some(letter), Some(space), Some(digit)) = (back.next(), back.next(), back.next())
+            && cyrillic_capital(letter)
+            && matches!(space, ' ' | '\t')
+            && digit.is_ascii_digit()
+            && after.starts_with([' ', '\t'])
+            && after
+                .trim_start_matches([' ', '\t'])
+                .starts_with(char::is_uppercase)
+        {
+            range.end -= letter.len_utf8() + space.len_utf8();
+        }
+        let text = &source[range.clone()];
+        let digits = text.trim_end_matches(|c: char| c.is_ascii_digit());
+        let mut ahead = source[range.end..].chars();
+        let case_number = digits.len() < text.len()
+            && digits.trim_end_matches([' ', '\t']).ends_with('№')
+            && matches!(ahead.next(), Some('-' | '/'))
+            && ahead.next().is_some_and(|c| c.is_ascii_digit());
+        (!case_number && !range.is_empty()).then_some(range)
+    }
+
     /// Matches beside existing evidence, all in view coordinates. Definite
     /// street/building components may contain names; a guessed town tail
     /// never consumes an independent PERSON/ORG or a contact field.
@@ -4154,6 +4254,12 @@ impl Pack {
                                 .map(|piece| (piece, Some(whole.clone())))
                                 .collect(),
                             None => vec![(range, None)],
+                        })
+                        .filter_map(move |range| {
+                            if category != Category::Address || range.is_empty() {
+                                return Some(range);
+                            }
+                            self.address_beside(source, names, pattern, range)
                         })
                         // An address match before a colon ends in a field's
                         // label ("12 Oak Road, Email: …"), not the address's
@@ -8209,6 +8315,1355 @@ Privacy Act (“BIPA”). BIPA applies.",
         }
     }
 
+    /// #362 round two: Russian addresses of court acts and register
+    /// extracts are proposed whole, from the index or first element to the
+    /// last: flat lists, a second house number, dotless and capital parts,
+    /// «им.», settlement types, a house letter, «ГСП», a street with no
+    /// house or a box after an index and a place, and the elements around
+    /// a masked or blank part.
+    #[test]
+    fn russian_court_and_register_addresses_are_proposed_whole() {
+        let addresses = |source: &str, raw: &[(&str, &str)]| -> Vec<String> {
+            shown(source, raw)
+                .into_iter()
+                .filter(|(_, category)| category == "ADDRESS")
+                .map(|(text, _)| text)
+                .collect()
+        };
+        for (source, expected) in [
+            // A flat list and a second house number go on; no space is
+            // needed after a comma.
+            (
+                "Квартиры: ул. Кедровая, 10 кв. 1,2; ул. Сосновая, 12 кв. 1, 2, 4; ул. Еловая,16. Далее",
+                &[
+                    "ул. Кедровая, 10 кв. 1,2",
+                    "ул. Сосновая, 12 кв. 1, 2, 4",
+                    "ул. Еловая,16",
+                ][..],
+            ),
+            (
+                "Дома: ул. Луговая, 6, 9; ул. Озёрная, 25 кв. 1.",
+                &["ул. Луговая, 6, 9", "ул. Озёрная, 25 кв. 1"],
+            ),
+            // From the region or index to the flat, «им.» in the street's
+            // name, a district after the city.
+            (
+                "Адрес: 999999, Энская область, г. Энск, Северный р-н, ул. им. Пахомова, д. 24, кв. 141. Далее",
+                &[
+                    "999999, Энская область, г. Энск, Северный р-н, ул. им. Пахомова, д. 24, кв. 141",
+                ],
+            ),
+            (
+                "проживает: Энская обл., г. Энск, Лесной р-н, ул. им. Пахомова, д. 3, кв. 8.",
+                &["Энская обл., г. Энск, Лесной р-н, ул. им. Пахомова, д. 3, кв. 8"],
+            ),
+            // A register extract in capitals, the country before the index.
+            (
+                "Юридический адрес: РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1.",
+                &["РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1"],
+            ),
+            (
+                "Адрес: РОССИЯ 999999, Г.ЭНСК, ВН.ТЕР.Г. МУНИЦИПАЛЬНЫЙ ОКРУГ КЕДРОВЫЙ, УЛ КЕДРОВАЯ, Д. 10, ПОМЕЩ. 5-Н.",
+                &[
+                    "РОССИЯ 999999, Г.ЭНСК, ВН.ТЕР.Г. МУНИЦИПАЛЬНЫЙ ОКРУГ КЕДРОВЫЙ, УЛ КЕДРОВАЯ, Д. 10, ПОМЕЩ. 5-Н",
+                ],
+            ),
+            // Settlement types (#482's «ст.» too) and a house letter after a
+            // space.
+            (
+                "Магазин: Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г. Далее",
+                &["Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г"],
+            ),
+            (
+                "Офис: 999999, Энская область, г.о. Кедровск, ул. Лесная, д. 5, стр. 2, оф. 3.",
+                &["999999, Энская область, г.о. Кедровск, ул. Лесная, д. 5, стр. 2, оф. 3"],
+            ),
+            (
+                "проживает: 999999, Энский край, ст. Кедровская, ул. Садовая, д. 5; уроженец",
+                &["999999, Энский край, ст. Кедровская, ул. Садовая, д. 5"],
+            ),
+            // Dotless parts.
+            (
+                "Адрес: ул Лесная, д 31 к 2, кв 69б.",
+                &["ул Лесная, д 31 к 2, кв 69б"],
+            ),
+            // Court headers: an index, «ГСП», a bare city and house, a
+            // street with an initial or with its type after its name.
+            (
+                "Девятый арбитражный апелляционный суд\n999999, Энск, ГСП-4, проезд Соломенной cторожки, 12\nПОСТАНОВЛЕНИЕ",
+                &["999999, Энск, ГСП-4, проезд Соломенной cторожки, 12"],
+            ),
+            (
+                "Арбитражный суд Энской области, 999999, г. Энск, ул. Б. Тульская, д. 17, тел. 8 (999) 555-12-34",
+                &["999999, г. Энск, ул. Б. Тульская, д. 17"],
+            ),
+            (
+                "Суд: 999999, г. Энск, Смольнинская ул., д. 6.",
+                &["999999, г. Энск, Смольнинская ул., д. 6"],
+            ),
+            (
+                "Суд: 999999, Энский край, Энск, ул. Ленина, д. 37.",
+                &["999999, Энский край, Энск, ул. Ленина, д. 37"],
+            ),
+            // After an index and a place, a street with no house, or a box.
+            (
+                "Адрес: 999999, Энская область, Энск город, Московское (18 км) шоссе. Далее",
+                &["999999, Энская область, Энск город, Московское (18 км) шоссе"],
+            ),
+            (
+                "Адрес: 999999, Энская область, г. Энск, а/ 1. Далее",
+                &["999999, Энская область, г. Энск, а/ 1"],
+            ),
+            (
+                "Почта: 999999, г. Энск, а/я 15.",
+                &["999999, г. Энск, а/я 15"],
+            ),
+            // Masked or blank parts: the elements around a blank or an
+            // ellipsis are one address; no span holds a "<", so one starts
+            // after "<...>" (and an ellipsis) at a house with more after it,
+            // or at a plot, and an index with its places before a mask is
+            // one of its own.
+            (
+                "(<...> д 31 к 2, кв 69б, ИНН: <***>)",
+                &["д 31 к 2, кв 69б"],
+            ),
+            (
+                "участок: Энская область, Кедровский р-н, <...> уч. 109.",
+                &["уч. 109"],
+            ),
+            (
+                "Офис: 999999, Энская область, г.о. Кедровск, <...> д. 5, стр. 1, оф. 2.",
+                &[
+                    "999999, Энская область, г.о. Кедровск",
+                    "д. 5, стр. 1, оф. 2",
+                ],
+            ),
+            (
+                "Офис: 999999, Энская область, г.о. Кедровск, <...> … д. 5, стр. 1, оф. 2.",
+                &[
+                    "999999, Энская область, г.о. Кедровск",
+                    "д. 5, стр. 1, оф. 2",
+                ],
+            ),
+            (
+                "Адрес: г. Энск, ул. Лесная, д. 5, , ком. 1-А. Далее",
+                &["г. Энск, ул. Лесная, д. 5, , ком. 1-А"],
+            ),
+            (
+                "Адрес: г. Энск, , д. 5, ком. 1-А. Далее",
+                &["г. Энск, , д. 5, ком. 1-А"],
+            ),
+            (
+                "Адрес: г. Энск, ул. <...>, д. 5, кв. 7. Далее",
+                &["д. 5, кв. 7"],
+            ),
+            (
+                "Адрес: 999999, г. Энск, ул. …, д. 5, кв. 7. Далее",
+                &["999999, г. Энск, ул. …, д. 5, кв. 7"],
+            ),
+            (
+                "Адрес: 999999, г. Энск, …, д. 5, кв. 7. Далее",
+                &["999999, г. Энск, …, д. 5, кв. 7"],
+            ),
+        ] {
+            assert_eq!(addresses(source, &[]), expected, "{source}");
+        }
+        // A model address cut short grows to the whole of it.
+        let source =
+            "Магазин: Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г.";
+        assert_eq!(
+            addresses(source, &[("ул. Лесная, д. 43", "address")]),
+            ["Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г"]
+        );
+    }
+
+    /// #362 round two's guards: a Russian address never takes the name
+    /// before it, the next field or a phone after a flat, and an index
+    /// alone, prose about «ул.» or a mask before a date is no address. A
+    /// model's address that runs into the next label ends before it.
+    #[test]
+    fn russian_addresses_keep_names_fields_and_prose_outside() {
+        assert_eq!(
+            shown(
+                "Истец Иванов Иван Иванович, 999999, г. Энск, ул. Лесная, д. 5, кв. 7, ИНН 999999999999",
+                &[("Иванов Иван Иванович", "person")]
+            ),
+            pairs(&[
+                ("Иванов Иван Иванович", "PERSON"),
+                ("999999, г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ("999999999999", "TAX"),
+            ])
+        );
+        assert_eq!(
+            shown(
+                "ООО «Кедровый бор»: РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ОФ. 1.",
+                &[("Кедровый бор", "organization")]
+            ),
+            pairs(&[
+                ("ООО «Кедровый бор»", "ORG"),
+                (
+                    "РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ОФ. 1",
+                    "ADDRESS"
+                ),
+            ])
+        );
+        // A phone after a flat is no flat list.
+        assert_eq!(
+            shown("Адрес: ул. Лесная, д. 5, кв. 7, 8 (999) 555-12-34.", &[]),
+            pairs(&[("ул. Лесная, д. 5, кв. 7", "ADDRESS")])
+        );
+        assert_eq!(
+            shown("Адрес: ул. Лесная, д. 5, кв. 7, 8-999-555-12-34.", &[]),
+            pairs(&[("ул. Лесная, д. 5, кв. 7", "ADDRESS")])
+        );
+        // A model address that runs into a cadastral label ends before it;
+        // a residue of a letter and the label goes.
+        let source = "участок по адресу <...>, д. 5, лит. Б, кадастровый № 99:07:0012345:678";
+        assert_eq!(
+            shown(source, &[("д. 5, лит. Б, кадастровый №", "address")]),
+            pairs(&[
+                ("д. 5, лит. Б", "ADDRESS"),
+                ("99:07:0012345:678", "IDENTITY"),
+            ])
+        );
+        let source = "участок <...> Б, кадастровый № 99:07:0012345:678";
+        assert_eq!(
+            shown(source, &[("Б, кадастровый №", "address")]),
+            pairs(&[("99:07:0012345:678", "IDENTITY")])
+        );
+        for source in [
+            "Индекс 625010, далее по тексту.",
+            "625010, ",
+            "Сокращение «ул.» означает улицу, а «д.» — дом; ул. Ленина упомянута в тексте.",
+            "На ул. Ленина, у дома, стояли люди.",
+            "<...> д. 5 мая состоялось заседание",
+            "по материалам д. 12, ст. 5 закона",
+            "Псков, д. 29, пом. 8",
+            "согласно п. 3 ч. 1 ст. 5 закона",
+        ] {
+            assert!(shown(source, &[]).is_empty(), "{source}");
+        }
+    }
+
+    /// #362 round two's pre-gate review: every input it gave, with the
+    /// model's spans it gave. A name before an address (a surname, a short
+    /// company name, initials that read like a settlement's type), a phone,
+    /// a date or a passport after a flat list, and a public body's name
+    /// keep their spans, and so does the address beside them; a masked
+    /// office keeps the index and places before the mask and the house
+    /// after it; the brief's shapes stand as they were.
+    #[test]
+    fn russian_addresses_keep_the_review_inputs_apart() {
+        // Each row: the source, the model's spans and what is shown.
+        type Spans = &'static [(&'static str, &'static str)];
+        let rows: &[(&str, Spans, Spans)] = &[
+            // P1-A: a name before the places stays a name; the address after
+            // it stands, from its first place.
+            (
+                "Истец: Иванов, г. Энск, ул. Лесная, д. 5, кв. 7.",
+                &[("Иванов", "person")][..],
+                &[
+                    ("Иванов", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: Иванов, г. Энск, ул. Лесная, д. 5, кв. 7.",
+                &[][..],
+                &[("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "ответчик Петров, г. Энск, ул. Лесная, д. 5.",
+                &[("Петров", "person")][..],
+                &[
+                    ("Петров", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "общества с ограниченной ответственностью Кедр, г. Энск, ул. Лесная, д. 5.",
+                &[("Кедр", "organization")][..],
+                &[("Кедр", "ORG"), ("г. Энск, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "общества с ограниченной ответственностью Кедр, г. Энск, ул. Лесная, д. 5.",
+                &[(
+                    "общества с ограниченной ответственностью Кедр",
+                    "organization",
+                )][..],
+                &[
+                    ("общества с ограниченной ответственностью Кедр", "ORG"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: Сидоров, город Энск, ул. Лесная, д. 5.",
+                &[("Сидоров", "person")][..],
+                &[
+                    ("Сидоров", "PERSON"),
+                    ("город Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: Сидоров, Энская область, г. Энск, ул. Лесная, д. 5.",
+                &[("Сидоров", "person")][..],
+                &[
+                    ("Сидоров", "PERSON"),
+                    ("Энская область, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: Петров А.С., г. Энск, ул. Лесная, д. 5.",
+                &[("Петров А.С.", "person")][..],
+                &[
+                    ("Петров А.С.", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ИП Петров А.С., 999999, г. Энск, ул. Лесная, д. 5.",
+                &[("Петров А.С.", "person")][..],
+                &[
+                    ("Петров А.С.", "PERSON"),
+                    ("999999, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "представитель А.С. Петров, 999999, г. Энск, ул. Лесная, д. 5.",
+                &[("А.С. Петров", "person")][..],
+                &[
+                    ("А.С. Петров", "PERSON"),
+                    ("999999, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "истца Иванова, Москва, ул. Лесная, д. 5",
+                &[("Иванова", "person")][..],
+                &[
+                    ("Иванова", "PERSON"),
+                    ("Москва, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "к обществу Кедр, г. Энск, ул. Лесная, д. 5.",
+                &[("Кедр", "organization")][..],
+                &[("Кедр", "ORG"), ("г. Энск, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "истец Иванов, ул. Лесная, д. 5",
+                &[("Иванов", "person")][..],
+                &[("Иванов", "PERSON"), ("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "ответчику Иванову, Кедровский район, ул. Лесная, д. 5",
+                &[("Иванову", "person")][..],
+                &[
+                    ("Иванову", "PERSON"),
+                    ("Кедровский район, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ответчику Иванову, с. Кедровка, ул. Лесная, д. 5",
+                &[("Иванову", "person")][..],
+                &[
+                    ("Иванову", "PERSON"),
+                    ("с. Кедровка, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: Иванов, 999999, г. Энск, ул. Лесная, д. 5",
+                &[("Иванов", "person")][..],
+                &[
+                    ("Иванов", "PERSON"),
+                    ("999999, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: ООО Кедр, г. Энск, ул. Лесная, д. 5",
+                &[("ООО Кедр", "organization")][..],
+                &[
+                    ("ООО Кедр", "ORG"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: Петров, Кедровский район, с. Кедровка, ул. Ленина, д. 1, ИНН 770708389312",
+                &[("Петров", "person")][..],
+                &[
+                    ("Петров", "PERSON"),
+                    ("Кедровский район, с. Кедровка, ул. Ленина, д. 1", "ADDRESS"),
+                    ("770708389312", "TAX"),
+                ][..],
+            ),
+            (
+                "заявление общества Кедровый Бор, г. Энск, ул. Лесная, д. 5",
+                &[("Кедровый Бор", "organization")][..],
+                &[
+                    ("Кедровый Бор", "ORG"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик — Петров, г. Энск, ул. Лесная, д. 5",
+                &[("Петров", "person")][..],
+                &[
+                    ("Петров", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ИП Сидорова (Петрова, г. Энск, ул. Лесная, д. 5)",
+                &[("Петрова", "person")][..],
+                &[
+                    ("Петрова", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: Иванов, г. Энск, ул. Лесная, д. 5, кв. 7.",
+                &[
+                    ("Иванов", "person"),
+                    ("г. Энск, ул. Лесная, д. 5, кв. 7", "address"),
+                ][..],
+                &[
+                    ("Иванов", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: Иванов, г. Энск, ул. Лесная, д. 5, кв. 7.",
+                &[("г. Энск, ул. Лесная, д. 5, кв. 7", "address")][..],
+                &[("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "к индивидуальному предпринимателю Петрову, г. Энск, ул. Лесная, д. 5, о взыскании",
+                &[("Петрову", "person")][..],
+                &[
+                    ("Петрову", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "к индивидуальному предпринимателю Петрову, 999999, г. Энск, ул. Лесная, д. 5",
+                &[("Петрову", "person")][..],
+                &[
+                    ("Петрову", "PERSON"),
+                    ("999999, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчики: Петров, г. Энск, ул. Лесная, д. 5; Сидоров, г. Энск, ул. Садовая, д. 7.",
+                &[("Петров", "person"), ("Сидоров", "person")][..],
+                &[
+                    ("Петров", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                    ("Сидоров", "PERSON"),
+                    ("г. Энск, ул. Садовая, д. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчики: Петров, г. Энск, ул. Лесная, д. 5; Сидоров, г. Энск, ул. Садовая, д. 7.",
+                &[][..],
+                &[
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                    ("г. Энск, ул. Садовая, д. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Иванов И.И. Хабаровский край, Хабаровск, ул. Ленина, д. 5",
+                &[("Иванов И.И.", "person")][..],
+                &[
+                    ("Иванов И.И.", "PERSON"),
+                    ("Хабаровск, ул. Ленина, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Адрес: Хабаровский край, Хабаровск, ул. Ленина, д. 5",
+                &[][..],
+                &[("Хабаровский край, Хабаровск, ул. Ленина, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Истец: Иванов, Энск, ул. Лесная, д. 5",
+                &[("Иванов", "person")][..],
+                &[("Иванов", "PERSON"), ("Энск, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: Энск, Северный р-н, ул. Лесная, д. 5",
+                &[][..],
+                &[("Северный р-н, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "ООО «Кедр», Энская область, г. Энск, ул. Лесная, д. 5",
+                &[("ООО «Кедр»", "organization")][..],
+                &[
+                    ("ООО «Кедр»", "ORG"),
+                    ("Энская область, г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            // P1-B: a person's initials are no settlement; a settlement's type
+            // in capitals goes only before a name in capitals.
+            (
+                "представитель А.С. Петров, г. Энск, ул. Лесная, д. 5.",
+                &[("А.С. Петров", "person")][..],
+                &[
+                    ("А.С. Петров", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "представитель А.С. Петров, г. Энск, ул. Лесная, д. 5.",
+                &[][..],
+                &[("г. Энск, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Истец А. П. Петров, ул. Лесная, д. 5, кв. 7.",
+                &[("А. П. Петров", "person")][..],
+                &[
+                    ("А. П. Петров", "PERSON"),
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец Д. Петров, ул. Лесная, д. 5, кв. 7.",
+                &[("Д. Петров", "person")][..],
+                &[
+                    ("Д. Петров", "PERSON"),
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: С. Петрова Ирина, ул. Лесная, д. 5.",
+                &[("С. Петрова Ирина", "person")][..],
+                &[
+                    ("С. Петрова Ирина", "PERSON"),
+                    ("ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Ответчик: Иванов И. С., ул. Лесная, д. 5.",
+                &[("Иванов И. С.", "person")][..],
+                &[("Иванов И. С.", "PERSON"), ("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Ответчик: П. Иванов Иван Иванович, ул. Лесная, д. 5.",
+                &[("П. Иванов Иван Иванович", "person")][..],
+                &[
+                    ("П. Иванов Иван Иванович", "PERSON"),
+                    ("ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "гражданина С. Петрова, ул. Лесная, д. 5, кв. 7",
+                &[("С. Петрова", "person")][..],
+                &[
+                    ("С. Петрова", "PERSON"),
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: И.И. Петров, Энская область, г. Энск, ул. Лесная, д. 5, кв. 7",
+                &[("И.И. Петров", "person")][..],
+                &[
+                    ("И.И. Петров", "PERSON"),
+                    (
+                        "Энская область, г. Энск, ул. Лесная, д. 5, кв. 7",
+                        "ADDRESS",
+                    ),
+                ][..],
+            ),
+            (
+                "Истец: И.П. Петров, г. Энск, ул. Лесная, д. 5",
+                &[("И.П. Петров", "person")][..],
+                &[
+                    ("И.П. Петров", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец: А.Х. Петров, ул. Лесная, д. 5",
+                &[("А.Х. Петров", "person")][..],
+                &[("А.Х. Петров", "PERSON"), ("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Истец: А.И. Петров, ул. Лесная, д. 5",
+                &[("А.И. Петров", "person")][..],
+                &[("А.И. Петров", "PERSON"), ("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Истец: А.С. Петров, ул. Лесная, д. 5",
+                &[("Петров", "person")][..],
+                &[("А.С. Петров", "PERSON"), ("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "ПЕТРОВ С. ИВАНОВИЧ, УЛ ЛЕСНАЯ, Д. 5",
+                &[("ПЕТРОВ С. ИВАНОВИЧ", "person")][..],
+                &[
+                    ("ПЕТРОВ С. ИВАНОВИЧ", "PERSON"),
+                    ("УЛ ЛЕСНАЯ, Д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец Г.П. Иванов, ул. Лесная, д. 5, кв. 7",
+                &[("Г.П. Иванов", "person")][..],
+                &[
+                    ("Г.П. Иванов", "PERSON"),
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Истец С. П. Иванов, ул. Лесная, д. 5, кв. 7",
+                &[("С. П. Иванов", "person")][..],
+                &[
+                    ("С. П. Иванов", "PERSON"),
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "представителя Е.Д. Смирновой, г. Энск, ул. Лесная, д. 5",
+                &[("Е.Д. Смирновой", "person")][..],
+                &[
+                    ("Е.Д. Смирновой", "PERSON"),
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ООО КЕДРОВЫЙ БОР, РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14",
+                &[("ООО КЕДРОВЫЙ БОР", "organization")][..],
+                &[
+                    ("ООО КЕДРОВЫЙ БОР", "ORG"),
+                    ("РОССИЯ 999999, ЭНСК, УЛ ЦЕНТРАЛЬНАЯ, Д. 14", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "АО КЕДР, ЭНСКАЯ ОБЛАСТЬ, Г. ЭНСК, УЛ ЛЕСНАЯ, Д. 5",
+                &[("АО КЕДР", "organization")][..],
+                &[
+                    ("АО КЕДР", "ORG"),
+                    ("ЭНСКАЯ ОБЛАСТЬ, Г. ЭНСК, УЛ ЛЕСНАЯ, Д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ООО КЕДРОВСКИЙ РАЙОН, УЛ ЛЕСНАЯ, Д. 5",
+                &[("ООО КЕДРОВСКИЙ РАЙОН", "organization")][..],
+                &[
+                    ("ООО КЕДРОВСКИЙ РАЙОН", "ORG"),
+                    ("УЛ ЛЕСНАЯ, Д. 5", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ПЕТРОВ С. ИВАНОВИЧ, УЛ ЛЕСНАЯ, Д. 5",
+                &[][..],
+                &[("С. ИВАНОВИЧ, УЛ ЛЕСНАЯ, Д. 5", "ADDRESS")][..],
+            ),
+            (
+                "999999, ЭНСКАЯ ОБЛАСТЬ, С. КЕДРОВКА, УЛ ЛЕСНАЯ, Д. 5",
+                &[][..],
+                &[(
+                    "999999, ЭНСКАЯ ОБЛАСТЬ, С. КЕДРОВКА, УЛ ЛЕСНАЯ, Д. 5",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: Энская область, с. Кедровка, ул. Лесная, д. 5.",
+                &[][..],
+                &[("Энская область, с. Кедровка, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "согласно п. Кедровый, ул. Лесная, д. 5",
+                &[][..],
+                &[("п. Кедровый, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            // P2-1: a flat list ends before a phone, a date or a passport.
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8 9161234567.",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8–916–123–45–67.",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 123-45-67.",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "проживающий: ул. Лесная, д. 5, кв. 7, 12.03.1985 года рождения",
+                &[][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "проживающий: ул. Лесная, д. 5, кв. 7, 12.03.1985 года рождения",
+                &[("12.03.1985", "date")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8, ИНН 770708389312",
+                &[][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7, 8", "ADDRESS"),
+                    ("770708389312", "TAX"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 45 06 123456",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, р/с 40702810900000012345",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8–916–123–45–67.",
+                &[("8–916–123–45–67", "phone_number")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("8–916–123–45–67", "PHONE"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8 916 123 45 67.",
+                &[("8 916 123 45 67", "phone_number")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("8 916 123 45 67", "PHONE"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 45 06 123456.",
+                &[("45 06 123456", "passport_number")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("45 06 123456", "IDENTITY"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 12-34-56.",
+                &[("12-34-56", "phone_number")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12-34-56", "PHONE"),
+                ][..],
+            ),
+            (
+                "ул. Лесная, 5, 8 (999) 555-12-34",
+                &[("8 (999) 555-12-34", "phone_number")][..],
+                &[("ул. Лесная, 5", "ADDRESS"), ("8 (999) 555-12-34", "PHONE")][..],
+            ),
+            (
+                "ул. Лесная, 5, 770708389312",
+                &[][..],
+                &[("ул. Лесная, 5", "ADDRESS")][..],
+            ),
+            (
+                "ул. Лесная, д. 5, кв. 7, 555.12.34",
+                &[("555.12.34", "phone_number")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("555.12.34", "PHONE"),
+                ][..],
+            ),
+            (
+                "Иванов, проживающий: ул. Лесная, д. 5, кв. 7, 12.03.1985 г.р.",
+                &[][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "Иванов, проживающий: ул. Лесная, д. 5, кв. 7, 12.03.1985 г.р.",
+                &[("12.03.1985", "date")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "проживающий: ул. Лесная, д. 5, кв. 7, 12.03.1985 года рождения, уроженец",
+                &[("12.03.1985", "date")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 12.03.1985 г.р.",
+                &[("12.03.1985", "date")][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("12.03.1985", "DATE"),
+                ][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, кв. 7, 8 – 916 – 123.",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "ул. Лесная, д. 5, кв. 1, 2",
+                &[][..],
+                &[("ул. Лесная, д. 5, кв. 1, 2", "ADDRESS")][..],
+            ),
+            (
+                "ул. Кедровая, д. 10, кв. 1, 2\nДалее",
+                &[][..],
+                &[("ул. Кедровая, д. 10, кв. 1, 2", "ADDRESS")][..],
+            ),
+            // P2-2: masked parts: the house after a mask and an ellipsis, the
+            // index and places before a mask.
+            (
+                "Офис: 999999, Энская область, г.о. Кедровск, <...> … д. 5, стр. 1, оф. 2.",
+                &[][..],
+                &[
+                    ("999999, Энская область, г.о. Кедровск", "ADDRESS"),
+                    ("д. 5, стр. 1, оф. 2", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "999999, Энская область, г.о. Кедровск, <...> … д. 5, стр. 1, оф. 2",
+                &[][..],
+                &[
+                    ("999999, Энская область, г.о. Кедровск", "ADDRESS"),
+                    ("д. 5, стр. 1, оф. 2", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "999999, Энская область, г.о. Кедровск, <...> д. 5, стр. 1, оф. 2",
+                &[][..],
+                &[
+                    ("999999, Энская область, г.о. Кедровск", "ADDRESS"),
+                    ("д. 5, стр. 1, оф. 2", "ADDRESS"),
+                ][..],
+            ),
+            ("Адрес: г. Энск, <...>, д. 5", &[][..], &[][..]),
+            (
+                "Адрес: <...>, д. 5, кв. 7",
+                &[][..],
+                &[("д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: г. Энск, ул. ***, д. 5, кв. 7",
+                &[][..],
+                &[("г. Энск, ул. ***, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: г. Энск, ул. <данные изъяты>, д. 5, кв. 7",
+                &[][..],
+                &[("д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: 999999, Энская область, г.о. Кедровск, <...>.",
+                &[][..],
+                &[("999999, Энская область, г.о. Кедровск", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: Россия, 999999, г. Энск, <данные изъяты>",
+                &[][..],
+                &[("Россия, 999999, г. Энск", "ADDRESS")][..],
+            ),
+            ("Адрес: 999999, Энск, <...>", &[][..], &[][..]),
+            // P2-3: a public body's name stays outside its address.
+            (
+                "Администрация г. Энска, г. Энск, ул. Ленина, д. 1",
+                &[("Администрация г. Энска", "organization")][..],
+                &[("г. Энск, ул. Ленина, д. 1", "ADDRESS")][..],
+            ),
+            (
+                "Администрация г. Энска, г. Энск, ул. Ленина, д. 1",
+                &[][..],
+                &[("г. Энск, ул. Ленина, д. 1", "ADDRESS")][..],
+            ),
+            (
+                "Администрация г. Энска, г. Энск, ул. Ленина, д. 1",
+                &[("Администрация", "organization")][..],
+                &[("г. Энск, ул. Ленина, д. 1", "ADDRESS")][..],
+            ),
+            // P3: place names of any Cyrillic or Latin alphabet, a plot that is
+            // a year, a case number after «д. №», a lowercase «к» before a
+            // time, a house letter before a name.
+            (
+                "Адрес: г. Київ, ул. Хрещатик, д. 5.",
+                &[][..],
+                &[("г. Київ, ул. Хрещатик, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: 070000, г. Өскемен, ул. Абая, д. 5.",
+                &[][..],
+                &[("070000, г. Өскемен, ул. Абая, д. 5", "ADDRESS")][..],
+            ),
+            ("<данные изъяты> уч. 2023 года", &[][..], &[][..]),
+            (
+                "Энская область, <данные изъяты> уч. 1234.",
+                &[][..],
+                &[("уч. 1234", "ADDRESS")][..],
+            ),
+            (
+                "по ул. Лесной, д. № 2-1234/2020 рассмотрено",
+                &[][..],
+                &[][..],
+            ),
+            (
+                "по ул. Лесной, д. № 2-1234/2020 рассмотрено",
+                &[("2-1234/2020", "case number")][..],
+                &[][..],
+            ),
+            (
+                "по ул. Лесной, д. № 2-1234/2020",
+                &[("№ 2-1234/2020", "case")][..],
+                &[][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 12-1234 далее",
+                &[][..],
+                &[("ул. Лесная, д. 12", "ADDRESS")][..],
+            ),
+            (
+                "явиться на ул. Лесная, д. 5 к 10 часам",
+                &[][..],
+                &[("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5 В Петров И.И. явился",
+                &[("Петров И.И.", "person")][..],
+                &[("ул. Лесная, д. 5", "ADDRESS"), ("Петров И.И.", "PERSON")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5 В Петров И.И. явился",
+                &[][..],
+                &[("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Магазин: ул. Лесная, д. 43 Г. Далее",
+                &[][..],
+                &[("ул. Лесная, д. 43 Г", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, лит. Б Петров явился",
+                &[][..],
+                &[("ул. Лесная, д. 5, лит. Б", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 43 Г\nДалее",
+                &[][..],
+                &[("ул. Лесная, д. 43 Г", "ADDRESS")][..],
+            ),
+            // The brief's shapes, statute references and model spans as before.
+            (
+                "согласно п. 3 ч. 1 ст. 5 ГК РФ, ст. 12, д. 5",
+                &[][..],
+                &[][..],
+            ),
+            (
+                "в соответствии с пп. 1, 2 п. 3 ст. 5 Закона, ч. 2 ст. 15 АПК РФ",
+                &[][..],
+                &[][..],
+            ),
+            (
+                "в г. 2026, ул. Лесная, д. 5",
+                &[][..],
+                &[("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Решение от 12.03.2026 г., ул. Лесная, д. 5",
+                &[][..],
+                &[("ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: 191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12.",
+                &[][..],
+                &[(
+                    "191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: 197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3.",
+                &[][..],
+                &[(
+                    "197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: Республика Саха (Якутия), г. Якутск, ул. Ленина, д. 5.",
+                &[][..],
+                &[(
+                    "Республика Саха (Якутия), г. Якутск, ул. Ленина, д. 5",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9",
+                &[][..],
+                &[(
+                    "Тверская область, г. Ржев, ул. Тихих арок, д. 47, корп. 2, стр. 1, лит. Б, пом. 9",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: кв. 9, д. 32, переулок Бумажных лодок, Тверь, 170000",
+                &[][..],
+                &[(
+                    "кв. 9, д. 32, переулок Бумажных лодок, Тверь, 170000",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "по адресу Псков, ул. Тихих залов, д. 29",
+                &[][..],
+                &[("Псков, ул. Тихих залов, д. 29", "ADDRESS")][..],
+            ),
+            (
+                "Арбитражный суд Приморского края\n690091, г. Владивосток, ул. Светланская, 54\nРЕШЕНИЕ",
+                &[][..],
+                &[("690091, г. Владивосток, ул. Светланская, 54", "ADDRESS")][..],
+            ),
+            (
+                "191124, Санкт-Петербург, Суворовский пр., д. 50/52",
+                &[][..],
+                &[(
+                    "191124, Санкт-Петербург, Суворовский пр., д. 50/52",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "117997, г. Москва, ул. Садовническая, д. 68/70, стр. 1",
+                &[][..],
+                &[(
+                    "117997, г. Москва, ул. Садовническая, д. 68/70, стр. 1",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "125993, г. Москва, ГСП-3, ул. Тверская, д. 1",
+                &[][..],
+                &[("125993, г. Москва, ГСП-3, ул. Тверская, д. 1", "ADDRESS")][..],
+            ),
+            (
+                "127994, г. Москва, ГСП-4, проезд Соломенной сторожки, 12",
+                &[][..],
+                &[(
+                    "127994, г. Москва, ГСП-4, проезд Соломенной сторожки, 12",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "г. Энск, ул. Лесная, д. 5, кв. 7, тел. 8 (999) 555-12-34",
+                &[("г. Энск, ул. Лесная, д. 5, кв. 7, тел", "address")][..],
+                &[("г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "дом № 5 по ул. Лесной",
+                &[("№ 5 по ул. Лесной", "address")][..],
+                &[("5 по ул. Лесной", "ADDRESS")][..],
+            ),
+            (
+                "г. Энск, ул. Лесная, участок № 5",
+                &[("г. Энск, ул. Лесная, участок №", "address")][..],
+                &[("г. Энск, ул. Лесная, участок № 5", "ADDRESS")][..],
+            ),
+            (
+                "Магазин: Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г.",
+                &[("ул. Лесная, д. 43", "address")][..],
+                &[(
+                    "Республика Энская, Кедровский район, ч. Кедровка, ул. Лесная, д. 43 Г",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Иванов Иван Иванович, 999999, г. Энск, ул. Лесная, д. 5, кв. 7",
+                &[
+                    ("Иванов Иван Иванович", "person"),
+                    ("г. Энск, ул. Лесная, д. 5, кв. 7", "address"),
+                ][..],
+                &[
+                    ("Иванов Иван Иванович", "PERSON"),
+                    ("999999, г. Энск, ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "420066, Республика Татарстан, г. Казань, ул. Ново-Песочная, д. 3",
+                &[][..],
+                &[(
+                    "420066, Республика Татарстан, г. Казань, ул. Ново-Песочная, д. 3",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "410002, г. Саратов, ул. Бабушкин взвоз, д. 1",
+                &[][..],
+                &[("410002, г. Саратов, ул. Бабушкин взвоз, д. 1", "ADDRESS")][..],
+            ),
+            (
+                "участок по адресу: г. Энск, ул. Лесная, д. 5, кадастровый № 99:07:0012345:678",
+                &[("г. Энск, ул. Лесная, д. 5, кадастровый №", "address")][..],
+                &[
+                    ("г. Энск, ул. Лесная, д. 5", "ADDRESS"),
+                    ("99:07:0012345:678", "IDENTITY"),
+                ][..],
+            ),
+            (
+                "ООО «Кедровый бор»: Россия 999999, Энск, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1.",
+                &[("Кедровый бор", "organization")][..],
+                &[
+                    ("ООО «Кедровый бор»", "ORG"),
+                    (
+                        "Россия 999999, Энск, УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1",
+                        "ADDRESS",
+                    ),
+                ][..],
+            ),
+            (
+                "Адрес: Россия 999999, Энск, … УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1.",
+                &[][..],
+                &[(
+                    "Россия 999999, Энск, … УЛ ЦЕНТРАЛЬНАЯ, Д. 14, К. 4, ПОМЕЩ. 5-Н, ОФ. 1",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: 443000, Самарская область, Самара город, Московское (18 км) шоссе",
+                &[][..],
+                &[(
+                    "443000, Самарская область, Самара город, Московское (18 км) шоссе",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: 445000, Самарская область, г. Тольятти, а/ 1",
+                &[][..],
+                &[("445000, Самарская область, г. Тольятти, а/ 1", "ADDRESS")][..],
+            ),
+            (
+                "Магазин: Республика Тыва, Дзун-Хемчикский район, ч. Чадан, ул. Ленина, д. 43 Г.",
+                &[][..],
+                &[(
+                    "Республика Тыва, Дзун-Хемчикский район, ч. Чадан, ул. Ленина, д. 43 Г",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Квартиры: ул. Кедровая, 10 кв. 1,2; ул. Сосновая, 12 кв. 1, 2, 4; ул. Луговая, 6, 9; ул. Еловая,16; ул. Озёрная, 25 кв. 1.",
+                &[][..],
+                &[
+                    ("ул. Кедровая, 10 кв. 1,2", "ADDRESS"),
+                    ("ул. Сосновая, 12 кв. 1, 2, 4", "ADDRESS"),
+                    ("ул. Луговая, 6, 9", "ADDRESS"),
+                    ("ул. Еловая,16", "ADDRESS"),
+                    ("ул. Озёрная, 25 кв. 1", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Энская обл., г. Энск, Северный р-н, ул. им. Пахомова, д. 24, кв. 141",
+                &[][..],
+                &[(
+                    "Энская обл., г. Энск, Северный р-н, ул. им. Пахомова, д. 24, кв. 141",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "999999, г. Энск, ГСП-4, проезд Соломенной cторожки, 12",
+                &[][..],
+                &[(
+                    "999999, г. Энск, ГСП-4, проезд Соломенной cторожки, 12",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "680000, Хабаровский край, г. Хабаровск, ул. Ленина, д. 5",
+                &[][..],
+                &[(
+                    "680000, Хабаровский край, г. Хабаровск, ул. Ленина, д. 5",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "участок <...> Б, кадастровый № 99:07:0012345:678",
+                &[("Б, кадастровый №", "address")][..],
+                &[("99:07:0012345:678", "IDENTITY")][..],
+            ),
+            (
+                "Московская область, Мытищинский р-н, <...> уч. 109",
+                &[][..],
+                &[("уч. 109", "ADDRESS")][..],
+            ),
+            (
+                "(<...> д 31 к 2, кв 69б, ИНН:<***>)",
+                &[][..],
+                &[("д 31 к 2, кв 69б", "ADDRESS")][..],
+            ),
+            (
+                "…, г. Энск, ул. Лесная, д. 5, , ком. 1-А",
+                &[][..],
+                &[("г. Энск, ул. Лесная, д. 5, , ком. 1-А", "ADDRESS")][..],
+            ),
+            (
+                "а/я 15, г. Энск, 999999",
+                &[][..],
+                &[("а/я 15, г. Энск, 999999", "ADDRESS")][..],
+            ),
+            ("625010, ", &[][..], &[][..]),
+            (
+                "ул Лесная, д 5, кв 1, 2",
+                &[][..],
+                &[("ул Лесная, д 5, кв 1, 2", "ADDRESS")][..],
+            ),
+            (
+                "Энская область, г.о. Кедровск, ул. Лесная, д. 5",
+                &[][..],
+                &[("Энская область, г.о. Кедровск, ул. Лесная, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "УЛ ЛЕСНАЯ, Д. 14 Б, К. 4",
+                &[][..],
+                &[("УЛ ЛЕСНАЯ, Д. 14 Б, К. 4", "ADDRESS")][..],
+            ),
+            (
+                "ул. Лесная, 14 Б",
+                &[][..],
+                &[("ул. Лесная, 14 Б", "ADDRESS")][..],
+            ),
+            (
+                "ул. Луговая, 6, 9, кв. 3",
+                &[][..],
+                &[("ул. Луговая, 6, 9, кв. 3", "ADDRESS")][..],
+            ),
+            (
+                "ул. Луговая, 6/2, кв. 3",
+                &[][..],
+                &[("ул. Луговая, 6/2, кв. 3", "ADDRESS")][..],
+            ),
+            (
+                "РОССИЙСКАЯ ФЕДЕРАЦИЯ, 999999, Г.ЭНСК, ПР-Т ЛЕНИНА, Д. 5, ОФИС 3",
+                &[][..],
+                &[(
+                    "РОССИЙСКАЯ ФЕДЕРАЦИЯ, 999999, Г.ЭНСК, ПР-Т ЛЕНИНА, Д. 5, ОФИС 3",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "РОССИЯ, 999999, ЭНСК, УЛ ЛЕСНАЯ, Д. 5, ПОМЕЩЕНИЕ I, КОМН. 2",
+                &[][..],
+                &[(
+                    "РОССИЯ, 999999, ЭНСК, УЛ ЛЕСНАЯ, Д. 5, ПОМЕЩЕНИЕ I, КОМН. 2",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "Адрес: г. Энск, Ленинский пр-т, д. 5, кв. 3",
+                &[][..],
+                &[("г. Энск, Ленинский пр-т, д. 5, кв. 3", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: г. Энск, ул. имени Пахомова, д. 5",
+                &[][..],
+                &[("г. Энск, ул. имени Пахомова, д. 5", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: г. Энск, ул. Лесная, д. 5, эт. 2, пом. 3",
+                &[][..],
+                &[("г. Энск, ул. Лесная, д. 5, эт. 2, пом. 3", "ADDRESS")][..],
+            ),
+            (
+                "999999, ЭНСКАЯ ОБЛАСТЬ, Г.О. КЕДРОВСК, УЛ ЛЕСНАЯ, Д. 5",
+                &[][..],
+                &[(
+                    "999999, ЭНСКАЯ ОБЛАСТЬ, Г.О. КЕДРОВСК, УЛ ЛЕСНАЯ, Д. 5",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "АРБИТРАЖНЫЙ СУД ГОРОДА МОСКВЫ\n115225, г.Москва, ул. Б. Тульская, 17\nhttp://www.msk.arbitr.ru",
+                &[][..],
+                &[("115225, г.Москва, ул. Б. Тульская, 17", "ADDRESS")][..],
+            ),
+            (
+                "Девятый арбитражный апелляционный суд 127994, Москва, ГСП-4, проезд Соломенной сторожки, 12, адрес электронной почты",
+                &[][..],
+                &[(
+                    "127994, Москва, ГСП-4, проезд Соломенной сторожки, 12",
+                    "ADDRESS",
+                )][..],
+            ),
+            (
+                "кв. 9, д. 32, ул. Лесная, г. Энск; ул. Садовая, д. 7, кв. 1",
+                &[][..],
+                &[
+                    ("кв. 9, д. 32, ул. Лесная, г. Энск", "ADDRESS"),
+                    ("ул. Садовая, д. 7, кв. 1", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "ул. Лесная, д. 5, кв. 7, ул. Садовая, д. 7",
+                &[][..],
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("ул. Садовая, д. 7", "ADDRESS"),
+                ][..],
+            ),
+            (
+                "Адрес: д. 5, № 7",
+                &[("д. 5, №", "address")][..],
+                &[("д. 5", "ADDRESS")][..],
+            ),
+            (
+                "<...> д. 5, кв. 7 Петров Иван",
+                &[("Петров Иван", "person")][..],
+                &[("д. 5, кв. 7", "ADDRESS"), ("Петров Иван", "PERSON")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5, к. 2, кв. 7.",
+                &[][..],
+                &[("ул. Лесная, д. 5, к. 2, кв. 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д.5 к.2 кв.7.",
+                &[][..],
+                &[("ул. Лесная, д.5 к.2 кв.7", "ADDRESS")][..],
+            ),
+            (
+                "УЛ ЛЕСНАЯ, Д 5 К 2, КВ 7",
+                &[][..],
+                &[("УЛ ЛЕСНАЯ, Д 5 К 2, КВ 7", "ADDRESS")][..],
+            ),
+            (
+                "Адрес: ул. Лесная, д. 5-7, кв. 3.",
+                &[][..],
+                &[("ул. Лесная, д. 5-7, кв. 3", "ADDRESS")][..],
+            ),
+            (
+                "Harrow House, 12 Pellin Street, Bristol BS6 9ZY",
+                &[("Harrow House", "organization")][..],
+                &[("Harrow House, 12 Pellin Street, Bristol BS6 9ZY", "ADDRESS")][..],
+            ),
+            (
+                "Пахомова ул., д. 5, кв. 3",
+                &[("Пахомова", "person")][..],
+                &[("Пахомова", "PERSON")][..],
+            ),
+            (
+                "Адрес: ул. им. Пахомова, д. 5",
+                &[("Пахомова", "person")][..],
+                &[("ул. им. Пахомова, д. 5", "ADDRESS")][..],
+            ),
+            ("в силу ст. 12, ч. 1 ст. 5 ГК РФ, д. 5", &[][..], &[][..]),
+        ];
+        for (source, raw, expected) in rows {
+            assert_eq!(shown(source, raw), pairs(expected), "{source}");
+        }
+    }
+
     /// US and UK addresses from PDF and text layers (#498): the "City, ST
     /// ZIP" line under the street, suites, floors and buildings, compass
     /// parts, spelled-out states and capitals, whole from the first element
@@ -9920,6 +11375,572 @@ Privacy Act (“BIPA”). BIPA applies.",
             shown(source, &[("4512345678", "passport_number")]),
             pairs(&[("4512345678", "IDENTITY")])
         );
+    }
+
+    /// Close variants of the English citations #511 covers are no tax,
+    /// bank or identity values either: codes without spaces or dots, state
+    /// statutes, the Civil Procedure Rules by rule or part, agencies'
+    /// letters and rulings, a running header's entry and page, and years
+    /// (guide rules 4 and 8, issue #480).
+    #[test]
+    fn english_citation_variants_are_never_proposed() {
+        let source = "Under 19CFR141.37, 42 USC Section 1981, 42 U.S.C. Sec. 1983, NRS 41.1395, \
+            N.R.S. § 41.085, 54 FR 35305, 49FR17754, CPR r71.8, CPR r.38.4, CPR r 71.5, CPR \
+            Part 35 and the CPR, Part 19.12 (Release Number 34-52926; FDIC FIL-111-2006; OTS \
+            No. 2006-49; CEQ # 20060476; T.D. 84-93; Rev. Rul. 2031-12; PLR 203112001; Fed. R. \
+            Civ. P. 12(b)(6)). In Reply Refer To: AESO/SE 22410-2005-F-0506.\n\
+            15-49008-wsd Doc 19-1 Filed 06/12/15\nTXSD Page 7 of 8\n\
+            For the years 2013 through 2016 and in March 2023 nothing changed.";
+        let raw = [
+            ("19CFR141.37", "tax_id"),
+            ("42 USC Section 1981", "tax_id"),
+            ("1983", "bank_account"),
+            ("NRS 41.1395", "tax_id"),
+            ("41.085", "tax_id"),
+            ("54 FR 35305", "tax_id"),
+            ("49FR17754", "tax_id"),
+            ("CPR r71.8", "national_id_number"),
+            ("r.38.4", "tax_id"),
+            ("CPR r 71.5", "national_id_number"),
+            ("CPR Part 35", "passport_number"),
+            ("Part 19.12", "tax_id"),
+            ("Release Number 34-52926", "bank_account"),
+            ("FIL-111-2006", "tax_id"),
+            ("OTS No. 2006-49", "tax_id"),
+            ("CEQ # 20060476", "tax_id"),
+            ("T.D. 84-93", "tax_id"),
+            ("Rev. Rul. 2031-12", "tax_id"),
+            ("203112001", "tax_id"),
+            ("12(b)(6)", "tax_id"),
+            ("AESO/SE 22410-2005-F-0506", "organization"),
+            ("15-49008-wsd", "tax_id"),
+            ("Doc 19-1", "tax_id"),
+            ("TXSD Page 7 of 8", "tax_id"),
+            ("2013 through 2016", "tax_id"),
+            ("2023", "tax_id"),
+        ];
+        let failures: Vec<String> = raw
+            .iter()
+            .filter_map(|span| {
+                let actual = shown(source, &[*span]);
+                (!actual.is_empty()).then(|| format!("{span:?}: {actual:?}"))
+            })
+            .collect();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        // A year alone is no tax number; a real one stays.
+        for year in ["2023", " 2013 through 2016 ", "2029 and 2030"] {
+            assert!(!pack().identifying(year, Category::Tax), "{year:?}");
+        }
+        for value in ["98-7654321", "123456789", "123-45-6789", "20231"] {
+            assert!(pack().identifying(value, Category::Tax), "{value:?}");
+        }
+    }
+
+    /// A docket number is the case at hand's after "No." (CASE, with its
+    /// repeats), a cited case's inside its citation, and never a tax, bank
+    /// or identity value (guide rule 5, #506 item 3, issue #480).
+    #[test]
+    fn docket_numbers_are_case_numbers_or_nothing() {
+        let source = "Ivo Harrow v. Quillon Freight LLC\nNo. 09-31-00999-CV\n\n\
+            See Pellam v. Ostrand, No. 09-30-00111-CV (Tex. App. 2030), and 1:31-cv-00999-ZZ \
+            (see 02 CV 3651). Index No. 06 CV 15490 is the related action. 31-99999-zzz Doc 7 \
+            Filed 06/12/31.\n09-31-00999-CV Page 2 of 3\n";
+        let raw = [
+            ("Ivo Harrow", "person"),
+            ("Quillon Freight LLC", "organization"),
+            ("09-31-00999-CV", "tax_id"),
+            ("09-30-00111-CV", "tax_id"),
+            ("1:31-cv-00999-ZZ", "tax_id"),
+            ("02 CV 3651", "bank_account"),
+            ("06 CV 15490", "tax_id"),
+            ("31-99999-zzz", "national_id_number"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Ivo Harrow", "PERSON"),
+                ("Quillon Freight LLC", "ORG"),
+                ("09-31-00999-CV", "CASE"),
+                ("06 CV 15490", "CASE"),
+                ("09-31-00999-CV", "CASE"),
+            ])
+        );
+        // A bankruptcy header's case number is CASE where a label names it,
+        // without the entry beside it.
+        let source = "Case: 15-49008-wsd\n15-49008-wsd Doc 19-1 Filed 06/12/15\n";
+        assert_eq!(
+            shown(source, &[("15-49008-wsd Doc 19-1", "tax_id")]),
+            pairs(&[("15-49008-wsd", "CASE"), ("15-49008-wsd", "CASE")])
+        );
+        for (value, category) in [
+            ("01-24-00779-CV", Category::Tax),
+            ("1:21-cv-00616-RP", Category::Tax),
+            ("02 CV 3651", Category::Bank),
+            ("15-49008-wsd Doc 19-1", Category::Tax),
+            ("01-24-00779-CV", Category::Identity),
+        ] {
+            assert!(!pack().identifying(value, category), "{value:?}");
+        }
+    }
+
+    /// Beside each English citation a real value and a party stay: a tax
+    /// number, an account, a phone, a passport, a company and a person
+    /// (issue #480).
+    #[test]
+    fn identifiers_beside_citation_variants_stay() {
+        let source = "Under 19CFR141.37 Quillon Freight LLC (EIN 98-7654321) paid from account \
+            number 12345678; NRS 41.1395 binds Ivo Harrow, tel. +1 (202) 555-0164, passport \
+            123456789 (CPR r71.8); Release Number 34-52926, SSN 123-45-6789; for the years \
+            2013 through 2016 (TXSD Page 7 of 8) Rowan Pell paid.";
+        let raw = [
+            ("Quillon Freight LLC", "organization"),
+            ("98-7654321", "tax_id"),
+            ("12345678", "bank_account"),
+            ("Ivo Harrow", "person"),
+            ("+1 (202) 555-0164", "phone_number"),
+            ("123456789", "passport_number"),
+            ("123-45-6789", "tax_id"),
+            ("Rowan Pell", "person"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("Quillon Freight LLC", "ORG"),
+                ("98-7654321", "TAX"),
+                ("12345678", "BANK"),
+                ("Ivo Harrow", "PERSON"),
+                ("+1 (202) 555-0164", "PHONE"),
+                ("123456789", "IDENTITY"),
+                ("123-45-6789", "TAX"),
+                ("Rowan Pell", "PERSON"),
+            ])
+        );
+    }
+
+    /// Close variants of the Russian references #511 covers: a law's number
+    /// spaced, reversed or in lower case, an article of a code by its full
+    /// name, a municipal act after a quoted name, a letter's number whole or
+    /// in pieces, a transfer document with its word, a trading protocol's
+    /// number and a date's month (guide rules 4 and 8, issue #480).
+    #[test]
+    fn russian_reference_variants_are_never_proposed() {
+        let source = "Постановление Администрации Энского района «Кедровый» от 25.03.2031 № \
+            833-ПА, по УПД № 137 от 06.06.2031, протоколу об определении участников торгов \
+            144355-МЭТС/1, Письмо Минфина России от 30.04.2031 N 52н, письмо № \
+            02-09-11/05-07-31116 и № 06-18/27628, Закон РФ «О защите прав потребителей» от \
+            07.02.1992 № 2300-1, Положение Банка России от 29.06.2031 N 762-П, ст. 428 \
+            Гражданского кодекса РФ, ст. 12.8 Кодекса Российской Федерации об \
+            административных правонарушениях, Федерального закона № 999 - ФЗ, ФЗ-127 и 44-фз.";
+        let raw = [
+            ("03", "bank_account"),
+            ("833-ПА", "national_id_number"),
+            ("УПД № 137", "tax_id"),
+            ("144355-МЭТС/1", "tax_id"),
+            ("52н", "tax_id"),
+            ("05-07-31116", "bank_account"),
+            ("06-18/27628", "tax_id"),
+            ("2300-1", "tax_id"),
+            ("762-П", "national_id_number"),
+            ("428 Гражданского кодекса РФ", "tax_id"),
+            ("12.8 Кодекса Российской Федерации", "tax_id"),
+            ("999 - ФЗ", "tax_id"),
+            ("ФЗ-127", "tax_id"),
+            ("44-фз", "tax_id"),
+        ];
+        let failures: Vec<String> = raw
+            .iter()
+            .filter_map(|span| {
+                let actual = shown(source, &[*span]);
+                (!actual.is_empty()).then(|| format!("{span:?}: {actual:?}"))
+            })
+            .collect();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// Beside each Russian reference real values, a party and the case's
+    /// own number stay; a page number comes off the case number's repeat,
+    /// and a court case's number after "№" is no letter's (issue #480).
+    #[test]
+    fn identifiers_beside_russian_reference_variants_stay() {
+        let source = "Дело № А28-3207/2031. Постановление Администрации Энского района \
+            «Кедровый» от 25.03.2031 № 833-ПА получила Лидия Брюн, ИНН 7701234567, КПП \
+            770101001, ОГРН 1027700132195, р/с 40702810900000012345 от 30.03.2031, паспорт \
+            4512 345678, тел. +7 (495) 123-45-67; по УПД № 137 ООО «Кедровый бор».\n\
+            3 А28-3207/2031\n";
+        let raw = [
+            ("Лидия Брюн", "person"),
+            ("7701234567", "tax_id"),
+            ("770101001", "tax_id"),
+            ("1027700132195", "tax_id"),
+            ("40702810900000012345", "bank_account"),
+            ("4512 345678", "passport_number"),
+            ("+7 (495) 123-45-67", "phone_number"),
+            ("ООО «Кедровый бор»", "organization"),
+            ("3 А28-3207/2031", "tax_id"),
+        ];
+        assert_eq!(
+            shown(source, &raw),
+            pairs(&[
+                ("А28-3207/2031", "CASE"),
+                ("Лидия Брюн", "PERSON"),
+                ("7701234567", "TAX"),
+                ("770101001", "TAX"),
+                // The structured ОГРН rule's category, as before #480.
+                ("1027700132195", "IDENTITY"),
+                ("40702810900000012345", "BANK"),
+                ("4512 345678", "IDENTITY"),
+                ("+7 (495) 123-45-67", "PHONE"),
+                ("ООО «Кедровый бор»", "ORG"),
+                ("А28-3207/2031", "CASE"),
+            ])
+        );
+        // A court case's number after "№" is no letter's: the model's span
+        // stays, as do a dotted account and an appellate number.
+        let source = "Решение суда № 2-1842/2031, счёт 40817.810.12.03.2031, № 09АП-1234/2031";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("2-1842/2031", "national_id_number"),
+                    ("40817.810.12.03.2031", "bank_account"),
+                    ("09АП-1234/2031", "tax_id"),
+                ]
+            ),
+            pairs(&[
+                ("2-1842/2031", "IDENTITY"),
+                ("40817.810.12.03.2031", "BANK"),
+                ("09АП-1234/2031", "TAX"),
+            ])
+        );
+    }
+
+    /// A source, the model's spans in it (each wording's `n`th mention)
+    /// and what the review should show.
+    type Shown<'a> = (
+        &'a str,
+        &'a [(&'a str, usize, &'a str)],
+        &'a [(&'a str, &'a str)],
+    );
+
+    /// Each case's proposals against what it should show; the failures,
+    /// one line each.
+    fn failures(cases: &[Shown<'_>]) -> Vec<String> {
+        cases
+            .iter()
+            .filter_map(|(source, raw, expected)| {
+                let actual = shown_at(source, raw);
+                (actual != pairs(expected))
+                    .then(|| format!("{source:?}: {actual:?}, not {expected:?}"))
+            })
+            .collect()
+    }
+
+    /// A court's docket number the model takes for a tax, bank or identity
+    /// value is a case number under any label, in a list or alone, and
+    /// never goes unmarked (guide rule 5, #480 review).
+    #[test]
+    fn docket_numbers_under_any_label_stay_case_numbers() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "UNITED STATES DISTRICT COURT\nIvo Harrow v. Quillon Freight LLC\nDocket: \
+                1:21-cv-00616-RP\n",
+                &[("1:21-cv-00616-RP", 0, "tax_id")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "Docket Number: 1:21-cv-00616-RP\n",
+                &[("1:21-cv-00616-RP", 0, "bank_account")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "NUMBER 13-21-00234-CV\n\nCOURT OF APPEALS\nIvo Harrow, Appellant, v. Quillon \
+                Freight LLC, Appellee.\n",
+                &[("13-21-00234-CV", 0, "tax_id")],
+                &[("13-21-00234-CV", "CASE")],
+            ),
+            (
+                "NUMBER 13-21-00234-CV\n\nIvo Harrow, Appellant, v. Quillon Freight LLC, \
+                Appellee.\n\nWe affirm in 13-21-00234-CV.\n",
+                &[
+                    ("13-21-00234-CV", 0, "tax_id"),
+                    ("13-21-00234-CV", 1, "tax_id"),
+                ],
+                &[("13-21-00234-CV", "CASE"), ("13-21-00234-CV", "CASE")],
+            ),
+            (
+                "NUMBERS 13-21-00234-CV & 13-21-00235-CV\n\nCOURT OF APPEALS\n",
+                &[
+                    ("13-21-00234-CV", 0, "tax_id"),
+                    ("13-21-00235-CV", 0, "tax_id"),
+                ],
+                &[("13-21-00234-CV", "CASE"), ("13-21-00235-CV", "CASE")],
+            ),
+            (
+                "NOS. 01-24-00779-CV, 01-24-00780-CV\n",
+                &[
+                    ("01-24-00779-CV", 0, "tax_id"),
+                    ("01-24-00780-CV", 0, "tax_id"),
+                ],
+                &[("01-24-00779-CV", "CASE"), ("01-24-00780-CV", "CASE")],
+            ),
+            (
+                "Nos. 01-24-00779-CV & 01-24-00780-CV\n",
+                &[
+                    ("01-24-00779-CV", 0, "tax_id"),
+                    ("01-24-00780-CV", 0, "tax_id"),
+                ],
+                &[("01-24-00779-CV", "CASE"), ("01-24-00780-CV", "CASE")],
+            ),
+            (
+                "Case Nos. 1:21-cv-00616-RP, 1:21-cv-00617-RP\n",
+                &[
+                    ("1:21-cv-00616-RP", 0, "tax_id"),
+                    ("1:21-cv-00617-RP", 0, "tax_id"),
+                ],
+                &[("1:21-cv-00616-RP", "CASE"), ("1:21-cv-00617-RP", "CASE")],
+            ),
+            (
+                "Cause Number 01-24-00779-CV\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("01-24-00779-CV", 0, "national_id_number")],
+                &[("01-24-00779-CV", "CASE")],
+            ),
+            (
+                "Civil Action 1:21-cv-00616-RP\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("1:21-cv-00616-RP", 0, "tax_id")],
+                &[("1:21-cv-00616-RP", "CASE")],
+            ),
+            (
+                "Index # 06 CV 15490\nIvo Harrow v. Quillon Freight LLC\n",
+                &[("06 CV 15490", 0, "tax_id")],
+                &[("06 CV 15490", "CASE")],
+            ),
+            (
+                "In re Ivo Harrow, Debtor.\nBankruptcy No. 15-49008-wsd\nChapter 7\n",
+                &[("15-49008-wsd", 0, "tax_id")],
+                &[("15-49008-wsd", "CASE")],
+            ),
+            (
+                "Ivo Harrow, Plaintiff, v. Quillon Freight LLC, Defendant.\nAdv. No. \
+                15-04123-wsd\n",
+                &[("15-04123-wsd", 0, "tax_id")],
+                &[("15-04123-wsd", "CASE")],
+            ),
+            (
+                "Adv. Pro. No. 31-01992-wsd\n",
+                &[("31-01992-wsd", 0, "tax_id")],
+                &[("31-01992-wsd", "CASE")],
+            ),
+            (
+                "In re Ivo Harrow, Debtor. Chapter 7, Bankruptcy 15-49008-wsd\n",
+                &[("15-49008-wsd", 0, "tax_id")],
+                &[("15-49008-wsd", "CASE")],
+            ),
+            (
+                "No. 01-24-00779-CR\nThe State of Texas v. Ivo Harrow\n",
+                &[("01-24-00779-CR", 0, "tax_id")],
+                &[("01-24-00779-CR", "CASE")],
+            ),
+            // "No." inside the model's span stays outside the case number.
+            (
+                "NO. 14-31-00999-CV\n",
+                &[("NO. 14-31-00999-CV", 0, "tax_id")],
+                &[("14-31-00999-CV", "CASE")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // Russian: a case number under another label or none is CASE too,
+        // its page number left out.
+        let cases: &[Shown<'_>] = &[
+            (
+                "Апелляционное производство № 33-1234/2031\nСудья Брюн Л.\n",
+                &[("33-1234/2031", 0, "tax_id")],
+                &[("33-1234/2031", "CASE")],
+            ),
+            (
+                "Материал № 13-123/2031\n",
+                &[("13-123/2031", 0, "tax_id")],
+                &[("13-123/2031", "CASE")],
+            ),
+            (
+                "№ 2-1842/2031\nРЕШЕНИЕ\nИменем Российской Федерации\n",
+                &[("2-1842/2031", 0, "tax_id")],
+                &[("2-1842/2031", "CASE")],
+            ),
+            (
+                "Апелляционное производство № 33-1234/2031\nДело № 2-1842/2031\n",
+                &[("33-1234/2031", 0, "tax_id"), ("2-1842/2031", 0, "tax_id")],
+                &[("33-1234/2031", "CASE"), ("2-1842/2031", "CASE")],
+            ),
+            (
+                "Определение Арбитражного суда Кировской области от 01.03.2031 № \
+                А28-3207/2031\n",
+                &[("А28-3207/2031", 0, "tax_id")],
+                &[("А28-3207/2031", "CASE")],
+            ),
+            (
+                "3 А28-3207/2031\n",
+                &[("3 А28-3207/2031", 0, "tax_id")],
+                &[("А28-3207/2031", "CASE")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    /// A Russian act's, letter's or law's lead before "№" takes no account,
+    /// БИК, card, passport or tax number after an author's word, and no
+    /// surname that starts like "Закон"; an arbitration court's case number
+    /// after an act stays the model's (#480 review).
+    #[test]
+    fn values_after_an_act_lead_stay() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "Письмо ООО «Ромашка» Счёт N 40702810900000012345\n",
+                &[("40702810900000012345", 0, "bank_account")],
+                &[("40702810900000012345", "BANK")],
+            ),
+            (
+                "Письмо ПАО Сбербанк БИК № 044525225\n",
+                &[("044525225", 0, "bank_account")],
+                &[("044525225", "BANK")],
+            ),
+            (
+                "Письмо Брюн Л. Карта № 4276123456789012\n",
+                &[("4276123456789012", 0, "bank_account")],
+                &[("4276123456789012", "BANK")],
+            ),
+            (
+                "Положение Сотрудника Брюн Л. № 4276123456789012\n",
+                &[("4276123456789012", 0, "bank_account")],
+                &[("4276123456789012", "BANK")],
+            ),
+            (
+                "Законов Иван Петрович N 4512345678, проживает в г. Кирове.\n",
+                &[
+                    ("Законов Иван Петрович", 0, "person"),
+                    ("4512345678", 0, "passport_number"),
+                ],
+                &[
+                    ("Законов Иван Петрович", "PERSON"),
+                    ("4512345678", "IDENTITY"),
+                ],
+            ),
+            (
+                "Письмо Минфина России от 30.03.2031 № 7701234567\n",
+                &[("7701234567", 0, "tax_id")],
+                &[("7701234567", "TAX")],
+            ),
+            (
+                "передаточному документу N 40702810900000012345\n",
+                &[("40702810900000012345", 0, "bank_account")],
+                &[("40702810900000012345", "BANK")],
+            ),
+            (
+                "Определение Арбитражного суда Кировской области от 01.03.2031 № \
+                А28-3207/2031\n",
+                &[("А28-3207/2031", 0, "national_id_number")],
+                &[("А28-3207/2031", "IDENTITY")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // The references themselves still go.
+        let source = "Закон РФ от 07.02.1992 № 2300-1, Законом № 999-ФЗ, Письмо Минфина России \
+            от 30.03.2031 № 02-09-11/05-03-99999, Определение Верховного Суда РФ от \
+            12.03.2031 № 305-ЭС31-1234.";
+        for (text, label) in [
+            ("2300-1", "tax_id"),
+            ("999-ФЗ", "tax_id"),
+            ("02-09-11/05-03-99999", "bank_account"),
+            ("305-ЭС31-1234", "tax_id"),
+        ] {
+            assert_eq!(shown(source, &[(text, label)]), Vec::new(), "{text:?}");
+        }
+        // A date's month after «от» is no account, its year short or not.
+        for source in ["письмо от 30.03.15 N 52н.", "письмо от 30.03.2015 N 52н."]
+        {
+            assert_eq!(
+                shown(source, &[("03", "bank_account")]),
+                Vec::new(),
+                "{source:?}"
+            );
+        }
+    }
+
+    /// A running header's page count, a Treasury Decision, a dotted date,
+    /// the Federal Register and a header's entry number each take only
+    /// their own shape: a party's name, a phone, a sort code, an address
+    /// and an identity number beside a look-alike stay (#480 review).
+    #[test]
+    fn neighbours_of_citation_look_alikes_stay() {
+        let cases: &[Shown<'_>] = &[
+            (
+                "DECLARATION OF HARROW Page 2 of 8\n",
+                &[("HARROW", 0, "person")],
+                &[("HARROW", "PERSON")],
+            ),
+            (
+                "Prepared for ACME Page 2 of 8\n",
+                &[("ACME", 0, "organization")],
+                &[("ACME", "ORG")],
+            ),
+            (
+                "Contacts: Smith, T.D. 555-0164; Jones, A.B. 555-0199.\n",
+                &[
+                    ("555-0164", 0, "phone_number"),
+                    ("555-0199", 0, "phone_number"),
+                ],
+                &[("555-0164", "PHONE"), ("555-0199", "PHONE")],
+            ),
+            (
+                "Sort code: 20.03.12\nAccount number: 12345678\n",
+                &[
+                    ("20.03.12", 0, "bank_account"),
+                    ("12345678", 0, "bank_account"),
+                ],
+                &[("20.03.12", "BANK"), ("12345678", "BANK")],
+            ),
+            (
+                "Pay to Ivo Harrow, sort code 20.03.12, account 12345678.\n",
+                &[
+                    ("20.03.12", 0, "bank_account"),
+                    ("12345678", 0, "bank_account"),
+                ],
+                &[("20.03.12", "BANK"), ("12345678", "BANK")],
+            ),
+            (
+                "Счёт 12.03.31 банк\n",
+                &[("12.03.31", 0, "bank_account")],
+                &[("12.03.31", "BANK")],
+            ),
+            (
+                "Quillon Freight LLC, Unit 12 FR 75008 Paris\n",
+                &[("75008", 0, "address")],
+                &[("75008", "ADDRESS")],
+            ),
+            (
+                "Identity Document 12345 Page 2 of the file.\n",
+                &[("12345", 0, "national_id_number")],
+                &[("12345", "IDENTITY")],
+            ),
+        ];
+        let failed = failures(cases);
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+        // The look-alikes themselves still go.
+        let source = "TXSD Page 7 of 8; T.D. 84-93; T.D. 9876; 54 FR 35305, 35310; 49FR17754 \
+            at 2; Document 12 Filed 06/12/21; от 30.03.2015 N 52н.";
+        for (text, label) in [
+            ("TXSD Page 7 of 8", "tax_id"),
+            ("84-93", "tax_id"),
+            ("9876", "tax_id"),
+            ("54 FR 35305", "tax_id"),
+            ("49FR17754", "tax_id"),
+            ("Document 12", "national_id_number"),
+            ("03", "bank_account"),
+        ] {
+            assert_eq!(shown(source, &[(text, label)]), Vec::new(), "{text:?}");
+        }
     }
 
     /// A citation is found as detection reads it: through character
