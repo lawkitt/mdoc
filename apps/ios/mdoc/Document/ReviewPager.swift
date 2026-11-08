@@ -107,7 +107,7 @@ struct ReviewPager: View {
                     // A tap on a peek steps to it.
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { NSLog("DBGPAGER peek tap"); swiped(item.place > 0 ? 1 : -1) }
+                        .onTapGesture { swiped(item.place > 0 ? 1 : -1) }
                 }
             }
             .opacity(Double(1 - 0.45 * dim))
@@ -115,9 +115,7 @@ struct ReviewPager: View {
             // hangs from its top.
             .frame(height: current ? nil : 0, alignment: .top)
             .offset(x: x)
-            // Only the current card is there for VoiceOver (and tests): a
-            // neighbor's controls, hidden alone, still showed.
-            .accessibilityElement(children: current ? .contain : .ignore)
+            // Only the card under review is there for VoiceOver.
             .accessibilityHidden(!current)
     }
 
@@ -150,7 +148,6 @@ struct ReviewPager: View {
                 let threshold = max(ReviewBarMetrics.swipeThreshold, cardWidth / 3)
                 let delta = dx < -threshold || predicted < -pitch / 2 ? 1
                     : dx > threshold || predicted > pitch / 2 ? -1 : 0
-                NSLog("DBGPAGER end dx=%f predicted=%f width=%f pitch=%f threshold=%f delta=%d axis=%@", dx, predicted, width, pitch, threshold, delta, String(describing: axis))
                 if delta == 1 && hasNext || delta == -1 && hasPrevious {
                     model.learn(.swipe)
                     settle(by: delta)

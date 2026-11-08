@@ -13,7 +13,8 @@ final class ReviewPagerUITests: XCTestCase {
     /// between the name and the mentions chip, where nothing takes a tap.
     @MainActor
     private func drag(_ app: XCUIApplication, by dx: CGFloat, velocity: CGFloat, hold: TimeInterval) {
-        // The current card's: the neighbors' sit off to the sides.
+        // The current card's: XCUITest also lists the neighbors' (hidden
+        // from VoiceOver), which sit off to the sides.
         let chips = app.buttons.matching(identifier: "review-mentions").allElementsBoundByIndex
         guard let chip = chips.first(where: { $0.frame.minX >= 0 && $0.frame.maxX <= app.frame.width }) else {
             return XCTFail("no mentions chip on screen")
