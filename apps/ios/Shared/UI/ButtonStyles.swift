@@ -40,26 +40,32 @@ enum BigButton {
     /// What the system's glass button adds above and below its label at the
     /// regular control size; `ComponentSnapshotTests` checks the sum is 44.
     static let systemPadding: CGFloat = 7
+    /// What it adds each side of an icon in a circle.
+    static let systemCirclePadding: CGFloat = 12
     /// The label's least height, so the button is `height` high.
     static var labelHeight: CGFloat { height - 2 * systemPadding }
+    /// An icon's width in a circle `height` across.
+    static var circleLabelWidth: CGFloat { height - 2 * systemCirclePadding }
 }
 
 /// `primaryAction()` and `secondaryAction()`: the system's glass button
-/// styles around a label at least `BigButton.labelHeight` high.
+/// styles around a label at least `BigButton.labelHeight` high. A disabled
+/// primary is clear glass: the system's greyed ink glass is near-white in
+/// dark mode, where the secondary words vanish on it.
 private struct BigButtonStyle: PrimitiveButtonStyle {
     let prominent: Bool
     let circle: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
         let button = Button(role: configuration.role, action: configuration.trigger) {
             configuration.label
-                .frame(
-                    minWidth: circle ? BigButton.labelHeight : nil,
-                    minHeight: BigButton.labelHeight)
+                .frame(width: circle ? BigButton.circleLabelWidth : nil)
+                .frame(minHeight: BigButton.labelHeight)
                 .modifier(BigButtonWords(prominent: prominent))
         }
-        if prominent {
+        if prominent && isEnabled {
             button
                 .buttonStyle(.glassProminent)
                 .tint(Color.ink)

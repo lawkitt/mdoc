@@ -66,30 +66,41 @@ final class ComponentSnapshotTests: XCTestCase {
         }
     }
 
-    /// What sits on the ink accent (ADR 0099): the filled button's words,
-    /// the Replaced mark's symbol and the selected chip's words are white in
-    /// light mode and black in dark mode; the progress ring is ink.
+    /// The big buttons and what sits on the ink accent (ADR 0099, amended
+    /// 2026-11-08): the primary is ink glass with white words in light mode
+    /// and black in dark mode, the secondary clear glass with ink words, and
+    /// Undo a clear glass circle; the Replaced mark's symbol and the selected
+    /// chip's words read on ink; the progress ring is ink.
     func testAccentControls() {
         let view = VStack(alignment: .leading, spacing: Space.m) {
             HStack(spacing: Space.s) {
                 Button {} label: {
+                    Label(String("Undo"), systemImage: "arrow.uturn.backward")
+                        .labelStyle(.iconOnly)
+                }
+                .secondaryAction(circle: true)
+                Button {} label: {
+                    Text(verbatim: "Keep").frame(maxWidth: .infinity)
+                }
+                .secondaryAction()
+                Button {} label: {
                     Label(String("Replace 3"), systemImage: "eye.slash")
                         .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+                        .frame(maxWidth: .infinity)
                 }
-                .accentProminent()
+                .primaryAction()
+            }
+            // Disabled: grey words, not white on grey.
+            HStack(spacing: Space.s) {
                 Button {} label: {
-                    Text(verbatim: "Keep")
-                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+                    Text(verbatim: "Replace").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .primaryAction()
+                Button {} label: {
+                    Text(verbatim: "Same as").frame(maxWidth: .infinity)
+                }
+                .secondaryAction()
             }
-            // Disabled: grey words on the greyed fill, not white on grey.
-            Button {} label: {
-                Text(verbatim: "Replace")
-                    .frame(maxWidth: .infinity, minHeight: Size.barButton)
-            }
-            .accentProminent()
             .disabled(true)
             HStack(spacing: Space.s) {
                 StateMark(state: .replaced)
@@ -108,6 +119,33 @@ final class ComponentSnapshotTests: XCTestCase {
         for appearance in Snapshot.Appearance.allCases {
             Snapshot.assert(view, named: "accent-controls", appearance: appearance)
         }
+    }
+
+    /// A button's size as laid out, without safe areas.
+    private func size(_ view: some View, _ size: DynamicTypeSize = .large) -> CGSize {
+        let host = UIHostingController(rootView: view.environment(\.dynamicTypeSize, size))
+        host.safeAreaRegions = []
+        return host.sizeThatFits(in: CGSize(width: 402, height: 874))
+    }
+
+    /// Every big button is 44 pt high at the default text size and never
+    /// less (ADR 0099, amended 2026-11-08): the system's glass adds
+    /// `BigButton.systemPadding` above and below the label, and a change to
+    /// that shows here. Undo is a 44 pt circle.
+    func testBigButtonsAre44PointsHigh() {
+        XCTAssertEqual(Size.barButton, 44)
+        let keep = Button {} label: { Text(verbatim: "Keep") }
+        let replace = Button {} label: { Label(String("Replace all 3"), systemImage: "eye.slash") }
+        let undo = Button {} label: { Label(String("Undo"), systemImage: "arrow.uturn.backward").labelStyle(.iconOnly) }
+        XCTAssertEqual(size(keep.secondaryAction()).height, 44, accuracy: 0.5, "secondary")
+        XCTAssertEqual(size(replace.primaryAction()).height, 44, accuracy: 0.5, "primary")
+        XCTAssertEqual(size(undo.secondaryAction(circle: true)).height, 44, accuracy: 0.5, "Undo")
+        XCTAssertEqual(size(undo.secondaryAction(circle: true)).width, 44, accuracy: 0.5, "Undo is round")
+        for small in [DynamicTypeSize.xSmall, .small] {
+            XCTAssertGreaterThanOrEqual(size(keep.secondaryAction(), small).height, 44 - 0.5, "\(small)")
+            XCTAssertGreaterThanOrEqual(size(replace.primaryAction(), small).height, 44 - 0.5, "\(small)")
+        }
+        XCTAssertGreaterThan(size(keep.secondaryAction(), .accessibility2).height, 44, "grows with the text")
     }
 
     func testToastActionKeepsTheToastItShows() {

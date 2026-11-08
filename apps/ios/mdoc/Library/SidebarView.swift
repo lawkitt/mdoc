@@ -273,19 +273,16 @@ struct SidebarView: View {
 
     // MARK: Bottom
 
-    /// Settings as a round button, New as a capsule, floating over a fade.
+    /// Settings as a clear glass circle, New as the sidebar's primary
+    /// button, floating over a fade.
     private var bottomBar: some View {
         HStack {
             Button {
                 navigator.present(.settings)
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.title3)
-                    .foregroundStyle(.primary)
-                    .frame(width: 52, height: 52)
-                    .background(.regularMaterial, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.separator.opacity(0.5)))
             }
+            .secondaryAction(circle: true)
             .accessibilityLabel(Text("Settings"))
             .accessibilityIdentifier("settings-button")
             Spacer()
@@ -293,12 +290,10 @@ struct SidebarView: View {
                 NewMenuItems(app: app)
             } label: {
                 Label("New", systemImage: "plus")
-                    .font(Typography.chip.weight(.semibold))
-                    .foregroundStyle(Palette.onAccent)
-                    .padding(.horizontal, Space.l)
-                    .frame(height: 52)
-                    .background(Palette.accent, in: Capsule())
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, Space.xs)
             }
+            .primaryAction()
             .menuOrder(.priority)
             .accessibilityIdentifier("new-menu")
         }

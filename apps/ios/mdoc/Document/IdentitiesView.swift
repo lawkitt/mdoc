@@ -321,7 +321,7 @@ struct IdentitiesView: View {
             } label: {
                 Text("Replace").frame(maxWidth: .infinity)
             }
-            .secondaryAction()
+            .primaryAction()
             Button {
                 model.decide(identities: ids, .keep)
                 selection = []

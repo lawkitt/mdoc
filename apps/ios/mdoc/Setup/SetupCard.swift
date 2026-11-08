@@ -11,6 +11,9 @@ struct SetupCard: View {
     var needs: ModelPurpose?
     /// Shows Not now.
     var dismissible = true
+    /// Download is the view's one primary button; false where the screen
+    /// has its own (Scan on the Documents page), and it is clear glass.
+    var prominent = true
     /// What Not now does; on Start it hides the card for good.
     var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
@@ -51,7 +54,7 @@ struct SetupCard: View {
                             Text("Download \(size) & continue")
                         }
                     }
-                    .accentProminent()
+                    .modifier(DownloadButtonStyle(prominent: prominent))
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
@@ -211,6 +214,19 @@ struct ModelRow: View {
         switch purpose {
         case .detector: String(localized: "Name finder")
         case .ocr: String(localized: "Text recognition (English, Russian)")
+        }
+    }
+}
+
+/// Download's weight: primary, or secondary beside a screen's own primary.
+private struct DownloadButtonStyle: ViewModifier {
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.primaryAction()
+        } else {
+            content.secondaryAction()
         }
     }
 }

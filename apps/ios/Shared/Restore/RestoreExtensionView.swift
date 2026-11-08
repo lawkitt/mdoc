@@ -99,7 +99,7 @@ struct RestoreExtensionView: View {
             HStack(spacing: 12) { buttons(model, result: result) }
             VStack(spacing: 12) { buttons(model, result: result) }
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .labelStyle(.titleAndIcon)
         .lineLimit(1)
         .padding()
@@ -116,7 +116,7 @@ struct RestoreExtensionView: View {
             Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 .frame(maxWidth: .infinity)
         }
-        .accentProminent()
+        .primaryAction()
         Button {
             share = ShareItems(items: [result.text])
         } label: {
