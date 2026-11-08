@@ -91,6 +91,17 @@ struct File {
     url: Vec<UrlEntry>,
     #[serde(default)]
     private: Vec<PrivateEntry>,
+    #[serde(default)]
+    label: Vec<LabelEntry>,
+}
+
+/// An identifier field's labels (#739): a value just after one, in a wider
+/// model span beside a rule's value, is a value of its own, of `category`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LabelEntry {
+    category: String,
+    words: Vec<String>,
 }
 
 /// Bodies that are never public, whoever owns them: a span that matches
@@ -449,6 +460,8 @@ pub(crate) struct Pack {
     /// Bodies never public: a span matching one of an entry's patterns and
     /// none of its `unless` is no court or public body.
     private: Vec<(Vec<Regex>, Vec<Regex>)>,
+    /// Identifier fields' `label` words, without their dots.
+    labels: Vec<(String, Category)>,
 }
 
 /// A cited case in the view's text: its range without `lead` and `tail`,
@@ -1147,6 +1160,7 @@ impl Pack {
             party_roles: std::collections::HashSet::new(),
             own_before: Vec::new(),
             private: Vec::new(),
+            labels: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         let mut defined_seen = std::collections::HashSet::new();
@@ -1474,6 +1488,22 @@ impl Pack {
                 shape.quotes.extend(quotes);
                 shape.quotes_after.extend(entry.quotes_after);
                 shape.quotes_after_words.extend(entry.quotes_after_words);
+            }
+            for (index, entry) in file.label.into_iter().enumerate() {
+                let at = |problem: String| format!("{name}: label #{}: {problem}", index + 1);
+                let category = category(&entry.category).map_err(at)?;
+                if !identifier_field(category) {
+                    return Err(at("needs TAX, BANK, IDENTITY or PHONE".into()));
+                }
+                if let Some(word) = entry.words.iter().find(|word| {
+                    word.is_empty() || **word != word.to_lowercase() || *word != &label_words(word)
+                }) {
+                    return Err(at(format!(
+                        "{word:?} needs lowercase words, single-spaced, without dots"
+                    )));
+                }
+                pack.labels
+                    .extend(entry.words.into_iter().map(|word| (word, category)));
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -4755,6 +4785,45 @@ impl Pack {
     /// part (its `absorbs`), read within the match alone: "Harrow House"
     /// before ", 12 Pellin Street" is the address's building, not a company;
     /// a number after the match ("…, Chatham House, 12 March") is none of it.
+    /// The identifier category a field's label names (#739): its `label`
+    /// words, an identifier `context`'s labels or an identifier span fix's
+    /// `trim` words, as `label_words` reads them ("Тел.:" is "тел"), ending
+    /// the words given, the longest first ("паспорт серии" by "серии"). The
+    /// number sign is no label.
+    pub(crate) fn field_label(&self, words: &str) -> Option<Category> {
+        let words = label_words(words);
+        let words: Vec<&str> = words.split(' ').filter(|w| !w.is_empty()).collect();
+        (0..words.len()).find_map(|from| self.whole_field_label(&words[from..].join(" ")))
+    }
+
+    /// The identifier category `label`, as `label_words` reads it, names
+    /// whole.
+    fn whole_field_label(&self, label: &str) -> Option<Category> {
+        let same = |words: &str| label_words(words) == label;
+        self.labels
+            .iter()
+            .find(|(words, _)| *words == label)
+            .map(|(_, category)| *category)
+            .or_else(|| {
+                self.contexts
+                    .iter()
+                    .filter(|context| identifier_field(context.category))
+                    .find(|context| context.labels.iter().any(|words| same(words)))
+                    .map(|context| context.category)
+            })
+            .or_else(|| {
+                self.spans.iter().find_map(|span| match span {
+                    Span::Fix(fix)
+                        if identifier_field(fix.category)
+                            && fix.trim.iter().any(|words| same(words)) =>
+                    {
+                        Some(fix.category)
+                    }
+                    _ => None,
+                })
+            })
+    }
+
     pub(crate) fn absorbs(
         &self,
         text: &str,
@@ -5474,6 +5543,28 @@ fn class(predicate: fn(char) -> bool) -> String {
     }
     class.push(']');
     class
+}
+
+/// Whether `category` is an identifier field's, which a `label` names.
+pub(crate) fn identifier_field(category: Category) -> bool {
+    matches!(
+        category,
+        Category::Tax | Category::Bank | Category::Identity | Category::Phone
+    )
+}
+
+/// A label as `label` entries write it: lowercase words, single-spaced,
+/// without their dots and edge punctuation ("Тел.:" is "тел", "р/с" stays).
+pub(crate) fn label_words(text: &str) -> String {
+    text.split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_alphanumeric())
+                .replace('.', "")
+                .to_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A category by its token (`PERSON`, `ORG`, …).
