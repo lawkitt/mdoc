@@ -72,6 +72,38 @@ extend = [
     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
 ]
 
+# One initial, with its period or without, right before a surname belongs
+# to the name: the model's "Ashdale" in "Judge K Ashdale" grows to "K
+# Ashdale" (guide rule 1, #387). The `lead` marks the letter as an
+# initial and stays outside the span: a title ("Judge", "Ms"), a
+# lowercase connector ("and", "by", "v"), a comma, a colon, "&" or "(".
+# Without one the letter is no initial: at a line start it may be a list
+# letter ("B. Smith"), at a sentence start an article ("A Smith said"),
+# after a heading word a section letter ("Part B Smith", "Exhibit A
+# Smith"). "I" is a pronoun, never in the letter class.
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?:\b(?:Judge|Justice|Magistrate|Master|Recorder|Registrar|Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Professor|Sir|Dame|Lord|Lady|Hon|Dear|Officer|Detective|Constable|Sergeant|Inspector|Sheriff|Senator|Councillor|Commissioner)\.?|\b(?:and|or|nor|by|with|to|from|for|of|per|v|vs|versus|between|before|against|cc|attn|signed|countersigned|witnessed|approved|prepared|issued|named|called|told|asked|met|wrote|said)|[,:&(])[ \t]+)[A-HJ-Z]\.?[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
+]
+
+# An all-caps given name before an initial and an all-caps surname belongs
+# to the name, as a signature or a caption writes it: the model's "P.
+# WELK" in "DORIAN P. WELK, Magistrate" grows to the whole of it (guide
+# rule 1, #387). Three letters at least, so "BY", "TO" and "CC" never
+# join; a role or title there is a `never` word and does not join either
+# ("JUDGE P. WELK", "MRS P. WELK"); a signature's verbs, all-caps
+# connectors and "HON" come off again at the start, case-sensitive ("SIGNED P. WELK" is
+# "P. WELK"). Not as `trim` words: those also mark a titled surname.
+[[span]]
+category = "PERSON"
+extend = [
+    '\b[A-Z]{3,}[ \t]+[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z]{2,}(?:-[A-Z]{2,})*\b',
+]
+trim_start = [
+    '(?:AND|FOR|FROM|ATTN|SIGNED|DATED|ATTEST|ATTESTED|WITNESSED|APPROVED|BEFORE|HON\.?|HONORABLE|HONOURABLE)[ \t]+',
+]
+
 # "& Anor" and "& Ors" (and another, and others) in a case name come off
 # a party's edge: "Pellow Holdings Ltd & Anor" is "Pellow Holdings Ltd"
 # (guide rule 2, issue #499). The "&" goes with the end's punctuation below.

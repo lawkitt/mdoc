@@ -1493,7 +1493,12 @@ impl Pack {
                     .extend
                     .iter()
                     .map(|pattern| {
-                        Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))
+                        let regex =
+                            Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))?;
+                        match regex.capture_names().flatten().find(|g| *g != "lead") {
+                            Some(group) => Err(at(format!("extend group {group:?} is not `lead`"))),
+                            None => Ok(regex),
+                        }
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let trim_start = entry
@@ -2523,10 +2528,18 @@ impl Pack {
             if !detections.iter().any(|d| d.category == fix.category) {
                 continue;
             }
+            // A `lead` group is context the grown span leaves out ("Judge "
+            // before "K Ashdale").
             let matches: Vec<_> = fix
                 .extend
                 .iter()
-                .flat_map(|pattern| pattern.find_iter(source).map(|m| m.range()))
+                .flat_map(|pattern| {
+                    pattern.captures_iter(source).filter_map(|found| {
+                        let whole = found.get(0)?;
+                        let start = found.name("lead").map_or(whole.start(), |lead| lead.end());
+                        (start < whole.end()).then_some(start..whole.end())
+                    })
+                })
                 .filter(|m| {
                     if !source[m.clone()].contains(['«', '"'])
                         || !self.public_body(&source[m.clone()], fix.category, false)
@@ -5291,6 +5304,87 @@ mod tests {
             fixed("ИП Ветлин Н. О.", &[("ИП Ветлин", Category::Organization)]),
             ["ИП Ветлин"]
         );
+    }
+
+    /// The person proposals for the model's `people` spans in `source`
+    /// (each its first occurrence), as the user would be shown them.
+    fn proposed_people(source: &str, people: &[&str]) -> Vec<String> {
+        let raw: Vec<_> = people
+            .iter()
+            .map(|text| {
+                let start = source.find(text).unwrap();
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: "person".into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "PERSON")
+            .map(|span| source[span.range].to_owned())
+            .collect()
+    }
+
+    /// One initial before a surname joins it after a title, a connector or
+    /// a comma, with its period or without; an all-caps given name joins
+    /// "X. SURNAME" (#387). A list letter, a section letter, a sentence's
+    /// "A", the pronoun "I", a role and a signature's verb do not.
+    #[test]
+    fn one_initial_or_an_all_caps_given_name_joins_a_surname() {
+        for (source, model, expected) in [
+            (
+                "Before Judge K Ashdale and DORIAN P. WELK, Magistrate.",
+                &["Ashdale", "P. WELK"][..],
+                &["K Ashdale", "DORIAN P. WELK"][..],
+            ),
+            (
+                "The order of Judge V Davies stands.",
+                &["Davies"],
+                &["V Davies"],
+            ),
+            (
+                "Heard by Judge K. Ashdale today.",
+                &["Ashdale"],
+                &["K. Ashdale"],
+            ),
+            (
+                "Signed by K Ashdale on Monday.",
+                &["Ashdale"],
+                &["K Ashdale"],
+            ),
+            (
+                "Present: Ivo Penrow, K Ashdale.",
+                &["Ivo Penrow", "Ashdale"],
+                &["Ivo Penrow", "K Ashdale"],
+            ),
+            ("Dear Ms A Brannock,", &["Brannock"], &["A Brannock"]),
+            (
+                "/s/ DORIAN P. WELK\nMagistrate",
+                &["P. WELK"],
+                &["DORIAN P. WELK"],
+            ),
+            ("DORIAN P. WELK, Magistrate", &["WELK"], &["DORIAN P. WELK"]),
+            // A section letter, a list letter, a sentence's article and the
+            // pronoun stay out.
+            ("under Part B Smith said", &["Smith"], &["Smith"]),
+            ("See Exhibit A Smith for the plan.", &["Smith"], &["Smith"]),
+            ("A Smith attended the site.", &["Smith"], &["Smith"]),
+            ("It ended. A Smith attended.", &["Smith"], &["Smith"]),
+            ("B. Smith\nC. Jones", &["Smith"], &["Smith"]),
+            ("Then I Penrow it.", &["Penrow"], &["Penrow"]),
+            // A role, a short word or a signature's verb before "X. SURNAME".
+            ("JUDGE P. WELK presiding.", &["P. WELK"], &["P. WELK"]),
+            ("BY P. WELK, counsel.", &["P. WELK"], &["P. WELK"]),
+            ("SIGNED P. WELK\n", &["P. WELK"], &["P. WELK"]),
+            ("Mixed Case P. WELK here.", &["P. WELK"], &["P. WELK"]),
+        ] {
+            assert_eq!(proposed_people(source, model), expected, "{source}");
+        }
     }
 
     /// Roles, role phrases, category words, defined terms and public bodies

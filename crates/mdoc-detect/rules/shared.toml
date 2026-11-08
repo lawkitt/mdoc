@@ -90,7 +90,9 @@
 #                         a person's never over a `never` word (a role),
 #                         except to drop a quoted public institution's own
 #                         name ("МВД России «…»");
-#                         earlier spans grow first
+#                         earlier spans grow first; a group named `lead`
+#                         (the only group allowed) is context the grown
+#                         span leaves out ("Judge " before "K Ashdale")
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
 #                         with some name left after them
 #   trim      = […]       lowercase words that come off either edge, a

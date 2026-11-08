@@ -1,7 +1,7 @@
 //! Immutable, cancellable candidate discovery; reusable cached matcher.
 use super::{
     exact_boundary, generated_alias, interval_conflict,
-    propagation::{glued, sentence_start},
+    propagation::{glued, reference_initials, sentence_start},
     syntax::{crosses_syntax, plain_text_span, protected_syntax},
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
@@ -174,7 +174,10 @@ impl DiscoveryInput {
                 && !crosses_syntax(&protected, &view.markup, source, range)
                 && plain_text_span(source, &view.markup, range.clone())
                 && !(self.mid_sentence[*index] && sentence_start(source, range.start))
-                && !(self.unglued[*index] && glued(source, range))
+                // A reference line's initials are the signer's ("IDP/ms").
+                && !(self.unglued[*index]
+                    && glued(source, range)
+                    && !reference_initials(source, range))
                 && !(self.whole[*index] && !whole_value(source, range))
                 && self.cues[*index]
                     .as_ref()

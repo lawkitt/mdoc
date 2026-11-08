@@ -2237,6 +2237,126 @@ fn signature_initials_join_their_full_name() {
     assert_eq!(initials.recognizer(), Some(Recognizer::Propagation));
 }
 
+/// #387: bare initials that spell a known name are that person: in a
+/// table column, in a letter's reference line (without the typist's), and
+/// in Russian in either order; and once some are in place, anywhere.
+#[test]
+fn bare_initials_of_a_known_name_join_it() {
+    let texts = |review: &Review, original: &str| -> Vec<String> {
+        proposed(review, original)
+            .mentions
+            .iter()
+            .map(|m| review.source[m.clone()].to_owned())
+            .collect()
+    };
+    let source = "Instructors: Jorin Brindle and Edda Hollin.\n\n\
+        | Week | Lead |\n|---|---|\n| 1 | JB |\n| 2 | EH |\n| 3 | EH |\n";
+    let review = ingest_names(source, &["Jorin Brindle", "Edda Hollin"]);
+    for (full, initials) in [("Jorin Brindle", "JB"), ("Edda Hollin", "EH")] {
+        let found = proposed(&review, initials);
+        assert_eq!(
+            review.variant_identity(found.id),
+            review.variant_identity(proposed(&review, full).id),
+            "{initials}"
+        );
+        assert_eq!(found.recognizer(), Some(Recognizer::Propagation));
+    }
+    assert_eq!(proposed(&review, "EH").mentions.len(), 2);
+
+    // The signer's initials of a name with a middle initial; the typist's
+    // "ms" stays unmarked.
+    for source in [
+        "Sincerely, Ivo D. Penrow, Member of Congress. IDP/ms",
+        "Sincerely,\n\nIvo D. Penrow\nMember of Congress\n\nIDP/ms\n",
+    ] {
+        let review = ingest_names(source, &["Ivo D. Penrow"]);
+        assert_eq!(texts(&review, "IDP"), ["IDP"], "{source}");
+        assert!(
+            review
+                .variants()
+                .iter()
+                .all(|v| v.original.as_ref() != "ms"),
+            "{source}"
+        );
+    }
+
+    // Russian: given names then surname, or surname first.
+    let source = "Исполнитель: Яков Викторович Ростов.\n\n\
+        | Этап | Исполнитель | Проверил |\n|---|---|---|\n| 1 | ЯВР | РЯВ |\n\nПодпись: Я. В.\n";
+    let review = ingest_names(source, &["Яков Викторович Ростов"]);
+    let full = review.variant_identity(proposed(&review, "Яков Викторович Ростов").id);
+    for initials in ["ЯВР", "РЯВ", "Я. В."] {
+        assert_eq!(
+            review.variant_identity(proposed(&review, initials).id),
+            full,
+            "{initials}"
+        );
+    }
+
+    // Two letters in prose count once some initials are in place.
+    let source = "Leads: Jorin Brindle and Edda Hollin.\n\n| 1 | JB |\n\nLater EH agreed.";
+    let review = ingest_names(source, &["Jorin Brindle", "Edda Hollin"]);
+    assert_eq!(texts(&review, "EH"), ["EH"]);
+}
+
+/// #387: bare initials stay unmarked as an abbreviation, a Roman numeral,
+/// two letters in prose alone, inside a run of capitals, glued into a
+/// path, or when no known name spells them.
+#[test]
+fn bare_initials_that_spell_no_one_or_are_abbreviations_stay() {
+    for (source, names) in [
+        (
+            "Nadia York filed in NY.\n\n| 1 | NY |\n\nIvo Ditch has an ID.\n\n| ID |\n",
+            &["Nadia York", "Ivo Ditch"][..],
+        ),
+        (
+            "Ivo Ivanson and Ida Vex.\n\n| Part | II |\n| IV |\n",
+            &["Ivo Ivanson", "Ida Vex"],
+        ),
+        ("Jorin Brindle met us. JB said so.", &["Jorin Brindle"]),
+        (
+            "Ivo D. Penrow wrote.\n\nSEE IDP REPORT\n",
+            &["Ivo D. Penrow"],
+        ),
+        (
+            "Ivo D. Penrow wrote.\n\nSaved as C:/files/IDP/letter.doc\n",
+            &["Ivo D. Penrow"],
+        ),
+        (
+            "Jorin Brindle led.\n\n| 1 | QZ |\n| 2 | BJ |\n",
+            &["Jorin Brindle"],
+        ),
+        (
+            "Ответственный Яков Викторович Ростов.\n\n| ВРЯ |\n",
+            &["Яков Викторович Ростов"],
+        ),
+    ] {
+        let review = ingest_names(source, names);
+        let unexpected: Vec<_> = review
+            .variants()
+            .iter()
+            .map(|v| v.original.as_ref())
+            .filter(|original| {
+                crate::propagation::bare_initials(original).is_some()
+                    || original.chars().all(char::is_uppercase)
+            })
+            .collect();
+        assert!(unexpected.is_empty(), "{source}: {unexpected:?}");
+    }
+    // Two people spelling the same initials: proposed apart, joined to
+    // neither.
+    let source = "Jorin Brindle and Jana Bell.\n\n| 1 | JB |\n";
+    let review = ingest_names(source, &["Jorin Brindle", "Jana Bell"]);
+    let initials = review.variant_identity(proposed(&review, "JB").id);
+    for full in ["Jorin Brindle", "Jana Bell"] {
+        assert_ne!(
+            initials,
+            review.variant_identity(proposed(&review, full).id),
+            "{full}"
+        );
+    }
+}
+
 /// #392: a person the document names only in oblique cases still has a
 /// surname: the inflected full names are one identity, and the surname
 /// alone joins it.
