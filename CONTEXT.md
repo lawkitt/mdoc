@@ -636,7 +636,12 @@ ring while proposed, an accent disc once replaced, an eye once kept. In
 the full view it is also the button that changes that one mention.
 
 **Hint line**: the review bar's one-line tip, at most one per document,
-gone once its gesture is used; it replaced TipKit's popovers.
+gone once its gesture is used; it replaced TipKit's popovers. Identities
+has one too, for drag-to-merge.
+
+**Drag-to-merge** (mobile Identities): dragging one name's row onto
+another's, which makes them one (Same as) as desktop's group-onto-group
+drag does ([ADR 0106](docs/adr/0106-mobile-identities-gestures.md)).
 
 **Focus** (mobile review): stepping limited to one identity or one
 category, started from Identities, shown on the progress line with ×.

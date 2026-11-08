@@ -1,5 +1,6 @@
 import Foundation
 import MdocFFI
+import UIKit
 
 /// The review bar's model (ADR 0098): which candidate is under review,
 /// stepping in document order, deciding, undo, and the identity tools.
@@ -194,17 +195,20 @@ extension DocumentViewModel {
     var canUndo: Bool { snapshot.canUndo }
     var canRedo: Bool { snapshot.canRedo }
 
-    /// Undo: the bar moves back to what it undid, and the toast names it
-    /// with Redo.
+    /// Undo: the bar moves back to what it undid. No toast: the change and
+    /// a haptic say it, and an earlier toast's Undo goes, since it would
+    /// reach one step further (ADR 0106). VoiceOver hears what was undone.
+    /// Redo is on the Undo button's long press, ⇧⌘Z and VoiceOver.
     func undo(fromSystem: Bool = false) {
         guard canUndo, !reviewWaitsForJob() else { return }
         guard perform(undoable: false, { try session.undo() }) else { return }
         Haptics.warning()
         let step = snapshot.redoStep
         updateReview { $0.follow(step) }
-        toast = ToastMessage(
-            text: step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone"),
-            actionTitle: String(localized: "Redo"), action: { [weak self] in self?.redoTapped() })
+        toast = nil
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone"))
     }
 
     func redo(fromSystem: Bool = false) {
@@ -259,6 +263,7 @@ extension DocumentViewModel {
     func sameAs(_ target: IdentityID) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
         guard changeIdentity(of: candidate, { try session.sameAs(candidate.id, scope: reviewScope, target: target) }) else { return }
+        ReviewHint.dragMerge.learn()
         let name = snapshot.identities.first { $0.id == target }?.primaryWording ?? ""
         toast = undoToast(String(localized: "Same as \(name)"))
     }
@@ -272,17 +277,27 @@ extension DocumentViewModel {
         }
     }
 
-    /// Same as for a whole identity, from Identities (a swipe or a drag).
+    /// Same as for a whole identity, from Identities (a swipe, a Looks like
+    /// card): "Same as Maya Bennett · Undo".
     func link(_ identity: IdentityID, into target: IdentityID) {
-        guard !reviewWaitsForJob() else { return }
+        link(identity, into: target) { _, into in String(localized: "Same as \(into.primaryWording)") }
+    }
+
+    /// The core's link, then a toast `text(from, into)` names, from the two
+    /// identities as they were. One undo step; the drag-merge hint is
+    /// learned.
+    func link(_ identity: IdentityID, into target: IdentityID, toast text: (Identity, Identity) -> String) {
+        guard !reviewWaitsForJob(),
+              let from = snapshot.identities.first(where: { $0.id == identity }),
+              let into = snapshot.identities.first(where: { $0.id == target }) else { return }
         let reviewed = reviewedCandidate
         let reviewedIndex = reviewOrder.index(of: reviewing)
         guard perform({ try session.link(identity, into: target) }) else { return }
         Haptics.decision()
+        ReviewHint.dragMerge.learn()
         // The bar stays on the same mention, whose range may have moved.
         if let reviewed { updateReview { $0.reselect(near: reviewed, index: reviewedIndex) } }
-        let name = snapshot.identities.first { $0.id == target }?.primaryWording ?? ""
-        toast = undoToast(String(localized: "Same as \(name)"))
+        toast = undoToast(text(from, into))
     }
 
     /// Belongs to…: the identity's owner, or none.

@@ -56,19 +56,23 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertTrue(model.toast?.text.hasPrefix("All") ?? false, "\(String(describing: model.toast?.text))")
     }
 
-    func testUndoMovesTheBarBackAndOffersRedo() throws {
+    /// Undo moves the bar back with no toast, and takes an earlier toast's
+    /// Undo away; Redo still offers Undo in its toast (ADR 0106).
+    func testUndoMovesTheBarBackWithoutAToast() throws {
         let model = try model()
         model.beginReview()
         let first = try XCTUnwrap(model.reviewedCandidate)
         model.decideCurrent(.replace)
         XCTAssertNotEqual(model.reviewedCandidate?.identityID, first.identityID)
+        model.toast = model.undoToast("Replaced \(first.original)")
         model.undo()
         XCTAssertEqual(model.reviewedCandidate?.original, first.original)
         XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
-        XCTAssertEqual(model.toast?.actionTitle, "Redo")
+        XCTAssertNil(model.toast, "no Redo toast, and no earlier Undo left to reach a step further")
         XCTAssertTrue(model.canRedo)
         model.redo()
         XCTAssertEqual(model.snapshot.candidates.first { $0.original == first.original }?.state, .replaced)
+        XCTAssertEqual(model.toast?.actionTitle, "Undo", "a Redo shows the Undo toast")
     }
 
     func testScopeResetsOnTheNextIdentity() throws {
