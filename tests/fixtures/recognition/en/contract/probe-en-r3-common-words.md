@@ -14,4 +14,4 @@ Section Two: Program Description
 
 This Agreement binds the parties. Librarians and Hospitalists briefed the Investigation Team. Plot B lies east of Plot A.
 
-A short note follows on this application, Ex p ⟦PERSON|Ossian Draycott⟧; Ms ⟦PERSON|Edda Brannock⟧ signed.
+Then a short note follows on this application, Ex p ⟦PERSON|Ossian Draycott⟧; Ms ⟦PERSON|Edda Brannock⟧ signed.

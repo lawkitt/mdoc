@@ -49,8 +49,7 @@
 # A context match wins over a model span on the same text.
 #
 # A `never` entry lists lowercase `words`, matched `whole`, `plural` (with an
-# `s`), as a `stem` with up to `ending` letters or as a `suffix` with `stem`
-# letters at least before it (`unless_named` alone). An entry matched as
+# `s`) or as a `stem` with up to `ending` letters. An entry matched as
 # `pattern` lists `patterns` instead, regexes: a model span of its
 # `anywhere_in` categories (required) that matches one outside quotes goes
 # like a court ("Department of Labor", "Massachusetts" alone). Optionally:
@@ -77,6 +76,11 @@
 #                               do too where the span is a name alone
 #                               ("Суд Н. О."); a pattern entry needs
 #                               anywhere_in PERSON alone
+#   unless_last_named = true    for a pattern entry with anywhere_in PERSON
+#                               alone: the span stays a person where the
+#                               document names its last word, another
+#                               person span with it beside a name or a
+#                               title before it ("Ms Standard")
 #   person_role = true          with unless_named: an initial + capitalized
 #                               role remains PERSON; plural surnames must
 #                               be listed in role_surnames

@@ -473,16 +473,26 @@ match = "whole"
 words = ["intermediaries"]
 unless_named = true
 
-# Plural nouns for people by their ending: "Librarians", "Hospitalists",
-# "Physicians", "Biologists" (issue #500). Four letters at least before
-# "-ians" or "-ists", so given names in the plural stay ("the Adrians",
-# "the Julians", "Vivians"); no "-ers", which ends many a surname ("Myers",
-# "Rogers", "Summers"). A title or a person span with the word beside a
-# name keeps it ("Ms Gillians", "Rhea Gillians").
+# Professions in -ian and -ist: "Librarians", "Hospitalists",
+# "Physicians", "Biologists" (issue #500). Listed one by one: a family's
+# plural surname with the same ending stays ("the Lindquists", "the
+# Hagopians", "The Kardashians"), and so do given names in the plural
+# ("the Adrians"). A title or a person span with the word beside a name
+# keeps one ("Ms Chemist", "Rhea Dentist").
 [[never]]
-match = "suffix"
-stem = 4
-words = ["ians", "ists"]
+match = "plural"
+words = [
+    "librarian", "physician", "technician", "clinician", "hospitalist",
+    "biologist", "scientist", "pharmacist", "dentist", "therapist",
+    "economist", "statistician", "electrician", "pediatrician",
+    "paediatrician", "obstetrician", "dietitian", "dietician", "optician",
+    "mathematician", "musician", "historian", "politician", "veterinarian",
+    "chemist", "physicist", "psychologist", "psychiatrist", "journalist",
+    "geologist", "ecologist", "toxicologist", "epidemiologist", "radiologist",
+    "anesthesiologist", "anaesthetist", "cardiologist", "oncologist",
+    "neurologist", "dermatologist", "pathologist", "botanist", "entomologist",
+    "nutritionist", "hygienist", "analyst", "artist",
+]
 unless_named = true
 
 # Head words of programmes, plans, standards, projects and trials, and of
@@ -503,19 +513,22 @@ words = [
 unless_named = true
 last_word_of = ["ORG"]
 
-# A person span of three words or more that ends in one of those head
-# words is the programme, no one: the model's "CAFTA-DR Environmental
+# A person span of three words or more that ends in a programme's head
+# word is the programme, no one: the model's "CAFTA-DR Environmental
 # Cooperation Program", "Bright Paths Reading Initiative" (guide rule 8,
-# issue #500); it would make every "Program" a name. Two words stay a
-# person's name ("Paul Program"), and so do initials ("J. R. Plan") and a
-# span after a title ("Mr Ivo Dane Standard").
+# issue #500); it would make every "Program" a name. Not the heads that
+# end people's names too ("Mary Ann Standard", "Maria Jose Portal", "Joan
+# Maria Plans"). Two words stay a person's name ("Paul Program"), and so
+# do initials ("J. R. Project"), a span after a title ("Mr Ivo Dane
+# Project") and one whose last word the document names ("Ms Project").
 [[never]]
 match = "pattern"
 patterns = [
-    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’-]+[\p{Zs}\t]+){2,}(?i:programs?|programmes?|initiatives?|standards?|plans?|projects?|trials?|portals?|platforms?)[\s\p{P}]*$',
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’-]+[\p{Zs}\t]+){2,}(?i:programs?|programmes?|initiatives?|projects?|trials?|platforms?)[\s\p{P}]*$',
 ]
 anywhere_in = ["PERSON"]
 unless_titled = true
+unless_last_named = true
 
 # A manager is both a job's head and software's ("Application Manager").
 [[never]]
@@ -661,14 +674,15 @@ words = [
 ]
 unless_named = true
 
-# Deities are never marked (guide rule 8, #506 item 8): "God", "Jesus",
-# "Allah", "Jesus Christ", "the Almighty" (issue #500). A person called so
-# keeps the name after a title ("Mr Christ") or where a person span has it
-# beside a name ("Jesus Navas", then "Jesus").
+# Deities are never marked (guide rule 8, #506 item 8): "God", "Allah",
+# "Christ", "the Almighty" (issue #500). A person called so keeps the name
+# after a title ("Mr Christ") or where a person span has it beside a name
+# ("Carol Christ", then "Christ"). "Jesus" alone is a given name too ("Her
+# son, Jesus, testified"), so only its phrases below count.
 [[never]]
 match = "whole"
 words = [
-    "god", "gods", "goddess", "goddesses", "jesus", "christ", "allah", "yahweh",
+    "god", "gods", "goddess", "goddesses", "christ", "allah", "yahweh",
     "jehovah", "almighty", "buddha",
 ]
 unless_named = true
@@ -679,6 +693,13 @@ match = "pattern"
 patterns = ['(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?holy[\p{Zs}\t]+(?:spirit|ghost)[\s\p{P}]*$']
 anywhere_in = ["PERSON"]
 unless_titled = true
+
+# Jesus by the phrases that name the deity, a span inside one included:
+# "Jesus Christ", "Lord Jesus" (whose "Lord" a title's trim would leave
+# out), "Jesus of Nazareth" (guide rule 8, #506 item 8). "Jesus Martinez"
+# and "Her son, Jesus" stay.
+[[reference]]
+pattern = '(?i)\b(?:(?:lord[\p{Zs}\t]+)?jesus[\p{Zs}\t]+christ|lord[\p{Zs}\t]+jesus|jesus[\p{Zs}\t]+of[\p{Zs}\t]+nazareth)\b'
 
 # A federal pay grade and a price index are no one and no company: "GS-14",
 # "GS-13/14", "GS 9", "the Consumer Price Index" (issue #500, guide rule 8).
@@ -1925,24 +1946,11 @@ categories = ["PERSON", "ORG"]
 [[reference]]
 pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_|]*(?:(?:Part|Section|Item)[\p{Zs}\t]+)?)\p{Uppercase}\.(?P<tail>[\p{Zs}\t]+\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+|of|and|or|the|to|for|in))*[\p{Zs}\t]+\p{Uppercase}\p{Ll}+[\p{Zs}\t*_:|]*(?m:$))'
 
-# A list letter alone at a line's start is no initial either: the model's
-# "J." of "J. Recommendations", "M." on a line of its own (guide rule 1,
-# issue #500). Only the letter goes: a span with the name after it ("A.
-# Smith") stays, and so does a letter in a table's cell.
-[[reference]]
-pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_]*)\p{Uppercase}\.(?P<tail>[\p{Zs}\t]+\p{Uppercase}|[\p{Zs}\t]*(?m:$))'
-
 # A plot's letter is its label, no initial: "Plot B lies east of Plot A",
 # "Plots C and D" (guide rule 1, issue #500). Only the letter goes: "Ivo
 # Plot" stays, and so does a name after the letter ("Plot 4, K Ashdale").
 [[reference]]
 pattern = '(?P<lead>\b(?:Plots?|PLOTS?)[\p{Zs}\t]+)\p{Uppercase}\b(?:(?:[\p{Zs}\t]*,[\p{Zs}\t]*|[\p{Zs}\t]+(?:and|or|&)[\p{Zs}\t]+)\p{Uppercase}\b)*'
-
-# An "A" that opens a sentence before a lower-case word is the article
-# ("A short note follows"), as an initial needs a name after it ("A Smith
-# said" is a span the model gives whole; guide rule 1, issue #500).
-[[reference]]
-pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_]*|[.!?][\p{Zs}\t]+)A(?P<tail>[\p{Zs}\t]+\p{Ll})'
 
 # A patent or trademark schedule's row is no identifier, address or name
 # (guide rule 8, issue #486): an office's code opening the row, then its
