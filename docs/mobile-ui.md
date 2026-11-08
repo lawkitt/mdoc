@@ -181,8 +181,9 @@ that only the view model changes; views send intents
 [ADR 0103](adr/0103-mobile-identities-drawer.md), with gestures from
 [ADR 0106](adr/0106-mobile-identities-gestures.md); code in
 [`IdentitiesView`](../apps/ios/mdoc/Document/IdentitiesView.swift),
-`IdentitiesView+Gestures`, `IdentitiesView+DragMerge`, `IdentityDrag`,
-`IdentitiesPanel` and `DocumentViewModel+Identities`.
+`IdentitiesView+Rows`, `IdentitiesView+Gestures`,
+`IdentitiesView+DragMerge`, `IdentityDrag`, `IdentitiesPanel` and
+`DocumentViewModel+Identities`.
 
 - **Where:** iPhone, a drawer from the right edge or 🪪 (`SideDrawer`,
   trailing); a wide iPad, the standing right column. A tap on a name opens
