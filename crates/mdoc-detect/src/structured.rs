@@ -71,9 +71,11 @@ impl Rules {
                 score: 0.95,
                 label: Some(label("инн|inn|tax id")),
             },
+            // ОГРН and ОГРНИП are TAX like ИНН (guide rule 6, #484 item 6,
+            // #563).
             Rule {
                 recognizer: registration,
-                category: Category::Identity,
+                category: Category::Tax,
                 evidence: Recognizer::Ogrn,
                 score: 0.95,
                 label: Some(label("огрн|огрнип|ogrn|ogrnip")),
@@ -215,7 +217,7 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert_eq!(&source[hits[0].range.clone()], ogrn);
         assert_eq!(&source[hits[1].range.clone()], ogrnip);
-        assert!(hits.iter().all(|d| d.category == Category::Identity));
+        assert!(hits.iter().all(|d| d.category == Category::Tax));
     }
     #[test]
     fn only_selected_entities_with_strict_context_and_boundaries() {
