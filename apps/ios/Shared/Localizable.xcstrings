@@ -441,7 +441,7 @@
     "Downloading %@" : {
 
     },
-    "Drag a name onto another to make them one" : {
+    "Drag to make one with another name" : {
 
     },
     "Each document you add starts a case, or joins one you choose." : {
@@ -534,6 +534,9 @@
     "Important" : {
       "comment" : "A Markdown alert's title"
     },
+    "In Select, drag ≡ onto a name to make them one" : {
+
+    },
     "Installed" : {
 
     },
@@ -603,6 +606,9 @@
           }
         }
       }
+    },
+    "Make one with…" : {
+
     },
     "Makes the selected names one name." : {
 

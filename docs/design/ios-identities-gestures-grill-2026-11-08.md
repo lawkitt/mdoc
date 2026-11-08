@@ -107,3 +107,23 @@ gestures, no full-swipe Keep, the state animation, no Redo toast, the
 drag-to-merge outline and hint, the one-time hint line (ADR 0106); (2)
 the ink accent (ADR 0099 amended, survey refreshed). Reviews by Codex;
 then both on the iPhone 17 Pro for the maintainer.
+
+## Round 4: drag-to-merge on iOS
+
+Building Q5–Q7 (PR #717) found that SwiftUI's drag and drop never
+delivers a drop inside the List: the List keeps a drag that starts in it
+to itself, so a row lifts and the list scrolls, but no row takes the drop.
+
+### Q13. How a drag starts
+
+**Decision:** (a) in Select each row shows a ≡ handle at its trailing
+edge; dragging the handle onto another name makes them one, with the
+app's own gesture instead of the system's drag and drop. The hint line
+says "In Select, drag ≡ onto a name to make them one"; VoiceOver has Make
+one with… on the handle.
+
+### Q14. What the target keeps
+
+**Decision:** its alias. The restore wording follows the core's rule, the
+fullest form of the names (#388), not the target's; ADR 0106 says so.
+
