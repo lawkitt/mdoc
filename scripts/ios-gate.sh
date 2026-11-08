@@ -32,7 +32,9 @@ field() { sed -n "s/^$1=//p" "$2"; }
 
 case "${1:-}" in
   clean)
-    [ -z "$(git status --porcelain --untracked-files=normal)" ]
+    # A git error is not a clean checkout.
+    status=$(git status --porcelain --untracked-files=normal) || die "git status failed"
+    [ -z "$status" ]
     ;;
   tier)
     tier_of "${2:?$usage}"

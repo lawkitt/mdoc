@@ -98,6 +98,7 @@ touch "$repo/apps/ios/Untracked.swift"
 refuses "an untracked file" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "untracked" "$tmp/out" || fail "untracked: $(cat "$tmp/out")"
 rm "$repo/apps/ios/Untracked.swift"
+refuses "a git error as clean" bash -c "cd '$repo' && GIT_INDEX_FILE=/dev/null bash scripts/ios-gate.sh clean"
 refuses "a plain version" release 0.2.0 "$tmp/good.txt" --yes
 refuses "another version" release 0.3.0-rc.1 "$tmp/good.txt" --yes
 grep -q "maintainer's" "$tmp/out" || fail "another version: $(cat "$tmp/out")"
