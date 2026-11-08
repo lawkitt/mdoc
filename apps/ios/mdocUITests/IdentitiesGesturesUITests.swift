@@ -211,6 +211,13 @@ final class IdentitiesGesturesUITests: XCTestCase {
                     withVelocity: 200, thenHoldForDuration: 0.3)
         MdocUITest.settledScreen()
         XCTAssertEqual(rows.count, count, "a row dropped on itself stays")
+        // Let go off the list, over the header: nothing.
+        let header = app.staticTexts["Identities"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        handles.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: header, withVelocity: 300, thenHoldForDuration: 0.3)
+        MdocUITest.settledScreen()
+        XCTAssertEqual(rows.count, count, "let go off the list: nothing")
+        XCTAssertFalse(app.buttons["toast-action"].firstMatch.exists)
 
         // Onto the second row: one name, the target's alias.
         let onto = row(target.name).coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5))

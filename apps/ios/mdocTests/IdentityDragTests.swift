@@ -48,6 +48,26 @@ final class IdentityDragTests: XCTestCase {
         XCTAssertNil(IdentityDrag.target(at: CGPoint(x: 200, y: 296), rows: [:], visible: list, dragged: a))
     }
 
+    /// A section header pinned over the list's top covers the row under
+    /// it: no drop there, nor a handle.
+    func testAPinnedHeaderCoversTheRowsUnderIt() {
+        let header = CGRect(x: 88, y: 284, width: 80, height: 18)
+        let band = IdentityDrag.covered(byHeader: header, list: list)
+        XCTAssertEqual(band, CGRect(x: list.minX, y: 276, width: list.width, height: 34))
+        XCTAssertNil(IdentityDrag.target(
+            at: CGPoint(x: 200, y: 296), rows: rows, visible: list, dragged: a, covered: [band]), "b, under the header")
+        XCTAssertEqual(IdentityDrag.target(
+            at: CGPoint(x: 200, y: 316), rows: rows, visible: list, dragged: a, covered: [band]), b, "b, below it")
+        let tracking = IdentityDragTracking()
+        tracking.active = true
+        tracking.list = list
+        tracking.handles = [b: CGRect(x: 350, y: 274, width: 44, height: 44)]
+        XCTAssertEqual(tracking.handle(at: CGPoint(x: 370, y: 300)), b)
+        tracking.headers = ["proposed": header]
+        XCTAssertNil(tracking.handle(at: CGPoint(x: 370, y: 300)), "a handle under the header")
+        XCTAssertEqual(tracking.handle(at: CGPoint(x: 370, y: 314)), b)
+    }
+
     func testTheGapBetweenTwoRowsGoesToTheNearer() {
         // b ends at 322 and c starts at 330.
         XCTAssertEqual(target(200, 324), b, "just under b")

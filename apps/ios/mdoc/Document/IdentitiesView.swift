@@ -75,8 +75,8 @@ struct IdentitiesView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
-                section("To review", shown.filter { placed($0) == .proposed })
-                section("Replaced", shown.filter { placed($0) == .replaced })
+                section("To review", id: "proposed", shown.filter { placed($0) == .proposed })
+                section("Replaced", id: "replaced", shown.filter { placed($0) == .replaced })
                 keptSection(shown.filter { placed($0) == .kept })
             }
             .listStyle(.plain)
@@ -216,7 +216,7 @@ struct IdentitiesView: View {
                     .listRowSeparator(.hidden)
                 }
             } header: {
-                sectionHeader("Looks like", count: nil)
+                sectionHeader("Looks like", id: "hints", count: nil)
             }
         }
     }
@@ -250,14 +250,14 @@ struct IdentitiesView: View {
     // MARK: Sections
 
     @ViewBuilder
-    private func section(_ title: LocalizedStringKey, _ members: [Identity]) -> some View {
+    private func section(_ title: LocalizedStringKey, id: String, _ members: [Identity]) -> some View {
         if !members.isEmpty {
             Section {
                 ForEach(members) { identity in
                     row(identity)
                 }
             } header: {
-                sectionHeader(title, count: members.count)
+                sectionHeader(title, id: id, count: members.count)
             }
         }
     }
@@ -277,7 +277,7 @@ struct IdentitiesView: View {
                     showsKept.toggle()
                 } label: {
                     HStack {
-                        sectionHeader("Kept", count: members.count)
+                        sectionHeader("Kept", id: "kept", count: members.count)
                         Image(systemName: showsKept || !query.isEmpty ? "chevron.down" : "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -290,7 +290,9 @@ struct IdentitiesView: View {
         }
     }
 
-    private func sectionHeader(_ title: LocalizedStringKey, count: Int?) -> some View {
+    /// A section's title and count; `id` names its frame, which a drag
+    /// keeps clear of (the header pins over the rows).
+    private func sectionHeader(_ title: LocalizedStringKey, id: String, count: Int?) -> some View {
         HStack(spacing: Space.xxs) {
             Text(title)
             if let count {
@@ -302,6 +304,8 @@ struct IdentitiesView: View {
         .foregroundStyle(.secondary)
         .textCase(nil)
         .accessibilityAddTraits(.isHeader)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.headers[id] = $0 }
+        .onDisappear { dragTracking.headers[id] = nil }
     }
 
     // MARK: Select

@@ -207,9 +207,10 @@ that only the view model changes; views send intents
   Select each row has a ≡ handle at its trailing edge, where the state
   mark is outside Select. Dragging it lifts a copy of the row that follows
   the finger up and down; the row itself dims. The row under the finger
-  (from the rows' reported frames, never the dragged row) gets the ink
-  outline and "Same as PERSON_1" in its alias line; within 56 pt of the
-  list's top or bottom (the selection bar's top) the list scrolls. Letting
+  (from the rows' reported frames, never the dragged row nor one under a
+  pinned section header) gets the ink outline and "Same as PERSON_1" in
+  its alias line, on the copy too; within 56 pt of the list's top or
+  bottom (the selection bar's top) the list scrolls. Letting
   go on a row is the core's link, as desktop's drag: the target keeps its
   alias, the restore wording is the core's fullest form, another category
   takes the target's, one undo step, a haptic and "PERSON_3 is now

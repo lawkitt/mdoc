@@ -73,8 +73,14 @@ extension IdentitiesView {
             drag = current
             retarget()
             dragTracking.autoScroll.speed = IdentityDrag.scrollSpeed(at: point.y, visible: dragTracking.visible)
-        case .ended:
+        case let .ended(point):
             dragTracking.autoScroll.speed = 0
+            // Where the finger let go, over the rows as they are now.
+            if var current = drag, !current.returning {
+                current.location = point
+                drag = current
+                retarget()
+            }
             drop()
         case .cancelled:
             dragTracking.autoScroll.speed = 0
@@ -86,7 +92,8 @@ extension IdentitiesView {
     private func retarget() {
         guard var current = drag, !current.returning else { return }
         let target = IdentityDrag.target(
-            at: current.location, rows: dragTracking.rows, visible: dragTracking.visible, dragged: current.dragged)
+            at: current.location, rows: dragTracking.rows, visible: dragTracking.visible, dragged: current.dragged,
+            covered: dragTracking.covered)
         guard target != current.target else { return }
         current.target = target
         withAnimation(Motion.move(reduced: reduceMotion)) { drag = current }

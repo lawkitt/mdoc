@@ -21,12 +21,14 @@ enum IdentityDrag {
     static let maxSpeed: CGFloat = 700
 
     /// The row under `point`: one of `rows` whose frame (with `slop`) holds
-    /// it, inside `visible`, the part of the list on screen. Never `dragged`'s
-    /// own row. All in one coordinate space.
+    /// it, inside `visible`, the part of the list on screen, and not under
+    /// one of `covered`, the section headers pinned over the rows. Never
+    /// `dragged`'s own row. All in one coordinate space.
     static func target(
-        at point: CGPoint, rows: [IdentityID: CGRect], visible: CGRect, dragged: IdentityID
+        at point: CGPoint, rows: [IdentityID: CGRect], visible: CGRect, dragged: IdentityID,
+        covered: [CGRect] = []
     ) -> IdentityID? {
-        guard visible.contains(point) else { return nil }
+        guard visible.contains(point), !covered.contains(where: { $0.contains(point) }) else { return nil }
         return rows
             .filter { $0.key != dragged && $0.value.insetBy(dx: 0, dy: -slop).contains(point) }
             // Two frames that both reach the point (the slop): the nearer middle.
@@ -44,6 +46,12 @@ enum IdentityDrag {
         if fromTop < edge { return -maxSpeed * min(1, (edge - fromTop) / edge) }
         if fromBottom < edge { return maxSpeed * min(1, (edge - fromBottom) / edge) }
         return 0
+    }
+
+    /// What a section header covers: its band across the list, with the
+    /// header row's padding above and below its words.
+    static func covered(byHeader header: CGRect, list: CGRect) -> CGRect {
+        CGRect(x: list.minX, y: header.minY - Space.xs, width: list.width, height: header.height + 2 * Space.xs)
     }
 
     /// A content offset moved by `delta`, kept between `lowest` and `highest`.
@@ -78,6 +86,9 @@ struct IdentityDragState: Equatable {
 final class IdentityDragTracking {
     var rows: [IdentityID: CGRect] = [:]
     var handles: [IdentityID: CGRect] = [:]
+    /// The section headers' words ("To review 4"), which pin over the rows
+    /// as the list scrolls.
+    var headers: [String: CGRect] = [:]
     var list: CGRect = .zero
     /// The top of the selection bar over the list's bottom, while it shows.
     var barTop: CGFloat?
@@ -92,9 +103,14 @@ final class IdentityDragTracking {
         return CGRect(x: list.minX, y: list.minY, width: list.width, height: max(0, barTop - list.minY))
     }
 
+    /// What the section headers cover.
+    var covered: [CGRect] {
+        headers.values.map { IdentityDrag.covered(byHeader: $0, list: list) }
+    }
+
     /// The name whose ≡ handle is at `point`, in Select.
     func handle(at point: CGPoint) -> IdentityID? {
-        guard active, visible.contains(point) else { return nil }
+        guard active, visible.contains(point), !covered.contains(where: { $0.contains(point) }) else { return nil }
         return handles.first { $0.value.contains(point) }?.key
     }
 }
