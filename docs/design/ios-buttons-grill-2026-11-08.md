@@ -52,6 +52,10 @@ the ring, title, search, Select and ›.
 **Decision:** 44 pt for every big button, the review bar's included
 (`Size.barButton` 40 → 44). The compact review bar grows by 4 pt once and
 then keeps one height (the height bug's fix).
+*Built 2026-11-08:* the 40 pt was the label's least height inside the
+system's padding, so the old buttons were 54 pt; at a true 44 pt the bar
+is 10 pt shorter. The styles live in `apps/ios/Shared/UI/ButtonStyles.swift`,
+since the Restore extension uses them too.
 
 ### Q4. Undo
 

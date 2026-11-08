@@ -84,8 +84,11 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   ink with on-accent words (the system's keeps white words, which vanish
   on the near-white ink of dark mode); every other big button,
   `.secondaryAction()`, is clear glass with ink words, and Undo and
-  Settings are clear glass circles (`secondaryAction(circle: true)`).
-  Disabled buttons are clear glass with words in the secondary colour. At
+  Settings are clear glass circles (`secondaryAction(circle: true)`). A
+  `Menu` takes only the system's styles, so "+ New" and Save to document
+  use `primaryMenu()` / `secondaryMenu()` with `bigButtonLabel(prominent:)`
+  on the label. Primary words are semibold. Disabled buttons are clear
+  glass with words in the secondary colour. At
   most one primary per view, a drawer or an iPad column counting as its
   own view: on the Documents page Scan is the one, so the setup card's
   Download there is secondary. Screens use these two styles only, no
