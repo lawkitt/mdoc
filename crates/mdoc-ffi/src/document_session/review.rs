@@ -8,6 +8,7 @@
 //! it as desktop's editor does (`history`, ADR 0098), and the identity tools
 //! are desktop's mapping changes (`mapping`).
 mod history;
+mod ids;
 mod mapping;
 
 use crate::CoreError;
@@ -65,17 +66,97 @@ pub(crate) struct ReviewText {
     /// Merge hints dismissed here or in the case, by the wordings that
     /// matched (`MergeHint::pair`, ADR 0080).
     dismissed: HashSet<(Arc<str>, Arc<str>)>,
+    /// Mention ids that survive changes (`ids`).
+    pub ids: ids::MentionIds,
+    /// The text's hash, taken when it changes: an app keeps what it built
+    /// from the text while this stays.
+    pub text_revision: u64,
+}
+
+/// A review's counts (`ReviewText::counts`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Counts {
+    pub proposed: u64,
+    pub replaced: u64,
+    pub kept: u64,
+}
+
+fn text_revision(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl ReviewText {
     pub fn new(text: String) -> Self {
         let mut document = Self {
+            text_revision: text_revision(&text),
             text,
             ..Default::default()
         };
         let text = document.text.clone();
         document.review.refresh(&text);
         document
+    }
+
+    /// Every mention's range, proposed, replaced or kept, in source order.
+    pub(crate) fn mention_ranges(&self) -> Vec<Range<usize>> {
+        let review = &self.review;
+        let mut ranges: Vec<_> = review
+            .candidates()
+            .iter()
+            .map(|c| c.range.clone())
+            .chain(review.applied().iter().map(|a| a.range.clone()))
+            .chain(
+                review
+                    .kept_mentions()
+                    .into_iter()
+                    .map(|(range, _, _)| range),
+            )
+            .collect();
+        ranges.sort_by_key(|r| (r.start, r.end));
+        ranges.dedup();
+        ranges
+    }
+
+    /// Proposed, replaced and kept mentions, as the snapshot and lists
+    /// count them.
+    pub(crate) fn counts(&self) -> Counts {
+        let review = &self.review;
+        Counts {
+            proposed: review
+                .candidates()
+                .iter()
+                .filter(|c| review.variant(c.variant).is_some())
+                .count() as u64,
+            replaced: review.applied().len() as u64,
+            kept: review.kept_mentions().len() as u64,
+        }
+    }
+
+    /// Any mention at all: how a document saved before scans were recorded
+    /// tells it was scanned, on opening and in lists alike.
+    pub(crate) fn has_mentions(&self) -> bool {
+        !self.mention_ranges().is_empty()
+    }
+
+    /// Give the mentions as they are now their ids.
+    pub fn sync_ids(&mut self) {
+        let ranges = self.mention_ranges();
+        self.ids.sync(ranges);
+    }
+
+    /// The mention with id `id` now.
+    pub fn mention_range(&mut self, id: u64) -> Option<Range<usize>> {
+        self.sync_ids();
+        self.ids.range(id)
+    }
+
+    /// Every change shows in this: the review's revision, the history's
+    /// state and the hints dismissed.
+    pub fn change_key(&self) -> (u64, u64, usize) {
+        (self.review.revision(), self.history, self.dismissed.len())
     }
 
     // ---- The editor's part --------------------------------------------------
@@ -116,6 +197,10 @@ impl ReviewText {
                 .collect()
         };
         debug_assert!(self.base.is_some(), "every change is part of a step");
+        if !edits.is_empty() {
+            self.text_revision = text_revision(&self.text);
+        }
+        self.ids.edited(&source_edits);
         self.edits.push(source_edits.clone());
         let before = self.history;
         self.history += 1;
@@ -817,8 +902,9 @@ mod tests {
     // ---- Undo, redo and the identity tools (ADR 0098) -------------------------
 
     /// What the review screen shows, without the history's ends.
-    fn shown(document: &ReviewText) -> String {
-        let snapshot = super::super::snapshot::of("", None, document, None);
+    fn shown(document: &mut ReviewText) -> String {
+        document.sync_ids();
+        let snapshot = super::super::snapshot::of("", None, document, None, true);
         let mut shown = format!("{}\n", snapshot.text);
         for m in &snapshot.mentions {
             shown += &format!(
@@ -863,8 +949,9 @@ mod tests {
         document.review.identity_by_alias(alias).unwrap()
     }
 
-    fn aliases(document: &ReviewText) -> Vec<String> {
-        super::super::snapshot::of("", None, document, None)
+    fn aliases(document: &mut ReviewText) -> Vec<String> {
+        document.sync_ids();
+        super::super::snapshot::of("", None, document, None, true)
             .mentions
             .into_iter()
             .map(|m| m.alias.unwrap_or_default())
@@ -883,7 +970,7 @@ mod tests {
         );
         assert!(!document.can_undo() && !document.can_redo());
         assert!(!document.undo(), "nothing to undo");
-        let start = shown(&document);
+        let start = shown(&mut document);
         let ann = range(text, "Ann Lee", 1);
         document.replace(ann.clone(), Scope::This).unwrap();
         assert_eq!(undo_label(&document), "Replace · Ann Lee");
@@ -898,21 +985,21 @@ mod tests {
         let alias = range(&document.text.clone(), "PERSON_1", 0);
         assert_eq!(document.undo_step().unwrap().1.range, Some(alias));
 
-        let replaced = shown(&document);
+        let replaced = shown(&mut document);
         let bob = range(&document.text.clone(), "Bob Hart", 0);
         document.keep(bob, Scope::All).unwrap();
         assert_eq!(undo_label(&document), "Keep · Bob Hart");
         round_trip(&mut document, &replaced);
 
         // Keep of a replaced mention returns its original, one step.
-        let kept = shown(&document);
+        let kept = shown(&mut document);
         let alias = range(&document.text.clone(), "PERSON_1", 0);
         document.keep(alias, Scope::This).unwrap();
         assert_eq!(document.text, text);
         round_trip(&mut document, &kept);
 
         // Replace on a kept mention proposes it again and replaces it: one step.
-        let before = shown(&document);
+        let before = shown(&mut document);
         document
             .replace(range(text, "Bob Hart", 1), Scope::All)
             .unwrap();
@@ -927,7 +1014,7 @@ mod tests {
     fn replace_all_and_a_mark_are_one_step_each() {
         let text = "Ann Lee met Mia. Ann Lee paid Mia.";
         let mut document = document(text, &[("Ann Lee", Category::Person)]);
-        let start = shown(&document);
+        let start = shown(&mut document);
         let mia = range(text, "Mia", 0);
         document
             .add_selection(mia.clone(), Some(Category::Person))
@@ -938,7 +1025,7 @@ mod tests {
         assert_eq!(document.undo_step().unwrap().1.range, Some(mia));
         round_trip(&mut document, &start);
 
-        let marked = shown(&document);
+        let marked = shown(&mut document);
         document.replace_all().unwrap();
         assert_eq!(
             document.text,
@@ -994,21 +1081,21 @@ mod tests {
         document
             .replace(range(text, "Ann Lee", 0), Scope::This)
             .unwrap();
-        let before = shown(&document);
+        let before = shown(&mut document);
         let applied = range(&document.text.clone(), "PERSON_1", 0);
         document.rename(applied, Scope::All, " CLIENT ").unwrap();
         assert_eq!(document.text, "CLIENT met Ann Lee and Ann Lee.");
-        assert_eq!(aliases(&document), ["CLIENT", "CLIENT", "CLIENT"]);
+        assert_eq!(aliases(&mut document), ["CLIENT", "CLIENT", "CLIENT"]);
         assert_eq!(undo_label(&document), "Rename · CLIENT");
         let client = range(&document.text.clone(), "CLIENT", 0);
         assert_eq!(document.undo_step().unwrap().1.range, Some(client.clone()));
         round_trip(&mut document, &before);
 
         // This one: a proposed mention splits off under the new alias.
-        let renamed = shown(&document);
+        let renamed = shown(&mut document);
         let last = range(&document.text.clone(), "Ann Lee", 1);
         document.rename(last, Scope::This, "WITNESS").unwrap();
-        assert_eq!(aliases(&document), ["CLIENT", "CLIENT", "WITNESS"]);
+        assert_eq!(aliases(&mut document), ["CLIENT", "CLIENT", "WITNESS"]);
         round_trip(&mut document, &renamed);
 
         // An alias another identity has is refused and named; no step.
@@ -1047,16 +1134,16 @@ mod tests {
             Some("ORG_1")
         );
         assert_eq!(alias(&choices, Category::Person), None, "the alias stays");
-        let before = shown(&document);
+        let before = shown(&mut document);
         document
             .set_category(first.clone(), Scope::All, Category::Organization)
             .unwrap();
-        assert_eq!(aliases(&document), ["ORG_1", "ORG_1"]);
+        assert_eq!(aliases(&mut document), ["ORG_1", "ORG_1"]);
         assert_eq!(undo_label(&document), "Category · Organization");
         round_trip(&mut document, &before);
 
         // This one: the mention splits off in its category; the rest stays.
-        let recategorized = shown(&document);
+        let recategorized = shown(&mut document);
         let this = document
             .category_choices(first.clone(), Scope::This)
             .unwrap();
@@ -1064,7 +1151,7 @@ mod tests {
         document
             .set_category(first, Scope::This, Category::Other)
             .unwrap();
-        assert_eq!(aliases(&document), ["REDACTED_1", "ORG_1"]);
+        assert_eq!(aliases(&mut document), ["REDACTED_1", "ORG_1"]);
         round_trip(&mut document, &recategorized);
     }
 
@@ -1081,7 +1168,7 @@ mod tests {
         document.replace_all().unwrap();
         assert_eq!(document.text, "PERSON_1 met PERSON_2 and PERSON_2.");
         let (maya, slip) = (id_of(&document, "PERSON_1"), id_of(&document, "PERSON_2"));
-        let before = shown(&document);
+        let before = shown(&mut document);
         // This one moves one mention; the other stays PERSON_2.
         let second = range(&document.text.clone(), "PERSON_2", 0);
         document.same_as(second, Scope::This, maya).unwrap();
@@ -1117,13 +1204,13 @@ mod tests {
             ],
         );
         let maya = id_of(&document, "PERSON_1");
-        let before = shown(&document);
+        let before = shown(&mut document);
         document
             .same_as(range(text, "Maya Benett", 0), Scope::All, maya)
             .unwrap();
         assert_eq!(document.text, text);
         assert_eq!(document.review.remaining(), 2);
-        assert_eq!(aliases(&document), ["PERSON_1", "PERSON_1"]);
+        assert_eq!(aliases(&mut document), ["PERSON_1", "PERSON_1"]);
         round_trip(&mut document, &before);
     }
 
@@ -1132,7 +1219,7 @@ mod tests {
         let text = "Ann Lee met Ann Lee.";
         let mut document = document(text, &[("Ann Lee", Category::Person)]);
         document.replace_all().unwrap();
-        let before = shown(&document);
+        let before = shown(&mut document);
         let second = range(&document.text.clone(), "PERSON_1", 1);
         document.new_alias(second).unwrap();
         assert_eq!(document.text, "PERSON_1 met PERSON_2.");
@@ -1146,7 +1233,7 @@ mod tests {
         let mut proposed = super::tests::document(text, &[("Ann Lee", Category::Person)]);
         proposed.new_alias(range(text, "Ann Lee", 1)).unwrap();
         assert_eq!(proposed.text, text);
-        assert_eq!(aliases(&proposed), ["PERSON_1", "PERSON_2"]);
+        assert_eq!(aliases(&mut proposed), ["PERSON_1", "PERSON_2"]);
     }
 
     #[test]
@@ -1160,13 +1247,13 @@ mod tests {
             ],
         );
         let (ann, email) = (id_of(&document, "PERSON_1"), id_of(&document, "EMAIL_1"));
-        let before = shown(&document);
+        let before = shown(&mut document);
         document.set_owner(email, Some(ann)).unwrap();
         assert_eq!(document.review.identity(email).unwrap().owner, Some(ann));
         assert_eq!(undo_label(&document), "Belongs to · Ann Lee");
         assert_eq!(document.undo_step().unwrap().1.identity, Some(email));
         round_trip(&mut document, &before);
-        let owned = shown(&document);
+        let owned = shown(&mut document);
         document.set_owner(email, None).unwrap();
         assert_eq!(undo_label(&document), "Belongs to · none");
         round_trip(&mut document, &owned);
@@ -1184,7 +1271,7 @@ mod tests {
         let text = "Ivan Petrov and Anna Ivanova signed.";
         let mut document = document(text, &[("Anna Ivanova", Category::Person)]);
         document.replace_all().unwrap();
-        let before = shown(&document);
+        let before = shown(&mut document);
         let case = [ExportedIdentity {
             alias: "PERSON_1".into(),
             previous: Vec::new(),

@@ -1,33 +1,32 @@
 import Foundation
 
-/// The one place that picks the core: the Rust core through `MdocFFI` for
-/// the app and the extension; `FakeCore` only for previews and view-model
-/// tests.
+/// The one place that opens the core for the app and the extension: the
+/// Rust core through `MdocFFI`, over the App Group's library or, for UI
+/// tests, a fresh one of their own.
 enum CoreFactory {
-    /// Launch argument for UI tests: a separate, fresh storage root and case
-    /// key, and a device below the detector floor, so no model is needed;
-    /// the seeded document is scanned with the structured rules.
-    static let uiTestingArgument = "-mdoc-ui-testing"
     /// Set in the App Group's defaults while the app runs for UI tests, so
     /// the Restore extension opens the same test library.
     private static let uiTestingKey = "uiTestingLibrary"
     private static let uiTestingFolder = "mdoc-ui-testing"
-    /// Below the detector floor: the app offers no Find names, and only the
-    /// UI tests' seed scans, with the structured rules.
-    static let belowFloorMemory: UInt64 = 4 * 1_073_741_824
 
-    static var isUITesting: Bool {
-        ProcessInfo.processInfo.arguments.contains(uiTestingArgument)
+    /// The process opens the UI tests' library and preferences: the app
+    /// launched for UI tests, or the Restore extension while the app runs
+    /// for them.
+    static var opensUITestLibrary: Bool {
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            return UserDefaults(suiteName: MdocStorage.appGroup)?.bool(forKey: uiTestingKey) ?? false
+        }
+        return LaunchConfiguration.current.isUITesting
     }
 
     /// The app's storage. UI tests get a fresh folder of their own; a normal
     /// launch clears the test flag.
-    static func appStorage() throws -> MdocStorage {
+    static func appStorage(_ launch: LaunchConfiguration = .current) throws -> MdocStorage {
         let defaults = UserDefaults(suiteName: MdocStorage.appGroup)
-        if isUITesting {
+        if launch.isUITesting {
             let storage = try MdocStorage.shared(folder: uiTestingFolder)
             clearKeepingDetector(storage)
-            if detectorTierInUITests && realDownloadsInUITests, let library = try? MdocStorage.shared() {
+            if launch.detectorTier && launch.realDownloads, let library = try? MdocStorage.shared() {
                 reuseDetector(from: library, into: storage)
             }
             defaults?.set(true, forKey: uiTestingKey)
@@ -90,26 +89,14 @@ enum CoreFactory {
         }
     }
 
-    static func appCore(storage: MdocStorage) throws -> Core {
+    static func appCore(storage: MdocStorage, _ launch: LaunchConfiguration = .current) throws -> Core {
         try RealCore.make(
-            storage: storage, keys: keyStore(testing: isUITesting),
-            physicalMemory: isUITesting && !detectorTierInUITests ? belowFloorMemory : ProcessInfo.processInfo.physicalMemory)
-    }
-
-    /// UI tests that need a model (OCR) download it for real.
-    static var realDownloadsInUITests: Bool {
-        ProcessInfo.processInfo.environment["MDOC_REAL_DOWNLOADS"] == "1"
-    }
-
-    /// The UI survey shows the detector tier's setup screens too; nothing
-    /// is downloaded, as UI tests use a fake downloader.
-    private static var detectorTierInUITests: Bool {
-        ProcessInfo.processInfo.environment["MDOC_UI_DETECTOR_TIER"] == "1"
+            storage: storage, keys: keyStore(testing: launch.isUITesting), physicalMemory: launch.physicalMemory)
     }
 
     /// The extension gets the library only: restoring needs no model.
     static func restoreExtension() throws -> any Library {
-        let testing = UserDefaults(suiteName: MdocStorage.appGroup)?.bool(forKey: uiTestingKey) ?? false
+        let testing = opensUITestLibrary
         let storage = try testing ? MdocStorage.shared(folder: uiTestingFolder) : MdocStorage.shared()
         try storage.prepare()
         return try RealCore.library(storage: storage, keys: keyStore(testing: testing))

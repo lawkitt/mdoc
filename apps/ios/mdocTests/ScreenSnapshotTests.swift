@@ -1,21 +1,22 @@
+import MdocFFI
 import SwiftUI
 import XCTest
 @testable import mdoc
 
-/// Home's rows and Settings' rows (ADR 0099). Lists themselves don't draw
+/// The Documents page's rows and Settings' rows (ADR 0099). Lists themselves don't draw
 /// offscreen, so the rows are drawn in a card as the list groups them.
 @MainActor
 final class ScreenSnapshotTests: XCTestCase {
     private let today = Calendar.current.date(bySettingHour: 17, minute: 24, second: 0, of: .now)!
     private let earlier = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 12))!
 
-    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, caseID: String? = nil) -> DocumentSummary {
-        DocumentSummary(
+    private func document(_ title: String, _ phase: DocumentPhase, kind: SourceKind, pending: Int = 0, candidates: Int = 0, updated: Date, caseID: String? = nil) -> LibraryDocument {
+        LibraryDocument(
             id: DocumentID(rawValue: title), title: title, caseID: caseID.map(CaseID.init), kind: kind, phase: phase,
             pendingCount: pending, updated: updated, candidateCount: candidates)
     }
 
-    func testHomeRows() {
+    func testDocumentRows() {
         let agreement = CaseSummary(id: CaseID(rawValue: "a"), name: "Riverside v Bennett", colour: .teal)
         let rows = VStack(alignment: .leading, spacing: Space.s) {
             DocumentRow(
@@ -34,9 +35,9 @@ final class ScreenSnapshotTests: XCTestCase {
         .padding()
         .background(Palette.background)
         for appearance in Snapshot.Appearance.allCases {
-            Snapshot.assert(rows, named: "home-rows", appearance: appearance)
+            Snapshot.assert(rows, named: "documents-rows", appearance: appearance)
         }
-        Snapshot.assert(rows, named: "home-rows-ax3", size: .accessibility3)
+        Snapshot.assert(rows, named: "documents-rows-ax3", size: .accessibility3)
     }
 
     func testSettingsRows() {
@@ -65,8 +66,8 @@ final class ScreenSnapshotTests: XCTestCase {
     /// Search stays while a query is typed, so it can be cleared even when
     /// the list shrinks below the threshold.
     func testSearchStaysWhileAQueryIsTyped() throws {
-        let home = HomeViewModel(library: Fixture.core().library)
-        XCTAssertLessThan(home.documents.count, HomeViewModel.searchThreshold)
+        let home = LibraryModel(library: try Fixture.seeded().library)
+        XCTAssertLessThan(home.documents.count, LibraryModel.searchThreshold)
         XCTAssertFalse(home.offersSearch)
         home.query = "x"
         XCTAssertTrue(home.offersSearch)
@@ -83,13 +84,13 @@ final class ScreenSnapshotTests: XCTestCase {
     }
 
     func testSerifSwitchesTheDocumentFont() {
-        let store = MarkdownDisplay.store
-        let before = store.bool(forKey: MarkdownDisplay.serifKey)
-        defer { store.set(before, forKey: MarkdownDisplay.serifKey) }
+        let preferences = Preferences.shared
+        let before = preferences.serif
+        defer { preferences.serif = before }
         let traits = UITraitCollection(preferredContentSizeCategory: .large)
-        store.set(false, forKey: MarkdownDisplay.serifKey)
+        preferences.serif = false
         let system = MarkdownStyler.font(.body, traits: traits)
-        store.set(true, forKey: MarkdownDisplay.serifKey)
+        preferences.serif = true
         let serif = MarkdownStyler.font(.body, traits: traits)
         XCTAssertEqual(system.pointSize, serif.pointSize)
         XCTAssertNotEqual(system.fontName, serif.fontName)
@@ -100,10 +101,10 @@ final class ScreenSnapshotTests: XCTestCase {
         XCTAssertEqual(ModelDetailView.memoryText(7_900_000_000), "8 GB")
     }
 
-    func testHomeSearchAndCaseFilter() {
-        let home = HomeViewModel(library: Fixture.core().library)
+    func testDocumentsSearchAndCaseFilter() throws {
+        let home = LibraryModel(library: try Fixture.seeded().library)
         XCTAssertEqual(home.shownDocuments.count, home.documents.count)
-        let first = try! XCTUnwrap(home.documents.first)
+        let first = try XCTUnwrap(home.documents.first)
         home.query = String(first.title.prefix(4))
         XCTAssertTrue(home.shownDocuments.contains(first))
         home.query = "zzzz-no-such-document"

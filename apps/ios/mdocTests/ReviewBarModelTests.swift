@@ -1,15 +1,15 @@
+import MdocFFI
 import XCTest
 @testable import mdoc
 
 /// The review bar's model (ADR 0098): stepping in document order, moving on
 /// after a decision, All reviewed, undo moving the bar back, focus and the
-/// identity tools, over the fake core.
+/// identity tools, over the real core and the seeded letter.
 @MainActor
 final class ReviewBarModelTests: XCTestCase {
     private func model() throws -> DocumentViewModel {
-        let core = Fixture.core()
-        let session = try core.library.session(for: Fixture.letter)
-        return DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let seeded = try Fixture.seeded()
+        return try seeded.model(seeded.letter)
     }
 
     func testBeginReviewOpensTheFirstProposalInDocumentOrder() throws {
@@ -17,7 +17,7 @@ final class ReviewBarModelTests: XCTestCase {
         model.beginReview()
         let first = model.snapshot.candidates.filter { $0.state == .proposed }.min { $0.range.start < $1.range.start }
         XCTAssertEqual(model.reviewing, first?.id)
-        XCTAssertEqual(model.reviewScope, .allOccurrences)
+        XCTAssertEqual(model.reviewScope, .all)
     }
 
     func testSteppingStopsAtTheEnds() throws {
@@ -56,28 +56,32 @@ final class ReviewBarModelTests: XCTestCase {
         XCTAssertTrue(model.toast?.text.hasPrefix("All") ?? false, "\(String(describing: model.toast?.text))")
     }
 
-    func testUndoMovesTheBarBackAndOffersRedo() throws {
+    /// Undo moves the bar back with no toast, and takes an earlier toast's
+    /// Undo away; Redo still offers Undo in its toast (ADR 0106).
+    func testUndoMovesTheBarBackWithoutAToast() throws {
         let model = try model()
         model.beginReview()
         let first = try XCTUnwrap(model.reviewedCandidate)
         model.decideCurrent(.replace)
         XCTAssertNotEqual(model.reviewedCandidate?.identityID, first.identityID)
+        model.toast = model.undoToast("Replaced \(first.original)")
         model.undo()
         XCTAssertEqual(model.reviewedCandidate?.original, first.original)
         XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
-        XCTAssertEqual(model.toast?.actionTitle, "Redo")
+        XCTAssertNil(model.toast, "no Redo toast, and no earlier Undo left to reach a step further")
         XCTAssertTrue(model.canRedo)
         model.redo()
         XCTAssertEqual(model.snapshot.candidates.first { $0.original == first.original }?.state, .replaced)
+        XCTAssertEqual(model.toast?.actionTitle, "Undo", "a Redo shows the Undo toast")
     }
 
     func testScopeResetsOnTheNextIdentity() throws {
         let model = try model()
         model.beginReview()
-        model.reviewScope = .justThisOne
+        model.setScope(.this)
         let identity = model.reviewedCandidate?.identityID
         while model.reviewedCandidate?.identityID == identity, model.step(1) {}
-        XCTAssertEqual(model.reviewScope, .allOccurrences)
+        XCTAssertEqual(model.reviewScope, .all)
     }
 
     func testFocusKeepsSteppingInsideTheIdentity() throws {
@@ -175,5 +179,257 @@ final class ReviewBarModelTests: XCTestCase {
         let trimmed = DocumentViewModel.trimmed(SourceRange(start: 8, end: 14), in: text)
         XCTAssertEqual(trimmed, SourceRange(start: 8, end: 13))
         XCTAssertEqual(DocumentViewModel.trimmed(SourceRange(start: 13, end: 14), in: text).length, 0)
+    }
+
+    // MARK: Full view and decided cards (2026-11-06 grill)
+
+    func testAMentionPillChangesOnlyThatMentionAndTheBarStays() throws {
+        let model = try model()
+        let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
+        let mentions = model.snapshot.mentions(of: repeated.id).sorted { $0.range.start < $1.range.start }
+        model.select(mentions[0].id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.decideMention(mentions[1].id, .replace)
+        let now = model.snapshot.mentions(of: repeated.id).sorted { $0.range.start < $1.range.start }
+        XCTAssertEqual(now.map(\.state).filter { $0 == .replaced }.count, 1, "only the one mention")
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "the bar stays where it was")
+        XCTAssertTrue(model.canUndo)
+    }
+
+    func testInsteadKeepsTheCardAndNextMovesOn() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.replace)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.changeCurrent(.keep)
+        XCTAssertEqual(model.reviewedCandidate?.state, .kept)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Keep instead stays on the card")
+        model.goToNextUndecided()
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed)
+    }
+
+    /// The long press's Keep instead and Replace instead, and K and Return
+    /// on a decided card, change it in place, as the card's own buttons do
+    /// (ADR 0101, #678).
+    func testChangingADecidedNameStaysOnItFromEveryEntryPoint() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.replace)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.decideCurrent(.keep)
+        XCTAssertEqual(model.reviewedCandidate?.state, .kept)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Keep instead stays on the name")
+        model.decideCurrent(.replace)
+        XCTAssertEqual(model.reviewedCandidate?.state, .replaced)
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "Replace instead stays on the name")
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// Return is the card's filled button: Replace on a proposed name,
+    /// Replace instead on a kept one (which stays), and Next on a replaced
+    /// one, as the decided card's filled Next (ADR 0101, review of #678).
+    func testReturnReplacesThenMovesOnFromAReplacedName() throws {
+        let model = try model()
+        model.beginReview()
+        let first = try XCTUnwrap(model.reviewedCandidate)
+        model.decideCurrent(.keep)
+        model.select(try XCTUnwrap(model.snapshot.mentions(of: first.identityID).first).id)
+        let place = model.reviewOrder.index(of: model.reviewing)
+        model.returnKey()
+        XCTAssertEqual(model.reviewedCandidate?.state, .replaced, "Replace instead")
+        XCTAssertEqual(model.reviewOrder.index(of: model.reviewing), place, "and stays")
+        model.returnKey()
+        XCTAssertEqual(model.reviewedCandidate?.state, .proposed, "then Next, to the next undecided name")
+    }
+
+    /// Each document has its own undo history (ADR 0104, #672): after a
+    /// change in one document, the window's undo in another never reaches
+    /// it, and back in the first its step undoes again.
+    func testSwitchingDocumentsNeverUndoesTheOthersStep() throws {
+        let seeded = try Fixture.seeded()
+        let jobs = LongJobRunner(background: NoBackgroundContinuation())
+        let letter = try seeded.model(seeded.letter, jobs: jobs)
+        let other = try seeded.model(seeded.quotation, jobs: jobs)
+        let window = UndoManager()
+        window.groupsByEvent = false
+        let letterScreen = UUID(), otherScreen = UUID()
+        letter.attachSystemUndo(window, for: letterScreen)
+        letter.beginReview()
+        let first = try XCTUnwrap(letter.reviewedCandidate)
+        func state() -> MentionState? { letter.snapshot.candidates.first { $0.original == first.original }?.state }
+        window.beginUndoGrouping()
+        letter.decideCurrent(.replace)
+        window.endUndoGrouping()
+        XCTAssertEqual(state(), .replaced)
+
+        // The other document opens in the same window.
+        letter.detachSystemUndo(for: letterScreen)
+        other.attachSystemUndo(window, for: otherScreen)
+        XCTAssertFalse(window.canUndo, "the window holds no step of the letter's")
+        other.undoTapped()
+        XCTAssertEqual(state(), .replaced, "the other document's Undo leaves the letter alone")
+
+        // Back to the letter: ⌘Z reaches its step again.
+        other.detachSystemUndo(for: otherScreen)
+        letter.attachSystemUndo(window, for: UUID())
+        XCTAssertTrue(window.canUndo)
+        window.undo()
+        XCTAssertEqual(state(), .proposed)
+    }
+
+    /// A size-class change builds a new screen for the same document, and
+    /// the old one may leave after the new one appeared: its leaving keeps
+    /// the document's steps in the window (review of #672).
+    func testANewScreenForTheSameDocumentKeepsItsSteps() throws {
+        let model = try model()
+        let window = UndoManager()
+        window.groupsByEvent = false
+        let wide = UUID(), compact = UUID()
+        model.attachSystemUndo(window, for: wide)
+        model.beginReview()
+        window.beginUndoGrouping()
+        model.decideCurrent(.replace)
+        window.endUndoGrouping()
+        model.attachSystemUndo(window, for: compact)
+        model.detachSystemUndo(for: wide)
+        XCTAssertTrue(window.canUndo, "the old screen leaving takes nothing")
+        window.beginUndoGrouping()
+        model.decideCurrent(.keep)
+        window.endUndoGrouping()
+        window.undo()
+        window.undo()
+        XCTAssertFalse(window.canUndo)
+        XCTAssertEqual(model.snapshot.pendingCount, try self.model().snapshot.pendingCount, "both steps undone")
+    }
+
+    /// Find's previews cut on characters, never inside a letter (#679).
+    func testFindPreviewsCutOnCharacters() throws {
+        let (core, storage) = try Fixture.core()
+        let text = String(repeating: "а", count: 60) + " Иван " + String(repeating: "б", count: 60)
+        let session = try core.library.importDocument(.text(text), title: "Письмо", into: .newCase(name: "Петров"))
+        _ = try session.recognize(observer: TestObserver())
+        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        let match = try XCTUnwrap(model.matches(of: "Иван").first)
+        let bytes = Array(model.snapshot.markdown.utf8)
+        XCTAssertEqual(bytes[match.start - 50] & 0xC0, 0x80, "50 bytes back is inside a letter")
+        let preview = model.context(of: match)
+        XCTAssertFalse(preview.contains("\u{FFFD}"), preview)
+        XCTAssertTrue(preview.contains("а Иван б"), preview)
+        XCTAssertTrue(preview.hasPrefix("…") && preview.hasSuffix("…"), preview)
+        XCTAssertEqual(preview, "…" + String(repeating: "а", count: 49) + " Иван " + String(repeating: "б", count: 49) + "…")
+    }
+
+    func testNextOnTheLastDecidedCardEndsReview() throws {
+        let model = try model()
+        model.beginReview()
+        model.replaceAllPending()
+        model.beginReview()
+        XCTAssertTrue(model.reviewOrder.isDone)
+        model.goToNextUndecided()
+        XCTAssertFalse(model.isReviewing)
+    }
+
+    func testOneHintPerDocumentAtItsMoment() throws {
+        let wasEnabled = ReviewHint.enabled
+        ReviewHint.resetAll()
+        ReviewHint.enabled = true
+        defer {
+            ReviewHint.resetAll()
+            ReviewHint.enabled = wasEnabled
+        }
+        let model = try model()
+        model.beginReview()
+        XCTAssertNil(model.hint, "not on the first card")
+        model.step(1)
+        XCTAssertEqual(model.hint, .swipe, "after the second card")
+        model.learn(.swipe)
+        XCTAssertNil(model.hint, "gone once used")
+        for _ in 0..<3 where model.isReviewing { model.decideCurrent(.keep) }
+        XCTAssertNil(model.hint, "no second hint in this document")
+        XCTAssertTrue(ReviewHint.swipe.isLearned)
+    }
+
+    // MARK: Candidate actions (ADR 0104, #678)
+
+    /// The long press, the card and the keys take their actions from one
+    /// place, for each state.
+    func testActionsForEachState() throws {
+        let model = try model()
+        let proposed = try XCTUnwrap(model.snapshot.candidates.first { $0.state == .proposed })
+        XCTAssertEqual(model.actions(for: proposed), [.replace, .keep, .replaceThisOne, .sameAs, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: proposed) == (.keep, .replace))
+        XCTAssertEqual(model.keyAction(.return, for: proposed), .replace)
+        XCTAssertEqual(model.keyAction(.keep, for: proposed), .keep)
+
+        var replaced = proposed
+        replaced.state = .replaced
+        XCTAssertEqual(model.actions(for: replaced), [.showOriginal, .keepInstead, .sameAs, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: replaced) == (.keepInstead, .next))
+        XCTAssertEqual(model.keyAction(.return, for: replaced), .next, "Return is the filled Next")
+        XCTAssertEqual(model.keyAction(.keep, for: replaced), .keepInstead)
+
+        var kept = proposed
+        kept.state = .kept
+        XCTAssertEqual(model.actions(for: kept), [.replaceInstead, .changeCategory])
+        XCTAssertTrue(model.cardActions(for: kept) == (.replaceInstead, .next))
+        XCTAssertEqual(model.keyAction(.return, for: kept), .replaceInstead)
+        XCTAssertNil(model.keyAction(.keep, for: kept), "K on a kept name does nothing")
+    }
+
+    /// With no other identity there is no Same as… to offer.
+    func testNoSameAsWithoutAnotherIdentity() throws {
+        let (core, storage) = try Fixture.core()
+        let session = try core.library.importDocument(.text("Maya Bennett signed."), title: "Note", into: .newCase(name: "Bennett"))
+        _ = try session.recognize(observer: TestObserver())
+        _ = try session.propose([SampleDocument.Name(wording: "Maya Bennett", category: .person)])
+        let model = DocumentViewModel(session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        let only = try XCTUnwrap(model.snapshot.candidates.first)
+        XCTAssertEqual(model.actions(for: only), [.replace, .keep, .replaceThisOne, .changeCategory])
+    }
+
+    /// A menu choice puts the bar on the name, in scope All, or This one for
+    /// Just this one, and acts as the card would.
+    func testAMenuChoicePutsTheBarOnTheName() throws {
+        let model = try model()
+        let repeated = try XCTUnwrap(model.snapshot.identities.first { $0.mentionCount > 1 })
+        let mentions = model.sortedMentions(of: repeated.id)
+        model.perform(.replaceThisOne, fromMenuOn: mentions[1].id)
+        XCTAssertEqual(model.sortedMentions(of: repeated.id).filter { $0.state == .replaced }.count, 1, "this one only")
+        model.undo()
+        let again = model.sortedMentions(of: repeated.id)
+        model.select(again[0].id)
+        model.setScope(.this)
+        model.perform(.keep, fromMenuOn: again[0].id)
+        XCTAssertTrue(model.sortedMentions(of: repeated.id).allSatisfy { $0.state == .kept }, "the menu acts in scope All")
+        model.perform(.showOriginal, fromMenuOn: again[0].id)
+        XCTAssertEqual(model.toast?.text, "Original: \(again[0].original)")
+    }
+
+    /// Opening a name's menu is the long press found: its hint goes. The
+    /// menu itself is built without changing anything.
+    func testOpeningTheMenuLearnsTheLongPress() throws {
+        let wasEnabled = ReviewHint.enabled
+        ReviewHint.resetAll()
+        ReviewHint.enabled = true
+        defer {
+            ReviewHint.resetAll()
+            ReviewHint.enabled = wasEnabled
+        }
+        let model = try model()
+        let candidate = try XCTUnwrap(model.snapshot.candidates.first)
+        _ = CandidateMenu.make(for: candidate.id, model: model) { _ in }
+        XCTAssertFalse(ReviewHint.longPress.isLearned, "building the menu learns nothing")
+        model.menuOpened(on: candidate.id)
+        XCTAssertTrue(ReviewHint.longPress.isLearned)
+    }
+
+    /// A notice stays two to four seconds, by its length.
+    func testANoticeStaysLongEnoughToRead() {
+        XCTAssertEqual(DocumentViewModel.noticeDuration("Copied"), .seconds(2))
+        XCTAssertEqual(DocumentViewModel.noticeDuration(String(repeating: "a", count: 100)), .seconds(4))
     }
 }

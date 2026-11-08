@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is now %@" : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -21,8 +24,15 @@
         }
       }
     },
-    "%@ (%lld)" : {
-      "shouldTranslate" : false
+    "%@ %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
     },
     "%@ is %@" : {
       "localizations" : {
@@ -49,7 +59,16 @@
     "%lld" : {
 
     },
+    "%lld documents" : {
+
+    },
     "%lld GB" : {
+
+    },
+    "%lld kept" : {
+
+    },
+    "%lld left" : {
 
     },
     "%lld matches" : {
@@ -77,6 +96,9 @@
         }
       }
     },
+    "%lld names" : {
+
+    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -99,6 +121,16 @@
     },
     "%lld replaced" : {
 
+    },
+    "%lld replaced · %lld kept" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld replaced · %2$lld kept"
+          }
+        }
+      }
     },
     "%lld reviewed" : {
 
@@ -153,10 +185,25 @@
         }
       }
     },
+    "%lld×" : {
+
+    },
+    "1 document" : {
+
+    },
     "1 match" : {
 
     },
+    "1 name" : {
+
+    },
     "A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored." : {
+
+    },
+    "A letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
+
+    },
+    "A letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
 
     },
     "A short agreement with made-up names, to try review without your own documents." : {
@@ -168,10 +215,10 @@
     "Add" : {
 
     },
-    "Add a letter, contract or note. mdoc finds the names in it so you can share it with an AI without them." : {
+    "Add a document" : {
 
     },
-    "Add a letter, contract or note. Select the names in it to replace them, then share it with an AI." : {
+    "Add another" : {
 
     },
     "Add document" : {
@@ -207,6 +254,15 @@
     "All cases" : {
 
     },
+    "All cases…" : {
+
+    },
+    "all decided" : {
+
+    },
+    "also %@" : {
+
+    },
     "Another job is running. Try again when it finishes." : {
 
     },
@@ -234,6 +290,9 @@
     "Cancel download" : {
 
     },
+    "Cancel search" : {
+
+    },
     "Candidates" : {
 
     },
@@ -252,6 +311,9 @@
     "Case: %@" : {
 
     },
+    "Cases" : {
+
+    },
     "Category, %@" : {
 
     },
@@ -261,14 +323,27 @@
     "Change category" : {
 
     },
-    "Changed your mind?" : {
-
-    },
     "Checking and installing" : {
 
     },
-    "Choose a document, or add one with +." : {
+    "Close Identities" : {
 
+    },
+    "Close sidebar" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Continue %@, %lld left" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Continue %1$@, %2$lld left"
+          }
+        }
+      }
     },
     "Converting" : {
 
@@ -288,6 +363,9 @@
     "Copy" : {
 
     },
+    "Copy for AI" : {
+
+    },
     "Copy reply" : {
 
     },
@@ -303,10 +381,16 @@
     "Delete" : {
 
     },
+    "Deleted %@" : {
+
+    },
     "Dismiss hint" : {
 
     },
     "Document font" : {
+
+    },
+    "Documents" : {
 
     },
     "Documents and cases" : {
@@ -316,6 +400,9 @@
 
     },
     "Documents stay on this iPhone" : {
+
+    },
+    "Documents you add show here." : {
 
     },
     "DOCX files and pasted text show their text only." : {
@@ -354,6 +441,12 @@
     "Downloading %@" : {
 
     },
+    "Drag to make one with another name" : {
+
+    },
+    "Each document you add starts a case, or joins one you choose." : {
+
+    },
     "Each gets its alias. You can still keep any of them." : {
 
     },
@@ -363,10 +456,13 @@
     "End review" : {
 
     },
-    "Enough memory to find names on this device." : {
+    "End review " : {
 
     },
-    "Every mention of this name, and Keep or Replace for all of them." : {
+    "Ends review." : {
+
+    },
+    "Enough memory to find names on this device." : {
 
     },
     "Failed · %@" : {
@@ -382,6 +478,9 @@
 
     },
     "Find names" : {
+
+    },
+    "Find names stopped: %@" : {
 
     },
     "Find names, or select words in the text and choose Hide name." : {
@@ -402,10 +501,10 @@
     "Finish import" : {
 
     },
-    "Haptics" : {
+    "Goes to the next name to decide." : {
 
     },
-    "Hide details" : {
+    "Haptics" : {
 
     },
     "Hide mentions" : {
@@ -414,7 +513,10 @@
     "Hide name" : {
 
     },
-    "Hide name marks it, and every exact repeat, as one name to review." : {
+    "Hide tip" : {
+
+    },
+    "Hides the kept names." : {
 
     },
     "Identities" : {
@@ -432,6 +534,9 @@
     "Important" : {
       "comment" : "A Markdown alert's title"
     },
+    "In Select, drag ≡ onto a name to make them one" : {
+
+    },
     "Installed" : {
 
     },
@@ -442,6 +547,9 @@
 
     },
     "Installing %@" : {
+
+    },
+    "Its case keeps its names." : {
 
     },
     "Just this one" : {
@@ -459,7 +567,13 @@
     "Keep instead" : {
 
     },
+    "Keeps every mention." : {
+
+    },
     "Keeps the reply with %@." : {
+
+    },
+    "Keeps this one." : {
 
     },
     "kept" : {
@@ -474,13 +588,32 @@
     "Light" : {
 
     },
-    "Long-press a name" : {
+    "Long-press any name for more" : {
 
     },
     "Looks like" : {
 
     },
     "Looks like %@" : {
+
+    },
+    "Looks like the same: %@ and %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Looks like the same: %1$@ and %2$@"
+          }
+        }
+      }
+    },
+    "Make one with…" : {
+
+    },
+    "Makes the selected names one name." : {
+
+    },
+    "Marks the first unmarked match, and every exact repeat, as one name to review." : {
 
     },
     "mdoc" : {
@@ -496,6 +629,12 @@
 
     },
     "mdoc could not read its case key from the Keychain (%lld)." : {
+
+    },
+    "mdoc could not read or write a file: %@" : {
+
+    },
+    "mdoc could not save this change: %@" : {
 
     },
     "mdoc downloads its name detector and text recognition once (%@). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first." : {
@@ -550,9 +689,6 @@
         }
       }
     },
-    "Mentions (%lld)" : {
-
-    },
     "Models" : {
 
     },
@@ -560,6 +696,24 @@
 
     },
     "More" : {
+
+    },
+    "Move" : {
+
+    },
+    "Move the document once it is read." : {
+
+    },
+    "Move to case" : {
+
+    },
+    "Moved back to %@" : {
+
+    },
+    "Moved to %@" : {
+
+    },
+    "Name" : {
 
     },
     "Name detector (GLiNER2)" : {
@@ -571,10 +725,19 @@
     "Names and aliases" : {
 
     },
+    "New" : {
+
+    },
     "New alias" : {
 
     },
     "New case" : {
+
+    },
+    "New case…" : {
+
+    },
+    "New document" : {
 
     },
     "Next" : {
@@ -583,10 +746,7 @@
     "No cases yet" : {
 
     },
-    "No document open" : {
-
-    },
-    "No documents yet" : {
+    "No documents or cases match “%@”." : {
 
     },
     "No names found. Select text to mark one." : {
@@ -613,6 +773,9 @@
     "Not restored" : {
 
     },
+    "Not the same" : {
+
+    },
     "Note" : {
       "comment" : "A Markdown alert's title"
     },
@@ -634,7 +797,7 @@
     "Opens Identities." : {
 
     },
-    "Opens the first mention." : {
+    "Opens it in the review bar." : {
 
     },
     "Organization" : {
@@ -709,9 +872,6 @@
     "Proposed" : {
 
     },
-    "Pull up for details" : {
-
-    },
     "Reading the document. Review when it finishes." : {
 
     },
@@ -725,6 +885,9 @@
 
     },
     "Ready to share" : {
+
+    },
+    "Recent" : {
 
     },
     "Recognition stopped when mdoc left the screen. Finished pages are kept." : {
@@ -763,6 +926,18 @@
     "Rename" : {
 
     },
+    "Rename case" : {
+
+    },
+    "Rename document" : {
+
+    },
+    "Rename the document once it is read." : {
+
+    },
+    "Rename, move, share or delete the document." : {
+
+    },
     "Rename…" : {
 
     },
@@ -776,6 +951,9 @@
 
     },
     "Replace all %lld" : {
+
+    },
+    "Replace all %lld names left" : {
 
     },
     "Replace all %lld proposals" : {
@@ -803,13 +981,16 @@
     "Replace instead" : {
 
     },
-    "Replace, keep, say who it is, or change its category without the bar." : {
-
-    },
     "replaced" : {
 
     },
     "Replaced" : {
+
+    },
+    "Replaces every mention." : {
+
+    },
+    "Replaces this one." : {
 
     },
     "Reply" : {
@@ -835,19 +1016,6 @@
     },
     "Review" : {
 
-    },
-    "Review %lld" : {
-
-    },
-    "Review %lld %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Review %1$lld %2$@"
-          }
-        }
-      }
     },
     "Review %lld proposals before sharing." : {
       "localizations" : {
@@ -878,6 +1046,9 @@
 
     },
     "Review this identity" : {
+
+    },
+    "Same as" : {
 
     },
     "Same as %@" : {
@@ -913,7 +1084,19 @@
     "Scrolls to this name's next mention." : {
 
     },
+    "Search documents and cases" : {
+
+    },
+    "Search names" : {
+
+    },
+    "Select" : {
+
+    },
     "Select the words to replace first." : {
+
+    },
+    "Selects it." : {
 
     },
     "Serif" : {
@@ -943,12 +1126,6 @@
     "Share the AI's reply as text to restore it." : {
 
     },
-    "Show" : {
-
-    },
-    "Show details" : {
-
-    },
     "Show Markdown" : {
 
     },
@@ -958,7 +1135,10 @@
     "Show original" : {
 
     },
-    "Show Sidebar" : {
+    "Show sidebar" : {
+
+    },
+    "Shows the kept names." : {
 
     },
     "Something went wrong" : {
@@ -976,10 +1156,7 @@
     "Stopped." : {
 
     },
-    "Swipe for the next one" : {
-
-    },
-    "Swipe the card sideways, or tap the edge, to step through the names." : {
+    "Swipe the card for the next name" : {
 
     },
     "System" : {
@@ -1003,7 +1180,16 @@
     "Text recognition (PP-OCR)" : {
 
     },
+    "Text recognition stopped: %@" : {
+
+    },
+    "That name is no longer in the document." : {
+
+    },
     "The document and its names stay as they are." : {
+
+    },
+    "The document leaves its case. Replies already sent still restore with the old case." : {
 
     },
     "The download failed (HTTP %lld)." : {
@@ -1015,10 +1201,13 @@
     "The import stopped when mdoc left the screen." : {
 
     },
+    "The model could not be installed: %@" : {
+
+    },
     "The scanned pages could not be read." : {
 
     },
-    "The tips show again the next time you open mdoc." : {
+    "The tips show again as you review." : {
 
     },
     "Theme" : {
@@ -1048,6 +1237,9 @@
     "Title" : {
 
     },
+    "To review" : {
+
+    },
     "Try a sample" : {
 
     },
@@ -1058,9 +1250,6 @@
 
     },
     "Undo" : {
-
-    },
-    "Undo is beside Keep; you can also shake the phone. A long press on Undo redoes." : {
 
     },
     "Undone" : {
@@ -1090,7 +1279,7 @@
     "Web address" : {
 
     },
-    "Which name is %@?" : {
+    "working" : {
 
     },
     "Your carrier may charge for the data." : {

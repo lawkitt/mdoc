@@ -592,6 +592,19 @@ memory, scan time, heat, OCR output) that come before mobile UI work.
 Copy and Paste reply; it replaces the review actions once nothing is left
 to decide.
 
+**Sidebar** (mobile): the panel under the screen on iPhone, and the first
+column on a wide iPad: search, Cases, Documents, To review, Recent, Settings
+and New ([ADR 0102](docs/adr/0102-mobile-sidebar.md)). The screen slides
+aside to show it.
+
+**Identities drawer** (mobile): the open document's names in a panel from
+the right edge on iPhone (the standing right column on iPad), ordered by
+what is left, with state buttons, Looks like and Select
+([ADR 0103](docs/adr/0103-mobile-identities-drawer.md)).
+
+**Start** (mobile): the main area with no document open: setup, Continue,
+the add tiles and Try a sample.
+
 **Review bar**: the docked bar a phone reviews in, in place of the
 hand-off bar: progress line, review card, then Undo, Keep and Replace. The
 text stays scrollable under it; it replaces the candidate sheet
@@ -612,6 +625,24 @@ Identities.
 **Mentions chip**: "1 of 3 ›" on the review card when an identity has more
 than one mention; each tap scrolls the text to the next.
 
+**Full view** (mobile review): the review bar dragged up: one row per
+mention of the identity under review, each with its heading, the words of
+its paragraph, the original name highlighted and a state mark
+([ADR 0101](docs/adr/0101-mobile-review-bar-polish.md)). Also called the
+expanded bar.
+
+**State mark**: a mention's or identity's state as a round mark: a dashed
+ring while proposed, an accent disc once replaced, an eye once kept. In
+the full view it is also the button that changes that one mention.
+
+**Hint line**: the review bar's one-line tip, at most one per document,
+gone once its gesture is used; it replaced TipKit's popovers. Identities
+has one too, for drag-to-merge.
+
+**Drag-to-merge** (mobile Identities): dragging one name's row onto
+another's, which makes them one (Same as) as desktop's group-onto-group
+drag does ([ADR 0106](docs/adr/0106-mobile-identities-gestures.md)).
+
 **Focus** (mobile review): stepping limited to one identity or one
 category, started from Identities, shown on the progress line with ×.
 
@@ -625,7 +656,7 @@ sample"; also the UI tests' and previews' fixture, so screenshots of it are
 safe to share.
 
 **UI survey**: light and dark screenshots of every mobile screen, taken by
-`ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
+`SurveyUITests` (`just ios-survey`) on iOS and `just android-survey` on Android, and kept
 under `docs/evidence/ios-app/current` and `docs/evidence/android-app/current`,
 replaced by each UI PR ([ADR 0099](docs/adr/0099-mobile-ui-system.md)).
 

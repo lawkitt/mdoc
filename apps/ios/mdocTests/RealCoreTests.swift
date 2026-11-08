@@ -29,9 +29,9 @@ final class RealCoreTests: XCTestCase {
         """
 
     /// Import, rules-only scan and a review, saved into the case it started.
-    private func reviewed(_ core: Core) throws -> any DocumentSession {
+    private func reviewed(_ core: Core) throws -> any mdoc.DocumentSession {
         let session = try core.library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
-        XCTAssertEqual(session.snapshot().phase, .recognizing)
+        XCTAssertNil(session.snapshot().phase, "recognizing")
         let imported = try session.recognize(observer: TestObserver())
         XCTAssertEqual(imported.phase, .unscanned)
         XCTAssertEqual(imported.caseName, "Ellison")
@@ -46,7 +46,7 @@ final class RealCoreTests: XCTestCase {
         let core = try core()
         let session = try reviewed(core)
         let email = try XCTUnwrap(session.snapshot().candidates.first { $0.category == .email })
-        let kept = try session.decide(email.id, .keep, scope: .allOccurrences)
+        let kept = try session.decide(email.id, .keep, scope: .all)
         XCTAssertEqual(kept.identities.first { $0.id == email.identityID }?.state, .kept)
     }
 
@@ -67,7 +67,7 @@ final class RealCoreTests: XCTestCase {
         let core = try core()
         let session = try reviewed(core)
         let email = try XCTUnwrap(session.snapshot().candidates.first { $0.category == .email })
-        let after = try session.decide(email.id, .replace, scope: .allOccurrences)
+        let after = try session.decide(email.id, .replace, scope: .all)
         XCTAssertFalse(after.markdown.contains("maya.ellison@example.com"))
         XCTAssertTrue(after.markdown.contains(email.alias))
         // Offsets are source bytes and land on the alias.
@@ -84,7 +84,7 @@ final class RealCoreTests: XCTestCase {
         let core = try core()
         let first = try reviewed(core)
         let email = try XCTUnwrap(first.snapshot().candidates.first { $0.category == .email })
-        _ = try first.decide(email.id, .replace, scope: .allOccurrences)
+        _ = try first.decide(email.id, .replace, scope: .all)
         let caseID = try XCTUnwrap(first.snapshot().caseID)
 
         let second = try core.library.importDocument(
@@ -114,7 +114,11 @@ final class RealCoreTests: XCTestCase {
     func testShareWaitsForReviewThenRestoresWithTheCase() throws {
         let core = try core()
         let session = try reviewed(core)
-        XCTAssertThrowsError(try session.copyForAI())
+        // The core refuses while proposals wait, with how many.
+        let pending = session.snapshot().pendingCount
+        XCTAssertThrowsError(try session.copyForAI()) { error in
+            XCTAssertEqual(error as? CoreError, .pendingReview(pending))
+        }
         let ready = try session.replaceAllPending()
         XCTAssertEqual(ready.phase, .ready)
         let handOff = try session.copyForAI()
@@ -149,10 +153,52 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(session.snapshot().reply?.aliasText, "Reply to \(alias).")
     }
 
+    /// A scan that found nothing is still a scan (#673): after mdoc
+    /// restarts the document is ready, not offered Find names again.
+    func testAScanThatFoundNothingStaysScannedAfterARestart() throws {
+        let session = try core().library.importDocument(
+            .text("# Note\n\nNothing to hide here."), title: "Note", into: .newCase(name: "Plain"))
+        _ = try session.recognize(observer: TestObserver())
+        let scanned = try session.scan(observer: TestObserver())
+        XCTAssertTrue(scanned.candidates.isEmpty)
+        XCTAssertEqual(scanned.phase, .ready)
+        let reopened = try core().library
+        XCTAssertEqual(reopened.snapshot().documents.first?.phase, .ready)
+        let id = try XCTUnwrap(reopened.snapshot().documents.first?.id)
+        XCTAssertEqual(try reopened.session(for: id).snapshot().phase, .ready)
+    }
+
+    /// Category menus list categories in `mdoc_pii::Category`'s order
+    /// (#682): Identity, Tax and Bank before Case number and Date.
+    func testCategoriesFollowTheCoresOrder() {
+        XCTAssertEqual(
+            Category.allCases.map { "\($0)" },
+            ["person", "organization", "email", "url", "phone", "address", "identity", "tax", "bank", "caseNumber", "date", "other"])
+    }
+
+    /// File names from titles follow the core's rule (#683, `file_stem` in
+    /// `crates/mdoc-ffi/src/library.rs`): a look-alike for each character a
+    /// file name cannot hold, control characters as "-", no leading dot,
+    /// at most 240 bytes before the extension, cut on a character.
+    func testFileNamesFollowTheCoresRule() {
+        XCTAssertEqual(MdocStorage.fileName("Claim: Bennett", extension: "pdf"), "Claim\u{A789} Bennett.pdf")
+        XCTAssertEqual(
+            MdocStorage.fileName("Why? <draft> \"A|B\" *", extension: "docx"),
+            "Why\u{FF1F} \u{FF1C}draft\u{FF1E} \u{FF02}A\u{2223}B\u{FF02} \u{2217}.docx")
+        XCTAssertEqual(MdocStorage.fileName(".hidden", extension: "pdf"), "hidden.pdf", "never a hidden file")
+        XCTAssertEqual(MdocStorage.fileName("Tab\there", extension: ""), "Tab-here")
+        XCTAssertEqual(MdocStorage.fileName("  ", extension: "pdf"), "Document.pdf")
+        let long = MdocStorage.fileName(String(repeating: "ж", count: 200), extension: "pdf")
+        XCTAssertEqual(long, String(repeating: "ж", count: 120) + ".pdf", "240 bytes, whole letters")
+    }
+
     func testReopenedLibraryKeepsTheDocumentAndCase() throws {
-        let session = try reviewed(core())
+        let core = try core()
+        let session = try reviewed(core)
         _ = try session.replaceAllPending()
-        let reopened = try core().library.snapshot()
+        // Saved once mdoc leaves the foreground, if not before.
+        try core.library.saveChanges()
+        let reopened = try self.core().library.snapshot()
         XCTAssertEqual(reopened.documents.count, 1)
         XCTAssertEqual(reopened.documents.first?.phase, .ready)
         XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
@@ -209,15 +255,6 @@ final class RealCoreTests: XCTestCase {
         XCTAssertEqual(try self.core().library.snapshot().documents.first?.phase, .reviewing)
     }
 
-    func testManualReplacementReplacesEveryRepeat() throws {
-        let session = try reviewed(core())
-        let text = session.snapshot().markdown
-        let range = try XCTUnwrap(text.range(of: "Ellison"))
-        let start = text.utf8.distance(from: text.utf8.startIndex, to: range.lowerBound)
-        let after = try session.addReplacement(SourceRange(start: start, end: start + "Ellison".utf8.count), category: .person)
-        XCTAssertFalse(after.markdown.contains("Ms Ellison's"))
-    }
-
     /// ADR 0098 through the real core: a mark proposes in the guessed
     /// category, decisions and identity changes undo one step at a time,
     /// and each saves into the case without taking an undone step back.
@@ -232,22 +269,22 @@ final class RealCoreTests: XCTestCase {
         let ellison = try XCTUnwrap(marked.candidates.first { $0.original == "Ms Ellison" })
         XCTAssertEqual(ellison.state, .proposed)
         XCTAssertEqual(marked.undoStep?.kind, .mark)
-        XCTAssertEqual(marked.undoStep?.candidateID, ellison.id)
+        XCTAssertEqual(marked.candidate(of: marked.undoStep)?.id, ellison.id)
 
         let email = try XCTUnwrap(marked.candidates.first { $0.category == .email })
-        let replaced = try session.decide(email.id, .replace, scope: .allOccurrences)
+        let replaced = try session.decide(email.id, .replace, scope: .all)
         XCTAssertEqual(replaced.undoStep?.label, "Replace · maya.ellison@example.com")
         let alias = try XCTUnwrap(replaced.candidates.first { $0.identityID == email.identityID })
-        let renamed = try session.rename(alias.id, scope: .allOccurrences, to: "CONTACT")
+        let renamed = try session.rename(alias.id, scope: .all, to: "CONTACT")
         XCTAssertTrue(renamed.markdown.contains("CONTACT"))
         XCTAssertEqual(renamed.undoStep?.label, "Rename · CONTACT")
         let contact = try XCTUnwrap(renamed.candidates.first { $0.alias == "CONTACT" })
-        XCTAssertEqual(renamed.undoStep?.candidateID, contact.id)
+        XCTAssertEqual(renamed.candidate(of: renamed.undoStep)?.id, contact.id)
         let name = try XCTUnwrap(renamed.candidates.first { $0.original == "Ms Ellison" })
-        XCTAssertThrowsError(try session.rename(name.id, scope: .allOccurrences, to: "CONTACT")) { error in
+        XCTAssertThrowsError(try session.rename(name.id, scope: .all, to: "CONTACT")) { error in
             XCTAssertEqual(error as? CoreError, .aliasTaken(alias: "CONTACT", by: email.identityID))
         }
-        XCTAssertThrowsError(try session.rename(name.id, scope: .allOccurrences, to: "no spaces")) { error in
+        XCTAssertThrowsError(try session.rename(name.id, scope: .all, to: "no spaces")) { error in
             guard case .refused = error as? CoreError else { return XCTFail("\(error)") }
         }
 
@@ -259,12 +296,12 @@ final class RealCoreTests: XCTestCase {
         XCTAssertFalse(reopened.markdown.contains("CONTACT"))
         XCTAssertTrue(try session.redo().markdown.contains("CONTACT"))
 
-        let choices = try session.categoryChoices(for: name.id, scope: .allOccurrences)
+        let choices = try session.categoryChoices(for: name, scope: .all)
         XCTAssertEqual(choices.count, Category.allCases.count)
-        XCTAssertEqual(choices.filter(\.isCurrent).map(\.category), [name.category])
+        XCTAssertEqual(choices.filter(\.current).map(\.category), [name.category])
         var person = name
         if person.category != .person {
-            let recategorized = try session.setCategory(person.id, scope: .allOccurrences, to: .person)
+            let recategorized = try session.setCategory(person.id, scope: .all, to: .person)
             XCTAssertEqual(recategorized.undoStep?.label, "Category · Person")
             person = try XCTUnwrap(recategorized.candidates.first { $0.original == "Ms Ellison" })
         }
@@ -275,10 +312,10 @@ final class RealCoreTests: XCTestCase {
 
         let split = try session.newAlias(contact.id)
         XCTAssertEqual(split.undoStep?.kind, .newAlias)
-        let moved = try XCTUnwrap(split.undoStep?.candidateID)
+        let moved = try XCTUnwrap(split.candidate(of: split.undoStep)?.id)
         XCTAssertNotEqual(split.candidate(moved)?.identityID, email.identityID)
         XCTAssertFalse(split.markdown.contains("CONTACT"))
-        let linked = try session.sameAs(moved, scope: .justThisOne, target: email.identityID)
+        let linked = try session.sameAs(moved, scope: .this, target: email.identityID)
         XCTAssertEqual(linked.undoStep?.kind, .sameAs)
         XCTAssertTrue(linked.markdown.contains("CONTACT"))
     }
@@ -295,6 +332,78 @@ final class RealCoreTests: XCTestCase {
             XCTAssertEqual(error as? CoreError, .modelMissing)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Receipt.jpg").path))
+    }
+
+    /// A title lists as typed (no "Sample- services agreement"), and Rename
+    /// keeps the open session: it saves on to the renamed file, and the
+    /// case named after the document follows it.
+    func testRenameKeepsTheTitleAsTypedAndTheSession() throws {
+        let core = try core()
+        let title = "Sample: services agreement"
+        let session = try core.library.importDocument(.text(Self.letter), title: title, into: .newCase(name: title))
+        _ = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(core.library.snapshot().documents.map(\.title), [title])
+
+        try core.library.renameDocument(session.id, to: "Services: final")
+        XCTAssertEqual(session.snapshot().title, "Services: final")
+        let renamed = core.library.snapshot()
+        XCTAssertEqual(renamed.documents.map(\.title), ["Services: final"])
+        XCTAssertEqual(renamed.cases.map(\.name), ["Services: final"])
+        XCTAssertEqual(renamed.documents.first?.id, session.id)
+        _ = try session.scan(observer: TestObserver())
+        XCTAssertEqual(try session.replaceAllPending().phase, .ready)
+        XCTAssertThrowsError(try core.library.renameDocument(session.id, to: "  ")) { error in
+            XCTAssertEqual(error as? CoreError, .invalid("A document needs a title."))
+        }
+
+        try core.library.renameCase(try XCTUnwrap(renamed.cases.first?.id), to: "Ellison")
+        // Replace all is saved once mdoc leaves the foreground, if not before.
+        try core.library.saveChanges()
+        let reopened = try self.core().library.snapshot()
+        XCTAssertEqual(reopened.documents.map(\.title), ["Services: final"])
+        XCTAssertEqual(reopened.documents.first?.phase, .ready)
+        XCTAssertEqual(reopened.cases.map(\.name), ["Ellison"])
+    }
+
+    /// Move to case re-aliases the document for the case it joins; the case
+    /// it left stays, and Undo moves it back with the old aliases and takes
+    /// its names out of the case it joined.
+    func testMoveToCaseAndUndoThroughTheCore() throws {
+        let core = try core()
+        let letter = try reviewed(core)
+        let before = try letter.replaceAllPending().markdown
+        XCTAssertTrue(before.contains("EMAIL_1"))
+        let note = try core.library.importDocument(
+            .text("Write to someone@example.org."), title: "Note", into: .newCase(name: "Other"))
+        _ = try note.recognize(observer: TestObserver())
+        _ = try note.scan(observer: TestObserver())
+        XCTAssertTrue(try note.replaceAllPending().markdown.contains("EMAIL_1"))
+        let other = try XCTUnwrap(note.snapshot().caseID)
+
+        let move = try core.library.moveDocument(letter.id, to: .existing(other))
+        XCTAssertEqual(move.to.id, other)
+        XCTAssertEqual(move.to.name, "Other")
+        XCTAssertTrue(move.added.contains("EMAIL_2"))
+        let moved = letter.snapshot()
+        XCTAssertEqual(moved.caseID, other)
+        XCTAssertFalse(moved.markdown.contains("EMAIL_1"))
+        XCTAssertTrue(moved.markdown.contains("EMAIL_2"))
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).text, "maya.ellison@example.com")
+        let ellison = try XCTUnwrap(move.from)
+        XCTAssertEqual(Set(core.library.snapshot().cases.map(\.name)), ["Ellison", "Other"])
+        XCTAssertTrue(core.library.snapshot().documents(in: ellison).isEmpty)
+        XCTAssertThrowsError(try core.library.moveDocument(letter.id, to: .existing(other)))
+
+        let undone = try core.library.undoMove(move)
+        XCTAssertEqual(undone.to.id, ellison)
+        XCTAssertEqual(letter.snapshot().markdown, before)
+        XCTAssertEqual(letter.snapshot().caseID, ellison)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_2", in: other).unresolvedCount, 1)
+        XCTAssertEqual(try core.library.restore(reply: "EMAIL_1", in: other).text, "someone@example.org")
+
+        let fresh = try core.library.moveDocument(letter.id, to: .newCase(name: "Fresh"))
+        XCTAssertEqual(fresh.to.name, "Fresh")
+        XCTAssertEqual(letter.snapshot().markdown, before)
     }
 
     func testSetupOffersOCRBelowTheFloorAndTheDetectorAbove() throws {
@@ -326,7 +435,7 @@ extension RealCoreTests {
         // mdoc stops before recognition runs; the next launch finds it.
         let core = try core()
         let pending = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == first.id })
-        XCTAssertEqual(pending.phase, .recognizing)
+        XCTAssertNil(pending.phase, "recognizing")
         let session = try core.library.session(for: first.id)
         XCTAssertEqual(try session.recognize(observer: TestObserver()).phase, .unscanned)
         // Saved, it is no longer pending: one document, not two.

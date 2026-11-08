@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 
 /// Builds the document's attributed Markdown source from the core's spans,
@@ -82,10 +83,12 @@ struct MarkdownStyler {
             }
             index = NSMaxRange(line)
         }
-        func clamp(_ range: SourceRange) -> NSRange? {
-            let clipped = NSIntersectionRange(offsets.nsRange(range), NSRange(location: 0, length: length))
+        func clamp(_ range: NSRange) -> NSRange? {
+            let clipped = NSIntersectionRange(range, NSRange(location: 0, length: length))
             return clipped.length > 0 ? clipped : nil
         }
+        func clamp(_ range: TextRange) -> NSRange? { clamp(offsets.nsRange(range)) }
+        func clamp(_ range: SourceRange) -> NSRange? { clamp(offsets.nsRange(range)) }
 
         let tableFont = UIFont.monospacedSystemFont(
             ofSize: Self.font(.footnote, traits: traits).pointSize, weight: .regular)
@@ -94,8 +97,8 @@ struct MarkdownStyler {
             guard let range = clamp(line.range) else { continue }
             switch line.kind {
             case .heading(let level):
-                text.addAttribute(.font, value: headingFont(level: level), range: range)
-                text.addAttribute(.accessibilityTextHeadingLevel, value: level, range: range)
+                text.addAttribute(.font, value: headingFont(level: Int(level)), range: range)
+                text.addAttribute(.accessibilityTextHeadingLevel, value: Int(level), range: range)
             case .quote:
                 text.addAttribute(.foregroundColor, value: UIColor.secondaryLabel, range: range)
             case .codeBlock:
@@ -122,12 +125,12 @@ struct MarkdownStyler {
 
         // Inline spans add to the line's font: bold in a heading stays the
         // heading's size.
-        for span in styling.spans where !span.kinds.contains(.marker) {
+        for span in styling.spans where !span.marker {
             guard let range = clamp(span.range) else { continue }
             var added: UIFontDescriptor.SymbolicTraits = []
-            if span.kinds.contains(.strong) { added.insert(.traitBold) }
-            if span.kinds.contains(.emphasis) { added.insert(.traitItalic) }
-            let code = span.kinds.contains(.code)
+            if span.strong { added.insert(.traitBold) }
+            if span.emphasis { added.insert(.traitItalic) }
+            let code = span.code
             if code || !added.isEmpty {
                 text.enumerateAttribute(.font, in: range) { value, part, _ in
                     var font = value as? UIFont ?? body
@@ -140,16 +143,19 @@ struct MarkdownStyler {
             if code {
                 text.addAttribute(.backgroundColor, value: UIColor.tertiarySystemFill, range: range)
             }
-            if span.kinds.contains(.strikethrough) {
+            if span.strikethrough {
                 text.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
-            if span.kinds.contains(.underline) {
+            if span.underline {
                 text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
-            if span.kinds.contains(.link) {
+            if span.link {
+                // In the accent and underlined: the ink accent alone is
+                // close to the text's own colour (ADR 0099).
                 text.addAttribute(.foregroundColor, value: UIColor.tintColor, range: range)
+                text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
-            if span.kinds.contains(.highlight) {
+            if span.highlight {
                 text.addAttribute(.backgroundColor, value: Self.highlight, range: range)
             }
             // The document's own colours, as the desktop draws them.
@@ -162,7 +168,7 @@ struct MarkdownStyler {
         }
         // Markers last, so they stay dimmed, or hidden, whatever they sit in.
         var hidden: [NSRange] = []
-        for span in styling.spans where span.kinds.contains(.marker) {
+        for span in styling.spans where span.marker {
             guard let range = clamp(span.range) else { continue }
             if rendered {
                 text.addAttributes(Self.hiddenAttributes, range: range)
@@ -207,13 +213,10 @@ struct MarkdownStyler {
                 attributes[.underlineStyle] = NSUnderlineStyle.single.union(.patternDot).rawValue
                 attributes[.underlineColor] = UIColor.secondaryLabel
             }
-            if candidate.id == selected {
-                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected)
-            } else if scoped.contains(candidate.id) {
-                attributes[.backgroundColor] = colour.withAlphaComponent(fill.selected * 0.45)
-                attributes[.underlineStyle] = NSUnderlineStyle.thick.rawValue
-                attributes[.underlineColor] = colour
-            }
+            let decoration = Self.decoration(
+                of: candidate, selected: candidate.id == selected, scoped: scoped.contains(candidate.id),
+                dark: traits.userInterfaceStyle == .dark)
+            attributes.merge(decoration) { _, decorated in decorated }
             text.addAttributes(attributes, range: range)
         }
         extra?(text)
@@ -224,6 +227,34 @@ struct MarkdownStyler {
         let tables = width.map { layout.tables(width: $0) } ?? []
         layout.apply(tables: tables)
         return RenderedDocument(text: text, tables: tables)
+    }
+
+    /// The keys `decoration` may set: what a selection or scope change
+    /// recolours in place (`MarkdownTextView`).
+    static let decorationKeys: [NSAttributedString.Key] = [.backgroundColor, .underlineStyle, .underlineColor, .mdocOutline]
+
+    /// What the review bar adds to a candidate over its state's look: the
+    /// one under review filled stronger and outlined in ink, black in light
+    /// mode and white in dark mode (ADR 0099), the other mentions its scope
+    /// reaches filled lighter with a thick underline (ADR 0098). Empty for
+    /// any other candidate.
+    static func decoration(of candidate: Candidate, selected: Bool, scoped: Bool, dark: Bool) -> [NSAttributedString.Key: Any] {
+        let colour = candidate.category.uiColor
+        let fill = fill(dark: dark)
+        if selected {
+            return [
+                .backgroundColor: colour.withAlphaComponent(fill.selected),
+                .mdocOutline: UIColor.ink.resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)),
+            ]
+        }
+        if scoped {
+            return [
+                .backgroundColor: colour.withAlphaComponent(fill.selected * 0.45),
+                .underlineStyle: NSUnderlineStyle.thick.rawValue,
+                .underlineColor: colour,
+            ]
+        }
+        return [:]
     }
 
     /// What VoiceOver adds after a candidate's words.
@@ -253,7 +284,7 @@ struct MarkdownStyler {
     /// With Document font › Serif it is New York at the same size (ADR 0099).
     static func font(_ style: UIFont.TextStyle, traits: UITraitCollection, weight: UIFont.Weight = .regular) -> UIFont {
         let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style, compatibleWith: traits).pointSize, weight: weight)
-        guard MarkdownDisplay.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
+        guard Preferences.shared.serif, let serif = font.fontDescriptor.withDesign(.serif) else { return font }
         return UIFont(descriptor: serif, size: 0)
     }
 

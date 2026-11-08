@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 import UIKit
 
@@ -7,7 +8,8 @@ import UIKit
 /// unrecognized (ADR 0087). Read-only and selectable.
 struct RestoredTextView: UIViewRepresentable {
     let result: RestoreResult
-    @AppStorage(MarkdownDisplay.showsSourceKey, store: MarkdownDisplay.store) private var showsSource = false
+    @Environment(\.preferences) private var preferences
+    private var showsSource: Bool { preferences.showsSource }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()

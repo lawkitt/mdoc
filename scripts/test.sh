@@ -54,7 +54,7 @@ nextest() {
 
 doctests() { cargo test --doc --workspace --features headless-renders; }
 
-suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh)
+suites=(test-release.sh test-ci-cache-cleanup.sh test-local-ci.sh test-local-ci-fallback.sh test-quarantine.sh test-tiers.sh test-merge-gate.sh test-queue-runner.sh test-ios-build-info.sh test-ios-release.sh)
 
 # Runs one tier's commands and exits with their status; nothing else runs.
 only() {
@@ -97,6 +97,7 @@ trap cleanup EXIT
 suites+=(test-snapshots-fetch.sh)
 suites+=(test-nightly.sh)
 suites+=(test-ci-stats.sh)
+suites+=(test-fixed-delays.sh)
 for suite in "${suites[@]}"; do
   bash "scripts/$suite" </dev/null >"$tmp/$suite.log" 2>&1 &
   pids+=($!)

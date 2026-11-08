@@ -97,6 +97,9 @@ pub(super) struct Saved {
     pub text: String,
     /// The step that made this state; none for the first.
     pub step: Option<Step>,
+    /// Its mentions' ids.
+    pub ids: Vec<(Range<usize>, u64)>,
+    pub text_revision: u64,
 }
 
 impl ReviewText {
@@ -109,10 +112,13 @@ impl ReviewText {
         change: impl FnOnce(&mut Self, &mut Step) -> Result<(), CoreError>,
     ) -> Result<(), CoreError> {
         debug_assert!(self.base.is_none(), "steps never nest");
+        self.sync_ids();
         self.base = Some(Saved {
             history: self.history,
             text: self.text.clone(),
             step: self.step.clone(),
+            ids: self.ids.saved(),
+            text_revision: self.text_revision,
         });
         let redo = std::mem::take(&mut self.redo);
         self.edits.clear();
@@ -161,11 +167,15 @@ impl ReviewText {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
+        self.sync_ids();
         let current = Saved {
             history: self.history,
             text: std::mem::replace(&mut self.text, previous.text),
             step: std::mem::replace(&mut self.step, previous.step),
+            ids: self.ids.saved(),
+            text_revision: std::mem::replace(&mut self.text_revision, previous.text_revision),
         };
+        self.ids.restore(previous.ids);
         let before = current.history;
         self.redo.push(current);
         self.travel(before, previous.history);
@@ -177,11 +187,15 @@ impl ReviewText {
         let Some(next) = self.redo.pop() else {
             return false;
         };
+        self.sync_ids();
         let current = Saved {
             history: self.history,
             text: std::mem::replace(&mut self.text, next.text),
             step: std::mem::replace(&mut self.step, next.step),
+            ids: self.ids.saved(),
+            text_revision: std::mem::replace(&mut self.text_revision, next.text_revision),
         };
+        self.ids.restore(next.ids);
         let before = current.history;
         self.undo.push(current);
         self.travel(before, next.history);

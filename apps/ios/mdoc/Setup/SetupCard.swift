@@ -7,11 +7,14 @@ import UIKit
 /// (ADR 0090).
 struct SetupCard: View {
     @Bindable var model: SetupViewModel
-    /// The model the waiting job needs; nil (Home) offers every missing one.
+    /// The model the waiting job needs; nil (Start) offers every missing one.
     var needs: ModelPurpose?
     /// Shows Not now.
     var dismissible = true
-    /// What Not now does; on Home it hides the card until next launch.
+    /// Download is the view's one primary button; false where the screen
+    /// has its own (Scan on the Documents page), and it is clear glass.
+    var prominent = true
+    /// What Not now does; on Start it hides the card for good.
     var onDismiss: (() -> Void)?
     /// The work that asked for setup, run once the models are installed.
     var then: (@MainActor () async -> Void)?
@@ -36,7 +39,7 @@ struct SetupCard: View {
                     Button("Cancel", role: .cancel) {
                         model.cancel()
                     }
-                    .buttonStyle(.bordered)
+                    .secondaryAction()
                     .accessibilityIdentifier("setup-cancel")
                 }
                 .lineLimit(1)
@@ -51,7 +54,7 @@ struct SetupCard: View {
                             Text("Download \(size) & continue")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .modifier(DownloadButtonStyle(prominent: prominent))
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
@@ -62,6 +65,7 @@ struct SetupCard: View {
                             }
                         }
                         .buttonStyle(.borderless)
+                        .textAction()
                     }
                 }
                 if offered.count < model.snapshot.missing.count {
@@ -72,6 +76,7 @@ struct SetupCard: View {
                     }
                     .buttonStyle(.borderless)
                     .font(.subheadline)
+                    .textAction()
                     .accessibilityIdentifier("setup-download-all")
                 }
             }
@@ -83,7 +88,7 @@ struct SetupCard: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The grouped row colour: white on Home's grey list in light mode, a
+        // The grouped row colour: white on the Documents page's grey list in light mode, a
         // lifted grey in dark (the plain secondary background matched the list).
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .cellularQuestion(model: model)
@@ -213,6 +218,19 @@ struct ModelRow: View {
     }
 }
 
+/// Download's weight: primary, or secondary beside a screen's own primary.
+private struct DownloadButtonStyle: ViewModifier {
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.primaryAction()
+        } else {
+            content.secondaryAction()
+        }
+    }
+}
+
 /// Use cellular, while a download waits for Wi-Fi: it asks the cellular
 /// question (ADR 0088).
 struct UseCellularButton: View {
@@ -224,7 +242,7 @@ struct UseCellularButton: View {
         } label: {
             Label("Use cellular", systemImage: "antenna.radiowaves.left.and.right")
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .accessibilityHint(Text("Asks before downloading over cellular."))
         .accessibilityIdentifier("setup-use-cellular")
     }

@@ -1,9 +1,15 @@
 import Foundation
+import MdocFFI
 
-// Value types that cross the core boundary. They mirror the records and
-// enums `crates/mdoc-ffi` will export through UniFFI (ADR 0085), so the
-// real core can replace `FakeCore` without changing the views. Swift keeps
-// only these snapshots and its own view state; the core owns the rest.
+// The app's ids and the snapshots its views show (ADR 0085). The core's own
+// records and enums (`Category`, `MentionState`, `Scope`, `DocumentPhase`,
+// `HandOff`, the Markdown styling, …) are used as UniFFI generates them
+// (ADR 0104); their labels and icons are extensions. Swift keeps only these
+// snapshots and its own view state; the core owns the rest.
+
+/// The core's `Category`, named here because the Objective-C runtime has a
+/// `Category` too.
+typealias Category = MdocFFI.Category
 
 struct CaseID: Hashable, Sendable, Codable {
     let rawValue: String
@@ -21,6 +27,22 @@ struct IdentityID: Hashable, Sendable {
     let rawValue: String
 }
 
+extension IdentityID {
+    /// The core's identity id.
+    init(_ id: UInt64) {
+        self.init(rawValue: String(id))
+    }
+}
+
+/// A merge hint (ADR 0080): "Looks like `wording`". Linking them is the
+/// user's choice; × hides the hint.
+extension LinkHint {
+    /// The shorter or later identity, which Same as links…
+    var fromID: IdentityID { IdentityID(from) }
+    /// …into this one, which keeps its alias and restore wording.
+    var intoID: IdentityID { IdentityID(into) }
+}
+
 /// A range of UTF-8 bytes in a document's Markdown source. Every offset the
 /// core returns is a source byte offset; `TextOffsets` converts to UTF-16.
 struct SourceRange: Hashable, Sendable {
@@ -30,43 +52,14 @@ struct SourceRange: Hashable, Sendable {
     var length: Int { end - start }
 }
 
-/// What a replacement stands for, in `mdoc_pii::Category` order.
-enum Category: String, CaseIterable, Sendable {
-    case person, organization, email, url, phone, address, date, caseNumber, identity, tax, bank, other
-
-    var label: String {
-        switch self {
-        case .person: String(localized: "Person")
-        case .organization: String(localized: "Organization")
-        case .email: String(localized: "Email")
-        case .url: String(localized: "Web address")
-        case .phone: String(localized: "Phone")
-        case .address: String(localized: "Address")
-        case .date: String(localized: "Date")
-        case .caseNumber: String(localized: "Case number")
-        case .identity: String(localized: "Identity")
-        case .tax: String(localized: "Tax identifier")
-        case .bank: String(localized: "Bank details")
-        case .other: String(localized: "Other")
-        }
+extension SourceRange {
+    /// The core's range.
+    init(_ range: TextRange) {
+        self.init(start: Int(range.start), end: Int(range.end))
     }
 
-    /// The alias prefix, as in `PERSON_1`.
-    var token: String {
-        switch self {
-        case .person: "PERSON"
-        case .organization: "ORG"
-        case .email: "EMAIL"
-        case .url: "URL"
-        case .phone: "PHONE"
-        case .address: "ADDRESS"
-        case .date: "DATE"
-        case .caseNumber: "CASE"
-        case .identity: "IDENTITY"
-        case .tax: "TAX"
-        case .bank: "BANK"
-        case .other: "REDACTED"
-        }
+    var textRange: TextRange {
+        TextRange(start: UInt64(start), end: UInt64(end))
     }
 }
 
@@ -89,24 +82,16 @@ enum SourceKind: String, Sendable {
     var needsRecognition: Bool { self == .scan || self == .image }
 }
 
-/// Where a document stands in the review-first flow.
-enum DocumentPhase: Hashable, Sendable {
-    /// Import or OCR has not finished; finished pages are kept.
-    case recognizing
-    /// Text is ready; no scan has run yet.
-    case unscanned
-    /// Proposals wait for a decision.
-    case reviewing
-    /// Nothing is pending: Copy for AI and Share are open.
-    case ready
-}
-
-struct DocumentSummary: Identifiable, Hashable, Sendable {
+/// A document as the library lists it: a saved one from the core's
+/// `DocumentSummary`, or an import the core has not read yet, with the id
+/// this run gave it and its source's kind, which the core does not keep.
+struct LibraryDocument: Identifiable, Hashable, Sendable {
     let id: DocumentID
     var title: String
     var caseID: CaseID?
     var kind: SourceKind
-    var phase: DocumentPhase
+    /// Nil while the import or its text recognition has not finished.
+    var phase: DocumentPhase?
     var pendingCount: Int
     var updated: Date
     /// Every candidate, decided or not: none after a scan is "Nothing found".
@@ -115,7 +100,7 @@ struct DocumentSummary: Identifiable, Hashable, Sendable {
 
 struct LibrarySnapshot: Sendable, Equatable {
     var cases: [CaseSummary]
-    var documents: [DocumentSummary]
+    var documents: [LibraryDocument]
     /// The case of the document shared or copied for AI last. Restore uses
     /// it unless the user picks another (ADR 0084's current case).
     var currentCase: CaseID?
@@ -123,7 +108,7 @@ struct LibrarySnapshot: Sendable, Equatable {
     static let empty = LibrarySnapshot(cases: [], documents: [], currentCase: nil)
 
     /// The case's documents, most recently changed first.
-    func documents(in caseID: CaseID) -> [DocumentSummary] {
+    func documents(in caseID: CaseID) -> [LibraryDocument] {
         documents.filter { $0.caseID == caseID }.sorted { $0.updated > $1.updated }
     }
 }
@@ -143,15 +128,24 @@ enum CaseChoice: Hashable, Sendable {
     case existing(CaseID)
 }
 
+/// Where Move to case took a document, for "Moved to <case> · Undo".
+struct CaseMove: Hashable, Sendable {
+    var document: DocumentID
+    /// The case it is in now.
+    var to: CaseSummary
+    /// The case it left, if it was in one; it stays, even empty. Undo moves
+    /// the document back there.
+    var from: CaseID?
+    /// Aliases of the names the move added to `to`; Undo takes them out
+    /// again where nothing else uses them.
+    var added: [String]
+}
+
 /// The page the text came from.
 enum OriginalSource: Equatable, Sendable {
     case none
     case pdf(URL)
     case images([URL])
-}
-
-enum MentionState: Hashable, Sendable {
-    case proposed, replaced, kept
 }
 
 /// One underlined mention in the text.
@@ -182,56 +176,11 @@ struct Identity: Identifiable, Hashable, Sendable {
     var owner: IdentityID? = nil
 }
 
-/// Two identities that look like one subject (ADR 0080): "Looks like
-/// `wording`". Linking them is the user's choice; × hides the hint.
-struct MergeHint: Hashable, Sendable {
-    /// The shorter or later identity, which Same as links…
-    var from: IdentityID
-    /// …into this one, which keeps its alias and restore wording.
-    var into: IdentityID
-    var wording: String
-}
-
-/// One row of the category menu: choosing `category` gives `alias`, or
-/// keeps the alias as it is when nil ("Organization → ORG_3").
-struct CategoryChoice: Hashable, Sendable {
-    var category: Category
-    var alias: String?
-    /// The mention's identity is in this category already.
-    var isCurrent: Bool
-}
-
-/// What an undo step did (ADR 0098).
-enum HistoryStepKind: Hashable, Sendable {
-    case replace, keep, replaceAll, mark, rename, category, sameAs, newAlias, owner, joinCase
-}
-
-/// A step Undo reverts or Redo makes again: the toast names it ("Undid " +
-/// `label`), and the bar moves back to where it acted.
-struct HistoryStep: Hashable, Sendable {
-    var kind: HistoryStepKind
-    /// "Replace · Riverside Holdings", "Same as · Maya Bennett".
-    var label: String
-    /// What the label names after the kind; empty for none.
-    var subject: String
-    /// The mention it acted on in this snapshot's Markdown: for the undo
-    /// step where it is now, for the redo step where it is before redoing.
-    var range: SourceRange?
-    /// The candidate at `range`, when one is there.
-    var candidateID: CandidateID?
-    var identityID: IdentityID?
-}
-
 /// The candidate sheet's choice. Aliases come from the core and are not
 /// edited (ADR 0085's review sheet shows the alias).
 enum Decision: Hashable, Sendable {
     case replace
     case keep
-}
-
-enum Scope: Hashable, Sendable {
-    case allOccurrences
-    case justThisOne
 }
 
 /// A restored reply split for display: plain text, values put back, and
@@ -287,11 +236,11 @@ struct ReplySnapshot: Hashable, Sendable {
     var restored: RestoreResult
 }
 
-/// Copy for AI's output: the placeholder note plus the current Markdown,
-/// and a file name with known originals pseudonymized.
-struct HandOff: Hashable, Sendable {
-    var text: String
-    var fileName: String
+/// Mentions by state, as the core counts them.
+struct MentionCounts: Hashable, Sendable {
+    var proposed: Int
+    var replaced: Int
+    var kept: Int
 }
 
 struct DocumentSnapshot: Equatable, Sendable {
@@ -300,9 +249,15 @@ struct DocumentSnapshot: Equatable, Sendable {
     var caseID: CaseID?
     var caseName: String?
     var kind: SourceKind
-    var phase: DocumentPhase
+    /// Nil while the import or its text recognition has not finished:
+    /// finished pages are kept.
+    var phase: DocumentPhase?
     var markdown: String
     var styling: MarkdownStyling
+    /// The core's `text_revision`: the same while `markdown` is, so the
+    /// text view lays the text out again only when it changes. Nil for a
+    /// snapshot the core did not make.
+    var textRevision: UInt64? = nil
     var candidates: [Candidate]
     var identities: [Identity]
     var original: OriginalSource
@@ -316,8 +271,8 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// OCR stopped part-way (a cancel, or mdoc stopping): its finished pages
     /// are kept and recognition resumes with the rest.
     var resumesOCR = false
-    /// Merge hints, without the dismissed ones.
-    var mergeHints: [MergeHint] = []
+    /// Merge hints (ADR 0080), without the dismissed ones.
+    var mergeHints: [LinkHint] = []
     var canUndo = false
     var canRedo = false
     /// What Undo would revert; after a redo, what it made again.
@@ -325,16 +280,26 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// What Redo would make again; after an undo, what it undid.
     var redoStep: HistoryStep? = nil
 
+    /// The core's count of mentions in each state; nil for a snapshot the
+    /// core did not make, which counts `candidates`.
+    var counts: MentionCounts? = nil
+
     var pendingCount: Int {
-        candidates.filter { $0.state == .proposed }.count
+        counts?.proposed ?? candidates.filter { $0.state == .proposed }.count
     }
 
     var replacedCount: Int {
-        candidates.filter { $0.state == .replaced }.count
+        counts?.replaced ?? candidates.filter { $0.state == .replaced }.count
     }
 
     func candidate(_ id: CandidateID) -> Candidate? {
         candidates.first { $0.id == id }
+    }
+
+    /// The candidate an undo or redo step acted on, when one is at its range.
+    func candidate(of step: HistoryStep?) -> Candidate? {
+        guard let range = step?.range.map(SourceRange.init) else { return nil }
+        return candidates.first { $0.range == range }
     }
 
     func mentions(of identity: IdentityID) -> [Candidate] {
@@ -402,14 +367,9 @@ struct ModelDownloadRequest: Hashable, Sendable {
     var byteSize: Int64
 }
 
-/// Where a long core job is.
-enum CoreStage: Hashable, Sendable {
-    case reading, converting, recognizing, scanning, installing
-}
-
 /// One progress report: the stage, and how far when the core knows.
 struct JobUpdate: Hashable, Sendable {
-    var stage: CoreStage
+    var stage: JobStage
     var fraction: Double?
     var page: Int?
     var pageCount: Int?
@@ -417,20 +377,46 @@ struct JobUpdate: Hashable, Sendable {
 
 // MARK: - Errors
 
+/// Why a call failed, each with its own message (ADR 0104). The core's
+/// failures map one to one from its `CoreError` and `ReviewError`
+/// (`CoreFailure`); the rest are the app's own.
 enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case cancelled
+    /// The document is no longer in the library.
     case notFound
+    /// Copy for AI and Share wait until every proposal is replaced or kept.
     case pendingReview(Int)
     case emptySelection
     case noCase
     /// Scanning needs the detector, or recognition needs OCR, and it is not
     /// installed.
     case modelMissing
+    /// Reading or converting the file.
     case importFailed(String)
+    /// Text recognition failed.
+    case recognitionFailed(String)
+    /// Finding names failed.
+    case findNamesFailed(String)
+    /// A review change no longer applies: the text or the mention changed.
+    case reviewChanged(String)
+    /// A case rule (one case per document), or the case could not be read.
+    case caseRefused(String)
+    /// A model file could not be verified or installed.
+    case setupFailed(String)
+    /// Something the core does not accept, such as a blank title.
+    case invalid(String)
+    /// Reading or writing a file failed.
+    case fileFailed(String)
     /// Rename: another identity has this alias. Same as is the way to it.
     case aliasTaken(alias: String, by: IdentityID)
-    /// A review change the core refused, in its words.
+    /// The mention or identity is no longer in the review.
+    case nameNotFound
+    /// A change refused, in the core's words or the app's.
     case refused(String)
+    /// A review change could not be saved.
+    case saveFailed(String)
+    /// Anything else, in its own words.
+    case other(String)
 
     var errorDescription: String? {
         switch self {
@@ -448,9 +434,24 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
             String(localized: "Download the models first.")
         case .importFailed(let reason):
             String(localized: "mdoc could not open this file: \(reason)")
+        case .recognitionFailed(let reason):
+            String(localized: "Text recognition stopped: \(reason)")
+        case .findNamesFailed(let reason):
+            String(localized: "Find names stopped: \(reason)")
+        case .setupFailed(let reason):
+            String(localized: "The model could not be installed: \(reason)")
+        case .fileFailed(let reason):
+            String(localized: "mdoc could not read or write a file: \(reason)")
+        case .saveFailed(let reason):
+            String(localized: "mdoc could not save this change: \(reason)")
         case .aliasTaken(let alias, _):
             String(localized: "\(alias) is another name's alias.")
-        case .refused(let reason):
+        case .nameNotFound:
+            String(localized: "That name is no longer in the document.")
+        // Sentences of the core's (a blank title, the case a document is
+        // in already, a mention that moved) or of the app's, as they are.
+        case .reviewChanged(let reason), .caseRefused(let reason), .invalid(let reason), .refused(let reason),
+             .other(let reason):
             reason
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Find in document (ADR 0098, tier 2): every match of a word in the text,
 /// with its context; Hide name marks it, and the core proposes every exact
@@ -8,6 +9,7 @@ struct FindSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @FocusState private var focused: Bool
+    @State private var presented = false
 
     private var matches: [SourceRange] { model.matches(of: query) }
 
@@ -59,12 +61,53 @@ struct FindSheet: View {
             }
             // Focus once the sheet is up, not in onAppear: on iOS 26.2,
             // focusing the field while the sheet presents spins the main
-            // thread and the app stops responding (#634).
-            .task {
-                try? await Task.sleep(for: .milliseconds(600))
-                focused = true
+            // thread and the app stops responding (#634). A fixed delay
+            // isn't enough: on a loaded machine the field may not be
+            // ready yet, and the focus is dropped (#669). So wait for
+            // viewDidAppear, then ask again until the field has it.
+            .background(DidAppear { presented = true })
+            .task(id: presented) {
+                guard presented else { return }
+                for _ in 0..<12 {
+                    focused = true
+                    // timing: iOS 26.2 drops or hangs on an early focus and says nothing when it takes (#634, #669)
+                    try? await Task.sleep(for: .milliseconds(250))
+                    // Once it took, stop: the user may close the keyboard.
+                    if focused || Task.isCancelled { return }
+                }
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// Runs `action` from viewDidAppear, which UIKit calls once the enclosing
+/// sheet has finished presenting.
+private struct DidAppear: UIViewControllerRepresentable {
+    let action: () -> Void
+
+    func makeUIViewController(context: Context) -> Controller { Controller(action: action) }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.action = action }
+
+    final class Controller: UIViewController {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+            view.isAccessibilityElement = false
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            action()
+        }
     }
 }

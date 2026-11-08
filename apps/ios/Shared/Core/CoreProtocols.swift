@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 // The three coarse objects `crates/mdoc-ffi` exports (ADR 0085). Rust owns
 // document, review, case and restore state; these calls return snapshots.
@@ -6,8 +7,8 @@ import Foundation
 // thing the core calls back into the platform for.
 
 /// Progress and cooperative cancellation for a long core call: the real
-/// core reports stages through its `JobProgress` callback and stops when its
-/// session's `cancel()` is called.
+/// core reports stages through its `JobProgress` callback, and `onCancel`
+/// stops the job by its id (`cancel_job`), even one not started yet.
 protocol JobObserver: AnyObject, Sendable {
     func progress(_ update: JobUpdate)
     /// Polled between units of work; true ends the call with `CoreError.cancelled`.
@@ -32,10 +33,52 @@ protocol Library: AnyObject, Sendable {
     /// Saves the jobs that finished while the phone was locked, and returns
     /// their documents.
     func saveDeferred() throws -> [DocumentID]
+    /// Saves now what review taps left for their save (ADR 0104: the save
+    /// follows the tap), in every document: mdoc leaves the foreground.
+    func saveChanges() throws
+    /// Tells `observer`, on the main thread, how each save that follows
+    /// taps went.
+    func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void)
+    /// Rename: the document's title, as typed (its file follows, numbered
+    /// when another document has the title). A case holding only this
+    /// document and named after it is renamed with it. Refused for a blank
+    /// title, and for an import not read yet.
+    func renameDocument(_ document: DocumentID, to title: String) throws
+    /// Renames a case; its documents keep their titles.
+    func renameCase(_ caseID: CaseID, to name: String) throws
+    /// Move to case (ADR 0041 Joining): the document leaves its case and
+    /// joins `target`, its names taking that case's aliases (a name the case
+    /// knows takes its alias, a clashing alias the next free number). The
+    /// case it left keeps its names and the document's reply, so replies to
+    /// what was sent still restore with it, and it stays even with no
+    /// documents left. Refused for the case it is in already, and for an
+    /// import not read yet.
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove
+    /// Undo of Move to case: the document moves back into the case it
+    /// left and its names take their old aliases again; the reply kept there
+    /// is the document's again. The case it leaves loses the names the move
+    /// added, unless another of its documents or a reply kept there uses
+    /// them, or it is the current case.
+    func undoMove(_ move: CaseMove) throws -> CaseMove
+}
+
+/// How a save that followed review taps went (`Library.observeSaves`).
+enum SaveEvent: Sendable {
+    /// Saved. `rejoined`: another document changed the case meanwhile, and
+    /// joining it again may have renumbered this one's aliases.
+    case saved(DocumentID, rejoined: Bool)
+    /// Not saved, and still to save.
+    case failed(DocumentID, CoreError)
 }
 
 extension Library {
     func saveDeferred() throws -> [DocumentID] { [] }
+    func saveChanges() throws {}
+    func observeSaves(_ observer: @escaping @MainActor @Sendable (SaveEvent) -> Void) {}
+    func renameDocument(_ document: DocumentID, to title: String) throws { throw CoreError.notFound }
+    func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
+    func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
+    func undoMove(_ move: CaseMove) throws -> CaseMove { throw CoreError.noCase }
 }
 
 /// One document's import, OCR, review and hand-off.
@@ -49,12 +92,14 @@ protocol DocumentSession: AnyObject, Sendable {
     func decide(_ candidate: CandidateID, _ decision: Decision, scope: Scope) throws -> DocumentSnapshot
     /// Replaces every proposed mention with its proposed alias.
     func replaceAllPending() throws -> DocumentSnapshot
-    /// Replace…: a manual identity for the selected source text, replaced
-    /// in every exact repeat.
-    func addReplacement(_ range: SourceRange, category: Category) throws -> DocumentSnapshot
-    /// Copy for AI's text, through the same export path as desktop. Fails
-    /// while proposals are pending. Records the document as shared last.
+    /// Copy for AI's text, through the same export path as desktop. The core
+    /// refuses while proposals are pending. Records the document as shared
+    /// last. Saves the document first, so the case the Restore extension
+    /// reads has every alias the text has.
     func copyForAI() throws -> HandOff
+    /// Saves now what review taps left for their save (ADR 0104): before
+    /// the document is left for another, or mdoc leaves the foreground.
+    func saveChanges() throws
     /// Restores `reply` with this document's case and keeps it as the
     /// document's reply.
     func restoreReply(_ reply: String) throws -> DocumentSnapshot
@@ -64,7 +109,9 @@ protocol DocumentSession: AnyObject, Sendable {
     //
     // Each change below, and `decide`, `replaceAllPending` and the marks, is
     // one undo step, held in memory while the session lives (256 steps).
-    // Copy for AI, Restore reply and Clear reply are not steps.
+    // Copy for AI, Restore reply and Clear reply are not steps. Each returns
+    // at once; its change is saved shortly after, on a utility queue,
+    // several taps in one save (ADR 0104).
 
     /// Undoes the last step. The snapshot's `redoStep` names what it undid
     /// and where, for the toast and to move the bar back.
@@ -78,17 +125,17 @@ protocol DocumentSession: AnyObject, Sendable {
     /// its category. Try a sample uses it, so the sample reviews before the
     /// name finder is downloaded (ADR 0099).
     func propose(_ names: [SampleDocument.Name]) throws -> DocumentSnapshot
-    /// Rename…: the alias of this mention (`.justThisOne` splits it off
-    /// under the alias) or of its identity. Throws `.aliasTaken` with the
+    /// Rename…: the alias of this mention (`.this` splits it off under the
+    /// alias) or of its identity. Throws `.aliasTaken` with the
     /// identity that has the alias already: Same as is the way to it.
     func rename(_ candidate: CandidateID, scope: Scope, to alias: String) throws -> DocumentSnapshot
     /// The category menu: each category with the alias choosing it gives.
-    func categoryChoices(for candidate: CandidateID, scope: Scope) throws -> [CategoryChoice]
+    func categoryChoices(for candidate: Candidate, scope: Scope) throws -> [CategoryChoice]
     /// The category of this mention (split off in it) or of its identity.
     func setCategory(_ candidate: CandidateID, scope: Scope, to category: Category) throws -> DocumentSnapshot
-    /// Same as…: `.allOccurrences` links the mention's identity into
-    /// `target`, which keeps its alias and restore wording; `.justThisOne`
-    /// moves only this mention. Replaces nothing by itself.
+    /// Same as…: `.all` links the mention's identity into `target`, which
+    /// keeps its alias and restore wording; `.this` moves only this mention.
+    /// Replaces nothing by itself.
     func sameAs(_ candidate: CandidateID, scope: Scope, target: IdentityID) throws -> DocumentSnapshot
     /// Same as… for a whole identity: an Identities row, or a merge hint.
     func link(_ identity: IdentityID, into target: IdentityID) throws -> DocumentSnapshot
@@ -98,7 +145,7 @@ protocol DocumentSession: AnyObject, Sendable {
     /// organization; nil clears it.
     func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot
     /// × on a merge hint: hidden from now on, in the case too. Not a step.
-    func dismissHint(_ hint: MergeHint) throws -> DocumentSnapshot
+    func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot
 }
 
 /// Models that fit the device, and verifying and installing downloads.

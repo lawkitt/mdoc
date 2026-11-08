@@ -32,6 +32,7 @@ final class DeviceBelowFloorUITests: XCTestCase {
     @MainActor
     private func scanRecognizeAndMark() throws {
         let app = launch(seed: MdocUITest.deviceScan)
+        MdocUITest.revealSidebar(app)
         let settings = app.buttons["settings-button"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists, "a setup card on Home below the floor")
@@ -61,8 +62,9 @@ final class DeviceBelowFloorUITests: XCTestCase {
             "the pages were never recognized")
         try leaveAndReturn(app)
 
+        // The text shows once recognition ends: minutes on a warm 12 Pro.
         let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: 60))
+        XCTAssertTrue(text.waitForExistence(timeout: 300), "the pages were never recognized")
         expect(NSPredicate(format: "value CONTAINS 'Harbour Street'"), on: text, timeout: 300)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "recognition stopped in the background")
 
@@ -84,7 +86,12 @@ final class DeviceBelowFloorUITests: XCTestCase {
         let confirm = app.buttons["review-replace"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "no review bar on the mark")
         confirm.tap()
-        XCTAssertTrue(app.buttons["review-undo"].isEnabled, "the selection was not marked")
+        // The mark is the document's only name, so replacing it ends review
+        // (#699): Undo is the toast's, or the bar's when it stays open.
+        let undone = app.buttons["review-undo"].exists
+            ? app.buttons["review-undo"].isEnabled
+            : app.buttons["toast-action"].waitForExistence(timeout: 5)
+        XCTAssertTrue(undone, "the selection was not marked")
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
         // The marked text shares.
@@ -112,9 +119,13 @@ final class DeviceBelowFloorUITests: XCTestCase {
                 .matching(NSPredicate(format: "identifier == 'document-row' AND label CONTAINS 'Import not finished'"))
                 .firstMatch.exists,
             "the import did not finish")
-        row.tap()
-
+        // A tap just after coming back can be lost (#711): tap again until
+        // the document opens.
         let text = app.textViews["document-text"]
+        for _ in 0..<3 where !text.exists {
+            if row.isHittable { row.tap() }
+            if text.waitForExistence(timeout: 10) { break }
+        }
         XCTAssertTrue(text.waitForExistence(timeout: 60))
         expect(NSPredicate(format: "value CONTAINS 'Basis Trustee'"), on: text, timeout: 180)
         XCTAssertFalse(app.buttons["interruption-resume"].exists, "the import stopped in the background")
@@ -139,10 +150,16 @@ final class DeviceBelowFloorUITests: XCTestCase {
     /// stops it the moment a job starts (lawkitt/mdoc#290).
     @MainActor
     private func leaveAndReturn(_ app: XCUIApplication, seconds: UInt32 = 10) throws {
-        XCUIDevice.shared.press(.home)
-        XCTAssertTrue(
-            app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended,
-            "mdoc did not go to the background")
+        // Home can be missed while the background job's banner shows: press
+        // it again if mdoc is still in front.
+        var left = false
+        for _ in 0..<3 where !left {
+            XCUIDevice.shared.press(.home)
+            left = app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended
+        }
+        XCTAssertTrue(left, "mdoc did not go to the background")
+        // The stay itself is the test: a fixed time in the background, not
+        // a wait for something to happen.
         sleep(seconds)
         XCTAssertNotEqual(app.state, .notRunning, "mdoc stopped in the background")
         app.activate()
@@ -155,10 +172,11 @@ final class DeviceBelowFloorUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [found], timeout: timeout), .completed, "\(element) never matched \(predicate)")
     }
 
-    /// A Home row by title, whatever its status.
+    /// A sidebar row by title, whatever its status.
     @MainActor
     private static func row(_ app: XCUIApplication, title: String) -> XCUIElement {
-        app.descendants(matching: .any)
+        MdocUITest.revealSidebar(app)
+        return app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@", "\(title),"))
             .firstMatch
     }

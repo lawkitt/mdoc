@@ -29,6 +29,7 @@ class ModelDownloader(
             val via = network()
             if (via == null) {
                 waiting(true)
+                // timing: polls for a network instead of waiting for one (#697)
                 Thread.sleep(2_000)
                 continue
             }
@@ -40,6 +41,7 @@ class ModelDownloader(
                 if (cancelled()) throw AppError.Cancelled()
                 // The network went away mid-transfer: wait for it, then resume.
                 if (++attempts > 20) throw error
+                // timing: polls for the network's return instead of waiting for it (#697)
                 Thread.sleep(2_000)
             }
         }

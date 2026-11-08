@@ -67,3 +67,25 @@ struct CaseDot: View {
             .accessibilityHidden(true)
     }
 }
+
+// The accent is ink (ADR 0099, amended 2026-11-08): near-black `#1c1c1e` in
+// light mode and near-white `#f2f2f7` in dark mode, the app's `AccentColor`.
+// What sits on it flips with it.
+
+extension UIColor {
+    /// The accent: the app's `AccentColor`, or the label colour where there
+    /// is no asset catalog (the Restore extension).
+    static let ink = UIColor(named: "AccentColor") ?? .label
+
+    /// Words and symbols on an accent fill: white on the near-black of light
+    /// mode, black on the near-white of dark mode.
+    static let onAccent = UIColor { $0.userInterfaceStyle == .dark ? .black : .white }
+}
+
+extension Color {
+    /// The accent (`UIColor.ink`), named rather than the environment's
+    /// tint, so offscreen renders (snapshots) draw it too.
+    static let ink = Color(uiColor: .ink)
+    /// Words and symbols on an accent fill (`UIColor.onAccent`).
+    static let onAccent = Color(uiColor: .onAccent)
+}

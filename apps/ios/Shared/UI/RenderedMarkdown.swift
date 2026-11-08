@@ -1,3 +1,4 @@
+import MdocFFI
 import UIKit
 
 // The rendered view (ADR 0096): the Markdown source in one TextKit 2 text
@@ -13,6 +14,9 @@ extension NSAttributedString.Key {
     static let mdocHidden = NSAttributedString.Key("io.github.lawkitt.mdoc.hidden")
     /// What a rendered line draws beside or behind its text.
     static let mdocDecoration = NSAttributedString.Key("io.github.lawkitt.mdoc.decoration")
+    /// A `UIColor` to outline these characters with, a rounded box on each
+    /// line they cover: the name under review (ADR 0099).
+    static let mdocOutline = NSAttributedString.Key("io.github.lawkitt.mdoc.outline")
 }
 
 extension NSAttributedString {
@@ -70,7 +74,7 @@ struct RenderedTable {
     var rows: [[RenderedCell]]
     var columns: [CGFloat]
     var heights: [CGFloat]
-    var style: MarkdownTable.Style
+    var style: MarkdownTableStyle
     var rtl: Bool
     /// Space around a cell's text.
     var padding: UIEdgeInsets
@@ -85,7 +89,7 @@ final class LineDecoration: NSObject {
     /// A list bullet or number, drawn where the hidden marker was.
     var label: (text: NSAttributedString, x: CGFloat)?
     /// A task box.
-    var task: (checked: Bool, x: CGFloat, size: CGFloat, stroke: UIColor, fill: UIColor)?
+    var task: (checked: Bool, x: CGFloat, size: CGFloat, stroke: UIColor, fill: UIColor, tick: UIColor)?
     /// A quote's or alert's bar on the left.
     var bar: (x: CGFloat, width: CGFloat, color: UIColor)?
     /// A card behind the line, rounded at the card's first and last lines.
@@ -154,10 +158,10 @@ struct BlockLayout {
         return styling.tables.compactMap { table -> RenderedTable? in
             let tableRange = offsets.nsRange(table.range)
             guard tableRange.length > 0, !table.rows.isEmpty else { return nil }
-            let count = max(table.aligns.count, table.rows.map(\.count).max() ?? 0)
+            let count = max(table.aligns.count, table.rows.map(\.cells.count).max() ?? 0)
             guard count > 0 else { return nil }
             var rows: [[RenderedCell]] = []
-            for (rowIndex, row) in table.rows.enumerated() {
+            for (rowIndex, row) in table.rows.map(\.cells).enumerated() {
                 var cells: [RenderedCell] = []
                 for column in 0..<count {
                     let range = column < row.count ? offsets.nsRange(row[column]) : nil
@@ -211,7 +215,7 @@ struct BlockLayout {
             let floors = zip(natural, words).map { max(min($0, minimum), $1) }
             natural = zip(natural, floors).map { max($0, $1) }
             var columns: [CGFloat]
-            if let stored = table.widths, stored.count == count, stored.reduce(0, +) > 0 {
+            if let stored = table.widths?.map(Double.init), stored.count == count, stored.reduce(0, +) > 0 {
                 let total = stored.reduce(0, +)
                 let span = max(width, CGFloat(count) * minimum * 0.75)
                 columns = zip(stored, floors).map { max(CGFloat($0 / total) * span, $1) }
@@ -253,7 +257,7 @@ struct BlockLayout {
 
     /// A cell's text: the document's styling at the cell's size, the header
     /// bold, aligned as its column.
-    private func style(cell: NSMutableAttributedString, ratio: CGFloat, header: Bool, align: MarkdownTable.Align, rtl: Bool) {
+    private func style(cell: NSMutableAttributedString, ratio: CGFloat, header: Bool, align: MarkdownAlign, rtl: Bool) {
         let whole = NSRange(location: 0, length: cell.length)
         cell.enumerateAttribute(.font, in: whole) { value, part, _ in
             guard let font = value as? UIFont, cell.attribute(.mdocHidden, at: part.location, effectiveRange: nil) == nil else { return }
@@ -283,7 +287,7 @@ struct BlockLayout {
         case blank
         case heading(Int)
         case quote
-        case alert(MarkdownBlock.Alert, title: Bool)
+        case alert(MarkdownAlertKind, title: Bool)
         case fence(open: Bool)
         case code
         case rule
@@ -296,7 +300,7 @@ struct BlockLayout {
     /// decoration; `tables` hold the grids whose gaps the table lines leave.
     mutating func apply(tables: [RenderedTable]) {
         let length = text.length
-        var lineKinds: [Int: MarkdownLine.Kind] = [:]
+        var lineKinds: [Int: MarkdownLineKind] = [:]
         for line in styling.lines {
             lineKinds[offsets.nsRange(line.range).location] = line.kind
         }
@@ -304,7 +308,7 @@ struct BlockLayout {
         for item in styling.listItems {
             items[offsets.nsRange(item.range).location] = item
         }
-        var blocks: [Int: MarkdownBlock.Kind] = [:]
+        var blocks: [Int: MarkdownBlockKind] = [:]
         for block in styling.blocks {
             blocks[offsets.nsRange(block.range).location] = block.kind
         }
@@ -338,7 +342,7 @@ struct BlockLayout {
             } else if let item = items[start] {
                 role = .list(item)
             } else if case .heading(let level) = lineKinds[start] {
-                role = .heading(level)
+                role = .heading(Int(level))
             } else if lineKinds[start] == .quote {
                 role = .quote
             } else if blocks[start] == .muted {
@@ -350,7 +354,7 @@ struct BlockLayout {
         }
 
         // Ordered lists share one label width per list.
-        var labelWidths: [Int: CGFloat] = [:]
+        var labelWidths: [UInt32: CGFloat] = [:]
         for item in styling.listItems {
             guard let list = item.list else { continue }
             labelWidths[list] = max(labelWidths[list] ?? 0, labelWidth(item.label))
@@ -433,7 +437,7 @@ struct BlockLayout {
                 let marker = resolved(.secondaryLabel)
                 if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
-                    decoration.task = (checked, x, size, marker, resolved(.tintColor))
+                    decoration.task = (checked, x, size, marker, resolved(.tintColor), resolved(.onAccent))
                     column = size + 8 * scale
                 } else {
                     let label = NSAttributedString(string: item.label, attributes: [.font: body, .foregroundColor: marker])
@@ -545,7 +549,7 @@ struct BlockLayout {
         String(localized: "Image", comment: "Chip in place of a Markdown image with no description")
     }
 
-    static func colour(of alert: MarkdownBlock.Alert) -> UIColor {
+    static func colour(of alert: MarkdownAlertKind) -> UIColor {
         switch alert {
         case .note: .systemBlue
         case .tip: .systemGreen
@@ -555,7 +559,7 @@ struct BlockLayout {
         }
     }
 
-    static func name(of alert: MarkdownBlock.Alert) -> String {
+    static func name(of alert: MarkdownAlertKind) -> String {
         switch alert {
         case .note: String(localized: "Note", comment: "A Markdown alert's title")
         case .tip: String(localized: "Tip", comment: "A Markdown alert's title")
@@ -565,7 +569,7 @@ struct BlockLayout {
         }
     }
 
-    static func symbol(of alert: MarkdownBlock.Alert) -> String {
+    static func symbol(of alert: MarkdownAlertKind) -> String {
         switch alert {
         case .note: "info.circle"
         case .tip: "lightbulb"
@@ -589,17 +593,40 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
         textLayoutManager?.textContainer?.size.width ?? layoutFragmentFrame.width
     }
 
+    /// The paragraph's outlined stretches (`mdocOutline`), paragraph-relative.
+    private var outlines: [(range: NSRange, colour: UIColor)] {
+        guard let paragraph = textElement as? NSTextParagraph else { return [] }
+        let string = paragraph.attributedString
+        var found: [(range: NSRange, colour: UIColor)] = []
+        string.enumerateAttribute(.mdocOutline, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+            if let colour = value as? UIColor { found.append((range, colour)) }
+        }
+        return found
+    }
+
+    /// How far an outline stands off its characters, and its line.
+    private static let outlineOutset = CGSize(width: 2, height: 1)
+    private static let outlineWidth: CGFloat = 1.5
+
     override var renderingSurfaceBounds: CGRect {
-        guard decoration != nil else { return super.renderingSurfaceBounds }
-        let whole = CGRect(x: -layoutFragmentFrame.minX, y: 0, width: containerWidth, height: layoutFragmentFrame.height)
-        return super.renderingSurfaceBounds.union(whole)
+        var bounds = super.renderingSurfaceBounds
+        if decoration != nil {
+            bounds = bounds.union(CGRect(x: -layoutFragmentFrame.minX, y: 0, width: containerWidth, height: layoutFragmentFrame.height))
+        }
+        if !outlines.isEmpty {
+            let margin = Self.outlineOutset.width + Self.outlineWidth
+            bounds = bounds.insetBy(dx: -margin, dy: -margin)
+        }
+        return bounds
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
         guard let decoration else {
             super.draw(at: point, in: context)
+            drawOutlines(at: point, in: context)
             return
         }
+        defer { drawOutlines(at: point, in: context) }
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
         let left = point.x - layoutFragmentFrame.minX
@@ -642,7 +669,7 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
                 tick.addLine(to: CGPoint(x: box.minX + box.width * 0.42, y: box.minY + box.height * 0.70))
                 tick.addLine(to: CGPoint(x: box.minX + box.width * 0.76, y: box.minY + box.height * 0.28))
                 tick.lineWidth = 1.6
-                UIColor.white.setStroke()
+                task.tick.setStroke()
                 tick.stroke()
             } else {
                 task.stroke.setStroke()
@@ -688,6 +715,57 @@ final class MarkdownLayoutFragment: NSTextLayoutFragment {
             }
             title.text.draw(at: CGPoint(x: x, y: middle - (font?.lineHeight ?? lineHeight) / 2))
         }
+    }
+
+    private func drawOutlines(at point: CGPoint, in context: CGContext) {
+        let boxes = outlineBoxes(at: point)
+        guard !boxes.isEmpty else { return }
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
+        for (box, colour) in boxes {
+            let path = UIBezierPath(roundedRect: box, cornerRadius: 4)
+            path.lineWidth = Self.outlineWidth
+            colour.setStroke()
+            path.stroke()
+        }
+    }
+
+    /// A rounded box around each outlined stretch on each line it covers,
+    /// for a fragment drawn at `point`. Its sides span the stretch's text
+    /// segments on that line, which stay true where the stretch and its
+    /// line run in different directions (a Hebrew name in English text);
+    /// its height is the font's there, from the line's baseline, so a
+    /// heading's name gets a taller box.
+    func outlineBoxes(at point: CGPoint) -> [(box: CGRect, colour: UIColor)] {
+        let outlines = outlines
+        guard !outlines.isEmpty, let layout = textLayoutManager, let content = layout.textContentManager,
+              let start = textElement?.elementRange?.location else { return [] }
+        let origin = CGPoint(x: point.x - layoutFragmentFrame.minX, y: point.y - layoutFragmentFrame.minY)
+        var boxes: [(box: CGRect, colour: UIColor)] = []
+        for outline in outlines {
+            for line in textLineFragments {
+                let part = NSIntersectionRange(outline.range, line.characterRange)
+                guard part.length > 0,
+                      let from = content.location(start, offsetBy: part.location),
+                      let to = content.location(from, offsetBy: part.length),
+                      let range = NSTextRange(location: from, end: to) else { continue }
+                var left = CGFloat.infinity, right = -CGFloat.infinity
+                layout.enumerateTextSegments(in: range, type: .standard, options: [.rangeNotRequired]) { _, frame, _, _ in
+                    left = min(left, frame.minX)
+                    right = max(right, frame.maxX)
+                    return true
+                }
+                guard left < right else { continue }
+                let font = line.attributedString.attribute(.font, at: part.location, effectiveRange: nil) as? UIFont
+                let baseline = point.y + line.typographicBounds.minY + line.glyphOrigin.y
+                let ascender = font?.ascender ?? line.typographicBounds.height * 0.8
+                let descender = font?.descender ?? 0
+                let box = CGRect(x: origin.x + left, y: baseline - ascender, width: right - left, height: ascender - descender)
+                    .insetBy(dx: -Self.outlineOutset.width, dy: -Self.outlineOutset.height)
+                boxes.append((box, outline.colour))
+            }
+        }
+        return boxes
     }
 }
 
@@ -939,6 +1017,8 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         content.primaryTextLayoutManager = layout
         super.init(frame: .zero, textContainer: container)
         layout.delegate = self
+        // A short text takes a drag too, so it never feels frozen.
+        alwaysBounceVertical = true
     }
 
     @available(*, unavailable)
@@ -974,15 +1054,27 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         setNeedsLayout()
     }
 
+    /// Called at the end of a layout pass whose text and tables are placed:
+    /// where a scroll to a range can trust the text's rects. A pass that
+    /// rendered again for a new width skips it; the next pass calls it.
+    var onLayout: (() -> Void)?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let width = textWidth
+        var renderedAgain = false
         if width > 0, abs(width - shownWidth) > 0.5 {
             shownWidth = width
             onWidth?(width)
+            renderedAgain = true
         }
         if !tableViews.isEmpty {
             placeTables()
+        }
+        if renderedAgain {
+            setNeedsLayout()
+        } else {
+            onLayout?()
         }
     }
 
@@ -992,7 +1084,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     /// viewport, so a grid placed once drifted off its gap: after a restyle
     /// while scrolled, screens away. Here, after the viewport's layout, the
     /// fragment's frame is the one the text is drawn with.
-    private func placeTables() {
+    func placeTables() {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
         let start = content.documentRange.location
         let x = textContainerInset.left + textContainer.lineFragmentPadding
@@ -1018,6 +1110,51 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
                 view.frame = frame
             }
         }
+    }
+
+    /// Where the first line of `range` is drawn, in this view's
+    /// coordinates, and the grids put on their gaps again. TextKit 2 lays
+    /// out lazily: outside the viewport a fragment's place is an estimate,
+    /// which `firstRect(for:)` answers with, and an edit (recolouring the
+    /// name under review) makes every place after it an estimate again.
+    /// Laying out only up to the range, fragment by fragment or with
+    /// `ensureLayout(for:)`, kept the estimate; only the whole text gives
+    /// the place it is drawn at once scrolled there. So a range outside the
+    /// viewport lays out the whole text first; one inside it is measured
+    /// where it is drawn.
+    func laidOutRect(of range: NSRange) -> CGRect? {
+        guard let layout = textLayoutManager, let content = layout.textContentManager else { return nil }
+        let start = content.documentRange.location
+        // The storage's length: `attributedText` copies the whole text.
+        guard NSMaxRange(range) <= textStorage.length,
+              let from = content.location(start, offsetBy: range.location) else { return nil }
+        let viewport = layout.textViewportLayoutController.viewportRange
+        let shown = viewport.map { $0.contains(from) && layout.textLayoutFragment(for: from)?.state == .layoutAvailable } ?? false
+        if !shown {
+            layout.ensureLayout(for: content.documentRange)
+            if !tableViews.isEmpty { placeTables() }
+        }
+        guard let fragment = layout.textLayoutFragment(for: from) else { return nil }
+        // Lines count from their paragraph's start, as in `placeTables`.
+        let paragraphStart = fragment.textElement?.elementRange?.location ?? fragment.rangeInElement.location
+        let into = content.offset(from: paragraphStart, to: from)
+        guard let line = fragment.textLineFragments.first(where: { NSLocationInRange(into, $0.characterRange) })
+            ?? fragment.textLineFragments.last else { return nil }
+        let frame = fragment.layoutFragmentFrame
+        let bounds = line.typographicBounds
+        let x = line.locationForCharacter(at: into).x
+        let end = line.locationForCharacter(at: min(into + range.length, NSMaxRange(line.characterRange))).x
+        return CGRect(
+            x: frame.minX + bounds.minX + min(x, end) + textContainerInset.left,
+            y: frame.minY + bounds.minY + textContainerInset.top,
+            width: abs(end - x), height: bounds.height)
+    }
+
+    /// The text's height as laid out so far: the content size lags behind
+    /// a layout `laidOutRect(of:)` asked for until the next pass.
+    var laidOutContentHeight: CGFloat {
+        let used = textLayoutManager?.usageBoundsForTextContainer.maxY ?? 0
+        return max(contentSize.height, used + textContainerInset.top + textContainerInset.bottom)
     }
 
     nonisolated func textLayoutManager(

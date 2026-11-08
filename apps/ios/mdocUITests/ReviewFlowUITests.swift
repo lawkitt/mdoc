@@ -34,14 +34,18 @@ final class ReviewFlowUITests: XCTestCase {
         XCTAssertFalse(app.links[MdocUITest.email].exists)
 
         // The only proposal: All reviewed, with Undo in the toast; undo puts
-        // the bar back on it, and the next toast redoes.
+        // the bar back on it with no toast (ADR 0106), and the Undo button's
+        // long press redoes.
         let toastUndo = app.buttons["toast-action"]
         XCTAssertTrue(toastUndo.waitForExistence(timeout: 5))
         toastUndo.tap()
-        let redo = app.buttons["toast-action"].firstMatch
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == 'toast-action' AND label == 'Redo'")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.exists)
-        XCTAssertTrue(app.buttons["review-undo"].exists)
+        XCTAssertTrue(toastUndo.waitForNonExistence(timeout: 5), "no Redo toast")
+        XCTAssertTrue(app.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 10))
+        let undo = app.buttons["review-undo"]
+        XCTAssertTrue(undo.exists)
+        undo.press(forDuration: 1.0)
+        let redo = app.buttons["Redo"].firstMatch
+        XCTAssertTrue(redo.waitForExistence(timeout: 5))
         redo.tap()
         XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
@@ -95,11 +99,14 @@ enum MdocUITest {
     static let markdownEmail = "anna.smirnova@example.com"
 
     /// Launches with a fresh library that imports `seed` from the repository.
+    /// `slowToasts`: a toast stays 15 s, for a test that checks a lot before
+    /// it taps Undo.
     @MainActor
-    static func launch(seed: String = defaultSeed) -> XCUIApplication {
+    static func launch(seed: String = defaultSeed, slowToasts: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
         app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path
+        if slowToasts { app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1" }
         app.launch()
         return app
     }
@@ -149,20 +156,19 @@ enum MdocUITest {
 
     /// Waits up to `timeout` for `done` while a download runs, answering Use
     /// cellular whenever mdoc holds it for Wi-Fi: a phone can move between
-    /// Wi-Fi and its own data during the run. Checks once a second.
+    /// Wi-Fi and its own data during the run. Checks once a second: each
+    /// check reads the screen, which costs a phone more than a Simulator.
     @MainActor
     static func waitThroughDownload(_ app: XCUIApplication, timeout: TimeInterval, until done: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
         let held = app.buttons["setup-use-cellular"].firstMatch
-        while deadline.timeIntervalSinceNow > 0 {
+        return wait(timeout: timeout, every: 1) {
             if done() { return true }
             if held.exists {
                 held.tap()
                 answerCellularQuestion(app)
             }
-            Thread.sleep(forTimeInterval: 1)
+            return false
         }
-        return done()
     }
 
     /// The scan's pages are being recognized, or already are: a fast phone
@@ -193,11 +199,44 @@ enum MdocUITest {
         element.tap()
     }
 
+    /// The sidebar holds the documents and Settings (docs/mobile-ui.md,
+    /// Sidebar): on iPhone it slides out from ☰; on a wide iPad it stands
+    /// beside the screen already.
+    @MainActor
+    static func revealSidebar(_ app: XCUIApplication) {
+        let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
+        if sidebar.exists && sidebar.isHittable { return }
+        let button = app.buttons["show-sidebar"].firstMatch
+        guard button.waitForExistence(timeout: 5) else { return }
+        // A tap in the first seconds after launch can be lost (#711), so tap
+        // again until the drawer is open.
+        for _ in 0..<5 {
+            button.tap()
+            if sidebar.waitForExistence(timeout: 2), sidebar.isHittable { return }
+            guard button.exists, button.isHittable else { return }
+        }
+    }
+
+    /// Settings, from the sidebar's ⚙.
+    @MainActor
+    static func openSettings(_ app: XCUIApplication) {
+        revealSidebar(app)
+        app.buttons["settings-button"].firstMatch.tap()
+    }
+
+    /// The first document row in the sidebar, which it slides out for.
+    @MainActor
+    static func anyDocumentRow(_ app: XCUIApplication) -> XCUIElement {
+        revealSidebar(app)
+        return app.descendants(matching: .any).matching(identifier: "document-row").firstMatch
+    }
+
     @MainActor
     static func documentRow(_ app: XCUIApplication, title: String = title) -> XCUIElement {
+        revealSidebar(app)
         // Rows read "<title>, <status>"; the row is ready to open once it
         // has candidates to review.
-        app.descendants(matching: .any)
+        return app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@ AND label CONTAINS 'to review'", title))
             .firstMatch
     }

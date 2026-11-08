@@ -88,9 +88,11 @@ struct KeychainCaseKeyStore: CaseKeyStore {
     }
 }
 
-/// A fixed key for tests and previews.
+#if DEBUG
+/// A fixed key for tests and previews: never in a Release build.
 struct FixedCaseKeyStore: CaseKeyStore {
     var bytes = Data(repeating: 42, count: 32)
 
     func key() throws -> Data { bytes }
 }
+#endif

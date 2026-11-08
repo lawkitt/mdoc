@@ -27,10 +27,14 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["setup-download"].waitForExistence(timeout: 30))
         shot("01-home-empty-setup")
 
-        app.buttons["add-menu"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Paste"].waitForExistence(timeout: 5))
+        MdocUITest.revealSidebar(app)
+        shot("37-sidebar-empty")
+        app.buttons["new-menu"].firstMatch.tap()
+        // The menu's item, not Start's Paste tile of the same name.
+        let pasteItem = app.collectionViews.buttons["Paste text"].firstMatch
+        XCTAssertTrue(pasteItem.waitForExistence(timeout: 5))
         shot("02-add-menu")
-        app.buttons["Paste"].tap()
+        pasteItem.tap()
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         shot("03-paste-sheet-empty")
@@ -53,6 +57,18 @@ final class SurveyUITests: XCTestCase {
         goHome(app)
         XCTAssertTrue(app.descendants(matching: .any)["document-row"].firstMatch.waitForExistence(timeout: 10))
         shot("08-home-one-document")
+        // Delete from the row's menu: the toast offers Undo (Q17), which
+        // brings the document back, open.
+        app.descendants(matching: .any)["document-row"].firstMatch.press(forDuration: 1.0)
+        let delete = app.buttons["Delete"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        delete.tap()
+        let undo = app.buttons["toast-action"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        shot("40-delete-undo")
+        undo.tap()
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
+        goHome(app)
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings-theme"].firstMatch.waitForExistence(timeout: 5))
         shot("09-settings")
@@ -70,9 +86,17 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     func test2Review() throws {
         let app = launch(seed: MdocUITest.defaultSeed)
+        // Start, with the document to go back to (iPhone; iPad opens beside it).
+        if app.buttons["continue-card"].waitForExistence(timeout: 60) {
+            shot("38-start-continue")
+        }
         let row = MdocUITest.documentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         shot("11-home-to-review")
+        app.buttons["sidebar-cases"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["case-row"].firstMatch.waitForExistence(timeout: 5))
+        shot("39-cases")
+        MdocUITest.revealSidebar(app)
         row.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
@@ -103,6 +127,11 @@ final class SurveyUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["Identities"].waitForExistence(timeout: 5))
         shot("17-identities")
+        // Select: a tick on the left and a ≡ handle on the right of each row.
+        app.buttons["identities-select"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["identity-drag-handle"].firstMatch.waitForExistence(timeout: 5))
+        shot("41-identities-select")
+        app.buttons["identities-select"].firstMatch.tap()
         if !isPad {
             closeSheet(app)
         }
@@ -152,32 +181,33 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     func test3Original() throws {
         let app = launch(seed: "tests/fixtures/import/text.pdf")
-        let row = app.descendants(matching: .any)["document-row"].firstMatch
+        let row = MdocUITest.anyDocumentRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         row.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         if isPad {
-            sleep(2)
             // A portrait iPad shows the original beside the text, Identities
             // over it from the picker.
             shot("26-pdf-text-original")
             let segment = app.segmentedControls.buttons["Identities"].firstMatch
             if segment.exists {
                 segment.tap()
-                sleep(1)
+                segment.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
                 shot("26-pdf-text-identities")
             }
             // Landscape keeps Home, the text, the original and Identities
             // side by side (ADR 0085).
             XCUIDevice.shared.orientation = .landscapeLeft
             defer { XCUIDevice.shared.orientation = .portrait }
-            sleep(2)
+            let window = app.windows.firstMatch
+            MdocUITest.wait(timeout: 10) { window.frame.width > window.frame.height }
             shot("26-pdf-landscape")
             return
         }
         shot("26-pdf-text")
-        app.buttons["Original"].firstMatch.tap()
-        sleep(2)
+        let original = app.buttons["Original"].firstMatch
+        original.tap()
+        original.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5)
         shot("27-pdf-original")
     }
 
@@ -192,7 +222,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         shot("28-markdown-review")
         text.swipeUp(velocity: .fast)
-        sleep(1)
+        // shot waits for the scroll to come to rest.
         shot("29-markdown-review-end")
 
         let large = launch(seed: MdocUITest.markdownFixture, contentSize: "UICTContentSizeCategoryAccessibilityXL")
@@ -218,13 +248,11 @@ final class SurveyUITests: XCTestCase {
     @MainActor
     func test5BelowFloor() throws {
         let app = launch(seed: nil)
-        XCTAssertTrue(app.buttons["add-menu"].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["empty-paste"].firstMatch.waitForExistence(timeout: 30))
         XCTAssertFalse(app.buttons["setup-download"].exists)
         shot("31-home-empty-below-floor")
 
-        app.buttons["add-menu"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Paste"].waitForExistence(timeout: 5))
-        app.buttons["Paste"].tap()
+        app.buttons["empty-paste"].firstMatch.tap()
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -263,6 +291,7 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(serif.waitForExistence(timeout: 5))
         serif.tap()
         app.buttons["Done"].firstMatch.tap()
+        MdocUITest.revealSidebar(app)
         row.tap()
         XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 10))
         shot("36-review-serif-ax-text")
@@ -291,6 +320,7 @@ final class SurveyUITests: XCTestCase {
         if detectorTier {
             app.launchEnvironment["MDOC_UI_DETECTOR_TIER"] = "1"
         }
+        app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
         app.launch()
         return app
     }
@@ -306,29 +336,31 @@ final class SurveyUITests: XCTestCase {
         }
     }
 
+    /// The sidebar: on iPhone ☰ slides it out; on iPad it stands beside
+    /// the screen, or shows from ☰ in portrait once a document opens.
     @MainActor
     private func goHome(_ app: XCUIApplication) {
-        if isPad {
-            // In portrait the sidebar hides once a document opens.
-            let show = app.buttons["show-sidebar"]
-            if show.waitForExistence(timeout: 2) {
-                show.tap()
-                sleep(1)
-            }
-            return
-        }
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        MdocUITest.revealSidebar(app)
+        app.buttons["settings-button"].firstMatch.waitUntilHittable(timeout: 5)
     }
 
     @MainActor
     private func closeSheet(_ app: XCUIApplication) {
+        // Identities is a drawer on iPhone: its own close button.
+        // The drawer's panel goes once it has slid shut.
+        let drawer = app.buttons["identities-done"].firstMatch
+        if drawer.exists {
+            drawer.tap()
+            XCTAssertTrue(drawer.waitForNonExistence(timeout: 5), "Identities stayed open")
+            return
+        }
         let done = app.buttons["Done"].firstMatch
         if done.waitForExistence(timeout: 1) {
             done.tap()
         } else {
             app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
         }
-        sleep(1)
+        XCTAssertTrue(app.staticTexts["Identities"].waitForNonExistence(timeout: 5), "Identities stayed open")
     }
 
     /// Share: one tap, or the older Share menu's "Share text".
@@ -340,8 +372,8 @@ final class SurveyUITests: XCTestCase {
             shot("20-share-menu")
             menuItem.tap()
         }
+        // shot waits for the sheet to finish sliding up.
         XCTAssertTrue(app.otherElements["ActivityListView"].firstMatch.waitForExistence(timeout: 10))
-        sleep(1)
     }
 
     @MainActor
@@ -351,11 +383,14 @@ final class SurveyUITests: XCTestCase {
             .matching(NSPredicate(format: "label IN {'Restore with mdoc', 'mdoc'}"))
             .firstMatch
         XCTAssertTrue(restore.waitForExistence(timeout: 5), "Restore with mdoc is not in the share sheet")
+        let sharing = XCUIScreen.main.screenshot()
         restore.tap()
-        // The extension runs in its own process; its title may not be in
-        // the app's tree, so give its sheet time to show.
-        _ = app.staticTexts["Restore with mdoc"].waitForExistence(timeout: 10)
-        sleep(2)
+        // The extension runs in its own process; its sheet shows in the
+        // app's tree once it is up, by its title. Either way, the screen
+        // must have left the share sheet before shot waits for it to settle.
+        MdocUITest.firstToAppear(
+            [app.navigationBars["Restore with mdoc"], app.staticTexts["Restore with mdoc"]], timeout: 10)
+        MdocUITest.settledScreen(unlike: sharing, timeout: 10)
         shot("22-restore-extension")
         let done = app.buttons["Done"].firstMatch
         if done.waitForExistence(timeout: 3) {
@@ -373,17 +408,24 @@ final class SurveyUITests: XCTestCase {
         }
     }
 
-    /// The screen in light, then in dark.
+    /// The screen in light, then in dark, each once it has settled (dark
+    /// once it differs from light), then back to light. Setting the
+    /// appearance waits for the app to go idle, so the next step sees light.
     @MainActor
     private func shot(_ name: String) {
-        for (appearance, suffix) in [(XCUIDevice.Appearance.light, "light"), (.dark, "dark")] {
-            XCUIDevice.shared.appearance = appearance
-            sleep(1)
-            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            attachment.name = "\(name)-\(suffix)"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-        }
         XCUIDevice.shared.appearance = .light
+        let light = MdocUITest.settledScreen()
+        keep(light, "\(name)-light")
+        XCUIDevice.shared.appearance = .dark
+        keep(MdocUITest.settledScreen(unlike: light), "\(name)-dark")
+        XCUIDevice.shared.appearance = .light
+    }
+
+    @MainActor
+    private func keep(_ screenshot: XCUIScreenshot, _ name: String) {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

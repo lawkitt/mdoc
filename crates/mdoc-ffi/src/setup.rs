@@ -2,7 +2,7 @@
 //! pinned manifests, and installing a file the platform downloaded: SHA-256
 //! against the pinned digest, then an atomic move into the model folder.
 //! The platform runs the download; nothing here uses the network.
-use crate::{CoreError, spike::Runtimes};
+use crate::CoreError;
 use mdoc_store::settings::{OcrModel, PiiModel};
 use std::{
     path::{Path, PathBuf},
@@ -256,6 +256,98 @@ fn files(model: ModelId) -> Vec<ModelFile> {
                 bytes: a.size,
             })
             .collect(),
+    }
+}
+
+/// The native libraries the core loads.
+#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+pub struct Runtimes {
+    pub pdfium: String,
+    pub onnx: String,
+}
+
+/// The runtimes that ship inside the app. iOS: linked into it. Android: the
+/// APK's own `libpdfium.so` and `libonnxruntime.so` beside this library in
+/// the app's native library folder, which needs the APK to extract its
+/// libraries (`useLegacyPackaging`): PDFium is opened by file path (ADR
+/// 0089). Elsewhere there are none, and callers pass the desktop's
+/// downloaded libraries instead.
+#[uniffi::export]
+pub fn linked_runtimes() -> Result<Runtimes, CoreError> {
+    #[cfg(target_os = "ios")]
+    {
+        let linked = mdoc_import::ocr::linked_runtimes()?;
+        Ok(Runtimes {
+            pdfium: linked.pdfium.display().to_string(),
+            onnx: linked.onnx.display().to_string(),
+        })
+    }
+    #[cfg(target_os = "android")]
+    {
+        let dir = android::library_dir().ok_or_else(|| CoreError::Ocr {
+            message: "The app's native libraries are not extracted.".into(),
+        })?;
+        let runtimes = Runtimes {
+            pdfium: dir.join("libpdfium.so").display().to_string(),
+            onnx: dir.join("libonnxruntime.so").display().to_string(),
+        };
+        for library in [&runtimes.pdfium, &runtimes.onnx] {
+            if !Path::new(library).is_file() {
+                return Err(CoreError::Ocr {
+                    message: format!(
+                        "{library} is missing: the app's native libraries are not extracted."
+                    ),
+                });
+            }
+        }
+        Ok(runtimes)
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    Err(CoreError::Ocr {
+        message: "Runtimes ship inside the app only on iOS and Android.".into(),
+    })
+}
+
+/// Where this library was loaded from, as the dynamic linker reports it.
+#[cfg(target_os = "android")]
+mod android {
+    use std::{
+        ffi::{CStr, c_char, c_int, c_void},
+        path::PathBuf,
+    };
+
+    #[repr(C)]
+    struct DlInfo {
+        fname: *const c_char,
+        fbase: *mut c_void,
+        sname: *const c_char,
+        saddr: *mut c_void,
+    }
+
+    unsafe extern "C" {
+        fn dladdr(address: *const c_void, info: *mut DlInfo) -> c_int;
+    }
+
+    /// The folder holding `libmdoc_ffi.so`; `None` when the linker reports
+    /// none, or a path inside the APK (libraries not extracted).
+    pub fn library_dir() -> Option<PathBuf> {
+        let mut info = DlInfo {
+            fname: std::ptr::null(),
+            fbase: std::ptr::null_mut(),
+            sname: std::ptr::null(),
+            saddr: std::ptr::null_mut(),
+        };
+        let address = library_dir as *const c_void;
+        // SAFETY: dladdr only reads the address and fills `info`; fname, when
+        // set, points to the linker's own NUL-terminated string.
+        if unsafe { dladdr(address, &mut info) } == 0 || info.fname.is_null() {
+            return None;
+        }
+        // SAFETY: checked non-null above; the linker keeps it alive.
+        let file = PathBuf::from(unsafe { CStr::from_ptr(info.fname) }.to_str().ok()?);
+        file.is_file()
+            .then(|| file.parent().map(PathBuf::from))
+            .flatten()
     }
 }
 

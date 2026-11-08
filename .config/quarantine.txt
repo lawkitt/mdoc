@@ -18,3 +18,12 @@ android:io.github.lawkitt.mdoc.OriginalTest#aPdfShowsItsOriginalPage  #537  2026
 # Flaked twice on unrelated changes, 2026-11-05/06.
 ios:mdocUITests/ReviewFlowUITests/testOpenReviewShareRestore  #638  2026-12-06
 ios:mdocUITests/ReviewToolsUITests/testHardwareKeysDriveTheBar  #640  2026-12-06
+
+# Flaked twice on unrelated changes, 2026-11-07/08: the job service race
+# crashes the process in the next test (#689).
+android:io.github.lawkitt.mdoc.ReviewFixesTest#aJobOutlivesTheScreenThatStartedIt  #689  2026-12-08
+
+# Flaked twice on hosted ci/ios in the merge queue on unrelated changes,
+# 2026-11-07/08: #699 (Find's hide button never showed) and #726 (Undo not
+# enabled after the K key); both passed locally.
+ios:mdocUITests/ReviewToolsUITests/testFindMarkAndTheBarsTools  #700  2026-12-08

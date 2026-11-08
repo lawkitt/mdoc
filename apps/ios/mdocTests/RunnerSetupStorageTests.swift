@@ -7,7 +7,7 @@ final class LongJobRunnerTests: XCTestCase {
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
         let gate = TestObserver()
         let first = Task {
-            await jobs.run(.scan, documentID: Fixture.letter, title: "first") { observer in
+            await jobs.run(.scan, documentID: DocumentID(rawValue: "letter"), title: "first") { observer in
                 while !gate.isCancelled() && !observer.isCancelled() {
                     Thread.sleep(forTimeInterval: 0.01)
                 }
@@ -15,7 +15,7 @@ final class LongJobRunnerTests: XCTestCase {
             }
         }
         while jobs.current == nil { await Task.yield() }
-        let second = await jobs.run(.scan, documentID: Fixture.quotation, title: "second") { _ in 2 }
+        let second = await jobs.run(.scan, documentID: DocumentID(rawValue: "quotation"), title: "second") { _ in 2 }
         guard case .busy = second else { return XCTFail("second job should be refused") }
         gate.cancel()
         guard case .finished(1) = await first.value else { return XCTFail("first job should finish") }
@@ -25,7 +25,7 @@ final class LongJobRunnerTests: XCTestCase {
     func testCancelEndsTheJobAsCancelled() async {
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
         let run = Task {
-            await jobs.run(.recognize, documentID: Fixture.tenancy, title: "job") { observer -> Int in
+            await jobs.run(.recognize, documentID: DocumentID(rawValue: "tenancy"), title: "job") { observer -> Int in
                 while !observer.isCancelled() {
                     Thread.sleep(forTimeInterval: 0.01)
                 }
@@ -42,7 +42,7 @@ final class LongJobRunnerTests: XCTestCase {
         let background = ExpiringContinuation()
         let jobs = LongJobRunner(background: background)
         let run = Task {
-            await jobs.run(.recognize, documentID: Fixture.tenancy, title: "job") { observer -> Int in
+            await jobs.run(.recognize, documentID: DocumentID(rawValue: "tenancy"), title: "job") { observer -> Int in
                 while !observer.isCancelled() {
                     Thread.sleep(forTimeInterval: 0.01)
                 }
@@ -52,7 +52,7 @@ final class LongJobRunnerTests: XCTestCase {
         while jobs.current == nil { await Task.yield() }
         background.expire()
         guard case .cancelled(.background) = await run.value else { return XCTFail("expected a background cancel") }
-        XCTAssertEqual(jobs.interrupted, InterruptedJob(kind: .recognize, documentID: Fixture.tenancy))
+        XCTAssertEqual(jobs.interrupted, InterruptedJob(kind: .recognize, documentID: DocumentID(rawValue: "tenancy")))
         XCTAssertTrue(background.ended)
     }
 
@@ -103,15 +103,15 @@ final class SetupViewModelTests: XCTestCase {
         memory: UInt64 = 8 * Fixture.gigabyte,
         downloadSeconds: Double = 0,
         downloader: (any ModelDownloader)? = nil
-    ) -> (SetupViewModel, UserDefaults) {
-        let defaults = UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)")!
+    ) -> (SetupViewModel, Preferences) {
+        let preferences = Fixture.preferences()
         let model = SetupViewModel(
-            setup: Fixture.core(modelsInstalled: false, memory: memory).setup,
+            setup: FakeSetup(memory: memory),
             downloader: downloader ?? FakeModelDownloader(seconds: downloadSeconds),
             network: network,
             jobs: LongJobRunner(background: NoBackgroundContinuation()),
-            defaults: defaults)
-        return (model, defaults)
+            preferences: preferences)
+        return (model, preferences)
     }
 
     func testWiFiDownloadsAndInstalls() async {
@@ -261,10 +261,10 @@ final class SetupViewModelTests: XCTestCase {
     }
 
     func testNotNowIsRemembered() {
-        let (model, defaults) = model()
+        let (model, preferences) = model()
         model.dismissCard()
         XCTAssertFalse(model.showsCard)
-        XCTAssertTrue(defaults.bool(forKey: SetupViewModel.dismissedKey))
+        XCTAssertTrue(preferences.setupCardDismissed)
     }
 }
 

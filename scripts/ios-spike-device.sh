@@ -29,7 +29,7 @@ else
 fi
 
 if [ "${MDOC_SPIKE_SKIP_BUILD:-0}" != 1 ]; then
-  scripts/build-ios-core.sh
+  MDOC_FFI_FEATURES=spike scripts/build-ios-core.sh
   scripts/ios-spike-data.sh ${MDOC_SPIKE_PROFILE:+"$MDOC_SPIKE_PROFILE"}
 fi
 

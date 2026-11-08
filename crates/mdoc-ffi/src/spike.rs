@@ -2,6 +2,7 @@
 //! the shared fixtures, measured against the detector budgets. The Swift
 //! harness (`tools/ios-spike`) and the Mac stand-in (`examples/spike.rs`)
 //! both call [`run`], so every platform measures the same code.
+pub use crate::setup::Runtimes;
 use crate::{CoreError, memory::Memory};
 use std::{
     path::{Path, PathBuf},
@@ -21,7 +22,8 @@ const PAGES: usize = 20;
 const PROBE_RUNS: usize = 5;
 
 /// Where [`run`] finds its inputs. Every path is read, never written.
-#[derive(Clone, Debug, uniffi::Record)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct SpikeInput {
     /// A copy of the fixtures, flat: `legal-opinion.docx`, `english.pdf`,
     /// `english.txt`, `russian.pdf` and `russian.txt`.
@@ -33,99 +35,8 @@ pub struct SpikeInput {
     pub runtimes: Runtimes,
 }
 
-/// The native libraries the core loads.
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
-pub struct Runtimes {
-    pub pdfium: String,
-    pub onnx: String,
-}
-
-/// The runtimes that ship inside the app. iOS: linked into it. Android: the
-/// APK's own `libpdfium.so` and `libonnxruntime.so` beside this library in
-/// the app's native library folder, which needs the APK to extract its
-/// libraries (`useLegacyPackaging`): PDFium is opened by file path (ADR
-/// 0089). Elsewhere there are none, and callers pass the desktop's
-/// downloaded libraries instead.
-#[uniffi::export]
-pub fn linked_runtimes() -> Result<Runtimes, CoreError> {
-    #[cfg(target_os = "ios")]
-    {
-        let linked = mdoc_import::ocr::linked_runtimes()?;
-        Ok(Runtimes {
-            pdfium: linked.pdfium.display().to_string(),
-            onnx: linked.onnx.display().to_string(),
-        })
-    }
-    #[cfg(target_os = "android")]
-    {
-        let dir = android::library_dir().ok_or_else(|| CoreError::Ocr {
-            message: "The app's native libraries are not extracted.".into(),
-        })?;
-        let runtimes = Runtimes {
-            pdfium: dir.join("libpdfium.so").display().to_string(),
-            onnx: dir.join("libonnxruntime.so").display().to_string(),
-        };
-        for library in [&runtimes.pdfium, &runtimes.onnx] {
-            if !Path::new(library).is_file() {
-                return Err(CoreError::Ocr {
-                    message: format!(
-                        "{library} is missing: the app's native libraries are not extracted."
-                    ),
-                });
-            }
-        }
-        Ok(runtimes)
-    }
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    Err(CoreError::Ocr {
-        message: "Runtimes ship inside the app only on iOS and Android.".into(),
-    })
-}
-
-/// Where this library was loaded from, as the dynamic linker reports it.
-#[cfg(target_os = "android")]
-mod android {
-    use std::{
-        ffi::{CStr, c_char, c_int, c_void},
-        path::PathBuf,
-    };
-
-    #[repr(C)]
-    struct DlInfo {
-        fname: *const c_char,
-        fbase: *mut c_void,
-        sname: *const c_char,
-        saddr: *mut c_void,
-    }
-
-    unsafe extern "C" {
-        fn dladdr(address: *const c_void, info: *mut DlInfo) -> c_int;
-    }
-
-    /// The folder holding `libmdoc_ffi.so`; `None` when the linker reports
-    /// none, or a path inside the APK (libraries not extracted).
-    pub fn library_dir() -> Option<PathBuf> {
-        let mut info = DlInfo {
-            fname: std::ptr::null(),
-            fbase: std::ptr::null_mut(),
-            sname: std::ptr::null(),
-            saddr: std::ptr::null_mut(),
-        };
-        let address = library_dir as *const c_void;
-        // SAFETY: dladdr only reads the address and fills `info`; fname, when
-        // set, points to the linker's own NUL-terminated string.
-        if unsafe { dladdr(address, &mut info) } == 0 || info.fname.is_null() {
-            return None;
-        }
-        // SAFETY: checked non-null above; the linker keeps it alive.
-        let file = PathBuf::from(unsafe { CStr::from_ptr(info.fname) }.to_str().ok()?);
-        file.is_file()
-            .then(|| file.parent().map(PathBuf::from))
-            .flatten()
-    }
-}
-
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct SpikeReport {
     pub core_version: String,
     pub runtimes: Runtimes,
@@ -146,7 +57,8 @@ pub struct SpikeReport {
 }
 
 /// The 20-page document: `legal-opinion.docx` converted in-process.
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct Conversion {
     pub source: String,
     pub conversion_seconds: f64,
@@ -157,7 +69,8 @@ pub struct Conversion {
 }
 
 /// One full 512-token window, timed on its own.
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct Probe {
     pub tokens: u64,
     pub bytes: u64,
@@ -170,7 +83,8 @@ pub struct Probe {
 }
 
 /// The real scan path over the 20-page document.
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct Scan {
     pub total_seconds: f64,
     pub verify_seconds: f64,
@@ -186,7 +100,8 @@ pub struct Scan {
     pub detections: u64,
 }
 
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct OcrRun {
     pub fixture: String,
     pub bundle: String,
@@ -201,7 +116,8 @@ pub struct OcrRun {
     pub error: Option<String>,
 }
 
-#[derive(Clone, Debug, serde::Serialize, uniffi::Record)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct Budget {
     pub name: String,
     pub limit: f64,
@@ -213,7 +129,7 @@ pub struct Budget {
 /// settings the platform set in the environment (`GLINER2_DEVICE`,
 /// `MDOC_DETECT_THREADS`): the Android spike times threads and XNNPACK with it.
 /// `fp32` probes the FP32 export at `input.model_root` instead of FP16.
-#[uniffi::export]
+#[cfg_attr(feature = "spike", uniffi::export)]
 pub fn probe(input: SpikeInput, fp32: bool) -> Result<Probe, CoreError> {
     let fixtures = PathBuf::from(&input.fixtures);
     let (_, text) = twenty_pages(&fixtures.join("legal-opinion.docx"))?;
@@ -232,7 +148,8 @@ pub fn probe(input: SpikeInput, fp32: bool) -> Result<Probe, CoreError> {
 }
 
 /// One pinned file of a detector export the apps do not offer.
-#[derive(Clone, Debug, uniffi::Record)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "spike", derive(uniffi::Record))]
 pub struct SpikeArtifact {
     /// Where it goes under the export's root.
     pub path: String,
@@ -244,7 +161,7 @@ pub struct SpikeArtifact {
 /// GLiNER2's FP32 export, the desktop's alternative to FP16, for the
 /// spike to fetch and time on phones: ONNX Runtime's CPU provider may run
 /// FP32 faster than FP16 on a phone. `probe` verifies the files.
-#[uniffi::export]
+#[cfg_attr(feature = "spike", uniffi::export)]
 pub fn fp32_artifacts() -> Vec<SpikeArtifact> {
     mdoc_detect::manifest_for(mdoc_store::settings::PiiModel::Fp32)
         .files
@@ -260,7 +177,7 @@ pub fn fp32_artifacts() -> Vec<SpikeArtifact> {
 
 /// Runs the whole spike once. Only conversion failing stops it; a detector
 /// or OCR failure is recorded in the report.
-#[uniffi::export]
+#[cfg_attr(feature = "spike", uniffi::export)]
 pub fn run(input: SpikeInput) -> Result<SpikeReport, CoreError> {
     let fixtures = PathBuf::from(&input.fixtures);
     let onnx = PathBuf::from(&input.runtimes.onnx);
@@ -312,7 +229,7 @@ pub fn run(input: SpikeInput) -> Result<SpikeReport, CoreError> {
 }
 
 /// The report as pretty JSON, the harness's output file.
-#[uniffi::export]
+#[cfg_attr(feature = "spike", uniffi::export)]
 pub fn report_json(report: SpikeReport) -> String {
     serde_json::to_string_pretty(&report).expect("a report serializes")
 }

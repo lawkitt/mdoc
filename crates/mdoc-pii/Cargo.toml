@@ -17,6 +17,9 @@ regex = "1"
 markdown = "1"
 # NFC for the text detection reads: decomposed letters compose (ADR 0092).
 unicode-normalization = "=0.1.26"
+# Grapheme clusters for `view::occurrences`, as the platforms' string search
+# matches whole characters.
+unicode-segmentation = "1"
 mdoc-history = { path = "../mdoc-history" }
 
 [dev-dependencies]

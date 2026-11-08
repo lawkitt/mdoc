@@ -242,7 +242,21 @@ final class BackgroundModelDownloader: NSObject, ModelDownloader, URLSessionDown
     }
 }
 
-/// Pretends to download, for previews and tests: no network call.
+/// The downloader of a core that could not open: it has no model to offer,
+/// so nothing ever asks it.
+struct NoModelDownloader: ModelDownloader {
+    func download(
+        _ request: ModelDownloadRequest,
+        allowCellular: Bool,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        throw CoreError.notFound
+    }
+}
+
+#if DEBUG
+/// Pretends to download, for previews, tests and UI tests: no network call.
+/// Never in a Release build.
 struct FakeModelDownloader: ModelDownloader {
     var seconds: Double = 2
 
@@ -254,6 +268,7 @@ struct FakeModelDownloader: ModelDownloader {
         let steps = 20
         for step in 1...steps {
             if seconds > 0 {
+                // timing: the fake download's pretend length, for previews and timing tests (ADR 0104)
                 try await Task.sleep(for: .seconds(seconds / Double(steps)))
             }
             try Task.checkCancellation()
@@ -264,3 +279,4 @@ struct FakeModelDownloader: ModelDownloader {
         return file
     }
 }
+#endif

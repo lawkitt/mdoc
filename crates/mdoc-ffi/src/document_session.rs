@@ -5,21 +5,26 @@
 //! case. Long jobs report their
 //! stage to the platform and stop when it cancels; the platform runs them
 //! off its main thread.
+mod actions;
 mod intake;
 mod review;
+mod saving;
 mod snapshot;
 
 use crate::{
     CoreError,
-    library::{CaseInfo, Library, RestoredReply, TextRange},
+    library::{CaseInfo, Library, Recorded, RenamedDocument, RestoredReply, Stamp, TextRange},
     setup::{DetectorPaths, OcrPaths},
 };
+pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 use mdoc_pii::restore::RestoreMap;
+pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
+pub use saving::SavedChange;
 pub use snapshot::{
-    Category, CategoryChoice, HistoryStep, IdentityRow, LinkHint, Mention, MentionState,
-    ReviewSnapshot,
+    Category, CategoryChoice, DocumentPhase, HistoryStep, IdentityRow, LinkHint, Mention,
+    MentionState, ReviewSnapshot,
 };
 use std::{
     collections::HashSet,
@@ -99,14 +104,63 @@ struct Document {
     /// while the case still holds exactly these, no other document changed
     /// it, and saving needs no join that could undo this one's own steps.
     synced: Option<Vec<mdoc_store::cases::StoredIdentity>>,
+    /// Scanned, or names proposed some other way, even if none were found.
+    scanned: bool,
+    /// `ReviewText::change_key` at the last save: equal now, nothing
+    /// changed since, and a save would write what is there.
+    saved: Option<((u64, u64, usize), bool)>,
+    /// A `save_pending` joined the case again, and no save has told the
+    /// app yet (`SavedChange::rejoined`).
+    rejoined: bool,
 }
 
 #[derive(uniffi::Object)]
 pub struct DocumentSession {
     document: Mutex<Option<Document>>,
-    /// The running job's cancel flag.
-    job: Mutex<Arc<AtomicBool>>,
+    job: Mutex<Jobs>,
     generation: Mutex<u64>,
+    /// One save at a time (`lock_saving`).
+    saving: Mutex<()>,
+}
+
+/// The session's jobs, one at a time: a new job stops the one before. Its
+/// lock is held only for a moment, never across a job's work nor while
+/// waiting for another lock, so `cancel`, `cancel_job` and `next_job`
+/// return at once from any thread.
+#[derive(Default)]
+struct Jobs {
+    /// The latest job's cancel flag.
+    flag: Arc<AtomicBool>,
+    /// Bumped by every job, so a job that ends knows whether it is the latest.
+    id: u64,
+    /// The latest job has not ended.
+    running: bool,
+    /// `cancel_job` named the next job before it started: it starts
+    /// cancelled.
+    pending: Option<u64>,
+}
+
+/// A running job's cancel flag; dropping it ends the job.
+struct Job<'a> {
+    session: &'a DocumentSession,
+    id: u64,
+    flag: Arc<AtomicBool>,
+}
+
+impl std::ops::Deref for Job<'_> {
+    type Target = Arc<AtomicBool>;
+    fn deref(&self) -> &Arc<AtomicBool> {
+        &self.flag
+    }
+}
+
+impl Drop for Job<'_> {
+    fn drop(&mut self) {
+        let mut jobs = self.session.lock_job();
+        if jobs.id == self.id {
+            jobs.running = false;
+        }
+    }
 }
 
 #[uniffi::export]
@@ -115,8 +169,9 @@ impl DocumentSession {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             document: Mutex::new(None),
-            job: Mutex::new(Arc::new(AtomicBool::new(false))),
+            job: Mutex::new(Jobs::default()),
             generation: Mutex::new(0),
+            saving: Mutex::new(()),
         })
     }
 
@@ -186,14 +241,22 @@ impl DocumentSession {
         path: String,
     ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
+        // Stamped before they are read: counts recorded with these stamps
+        // are never of anything newer.
+        let stamp = Stamp::of_file(Path::new(&path));
+        let case_stamps = library.case_stamps();
+        let read = library.document_state(Path::new(&path));
         let stored = mdoc_store::document::Document::open(PathBuf::from(&path))?;
         let member = library.member(Path::new(&path));
         let case = library
             .cases_raw()
             .into_iter()
             .find(|case| case.members.contains(&member));
+        let case_mark = case
+            .as_ref()
+            .map(|case| (case.id.clone(), case_stamps.get(&case.id).copied()));
         let imported = intake::Imported {
-            title: intake::title(Path::new(&path)),
+            title: crate::library::title_of(Path::new(&path)),
             markdown: stored.saved.clone(),
             warning: None,
             kept: None,
@@ -202,14 +265,66 @@ impl DocumentSession {
             path: stored.path.clone(),
             stored,
             case,
+            scanned: read.as_ref().map(|s| s.scanned),
         };
-        self.open(imported, &cancel, Some(opened))
+        let snapshot = self.open(imported, &cancel, Some(opened))?;
+        #[cfg(test)]
+        if let Some(hook) = library
+            .before_record
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            hook();
+        }
+        // Its summary, as it opened; best effort, as only lists read it,
+        // and never waiting for a save in progress.
+        if let Some(lock) = library.try_lock() {
+            let counts = Counts {
+                proposed: snapshot.proposed,
+                replaced: snapshot.replaced,
+                kept: snapshot.kept,
+            };
+            let summary = Recorded::of(counts, stamp, case_mark);
+            let _ = library.record_opened(
+                &lock,
+                Path::new(&path),
+                read.as_ref(),
+                snapshot.scanned,
+                summary,
+            );
+        }
+        Ok(snapshot)
     }
 
     /// Stop the running import or scan; it fails with `CoreError::Cancelled`
     /// at its next checkpoint (model loads and native calls finish first).
+    /// With no job running it does nothing, so a cancel that comes late
+    /// never stops a later job; to stop a job that may not have started
+    /// yet, use `cancel_job(next_job())`.
     pub fn cancel(&self) {
-        self.lock_job().store(true, Ordering::Relaxed);
+        let jobs = self.lock_job();
+        if jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// The id the next job (import, open or scan) gets: take it just
+    /// before the call, and `cancel_job` stops that job whenever the cancel
+    /// comes, before it starts or while it runs (#680).
+    pub fn next_job(&self) -> u64 {
+        self.lock_job().id + 1
+    }
+
+    /// Stop job `job` (`next_job`): the running one now, the next one as
+    /// it starts; one that ended, or a later one, is left alone.
+    pub fn cancel_job(&self, job: u64) {
+        let mut jobs = self.lock_job();
+        if job == jobs.id && jobs.running {
+            jobs.flag.store(true, Ordering::Relaxed);
+        } else if job == jobs.id + 1 {
+            jobs.pending = Some(job);
+        }
     }
 
     pub fn snapshot(&self) -> Result<ReviewSnapshot, CoreError> {
@@ -445,15 +560,7 @@ impl DocumentSession {
     /// A name for the shared `.md` file: the title with this document's
     /// known originals replaced by their aliases.
     pub fn share_file_name(&self) -> Result<String, CoreError> {
-        self.read_document(|document| {
-            let map = RestoreMap::new(document.review.review.export_identities());
-            let (title, _) = map.pseudonymize(&document.title);
-            let title: String = title
-                .chars()
-                .map(|c| if "/\\:".contains(c) { '-' } else { c })
-                .collect();
-            format!("{}.md", title.trim())
-        })
+        self.read_document(Document::share_file_name)
     }
 
     /// Restore an AI reply with this document's mapping, as desktop's reply
@@ -476,6 +583,7 @@ impl DocumentSession {
         case_id: String,
     ) -> Result<ReviewSnapshot, CoreError> {
         let case = library.load(&case_id)?;
+        let _saving = self.lock_saving();
         self.with_document(|document| match &document.case {
             Some(joined) if *joined == case_id => Ok(()),
             Some(_) => Err(CoreError::case("This document is in another case.")),
@@ -499,68 +607,79 @@ impl DocumentSession {
     /// document added meanwhile keep their aliases and this one's move to
     /// free numbers; one library write lock covers the whole save.
     pub fn save(&self, library: Arc<Library>) -> Result<SavedDocument, CoreError> {
+        let _saving = self.lock_saving();
+        let mut guard = self.lock_document();
+        guard.as_mut().ok_or_else(no_document)?.save(&library)
+    }
+
+    /// Rename…: this document's title, as `Library::rename_document` does
+    /// for a saved one, keeping the session on its renamed file with its
+    /// review and history. Not saved yet, only the title changes, and its
+    /// case with it while the case is still empty and named after it.
+    pub fn rename_document(
+        &self,
+        library: Arc<Library>,
+        title: String,
+    ) -> Result<RenamedDocument, CoreError> {
+        let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
         let lock = library.lock()?;
-        let path = match &document.path {
-            Some(path) => path.clone(),
-            None => {
-                let path = library.reserve_document_path(&document.title)?;
-                document.path = Some(path.clone());
-                path
-            }
+        let renamed = match &document.path {
+            Some(path) => library.rename_locked(&lock, path, &title)?,
+            None => library.rename_unsaved_locked(
+                &lock,
+                document.case.as_deref(),
+                &document.title,
+                &title,
+            )?,
         };
-        let member = library.member(&path);
-        library.refuse_other_case(&member, document.case.as_deref().unwrap_or_default())?;
-        let case = match document.case.clone() {
-            Some(id) => library.edit_locked(&lock, &id, |case| {
-                // Only a case another document changed since is joined
-                // again: joining against this document's own last save would
-                // take back what Undo just reverted.
-                if document.synced.as_ref() != Some(&case.identities) {
-                    document
-                        .review
-                        .join(&case.exported(), &case.reserved_aliases())?;
-                    document.review.dismiss_pairs(&case.dismissed_hints);
-                }
-                document.stored.save(path.clone(), &document.review.text)?;
-                let before = case.clone();
-                case.merge(&document.review.review.export_identities());
-                if !case.members.contains(&member) {
-                    case.members.push(member.clone());
-                }
-                for (a, b) in document.review.dismissed_pairs() {
-                    let pair = (a, b);
-                    let flipped = (pair.1.clone(), pair.0.clone());
-                    if !case.dismissed_hints.contains(&pair)
-                        && !case.dismissed_hints.contains(&flipped)
-                    {
-                        case.dismissed_hints.push(pair);
-                    }
-                }
-                document.synced = Some(case.identities.clone());
-                Ok(*case != before)
-            })?,
-            None => {
-                document.stored.save(path.clone(), &document.review.text)?;
-                let mut case = mdoc_store::cases::Case::new(
-                    document.title.clone(),
-                    &document.review.review.export_identities(),
-                    Some(member),
-                );
-                // Hints dismissed before the case existed stay dismissed.
-                case.dismissed_hints = document.review.dismissed_pairs();
-                document.synced = Some(case.identities.clone());
-                library.create_locked(&lock, case)?
-            }
-        };
-        document.case = Some(case.id.clone());
-        Ok(SavedDocument {
-            path: path.display().to_string(),
-            case,
-            review: document.snapshot(),
-        })
+        if let Some(path) = &renamed.path {
+            let path = PathBuf::from(path);
+            document.stored.path = Some(std::path::absolute(&path)?);
+            document.path = Some(path);
+        }
+        document.title = renamed.title.clone();
+        Ok(renamed)
     }
+}
+
+/// The text of a document moving from case `from` (if any) into case `to`,
+/// and the identities it brings: opened in `from` as a reopened member is,
+/// then joined to `to` (`plan_join`), so names `to` knows take its aliases,
+/// clashing aliases its next free numbers, and the text is rewritten with
+/// them. The identities carry no earlier aliases: those name `from`'s
+/// history, which can mean other people in `to`.
+pub(crate) fn realias(
+    text: &str,
+    from: Option<&mdoc_store::cases::Case>,
+    to: &mdoc_store::cases::Case,
+) -> Result<(String, Vec<mdoc_pii::restore::ExportedIdentity>), CoreError> {
+    let mut review = ReviewText::new(text.to_owned());
+    if let Some(from) = from {
+        review.open_case(&from.exported(), &from.reserved_aliases());
+    }
+    review.join(&to.exported(), &to.reserved_aliases())?;
+    let mut exported = review.review.export_identities();
+    for identity in &mut exported {
+        identity.previous.clear();
+    }
+    Ok((review.text, exported))
+}
+
+/// What `open_document` would count in a stored document with `text`, in
+/// `case` if any, without a session, and whether it has any mention (how
+/// `open_document` tells a document without a record was scanned): what a
+/// summary falls back to.
+pub(crate) fn reopened_counts(
+    text: String,
+    case: Option<&mdoc_store::cases::Case>,
+) -> (Counts, bool) {
+    let mut review = ReviewText::new(text);
+    if let Some(case) = case {
+        review.open_case(&case.exported(), &case.reserved_aliases());
+    }
+    (review.counts(), review.has_mentions())
 }
 
 /// What a document the library keeps brings when it is opened.
@@ -568,39 +687,61 @@ struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
     case: Option<mdoc_store::cases::Case>,
+    /// What its last save recorded; `None` for a document saved before
+    /// the library kept it.
+    scanned: Option<bool>,
 }
 
 impl Document {
-    fn snapshot(&self) -> ReviewSnapshot {
+    /// `DocumentSession::share_file_name`.
+    fn share_file_name(&self) -> String {
+        let map = RestoreMap::new(self.review.review.export_identities());
+        let (title, _) = map.pseudonymize(&self.title);
+        let title: String = title
+            .chars()
+            .map(|c| if "/\\:".contains(c) { '-' } else { c })
+            .collect();
+        format!("{}.md", title.trim())
+    }
+
+    /// Changes when the review does, or when the document is first scanned.
+    fn change_key(&self) -> ((u64, u64, usize), bool) {
+        (self.review.change_key(), self.scanned)
+    }
+
+    fn snapshot(&mut self) -> ReviewSnapshot {
+        self.review.sync_ids();
         snapshot::of(
             &self.title,
             self.warning.as_deref(),
             &self.review,
             self.case.as_deref(),
+            self.scanned,
         )
     }
 
     /// Scan results, minus the categories the case skips
-    /// (`complete_pii_scan`).
+    /// (`complete_pii_scan`). The document counts as scanned after.
     fn ingest(&mut self, mut detections: Vec<mdoc_pii::Detection>) -> Result<(), CoreError> {
         detections.retain(|d| !self.skip.contains(&d.category));
-        self.review.ingest(detections)
+        self.review.ingest(detections)?;
+        self.scanned = true;
+        Ok(())
     }
 }
 
 impl DocumentSession {
     /// Make `imported` the session's document, unless its job was
-    /// cancelled or a newer job started: then the current one stays.
+    /// cancelled or a newer job started: then the current one stays. The
+    /// document is built first, with no lock held: the job lock is only
+    /// ever held for a moment, so `cancel` from the platform's main thread
+    /// never waits on a job's work.
     fn open(
         &self,
         imported: intake::Imported,
-        cancel: &Arc<AtomicBool>,
+        cancel: &Job,
         opened: Option<Opened>,
     ) -> Result<ReviewSnapshot, CoreError> {
-        let job = self.lock_job();
-        if !Arc::ptr_eq(&job, cancel) || cancel.load(Ordering::Relaxed) {
-            return Err(CoreError::Cancelled);
-        }
         let generation = {
             let mut generation = self.generation.lock().unwrap_or_else(|e| e.into_inner());
             *generation += 1;
@@ -617,6 +758,9 @@ impl DocumentSession {
             stored: mdoc_store::document::Document::default(),
             generation,
             synced: None,
+            scanned: false,
+            saved: None,
+            rejoined: false,
         };
         if let Some(opened) = opened {
             document.path = opened.path;
@@ -630,26 +774,50 @@ impl DocumentSession {
                 document.synced = Some(case.identities.clone());
                 document.case = Some(case.id);
             }
+            // Saved before scans were recorded: scanned when it has
+            // mentions, as the apps used to tell.
+            document.scanned = opened
+                .scanned
+                .unwrap_or_else(|| document.review.has_mentions());
+            // As saved: nothing to save until something changes.
+            document.saved = Some(document.change_key());
         }
         let snapshot = document.snapshot();
-        *self.lock_document() = Some(document);
+        // The document lock, then the job's check: a newer job that starts
+        // after the check opens its document after this one, in this order.
+        let mut slot = self.lock_document();
+        {
+            let jobs = self.lock_job();
+            if jobs.id != cancel.id || cancel.load(Ordering::Relaxed) {
+                return Err(CoreError::Cancelled);
+            }
+        }
+        *slot = Some(document);
+        drop(slot);
         // Taken: an import rejected before this point keeps its OCR pages.
         if let Some(kept) = imported_kept {
             kept.remove();
         }
-        drop(job);
         Ok(snapshot)
     }
 
-    /// A new job: the one before stops at its next checkpoint.
-    fn start_job(&self) -> Arc<AtomicBool> {
-        let mut job = self.lock_job();
-        job.store(true, Ordering::Relaxed);
-        *job = Arc::new(AtomicBool::new(false));
-        job.clone()
+    /// A new job: the one before stops at its next checkpoint, and a
+    /// `cancel_job` that named this one before it started stops it.
+    fn start_job(&self) -> Job<'_> {
+        let mut jobs = self.lock_job();
+        jobs.flag.store(true, Ordering::Relaxed);
+        jobs.id += 1;
+        let cancelled = jobs.pending.take() == Some(jobs.id);
+        jobs.flag = Arc::new(AtomicBool::new(cancelled));
+        jobs.running = true;
+        Job {
+            session: self,
+            id: jobs.id,
+            flag: jobs.flag.clone(),
+        }
     }
 
-    fn lock_job(&self) -> MutexGuard<'_, Arc<AtomicBool>> {
+    fn lock_job(&self) -> MutexGuard<'_, Jobs> {
         self.job.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -792,6 +960,123 @@ mod tests {
             assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
         }
         assert_eq!(session.snapshot().unwrap().text, "Newer");
+        // A cancel during that job stopped it, and only it.
+        let next = session.import_file(path.display().to_string(), ImportOptions::default(), None);
+        assert_eq!(next.unwrap().text, "Older");
+    }
+
+    /// #680: a cancel for the job about to start stops it, for an import
+    /// and for a scan; the job after it runs.
+    #[test]
+    fn a_cancel_just_before_a_job_stops_it() {
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee, ann@example.com.").unwrap();
+        let import = |session: &DocumentSession| {
+            session.import_file(path.display().to_string(), ImportOptions::default(), None)
+        };
+        let session = session("Current", "Current");
+        session.cancel_job(session.next_job());
+        let result = import(&session);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        import(&session).unwrap();
+        session.cancel_job(session.next_job());
+        let result = session.scan(None, None);
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert!(session.snapshot().unwrap().mentions.is_empty());
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+    }
+
+    /// A job blocked in its progress callback, until released.
+    struct Blocked {
+        entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl JobProgress for Blocked {
+        fn stage(&self, _: JobStage) {
+            if let Some(entered) = self.entered.lock().unwrap().take() {
+                entered.send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+            }
+        }
+        fn advanced(&self, _: u64, _: u64) {}
+    }
+
+    /// What the platforms call from their main thread returns at once
+    /// while a job runs: Android cancels from it, and a blocked main thread
+    /// misses the system's deadlines.
+    #[test]
+    fn main_thread_calls_never_wait_for_a_running_job() {
+        use std::{
+            sync::mpsc,
+            time::{Duration, Instant},
+        };
+        let scratch = Scratch::new();
+        let path = scratch.path().join("old.md");
+        std::fs::write(&path, "Ann Lee wrote.").unwrap();
+        let session = session("Current", "Current");
+        let (entered, on_enter) = mpsc::channel();
+        let (release, on_release) = mpsc::channel();
+        let progress = Blocked {
+            entered: Mutex::new(Some(entered)),
+            release: Mutex::new(on_release),
+        };
+        let job = {
+            let session = session.clone();
+            let path = path.display().to_string();
+            std::thread::spawn(move || {
+                session.import_file(path, ImportOptions::default(), Some(Box::new(progress)))
+            })
+        };
+        on_enter.recv_timeout(Duration::from_secs(10)).unwrap();
+        let began = Instant::now();
+        session.cancel();
+        let next = session.next_job();
+        session.cancel_job(next - 1);
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+        assert_eq!(session.info().unwrap().title, "Current");
+        let took = began.elapsed();
+        assert!(took < Duration::from_millis(500), "{took:?}");
+        release.send(()).unwrap();
+        let result = job.join().unwrap();
+        assert!(matches!(result, Err(CoreError::Cancelled)), "{result:?}");
+        assert_eq!(session.snapshot().unwrap().text, "Current");
+    }
+
+    /// The cancel calls never wait for the document, which a save or a
+    /// scan's last step holds.
+    #[test]
+    fn cancel_never_waits_for_the_document() {
+        use std::{sync::mpsc, time::Duration};
+        let session = session("Current", "Current");
+        let held = session.lock_document();
+        let (done, finished) = mpsc::channel();
+        let other = session.clone();
+        std::thread::spawn(move || {
+            other.cancel();
+            other.cancel_job(other.next_job());
+            done.send(()).unwrap();
+        });
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+        drop(held);
+    }
+
+    /// may while the app saves, never stops the next job.
+    #[test]
+    fn a_cancel_after_a_job_ended_leaves_the_next_one() {
+        let session = DocumentSession::new();
+        let job = session.next_job();
+        session
+            .import_text("Ann Lee, ann@example.com.".into(), "Letter".into())
+            .unwrap();
+        session.cancel_job(job);
+        session.cancel();
+        assert_eq!(session.scan(None, None).unwrap().mentions.len(), 1);
+        // A ticket for a job two ahead is no ticket.
+        session.cancel_job(session.next_job() + 1);
+        session.scan(None, None).unwrap();
     }
 
     /// Save → reopen from the library → share → restore → save: the file
@@ -1123,6 +1408,350 @@ mod tests {
         let row = undone.identities.iter().find(|i| i.id == mailbox).unwrap();
         assert_eq!(row.owner, None);
         assert_eq!(undone.redo_step.unwrap().kind, StepKind::Owner);
+    }
+
+    /// `text` with `names` replaced, saved into a case of its own.
+    fn saved(library: &Arc<Library>, text: &str, names: &[&str], title: &str) -> SavedDocument {
+        let session = session(text, title);
+        for name in names {
+            select(&session, name);
+        }
+        session.replace_all().unwrap();
+        session.save(library.clone()).unwrap()
+    }
+
+    fn restored(library: &Library, case: &str, reply: &str) -> String {
+        library.restore(case.into(), reply.into()).unwrap().text
+    }
+
+    /// Moving re-aliases the document for the case it joins (`plan_join`):
+    /// a shared name takes the case's alias, a clashing one the next free
+    /// number, and the case's other names are proposed. The case it left
+    /// keeps its names and the reply kept for it. Moving back gives the
+    /// names their old aliases and takes out of the case it leaves the
+    /// names the move added there.
+    #[test]
+    fn a_moved_document_takes_the_cases_aliases() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let letter = saved(
+            &library,
+            "Ann Lee wrote to Bob Hart about Carl Diaz.",
+            &["Ann Lee", "Bob Hart"],
+            "Letter",
+        );
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote to PERSON_2 about Carl Diaz."
+        );
+        let reply = "PERSON_1 thanks PERSON_2.";
+        library
+            .save_reply(letter.case.id.clone(), letter.path.clone(), reply.into())
+            .unwrap();
+        let memo = saved(
+            &library,
+            "Bob Hart met Carl Diaz.",
+            &["Bob Hart", "Carl Diaz"],
+            "Memo",
+        );
+        let moved = library
+            .move_document(letter.path.clone(), memo.case.id.clone())
+            .unwrap();
+        assert_eq!(moved.path, letter.path);
+        assert_eq!(moved.case.id, memo.case.id);
+        assert_eq!(
+            moved.case.documents,
+            [memo.path.clone(), letter.path.clone()]
+        );
+        assert_eq!(moved.added, ["PERSON_3"], "Ann; Bob and Carl were known");
+        let left = moved.left.unwrap();
+        assert_eq!(left.id, letter.case.id);
+        assert!(left.documents.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_3 wrote to PERSON_1 about Carl Diaz."
+        );
+        assert_eq!(
+            restored(&library, &memo.case.id, "PERSON_3, PERSON_1, PERSON_2."),
+            "Ann Lee, Bob Hart, Carl Diaz."
+        );
+        // The case left restores replies to what was sent before, and keeps
+        // the reply; the document has none in its new case.
+        assert_eq!(
+            restored(&library, &letter.case.id, reply),
+            "Ann Lee thanks Bob Hart."
+        );
+        let stored = library.load(&letter.case.id).unwrap();
+        assert_eq!(stored.replies.len(), 1);
+        assert_eq!(
+            library
+                .reply(memo.case.id.clone(), letter.path.clone())
+                .unwrap(),
+            None
+        );
+        // Reopened, it is in its new case, with the case's other name proposed.
+        let reopened = DocumentSession::new()
+            .open_document(library.clone(), letter.path.clone())
+            .unwrap();
+        assert_eq!(reopened.case_id, Some(memo.case.id.clone()));
+        assert_eq!(reopened.replaced, 2);
+        assert!(
+            reopened
+                .mentions
+                .iter()
+                .any(|m| m.original == "Carl Diaz" && m.alias.as_deref() == Some("PERSON_2"))
+        );
+        assert_eq!(
+            library
+                .documents()
+                .unwrap()
+                .iter()
+                .find(|d| d.path == letter.path)
+                .unwrap()
+                .case_id,
+            Some(memo.case.id.clone())
+        );
+        // Undo: moving back gives the names their old aliases, the reply is
+        // the document's again, and Memo's case forgets Ann.
+        let back = library
+            .move_back(
+                letter.path.clone(),
+                letter.case.id.clone(),
+                moved.added.clone(),
+            )
+            .unwrap();
+        assert_eq!(back.case.id, letter.case.id);
+        assert_eq!(
+            back.left.unwrap().documents,
+            std::slice::from_ref(&memo.path)
+        );
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote to PERSON_2 about Carl Diaz."
+        );
+        assert_eq!(
+            library
+                .reply(letter.case.id.clone(), letter.path.clone())
+                .unwrap(),
+            Some(reply.into())
+        );
+        assert_eq!(
+            restored(&library, &letter.case.id, "PERSON_1, PERSON_2."),
+            "Ann Lee, Bob Hart."
+        );
+        let memo_case = library.load(&memo.case.id).unwrap();
+        assert!(memo_case.identities.iter().all(|i| i.alias != "PERSON_3"));
+        assert_eq!(memo_case.identities.len(), 2);
+        let memo_reopened = DocumentSession::new()
+            .open_document(library.clone(), memo.path.clone())
+            .unwrap();
+        assert!(
+            memo_reopened
+                .identities
+                .iter()
+                .all(|i| i.alias != "PERSON_3")
+        );
+    }
+
+    /// The case a document leaves stays, even empty (ADR 0041: a case is
+    /// deleted only on its own). Moving back keeps the names the move added
+    /// where something still uses them: another document of that case, or
+    /// a reply to text shared from it (the current case).
+    #[test]
+    fn a_case_left_stays_and_moving_back_keeps_names_in_use() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+        let memo = saved(&library, "Bob Hart wrote.", &["Bob Hart"], "Memo");
+        let moved = library
+            .move_document(letter.path.clone(), memo.case.id.clone())
+            .unwrap();
+        assert_eq!(moved.added, ["PERSON_2"]);
+        assert!(moved.left.unwrap().documents.is_empty());
+        assert_eq!(library.cases().cases.len(), 2);
+        assert_eq!(restored(&library, &letter.case.id, "PERSON_1"), "Ann Lee");
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_2 wrote."
+        );
+        // Another document of Memo's case names Ann now.
+        let note = self::session("Ann Lee called.", "Note");
+        note.join_case(library.clone(), memo.case.id.clone())
+            .unwrap();
+        select(&note, "Ann Lee");
+        note.replace_all().unwrap();
+        let note = note.save(library.clone()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&note.path).unwrap(),
+            "PERSON_2 called."
+        );
+        let back = library
+            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
+            .unwrap();
+        assert_eq!(back.case.id, letter.case.id);
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote."
+        );
+        assert_eq!(restored(&library, &memo.case.id, "PERSON_2"), "Ann Lee");
+        // Moved into a case shared since: a reply may name Ann there.
+        let other = saved(&library, "Dan Roe wrote.", &["Dan Roe"], "Other");
+        let moved = library
+            .move_document(letter.path.clone(), other.case.id.clone())
+            .unwrap();
+        assert_eq!(moved.added, ["PERSON_2"]);
+        library.note_shared(other.case.id.clone()).unwrap();
+        library
+            .move_back(letter.path.clone(), letter.case.id.clone(), moved.added)
+            .unwrap();
+        assert_eq!(restored(&library, &other.case.id, "PERSON_2"), "Ann Lee");
+        // Moving back into the case it is in is refused, as a move is.
+        assert!(matches!(
+            library.move_back(letter.path.clone(), letter.case.id.clone(), Vec::new()),
+            Err(CoreError::Case { .. })
+        ));
+    }
+
+    #[test]
+    fn a_move_into_its_own_or_a_missing_case_is_refused() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+        assert!(matches!(
+            library.move_document(letter.path.clone(), letter.case.id.clone()),
+            Err(CoreError::Case { .. })
+        ));
+        for id in ["0".repeat(32), "not an id".into()] {
+            assert!(matches!(
+                library.move_document(letter.path.clone(), id),
+                Err(CoreError::Case { .. })
+            ));
+        }
+        let outside = scratch.path().join("outside.md");
+        std::fs::write(&outside, "Ann Lee").unwrap();
+        assert!(matches!(
+            library.move_document(outside.display().to_string(), letter.case.id.clone()),
+            Err(CoreError::Invalid { .. })
+        ));
+        assert!(matches!(
+            library.move_document_to_new_case(letter.path.clone(), " ".into()),
+            Err(CoreError::Invalid { .. })
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote."
+        );
+        assert_eq!(
+            library.case_info(letter.case.id).unwrap().documents,
+            std::slice::from_ref(&letter.path)
+        );
+    }
+
+    /// New case…: the document's names keep their aliases in a case of
+    /// their own; the case it left stays.
+    #[test]
+    fn a_document_moves_into_a_new_case() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+        let moved = library
+            .move_document_to_new_case(letter.path.clone(), " Ivanov ".into())
+            .unwrap();
+        assert_eq!(moved.case.name, "Ivanov");
+        assert_eq!(moved.case.names, 1);
+        assert_eq!(moved.added, ["PERSON_1"]);
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote."
+        );
+        assert_eq!(restored(&library, &moved.case.id, "PERSON_1"), "Ann Lee");
+        assert_eq!(library.cases().cases.len(), 2);
+        assert!(
+            library
+                .case_info(letter.case.id)
+                .unwrap()
+                .documents
+                .is_empty()
+        );
+    }
+
+    /// A file that cannot be rewritten leaves the document in the case it
+    /// was in, and the case it was joining as it was.
+    #[test]
+    #[cfg(unix)]
+    fn a_move_whose_file_cannot_be_written_changes_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let letter = saved(&library, "Ann Lee wrote.", &["Ann Lee"], "Letter");
+        let memo = saved(&library, "Bob Hart wrote.", &["Bob Hart"], "Memo");
+        let before = library.load(&memo.case.id).unwrap();
+        let documents = library.documents_dir();
+        let mode = |mode| {
+            std::fs::set_permissions(&documents, std::fs::Permissions::from_mode(mode)).unwrap()
+        };
+        mode(0o555);
+        let result = library.move_document(letter.path.clone(), memo.case.id.clone());
+        mode(0o755);
+        assert!(matches!(result, Err(CoreError::Io { .. })), "{result:?}");
+        assert_eq!(
+            std::fs::read_to_string(&letter.path).unwrap(),
+            "PERSON_1 wrote."
+        );
+        let after = library.load(&memo.case.id).unwrap();
+        assert_eq!(
+            (&after.identities, &after.members),
+            (&before.identities, &before.members)
+        );
+        assert_eq!(
+            library.case_info(letter.case.id).unwrap().documents,
+            std::slice::from_ref(&letter.path)
+        );
+    }
+
+    /// Renaming an open document keeps its review and history; its next
+    /// save goes to the renamed file. Not saved yet, its case follows.
+    #[test]
+    fn an_open_document_is_renamed_in_place() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let session = session("Ann Lee wrote to Bob Hart.", "Sample: services agreement");
+        select(&session, "Ann Lee");
+        session.replace_all().unwrap();
+        let first = session.save(library.clone()).unwrap();
+        assert_eq!(first.case.name, "Sample: services agreement");
+        assert_eq!(
+            library.documents().unwrap()[0].title,
+            "Sample: services agreement"
+        );
+        let renamed = session
+            .rename_document(library.clone(), "Services: final".into())
+            .unwrap();
+        assert_eq!(renamed.case.unwrap().name, "Services: final");
+        let snapshot = session.snapshot().unwrap();
+        assert_eq!(snapshot.title, "Services: final");
+        assert!(snapshot.can_undo);
+        select(&session, "Bob Hart");
+        session.replace_all().unwrap();
+        let again = session.save(library.clone()).unwrap();
+        assert_eq!(Some(again.path.clone()), renamed.path);
+        assert_eq!(
+            std::fs::read_to_string(&again.path).unwrap(),
+            "PERSON_1 wrote to PERSON_2."
+        );
+        assert!(!Path::new(&first.path).exists());
+        assert_eq!(library.documents().unwrap().len(), 1);
+        // Before its first save: the title, and its empty case named after it.
+        let case = library.create_case("Draft".into()).unwrap();
+        let draft = self::session("Text.", "Draft");
+        draft.join_case(library.clone(), case.id.clone()).unwrap();
+        let renamed = draft
+            .rename_document(library.clone(), "Draft: two".into())
+            .unwrap();
+        assert_eq!(renamed.path, None);
+        assert_eq!(renamed.case.unwrap().name, "Draft: two");
+        let saved = draft.save(library.clone()).unwrap();
+        assert!(saved.path.ends_with("Draft\u{A789} two.md"));
     }
 
     #[test]

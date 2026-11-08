@@ -97,7 +97,7 @@ The tier comes from the phone's model: the iPhone 15 Pro (`iPhone16,x`) and
 every iPhone from the 16 on run `DeviceLongJobsUITests`; earlier phones run
 `DeviceBelowFloorUITests`, which also runs on any phone with `below-floor`, as
 UI tests take the tier from a stand-in memory size. Below the floor, Settings
-says the phone cannot find names and Home has no setup card; the scan's
+says the phone cannot find names and Start has no setup card; the scan's
 Download & continue fetches text recognition and recognizes the pages
 while the test leaves for ten seconds; where Find names would be, the
 document says so; a word selected and replaced as a person becomes
@@ -107,7 +107,7 @@ document says so; a word selected and replaced as a person becomes
 
 ### Accessibility audit
 
-`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Home,
+`AccessibilityAuditExploreUITests` runs Xcode's accessibility audit on Start,
 the review, the candidate sheet, Identities, the replaced document and the
 reply sheet, and prints each issue (`A11Y[screen] …` in the log) without
 failing. Run it in the Simulator with `TEST_RUNNER_MDOC_A11Y_EXPLORE=1` and
@@ -126,11 +126,11 @@ synchronized group, so adding a file needs no project edit.
 
 | Folder | Target | What it holds |
 | --- | --- | --- |
-| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's error |
-| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `FakeCore`, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
-| `mdoc/` | app | Home, the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
+| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's errors (`CoreError` and `ReviewError`, one case each) |
+| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
+| `mdoc/` | app | `App/`: the app model, the navigator and its one presenter, the open documents' models, the UI tests' seed; `Library/`: the library model, file intake, the sidebar, Start, Cases and Documents; the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
 | `RestoreExtension/` | Restore with mdoc | The share extension's entry point |
-| `mdocTests/`, `mdocUITests/` | tests | View models against `FakeCore`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
+| `mdocTests/`, `mdocUITests/` | tests | View models on the real core over temporary storage, with the fixtures and test doubles in `mdocTests/Support`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
 | `Config/` | — | Info.plist additions and entitlements |
 
 The app embeds `MdocFFI.framework` and `pdfium.framework`; the extension
@@ -148,10 +148,24 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 ## Rules
 
 - **Rust owns state.** View models keep the snapshots the core returns and
-  view state only; every change is a core call, and a document saves into
-  its case after each one. `CoreFactory` picks the core: `RealCore` in the
-  app and the extension, `FakeCore` (fictional fixtures, in memory) only in
-  the view-model tests.
+  view state only; every change is a core call. A review tap returns at
+  once and its change saves into the case right after, on a utility queue,
+  once the taps pause (`SaveScheduler`, the core's `save_pending`), or at
+  once when mdoc leaves the foreground, before Copy for AI and Share, and
+  when the document is left for another screen
+  ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)). `CoreFactory`
+  opens `RealCore` for the app and the extension.
+- **Tests run the real core** ([ADR 0104](../../docs/adr/0104-mobile-app-structure.md)):
+  over temporary storage with a fixed case key, below the detector floor so
+  no model is needed, the fixture's names proposed as Try a sample proposes
+  its own (`mdocTests/Support`). No test fakes the library or a document:
+  the core's stand-ins are a fake `Setup` for the download tests and
+  `SlowJobs`, a real session whose long jobs wait first, for the timing
+  tests; the platform's are the downloaders and the network
+  (`FakeModelDownloader`, `HeldDownloader`, `FakeNetwork`). Previews use the
+  real core and the sample document. Fakes, the fixed case key and the
+  previews' core are behind `#if DEBUG` or in the test targets: none ships
+  in the app or the extension.
 - **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
   offsets into the Markdown source; `TextOffsets` converts them for UIKit.
 - **The core recognizes Markdown.** `MarkdownStyling` asks the core for a
@@ -168,7 +182,8 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 - **A job that ends while the phone is locked** cannot write the library
   (Data Protection Complete). Its result stays in the session and is saved
   when the phone unlocks or mdoc comes back (`ProtectedData`,
-  `Library.saveDeferred`).
+  `Library.saveDeferred`), as is a tap's change whose save comes after the
+  lock.
 - **Locking the phone pauses a job.** Leaving mdoc does not: the continued
   processing task keeps Find names going (on the iPhone 17 Pro, 4% to 69%
   in 45 s away, which `DeviceLongJobsUITests` checks). With the phone
@@ -212,9 +227,10 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`); every visible string goes there.
 
-UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
-in the App Group (the extension follows it), its own case key, and a device
-below the detector floor, so no model is needed. The app imports the file in
+UI tests launch the app with `-mdoc-ui-testing` (`LaunchConfiguration`
+reads every UI-test flag once): a fresh library of its own in the App Group
+(the extension follows it), its own case key, its own preferences, and a
+device below the detector floor, so no model is needed. The app imports the file in
 `MDOC_SEED_FILE` (the demo DOCX, the Markdown-rich
 `tests/fixtures/mobile-markdown/review.md` as pasted text, or a folder of
 JPEG pages as a scan) and scans it at launch with the structured rules alone:

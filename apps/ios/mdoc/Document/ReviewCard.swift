@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 
 /// The swipeable card under review (ADR 0098): the category icon, the name
@@ -7,6 +8,10 @@ import SwiftUI
 struct ReviewCard: View {
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
+    /// False for a neighbor peeking in beside the card under review
+    /// (`ReviewPager`): drawn the same, but its controls take no taps, keys
+    /// or focus, and carry no test identifiers.
+    var isCurrent = true
 
     @State private var renaming = false
     @State private var draft = ""
@@ -36,12 +41,41 @@ struct ReviewCard: View {
                 categoryLabel: candidate.category.label) { model.sameAs($0) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("review-card")
+        .accessibilityIdentifier(id("review-card"))
+        .disabled(!isCurrent)
+        // A rename begun on this card ends when it slides aside, so its
+        // field never renames the card that took its place.
+        .onChange(of: isCurrent) { _, current in
+            if !current {
+                renaming = false
+                aliasFocused = false
+            }
+        }
+    }
+
+    /// A test identifier, on the card under review only: XCUITest also
+    /// lists the neighbors, which VoiceOver doesn't.
+    private func id(_ identifier: String) -> String {
+        isCurrent ? identifier : ""
     }
 
     // MARK: Line 1
 
+    /// One height whether or not the mentions chip shows: a hidden chip, no
+    /// wider than nothing, holds the row at the chip's height at every text
+    /// size, so the compact bar (and the text above it) keeps its height
+    /// from card to card.
     private var header: some View {
+        ZStack(alignment: .leading) {
+            Chip(Text(verbatim: "1 of 2"), systemImage: "arrow.down")
+                .fixedSize()
+                .frame(width: 0)
+                .hidden()
+            headerRow
+        }
+    }
+
+    private var headerRow: some View {
         HStack(spacing: Space.xs) {
             Image(systemName: candidate.category.symbol)
                 .foregroundStyle(candidate.category.color)
@@ -69,24 +103,18 @@ struct ReviewCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Mention \(mentions.index) of \(mentions.count)"))
                 .accessibilityHint(Text("Scrolls to this name's next mention."))
-                .accessibilityIdentifier("review-mentions")
+                .accessibilityIdentifier(id("review-mentions"))
             }
         }
     }
 
+    /// Replaced or kept, in the mention rows' round marks; nothing while
+    /// proposed.
     @ViewBuilder
     private var stateBadge: some View {
-        switch candidate.state {
-        case .replaced:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Palette.ready)
-                .accessibilityLabel(Text("Replaced"))
-        case .kept:
-            Image(systemName: "eye")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(Text("Kept"))
-        case .proposed:
-            EmptyView()
+        if candidate.state != .proposed {
+            StateMark(state: candidate.state)
+                .accessibilityLabel(Text(ReviewDetails.stateName(candidate.state)))
         }
     }
 
@@ -121,7 +149,7 @@ struct ReviewCard: View {
                         Image(systemName: choice.category.symbol)
                     }
                 }
-                .disabled(choice.isCurrent)
+                .disabled(choice.current)
             }
             // Belongs to… for contacts and identifiers, or once an owner is
             // set (ADR 0032).
@@ -152,7 +180,7 @@ struct ReviewCard: View {
             Chip(candidate.category.label, systemImage: candidate.category.symbol, tint: candidate.category.color, opensMenu: true)
         }
         .accessibilityLabel(Text("Category, \(candidate.category.label)"))
-        .accessibilityIdentifier("review-category")
+        .accessibilityIdentifier(id("review-category"))
     }
 
     private var ownerTitle: String {
@@ -183,7 +211,7 @@ struct ReviewCard: View {
             Chip(candidate.alias, opensMenu: true, monospaced: true)
         }
         .accessibilityLabel(Text("Alias, \(candidate.alias)"))
-        .accessibilityIdentifier("review-alias")
+        .accessibilityIdentifier(id("review-alias"))
     }
 
     /// Hinted identities first, then the same category, then the others; a
@@ -191,7 +219,7 @@ struct ReviewCard: View {
     @ViewBuilder
     private var sameAsMenu: some View {
         let targets = model.sameAsTargets(for: candidate)
-        if targets.all.count > 8 {
+        if targets.all.count > DocumentViewModel.sameAsListLimit {
             Button {
                 showsSameAsList = true
             } label: {
@@ -229,16 +257,16 @@ struct ReviewCard: View {
     private var scopeMenu: some View {
         let count = identity?.mentionCount ?? 1
         return Menu {
-            Picker("Scope", selection: $model.reviewScope) {
-                Text("All \(count)").tag(Scope.allOccurrences)
-                Text("This one").tag(Scope.justThisOne)
+            Picker("Scope", selection: Binding(get: { model.reviewScope }, set: { model.setScope($0) })) {
+                Text("All \(count)").tag(Scope.all)
+                Text("This one").tag(Scope.this)
             }
         } label: {
-            Chip(model.reviewScope == .allOccurrences ? Text("All \(count)") : Text("This one"), opensMenu: true)
+            Chip(model.reviewScope == .all ? Text("All \(count)") : Text("This one"), opensMenu: true)
         }
         .disabled(count < 2)
-        .accessibilityLabel(Text(model.reviewScope == .allOccurrences ? "Scope, all \(count) mentions" : "Scope, this one"))
-        .accessibilityIdentifier("review-scope")
+        .accessibilityLabel(Text(model.reviewScope == .all ? "Scope, all \(count) mentions" : "Scope, this one"))
+        .accessibilityIdentifier(id("review-scope"))
     }
 
     // MARK: Rename
@@ -256,7 +284,7 @@ struct ReviewCard: View {
                     .padding(.horizontal, Space.s)
                     .frame(minHeight: Size.chip)
                     .background(Palette.chipFill, in: Capsule())
-                    .accessibilityIdentifier("review-rename-field")
+                    .accessibilityIdentifier(id("review-rename-field"))
                 Button("Cancel") { renaming = false }
                     .frame(minHeight: Size.target)
                 Button("Rename", action: commitRename)
@@ -289,6 +317,7 @@ struct ReviewCard: View {
     }
 
     private func commitRename() {
+        guard isCurrent else { return }
         let outcome = model.rename(to: draft.trimmingCharacters(in: .whitespaces))
         if case .done = outcome {
             renaming = false
@@ -300,7 +329,7 @@ struct ReviewCard: View {
 
     // MARK: Merge hint
 
-    private func hintLine(_ hint: MergeHint) -> some View {
+    private func hintLine(_ hint: LinkHint) -> some View {
         HStack(spacing: Space.xs) {
             Image(systemName: "sparkles")
                 .foregroundStyle(.secondary)
@@ -316,7 +345,7 @@ struct ReviewCard: View {
                 Chip("Same as", systemImage: "link", tint: Palette.accent)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("review-hint-same-as")
+            .accessibilityIdentifier(id("review-hint-same-as"))
             Button {
                 model.dismissHint(hint)
             } label: {
@@ -328,7 +357,7 @@ struct ReviewCard: View {
             .accessibilityLabel(Text("Dismiss hint"))
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("review-hint")
+        .accessibilityIdentifier(id("review-hint"))
     }
 }
 
@@ -397,70 +426,33 @@ struct SameAsPicker: View {
     }
 }
 
-/// Swipe up: the identity's mentions with their context, and Keep all or
-/// Replace all for it (ADR 0098's expanded view).
+/// Pulled up: one row per mention of the identity under review, in
+/// document order. Each shows the words around the name, the name in its
+/// original wording, and the heading above it; a tap scrolls the text there,
+/// and the state pill changes that one mention (docs/mobile-ui.md).
 struct ReviewDetails: View {
     @Bindable var model: DocumentViewModel
     let candidate: Candidate
 
     var body: some View {
-        let mentions = model.snapshot.mentions(of: candidate.identityID).sorted { $0.range.start < $1.range.start }
-        // As tall as its content, scrolling only past the cap.
-        ViewThatFits(in: .vertical) {
-            content(mentions)
-            ScrollView { content(mentions) }
-                .scrollBounceBehavior(.basedOnSize)
-        }
-        .accessibilityIdentifier("review-details")
-    }
-
-    private func content(_ mentions: [Candidate]) -> some View {
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("Mentions (\(mentions.count))")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(mentions) { mention in
-                    Button {
-                        model.select(mention.id)
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
-                            Image(systemName: Self.symbol(mention.state))
-                                .foregroundStyle(mention.state == .replaced ? Palette.ready : .secondary)
-                                .accessibilityLabel(Text(Self.stateName(mention.state)))
-                            Text(model.context(of: mention))
-                                .font(Typography.caption)
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(.vertical, Space.xxs)
-                        .background(mention.id == candidate.id ? Palette.accent.opacity(0.08) : .clear)
-                    }
-                    .buttonStyle(.plain)
-                }
-                if mentions.count > 1 {
-                    HStack(spacing: Space.s) {
-                        Button("Keep all \(mentions.count)") {
-                            model.decideIdentity(.keep)
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Replace all \(mentions.count)") {
-                            model.decideIdentity(.replace)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding(.top, Space.xs)
+        let mentions = model.sortedMentions(of: candidate.identityID)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentions.enumerated()), id: \.element.id) { offset, mention in
+                MentionRow(
+                    snippet: model.snippet(of: mention), state: mention.state,
+                    isCurrent: mention.id == candidate.id, tint: candidate.category.color,
+                    onOpen: { model.openMention(mention.id) },
+                    onToggle: {
+                        model.decideMention(mention.id, mention.state == .replaced ? .keep : .replace)
+                    })
+                if offset < mentions.count - 1 {
+                    Divider().padding(.leading, Space.s)
                 }
             }
-            .padding(.vertical, Space.xs)
-    }
-
-    static func symbol(_ state: MentionState) -> String {
-        switch state {
-        case .proposed: "circle.dashed"
-        case .replaced: "checkmark.circle.fill"
-        case .kept: "eye"
         }
+        .padding(.vertical, Space.xxs)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("review-details")
     }
 
     static func stateName(_ state: MentionState) -> String {
@@ -469,5 +461,118 @@ struct ReviewDetails: View {
         case .replaced: String(localized: "Replaced")
         case .kept: String(localized: "Kept")
         }
+    }
+
+    static func symbol(_ state: MentionState) -> String {
+        switch state {
+        case .proposed: "circle.dashed"
+        case .replaced: "eye.slash"
+        case .kept: "eye"
+        }
+    }
+}
+
+/// One mention: its heading and words, the name highlighted as in the
+/// text, and a pill with its state.
+struct MentionRow: View {
+    let snippet: MentionSnippet
+    let state: MentionState
+    let isCurrent: Bool
+    let tint: Color
+    let onOpen: () -> Void
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s) {
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let heading = snippet.heading {
+                        Text(heading)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Text(words)
+                        .font(Typography.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(spoken))
+            .accessibilityHint(Text("Scrolls the text to it."))
+            Button(action: onToggle) {
+                StateButtonLabel(state: state)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(ReviewDetails.stateName(state)))
+            .accessibilityHint(Text(state == .replaced ? "Keeps this one." : "Replaces this one."))
+            .accessibilityIdentifier("mention-state")
+        }
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xxs)
+        .background(
+            isCurrent ? Palette.accent.opacity(0.08) : .clear,
+            in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+        .accessibilityIdentifier("mention-row")
+    }
+
+    /// The words, with the name bold on its category's highlight.
+    private var words: AttributedString {
+        var name = AttributedString(snippet.name)
+        name.inlinePresentationIntent = .stronglyEmphasized
+        name.backgroundColor = tint.opacity(0.18)
+        return AttributedString(snippet.before) + name + AttributedString(snippet.after)
+    }
+
+    private var spoken: String {
+        [snippet.heading, snippet.before + snippet.name + snippet.after]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+            .replacingOccurrences(of: "…", with: "")
+    }
+}
+
+/// A mention's or an identity's state as a round button, like Reminders'
+/// checkbox: a dashed ring while proposed, a filled accent disc once
+/// replaced, an eye once kept. The words are for VoiceOver.
+struct StateButtonLabel: View {
+    let state: MentionState
+
+    var body: some View {
+        StateMark(state: state)
+            // The whole 44-point square is the target.
+            .frame(width: Size.target, height: Size.target)
+            .contentShape(Rectangle())
+    }
+}
+
+/// The round mark itself, 26 points.
+struct StateMark: View {
+    let state: MentionState
+
+    var body: some View {
+        ZStack {
+            switch state {
+            case .proposed:
+                Circle()
+                    .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+            case .replaced:
+                Circle().fill(Palette.accent)
+                Image(systemName: "eye.slash.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Palette.onAccent)
+            case .kept:
+                Circle().fill(Palette.chipFill)
+                Image(systemName: "eye")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .frame(width: 26, height: 26)
     }
 }

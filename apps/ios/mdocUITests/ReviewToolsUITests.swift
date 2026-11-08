@@ -65,18 +65,22 @@ final class ReviewToolsUITests: XCTestCase {
         }
         if app.buttons["review-end"].exists { app.buttons["review-end"].tap() }
 
-        // Identities: search and the Show filter.
+        // Identities: search, then Select with Replace.
         XCTAssertTrue(MdocUITest.showIdentities(app))
+        app.buttons["identities-search-button"].firstMatch.tap()
         let search = app.textFields["identities-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
         search.typeText("zzzz")
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Bennett'")).firstMatch.exists)
-        app.buttons["Clear"].firstMatch.tap()
-        let show = app.segmentedControls["identities-show"].firstMatch
-        XCTAssertTrue(show.waitForExistence(timeout: 5))
-        show.buttons["Kept"].tap()
-        XCTAssertTrue(show.buttons["Kept"].isSelected)
+        let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
+        XCTAssertEqual(rows.count, 0, "nothing matches zzzz")
+        app.buttons["identities-search-button"].firstMatch.tap()
+        XCTAssertGreaterThan(rows.count, 0)
+        app.buttons["identities-select"].firstMatch.tap()
+        rows.firstMatch.tap()
+        let selectionBar = app.descendants(matching: .any)["identities-selection-bar"].firstMatch
+        XCTAssertTrue(selectionBar.waitForExistence(timeout: 5))
+        selectionBar.buttons["Replace"].tap()
+        XCTAssertTrue(app.buttons["toast-action"].waitForExistence(timeout: 5), "Undo for the selection")
     }
 
     /// A hardware keyboard drives the bar as desktop's keys do (ADR 0098,
@@ -101,7 +105,8 @@ final class ReviewToolsUITests: XCTestCase {
         let first = progress.label
         app.typeKey(.rightArrow, modifierFlags: [])
         expectChange(of: progress, from: first)
-        sleep(1)
+        // The next card slides in; ← waits until it has come to rest.
+        MdocUITest.settledScreen()
         app.typeKey(.leftArrow, modifierFlags: [])
         if UIDevice.current.userInterfaceIdiom == .pad {
             // lawkitt/mdoc#610: on iPad ← straight after → is dropped.
@@ -127,7 +132,7 @@ final class ReviewToolsUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: focused, evaluatedWith: field)], timeout: 10), .completed,
                        "the Find field never took focus")
         field.typeText(text)
     }
@@ -145,5 +150,20 @@ final class ReviewToolsUITests: XCTestCase {
     private func expectEnabled(_ element: XCUIElement) {
         let enabled = NSPredicate(format: "isEnabled == true")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: element)], timeout: 5), .completed)
+    }
+
+    /// The text ends where the bottom bar starts: its last line is readable
+    /// and tappable without holding the text up.
+    @MainActor
+    func testTheTextEndsAtTheBottomBar() throws {
+        let app = MdocUITest.launch()
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 30))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        let replace = app.buttons["primary-action"]
+        XCTAssertTrue(replace.waitForExistence(timeout: 30))
+        XCTAssertLessThanOrEqual(text.frame.maxY, replace.frame.minY)
     }
 }

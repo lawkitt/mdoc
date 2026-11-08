@@ -1,4 +1,5 @@
 import Foundation
+import MdocFFI
 
 /// mdoc's on-device folders (ADR 0085). Everything lives in the App Group
 /// container so the Restore extension reads the same cases. The core's
@@ -103,12 +104,13 @@ struct MdocStorage: Sendable {
         return target
     }
 
-    /// A file name from a title: no path separators, the extension kept.
+    /// A file name from a title, the extension kept, by the core's rule
+    /// (`file_stem` in `crates/mdoc-ffi/src/library.rs`, #683): look-alikes
+    /// for the characters a file name cannot hold, so "Claim: Bennett"
+    /// stays that title; control characters as "-"; no leading dot; at
+    /// most 240 bytes; "Document" when nothing is left.
     static func fileName(_ title: String, extension ext: String) -> String {
-        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: CharacterSet(charactersIn: "/:\\"))
-            .joined(separator: "-")
-        let base = cleaned.isEmpty ? "Document" : cleaned
+        let base = MdocFFI.fileNameStem(title: title)
         return ext.isEmpty ? base : "\(base).\(ext)"
     }
 

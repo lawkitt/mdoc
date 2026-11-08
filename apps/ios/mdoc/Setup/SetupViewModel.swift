@@ -13,7 +13,7 @@ final class SetupViewModel {
     private let downloader: any ModelDownloader
     private let network: any NetworkConditions
     private let jobs: LongJobRunner
-    private let defaults: UserDefaults
+    private let preferences: Preferences
 
     private(set) var snapshot: SetupSnapshot
     /// Download progress the platform owns until the core installs the file.
@@ -46,22 +46,20 @@ final class SetupViewModel {
     /// is none. The card says "Waiting for Wi-Fi" and offers Use cellular.
     var waitsForWiFi: Bool { fetching && !allowsCellular && route != .wifi }
 
-    static let dismissedKey = "setupCardDismissed"
-
     init(
         setup: any Setup,
         downloader: any ModelDownloader,
         network: any NetworkConditions,
         jobs: LongJobRunner,
-        defaults: UserDefaults = .standard
+        preferences: Preferences = .shared
     ) {
         self.setup = setup
         self.downloader = downloader
         self.network = network
         self.jobs = jobs
-        self.defaults = defaults
+        self.preferences = preferences
         snapshot = setup.snapshot()
-        cardDismissed = defaults.bool(forKey: Self.dismissedKey)
+        cardDismissed = preferences.setupCardDismissed
         route = network.route
         network.onChange = { [weak self] route in
             self?.route = route
@@ -70,7 +68,7 @@ final class SetupViewModel {
 
     private(set) var cardDismissed: Bool
 
-    /// Home's card sets up name finding. Below the floor there is none: the
+    /// Start's card sets up name finding. Below the floor there is none: the
     /// text-recognition download waits in the document that needs it, and
     /// in Settings (ADR 0088).
     var showsCard: Bool { snapshot.tier == .detector && snapshot.needsSetup && !cardDismissed }
@@ -79,7 +77,7 @@ final class SetupViewModel {
 
     func dismissCard() {
         cardDismissed = true
-        defaults.set(true, forKey: Self.dismissedKey)
+        preferences.setupCardDismissed = true
     }
 
     func state(of offer: ModelOffer) -> ModelState {

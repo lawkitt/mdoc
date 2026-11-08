@@ -35,7 +35,8 @@
 #            that builds or tests the app takes the area of what it runs:
 #            ci-desktop.yml, ci-detection.yml, queue.yml (which starts
 #            them) and release.yml are desktop, ci-ios.yml ios,
-#            ci-android.yml (merge-gate's Android fallback) android.
+#            ci-android.yml (merge-gate's Android fallback) android, ios-release.yml
+#            ios.
 #
 # A script two areas run belongs to both: mobile-check.sh is the Mac's
 # desktop cargo check (`--ffi`) and the iOS job; install-android-ndk.sh
@@ -61,7 +62,9 @@ ios                   tools/ios-spike/**
 ios                   scripts/build-ios-core.sh
 ios                   scripts/ios-*.sh
 ios                   scripts/ios-*.swift
+ios                   scripts/ios-*.py
 ios                   .github/workflows/ci-ios.yml
+ios                   .github/workflows/ios-release.yml
 
 android               apps/android/**
 android               tools/android-spike/**

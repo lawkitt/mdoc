@@ -1,8 +1,11 @@
 import Foundation
+import MdocFFI
+import UIKit
 
 /// The review bar's model (ADR 0098): which candidate is under review,
 /// stepping in document order, deciding, undo, and the identity tools.
-/// Every change goes through the session and comes back as a snapshot.
+/// Every change goes through the session and comes back as a snapshot; the
+/// bar's state is `review`, a `ReviewState` changed only here (ADR 0104).
 extension DocumentViewModel {
     enum RenameOutcome: Equatable {
         case done
@@ -18,11 +21,21 @@ extension DocumentViewModel {
         var all: [Identity] { hinted + sameCategory + otherCategories }
     }
 
-    var isReviewing: Bool { reviewing != nil }
+    // MARK: Reading the bar
 
-    var reviewedCandidate: Candidate? { reviewing.flatMap { snapshot.candidate($0) } }
-
-    var reviewOrder: ReviewOrder { ReviewOrder(snapshot, focus: focus) }
+    var isReviewing: Bool { review.isReviewing }
+    var reviewing: CandidateID? { review.reviewing }
+    var reviewScope: Scope { review.scope }
+    var focus: ReviewFocus? { review.focus }
+    var barExpanded: Bool { review.expanded }
+    var hint: ReviewHint? { review.hint }
+    var reviewedCandidate: Candidate? { review.reviewedCandidate }
+    var reviewOrder: ReviewOrder { review.order }
+    /// Whether every candidate in the document is decided: Next then reads
+    /// Done.
+    var documentIsDone: Bool { review.documentIsDone }
+    /// The other mentions All N reaches, outlined in the text.
+    var scopedMentions: Set<CandidateID> { review.scopedMentions }
 
     // MARK: Starting and ending
 
@@ -30,50 +43,41 @@ extension DocumentViewModel {
     /// decided.
     func beginReview(focus: ReviewFocus? = nil) {
         guard !reviewWaitsForJob() else { return }
-        self.focus = focus
-        let order = reviewOrder
-        guard let first = order.nextUndecided(after: nil) ?? order.candidates.first else {
-            self.focus = nil
-            return
-        }
-        select(first.id)
+        updateReview { $0.begin(focus: focus) }
     }
 
     func endReview() {
-        reviewing = nil
-        focus = nil
-        barExpanded = false
+        updateReview { $0.end() }
     }
 
     func clearFocus() {
-        focus = nil
-        if let reviewing, reviewOrder.index(of: reviewing) == nil {
-            self.reviewing = reviewOrder.nextUndecided(after: nil)?.id
-        }
+        updateReview { $0.clearFocus() }
     }
 
     /// Puts the bar on `id`, resetting the scope when the identity changes.
     func select(_ id: CandidateID) {
-        guard let candidate = snapshot.candidate(id) else { return }
-        // A name outside the focused group ends the focus.
-        if let focus, !focus.contains(candidate) { self.focus = nil }
-        if candidate.identityID != scopeIdentity {
-            reviewScope = .allOccurrences
-            scopeIdentity = candidate.identityID
-        }
-        reviewing = id
+        updateReview { $0.select(id) }
+    }
+
+    /// The scope chip: All or This one.
+    func setScope(_ scope: Scope) {
+        updateReview { $0.setScope(scope) }
+    }
+
+    /// The bar pulled up or let down; opening it keeps the name in view.
+    func setBarExpanded(_ expanded: Bool) {
+        updateReview { $0.setExpanded(expanded) }
+    }
+
+    /// The gesture was used, or × tapped: that hint never shows again.
+    func learn(_ hint: ReviewHint) {
+        hint.learn()
+        updateReview { $0.learned(ReviewHint.teachable) }
     }
 
     /// Scrolls the text back to the candidate under review.
     func revealReviewed() {
-        revealRange = nil
-        revealRequest += 1
-    }
-
-    /// The other mentions All N reaches, outlined in the text.
-    var scopedMentions: Set<CandidateID> {
-        guard reviewScope == .allOccurrences, let candidate = reviewedCandidate else { return [] }
-        return Set(snapshot.mentions(of: candidate.identityID).map(\.id)).subtracting([candidate.id])
+        updateReview { $0.revealReviewed() }
     }
 
     // MARK: Stepping
@@ -81,40 +85,36 @@ extension DocumentViewModel {
     /// Steps `delta` places in document order; false at either end.
     @discardableResult
     func step(_ delta: Int) -> Bool {
-        let order = reviewOrder
-        guard let index = order.index(of: reviewing) else { return false }
-        let next = index + delta
-        guard order.candidates.indices.contains(next) else { return false }
-        select(order.candidates[next].id)
-        return true
+        updateReview { $0.step(delta) }
     }
 
     /// Where the candidate sits among its identity's mentions.
     func mentionPosition(of candidate: Candidate) -> (index: Int, count: Int) {
-        let mentions = snapshot.mentions(of: candidate.identityID).sorted { $0.range.start < $1.range.start }
-        let index = (mentions.firstIndex { $0.id == candidate.id } ?? 0) + 1
-        return (index, mentions.count)
+        review.mentionPosition(of: candidate)
+    }
+
+    /// An identity's mentions in document order.
+    func sortedMentions(of identity: IdentityID) -> [Candidate] {
+        review.sortedMentions(of: identity)
     }
 
     /// The mentions chip: the identity's next mention, cycling round.
     func nextMention() {
-        guard let candidate = reviewedCandidate else { return }
-        let mentions = snapshot.mentions(of: candidate.identityID).sorted { $0.range.start < $1.range.start }
-        guard mentions.count > 1, let index = mentions.firstIndex(where: { $0.id == candidate.id }) else { return }
-        reviewing = mentions[(index + 1) % mentions.count].id
-        Haptics.selection()
+        if updateReview({ $0.nextMention() }) { Haptics.selection() }
     }
 
-    /// About 40 characters either side of a mention, on one line.
-    func context(of candidate: Candidate) -> String {
-        let bytes = Array(snapshot.markdown.utf8)
-        let start = max(0, candidate.range.start - 60)
-        let end = min(bytes.count, candidate.range.end + 60)
-        guard start < end else { return candidate.original }
-        let text = String(decoding: bytes[start..<end], as: UTF8.self)
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        return (start > 0 ? "…" : "") + text + (end < bytes.count ? "…" : "")
+    /// The full view's row for a mention: the name in its original
+    /// wording, with the words around it and its heading.
+    func snippet(of candidate: Candidate) -> MentionSnippet {
+        MentionSnippet(markdown: snapshot.markdown, range: candidate.range, name: candidate.original)
+    }
+
+    /// A full view's row: the bar onto that mention, and the text there.
+    func openMention(_ id: CandidateID) {
+        updateReview {
+            $0.select(id)
+            $0.revealReviewed()
+        }
     }
 
     // MARK: Deciding
@@ -123,63 +123,71 @@ extension DocumentViewModel {
     /// candidate; the last decision ends review with All reviewed.
     func decideCurrent(_ decision: Decision) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
+        // A decided name changes in place, as the card's Keep instead and
+        // Replace instead do (ADR 0101), from the long press, K and Return
+        // too (#678); deciding it as it is changes nothing.
+        guard candidate.state == .proposed else {
+            if candidate.state != (decision == .keep ? .kept : .replaced) { changeCurrent(decision) }
+            return
+        }
         let index = reviewOrder.index(of: candidate.id)
-        let ok = performReview { try session.decide(candidate.id, decision, scope: reviewScope) }
-        guard ok else { return }
-        UndoTip.decided = true
+        guard perform({ try session.decide(candidate.id, decision, scope: reviewScope) }) else { return }
         Haptics.decision()
-        advance(from: index)
+        let advanced = updateReview { state -> ReviewState.Advance in
+            state.decided()
+            return state.advance(from: index)
+        }
+        allReviewed(advanced)
     }
 
-    /// The expanded view's Keep all n or Replace all n for the identity.
-    func decideIdentity(_ decision: Decision) {
+    /// A state pill in the full view: that one mention changes, and the bar
+    /// stays where it is.
+    func decideMention(_ id: CandidateID, _ decision: Decision) {
+        guard let current = reviewedCandidate, !reviewWaitsForJob() else { return }
+        let index = reviewOrder.index(of: current.id)
+        guard perform({ try session.decide(id, decision, scope: .this) }) else { return }
+        Haptics.decision()
+        updateReview {
+            $0.decided()
+            $0.reselect(near: current, index: index)
+        }
+    }
+
+    /// Return, the card's filled button: Replace on a proposed name, Replace
+    /// instead on a kept one, and Next on a replaced one, as the decided
+    /// card's filled Next (ADR 0101).
+    func returnKey() {
+        if let candidate = reviewedCandidate, let action = keyAction(.return, for: candidate) { perform(action) }
+    }
+
+    /// "Keep instead" or "Replace instead" on a decided card, in the bar's
+    /// scope: the card stays, showing its new state, until Next.
+    func changeCurrent(_ decision: Decision) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
         let index = reviewOrder.index(of: candidate.id)
-        guard performReview({ try session.decide(candidate.id, decision, scope: .allOccurrences) }) else { return }
+        guard perform({ try session.decide(candidate.id, decision, scope: reviewScope) }) else { return }
         Haptics.decision()
-        advance(from: index)
-    }
-
-    /// After a decision: the next undecided candidate, or All reviewed.
-    func advance(from index: Int?) {
-        let order = reviewOrder
-        if let next = order.nextUndecided(after: index) {
-            select(next.id)
-        } else if order.isDone {
-            let count = order.count
-            Haptics.success()
-            toast = ToastMessage(
-                text: focus == nil
-                    ? String(localized: "All \(count) reviewed")
-                    : String(localized: "\(count) reviewed"),
-                actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })
-            if focus != nil {
-                // The group is done: back to the whole document.
-                focus = nil
-                if let next = reviewOrder.nextUndecided(after: nil) {
-                    select(next.id)
-                    return
-                }
-            }
-            endReview()
-        } else if let index, let same = order.candidate(at: index) {
-            select(same.id)
+        updateReview {
+            $0.decided()
+            $0.reselect(near: candidate, index: index)
         }
     }
 
-    /// Runs a review change; false (with the error shown) when it failed.
-    @discardableResult
-    func performReview(isStep: Bool = true, _ change: () throws -> DocumentSnapshot) -> Bool {
-        do {
-            let before = snapshot.undoStep
-            applyReview(try change())
-            // A change that made a step goes on the system's undo stack too.
-            if isStep && snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
+    /// Next on a decided card: the next undecided candidate, or the end of
+    /// review when none is left.
+    func goToNextUndecided() {
+        // As after a decision: the group's next, then the document's, then
+        // All reviewed.
+        let index = reviewOrder.index(of: reviewing)
+        allReviewed(updateReview { $0.advance(from: index) })
+        Haptics.selection()
+    }
+
+    /// "All 15 reviewed · Undo", or "3 reviewed" at the end of a focus.
+    private func allReviewed(_ advance: ReviewState.Advance) {
+        guard case .allReviewed(let count, let focused) = advance else { return }
+        Haptics.success()
+        toast = undoToast(focused ? String(localized: "\(count) reviewed") : String(localized: "All \(count) reviewed"))
     }
 
     // MARK: Undo
@@ -187,60 +195,44 @@ extension DocumentViewModel {
     var canUndo: Bool { snapshot.canUndo }
     var canRedo: Bool { snapshot.canRedo }
 
-    /// Undo: the bar moves back to what it undid, and the toast names it
-    /// with Redo.
+    /// Undo: the bar moves back to what it undid. No toast: the change and
+    /// a haptic say it, and an earlier toast's Undo goes, since it would
+    /// reach one step further (ADR 0106). VoiceOver hears what was undone.
+    /// Redo is on the Undo button's long press, ⇧⌘Z and VoiceOver.
     func undo(fromSystem: Bool = false) {
         guard canUndo, !reviewWaitsForJob() else { return }
-        guard performReview(isStep: false, { try session.undo() }) else { return }
+        guard perform(undoable: false, { try session.undo() }) else { return }
         Haptics.warning()
         let step = snapshot.redoStep
-        moveBar(to: step)
-        toast = ToastMessage(
-            text: step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone"),
-            actionTitle: String(localized: "Redo"), action: { [weak self] in self?.redoTapped() })
+        updateReview { $0.follow(step) }
+        toast = nil
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone"))
     }
 
     func redo(fromSystem: Bool = false) {
         guard canRedo, !reviewWaitsForJob() else { return }
-        guard performReview(isStep: false, { try session.redo() }) else { return }
+        guard perform(undoable: false, { try session.redo() }) else { return }
         let step = snapshot.undoStep
-        moveBar(to: step)
+        updateReview { $0.follow(step) }
         toast = ToastMessage(
             text: step.map { String(localized: "Redid \($0.label)") } ?? String(localized: "Redone"),
             actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })
-    }
-
-    /// After undo or redo: back onto the mention the step acted on, opening
-    /// the bar if review had ended.
-    private func moveBar(to step: HistoryStep?) {
-        if let id = step?.candidateID, snapshot.candidate(id) != nil {
-            if let focus, let candidate = snapshot.candidate(id), !focus.contains(candidate) { self.focus = nil }
-            select(id)
-            revealReviewed()
-        } else if let range = step?.range, let near = ReviewOrder(snapshot).candidate(near: range.start) {
-            focus = nil
-            select(near.id)
-            revealReviewed()
-        } else if let reviewing, snapshot.candidate(reviewing) == nil {
-            self.reviewing = reviewOrder.nextUndecided(after: nil)?.id
-        }
     }
 
     // MARK: Identity tools
 
     /// The category menu: each category with the alias it would give.
     func categoryChoices(for candidate: Candidate) -> [CategoryChoice] {
-        (try? session.categoryChoices(for: candidate.id, scope: reviewScope))
-            ?? Category.allCases.map { CategoryChoice(category: $0, alias: nil, isCurrent: $0 == candidate.category) }
+        (try? session.categoryChoices(for: candidate, scope: reviewScope))
+            ?? Category.allCases.map { CategoryChoice(category: $0, alias: nil, current: $0 == candidate.category) }
     }
 
     func setCategory(_ category: Category) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
-        let index = reviewOrder.index(of: candidate.id)
-        let splits = reviewScope == .justThisOne && mentionPosition(of: candidate).count > 1
-        guard performReview({ try session.setCategory(candidate.id, scope: reviewScope, to: category) }) else { return }
-        Haptics.decision()
-        reselect(near: candidate, index: index)
+        let splits = reviewScope == .this && mentionPosition(of: candidate).count > 1
+        guard changeIdentity(of: candidate, { try session.setCategory(candidate.id, scope: reviewScope, to: category) }) else { return }
         if splits, let now = reviewedCandidate {
             toast = undoToast(String(localized: "Split off as \(now.alias)"))
         }
@@ -251,9 +243,8 @@ extension DocumentViewModel {
         guard !alias.isEmpty, alias != candidate.alias else { return .done }
         let index = reviewOrder.index(of: candidate.id)
         do {
-            let before = snapshot.undoStep
-            applyReview(try session.rename(candidate.id, scope: reviewScope, to: alias))
-            if snapshot.canUndo && snapshot.undoStep != before { registerSystemUndo() }
+            // Rename shows its own errors: an alias taken offers Same as.
+            try change(rethrowing: true) { try session.rename(candidate.id, scope: reviewScope, to: alias) }
         } catch CoreError.aliasTaken(_, let other) {
             if let identity = snapshot.identities.first(where: { $0.id == other }) {
                 return .taken(identity)
@@ -263,7 +254,7 @@ extension DocumentViewModel {
             return .invalid(error.localizedDescription)
         }
         Haptics.decision()
-        reselect(near: candidate, index: index)
+        updateReview { $0.reselect(near: candidate, index: index) }
         return .done
     }
 
@@ -271,10 +262,8 @@ extension DocumentViewModel {
     /// its alias; This one moves only this mention. Nothing is replaced.
     func sameAs(_ target: IdentityID) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
-        let index = reviewOrder.index(of: candidate.id)
-        guard performReview({ try session.sameAs(candidate.id, scope: reviewScope, target: target) }) else { return }
-        Haptics.decision()
-        reselect(near: candidate, index: index)
+        guard changeIdentity(of: candidate, { try session.sameAs(candidate.id, scope: reviewScope, target: target) }) else { return }
+        ReviewHint.dragMerge.learn()
         let name = snapshot.identities.first { $0.id == target }?.primaryWording ?? ""
         toast = undoToast(String(localized: "Same as \(name)"))
     }
@@ -282,34 +271,52 @@ extension DocumentViewModel {
     /// New alias: this mention splits off as an identity of its own.
     func newAlias() {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
-        let index = reviewOrder.index(of: candidate.id)
-        guard performReview({ try session.newAlias(candidate.id) }) else { return }
-        Haptics.decision()
-        reselect(near: candidate, index: index)
+        guard changeIdentity(of: candidate, { try session.newAlias(candidate.id) }) else { return }
         if let now = reviewedCandidate {
             toast = undoToast(String(localized: "Split off as \(now.alias)"))
         }
     }
 
-    /// Same as for a whole identity, from Identities (a swipe or a drag).
+    /// Same as for a whole identity, from Identities (a swipe, a Looks like
+    /// card): "Same as Maya Bennett · Undo".
     func link(_ identity: IdentityID, into target: IdentityID) {
-        guard !reviewWaitsForJob() else { return }
+        link(identity, into: target) { _, into in String(localized: "Same as \(into.primaryWording)") }
+    }
+
+    /// The core's link, then a toast `text(from, into)` names, from the two
+    /// identities as they were. One undo step; the drag-merge hint is
+    /// learned.
+    func link(_ identity: IdentityID, into target: IdentityID, toast text: (Identity, Identity) -> String) {
+        guard !reviewWaitsForJob(),
+              let from = snapshot.identities.first(where: { $0.id == identity }),
+              let into = snapshot.identities.first(where: { $0.id == target }) else { return }
         let reviewed = reviewedCandidate
         let reviewedIndex = reviewOrder.index(of: reviewing)
-        guard performReview({ try session.link(identity, into: target) }) else { return }
+        guard perform({ try session.link(identity, into: target) }) else { return }
         Haptics.decision()
+        ReviewHint.dragMerge.learn()
         // The bar stays on the same mention, whose range may have moved.
-        if let reviewed { reselect(near: reviewed, index: reviewedIndex) }
-        let name = snapshot.identities.first { $0.id == target }?.primaryWording ?? ""
-        toast = undoToast(String(localized: "Same as \(name)"))
+        if let reviewed { updateReview { $0.reselect(near: reviewed, index: reviewedIndex) } }
+        toast = undoToast(text(from, into))
     }
 
     /// Belongs to…: the identity's owner, or none.
     func setOwner(_ owner: IdentityID?) {
         guard let candidate = reviewedCandidate, !reviewWaitsForJob() else { return }
+        changeIdentity(of: candidate, haptic: false) { try session.setOwner(candidate.identityID, to: owner) }
+    }
+
+    /// An identity tool's change to the name under review, through the one
+    /// runner; the bar stays on the same mention by position after.
+    @discardableResult
+    private func changeIdentity(
+        of candidate: Candidate, haptic: Bool = true, _ body: () throws -> DocumentSnapshot
+    ) -> Bool {
         let index = reviewOrder.index(of: candidate.id)
-        guard performReview({ try session.setOwner(candidate.identityID, to: owner) }) else { return }
-        reselect(near: candidate, index: index)
+        guard perform(body) else { return false }
+        if haptic { Haptics.decision() }
+        updateReview { $0.reselect(near: candidate, index: index) }
+        return true
     }
 
     /// Same as… targets: the core's hints first, then the same category in
@@ -323,7 +330,7 @@ extension DocumentViewModel {
     func sameAsTargets(forIdentity id: IdentityID, category: Category) -> SameAsTargets {
         let others = snapshot.identities.filter { $0.id != id }
         let hinted = mergeHints(for: id).compactMap { hint in
-            others.first { $0.id == (hint.from == id ? hint.into : hint.from) }
+            others.first { $0.id == (hint.fromID == id ? hint.intoID : hint.fromID) }
         }
         let rest = others.filter { identity in !hinted.contains { $0.id == identity.id } }
             .sorted { firstMention(of: $0.id) < firstMention(of: $1.id) }
@@ -334,41 +341,29 @@ extension DocumentViewModel {
     }
 
     /// The merge hint the card shows for this mention's identity, if any.
-    func mergeHint(for candidate: Candidate) -> MergeHint? {
+    func mergeHint(for candidate: Candidate) -> LinkHint? {
         mergeHints(for: candidate.identityID).first
     }
 
     /// The identity a hint points the card's identity at.
-    func hintTarget(_ hint: MergeHint, for candidate: Candidate) -> IdentityID {
-        hint.from == candidate.identityID ? hint.into : hint.from
+    func hintTarget(_ hint: LinkHint, for candidate: Candidate) -> IdentityID {
+        hint.fromID == candidate.identityID ? hint.intoID : hint.fromID
     }
 
-    func dismissHint(_ hint: MergeHint) {
-        performReview(isStep: false) { try session.dismissHint(hint) }
+    func dismissHint(_ hint: LinkHint) {
+        perform(undoable: false) { try session.dismissHint(hint) }
     }
 
-    private func mergeHints(for identity: IdentityID) -> [MergeHint] {
-        snapshot.mergeHints.filter { $0.from == identity || $0.into == identity }
+    private func mergeHints(for identity: IdentityID) -> [LinkHint] {
+        snapshot.mergeHints.filter { $0.fromID == identity || $0.intoID == identity }
     }
 
     private func firstMention(of identity: IdentityID) -> Int {
-        snapshot.mentions(of: identity).map(\.range.start).min() ?? .max
+        sortedMentions(of: identity).first?.range.start ?? .max
     }
 
-    private func undoToast(_ text: String) -> ToastMessage {
+    func undoToast(_ text: String) -> ToastMessage {
         ToastMessage(text: text, actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })
-    }
-
-    /// After an identity change moved ranges: the same mention by position,
-    /// keeping the bar on it.
-    private func reselect(near candidate: Candidate, index: Int?) {
-        let order = reviewOrder
-        if let index, let same = order.candidate(at: index) {
-            select(same.id)
-        } else if let near = ReviewOrder(snapshot).candidate(near: candidate.range.start) {
-            focus = nil
-            select(near.id)
-        }
     }
 
     // MARK: Stored proposals
@@ -376,12 +371,12 @@ extension DocumentViewModel {
     /// Proposals that come with the document (Try a sample), as a scan's.
     /// Before the text is read they wait for recognition to finish.
     func proposeStored(_ names: [SampleDocument.Name]) {
-        guard snapshot.phase != .recognizing else {
+        guard snapshot.phase != nil else {
             storedNames = names
             return
         }
         storedNames = nil
-        performReview(isStep: false) { try session.propose(names) }
+        perform(undoable: false) { try session.propose(names) }
     }
 
     // MARK: Find in document
@@ -412,24 +407,31 @@ extension DocumentViewModel {
         snapshot.candidates.first { $0.range.start <= range.start && $0.range.end >= range.end }
     }
 
+    /// A match with up to 50 characters either side, cut between
+    /// characters, never inside a letter (#679).
     func context(of range: SourceRange) -> String {
-        let bytes = Array(snapshot.markdown.utf8)
-        let start = max(0, range.start - 50), end = min(bytes.count, range.end + 50)
-        guard start < end else { return "" }
-        let text = String(decoding: bytes[start..<end], as: UTF8.self)
+        let text = snapshot.markdown
+        let utf8 = text.utf8
+        guard range.start >= 0, range.start <= range.end, range.end <= utf8.count else { return "" }
+        let lower = utf8.index(utf8.startIndex, offsetBy: range.start)
+        let upper = utf8.index(utf8.startIndex, offsetBy: range.end)
+        let before = text[..<lower].suffix(50), after = text[upper...].prefix(50)
+        let shown = (before + text[lower..<upper] + after)
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
-        return (start > 0 ? "…" : "") + text + (end < bytes.count ? "…" : "")
+        return (before.startIndex > text.startIndex ? "…" : "") + shown + (after.endIndex < text.endIndex ? "…" : "")
     }
 
     /// Scrolls the text to a match: onto its candidate when it is one.
     func reveal(_ range: SourceRange) {
-        if let candidate = candidate(covering: range) {
-            select(candidate.id)
-            revealReviewed()
-        } else {
-            revealRange = range
-            revealRequest += 1
+        let covering = candidate(covering: range)
+        updateReview { state in
+            if let covering {
+                state.select(covering.id)
+                state.revealReviewed()
+            } else {
+                state.reveal(range)
+            }
         }
     }
 
@@ -439,18 +441,66 @@ extension DocumentViewModel {
     /// undo, the three-finger swipe and ⌘Z reach the same history as the
     /// bar's Undo (ADR 0098).
     func registerSystemUndo() {
+        systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         guard let manager = systemUndo else { return }
         manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
         manager.setActionName(snapshot.undoStep?.label ?? "")
     }
 
+    /// As many steps as the core keeps (`DocumentSession`, 256).
+    static let systemUndoLevels = 256
+
+    /// The document shows in a window, on `screen`: its steps go back on the
+    /// window's undo stack, each its own group, so ⌘Z and shake reach them
+    /// again. Redo starts empty there; the bar's Redo still reaches the core.
+    /// A new screen for the same window (a size-class change rebuilds it)
+    /// takes the steps over as they are.
+    func attachSystemUndo(_ manager: UndoManager?, for screen: UUID) {
+        systemUndoScreen = screen
+        guard manager !== systemUndo else { return }
+        releaseSystemUndo()
+        systemUndo = manager
+        guard let manager else { return }
+        manager.levelsOfUndo = Self.systemUndoLevels
+        // Inside an open group the steps would join it as one.
+        guard systemUndoSteps > 0, manager.groupingLevel == 0 else {
+            systemUndoSteps = 0
+            return
+        }
+        let byEvent = manager.groupsByEvent
+        manager.groupsByEvent = false
+        for step in 0..<systemUndoSteps {
+            manager.beginUndoGrouping()
+            manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
+            if step == systemUndoSteps - 1 { manager.setActionName(snapshot.undoStep?.label ?? "") }
+            manager.endUndoGrouping()
+        }
+        manager.groupsByEvent = byEvent
+    }
+
+    /// `screen` leaves the window: unless a newer screen of this document
+    /// took it over, the steps leave the window's stacks, so another
+    /// document's ⌘Z or Undo never reaches them (#672).
+    func detachSystemUndo(for screen: UUID) {
+        guard screen == systemUndoScreen else { return }
+        systemUndoScreen = nil
+        releaseSystemUndo()
+    }
+
+    private func releaseSystemUndo() {
+        systemUndo?.removeAllActions(withTarget: self)
+        systemUndo = nil
+    }
+
     private func undoFromSystem() {
+        systemUndoSteps = max(systemUndoSteps - 1, 0)
         undo(fromSystem: true)
         systemUndo?.registerUndo(withTarget: self) { $0.redoFromSystem() }
         systemUndo?.setActionName(snapshot.redoStep?.label ?? "")
     }
 
     private func redoFromSystem() {
+        systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         redo(fromSystem: true)
         systemUndo?.registerUndo(withTarget: self) { $0.undoFromSystem() }
         systemUndo?.setActionName(snapshot.undoStep?.label ?? "")

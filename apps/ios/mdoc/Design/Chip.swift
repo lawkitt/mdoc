@@ -11,17 +11,36 @@ struct Chip: View {
     var tint: Color?
     var opensMenu = false
     var monospaced = false
+    /// Selected, as a filter: the accent's fill with the words that read on
+    /// it, over any tint.
+    var filled = false
 
-    init(_ title: Text, systemImage: String? = nil, tint: Color? = nil, opensMenu: Bool = false, monospaced: Bool = false) {
+    init(
+        _ title: Text, systemImage: String? = nil, tint: Color? = nil, opensMenu: Bool = false, monospaced: Bool = false,
+        filled: Bool = false
+    ) {
         self.title = title
         self.systemImage = systemImage
         self.tint = tint
         self.opensMenu = opensMenu
         self.monospaced = monospaced
+        self.filled = filled
     }
 
-    init(_ title: String, systemImage: String? = nil, tint: Color? = nil, opensMenu: Bool = false, monospaced: Bool = false) {
-        self.init(Text(verbatim: title), systemImage: systemImage, tint: tint, opensMenu: opensMenu, monospaced: monospaced)
+    init(
+        _ title: String, systemImage: String? = nil, tint: Color? = nil, opensMenu: Bool = false, monospaced: Bool = false,
+        filled: Bool = false
+    ) {
+        self.init(
+            Text(verbatim: title), systemImage: systemImage, tint: tint, opensMenu: opensMenu, monospaced: monospaced,
+            filled: filled)
+    }
+
+    private var foreground: Color { filled ? Palette.onAccent : tint ?? .primary }
+
+    private var fill: Color {
+        if filled { return Palette.accent }
+        return (tint ?? .primary).opacity(tint == nil ? 0.08 : 0.15)
     }
 
     var body: some View {
@@ -41,10 +60,10 @@ struct Chip: View {
                     .accessibilityHidden(true)
             }
         }
-        .foregroundStyle(tint ?? .primary)
+        .foregroundStyle(foreground)
         .padding(.horizontal, Space.s)
         .frame(minHeight: Size.chip)
-        .background((tint ?? .primary).opacity(tint == nil ? 0.08 : 0.15), in: Capsule())
+        .background(fill, in: Capsule())
         .contentShape(Capsule())
         // The whole chip is the target, at least 44 pt high.
         .frame(minHeight: Size.target)
@@ -61,7 +80,8 @@ struct Chip: View {
         }
         HStack {
             Chip("1 of 3", systemImage: "arrow.down")
-            Chip("Same as", systemImage: "link", tint: .accentColor)
+            Chip("Same as", systemImage: "link", tint: Palette.accent)
+            Chip("All", filled: true)
         }
     }
     .padding()

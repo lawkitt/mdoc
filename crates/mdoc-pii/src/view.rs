@@ -1281,14 +1281,16 @@ fn line_break(text: &str) -> Option<usize> {
 /// closing punctuation. "Delva Rosk\nExhibition company" before ": …" is two
 /// lines' text, not one wrapped value.
 ///
-/// An address the rule pack's `span` pattern found whole (`address`) is laid
+/// An address the rule pack's `span` pattern found whole (`whole`) is laid
 /// out over lines of its own, the pattern having read its parts on each
 /// ("4410 W. Quarry Parkway, Suite 210\nBrindlecombe, OH 45999"), so text may
 /// follow it on its last line (", and to …") when it ends in its number (a
 /// postcode, ZIP or flat number, not a town that may be the next field's
 /// first word: "12 Oak Road,\nDate" of "Date of birth"), that text is a word
 /// apart ("Room 2" of "Room 2/3" is not) and it is no field's label (": …").
-pub fn wrapped_value(source: &str, range: &Range<usize>, address: bool) -> bool {
+/// So may a date of birth a `context` label proposed (#363): "a March
+/// 9,\n1984 birth date" is one date, its year a number before the label.
+pub fn wrapped_value(source: &str, range: &Range<usize>, whole: bool) -> bool {
     let value = &source[range.clone()];
     let plain = value.match_indices('\n').any(|(i, _)| {
         let at = range.start + i;
@@ -1305,7 +1307,7 @@ pub fn wrapped_value(source: &str, range: &Range<usize>, address: bool) -> bool 
         || rest
             .chars()
             .all(|c| c.is_whitespace() || ".,;)»\"'".contains(c))
-        || (address && numbered_end(value, rest))
+        || (whole && numbered_end(value, rest))
 }
 
 /// Whether a value's last word holds a digit and the text after it on its
@@ -1406,6 +1408,77 @@ fn character_reference(text: &str) -> Option<(usize, String)> {
         }
     };
     Some((end, decoded))
+}
+
+/// Every occurrence of `wording` in `source`, left to right without
+/// overlaps, as source byte ranges. As the platforms' own string search,
+/// it matches whole characters (extended grapheme clusters) and treats
+/// canonically equivalent spellings as equal: a letter with its accent
+/// composed (NFC) or as a combining mark (NFD), Hangul as syllables or as
+/// jamo. A match never splits a character, so a letter is never found
+/// without its marks or vowel signs.
+pub fn occurrences(source: &str, wording: &str) -> Vec<Range<usize>> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let wording: String = wording.nfc().collect();
+    if wording.is_empty() {
+        return Vec::new();
+    }
+    // The source in NFC, one piece per character, and where each piece
+    // starts in both.
+    let mut text = String::with_capacity(source.len());
+    let mut starts = Vec::new();
+    for (at, character) in source.grapheme_indices(true) {
+        starts.push((text.len(), at));
+        text.extend(character.nfc());
+    }
+    starts.push((text.len(), source.len()));
+    let source_at = |offset: usize| {
+        starts
+            .binary_search_by_key(&offset, |(text, _)| *text)
+            .ok()
+            .map(|i| starts[i].1)
+    };
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(i) = text[from..].find(&wording) {
+        let start = from + i;
+        let end = start + wording.len();
+        if let (Some(source_start), Some(source_end)) = (source_at(start), source_at(end)) {
+            found.push(source_start..source_end);
+            from = end;
+        } else {
+            from = start + text[start..].chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod occurrence_tests {
+    use super::occurrences;
+
+    #[test]
+    fn nfc_and_nfd_spellings_find_each_other() {
+        let nfc = "Zo\u{eb} met Zo\u{eb} and Zoe.";
+        let nfd = "Zoe\u{308} met Zoe\u{308} and Zoe.";
+        assert_eq!(occurrences(nfc, "Zoe\u{308}"), [0..4, 9..13]);
+        assert_eq!(occurrences(nfd, "Zo\u{eb}"), [0..5, 10..15]);
+        // "Zoe" never matches the letter without its mark.
+        assert_eq!(occurrences(nfd, "Zoe"), vec![20..23]);
+        assert_eq!(occurrences("Анна Анна", "Анна"), [0..8, 9..17]);
+        assert!(occurrences("text", "").is_empty());
+        assert_eq!(occurrences("aaaa", "aa"), [0..2, 2..4]);
+        // Hangul: jamo (NFD) and syllables (NFC) find each other.
+        let jamo = "\u{1100}\u{1161}\u{11a8} \u{1100}\u{1161}\u{11a8}";
+        assert_eq!(occurrences(jamo, "\u{ac01}"), [0..9, 10..19]);
+        assert_eq!(
+            occurrences("\u{ac01}", "\u{1100}\u{1161}\u{11a8}"),
+            vec![0..3]
+        );
+        // A vowel sign stays with its letter: "कि" holds no "क".
+        assert!(occurrences("\u{915}\u{93f}", "\u{915}").is_empty());
+        assert_eq!(occurrences("\u{915} \u{915}\u{93f}", "\u{915}"), vec![0..3]);
+    }
 }
 
 #[cfg(test)]

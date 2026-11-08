@@ -2,11 +2,7 @@ import UIKit
 
 /// The app's haptics (ADR 0098), off when Settings › Review › Haptics is.
 enum Haptics {
-    static let enabledKey = "haptics"
-
-    static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
-    }
+    static var isEnabled: Bool { Preferences.shared.haptics }
 
     /// Stepping to another card.
     static func selection() {
