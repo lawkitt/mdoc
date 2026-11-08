@@ -96,6 +96,43 @@ final class MarkdownTextViewTests: XCTestCase {
         return snapshot.candidates.map { decoration(of: $0, in: other, offsets: offsets) }
     }
 
+    /// The name under review keeps its category's fill and gets an ink
+    /// outline, black in light mode and white in dark mode, in the text and
+    /// in a table cell; the mentions its scope reaches get none (ADR 0099).
+    func testTheNameUnderReviewIsOutlinedInInk() throws {
+        let harness = try harness()
+        let snapshot = harness.session.snapshot()
+        let mentions = snapshot.candidates.sorted { $0.range.start < $1.range.start }
+        let offsets = TextOffsets(snapshot.markdown)
+        let outline = MarkdownStyler.decorationKeys.firstIndex(of: .mdocOutline)!
+        let fill = MarkdownStyler.decorationKeys.firstIndex(of: .backgroundColor)!
+        func ink(_ style: UIUserInterfaceStyle) -> String {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            UIColor.ink.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return String(format: "%.3f %.3f %.3f %.3f", red, green, blue, alpha)
+        }
+        show(harness, textView(snapshot))
+        let plain = mentions.map { decoration(of: $0, in: harness.view, offsets: offsets) }
+        XCTAssertEqual(plain.map { $0[outline] }, ["none", "none", "none"])
+
+        for (index, selected) in mentions.prefix(2).enumerated() {
+            let others = Set(mentions.map(\.id)).subtracting([selected.id])
+            show(harness, textView(snapshot, selected: selected.id, scoped: others))
+            let decorated = mentions.map { decoration(of: $0, in: harness.view, offsets: offsets) }
+            XCTAssertEqual(decorated[index][outline], ink(.light), "mention \(index) under review")
+            XCTAssertNotEqual(decorated[index][fill], "none", "it keeps its category's fill")
+            for other in decorated.indices where other != index {
+                XCTAssertEqual(decorated[other][outline], "none", "mention \(other) in the scope")
+            }
+        }
+
+        let dark = MarkdownStyler.decoration(of: mentions[0], selected: true, scoped: false, dark: true)
+        var white: CGFloat = 0, alpha: CGFloat = 0
+        (dark[.mdocOutline] as? UIColor)?.getWhite(&white, alpha: &alpha)
+        XCTAssertGreaterThan(white, 0.9, "white in dark mode")
+        XCTAssertEqual(ink(.dark), "0.949 0.949 0.969 1.000")
+    }
+
     func testACardChangeRecoloursInPlaceAndNeverRebuilds() throws {
         let harness = try harness()
         let snapshot = harness.session.snapshot()

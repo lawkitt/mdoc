@@ -39,7 +39,7 @@ Android: `apps/android/.../ui/theme` under the same names (to come).
 | `Space` | 4, 8, 12, 16, 24 (`xxs`…`l`) | Padding and gaps; nothing off the 4 pt grid |
 | `Radius` | chip (capsule), control 12, card 20, tile 8, screen 44 | Continuous corners; screen for the sliding screen beside a drawer |
 | `Size` | target 44, bar button 40, chip 30, tile 30 | Hit targets never under 44 pt |
-| `Palette` | accent, surface, background, chip fill, separator; to review (orange), ready (green), restored (blue) | Only named colors; system colors adapt to dark mode and Increase Contrast |
+| `Palette` | accent, on accent, swipe accent, surface, background, chip fill, separator; to review (orange), ready (green), restored (blue) | Only named colors; system colors adapt to dark mode and Increase Contrast |
 | `Typography` | title, body, caption, chip, alias (monospaced), progress | Dynamic Type text styles only |
 | `Motion` | snappy spring 0.25 s; fade 0.2 s under Reduce Motion | `Motion.move(reduced:)` picks one |
 
@@ -71,8 +71,23 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
   for every preference (theme, document font, Show Markdown, haptics, the
   hints and the setup card); the app
   sets it on every window and the Restore extension reads it.
-- **Accent:** teal green, `#336b5c` light and `#82b9a7` dark, in the asset
-  catalog's `AccentColor`.
+- **Accent:** ink, `#1c1c1e` light and `#f2f2f7` dark, in the asset
+  catalog's `AccentColor` (`Palette.accent`, `UIColor.ink`), like the app
+  icon. Words and symbols on an accent fill use `Palette.onAccent`, white in
+  light mode and black in dark mode: a filled button is `.accentProminent()`
+  (the system's filled button keeps white words), a selected filter is
+  `Chip(…, filled: true)`. Swipe actions draw their words white in both
+  modes, so their accent is `Palette.swipeAccent`, a dark grey in dark mode.
+  `AccentContrastTests` holds each pair to 4.5:1.
+- **Text buttons** ("Select", "Not now", "Try a sample", Settings' Download
+  rows, the toast's Undo) are the primary text colour at medium weight
+  (`.textAction()`), not the accent; links in the document are the accent,
+  underlined.
+- **The name under review** keeps its category's fill and gets an ink
+  outline, black in light mode and white in dark mode (`mdocOutline`, drawn
+  by `MarkdownLayoutFragment`, in table cells too).
+- **System controls:** switches stay the system green; menu pickers take
+  the ink tint; the segmented Theme control is the system's.
 - **Document font:** System or Serif (New York) at the same sizes
   (`Preferences.serif`, read by `MarkdownStyler.font`).
 - **Settings:** inset grouped with `SettingsLabel` icon tiles; Appearance,

@@ -66,6 +66,43 @@ final class ComponentSnapshotTests: XCTestCase {
         }
     }
 
+    /// What sits on the ink accent (ADR 0099): the filled button's words,
+    /// the Replaced mark's symbol and the selected chip's words are white in
+    /// light mode and black in dark mode; the progress ring is ink.
+    func testAccentControls() {
+        let view = VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.s) {
+                Button {} label: {
+                    Label(String("Replace 3"), systemImage: "eye.slash")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+                }
+                .accentProminent()
+                Button {} label: {
+                    Text(verbatim: "Keep")
+                        .frame(maxWidth: .infinity, minHeight: Size.barButton)
+                }
+                .buttonStyle(.bordered)
+            }
+            HStack(spacing: Space.s) {
+                StateMark(state: .replaced)
+                StateMark(state: .kept)
+                StateMark(state: .proposed)
+                ProgressRing(fraction: 0.6)
+                Chip(Text(verbatim: "All"), filled: true)
+                Chip(Text(verbatim: "Person 2"), systemImage: "person")
+                Button(String("Select")) {}
+                    .font(Typography.chip)
+                    .textAction()
+            }
+        }
+        .padding()
+        .background(Palette.background)
+        for appearance in Snapshot.Appearance.allCases {
+            Snapshot.assert(view, named: "accent-controls", appearance: appearance)
+        }
+    }
+
     func testToastActionKeepsTheToastItShows() {
         var shown: ToastMessage? = ToastMessage(text: "12 replaced")
         let undo = ToastMessage(text: "12 replaced", actionTitle: "Undo") {

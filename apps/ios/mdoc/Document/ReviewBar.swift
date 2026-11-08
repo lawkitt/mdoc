@@ -495,7 +495,7 @@ private struct ReviewButtons: View {
         .frame(maxWidth: .infinity, minHeight: Size.barButton)
         let tap = Button { model.perform(action) } label: { label }
         if filled {
-            tap.buttonStyle(.borderedProminent)
+            tap.accentProminent()
                 .modifier(ButtonAccessibility(action: action, documentIsDone: model.documentIsDone))
         } else {
             tap.buttonStyle(.bordered)

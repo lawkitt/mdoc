@@ -150,7 +150,10 @@ struct MarkdownStyler {
                 text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
             if span.link {
+                // In the accent and underlined: the ink accent alone is
+                // close to the text's own colour (ADR 0099).
                 text.addAttribute(.foregroundColor, value: UIColor.tintColor, range: range)
+                text.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
             if span.highlight {
                 text.addAttribute(.backgroundColor, value: Self.highlight, range: range)
@@ -228,17 +231,21 @@ struct MarkdownStyler {
 
     /// The keys `decoration` may set: what a selection or scope change
     /// recolours in place (`MarkdownTextView`).
-    static let decorationKeys: [NSAttributedString.Key] = [.backgroundColor, .underlineStyle, .underlineColor]
+    static let decorationKeys: [NSAttributedString.Key] = [.backgroundColor, .underlineStyle, .underlineColor, .mdocOutline]
 
     /// What the review bar adds to a candidate over its state's look: the
-    /// one under review filled stronger, the other mentions its scope
+    /// one under review filled stronger and outlined in ink, black in light
+    /// mode and white in dark mode (ADR 0099), the other mentions its scope
     /// reaches filled lighter with a thick underline (ADR 0098). Empty for
     /// any other candidate.
     static func decoration(of candidate: Candidate, selected: Bool, scoped: Bool, dark: Bool) -> [NSAttributedString.Key: Any] {
         let colour = candidate.category.uiColor
         let fill = fill(dark: dark)
         if selected {
-            return [.backgroundColor: colour.withAlphaComponent(fill.selected)]
+            return [
+                .backgroundColor: colour.withAlphaComponent(fill.selected),
+                .mdocOutline: UIColor.ink.resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)),
+            ]
         }
         if scoped {
             return [

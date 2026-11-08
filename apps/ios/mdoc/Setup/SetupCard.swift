@@ -51,7 +51,7 @@ struct SetupCard: View {
                             Text("Download \(size) & continue")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminent()
                     .accessibilityIdentifier("setup-download")
                     if dismissible {
                         Button("Not now") {
@@ -62,6 +62,7 @@ struct SetupCard: View {
                             }
                         }
                         .buttonStyle(.borderless)
+                        .textAction()
                     }
                 }
                 if offered.count < model.snapshot.missing.count {
@@ -72,6 +73,7 @@ struct SetupCard: View {
                     }
                     .buttonStyle(.borderless)
                     .font(.subheadline)
+                    .textAction()
                     .accessibilityIdentifier("setup-download-all")
                 }
             }
