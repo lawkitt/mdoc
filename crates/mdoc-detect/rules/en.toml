@@ -174,6 +174,21 @@ trim = [
 category = "ORG"
 person_before = ["decl", "declaration", "aff", "affidavit", "dep", "deposition"]
 
+# A person's span of one name and an airline noun is an airline (guide
+# rule 2, #548): written lowercase the noun is a common one after the
+# company's name and stays outside ("⟦ORG|Pellam⟧ airlines", "⟦ORG|Pellam⟧
+# air fares"); capitalized it is the name's own word ("⟦ORG|Pellam
+# Airlines⟧"). Not after a title, nor after two words ("Ada Pellam airlines
+# tickets" are a person's). "Bank", "Medicine" and "Health" stay out:
+# they are surnames ("Melissa Bank") and nouns after a person's name
+# ("Ada Pellam bank details").
+# A team right after "team known as (the)", its name ending there, is a
+# company's too: "the team known as the ⟦ORG|Brindle Harriers⟧".
+[[span]]
+category = "PERSON"
+org_before = ["airline", "airlines", "air fare", "air fares", "airfare", "airfares"]
+org_after = ["team known as the", "team known as"]
+
 # A document label before "of" or a pinpoint page is no person's name
 # (#499). Require the dot and citation context: an untitled person called
 # Decl or Aff in prose must stay marked (guide rule 1).

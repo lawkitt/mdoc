@@ -365,6 +365,14 @@ struct SpanEntry {
     strip_end: String,
     #[serde(default)]
     person_before: Vec<String>,
+    /// For PERSON: lowercase words or phrases that, ending a span, make
+    /// it a company's ("Pellam airlines", "Pellam Bank").
+    #[serde(default)]
+    org_before: Vec<String>,
+    /// For PERSON: lowercase phrases right before a span that make it a
+    /// company's ("the team known as the Brindle Harriers").
+    #[serde(default)]
+    org_after: Vec<String>,
     /// A lowercase list marker at a line or list break is no initial.
     #[serde(default)]
     list_letter: bool,
@@ -513,6 +521,14 @@ struct SpanFix {
     /// person's document: "Ostrand Decl." is the declaration of a person
     /// named Ostrand.
     person_before: Vec<String>,
+    /// Lowercase words or phrases that, ending a person's span, make it a
+    /// company's: the name before a lowercase one ("Pellam" of "Pellam
+    /// airlines"), the whole span before a capitalized one ("Pellam
+    /// Bank"). They also end a company's name after its short name.
+    org_before: Vec<String>,
+    /// Lowercase phrases right before a person's span that make it a
+    /// company's: "team known as the" before "Brindle Harriers".
+    org_after: Vec<String>,
     list_letter: bool,
     /// Lowercase words a span never grows over ("exhibit" in "EXHIBIT A.
     /// WELK").
@@ -718,6 +734,31 @@ fn bare(word: &str) -> &str {
 /// English legal forms spelled out, lowercase: a company's name ends in
 /// one ("Contract Corporation", "Acme Holdings Limited").
 const SPELLED_FORMS: &[&str] = &["corporation", "company", "incorporated", "limited"];
+
+/// Generic business words, lowercase: after one other word in a company's
+/// name they make that word its short name ("Pellam" of "Pellam Bank",
+/// "Quillon" of "Quillon Freight Corp"; #548). Not "Motor", "Controls" or
+/// "Law": "Ford", "Johnson" and "Stewarts" may be people's names there.
+const BUSINESS_WORDS: &[&str] = &[
+    "resources",
+    "maritime",
+    "freight",
+    "holdings",
+    "group",
+    "shipping",
+    "bank",
+    "airline",
+    "airlines",
+    "capital",
+    "industries",
+    "logistics",
+    "energy",
+    "mining",
+];
+
+/// Russian party roles, lowercase: a name before one in a caption is a
+/// party's, a person as often as a company ("ИВАНОВ, истец").
+const RU_PARTY_ROLES: &[&str] = &["истец", "ответчик", "заявитель", "истца", "ответчика"];
 
 /// Russian words of a legal form spelled out, lowercase: «Общество с
 /// ограниченной ответственностью», «Акционерное общество».
@@ -1541,12 +1582,14 @@ impl Pack {
                     || !entry.extend.is_empty()
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty()
+                    || !entry.org_before.is_empty()
+                    || !entry.org_after.is_empty()
                     || entry.list_letter
                     || !entry.unless_over.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, list_letter or unless_over".into(),
+                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, org_before, org_after, list_letter or unless_over".into(),
                         ));
                     }
                     // A sized pattern's `mark` groups are what its lines'
@@ -1654,12 +1697,17 @@ impl Pack {
                 }
                 if !fixes {
                     return Err(at(
-                        "needs a pattern, trim words, trim_start, extend patterns, strip_end or person_before"
+                        "needs a pattern, trim words, trim_start, extend patterns, strip_end, person_before, org_before or org_after"
                             .into(),
                     ));
                 }
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
+                }
+                if (!entry.org_before.is_empty() || !entry.org_after.is_empty())
+                    && category != Category::Person
+                {
+                    return Err(at("only a PERSON fix takes org_before or org_after".into()));
                 }
                 if entry.list_letter
                     && !matches!(category, Category::Person | Category::Organization)
@@ -1671,7 +1719,12 @@ impl Pack {
                     return Err(at("role_trim needs ORG and trim words".into()));
                 }
                 // A trim may be a phrase of single-spaced words ("in re").
-                for word in &entry.trim {
+                for word in entry
+                    .trim
+                    .iter()
+                    .chain(&entry.org_before)
+                    .chain(&entry.org_after)
+                {
                     if word
                         .split(' ')
                         .any(|part| part.is_empty() || part.chars().any(char::is_whitespace))
@@ -1691,6 +1744,8 @@ impl Pack {
                     .trim
                     .iter()
                     .chain(&entry.person_before)
+                    .chain(&entry.org_before)
+                    .chain(&entry.org_after)
                     .chain(&entry.unless_over)
                 {
                     if *word != word.to_lowercase() {
@@ -1743,6 +1798,8 @@ impl Pack {
                     extend,
                     strip_end: entry.strip_end.clone(),
                     person_before: entry.person_before.clone(),
+                    org_before: entry.org_before.clone(),
+                    org_after: entry.org_after.clone(),
                     list_letter: entry.list_letter,
                     unless_over: entry.unless_over.clone(),
                 }));
@@ -2913,6 +2970,10 @@ impl Pack {
             }
         }
         self.person_documents(source, detections);
+        // Before citations drop a precedent's parties: "Spiliada Maritime
+        // Corp" there still makes "Spiliada" a company's short name.
+        let named = self.company_nouns(source, view, detections);
+        self.company_short_names(source, view, detections, &named);
         // Before citations, common-name evidence and propagation: a party
         // code must never become evidence that a real name was mentioned.
         for reference in &self.conditional_references {
@@ -3746,6 +3807,436 @@ impl Pack {
             let name = name.trim_start();
             detection.range = at..at + name.len();
             detection.category = Category::Person;
+        }
+    }
+
+    /// The `org_before` and `org_after` phrases of the PERSON fixes.
+    fn org_phrases(&self) -> (Vec<&String>, Vec<&String>) {
+        let fixes = || {
+            self.spans.iter().filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Person => Some(fix),
+                _ => None,
+            })
+        };
+        (
+            fixes().flat_map(|fix| &fix.org_before).collect(),
+            fixes().flat_map(|fix| &fix.org_after).collect(),
+        )
+    }
+
+    /// Where the name ends in `text`, a span that is a capitalized name
+    /// and an `org_before` noun written lowercase ("Pellam airlines",
+    /// "Pellam air fares"): a company's name with a common noun after it,
+    /// which stays outside (guide rule 2, #548). `None` for anything else:
+    /// a capitalized noun ("Pellam Airlines"), or a lowercase word or a
+    /// joiner before the noun ("Pellam College of airlines").
+    pub(crate) fn org_noun_name(&self, text: &str) -> Option<usize> {
+        let (nouns, _) = self.org_phrases();
+        let words: Vec<(usize, &str)> = text
+            .split_whitespace()
+            .map(|word| (word.as_ptr() as usize - text.as_ptr() as usize, word))
+            .collect();
+        let at = nouns.iter().find_map(|noun| {
+            let noun: Vec<&str> = noun.split(' ').collect();
+            (words.len() > noun.len()
+                && words[words.len() - noun.len()..]
+                    .iter()
+                    .zip(&noun)
+                    .all(|((_, word), noun)| bare(word).trim_end_matches('.') == *noun))
+            .then(|| words.len() - noun.len())
+        })?;
+        let (last, word) = words[at - 1];
+        let before = bare(word);
+        if !before.starts_with(char::is_uppercase)
+            || JOINERS.contains(&before.to_lowercase().as_str())
+        {
+            return None;
+        }
+        let end = last + word.trim_end_matches([',', ';', ':']).len();
+        text.trim_start()
+            .starts_with(char::is_uppercase)
+            .then_some(end)
+    }
+
+    /// A model person's span that is one capitalized word and an
+    /// `org_before` noun, or a name right after an `org_after` phrase that
+    /// ends there, is a company's (guide rule 2, #548): "Pellam airlines"
+    /// is "Pellam" with a common noun after it, "Pellam Airlines" the
+    /// company's whole name, and "Brindle Harriers" in "the team known as
+    /// the Brindle Harriers." a team. Never after a person's title, nor two
+    /// words before a noun ("Ada Pellam airlines tickets" is a person's),
+    /// nor a name a lowercase word carries on ("the team known as the Ada
+    /// Pellam fan club"). Returns the one-word names: each is a short name
+    /// elsewhere in the document ([`Self::company_short_names`]).
+    fn company_nouns(
+        &self,
+        source: &str,
+        view: &mdoc_pii::view::View,
+        detections: &mut [Detection],
+    ) -> Vec<Vec<String>> {
+        let (before, after) = self.org_phrases();
+        if before.is_empty() && after.is_empty() {
+            return Vec::new();
+        }
+        let text = &view.text;
+        let mut named = Vec::new();
+        for detection in detections
+            .iter_mut()
+            .filter(|d| d.category == Category::Person && d.recognizer == Recognizer::Model)
+        {
+            if self.titled(source, detection.range.start) {
+                continue;
+            }
+            let seen = view.view_range(detection.range.clone());
+            let span = &text[seen.clone()];
+            // Each word with its offset in the span.
+            let words: Vec<(usize, &str)> = span
+                .split_whitespace()
+                .map(|word| (word.as_ptr() as usize - span.as_ptr() as usize, word))
+                .collect();
+            let lower: Vec<String> = words
+                .iter()
+                .map(|(_, word)| bare(word).trim_end_matches('.').to_lowercase())
+                .collect();
+            // One name word, then the noun.
+            let noun = before.iter().any(|phrase| {
+                let phrase: Vec<&str> = phrase.split(' ').collect();
+                lower.len() == phrase.len() + 1 && lower[1..] == phrase[..]
+            });
+            let after_phrase = || {
+                let before_span: Vec<String> = text[..seen.start]
+                    .split_whitespace()
+                    .rev()
+                    .take(5)
+                    .map(str::to_lowercase)
+                    .collect();
+                // The team's name ends with the span: "(", ",", "." or
+                // the line's end, never "fan club".
+                let ends = !text[seen.end..]
+                    .trim_start_matches([' ', '\t'])
+                    .starts_with(char::is_alphanumeric);
+                ends && after.iter().any(|phrase| {
+                    let phrase: Vec<&str> = phrase.split(' ').rev().collect();
+                    before_span.len() >= phrase.len()
+                        && before_span.iter().zip(&phrase).all(|(a, b)| a == b)
+                })
+            };
+            let name = if noun {
+                match self.org_noun_name(span) {
+                    // A lowercase noun stays outside: "⟦ORG|Pellam⟧ airlines".
+                    Some(end) => 0..end,
+                    None if words[1].1.starts_with(char::is_uppercase) => 0..span.len(),
+                    None => continue,
+                }
+            } else if after_phrase() {
+                // "the team known as the Brindle Harriers" read as "the
+                // Brindle Harriers": the article stays outside.
+                let start = match words.first() {
+                    Some((_, "the")) if words.len() > 1 => words[1].0,
+                    _ => 0,
+                };
+                start..span.len()
+            } else {
+                continue;
+            };
+            if !span[name.clone()].starts_with(char::is_uppercase) {
+                continue;
+            }
+            let words = plain_words(&span[name.clone()]);
+            if words.len() == 1 {
+                named.push(words);
+            }
+            detection.range = view.source_range(seen.start + name.start..seen.start + name.end);
+            detection.category = Category::Organization;
+        }
+        named
+    }
+
+    /// A model person whose words are a company's short name in the same
+    /// document is that company (guide rule 2, #506 items 10 and 11, #548),
+    /// a possessive included ("Pellam’s"), only on strong evidence:
+    /// - a name the document defines for a company right after it, sharing
+    ///   a word with it ("Quillon Freight Corp. (“Quillon”)"; a generic
+    ///   term such as “the Company” shares none);
+    /// - a company's name before its legal form ("Quillon Freight" of
+    ///   "Quillon Freight Corp"), unless a person's span has those words
+    ///   ("Ada Pellam" of "Ada Pellam LLC");
+    /// - its first word where the rest is a [`BUSINESS_WORDS`] word and no
+    ///   joiner ("Pellam" of "Pellam Bank", "Quillon" of "Quillon Freight
+    ///   Corp"; not "Davis" of "Davis Polk & Wardwell LLP", "Ford" of "Ford
+    ///   Motor Co", nor "Ada" of "Ada Pellam LLC");
+    /// - a company's whole name of two words or more in any letter case
+    ///   where that mention has a legal form, a definition, an `org_before`
+    ///   noun or an `org_after` phrase beside it ("Brindle Harriers" beside
+    ///   "BRINDLE HARRIERS LLC"), never one a party role follows ("ADA
+    ///   PELLAM, Plaintiff");
+    /// - a one-word company's name before an `org_before` noun ("Pellam"
+    ///   of "Pellam airlines"), or one [`Self::company_nouns`] `named`.
+    ///
+    /// A company in a cited precedent gives no short name; «ИП» is no legal
+    /// form here (guide rule 1). Never where the words are a person's too:
+    /// after a title ("Mr Pellam"), or in a longer person's span beside
+    /// another name ("Ada Pellam", "John Smith" beside "Smith LLP"), which
+    /// a title always makes a person's; then each span of them stays as
+    /// the model gave it. Nor bare capitals of three letters or fewer no
+    /// definition names, which may be a person's initials (#387).
+    fn company_short_names(
+        &self,
+        source: &str,
+        view: &mdoc_pii::view::View,
+        detections: &mut [Detection],
+        named: &[Vec<String>],
+    ) {
+        if !detections.iter().any(|d| d.category == Category::Person) {
+            return;
+        }
+        let text = &view.text;
+        let written = |text: &str| -> Vec<String> {
+            text.split_whitespace()
+                .map(|word| bare(word).trim_end_matches('.').to_owned())
+                .filter(|word| !word.is_empty())
+                .collect()
+        };
+        let lower =
+            |words: &[String]| -> Vec<String> { words.iter().map(|w| w.to_lowercase()).collect() };
+        let (nouns, after) = self.org_phrases();
+        let nouns: Vec<Vec<&str>> = nouns.iter().map(|noun| noun.split(' ').collect()).collect();
+        let people: Vec<(usize, bool, Vec<String>)> = detections
+            .iter()
+            .filter(|d| d.category == Category::Person)
+            .map(|d| {
+                let words = written(&text[view.view_range(d.range.clone())]);
+                (d.range.start, self.titled(source, d.range.start), words)
+            })
+            .collect();
+        let a_person = |words: &[String]| {
+            let words = lower(words);
+            people.iter().any(|(_, _, person)| lower(person) == words)
+        };
+        // Each short name as written, and whether a definition gives it.
+        let mut known: Vec<(Vec<String>, bool)> =
+            named.iter().map(|name| (name.clone(), false)).collect();
+        // A span the model gave both categories ("Grant Pellover" as a
+        // person and a company) is no company's evidence: the review's
+        // conflict rules choose there. Nor is an individual entrepreneur
+        // («ИП Иванов») a company (guide rule 1).
+        let entrepreneur = |words: &[String]| {
+            let words = lower(words);
+            words.iter().any(|word| word == "ип")
+                || words.windows(2).any(|pair| {
+                    pair[0] == "индивидуальный" && pair[1].starts_with("предпринимател")
+                })
+        };
+        let cited: Vec<std::ops::Range<usize>> = self
+            .cited(text)
+            .into_iter()
+            .map(|case| case.range)
+            .collect();
+        struct Company {
+            seen: std::ops::Range<usize>,
+            words: Vec<String>,
+            cited: bool,
+        }
+        let organizations: Vec<Company> = detections
+            .iter()
+            .filter(|d| {
+                d.category == Category::Organization
+                    && !detections
+                        .iter()
+                        .any(|other| other.category == Category::Person && other.range == d.range)
+            })
+            .map(|d| {
+                let seen = view.view_range(d.range.clone());
+                let words = written(&text[seen.clone()]);
+                let cited = cited
+                    .iter()
+                    .any(|case| case.start <= seen.start && seen.end <= case.end);
+                Company { seen, words, cited }
+            })
+            .filter(|company| !company.words.is_empty() && !entrepreneur(&company.words))
+            .collect();
+        let form = |word: &String| {
+            self.legal_form(word) || SPELLED_FORMS.contains(&word.to_lowercase().as_str())
+        };
+        // Definitions right after a company: (its words, the term).
+        let mut defined: Vec<(&Company, Vec<String>)> = Vec::new();
+        for definition in definitions(text) {
+            // Where the subject ends in `text`; an empty one may be no
+            // slice of it.
+            let Some(end) = (definition.subject.as_ptr() as usize)
+                .checked_sub(text.as_ptr() as usize)
+                .map(|start| start + definition.subject.len())
+                .filter(|end| *end <= text.len() && !definition.subject.is_empty())
+            else {
+                continue;
+            };
+            let Some(company) = organizations.iter().find(|company| {
+                company.seen.end <= end
+                    && text[company.seen.end..end]
+                        .chars()
+                        .all(|c| c.is_whitespace() || c == '.' || c == ',')
+            }) else {
+                continue;
+            };
+            let mut term = written(definition.term);
+            if term
+                .first()
+                .is_some_and(|word| word.eq_ignore_ascii_case("the"))
+            {
+                term.remove(0);
+            }
+            if entrepreneur(&term) {
+                continue;
+            }
+            let words = lower(&company.words);
+            if lower(&term).iter().any(|word| words.contains(word)) {
+                defined.push((company, term));
+            }
+        }
+        for company in &organizations {
+            let words = &company.words;
+            let rest = &text[company.seen.end..];
+            let next: Vec<String> = rest
+                .split_whitespace()
+                .take(2)
+                .map(|word| bare(word).trim_end_matches('.').to_lowercase())
+                .collect();
+            let spaced = rest.starts_with(char::is_whitespace);
+            // "Pellam" before "airlines": a company's name with its noun
+            // outside ([`Self::org_noun_name`]).
+            let noun = spaced
+                && nouns.iter().any(|noun| {
+                    noun.len() <= next.len() && next.iter().zip(noun).all(|(a, b)| a == b)
+                });
+            if noun && words.len() == 1 {
+                known.push((words.clone(), false));
+            }
+            let definition = defined
+                .iter()
+                .any(|(defining, _)| std::ptr::eq(*defining, company));
+            // The whole name in another mention, on evidence beside this
+            // one; a party role after it is a caption's person.
+            let role = rest
+                .trim_start_matches(|c: char| c.is_whitespace() || c == ',')
+                .split(|c: char| !c.is_alphanumeric())
+                .next()
+                .map(str::to_lowercase)
+                .is_some_and(|word| {
+                    self.party_roles.contains(&word) || RU_PARTY_ROLES.contains(&word.as_str())
+                });
+            let after_phrase = || {
+                let before: Vec<String> = text[..company.seen.start]
+                    .split_whitespace()
+                    .rev()
+                    .take(5)
+                    .map(str::to_lowercase)
+                    .collect();
+                after.iter().any(|phrase| {
+                    let phrase: Vec<&str> = phrase.split(' ').rev().collect();
+                    before.len() >= phrase.len() && before.iter().zip(&phrase).all(|(a, b)| a == b)
+                })
+            };
+            let legal = words.iter().any(form)
+                || spaced && next.first().is_some_and(|word| self.legal_form(word));
+            if words.len() >= 2 && !role && (legal || definition || noun || after_phrase()) {
+                known.push((words.clone(), false));
+            }
+            // A precedent's company gives its whole name only.
+            if company.cited {
+                continue;
+            }
+            let mut core = &words[..];
+            while let Some((first, rest)) = core.split_first()
+                && (first.eq_ignore_ascii_case("the") || form(first))
+            {
+                core = rest;
+            }
+            while let Some((last, rest)) = core.split_last()
+                && !rest.is_empty()
+                && form(last)
+            {
+                core = rest;
+            }
+            if core.is_empty() {
+                continue;
+            }
+            // Before its legal form, unless a person's span has those words
+            // and no definition makes them the company's.
+            let owner = core.len() >= 2 && a_person(core) && !definition;
+            if core.len() < words.len() && !owner {
+                known.push((core.to_vec(), false));
+            }
+            // The first word, where the rest is a business word: no
+            // joiner, as in a firm of partners' names.
+            let joined = text[company.seen.clone()].contains(['&', '+'])
+                || lower(core)
+                    .iter()
+                    .any(|word| ["and", "и", "&", "+"].contains(&word.as_str()));
+            if core.len() >= 2
+                && !owner
+                && !joined
+                && lower(&core[1..])
+                    .iter()
+                    .all(|word| BUSINESS_WORDS.contains(&word.as_str()))
+            {
+                known.push((core[..1].to_vec(), false));
+            }
+        }
+        known.extend(defined.into_iter().map(|(_, term)| (term, true)));
+        // A name's words alone: no title, role or joiner only, a capital
+        // first, never a person's initials unless the document defines them.
+        known.retain(|(words, defined)| {
+            let name = |word: &String| {
+                !self.never(word) && !JOINERS.contains(&word.to_lowercase().as_str())
+            };
+            let initials =
+                |word: &String| word.chars().count() <= 3 && word.chars().all(char::is_uppercase);
+            words.first().is_some_and(|first| {
+                first.starts_with(char::is_uppercase) && first.chars().count() >= 2
+            }) && words.iter().any(name)
+                && (*defined || words.len() > 1 || !initials(&words[0]))
+        });
+        let known: Vec<Vec<String>> = known.into_iter().map(|(words, _)| lower(&words)).collect();
+        if known.is_empty() {
+            return;
+        }
+        // A person's word in this document: a span of it after a title, or
+        // a longer person's span with it and another name; a longer span
+        // that is a company's name counts only after a title.
+        let personal = |name: &Vec<String>| {
+            people.iter().any(|(_, titled, words)| {
+                let lowered = lower(words);
+                if lowered == *name {
+                    return *titled;
+                }
+                lowered.len() > name.len()
+                    && (*titled || !known.contains(&lowered))
+                    && lowered.windows(name.len()).any(|run| run == &name[..])
+                    && words.iter().zip(&lowered).any(|(word, lowered)| {
+                        !name.contains(lowered)
+                            && word.starts_with(char::is_uppercase)
+                            && !self.never(word)
+                    })
+            })
+        };
+        let companies: Vec<&Vec<String>> = known.iter().filter(|name| !personal(name)).collect();
+        for detection in detections
+            .iter_mut()
+            .filter(|d| d.category == Category::Person && d.recognizer == Recognizer::Model)
+        {
+            let words = lower(&written(&text[view.view_range(detection.range.clone())]));
+            if !companies.iter().any(|name| **name == words) {
+                continue;
+            }
+            // The possessive stays outside, as a person's does.
+            let span = &source[detection.range.clone()];
+            if let Some(possessive) = ["'s", "’s", "'S", "’S"]
+                .into_iter()
+                .find(|possessive| span.len() > possessive.len() && span.ends_with(possessive))
+            {
+                detection.range.end -= possessive.len();
+            }
+            detection.category = Category::Organization;
         }
     }
 
@@ -17330,6 +17821,18 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ),
             (
                 "[[span]]\ncategory = \"ORG\"\nperson_before = [\"Decl\"]",
+                "not lowercase",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\norg_before = [\"airlines\"]",
+                "only a PERSON fix takes org_before",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\norg_after = [\"team  known as\"]",
+                "not words single-spaced",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\norg_before = [\"Bank\"]",
                 "not lowercase",
             ),
             (
