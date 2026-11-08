@@ -115,10 +115,12 @@ final class IdentitiesModelTests: XCTestCase {
         }
     }
 
-    /// "Drag a name onto another to make them one" shows while two names
-    /// share a category or Looks like has a card, and goes for good after
-    /// the first drag-merge or Same as (ADR 0106); Reset tips brings it back.
+    /// "In Select, drag ≡ onto a name to make them one" shows while two
+    /// names share a category or Looks like has a card, and goes for good
+    /// after the first drag-merge or Same as (ADR 0106); Reset tips brings
+    /// it back.
     func testTheDragHintShowsUntilTheFirstMerge() throws {
+        XCTAssertEqual(String(localized: ReviewHint.dragMerge.text), "In Select, drag ≡ onto a name to make them one")
         let wasEnabled = ReviewHint.enabled
         ReviewHint.resetAll()
         ReviewHint.enabled = true

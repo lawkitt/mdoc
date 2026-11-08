@@ -127,6 +127,11 @@ final class SurveyUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["Identities"].waitForExistence(timeout: 5))
         shot("17-identities")
+        // Select: a tick on the left and a ≡ handle on the right of each row.
+        app.buttons["identities-select"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["identity-drag-handle"].firstMatch.waitForExistence(timeout: 5))
+        shot("41-identities-select")
+        app.buttons["identities-select"].firstMatch.tap()
         if !isPad {
             closeSheet(app)
         }
