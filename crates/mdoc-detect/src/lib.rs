@@ -1040,17 +1040,33 @@ fn rest_beside_rule_values<'a>(
         }
         for gap in gaps {
             for (value, label) in values_in(&view.text, view.view_range(gap)) {
-                let category = match &label {
-                    None => model.category,
+                let (category, labelled, whole) = match &label {
+                    None => (model.category, false, None),
                     Some(label) => match rules::pack().field_label(label) {
-                        Some(category) => category,
+                        Some(rules::FieldLabel::Labelled(category, whole)) => {
+                            (category, true, whole)
+                        }
+                        Some(rules::FieldLabel::Strict(category)) => (category, false, None),
                         None => continue,
                     },
+                };
+                // A phone ends before a year after it ("8 495 123-45-67
+                // 2026 г.").
+                let value = if category == Category::Phone {
+                    value.start..value.start + phone_end(&view.text[value.clone()])
+                } else {
+                    value
                 };
                 let part = view.source_range(value.clone());
                 let text = &view.text[value];
                 if part.is_empty()
-                    || !identifier_shaped(text, category, label.is_some())
+                    // A context's own value, its groups' spaces aside (an
+                    // IBAN in fours).
+                    || whole.is_some_and(|whole| {
+                        !whole.is_match(text)
+                            && !whole.is_match(&text.split_whitespace().collect::<String>())
+                    })
+                    || !identifier_shaped(text, category, labelled)
                     || !rules::pack().identifying_at(source, part.clone(), text, category)
                     || detections.iter().chain(&found).any(|d| d.range == part)
                 {
@@ -1083,6 +1099,9 @@ fn values_in(text: &str, range: Range<usize>) -> Vec<(Range<usize>, Option<Strin
         regex::Regex::new(r"^(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:г)?|\d{4}-\d{2}-\d{2})$")
             .expect("date token pattern")
     });
+    static IBAN_START: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let iban_start = IBAN_START
+        .get_or_init(|| regex::Regex::new(r"^[A-Z]{2}\d{2}").expect("IBAN start pattern"));
     let edge = |c: char| ",;:.!?«»\"'“”„*_[]{}".contains(c);
     fn close<'t>(run: &mut Option<Run<'t>>, runs: &mut Vec<Run<'t>>) {
         if let Some(found) = run.take() {
@@ -1106,6 +1125,15 @@ fn values_in(text: &str, range: Range<usize>) -> Vec<(Range<usize>, Option<Strin
                     Some((found, label)) => (found.start..end, label),
                     None => (start..end, std::mem::take(&mut words)),
                 });
+            } else if let Some((found, _)) = run.as_mut().filter(|(found, _)| {
+                iban_start.is_match(
+                    text[found.clone()].trim_start_matches(|c: char| !c.is_alphanumeric()),
+                ) && core
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            }) {
+                // An IBAN's letter group ("GB29 NWBK 6016 …").
+                found.end = start + token.len();
             } else if core.chars().any(char::is_alphabetic) {
                 if run.is_some() {
                     close(&mut run, &mut runs);
@@ -1147,11 +1175,39 @@ fn values_in(text: &str, range: Range<usize>) -> Vec<(Range<usize>, Option<Strin
         .collect()
 }
 
+/// Whether twenty digits are a Russian account's: its currency code, the
+/// sixth to eighth digits, is the rouble's or a common currency's
+/// ("40702810…"); a payment's УИН ("18810177…") or a budget code
+/// ("18210102…") has none.
+fn russian_account(value: &str) -> bool {
+    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+    ["810", "643", "840", "978", "156", "826", "756"].contains(&&digits[5..8])
+}
+
+/// How much of a phone run `value` is the phone: it ends once it has ten
+/// or eleven digits and four digits alone come next (a year: "212 555
+/// 0142 2026").
+fn phone_end(value: &str) -> usize {
+    let mut digits = 0;
+    for token in value.split(char::is_whitespace).filter(|t| !t.is_empty()) {
+        let at = token.as_ptr() as usize - value.as_ptr() as usize;
+        if (10..=11).contains(&digits)
+            && token.len() == 4
+            && token.bytes().all(|b| b.is_ascii_digit())
+        {
+            return value[..at].trim_end().len();
+        }
+        digits += token.chars().filter(char::is_ascii_digit).count();
+    }
+    value.len()
+}
+
 /// Whether `value` reads as one value of an identifier `category`: digits
 /// with spaces or dashes (#739). After its field's label (`labelled`) an
 /// account has 8 to 34 digits, a document's number 6 to 20, a tax number 8
 /// to 15 and a phone 7 to 15. With no label only the strict shapes count:
-/// an account's twenty digits or an IBAN, a passport's series and number, a
+/// a Russian account's twenty digits (`russian_account`) or an IBAN, a
+/// passport's series and number, a
 /// tax number's ten or twelve digits, a phone with "+" or a bracketed code
 /// or ten or eleven digits from 7 or 8 in groups. Thousands groups ("10 000
 /// 000"), a date ("2026-03-12"), a span of years or a ZIP code ("2019-2026",
@@ -1209,7 +1265,9 @@ fn identifier_shaped(value: &str, category: Category, labelled: bool) -> bool {
         Category::Bank => {
             made_of("")
                 && (iban.is_match(value)
-                    || letters == 0 && (digits == 20 || labelled && (8..=34).contains(&digits)))
+                    || letters == 0
+                        && (digits == 20 && (labelled || russian_account(value))
+                            || labelled && (8..=34).contains(&digits)))
         }
         Category::Identity => {
             made_of("№")
@@ -3297,6 +3355,143 @@ mod tests {
                 .map(|span| format!("{}«{}»", span.category, &source[span.range]))
                 .collect();
             assert_eq!(shown.join(" | "), expected, "{id}: {source}");
+        }
+    }
+
+    /// #739's delta review: a series is a passport's only after "паспорт" or
+    /// alone before a passport's shape; a `context`'s label needs a value
+    /// its `value` takes (spaces aside), and "счёт" or "сч." an account's
+    /// twenty digits; twenty digits alone need a Russian account's currency
+    /// code (no УИН, no КБК); a phone ends before a year; an IBAN keeps its
+    /// letter groups.
+    #[test]
+    fn a_wide_identifier_span_keeps_only_its_own_fields_after_the_delta_review() {
+        for (source, wide, label, expected) in [
+            // A series.
+            (
+                "ИНН 772012345678, свидетельство серии 77 № 012345678",
+                "772012345678, свидетельство серии 77 № 012345678",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            (
+                "ИНН 772012345678, бланк серии 7701 № 123456",
+                "772012345678, бланк серии 7701 № 123456",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            (
+                "ИНН 772012345678, свидетельство серии 77 № 012345678, тел. +7 495 123-45-67",
+                "772012345678, свидетельство серии 77 № 012345678, тел. +7 495 123-45-67",
+                "phone_number",
+                "TAX«772012345678» | PHONE«+7 495 123-45-67»",
+            ),
+            (
+                "ИНН 772012345678, паспорт гражданина РФ серии 45 12 № 345678",
+                "772012345678, паспорт гражданина РФ серии 45 12 № 345678",
+                "passport_number",
+                "TAX«772012345678» | IDENTITY«45 12 № 345678»",
+            ),
+            (
+                "ИНН 772012345678, серия 4512 № 345678",
+                "772012345678, серия 4512 № 345678",
+                "passport_number",
+                "TAX«772012345678» | IDENTITY«4512 № 345678»",
+            ),
+            (
+                "ИНН 772012345678, серия 77 № 0123456",
+                "772012345678, серия 77 № 0123456",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            // A context's value, and "счёт" alone.
+            (
+                "ИНН 7701234567, счёт № 12345678 от 01.02.2026",
+                "7701234567, счёт № 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, сч. № 12345678",
+                "7701234567, сч. № 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, р/с 40702810900000012345, счёт № 12345678",
+                "7701234567, р/с 40702810900000012345, счёт № 12345678",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "ИНН 7701234567, счёт 40702810900000012345",
+                "7701234567, счёт 40702810900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "ИНН 7701234567, кн 12345678",
+                "7701234567, кн 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, кн 12345678, р/с 40702810900000012345",
+                "7701234567, кн 12345678, р/с 40702810900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            // Twenty digits alone.
+            (
+                "ИНН 7701234567, 18810177230000123456",
+                "7701234567, 18810177230000123456",
+                "bank_account",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, 18210102010011000110",
+                "7701234567, 18210102010011000110",
+                "bank_account",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, 40702978900000012345",
+                "7701234567, 40702978900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702978900000012345»",
+            ),
+            // A phone before a year.
+            (
+                "ИНН 7701234567, тел. 8 495 123-45-67 2026 г.",
+                "7701234567, тел. 8 495 123-45-67 2026 г.",
+                "phone_number",
+                "TAX«7701234567» | PHONE«8 495 123-45-67»",
+            ),
+            (
+                "Tax ID 9900123450, Phone 212 555 0142 2026",
+                "9900123450, Phone 212 555 0142 2026",
+                "phone_number",
+                "TAX«9900123450» | PHONE«212 555 0142»",
+            ),
+            // An IBAN's letter groups.
+            (
+                "Tax ID 9900123450, IBAN: GB29 NWBK 6016 1331 9268 19",
+                "9900123450, IBAN: GB29 NWBK 6016 1331 9268 19",
+                "bank_account",
+                "TAX«9900123450» | BANK«GB29 NWBK 6016 1331 9268 19»",
+            ),
+            (
+                "Tax ID 9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                "9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                "bank_account",
+                "TAX«9900123450» | BANK«DE89 3704 0044 0532 0130 00»",
+            ),
+        ] {
+            let shown: Vec<String> = shown_with(source, &[(wide, label)])
+                .into_iter()
+                .map(|(_, category, text)| format!("{category}«{text}»"))
+                .collect();
+            assert_eq!(shown.join(" | "), expected, "{source}");
         }
     }
 

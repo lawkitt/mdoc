@@ -806,17 +806,33 @@ min_digits = 8
 # address's or an invoice's word no label: they give nothing.
 [[label]]
 category = "TAX"
-words = ["инн", "кпп", "огрн", "огрнип", "огрн ип", "окпо", "код окпо"]
+words = ["кпп", "огрн", "огрнип", "огрн ип", "окпо", "код окпо"]
 
 # Bank details' labels besides the trimmed ones above.
 [[label]]
 category = "BANK"
 words = ["бик", "лицевой счет", "лицевой счёт", "корр счет", "корр счёт", "номер счета", "номер счёта"]
 
+# "Счёт" and "сч." alone are an invoice's as often as an account's ("счёт
+# № 12345678 от 01.02.2026"): only an account's twenty digits after them.
+[[label]]
+category = "BANK"
+words = ["счет", "счёт", "сч"]
+strict = true
+
 # An identity document's labels.
 [[label]]
 category = "IDENTITY"
-words = ["паспорт", "паспорта", "серия", "серии", "серия и номер"]
+words = ["паспорт", "паспорта"]
+
+# A series is a passport's after "паспорт" ("паспорт гражданина РФ серии
+# 45 12 № 345678"); alone, only before a passport's series and number; a
+# certificate's or a form's ("свидетельство серии 77 № 012345678", "бланк
+# серии 7701 № 123456") is none.
+[[label]]
+category = "IDENTITY"
+words = ["серия", "серии", "серия и номер"]
+only_after = ["паспорт", "паспорта"]
 
 # A phone's labels.
 [[label]]
