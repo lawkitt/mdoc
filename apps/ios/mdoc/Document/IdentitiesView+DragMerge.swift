@@ -29,7 +29,9 @@ extension IdentitiesView {
                 let origin = proxy.frame(in: .global).origin
                 let frame = drag.copyFrame
                 HStack(spacing: Space.s) {
-                    rowLine(identity, selected: selection.contains(identity.id))
+                    // The copy covers the row under it: "Same as PERSON_1"
+                    // shows on the copy too.
+                    rowLine(identity, selected: selection.contains(identity.id), hint: targetHint)
                     HandleSymbol()
                 }
                 .padding(.vertical, Space.xxs)
@@ -47,6 +49,12 @@ extension IdentitiesView {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// "Same as PERSON_1" for the row under the finger.
+    private var targetHint: String? {
+        guard let target = drag?.target, let identity = identities.first(where: { $0.id == target }) else { return nil }
+        return dropHint(on: identity)
     }
 
     /// The handle's finger, from down to up.

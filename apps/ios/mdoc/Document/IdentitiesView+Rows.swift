@@ -91,9 +91,10 @@ extension IdentitiesView {
 
     /// A row's line: Select's tick, the category, the name, its alias and
     /// other spellings ("Same as PERSON_1" while a drag is over it), and the
-    /// state mark outside Select. The lifted copy draws the same line.
-    func rowLine(_ identity: Identity, selected: Bool) -> some View {
-        let dropHint = dropHint(on: identity)
+    /// state mark outside Select. The lifted copy draws the same line, with
+    /// `hint` in the alias line's place.
+    func rowLine(_ identity: Identity, selected: Bool, hint: String? = nil) -> some View {
+        let dropHint = hint ?? dropHint(on: identity)
         return HStack(spacing: Space.s) {
             if selecting {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -127,7 +128,9 @@ extension IdentitiesView {
                             .lineLimit(1)
                     }
                 }
-                // A drag over the row: "Same as PERSON_1" in its place.
+                // A drag over the row: "Same as PERSON_1" in its place, as
+                // wide as the row, not the alias.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .opacity(dropHint == nil ? 1 : 0)
                 .overlay(alignment: .leading) {
                     if let dropHint { DropHintLabel(text: dropHint) }

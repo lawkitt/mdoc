@@ -220,7 +220,8 @@ that only the view model changes; views send intents
   Make one with…, which opens Same as…. Mention drags and drop-to-split
   are desktop's only.
 - **Select:** tick rows, then Replace, Keep or Same as (into the name
-  mentioned most); one Undo takes the selection back.
+  mentioned most); one Undo takes the selection back. Rows in Select have
+  no swipes and no long-press menu: a tap ticks, the ≡ handle drags.
 
 ## Gestures
 

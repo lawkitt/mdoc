@@ -50,4 +50,5 @@ adds noise.
 - Closing the drawer by swiping over the list no longer works; the sliver,
   the edge and › do.
 - Keep needs one more tap from a swipe than before.
-- Drag-to-merge needs Select first; a long press on a row is its menu.
+- Drag-to-merge needs Select first, where rows neither swipe nor show
+  the long-press menu; outside Select a long press on a row is its menu.
