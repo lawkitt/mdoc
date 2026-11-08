@@ -116,6 +116,15 @@
 #                             masked name, "XXXXX")
 # Without a pattern an entry
 # fixes a model span's boundaries, in this order:
+#   nested_quotes = [regex…]  for ORG: legal forms before a name in nested
+#                         quotes on one line («…«…»», "…"…"", the last
+#                         inner pair closing with the outer, no deeper):
+#                         after one, every span on the form or in the
+#                         quotes grows to the whole name, form and closing
+#                         quotes included, as one span; without one, only
+#                         spans the quotes cut (holding one quote of a
+#                         pair, or two in the name) grow, to the name in
+#                         its outer quotes
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
 #                         into part of another span of its category, and

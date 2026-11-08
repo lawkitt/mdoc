@@ -366,6 +366,11 @@ struct SpanEntry {
     /// With `extend`: lowercase words a span never grows over.
     #[serde(default)]
     unless_over: Vec<String>,
+    /// For ORG: the legal forms that may stand before a name in nested
+    /// quotes («…«…»», "…"…""), each a regex. A span in such a name grows
+    /// to where its quotes balance (`SpanFix::nested_names`).
+    #[serde(default)]
+    nested_quotes: Vec<String>,
 }
 
 /// A legal reference or other marker no model span inside is (guide rule 8):
@@ -512,9 +517,196 @@ struct SpanFix {
     /// Lowercase words a span never grows over ("exhibit" in "EXHIBIT A.
     /// WELK").
     unless_over: Vec<String>,
+    /// Legal forms before a name in nested quotes, anchored to end where
+    /// the name's outer quote opens (`nested_names`).
+    nested_quotes: Vec<Regex>,
+}
+
+/// A closed pair of quotes on one line, in the source: where its opening
+/// quote starts, where its closing quote starts and where that ends.
+#[derive(Clone, Copy, PartialEq)]
+struct Quoted {
+    open: usize,
+    close: usize,
+    end: usize,
+}
+
+impl Quoted {
+    /// Whether this pair is inside `outer`, quotes and all.
+    fn inside(&self, outer: &Quoted) -> bool {
+        outer.open < self.open && self.end <= outer.close
+    }
+}
+
+/// The closed pairs of quotes in `line`, at `at` of the source: «» and
+/// straight quotes, nested. A straight quote opens after a space, the
+/// line's start or a bracket, before what is no space, and closes the
+/// innermost open straight quote after what is no space, so `"Группа
+/// "Север""` is two pairs and `15" экран` none. A closing quote of the other
+/// kind than the innermost open one leaves every open quote unclosed:
+/// «Кедр "Север» closes nothing.
+fn quote_pairs(line: &str, at: usize) -> Vec<Quoted> {
+    let mut open: Vec<(usize, char)> = Vec::new();
+    let mut pairs = Vec::new();
+    let mut prev: Option<char> = None;
+    let mut chars = line.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        let next = chars.peek().map(|&(_, next)| next);
+        let opens = prev.is_none_or(|p| p.is_whitespace() || "([«".contains(p))
+            && next.is_some_and(|n| !n.is_whitespace());
+        let closes = prev.is_some_and(|p| !p.is_whitespace() && !"([".contains(p));
+        let quote = match c {
+            '«' => {
+                open.push((i, c));
+                None
+            }
+            '»' => Some('«'),
+            '"' if closes && open.last().is_some_and(|&(_, q)| q == '"') => Some('"'),
+            '"' if opens => {
+                open.push((i, c));
+                None
+            }
+            // A straight quote after a word with none open closes nothing
+            // ("15\"").
+            '"' if closes && open.iter().any(|&(_, q)| q == '"') => Some('"'),
+            _ => None,
+        };
+        if let Some(quote) = quote {
+            match open.last() {
+                Some(&(start, opened)) if opened == quote => {
+                    open.pop();
+                    pairs.push(Quoted {
+                        open: at + start,
+                        close: at + i,
+                        end: at + i + c.len_utf8(),
+                    });
+                }
+                Some(_) => open.clear(),
+                None => {}
+            }
+        }
+        prev = Some(c);
+    }
+    pairs
 }
 
 impl SpanFix {
+    /// A company's name in nested quotes is one span (guide rule 2,
+    /// #557): «Правовая группа «Кедровый щит»», "Группа компаний "Северный
+    /// мост"". Such a name is a pair of quotes, on one line and inside one
+    /// pair at most, whose last inner pair closes with it and holds no
+    /// pair itself, with no legal form inside before an inner pair. With one of the `nested_quotes` legal forms just before
+    /// it, every span of the category on the form or in the quotes grows
+    /// to the whole name, form and closing quotes included, and so becomes
+    /// one. Without one, only spans the quotes cut grow (one holding just
+    /// one quote of a pair, or two spans in the name), to the name inside
+    /// its outer quotes, or with them when a span holds one: a quotation
+    /// that mentions «ООО «Кедр»» or «Кедре» is no name.
+    fn nested_names(&self, source: &str, detections: &mut Vec<Detection>) {
+        let mut lines: Vec<usize> = detections
+            .iter()
+            .filter(|d| d.category == self.category)
+            .map(|d| source[..d.range.start].rfind('\n').map_or(0, |at| at + 1))
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        let mut gone = vec![false; detections.len()];
+        for start in lines {
+            let end = source[start..]
+                .find('\n')
+                .map_or(source.len(), |at| start + at);
+            let pairs = quote_pairs(&source[start..end], start);
+            for name in &pairs {
+                let inner: Vec<&Quoted> = pairs.iter().filter(|p| p.inside(name)).collect();
+                if pairs.iter().filter(|outer| name.inside(outer)).count() > 1
+                    || !inner.iter().any(|p| p.end == name.close)
+                    || inner.iter().any(|p| inner.iter().any(|q| q.inside(p)))
+                {
+                    continue;
+                }
+                let open_end =
+                    name.open + source[name.open..].chars().next().map_or(1, char::len_utf8);
+                // A legal form inside the quotes makes them a quotation
+                // that mentions companies: «ООО «Кедр» и АО «Север»».
+                if inner.iter().any(|p| {
+                    self.nested_quotes
+                        .iter()
+                        .any(|form| form.is_match(&source[open_end..p.open]))
+                }) {
+                    continue;
+                }
+                let form = self
+                    .nested_quotes
+                    .iter()
+                    .filter_map(|form| form.find(&source[start..name.open]))
+                    .map(|found| start + found.start())
+                    .min();
+                let from = form.unwrap_or(name.open);
+                // Spans on this line on the name, and on no other quotes.
+                let touching: Vec<usize> = (0..detections.len())
+                    .filter(|&i| {
+                        let range = &detections[i].range;
+                        !gone[i]
+                            && detections[i].category == self.category
+                            && start <= range.start
+                            && range.end <= end
+                            && range.start < name.end
+                            && from < range.end
+                            && !pairs.iter().any(|p| {
+                                (p.end <= name.open || name.end <= p.open)
+                                    && p.open < range.end
+                                    && range.start < p.end
+                            })
+                    })
+                    .collect();
+                let holds =
+                    |range: &std::ops::Range<usize>, at: usize| range.start <= at && at < range.end;
+                let cut = |range: &std::ops::Range<usize>| {
+                    std::iter::once(name)
+                        .chain(inner.iter().copied())
+                        .any(|p| holds(range, p.open) != holds(range, p.close))
+                };
+                if touching.is_empty()
+                    || form.is_none()
+                        && touching.len() < 2
+                        && !touching.iter().any(|&i| cut(&detections[i].range))
+                {
+                    continue;
+                }
+                let quoted = form.is_some()
+                    || touching.iter().any(|&i| {
+                        let range = &detections[i].range;
+                        holds(range, name.open) || holds(range, name.close)
+                    });
+                let whole = if quoted {
+                    from..name.end
+                } else {
+                    open_end..name.close
+                };
+                let grown = touching.iter().fold(whole, |grown, &i| {
+                    let range = &detections[i].range;
+                    grown.start.min(range.start)..grown.end.max(range.end)
+                });
+                // One span: the first keeps the best score.
+                let first = touching[0];
+                let score = touching
+                    .iter()
+                    .map(|&i| detections[i].score)
+                    .fold(f32::MIN, f32::max);
+                detections[first].range = grown;
+                detections[first].score = score;
+                for &i in &touching[1..] {
+                    gone[i] = true;
+                }
+            }
+        }
+        let mut index = 0;
+        detections.retain(|_| {
+            index += 1;
+            !gone[index - 1]
+        });
+    }
+
     /// `range` without its `trim` words or phrases at either edge (a word's
     /// final period or colon with it; a comma before a trailing one goes
     /// with it), its `trim_start` prefixes and its `strip_end` characters.
@@ -1519,11 +1711,12 @@ impl Pack {
                     || !entry.strip_end.is_empty()
                     || !entry.person_before.is_empty()
                     || entry.list_letter
-                    || !entry.unless_over.is_empty();
+                    || !entry.unless_over.is_empty()
+                    || !entry.nested_quotes.is_empty();
                 if let Some(pattern) = &entry.pattern {
                     if fixes {
                         return Err(at(
-                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, list_letter or unless_over".into(),
+                            "a pattern takes no trim, trim_start, extend, strip_end, person_before, list_letter, unless_over or nested_quotes".into(),
                         ));
                     }
                     // A sized pattern's `mark` groups are what its lines'
@@ -1638,6 +1831,9 @@ impl Pack {
                 if !entry.person_before.is_empty() && category != Category::Organization {
                     return Err(at("only an ORG fix takes person_before".into()));
                 }
+                if !entry.nested_quotes.is_empty() && category != Category::Organization {
+                    return Err(at("only an ORG fix takes nested_quotes".into()));
+                }
                 if entry.list_letter
                     && !matches!(category, Category::Person | Category::Organization)
                 {
@@ -1712,6 +1908,24 @@ impl Pack {
                         Ok(regex)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                // Each form must end where the outer quote opens, spaces
+                // between.
+                let nested_quotes = entry
+                    .nested_quotes
+                    .iter()
+                    .map(|pattern| {
+                        let regex =
+                            Regex::new(&rust_classes(&format!(r"(?:{pattern})[\p{{Zs}}\t]*\z")))
+                                .map_err(|e| at(e.to_string()))?;
+                        if regex.is_match("") {
+                            return Err(at("nested_quotes matches an empty form".into()));
+                        }
+                        if regex.capture_names().flatten().next().is_some() {
+                            return Err(at("nested_quotes takes no groups".into()));
+                        }
+                        Ok(regex)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 pack.spans.push(Span::Fix(SpanFix {
                     category,
                     trim: entry.trim.clone(),
@@ -1722,6 +1936,7 @@ impl Pack {
                     person_before: entry.person_before.clone(),
                     list_letter: entry.list_letter,
                     unless_over: entry.unless_over.clone(),
+                    nested_quotes,
                 }));
             }
             for (index, entry) in file.url.iter().enumerate() {
@@ -2747,6 +2962,9 @@ impl Pack {
         for fix in fixes {
             if !detections.iter().any(|d| d.category == fix.category) {
                 continue;
+            }
+            if !fix.nested_quotes.is_empty() {
+                fix.nested_names(source, detections);
             }
             // A `lead` group is context the grown span leaves out ("Judge "
             // before "K Ashdale"). The next match is searched for from just
@@ -5829,6 +6047,193 @@ mod tests {
             .collect()
     }
 
+    /// The organization proposals for the model's `orgs` spans in `source`,
+    /// each found after the one before it, as the user would be shown them.
+    fn proposed_orgs(source: &str, orgs: &[&str]) -> Vec<String> {
+        let mut from = 0;
+        let raw: Vec<_> = orgs
+            .iter()
+            .map(|text| {
+                let start = from + source[from..].find(text).unwrap();
+                from = start + text.len();
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: "organization".into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .filter(|span| span.category == "ORG")
+            .map(|span| source[span.range].to_owned())
+            .collect()
+    }
+
+    /// A company's name in nested quotes is one span, from its legal form
+    /// to its last closing quote, however the model cut it: split at the
+    /// inner quote, on the inner name alone or short of the outer closing
+    /// quote; straight quotes too, the legal form spelled out in any case
+    /// form and letter case (guide rule 2, #557).
+    #[test]
+    fn a_name_in_nested_quotes_is_one_span() {
+        for (source, model, expected) in [
+            // The issue's synthetic reproduction, split at both inner quotes.
+            (
+                "Иск ООО «Правовая группа «Кедровый щит»» к обществу с ограниченной ответственностью \"Группа компаний \"Северный мост\"\".",
+                &[
+                    "ООО «Правовая группа",
+                    "Кедровый щит",
+                    "обществу с ограниченной ответственностью",
+                    "Северный мост",
+                ][..],
+                &[
+                    "ООО «Правовая группа «Кедровый щит»»",
+                    "обществу с ограниченной ответственностью \"Группа компаний \"Северный мост\"\"",
+                ][..],
+            ),
+            // The inner names alone.
+            (
+                "Иск ООО «Правовая группа «Кедровый щит»» к обществу с ограниченной ответственностью \"Группа компаний \"Северный мост\"\".",
+                &["Кедровый щит", "Северный мост"][..],
+                &[
+                    "ООО «Правовая группа «Кедровый щит»»",
+                    "обществу с ограниченной ответственностью \"Группа компаний \"Северный мост\"\"",
+                ][..],
+            ),
+            // The legal form and the inner name, the middle words left out.
+            (
+                "Иск Общества с ограниченной ответственностью «Правовая группа «Кедровый щит»» удовлетворить.",
+                &["Общества с ограниченной ответственностью", "Кедровый щит"][..],
+                &["Общества с ограниченной ответственностью «Правовая группа «Кедровый щит»»"][..],
+            ),
+            // Split at the inner straight quote.
+            (
+                "Взыскать с общества с ограниченной ответственностью \"Группа компаний \"Северный мост\"\" долг.",
+                &["Группа компаний", "Северный мост"][..],
+                &["общества с ограниченной ответственностью \"Группа компаний \"Северный мост\"\""]
+                    [..],
+            ),
+            // All capitals, the inner name alone.
+            (
+                "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"ГРУППА КОМПАНИЙ \"СЕВЕРНЫЙ МОСТ\"\" обратилось в суд.",
+                &["СЕВЕРНЫЙ МОСТ"][..],
+                &["ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"ГРУППА КОМПАНИЙ \"СЕВЕРНЫЙ МОСТ\"\""]
+                    [..],
+            ),
+            // The outer closing quote left outside.
+            (
+                "Истец ООО «Правовая группа «Кедровый щит»» обратился в суд.",
+                &["ООО «Правовая группа «Кедровый щит»"][..],
+                &["ООО «Правовая группа «Кедровый щит»»"][..],
+            ),
+            // A joint-stock company spelled out, and straight quotes inside
+            // guillemets.
+            (
+                "Ответчик публичное акционерное общество «Лизинговая компания «Развитие»» и ООО «Группа \"Кедр\"».",
+                &["Развитие", "Кедр"][..],
+                &[
+                    "публичное акционерное общество «Лизинговая компания «Развитие»»",
+                    "ООО «Группа \"Кедр\"»",
+                ][..],
+            ),
+            // Without a legal form, a split name is one inside its quotes.
+            (
+                "Лизингодатель «Лизинговая компания «Развитие»» передал предмет.",
+                &["Лизинговая компания", "Развитие"][..],
+                &["Лизинговая компания «Развитие»"][..],
+            ),
+            (
+                "Лизингодатель «Лизинговая компания «Развитие»» передал предмет.",
+                &["«Лизинговая компания «Развитие»"][..],
+                &["«Лизинговая компания «Развитие»»"][..],
+            ),
+        ] {
+            assert_eq!(proposed_orgs(source, model), expected, "{source}");
+        }
+    }
+
+    /// Nested quotes join no more than one name (#557): two companies, a
+    /// defined term after one, a document's title, a quotation that
+    /// mentions a company, an inner name without a legal form, a quote left
+    /// open, a line between, quotes nested deeper and English prose stay
+    /// as they were.
+    #[test]
+    fn nested_quotes_join_no_more_than_one_name() {
+        for (source, model, expected) in [
+            (
+                "Истец ООО «Кедр» и АО «Север» заключили договор.",
+                &["Кедр", "Север"][..],
+                &["ООО «Кедр»", "АО «Север»"][..],
+            ),
+            // The same companies in a quotation.
+            (
+                "Суд указал: «ООО «Кедр» и АО «Север»» — стороны договора.",
+                &["Кедр", "Север"][..],
+                &["ООО «Кедр»", "АО «Север»"][..],
+            ),
+            (
+                "Суд указал: «ООО «Кедр» и АО «Север»» — стороны договора.",
+                &["ООО «Кедр»", "АО «Север»"][..],
+                &["ООО «Кедр»", "АО «Север»"][..],
+            ),
+            (
+                "Истец ООО «Кедр» (далее — «Общество») обратился в суд.",
+                &["Кедр"][..],
+                &["ООО «Кедр»"][..],
+            ),
+            (
+                "ООО «Кедр» заключило договор «О поставке «Север»» с АО «Ель».",
+                &["Кедр", "Ель"][..],
+                &["ООО «Кедр»", "АО «Ель»"][..],
+            ),
+            (
+                "Суд указал: «долг ООО «Кедр»» погашен.",
+                &["Кедр"][..],
+                &["ООО «Кедр»"][..],
+            ),
+            (
+                "Он работал в «Группе «Кедр»» три года.",
+                &["Кедр"][..],
+                &["Кедр"][..],
+            ),
+            (
+                "Компания \"Кедр\" ответила \"нет\" на претензию.",
+                &["Кедр"][..],
+                &["Кедр"][..],
+            ),
+            // The outer quote never closes.
+            (
+                "Истец ООО «Правовая группа «Кедровый щит» обратился в суд.",
+                &["Кедровый щит"][..],
+                &["Кедровый щит"][..],
+            ),
+            // A line between the quotes.
+            (
+                "Истец ООО «Правовая группа
+«Кедровый щит»» обратился в суд.",
+                &["Кедровый щит"][..],
+                &["Кедровый щит"][..],
+            ),
+            // Three levels.
+            (
+                "Истец ООО «Альфа «Бета «Кедр»»» обратился в суд.",
+                &["Кедр"][..],
+                &["Кедр"][..],
+            ),
+            (
+                "He called it \"the \"Acme\" deal\" at Acme Ltd.",
+                &["Acme"][..],
+                &["Acme", "Acme"][..],
+            ),
+        ] {
+            assert_eq!(proposed_orgs(source, model), expected, "{source}");
+        }
+    }
+
     /// One initial before a surname joins it after a title, "by", "v",
     /// "per", "and" after a word or a judge's "J,", with its period or
     /// without; an all-caps given name joins "X. SURNAME" in a signature or
@@ -7065,16 +7470,6 @@ Privacy Act (“BIPA”). BIPA applies.",
                 "Сокол",
                 Category::Person,
             ),
-            (
-                "ООО «МВД России «Страж»» заключило договор.",
-                "Страж",
-                Category::Organization,
-            ),
-            (
-                "ООО «МО МВД России «Страж»» заключило договор.",
-                "Страж",
-                Category::Organization,
-            ),
         ] {
             assert_eq!(fixed(source, &[(span, category)]), [span], "{source}");
             let start = source.find(span).unwrap();
@@ -7107,6 +7502,15 @@ Privacy Act (“BIPA”). BIPA applies.",
                 }],
                 "{source}"
             );
+        }
+        // An inner agency quotation cannot overrule the private company
+        // enclosing it, whose name in nested quotes is one span (#557).
+        for source in [
+            "ООО «МВД России «Страж»» заключило договор.",
+            "ООО «МО МВД России «Страж»» заключило договор.",
+        ] {
+            let company = source.strip_suffix(" заключило договор.").unwrap();
+            assert_eq!(proposed_orgs(source, &["Страж"]), [company], "{source}");
         }
     }
 
@@ -17215,6 +17619,18 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             (
                 "[[span]]\ncategory = \"BANK\"\nlist_letter = true",
                 "only PERSON or ORG",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nnested_quotes = ['ООО']",
+                "only an ORG fix takes nested_quotes",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nnested_quotes = ['(?P<form>ООО)']",
+                "nested_quotes takes no groups",
+            ),
+            (
+                "[[span]]\ncategory = \"ORG\"\nnested_quotes = ['x?']",
+                "nested_quotes matches an empty form",
             ),
             ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
             (
