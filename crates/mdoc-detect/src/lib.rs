@@ -706,6 +706,15 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 seen = seen.start + case.start..seen.start + case.end;
                 range = view.source_range(seen.clone());
             }
+            // A company's name with a common noun after it: the model's
+            // "Pellam airlines" is "⟦ORG|Pellam⟧ airlines" (guide rule 2,
+            // #548), before the shape reads it as a heading's sentence case.
+            if category == Category::Organization
+                && let Some(end) = rules::pack().org_noun_name(&view.text[seen.clone()])
+            {
+                seen = seen.start..seen.start + end;
+                range = view.source_range(seen.clone());
+            }
             let text = &view.text[seen];
             rules::pack()
                 .identifying_with_organizations(
@@ -2094,6 +2103,234 @@ mod tests {
                 ]
             ),
             pairs(&[("PERSON", "Ольга Ивановна Белова"), ("ORG", "ЯВР")])
+        );
+    }
+
+    /// What the user is shown for model spans given as `(text, label,
+    /// nth)`: the `nth` whole-word occurrence of `text` in `source`.
+    fn shown_for(source: &str, model: &[(&str, &str, usize)]) -> Vec<(String, String)> {
+        let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        let raw: Vec<RawEntity> = model
+            .iter()
+            .map(|(text, label, nth)| {
+                let start = source
+                    .match_indices(text)
+                    .map(|(at, _)| at)
+                    .filter(|&at| {
+                        !word(source[..at].chars().next_back())
+                            && !word(source[at + text.len()..].chars().next())
+                    })
+                    .nth(*nth)
+                    .unwrap_or_else(|| panic!("{text} #{nth}"));
+                RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (span.category, source[span.range].to_owned()))
+            .collect()
+    }
+
+    fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
+        items
+            .iter()
+            .map(|(c, t)| ((*c).to_owned(), (*t).to_owned()))
+            .collect()
+    }
+
+    /// #548: a company's short name, a company with a common noun after
+    /// it and a team are no people (guide rule 2, #506 items 10 and 11).
+    #[test]
+    fn a_company_short_name_the_model_took_for_a_person_is_the_company() {
+        // The issue's synthetic reproductions.
+        let source = "Quillon Freight Corp. (“Quillon”) sued; Defendant Quillon replied. \
+                      Pellam airlines and Pellam air fares; the team known as the \
+                      Brindle Harriers (BRINDLE HARRIERS LLC).";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Quillon Freight Corp", "organization", 0),
+                    ("Quillon", "person", 1),
+                    ("Quillon", "person", 2),
+                    ("Pellam airlines", "person", 0),
+                    ("Pellam air fares", "person", 0),
+                    ("Brindle Harriers", "person", 0),
+                    ("BRINDLE HARRIERS LLC", "organization", 0),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Quillon Freight Corp"),
+                ("ORG", "Quillon"),
+                ("ORG", "Quillon"),
+                ("ORG", "Pellam"),
+                ("ORG", "Pellam"),
+                ("ORG", "Brindle Harriers"),
+                ("ORG", "BRINDLE HARRIERS LLC"),
+            ])
+        );
+        // The model may read the noun into a company's span instead; the
+        // name before it is a short name then too.
+        let source = "Pellam airlines and Pellam air fares; later Pellam flew.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam airlines", "organization", 0),
+                    ("Pellam air fares", "organization", 0),
+                    ("Pellam", "person", 2),
+                ]
+            ),
+            pairs(&[("ORG", "Pellam"), ("ORG", "Pellam"), ("ORG", "Pellam")])
+        );
+        let source = "Pellam Bank sued. The court awarded Pellam attorney’s fees and \
+                      Pellam’s costs. Record from Ostrand Medicine; record from Ostrand \
+                      Medicine (Ostrand Medicine is a hospital system).";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam Bank", "organization", 0),
+                    ("Pellam", "person", 1),
+                    ("Pellam’s", "person", 0),
+                    ("Ostrand Medicine", "person", 0),
+                    ("Ostrand Medicine", "person", 1),
+                    ("Ostrand Medicine", "organization", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Pellam Bank"),
+                ("ORG", "Pellam"),
+                ("ORG", "Pellam"),
+                ("ORG", "Ostrand Medicine"),
+                ("ORG", "Ostrand Medicine"),
+                ("ORG", "Ostrand Medicine"),
+            ])
+        );
+        // A team's name in capitals elsewhere; a short name a firm's
+        // definition gives; a Russian one after «далее».
+        let source = "BRINDLE HARRIERS sponsor the cup. Brindle Harriers fans attend. \
+                      Stewarts Law LLP (“Stewarts”) acted; Stewarts wrote.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("BRINDLE HARRIERS", "organization", 0),
+                    ("Brindle Harriers", "person", 0),
+                    ("Stewarts Law LLP", "organization", 0),
+                    ("Stewarts", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "BRINDLE HARRIERS"),
+                ("ORG", "Brindle Harriers"),
+                ("ORG", "Stewarts Law LLP"),
+                ("ORG", "Stewarts"),
+                ("ORG", "Stewarts"),
+            ])
+        );
+        let source = "ООО «Кедр» (далее — «Кедр») поставило товар. Счёт выставил Кедр.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[("ООО «Кедр»", "organization", 0), ("Кедр", "person", 2)]
+            ),
+            pairs(&[("ORG", "ООО «Кедр»"), ("ORG", "Кедр"), ("ORG", "Кедр")])
+        );
+    }
+
+    /// #548 guards: people who share a company's word stay people.
+    #[test]
+    fn people_who_share_a_company_word_stay_people() {
+        // A title, or a given name, makes the word a person's here.
+        let source = "Frost Bank sued. Mr Frost replied, and Frost signed.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Frost Bank", "organization", 0),
+                    ("Mr Frost", "person", 0),
+                    ("Frost", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Frost Bank"),
+                ("PERSON", "Frost"),
+                ("PERSON", "Frost"),
+            ])
+        );
+        let source = "Pellam Bank sued. Ada Pellam testified; Pellam said the bank erred.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Pellam Bank", "organization", 0),
+                    ("Ada Pellam", "person", 0),
+                    ("Pellam", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Pellam Bank"),
+                ("PERSON", "Ada Pellam"),
+                ("PERSON", "Pellam"),
+            ])
+        );
+        // A firm named after a partner: "Stewart" is another word than
+        // "Stewarts"; a bare "Smith" beside "John Smith" stays as the
+        // model gave it.
+        let source = "Stewarts Law LLP (“Stewarts”) acted. Mr Stewart signed for Stewarts. \
+                      Smith LLP acts for John Smith; later Smith signed.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Stewarts Law LLP", "organization", 0),
+                    ("Stewarts", "person", 1),
+                    ("Mr Stewart", "person", 0),
+                    ("Smith LLP", "organization", 0),
+                    ("John Smith", "person", 0),
+                    ("Smith", "person", 2),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Stewarts Law LLP"),
+                ("ORG", "Stewarts"),
+                ("PERSON", "Stewart"),
+                ("ORG", "Stewarts"),
+                ("ORG", "Smith LLP"),
+                ("PERSON", "John Smith"),
+                ("PERSON", "Smith"),
+            ])
+        );
+        // A defined generic term is no short name; a titled person whose
+        // surname is an industry noun's sentence stays; initials stay.
+        let source = "Larkfield Supply LLC (the “Company”) hired Ivo Penrow. Ms Ada Bank \
+                      and JB signed for JB Holdings Ltd.";
+        assert_eq!(
+            shown_for(
+                source,
+                &[
+                    ("Larkfield Supply LLC", "organization", 0),
+                    ("Ivo Penrow", "person", 0),
+                    ("Ada Bank", "person", 0),
+                    ("JB", "person", 0),
+                    ("JB Holdings Ltd", "organization", 0),
+                ]
+            ),
+            pairs(&[
+                ("ORG", "Larkfield Supply LLC"),
+                ("PERSON", "Ivo Penrow"),
+                ("PERSON", "Ada Bank"),
+                ("PERSON", "JB"),
+                ("ORG", "JB Holdings Ltd"),
+            ])
         );
     }
 

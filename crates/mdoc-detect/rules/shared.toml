@@ -132,6 +132,20 @@
 #                         span holds each of them
 #                         An existing PERSON loses the same document word
 #                         in a punctuated citation ("Ostrand Decl. ¶ 3").
+#   org_before = […]      for PERSON: lowercase words or single-spaced
+#                         phrases that, ending a model span, make it a
+#                         company's: written lowercase the noun comes off
+#                         ("Pellam" of "Pellam airlines"), capitalized the
+#                         whole span is ("Pellam Bank"); never after a
+#                         title. A company's name ending in one also gives
+#                         its short name ("Pellam" of "Pellam Bank")
+#   org_after = […]       for PERSON: lowercase phrases right before a
+#                         model span that make it a company's ("team known
+#                         as the" before "Brindle Harriers"); a leading
+#                         "the" of the span comes off
+# After these fixes a model person's span that is a company's short name
+# in the same document becomes that company (`company_short_names` in
+# rules.rs, #548).
 #   list_letter = true    for PERSON or ORG: a lowercase "a. " or "(a) "
 #                         at a line start or after list punctuation comes off
 # A fixed span left without its category's shape goes. An entry takes one

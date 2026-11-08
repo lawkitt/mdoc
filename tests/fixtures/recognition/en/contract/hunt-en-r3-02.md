@@ -5,7 +5,7 @@ issue: 415
 kind: contract
 source: hunt-r3
 expect: false hit: PERSON "Copper Horizon" ×2
-expect: false hit: PERSON "Silver Orchard" ×2
+expect: false hit: ORG "Silver Orchard" ×2
 expect: false hit: PERSON "Night Compass" ×2
 ---
 # Nondisclosure schedule: project descriptions

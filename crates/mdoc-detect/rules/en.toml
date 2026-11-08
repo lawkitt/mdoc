@@ -174,6 +174,23 @@ trim = [
 category = "ORG"
 person_before = ["decl", "declaration", "aff", "affidavit", "dep", "deposition"]
 
+# A person's span that ends in an industry noun is a company's (guide rule
+# 2, #548): lowercase, the noun is a common one after the company's name
+# and stays outside ("⟦ORG|Pellam⟧ airlines", "⟦ORG|Pellam⟧ air fares");
+# capitalized, it is the name's own word ("⟦ORG|Pellam Bank⟧"). A
+# company's name ending in one gives its short name too ("Pellam" of
+# "Pellam Bank"). Not after a title ("Ms Ada Bank"). "Health" stays out:
+# "Ada Pellam health" may be a person's.
+# A team after "team known as (the)" is a company's too: "the team known
+# as the ⟦ORG|Brindle Harriers⟧".
+[[span]]
+category = "PERSON"
+org_before = [
+    "airline", "airlines", "air fare", "air fares", "airfare", "airfares",
+    "bank", "medicine",
+]
+org_after = ["team known as the", "team known as"]
+
 # A document label before "of" or a pinpoint page is no person's name
 # (#499). Require the dot and citation context: an untitled person called
 # Decl or Aff in prose must stay marked (guide rule 1).
