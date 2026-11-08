@@ -58,6 +58,12 @@ choice, while desktop has System, Light and Dark.
   at once to every screen and sheet; stored on the device.
 - **Accent:** desktop's teal green (`#336b5c` light, `#82b9a7` dark) fills
   the primary button, tints chips and outlines the active name.
+  *Amended 2026-11-08 ([gestures grill](../design/ios-identities-gestures-grill-2026-11-08.md)
+  Q8–Q11):* on iOS the accent is ink, `#1c1c1e` with white text in light
+  mode and `#f2f2f7` with black text in dark mode, like the app icon; text
+  buttons are the primary text colour at medium weight; the active name
+  keeps its category tint with an ink outline. Desktop keeps the teal until
+  its own grill; Android follows iOS.
 - **Document font:** Settings › Appearance › Document font: System (the
   default) or Serif (New York), at the same Dynamic Type sizes; it changes
   the document text only.
