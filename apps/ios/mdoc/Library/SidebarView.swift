@@ -292,8 +292,9 @@ struct SidebarView: View {
                 Label("New", systemImage: "plus")
                     .fontWeight(.semibold)
                     .padding(.horizontal, Space.xs)
+                    .bigButtonLabel(prominent: true)
             }
-            .primaryAction()
+            .primaryMenu()
             .menuOrder(.priority)
             .accessibilityIdentifier("new-menu")
         }

@@ -23,6 +23,25 @@ extension View {
         buttonStyle(BigButtonStyle(prominent: false, circle: circle))
     }
 
+    /// `primaryAction()` and `secondaryAction()` for a `Menu`, whose label
+    /// takes only the system's button styles, not a custom one: the system's
+    /// glass here, with `bigButtonLabel(prominent:)` on the label.
+    func primaryMenu() -> some View {
+        buttonStyle(.glassProminent)
+            .tint(Color.ink)
+    }
+
+    func secondaryMenu() -> some View {
+        buttonStyle(.glass)
+    }
+
+    /// A big button's label: tall enough for 44 pt, in the words' colour.
+    /// The button styles add it themselves; a `Menu`'s label needs it.
+    func bigButtonLabel(prominent: Bool) -> some View {
+        frame(minHeight: BigButton.labelHeight)
+            .modifier(BigButtonWords(prominent: prominent))
+    }
+
     /// A text-only button ("Select", "Not now", "Try a sample"): the primary
     /// text colour at medium weight, so it stands out without a colour
     /// (ADR 0099).
@@ -56,14 +75,18 @@ private struct BigButtonStyle: PrimitiveButtonStyle {
     let prominent: Bool
     let circle: Bool
     @Environment(\.isEnabled) private var isEnabled
+    /// A circle's icon width, growing with the text as its height does, so
+    /// the circle stays round at every size.
+    @ScaledMetric private var circleWidth = BigButton.circleLabelWidth
 
     @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
         let button = Button(role: configuration.role, action: configuration.trigger) {
             configuration.label
-                .frame(width: circle ? BigButton.circleLabelWidth : nil)
-                .frame(minHeight: BigButton.labelHeight)
-                .modifier(BigButtonWords(prominent: prominent))
+                .frame(
+                    width: circle ? circleWidth : nil,
+                    height: circle ? circleWidth + 2 * (BigButton.systemCirclePadding - BigButton.systemPadding) : nil)
+                .bigButtonLabel(prominent: prominent)
         }
         if prominent && isEnabled {
             button
@@ -79,15 +102,18 @@ private struct BigButtonStyle: PrimitiveButtonStyle {
     }
 }
 
-/// The words: on-accent (primary) or ink (secondary) while the button can
-/// be tapped, the secondary colour when it can't. The system's prominent
-/// button keeps white words whatever its tint, and they vanish on the
-/// near-white ink of dark mode.
+/// The words: on-accent and semibold (primary) or ink (secondary) while
+/// the button can be tapped, the secondary colour when it can't. The
+/// system's prominent button keeps white words whatever its tint, and they
+/// vanish on the near-white ink of dark mode. A role's colour (destructive
+/// red) is not kept: no big button has one.
 private struct BigButtonWords: ViewModifier {
     let prominent: Bool
     @Environment(\.isEnabled) private var isEnabled
 
     func body(content: Content) -> some View {
-        content.foregroundStyle(isEnabled ? (prominent ? Color.onAccent : Color.ink) : Color.secondary)
+        content
+            .fontWeight(prominent ? .semibold : nil)
+            .foregroundStyle(isEnabled ? (prominent ? Color.onAccent : Color.ink) : Color.secondary)
     }
 }

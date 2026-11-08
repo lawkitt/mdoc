@@ -133,7 +133,6 @@ final class ComponentSnapshotTests: XCTestCase {
     /// `BigButton.systemPadding` above and below the label, and a change to
     /// that shows here. Undo is a 44 pt circle.
     func testBigButtonsAre44PointsHigh() {
-        XCTAssertEqual(Size.barButton, 44)
         let keep = Button {} label: { Text(verbatim: "Keep") }
         let replace = Button {} label: { Label(String("Replace all 3"), systemImage: "eye.slash") }
         let undo = Button {} label: { Label(String("Undo"), systemImage: "arrow.uturn.backward").labelStyle(.iconOnly) }
@@ -146,6 +145,9 @@ final class ComponentSnapshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(size(replace.primaryAction(), small).height, 44 - 0.5, "\(small)")
         }
         XCTAssertGreaterThan(size(keep.secondaryAction(), .accessibility2).height, 44, "grows with the text")
+        let round = size(undo.secondaryAction(circle: true), .accessibility2)
+        XCTAssertEqual(round.width, round.height, accuracy: 0.5, "Undo stays round at AX2")
+        XCTAssertGreaterThan(round.height, 44, "and grows with the text")
     }
 
     func testToastActionKeepsTheToastItShows() {

@@ -138,11 +138,13 @@ struct RestoreExtensionView: View {
         } label: {
             Label(model.savedTo == nil ? "Save to document" : "Saved", systemImage: model.savedTo == nil ? "tray.and.arrow.down" : "checkmark")
                 .frame(maxWidth: .infinity)
+                .bigButtonLabel(prominent: false)
         } primaryAction: {
             if let target = model.defaultSaveTarget {
                 model.save(to: target.id)
             }
         }
+        .secondaryMenu()
         .disabled(model.documentsInCase.isEmpty)
         .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
     }
