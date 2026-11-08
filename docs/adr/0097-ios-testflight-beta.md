@@ -1,7 +1,10 @@
 # iOS TestFlight beta
 
 Status: Accepted, 2026-11-03; amended 2026-11-04 (the export key is NO, and
-build 1 is `ios-v0.1.0-rc.2`). Amends [ADR 0091](0091-mobile-ci-and-releases.md)
+build 1 is `ios-v0.1.0-rc.2`). Amended by [ADR 0107](0107-agents-publish-ios-betas.md)
+(2026-11-08): agents publish `rc` builds from a hosted workflow, the iPhone
+12 Pro gates each build, internal builds have no cap, and What to Test is
+in the tag. Amends [ADR 0091](0091-mobile-ci-and-releases.md)
 (mobile tags and the first build) and details [ADR 0085](0085-mobile-apps.md)'s
 Distribution bullet and [ADR 0088](0088-ios-on-real-devices.md)'s first-build
 gate.
