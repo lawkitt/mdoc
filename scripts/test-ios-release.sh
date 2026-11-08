@@ -84,7 +84,11 @@ gates=$tmp/gates
 mkdir -p "$gates"
 # gate <commit> <tier> [phone]: a gate record, on the iPhone 12 Pro unless named.
 gate() { printf 'phone=%s\nudid=0000\ntier=%s\ncommit=%s\npassed=2026-11-08T00:00:00Z\n' "${3:-iPhone13,3}" "$2" "$1" >"$gates/$1"; }
-release() { (cd "$repo" && MDOC_GATE_DIR="$gates" bash scripts/ios-release.sh "$@"); }
+# A runner has no git identity; the annotated tag needs one.
+release() {
+  (cd "$repo" && GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid MDOC_GATE_DIR="$gates" \
+    bash scripts/ios-release.sh "$@")
+}
 
 refuses "no gate record" release 0.2.0-rc.3 "$tmp/good.txt" --yes
 grep -q "no gate record" "$tmp/out" || fail "no gate: $(cat "$tmp/out")"

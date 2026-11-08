@@ -33,8 +33,9 @@ plist=apps/ios/Config/mdoc-Info.plist
 marketing_version() {
   local versions
   versions=$(git show "$1:$project" | sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);$/\1/p' | sort -u)
-  [ -n "$versions" ] && [ "$(echo "$versions" | wc -l | tr -d ' ')" = 1 ] ||
+  if [ -z "$versions" ] || [ "$(echo "$versions" | wc -l | tr -d ' ')" != 1 ]; then
     die "MARKETING_VERSION at $1 is not one value: $(echo "$versions" | tr '\n' ' ')"
+  fi
   echo "$versions"
 }
 
@@ -123,7 +124,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$version" ] && [ -n "$notes" ] || die "$usage"
+if [ -z "$version" ] || [ -z "$notes" ]; then die "$usage"; fi
 split_version "$version"
 tag=ios-v$version
 
