@@ -79,29 +79,23 @@ options() {
 EOF
 }
 
-# auth: xcodebuild's App Store Connect key arguments, one a line; none
-# without a key.
-auth() {
-  if [ -n "${ASC_KEY_PATH:-}" ]; then
-    : "${ASC_KEY_ID:?ASC_KEY_ID is not set}" "${ASC_ISSUER_ID:?ASC_ISSUER_ID is not set}"
-    printf '%s\n' -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" \
-      -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-  fi
-}
-
 do_export() {
   local destination=$1 plist log status=0 args=()
   [ -d "$app" ] || die "no archive at $archive: run \`scripts/ios-archive.sh archive\` first"
   plist=$(mktemp)
   log=$(mktemp)
   options "$destination" >"$plist"
-  while IFS= read -r line; do args+=("$line"); done < <(auth)
+  # The App Store Connect key, when there is one; else Xcode's account.
+  if [ -n "${ASC_KEY_PATH:-}" ]; then
+    args=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "${ASC_KEY_ID:?ASC_KEY_ID is not set}"
+      -authenticationKeyIssuerID "${ASC_ISSUER_ID:?ASC_ISSUER_ID is not set}")
+  fi
   rm -rf "$export_dir"
   xcodebuild -exportArchive -archivePath "$archive" -exportPath "$export_dir" -exportOptionsPlist "$plist" \
     -allowProvisioningUpdates ${args[@]+"${args[@]}"} 2>&1 | tee "$log" || status=$?
   if [ "$status" = 0 ] && ! grep -q 'EXPORT SUCCEEDED' "$log"; then status=1; fi
   if [ "$status" != 0 ] && [ "$destination" = upload ] &&
-    grep -qiE 'redundant binary upload|bundle version must be higher|has already been (used|uploaded)' "$log"; then
+    grep -qiE "redundant binary upload|already uploaded a build with build number" "$log"; then
     echo "App Store Connect already has this build; counted as uploaded"
     status=0
   fi

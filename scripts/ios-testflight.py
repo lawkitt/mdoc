@@ -15,8 +15,9 @@ finish      After the upload: waits until Apple has processed the build
 
 Auth: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH (a .p8 file); the token
 comes from `xcrun altool --generate-jwt` and is renewed every 10 minutes.
-ASC_TOKEN, when set, is used as is, and ASC_API_BASE replaces the API's
-address (scripts/test-ios-release.sh uses both). Prints no secret.
+ASC_TOKEN, when set, is used as is; ASC_API_BASE replaces the API's address,
+and ASC_POLL_SECONDS and ASC_GROUP_WAIT_SECONDS the waits
+(scripts/test-ios-release.sh sets them). Prints no secret.
 Standard library only.
 """
 
@@ -34,6 +35,7 @@ import urllib.request
 BUNDLE_ID = "io.github.lawkitt.mdoc"
 LOCALE = "en-US"
 POLL_SECONDS = float(os.environ.get("ASC_POLL_SECONDS", "30"))
+GROUP_WAIT_SECONDS = float(os.environ.get("ASC_GROUP_WAIT_SECONDS", "600"))
 
 
 class Fail(Exception):
@@ -189,22 +191,25 @@ def ensure_in_group(api, app, build_id, name, deadline):
             raise Fail("the build is missing export compliance; ITSAppUsesNonExemptEncryption should answer it (ADR 0097)")
         if state == "PROCESSING_EXCEPTION":
             raise Fail("App Store Connect reports a processing exception for the build")
-        if in_group(api, group["id"], build_id):
-            return True
-        return None if state in (None, "PROCESSING") else False
+        return True if in_group(api, group["id"], build_id) else None
 
-    # Automatic distribution adds the build within minutes; give it ten
-    # before adding it ourselves.
-    soon = min(deadline, time.time() + 600)
+    # Automatic distribution adds the build within minutes; give it that
+    # long before adding it ourselves.
+    soon = min(deadline, time.time() + GROUP_WAIT_SECONDS)
     try:
-        if wait_until(soon, f"the build to reach {name}", probe):
-            return
+        wait_until(soon, f"the build to reach {name}", probe)
+        return
     except Fail as error:
         if "timed out" not in str(error):
             raise
     log(f"adding the build to {name}")
-    api.call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds",
-             {"data": [{"type": "builds", "id": build_id}]})
+    try:
+        api.call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds",
+                 {"data": [{"type": "builds", "id": build_id}]})
+    except Fail as error:
+        # Automatic distribution may have added it meanwhile.
+        if not in_group(api, group["id"], build_id):
+            raise Fail(f"could not add the build to {name}: {error}")
     if not in_group(api, group["id"], build_id):
         raise Fail(f"the build is not in {name} after adding it")
 

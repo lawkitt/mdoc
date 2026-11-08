@@ -216,7 +216,7 @@ fake() {
   done
 }
 asc() {
-  ASC_TOKEN=test-token ASC_API_BASE="http://127.0.0.1:$(cat "$tmp/port")" ASC_POLL_SECONDS=0.05 \
+  ASC_TOKEN=test-token ASC_API_BASE="http://127.0.0.1:$(cat "$tmp/port")" ASC_POLL_SECONDS=0.05 ASC_GROUP_WAIT_SECONDS=0.5 \
     python3 scripts/ios-testflight.py "$@"
 }
 
