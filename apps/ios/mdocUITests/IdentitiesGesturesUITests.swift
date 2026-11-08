@@ -12,17 +12,19 @@ final class IdentitiesGesturesUITests: XCTestCase {
     }
 
     @MainActor
-    private func openDocument() throws -> XCUIApplication {
+    private func openDocument(
+        seed: String = MdocUITest.defaultSeed, email: String = MdocUITest.email
+    ) throws -> XCUIApplication {
         guard UIDevice.current.userInterfaceIdiom == .phone else {
             throw XCTSkip("the drawers are iPhone's")
         }
-        let app = MdocUITest.launch()
+        let app = MdocUITest.launch(seed: seed)
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
         document.tap()
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
-        XCTAssertTrue(text.links[MdocUITest.email].firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(text.links[email].firstMatch.waitForExistence(timeout: 30))
         return app
     }
 
@@ -145,5 +147,72 @@ final class IdentitiesGesturesUITests: XCTestCase {
         openSidebar()
         drag(app, fromX: inner - 8, by: -200)
         XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5), "a drag from the inner edge closes it")
+    }
+
+    /// Drag-to-merge (ADR 0106): in Select, a row's ≡ handle drags it onto
+    /// another name and the two become one, under the target's alias, with
+    /// the selection kept; letting go over the row itself does nothing; one
+    /// Undo brings both back.
+    @MainActor
+    func testDraggingAHandleOntoAnotherNameMakesThemOne() throws {
+        // The Markdown fixture: an email, a phone number and an IBAN.
+        let app = try openDocument(seed: MdocUITest.markdownFixture, email: MdocUITest.markdownEmail)
+        XCTAssertTrue(MdocUITest.showIdentities(app))
+        app.buttons["identities-select"].firstMatch.tap()
+        let rows = app.descendants(matching: .any).matching(identifier: "identity-row")
+        let handles = app.descendants(matching: .any).matching(identifier: "identity-drag-handle")
+        XCTAssertTrue(handles.firstMatch.waitForExistence(timeout: 5), "Select shows the handles")
+        let count = rows.count
+        XCTAssertGreaterThanOrEqual(count, 2)
+        XCTAssertEqual(handles.count, count, "a handle on every row")
+        XCTAssertEqual(handles.firstMatch.label, "Drag to make one with another name")
+
+        // "anna.smirnova@example.com, Email, EMAIL_1, 1 mentions, proposed".
+        func parts(_ row: XCUIElement) -> (name: String, alias: String) {
+            let parts = row.label.components(separatedBy: ", ")
+            return (parts[0], parts[parts.count - 3])
+        }
+        let dragged = parts(rows.element(boundBy: 0))
+        let target = parts(rows.element(boundBy: 1))
+        func row(_ name: String) -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == 'identity-row' AND label BEGINSWITH %@", name + ",")).firstMatch
+        }
+        // Select both: the merged name stays selected.
+        row(target.name).tap()
+        row(dragged.name).tap()
+        XCTAssertTrue(row(target.name).isSelected)
+
+        // Let go over itself: nothing.
+        let handle = handles.element(boundBy: 0)
+        let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 6)),
+                    withVelocity: 200, thenHoldForDuration: 0.3)
+        MdocUITest.settledScreen()
+        XCTAssertEqual(rows.count, count, "a row dropped on itself stays")
+
+        // Onto the second row: one name, the target's alias.
+        let onto = row(target.name).coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5))
+        handles.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: onto, withVelocity: 300, thenHoldForDuration: 0.4)
+        let undo = app.buttons["toast-action"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "the Undo toast")
+        XCTAssertTrue(app.staticTexts["\(dragged.alias) is now \(target.alias)"].exists)
+        XCTAssertTrue(rows.element(boundBy: count - 2).waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.count, count - 1, "one name fewer")
+        let merged = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == 'identity-row' AND label CONTAINS %@ AND label CONTAINS %@",
+            ", \(target.alias),", dragged.name)).firstMatch
+        XCTAssertTrue(merged.exists, "the target's alias names both")
+        XCTAssertTrue(merged.isSelected, "the selection stays")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == 'identity-row' AND label CONTAINS %@", ", \(dragged.alias),")).firstMatch.exists)
+
+        // Undo: both again.
+        undo.tap()
+        XCTAssertTrue(rows.element(boundBy: count - 1).waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.count, count, "Undo brings both back")
+        XCTAssertTrue(row(dragged.name).label.contains(", \(dragged.alias),"))
+        XCTAssertTrue(row(target.name).label.contains(", \(target.alias),"))
     }
 }

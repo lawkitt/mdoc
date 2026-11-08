@@ -24,14 +24,16 @@ struct IdentitiesView: View {
     @State private var searching = false
     @FocusState private var searchFocused: Bool
     @State private var category: Category?
-    @State private var selecting = false
-    @State private var selection: Set<IdentityID> = []
+    @State var selecting = false
+    @State var selection: Set<IdentityID> = []
     @State private var showsKept = false
     /// Names just decided, at the state whose section they stay in while
     /// their marks turn (`IdentitiesView+Gestures`).
     @State var held: [IdentityID: MentionState] = [:]
-    /// The row a drag is over.
-    @State var dropTarget: IdentityID?
+    /// A row lifted by its ≡ handle (`IdentitiesView+DragMerge`).
+    @State var drag: IdentityDragState?
+    /// The rows' frames, which the drag finds its target in.
+    @State var dragTracking = IdentityDragTracking()
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var identities: [Identity] { model.snapshot.identities }
@@ -81,6 +83,10 @@ struct IdentitiesView: View {
             .listSectionSpacing(Space.xs)
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, selecting ? 72 : Space.m, for: .scrollContent)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { dragTracking.list = $0 }
+            // Select's ≡ handles: drag a name onto another (ADR 0106).
+            .gesture(HandleDragGesture(tracking: dragTracking, onEvent: handleDrag))
+            .overlay { liftedCopy }
         }
         .background(Palette.background)
         .overlay(alignment: .bottom) {
@@ -158,7 +164,7 @@ struct IdentitiesView: View {
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
             }
-            if IdentityDrop.reachesRows && model.showsDragMergeHint && !selecting {
+            if model.showsDragMergeHint && !selecting {
                 ReviewHintLine(hint: .dragMerge) { model.learn(.dragMerge) }
             }
         }
@@ -298,6 +304,86 @@ struct IdentitiesView: View {
 
     private func row(_ identity: Identity) -> some View {
         let selected = selection.contains(identity.id)
+        let line = rowLine(identity, selected: selected)
+            .padding(.vertical, Space.xxs)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if selecting {
+                    if selected { selection.remove(identity.id) } else { selection.insert(identity.id) }
+                    Haptics.selection()
+                } else {
+                    onOpen(identity.id)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(Self.spoken(identity)))
+            .accessibilityAddTraits(selecting ? (selected ? [.isSelected, .isButton] : .isButton) : .isButton)
+            .accessibilityHint(Text(selecting ? "Selects it." : "Opens it in the review bar."))
+            .accessibilityAction(named: Text(identity.state == .replaced ? "Keep all" : "Replace all")) {
+                deciding([identity.id]) { model.toggle(identity) }
+            }
+            .accessibilityAction(named: Text("Review this identity")) { onFocus(.identity(identity.id)) }
+            .accessibilityAction(named: Text("Same as…")) { onPickSameAs(identity.id) }
+            .accessibilityIdentifier("identity-row")
+        return Group {
+            if selecting {
+                // In Select the ≡ handle takes the state mark's place: an
+                // element of its own beside the row's, for VoiceOver.
+                HStack(spacing: Space.s) {
+                    line
+                    dragHandle(identity)
+                }
+                .accessibilityElement(children: .contain)
+            } else {
+                line
+            }
+        }
+        .modifier(DragMergeRow(
+            id: identity.id, lifted: drag?.dragged == identity.id, targeted: drag?.target == identity.id,
+            tracking: dragTracking))
+        .listRowBackground(selected ? Palette.accent.opacity(0.08) : Color.clear)
+        .listRowInsets(EdgeInsets(top: Space.xxs, leading: Space.m, bottom: Space.xxs, trailing: Space.xs))
+        // Right: Replace, a full swipe too. Left: Keep and Same as…, never
+        // a full swipe: Keep sends the original to the AI, so it is a tap
+        // (ADR 0106).
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button("Replace") { decide(identity, .replace) }
+                .tint(Palette.swipeAccent)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Keep") { decide(identity, .keep) }
+                .tint(.gray)
+            Button("Same as…") { onPickSameAs(identity.id) }
+                .tint(.indigo)
+        }
+        .contextMenu {
+            Button {
+                onFocus(.identity(identity.id))
+            } label: {
+                Label("Review this identity", systemImage: "rectangle.stack")
+            }
+            Button {
+                decide(identity, .replace)
+            } label: {
+                Label("Replace all", systemImage: "eye.slash")
+            }
+            Button {
+                decide(identity, .keep)
+            } label: {
+                Label("Keep all", systemImage: "eye")
+            }
+            Button {
+                onPickSameAs(identity.id)
+            } label: {
+                Label("Same as…", systemImage: "link")
+            }
+        }
+    }
+
+    /// A row's line: Select's tick, the category, the name, its alias and
+    /// other spellings ("Same as PERSON_1" while a drag is over it), and the
+    /// state mark outside Select. The lifted copy draws the same line.
+    func rowLine(_ identity: Identity, selected: Bool) -> some View {
         let dropHint = dropHint(on: identity)
         return HStack(spacing: Space.s) {
             if selecting {
@@ -353,65 +439,6 @@ struct IdentitiesView: View {
                 .accessibilityIdentifier("identity-state")
             }
         }
-        .padding(.vertical, Space.xxs)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if selecting {
-                if selected { selection.remove(identity.id) } else { selection.insert(identity.id) }
-                Haptics.selection()
-            } else {
-                onOpen(identity.id)
-            }
-        }
-        .listRowBackground(selected ? Palette.accent.opacity(0.08) : Color.clear)
-        .listRowInsets(EdgeInsets(top: Space.xxs, leading: Space.m, bottom: Space.xxs, trailing: Space.xs))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(Self.spoken(identity)))
-        .accessibilityAddTraits(selecting ? (selected ? [.isSelected, .isButton] : .isButton) : .isButton)
-        .accessibilityHint(Text(selecting ? "Selects it." : "Opens it in the review bar."))
-        .accessibilityAction(named: Text(identity.state == .replaced ? "Keep all" : "Replace all")) {
-            deciding([identity.id]) { model.toggle(identity) }
-        }
-        .accessibilityAction(named: Text("Review this identity")) { onFocus(.identity(identity.id)) }
-        .accessibilityAction(named: Text("Same as…")) { onPickSameAs(identity.id) }
-        .accessibilityIdentifier("identity-row")
-        // Right: Replace, a full swipe too. Left: Keep and Same as…, never
-        // a full swipe: Keep sends the original to the AI, so it is a tap
-        // (ADR 0106).
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Replace") { decide(identity, .replace) }
-                .tint(Palette.swipeAccent)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Keep") { decide(identity, .keep) }
-                .tint(.gray)
-            Button("Same as…") { onPickSameAs(identity.id) }
-                .tint(.indigo)
-        }
-        .contextMenu {
-            Button {
-                onFocus(.identity(identity.id))
-            } label: {
-                Label("Review this identity", systemImage: "rectangle.stack")
-            }
-            Button {
-                decide(identity, .replace)
-            } label: {
-                Label("Replace all", systemImage: "eye.slash")
-            }
-            Button {
-                decide(identity, .keep)
-            } label: {
-                Label("Keep all", systemImage: "eye")
-            }
-            Button {
-                onPickSameAs(identity.id)
-            } label: {
-                Label("Same as…", systemImage: "link")
-            }
-        }
-        // Drag one row onto another: the same name (ADR 0106).
-        .modifier(IdentityDrop(identity: identity, model: model, target: $dropTarget))
     }
 
     // MARK: Select
@@ -451,6 +478,9 @@ struct IdentitiesView: View {
         .padding(.vertical, Space.s)
         .background(.bar)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        // A drag finds no name under the bar, and scrolls at its top.
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { dragTracking.barTop = $0 }
+        .onDisappear { dragTracking.barTop = nil }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("identities-selection-bar")
     }

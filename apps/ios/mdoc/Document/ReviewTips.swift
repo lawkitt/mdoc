@@ -15,11 +15,11 @@ enum ReviewHint: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var text: LocalizedStringKey {
+    var text: LocalizedStringResource {
         switch self {
         case .swipe: "Swipe the card for the next name"
         case .longPress: "Long-press any name for more"
-        case .dragMerge: "Drag a name onto another to make them one"
+        case .dragMerge: "In Select, drag ≡ onto a name to make them one"
         }
     }
 

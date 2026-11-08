@@ -26,19 +26,28 @@ adds noise.
 - **Undo shows no toast**: the change and a haptic are the feedback. Redo
   stays on the Undo button's long press, ⇧⌘Z and VoiceOver; a Redo shows
   the Undo toast.
-- **Drag a name onto another to make them one**, on iPhone and iPad:
-  desktop's rules (ADR 0025). The dragged name joins the target, which
-  keeps its alias and restore wording; one undo step, no confirmation;
-  another category takes the target's. While dragging, the row under the
+- **Drag a name onto another to make them one**, on iPhone and iPad, from
+  a ≡ handle: in Select each row shows one at its trailing edge, in the
+  state mark's place, and dragging it lifts a copy of the row that follows
+  the finger. Rows don't drag freely: SwiftUI's List never delivers a drop
+  of a drag that starts inside it, so the drag is the app's own gesture on
+  the handle. Desktop's rules (ADR 0025): the dragged name joins the
+  target, which keeps its alias; the restore wording follows the core's
+  rule, the fullest form of the names (#388), not the target's. One undo
+  step, no confirmation; another category takes the target's; the
+  selection keeps its other names. While dragging, the row under the
   finger shows an ink outline and "Same as ALIAS"; the list scrolls near
   its edges; on drop, a haptic and the Undo toast "ALIAS is now TARGET ·
-  Undo". Mention drags and drop-to-split stay desktop-only.
-- **One hint line** in the drawer, "Drag a name onto another to make them
-  one", when Looks like has a suggestion or two names share a category;
-  gone for good after the first drag-merge or Same as.
+  Undo"; let go anywhere else and the copy slides back. VoiceOver has
+  Make one with… on the handle, which opens Same as…. Mention drags and
+  drop-to-split stay desktop-only.
+- **One hint line** in the drawer, "In Select, drag ≡ onto a name to make
+  them one", outside Select when Looks like has a suggestion or two names
+  share a category; gone for good after the first drag-merge or Same as.
 
 ## Consequences
 
 - Closing the drawer by swiping over the list no longer works; the sliver,
   the edge and › do.
 - Keep needs one more tap from a swipe than before.
+- Drag-to-merge needs Select first; a long press on a row is its menu.
