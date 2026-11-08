@@ -78,7 +78,9 @@ private struct BigButtonStyle: PrimitiveButtonStyle {
     let circle: Bool
     @Environment(\.isEnabled) private var isEnabled
     /// A circle's icon width, growing with the text as its height does, so
-    /// the circle stays round at every size.
+    /// the frame is never narrower than it is high and the circle is never
+    /// cut to a smaller one (the system pads the sides more at large sizes,
+    /// which leaves a few points beside the circle).
     @ScaledMetric private var circleWidth = BigButton.circleLabelWidth
 
     @ViewBuilder
