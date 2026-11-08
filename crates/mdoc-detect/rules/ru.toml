@@ -1055,10 +1055,12 @@ parts.bare_city = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*
 # word before them is a name ("Истец: Иванов, с. Кедровка, д. 5" is "с.
 # Кедровка, д. 5"). A settlement alone, with no house, is no match (guide
 # rule 3); a street between the settlement and the house is the forward
-# entry's.
+# entry's. An index has no digit or dash right before it: "8-999-123456,
+# с. Кедровка, д. 5" ends a phone, so the address is "с. Кедровка, д. 5"
+# (#482 review).
 [[span]]
 category = "ADDRESS"
-pattern = '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep})?(?:{area}{sep})*{settlement}(?:{sep}|[\p{Zs}\t]+){house}(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*'
+pattern = '(?:(?P<lead>(?m:^)|[^\d\-–—])(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep})?(?:{area}{sep})*{settlement}(?:{sep}|[\p{Zs}\t]+){house}(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*'
 parts.sep = ',(?:[\p{Zs}\t]*,)*\s*'
 parts.index = '\b\d{6}'
 parts.country = '\b(?:Россия|РОССИЯ|Российская[\p{Zs}\t]+Федерация|РОССИЙСКАЯ[\p{Zs}\t]+ФЕДЕРАЦИЯ)\b'
@@ -1069,8 +1071,14 @@ parts.district = '\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\
 parts.city = '\b[гГ]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t][\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,2}|\b[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}-]*[\p{Zs}\t]+(?:город|ГОРОД)\b|\b(?:город|ГОРОД)[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d]*(?:-[\p{Cyrillic}\p{Latin}\d]+)*'
 # The forward entry's settlement, lowercase types only: a capital one
 # here is an initial ("С. Петров, д. 5"). A lowercase second word follows
-# an adjective only ("п. Кедровый ключ").
-parts.settlement = '(?:\b(?:ч|п|с|х|д|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Cyrillic}\p{Latin}\d-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Cyrillic}\p{Latin}\d-]*)(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*){0,3}'
+# an adjective only, and then no other word ("п. Кедровый ключ"); else one
+# more capitalised word at most, so a name after the place is no part of it
+# ("с. Кедровка Ковальчук Иван, д. 5", "п. Кедровый ключ Ковальчук ДОС № 1"
+# are no address). After «с.» and «д.» (a case file, «дело», too) no word
+# ends as a surname's case form does (-ым, -им, -ом, -ем, -ой, -ей, -ого,
+# -его, -ому, -ему, -ука, -юка, -ова, -ева, -ина, -ына): "с. Петровым, д.
+# 5", "д. Ковальчука, д. 3" are no address (#482 review).
+parts.settlement = '(?:\b(?:ч|п|х|а|ст|пос|дер|тер)\.|\b(?:пгт|рп)\b\.?|\b(?:ст-ца|аул|село|деревня|станица|хутор|посёлок|поселок|микрорайон|мкр)\b\.?|\b(?:г\.[\p{Zs}\t]?[оп]|с\.[\p{Zs}\t]?п|р\.[\p{Zs}\t]?п|м\.[\p{Zs}\t]?р-н|вн\.[\p{Zs}\t]?тер\.[\p{Zs}\t]?г)\.?)[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Cyrillic}\p{Latin}\d-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Cyrillic}\p{Latin}\d-]*(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Cyrillic}\p{Latin}\d-]*)?)|\b[сд]\.[\p{Zs}\t]*[\p{Lu}&&[\p{Cyrillic}\p{Latin}]](?:[\p{Ll}-]*(?:ый|ий|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*|[\p{Ll}-]*(?:[\p{Ll}--[мйоуа]]|[\p{Ll}--[ыиое]]м|[\p{Ll}--[ое]]й|[\p{Ll}--[г]]о|[\p{Ll}--[ое]]го|[\p{Ll}--[м]]у|[\p{Ll}--[ое]]му|[\p{Ll}--[квн]]а|[\p{Ll}--[ую]]ка|[\p{Ll}--[ое]]ва|[\p{Ll}--[иы]]на)\b(?:[\p{Zs}\t]+[\p{Lu}&&[\p{Cyrillic}\p{Latin}]][\p{Ll}-]*(?:[\p{Ll}--[мйоуа]]|[\p{Ll}--[ыиое]]м|[\p{Ll}--[ое]]й|[\p{Ll}--[г]]о|[\p{Ll}--[ое]]го|[\p{Ll}--[м]]у|[\p{Ll}--[ое]]му|[\p{Ll}--[квн]]а|[\p{Ll}--[ую]]ка|[\p{Ll}--[ое]]ва|[\p{Ll}--[иы]]на)\b)?)'
 # A house, the forward entry's, or an officers' house («ДОС № 1», «ДОС-12»).
 parts.house = '\bд[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}(?:[\p{Zs}\t]+к[\p{Zs}\t]*\d+(?:-?\p{Alphabetic})?\b)?|(?:\b(?:д|Д|дом|ДОМ|вл|влд|ВЛД)\b\.?|\bДОС\b-?)[\p{Zs}\t]*(?:№[\p{Zs}\t]*)?{number}'
 parts.number = '\d+(?:-\d{1,3}\b)?(?:-?\p{Alphabetic})?(?:/\d+(?:-?\p{Alphabetic})?)?(?:[\p{Zs}\t][А-ЙЛ-РТ-ЯЁ]\b)?'
@@ -1082,21 +1090,34 @@ parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ко�
 # Северск" in "районного суда г. Северск" or "проведено в г. Северск",
 # "п. Кедровый ключ" in a housing list. The type is lowercase («а.», «г.»,
 # «п.», «пос.», «ст.», «х.», «с.»), before one capitalised word, or two
-# when the first is an adjective, whose second may be lowercase ("Новый
-# Хутор", "Кедровый ключ"); a name after the place stays ("в г. Северск
-# Иванов"). The first pattern takes any place after a word that leads one:
-# «уроженец» and its forms, «в», «во», «из», «суд» and its forms. The
-# second takes a place with no such word only when it has a place's ending
-# and no surname's («-ск», «-ка», «-во», «-но», «-ое», «-град», …; or an
-# adjective and a lowercase word), never after a digit, where «г.» is a
-# year ("2026 г. Иванка"). Initials are capitals and stay ("Иванов А. Б.",
-# "А. Петров"), and so do a title's name ("г-н Петров") and a surname in
-# the instrumental after a stray dot ("с. Петровым").
+# when the first is an adjective; a name after the place stays ("в г.
+# Северск Иванов"). Initials are capitals and stay ("Иванов А. Б.", "А.
+# Петров"), and so does a title's name ("г-н Петров").
+#
+# 1. After «уроженец» and its forms any such place, the adjective's second
+#    word capitalised too ("уроженец а. Новый Хутор").
+# 2. After «в», «во», «из» and «суд» in its forms the adjective's second
+#    word is lowercase ("в пос. Кедровый ключ"), so "в г. Нижний
+#    Ковальчук" keeps the name, and after «с.» no word ends -ым, -ом or
+#    -ой, a surname in the instrumental ("Суд с. Ковальчуком согласился").
+# 3. With no such word only a place's ending («-ск», «-овка», «-евка»,
+#    «-инка», «-ово», «-ино», «-ое», «-град», «-бург», «-поль»), never
+#    a surname's genitive («г. Ковальчука», «г. Новака», «г. Бойка»), and
+#    only after a word or a mark on the same line: at a line's start «г.»
+#    may close a year on the line before ("2020\nг. Ковальская"), and
+#    after a digit or a year's ending («2026 г.», «1990-х г.», «2020-м г.»)
+#    it is one.
+# 4. An adjective and a lowercase word before an address's next part
+#    («ДОС», «д.», «дом», «ул.», «улица»): "п. Кедровый ключ ДОС № 1". A
+#    lowercase «г.» before an adjective and a verb is a title («г.
+#    Ковальская пояснила») and stays (#482 review).
 [[shape]]
 category = "PERSON"
 forbid_in = [
-    '(?P<lead>(?i:\b(?:уроженец|уроженц(?:а|у|ем|е|ы|ев|ам|ами|ах)|уроженк(?:а|и|е|у|ой|ою|ам|ами|ах)?|в|во|из|суд(?:а|у|ом|е)?)\b)[\p{Zs}\t]+)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}(?:[\p{Ll}-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{L}[\p{Ll}-]{2,}|[\p{Ll}-]{2,})',
-    '(?P<lead>(?:^|[^\d\p{Zs}\t])[\p{Zs}\t]*)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}[\p{Ll}-]*(?:(?:ск|ка|во|но|ое|ее|ье|град|бург|поль)\b|(?:ый|ий|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*)',
+    '(?P<lead>(?i:\b(?:уроженец|уроженц(?:а|у|ем|е|ы|ев|ам|ами|ах)|уроженк(?:а|и|е|у|ой|ою|ам|ами|ах)?)\b)[\p{Zs}\t]+)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}(?:[\p{Ll}-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{L}[\p{Ll}-]{2,}|[\p{Ll}-]{2,})',
+    '(?P<lead>(?i:\b(?:в|во|из|суд(?:а|у|ом|е)?)\b)[\p{Zs}\t]+)\b(?:(?:а|г|п|пос|ст|х)\.[\p{Zs}\t]*\p{Lu}(?:[\p{Ll}-]*(?:ый|ий|ой|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}[\p{Ll}-]{2,}|[\p{Ll}-]{2,})|с\.[\p{Zs}\t]*\p{Lu}(?:[\p{Ll}-]*(?:ый|ий|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}[\p{Ll}-]{2,}|[\p{Ll}-]+(?:[\p{Ll}--[мй]]|[\p{Ll}--[ыо]]м|[\p{Ll}--[о]]й)\b))',
+    '(?P<lead>(?:[^\d\p{Zs}\t\p{L}\-–—]|(?:^|[^\p{L}\d\-–—])\p{L}+)[\p{Zs}\t]*)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}[\p{Ll}-]*(?:ск|(?:ов|ев|ёв|ин|ан|ен|ян)ка|ово|ево|ино|ое|ее|ье|град|бург|поль)\b',
+    '(?P<lead>(?:^|[^\d\p{Zs}\t])[\p{Zs}\t]*)\b(?:а|г|п|пос|ст|х|с)\.[\p{Zs}\t]*\p{Lu}[\p{Ll}-]*(?:ый|ий|ая|яя|ое|ее|ые|ие)[\p{Zs}\t]+\p{Ll}{3,}[\p{Ll}-]*[\p{Zs}\t]*,?[\p{Zs}\t]*(?:ДОС\b|д\.|дом\b|ул\.|улица\b)',
 ]
 
 # The model's address that runs on into the next field ends before its
