@@ -64,6 +64,12 @@ refuses "over 4,000 characters" bash "$wtt" check "$tmp/long.txt"
 bash "$wtt" check "$tmp/cyrillic.txt" || fail "characters were counted as bytes"
 : >"$tmp/empty.txt"
 refuses "an empty file" bash "$wtt" check "$tmp/empty.txt"
+# App Store Connect refused ☰ in rc.3's What to Test; ≡, ›, … and — went through.
+printf '%s\n- Open the sidebar from \xe2\x98\xb0.\n' "$opening" >"$tmp/symbol.txt"
+refuses "a symbol App Store Connect refuses" bash "$wtt" check "$tmp/symbol.txt"
+grep -q "refuses" "$tmp/out" || fail "symbol: $(cat "$tmp/out")"
+printf '%s\n- Drag \xe2\x89\xa1 onto a name \xe2\x80\x94 Settings \xe2\x80\xba Display\xe2\x80\xa6\n' "$opening" >"$tmp/allowed.txt"
+bash "$wtt" check "$tmp/allowed.txt" || fail "allowed symbols were refused: $(bash "$wtt" check "$tmp/allowed.txt" 2>&1)"
 
 # --- just release-ios and the tag checks ----------------------------------
 # A scratch repository with the files the checks read, pushed to a bare
