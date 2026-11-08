@@ -2,9 +2,10 @@
 //! Calls stay synchronous while they are cheap): a review action with no
 //! library changes the document only, and `save_pending` saves what
 //! changed since the last save, however many actions that was, from any
-//! thread. The document lock is held only to take what to write and to
-//! record what was written, never across the write, so a tap during a slow
-//! save returns at once.
+//! thread. The document lock is held only to take what to write, to
+//! record what was written and, when another document changed the case
+//! meanwhile, to join it again; never across the write, so a tap during a
+//! slow save returns at once.
 use super::{Document, DocumentSession, reopened_counts};
 use crate::{
     CoreError, ReviewError,
@@ -30,21 +31,16 @@ pub struct SavedChange {
 
 #[uniffi::export]
 impl DocumentSession {
-    /// Whether the document changed since it was last saved (or was never
-    /// saved): what `save_pending` would save.
-    pub fn has_unsaved_changes(&self) -> bool {
-        self.lock_document()
-            .as_ref()
-            .is_some_and(Document::has_unsaved_changes)
-    }
-
     /// Save what changed since the last save, as `save` does; none when
-    /// nothing did (or no document is read). Several review actions before
+    /// nothing did, or no document is read. Several review actions before
     /// it make one save. Safe to call from any thread while review actions
     /// go on: an action during the save is not in it and stays unsaved.
     /// A save that fails keeps the change unsaved, for the next call. A
-    /// document replaced by an import or open during the save is not
-    /// recorded as saved: save before replacing it.
+    /// document never saved is left to `save`: its first save is the
+    /// import's or scan's, which may join a chosen case first (a phone
+    /// locked when the job ended holds it back). A document replaced by an
+    /// import or open during the save is not recorded as saved: save
+    /// before replacing it.
     pub fn save_pending(&self, library: Arc<Library>) -> Result<Option<SavedChange>, ReviewError> {
         let _saving = self.lock_saving();
         let mut rejoined = false;
@@ -52,7 +48,11 @@ impl DocumentSession {
             let mut pending = {
                 let guard = self.lock_document();
                 match guard.as_ref() {
-                    Some(document) if document.has_unsaved_changes() => document.pending(),
+                    Some(document)
+                        if document.saved.is_some() && document.has_unsaved_changes() =>
+                    {
+                        document.pending()
+                    }
                     _ => return Ok(None),
                 }
             };
@@ -62,7 +62,9 @@ impl DocumentSession {
                 .as_mut()
                 .filter(|document| document.generation == pending.generation)
             else {
-                return Ok(None);
+                // Replaced meanwhile: what was written is the document
+                // before, which the session no longer holds.
+                return written.map(|_| None).map_err(Into::into);
             };
             document.take_written(&mut pending);
             match written? {
@@ -87,6 +89,14 @@ impl DocumentSession {
 }
 
 impl DocumentSession {
+    /// Whether the document changed since it was last saved.
+    #[cfg(test)]
+    pub(crate) fn has_unsaved_changes(&self) -> bool {
+        self.lock_document()
+            .as_ref()
+            .is_some_and(Document::has_unsaved_changes)
+    }
+
     /// Held across a whole save, and by every call that changes what a
     /// save writes to (the file, the case): one save at a time, and none
     /// of them in the middle of another's. Taken before the document lock,

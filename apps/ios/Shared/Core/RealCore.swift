@@ -256,6 +256,8 @@ final class RealLibrary: Library, @unchecked Sendable {
         // its file.
         let path = session.map(\.path) ?? (FileManager.default.fileExists(atPath: document.rawValue) ? document.rawValue : nil)
         guard session != nil || path != nil else { throw CoreError.notFound }
+        // No save after the taps writes it again once it is gone.
+        session?.cancelScheduledSave()
         if let path {
             // The core takes it out of its case (and the reply kept for it),
             // then removes the file; a case it cannot save keeps it.
@@ -268,7 +270,6 @@ final class RealLibrary: Library, @unchecked Sendable {
             try core { try ffi.discardImport(source: source.path) }
         }
         lock.withLock { _ = sessions.removeValue(forKey: document) }
-        session?.cancelScheduledSave()
         pending.remove(document)
     }
 
@@ -379,6 +380,18 @@ final class RealLibrary: Library, @unchecked Sendable {
         guard let observer = lock.withLock({ saveObserver }) else { return }
         DispatchQueue.main.async {
             MainActor.assumeIsolated { observer(event) }
+        }
+    }
+
+    /// The save that waits for `id` to unlock, run now if there is one;
+    /// kept if it fails.
+    fileprivate func saveDeferred(_ id: DocumentID) throws {
+        guard let save = lock.withLock({ unsaved.removeValue(forKey: id) }) else { return }
+        do {
+            try save()
+        } catch {
+            lock.withLock { unsaved[id] = unsaved[id] ?? save }
+            throw error
         }
     }
 
@@ -497,6 +510,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private var styled: (revision: UInt64, styling: MarkdownStyling)?
     /// The save that follows taps (ADR 0104).
     private let saver: SaveScheduler
+    /// Held while a save records its file, and while a rename moves it:
+    /// the file a save records is the session's.
+    private let saving = NSLock()
 
     fileprivate init(
         id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?,
@@ -536,7 +552,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         guard let before = ffi.info() else {
             throw CoreError.refused(String(localized: "Rename the document once it is read."))
         }
-        let renamed = try core { try ffi.renameDocument(library: library.ffi, title: title) }
+        let renamed = try saving.withLock { try core { try ffi.renameDocument(library: library.ffi, title: title) } }
         return (before.path, renamed.path ?? before.path)
     }
 
@@ -870,6 +886,9 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func saveChanges() throws {
         saver.cancel()
         do {
+            // A job's save a locked phone held back goes first: it joins
+            // the case chosen at import, and saves the taps too.
+            try library.saveDeferred(id)
             try savePendingNow()
         } catch {
             guard !ProtectedData.isAvailable else { throw error }
@@ -883,20 +902,27 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     }
 
     private func savePendingNow() throws {
-        guard let saved = try core({ try ffi.savePending(library: library.ffi) }) else { return }
-        // A first save (one a locked phone held back) records the file.
-        recordSaved(path: saved.path)
+        let saved = try saving.withLock {
+            let saved = try core { try ffi.savePending(library: library.ffi) }
+            if let saved { recordSaved(path: saved.path) }
+            return saved
+        }
+        guard let saved else { return }
         library.report(.saved(id, rejoined: saved.rejoined))
     }
 
-    /// The document went: its scheduled save must not write it again.
+    /// The document goes: its scheduled save does not run, and one running
+    /// now ends first.
     fileprivate func cancelScheduledSave() {
         saver.cancel()
+        saving.withLock {}
     }
 
     private func save() throws {
-        let saved = try core { try ffi.save(library: library.ffi) }
-        recordSaved(path: saved.path)
+        try saving.withLock {
+            let saved = try core { try ffi.save(library: library.ffi) }
+            recordSaved(path: saved.path)
+        }
     }
 
     private func recordSaved(path: String) {

@@ -166,6 +166,42 @@ final class SaveAfterTapTests: XCTestCase {
         XCTAssertEqual(try library.saveDeferred(), [seeded.letter])
         XCTAssertEqual(try onDisk(), tapped.markdown)
     }
+
+    /// An import read while the phone was locked waits for its first save,
+    /// which joins the case chosen for it. A save of the taps once mdoc is
+    /// back (the scene turns inactive before active) runs that save first,
+    /// never one that starts a case of its own.
+    func testAFlushRunsTheImportsHeldBackSaveFirst() throws {
+        library.savePause = .seconds(60)
+        let session = try library.importDocument(.text("Write to ann@example.com."), title: "Note", into: .existing(seeded.harbour))
+        try makeDocumentsUnwritable()
+        ProtectedData.isAvailable = false
+        _ = try session.recognize(observer: TestObserver())
+        try makeDocumentsWritable()
+        try session.saveChanges()
+        XCTAssertNotNil((session as? RealSession)?.path, "saved")
+        XCTAssertEqual(session.snapshot().caseID, seeded.harbour)
+        ProtectedData.isAvailable = true
+        XCTAssertEqual(try library.saveDeferred(), [], "saved once")
+        XCTAssertEqual(library.snapshot().cases.count, 2, "no case of its own")
+    }
+
+    /// A deleted document's scheduled save never runs: it neither writes
+    /// the file again nor reports a save that failed.
+    func testADeletedDocumentIsNotSavedAgain() throws {
+        library.savePause = .milliseconds(100)
+        // Held, as the document's model holds it while its delete's toast shows.
+        let session = try XCTUnwrap(try seeded.session(seeded.letter) as? RealSession)
+        let path = try XCTUnwrap(session.path)
+        try tapReplace()
+        let saved = expectation(description: "no save")
+        saved.isInverted = true
+        library.observeSaves { _ in saved.fulfill() }
+        try library.deleteDocument(seeded.letter)
+        wait(for: [saved], timeout: 0.5)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        withExtendedLifetime(session) {}
+    }
 }
 
 private final class Counter: @unchecked Sendable {
