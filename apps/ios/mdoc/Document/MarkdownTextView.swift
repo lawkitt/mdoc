@@ -523,8 +523,30 @@ final class CandidateTextView: RenderedTextView {
         return attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
     }
 
+    /// The spoken text, built once per content: VoiceOver and UI tests ask
+    /// for the value again and again, and a long document took seconds of
+    /// CPU per minute rebuilding it. Only new content changes which units
+    /// are hidden; recolouring a name keeps it.
+    private var spokenValue: String?
+    /// How many times the spoken text was built, for tests.
+    private(set) var spokenBuilds = 0
+
+    // Not an `attributedText` override: VoiceOver reads that property from
+    // a background queue, where a main-actor override traps (crash on the
+    // 12 Pro, 2026-11-08). New content always comes through `show`.
+    override func show(_ document: RenderedDocument, width: CGFloat) {
+        spokenValue = nil
+        super.show(document, width: width)
+    }
+
     override var accessibilityValue: String? {
-        get { attributedText.spoken(attributedText.string, at: 0) }
+        get {
+            if let spokenValue { return spokenValue }
+            let value = attributedText.spoken(attributedText.string, at: 0)
+            spokenValue = value
+            spokenBuilds += 1
+            return value
+        }
         set { super.accessibilityValue = newValue }
     }
 

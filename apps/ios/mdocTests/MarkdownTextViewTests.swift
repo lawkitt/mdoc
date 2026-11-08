@@ -136,6 +136,27 @@ final class MarkdownTextViewTests: XCTestCase {
     /// The bar on the last mention, kept; the reader scrolls to the top;
     /// Undo puts the bar back on the same name and asks for a reveal. The
     /// snapshot changed and the selection didn't: the text still scrolls.
+    /// VoiceOver's value is built once per content (#712): asking again, or
+    /// recolouring a name, reuses it; new content builds it again.
+    func testTheSpokenValueIsBuiltOncePerContent() throws {
+        let harness = try harness()
+        let snapshot = harness.session.snapshot()
+        show(harness, textView(snapshot))
+        let first = harness.view.accessibilityValue
+        for _ in 0..<5 { _ = harness.view.accessibilityValue }
+        XCTAssertEqual(harness.view.spokenBuilds, 1)
+
+        let mention = try XCTUnwrap(snapshot.candidates.first)
+        show(harness, textView(snapshot, selected: mention.id))
+        XCTAssertEqual(harness.view.accessibilityValue, first)
+        XCTAssertEqual(harness.view.spokenBuilds, 1, "a recolour kept the spoken value")
+
+        let replaced = try harness.session.decide(mention.id, .replace, scope: .all)
+        show(harness, textView(replaced))
+        XCTAssertNotEqual(harness.view.accessibilityValue, first, "new content is read anew")
+        XCTAssertEqual(harness.view.spokenBuilds, 2)
+    }
+
     func testARevealAfterAnUndoScrolls() throws {
         let harness = try harness()
         let view = harness.view
