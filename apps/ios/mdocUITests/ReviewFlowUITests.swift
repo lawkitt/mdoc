@@ -200,9 +200,13 @@ enum MdocUITest {
         let sidebar = app.descendants(matching: .any)["sidebar"].firstMatch
         if sidebar.exists && sidebar.isHittable { return }
         let button = app.buttons["show-sidebar"].firstMatch
-        if button.waitForExistence(timeout: 5) {
+        guard button.waitForExistence(timeout: 5) else { return }
+        // A tap in the first seconds after launch can be lost (#711), so tap
+        // again until the drawer is open.
+        for _ in 0..<5 {
             button.tap()
-            _ = sidebar.waitForExistence(timeout: 3)
+            if sidebar.waitForExistence(timeout: 2), sidebar.isHittable { return }
+            guard button.exists, button.isHittable else { return }
         }
     }
 

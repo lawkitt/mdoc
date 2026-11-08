@@ -143,10 +143,14 @@ final class DeviceLongJobsUITests: XCTestCase {
     /// suspended, which only the continued processing task allows.
     @MainActor
     private func leaveAndReturn(_ app: XCUIApplication, seconds: UInt32 = 10, stillWorking: Bool = false) throws {
-        XCUIDevice.shared.press(.home)
-        XCTAssertTrue(
-            app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended,
-            "mdoc did not go to the background")
+        // Home can be missed while the background job's banner shows: press
+        // it again if mdoc is still in front.
+        var left = false
+        for _ in 0..<3 where !left {
+            XCUIDevice.shared.press(.home)
+            left = app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended
+        }
+        XCTAssertTrue(left, "mdoc did not go to the background")
         // The stay itself is the test: a fixed time in the background, not
         // a wait for something to happen.
         sleep(seconds)
