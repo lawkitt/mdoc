@@ -79,7 +79,8 @@ breaks that in three ways:
   returns its snapshot at once and its change is saved off the main thread
   once the taps pause (300 ms, several taps in one save), and at once when
   the app leaves the foreground, before Copy for AI and Share, before
-  another document or screen replaces the open one, and before Move to
+  another document or screen replaces the open one, before a document
+  opens or is imported (it reads the case as saved), and before Move to
   case. A save holds the document only to take what to write and record
   it, and to join the case again when another document changed it (an
   undo step the document shows once the save lands). The library list

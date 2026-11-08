@@ -120,6 +120,29 @@ final class SaveAfterTapTests: XCTestCase {
         XCTAssertEqual(try onDisk(), tapped.markdown)
     }
 
+    /// A document opened from disk opens in its case as saved: a name
+    /// another document's taps marked and replaced is saved first, so it is
+    /// proposed in the one opened too (after a relaunch, no document has a
+    /// session yet).
+    func testOpeningADocumentSavesTheOthersFirst() throws {
+        let relaunched = try XCTUnwrap(
+            try RealCore.make(storage: seeded.storage, keys: FixedCaseKeyStore(), physicalMemory: Fixture.belowFloor)
+                .library as? RealLibrary)
+        relaunched.savePause = .seconds(60)
+        let documents = relaunched.snapshot().documents
+        let letterID = try XCTUnwrap(documents.first { $0.title == Letters.letterTitle }?.id)
+        let quotationID = try XCTUnwrap(documents.first { $0.title == Letters.quotationTitle }?.id)
+        let letter = try relaunched.session(for: letterID)
+        let markdown = letter.snapshot().markdown
+        let found = try XCTUnwrap(markdown.range(of: "staircase"))
+        let byteStart = markdown[..<found.lowerBound].utf8.count
+        let marked = try letter.markSelection(SourceRange(start: byteStart, end: byteStart + "staircase".utf8.count))
+        let mark = try XCTUnwrap(marked.candidates.first { $0.original == "staircase" && $0.state == .proposed })
+        _ = try letter.decide(mark.id, .replace, scope: .all)
+        let quotation = try relaunched.session(for: quotationID)
+        XCTAssertTrue(quotation.snapshot().candidates.contains { $0.original == "staircase" }, "proposed from the case")
+    }
+
     /// mdoc leaving the foreground saves every document.
     func testLeavingTheForegroundSaves() throws {
         library.savePause = .seconds(60)

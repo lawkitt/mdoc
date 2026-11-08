@@ -43,7 +43,6 @@ impl DocumentSession {
     /// before replacing it.
     pub fn save_pending(&self, library: Arc<Library>) -> Result<Option<SavedChange>, ReviewError> {
         let _saving = self.lock_saving();
-        let mut rejoined = false;
         loop {
             let mut pending = {
                 let guard = self.lock_document();
@@ -74,14 +73,15 @@ impl DocumentSession {
                     return Ok(Some(SavedChange {
                         path: pending.path.unwrap_or_default().display().to_string(),
                         case,
-                        rejoined,
+                        rejoined: std::mem::take(&mut document.rejoined),
                     }));
                 }
                 // Rare: joining needs the review, so this holds the
                 // document, but only while it joins.
+                // Told with the save that lands, even if this one fails.
                 None => {
                     document.rejoin(&library)?;
-                    rejoined = true;
+                    document.rejoined = true;
                 }
             }
         }
@@ -203,6 +203,8 @@ impl Document {
                 Some(saved) => {
                     let case = saved.case.clone();
                     self.saved_as(&pending, saved);
+                    // The review returned shows any join.
+                    self.rejoined = false;
                     return Ok(super::SavedDocument {
                         path: pending.path.unwrap_or_default().display().to_string(),
                         case,

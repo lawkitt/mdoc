@@ -225,6 +225,10 @@ final class RealLibrary: Library, @unchecked Sendable {
             return session
         }
         guard FileManager.default.fileExists(atPath: path) else { throw CoreError.notFound }
+        // It opens in its case as stored: what the other documents' taps
+        // added to the case (a name marked and replaced) is saved first,
+        // so it is proposed here too.
+        saveChangesReporting()
         let session = RealSession(id: DocumentID(rawValue: path), library: self, source: nil, title: "", caseID: nil)
         try session.reopen(path: path, original: originals.original(for: path))
         lock.withLock {
@@ -241,6 +245,8 @@ final class RealLibrary: Library, @unchecked Sendable {
         case .existing(let id): id.rawValue
         case .newCase(let name): try core { try ffi.createCase(name: name) }.id
         }
+        // Its job joins the case as stored: the taps' changes first.
+        saveChangesReporting()
         let prepared = try originals.prepare(source, title: title)
         let id = DocumentID(rawValue: "new:\(UUID().uuidString)")
         // Kept on disk until its first save, so it survives mdoc stopping.
@@ -368,6 +374,18 @@ final class RealLibrary: Library, @unchecked Sendable {
         }
         if let failure {
             throw failure
+        }
+    }
+
+    /// `saveChanges`, each failure told to the app as a failed save that
+    /// followed taps: the call that needed the saves goes on.
+    private func saveChangesReporting() {
+        for session in lock.withLock({ Array(sessions.values) }) {
+            do {
+                try session.saveChanges()
+            } catch {
+                report(.failed(session.id, CoreError(error)))
+            }
         }
     }
 

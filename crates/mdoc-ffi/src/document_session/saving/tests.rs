@@ -254,6 +254,53 @@ fn a_save_after_another_documents_rejoins_the_case() {
     );
 }
 
+/// A rejoin whose write then fails is still told with the save that
+/// lands: the app shows the review joined again.
+#[cfg(unix)]
+#[test]
+fn a_rejoin_is_told_after_a_failed_write() {
+    use std::os::unix::fs::PermissionsExt;
+    let scratch = Scratch::new();
+    let library = library(&scratch);
+    let case = library.create_case("Case".into()).unwrap();
+    let sessions: Vec<_> = [
+        ("Ann Lee signed.", "Ann Lee"),
+        ("Bob Hart signed.", "Bob Hart"),
+    ]
+    .into_iter()
+    .map(|(text, name)| {
+        let session = DocumentSession::new();
+        session.import_text(text.into(), name.into()).unwrap();
+        session.join_case(library.clone(), case.id.clone()).unwrap();
+        session.save(library.clone()).unwrap();
+        let names = vec![ProposedName {
+            wording: name.into(),
+            category: Category::Person,
+        }];
+        session
+            .review(ReviewAction::ProposeNames { names }, None)
+            .unwrap();
+        session.review(ReviewAction::ReplaceAll, None).unwrap();
+        session
+    })
+    .collect();
+    sessions[0].save_pending(library.clone()).unwrap().unwrap();
+    let documents = library.documents_dir();
+    let mode =
+        |mode| std::fs::set_permissions(&documents, std::fs::Permissions::from_mode(mode)).unwrap();
+    mode(0o555);
+    let failed = sessions[1].save_pending(library.clone());
+    mode(0o755);
+    assert!(failed.is_err(), "{failed:?}");
+    assert_eq!(sessions[1].snapshot().unwrap().text, "PERSON_2 signed.");
+    let saved = sessions[1].save_pending(library.clone()).unwrap().unwrap();
+    assert!(saved.rejoined);
+    sessions[1].review(ReviewAction::Undo, None).unwrap();
+    sessions[1].review(ReviewAction::Redo, None).unwrap();
+    let again = sessions[1].save_pending(library).unwrap().unwrap();
+    assert!(!again.rejoined, "told once");
+}
+
 /// A document never saved is left to `save`, its import's or scan's first
 /// save, which joins the case chosen for it: saving it here would start a
 /// case of its own.

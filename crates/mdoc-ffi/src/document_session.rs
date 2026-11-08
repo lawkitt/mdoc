@@ -109,6 +109,9 @@ struct Document {
     /// `ReviewText::change_key` at the last save: equal now, nothing
     /// changed since, and a save would write what is there.
     saved: Option<((u64, u64, usize), bool)>,
+    /// A `save_pending` joined the case again, and no save has told the
+    /// app yet (`SavedChange::rejoined`).
+    rejoined: bool,
 }
 
 #[derive(uniffi::Object)]
@@ -757,6 +760,7 @@ impl DocumentSession {
             synced: None,
             scanned: false,
             saved: None,
+            rejoined: false,
         };
         if let Some(opened) = opened {
             document.path = opened.path;
