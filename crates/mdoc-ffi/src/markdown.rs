@@ -206,6 +206,14 @@ pub fn markdown_styling(text: String) -> MarkdownStyling {
     styling(&text)
 }
 
+/// What a copy holding HTML and perhaps plain text pastes as: the ChatGPT
+/// iOS app copies no Markdown, so it comes from the HTML (ADR 0105). Nil when
+/// neither holds text.
+#[uniffi::export]
+pub fn pasted_markdown(html: String, plain: Option<String>) -> Option<String> {
+    mdoc_markdown::from_html::pasted_markdown(&html, plain.as_deref())
+}
+
 /// A table line's part in its table.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TablePart {

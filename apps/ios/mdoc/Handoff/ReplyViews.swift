@@ -19,16 +19,16 @@ struct ReplySheet: View {
                     // title, which can be long), so the editor keeps its room.
                     .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
-                PasteButton(payloadType: String.self) { strings in
-                    if let text = strings.first {
-                        reply = text
+                PasteButton(supportedContentTypes: [.html, .plainText]) { providers in
+                    Task { @MainActor in
+                        if let text = await PastedReply.text(from: providers) {
+                            reply = text
+                        }
                     }
                 }
                 .labelStyle(.titleAndIcon)
-                TextEditor(text: $reply)
-                    .font(.body)
+                ReplyEditor(text: $reply)
                     .frame(minHeight: 120)
-                    .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topLeading) {
@@ -60,6 +60,52 @@ struct ReplySheet: View {
                 }
             }
         }
+    }
+}
+
+/// The reply's text box. Its Paste, from the menu or ⌘V, reads a copy as the
+/// Paste button does, so a table copied from the ChatGPT app stays one (ADR
+/// 0105).
+private struct ReplyEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeUIView(context: Context) -> ReplyTextView {
+        let view = ReplyTextView()
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 5
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: ReplyTextView, context: Context) {
+        context.coordinator.text = $text
+        if view.text != text { view.text = text }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) { self.text = text }
+
+        func textViewDidChange(_ view: UITextView) {
+            text.wrappedValue = view.text
+        }
+    }
+}
+
+final class ReplyTextView: UITextView {
+    override func paste(_ sender: Any?) {
+        guard let pasted = PastedReply.text(from: .general), let range = selectedTextRange else {
+            super.paste(sender)
+            return
+        }
+        replace(range, withText: pasted)
+        delegate?.textViewDidChange?(self)
     }
 }
 
