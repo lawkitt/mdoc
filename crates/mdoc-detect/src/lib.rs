@@ -620,12 +620,48 @@ fn to_source(
     raw
 }
 
+/// The table and column of a cell `range` lies in: the offset of its
+/// table's first row and the number of unescaped pipes before it on its
+/// line, or `None` outside a table row.
+fn table_column(source: &str, range: &std::ops::Range<usize>) -> Option<(usize, usize)> {
+    let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let row = |line: &str| line.trim_start().starts_with('|');
+    if !row(&source[line_start..]) {
+        return None;
+    }
+    let before = &source[line_start..range.start];
+    let column = before
+        .match_indices('|')
+        .filter(|(i, _)| {
+            before[..*i]
+                .bytes()
+                .rev()
+                .take_while(|&b| b == b'\\')
+                .count()
+                % 2
+                == 0
+        })
+        .count();
+    // Back over the rows above to the table's first.
+    let mut table = line_start;
+    while table > 0 {
+        let above = source[..table - 1].rfind('\n').map_or(0, |i| i + 1);
+        if !row(&source[above..table - 1]) {
+            break;
+        }
+        table = above;
+    }
+    Some((table, column))
+}
+
 /// The model's organizations that are bare initials a column, a reference
 /// line or an "initials" label places as a known person's
 /// ([`mdoc_pii::placed_initials`]) are that person: "| ЯВР |" under
 /// "Исполнитель" beside «Яков Викторович Ростов» (guide rule 1, #387).
 /// Not where the document names an organization so: another of the model's
-/// organizations holds the word («ООО «ЯВР»»), or it is quoted.
+/// organizations holds the word («ООО «ЯВР»»), it is quoted, or the same
+/// column holds a model organization that is no known person's initials
+/// ("СМУ" beside "ПСК": a column of companies).
 fn initials_are_people(source: &str, detections: &mut [Detection]) {
     let organizations = || {
         detections
@@ -648,18 +684,24 @@ fn initials_are_people(source: &str, detections: &mut [Detection]) {
         .filter(|d| !placed.contains(&d.range))
         .map(|d| &source[d.range.clone()])
         .collect();
+    let company_columns: Vec<(usize, usize)> = organizations()
+        .filter(|d| !placed.contains(&d.range))
+        .filter_map(|d| table_column(source, &d.range))
+        .collect();
     for detection in detections.iter_mut() {
+        if detection.category != Category::Organization || !placed.contains(&detection.range) {
+            continue;
+        }
         let token = &source[detection.range.clone()];
         let organization = named.iter().any(|name| {
             name.split(|c: char| !c.is_alphanumeric())
                 .any(|word| word == token)
-        }) || ["«{}»", "\"{}\"", "“{}”"]
+        }) || ["«{}»", "\"{}\"", "“{}”", "„{}“", "‘{}’", "'{}'"]
             .iter()
-            .any(|quoted| source.contains(&quoted.replace("{}", token)));
-        if detection.category == Category::Organization
-            && placed.contains(&detection.range)
-            && !organization
-        {
+            .any(|quoted| source.contains(&quoted.replace("{}", token)))
+            || table_column(source, &detection.range)
+                .is_some_and(|column| company_columns.contains(&column));
+        if !organization {
             detection.category = Category::Person;
         }
     }
@@ -2032,10 +2074,7 @@ mod tests {
             [(Category::Person, 0.6), (Category::Organization, 0.9)]
         );
     }
-    /// #500 and #492's English reproductions: pronouns, "In", headings,
-    /// religions, group nouns, nationalities and a place's second word are
-    /// no one; a person named by such a word keeps it beside a title or
-    /// their full name.
+
     /// #387: the model's organization "ЯВР" in a column of a known
     /// person's initials is that person; the same letters a company's own
     /// name, or outside a placed position, stay as the model read them.
@@ -2118,8 +2157,62 @@ mod tests {
             ),
             pairs(&[("PERSON", "Ольга Ивановна Белова"), ("ORG", "ЯВР")])
         );
+        // A column the model reads as companies keeps them: "СМУ" spells
+        // the person, "ПСК" no one.
+        let companies = "Исполнитель работ: Сергей Михайлович Уваров.\n\n\
+            | Этап | Исполнитель |\n|---|---|\n| 1 | СМУ |\n| 2 | ПСК |\n";
+        assert_eq!(
+            shown(
+                companies,
+                &[
+                    ("Сергей Михайлович Уваров", "person", 0),
+                    ("СМУ", "organization", 0),
+                    ("ПСК", "organization", 0)
+                ]
+            ),
+            pairs(&[
+                ("PERSON", "Сергей Михайлович Уваров"),
+                ("ORG", "СМУ"),
+                ("ORG", "ПСК")
+            ])
+        );
+        let by = "Signed off by Alice B. Carter.\n\n| Step | By |\n|---|---|\n| 1 | ABC |\n| 2 | DLA |\n";
+        assert_eq!(
+            shown(
+                by,
+                &[
+                    ("Alice B. Carter", "person", 0),
+                    ("ABC", "organization", 0),
+                    ("DLA", "organization", 0)
+                ]
+            ),
+            pairs(&[
+                ("PERSON", "Alice B. Carter"),
+                ("ORG", "ABC"),
+                ("ORG", "DLA")
+            ])
+        );
+        // The company's name in German or single quotes.
+        for quoted in ["„ЯВР“", "‘ЯВР’", "'ЯВР'"] {
+            let company = format!("{table}\nПодрядчик: ООО {quoted}.\n");
+            let found = shown(
+                &company,
+                &[name, ("ЯВР", "organization", 0), ("ЯВР", "organization", 1)],
+            );
+            assert!(
+                found
+                    .iter()
+                    .filter(|(_, text)| text == "ЯВР")
+                    .all(|(category, _)| category == "ORG"),
+                "{quoted}: {found:?}"
+            );
+        }
     }
 
+    /// #500 and #492's English reproductions: pronouns, "In", headings,
+    /// religions, group nouns, nationalities and a place's second word are
+    /// no one; a person named by such a word keeps it beside a title or
+    /// their full name.
     #[test]
     fn correction_drops_common_words_and_keeps_people_named_so() {
         let source = "He appeals. In this case the Tribunal accepted his Christian faith, \
