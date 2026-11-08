@@ -42,7 +42,21 @@ struct ReviewCard: View {
 
     // MARK: Line 1
 
+    /// One height whether or not the mentions chip shows: a hidden chip, no
+    /// wider than nothing, holds the row at the chip's height at every text
+    /// size, so the compact bar (and the text above it) keeps its height
+    /// from card to card.
     private var header: some View {
+        ZStack(alignment: .leading) {
+            Chip(Text(verbatim: "1 of 2"), systemImage: "arrow.down")
+                .fixedSize()
+                .frame(width: 0)
+                .hidden()
+            headerRow
+        }
+    }
+
+    private var headerRow: some View {
         HStack(spacing: Space.xs) {
             Image(systemName: candidate.category.symbol)
                 .foregroundStyle(candidate.category.color)
