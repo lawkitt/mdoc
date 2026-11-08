@@ -24,13 +24,16 @@ extend = [
 # группа" and "Кедровый щит" in "ООО «Правовая группа «Кедровый щит»»" are
 # the whole of it, and so is its "Северный мост" alone in "обществу с
 # ограниченной ответственностью "Группа компаний "Северный мост""".
-# Without a legal form before the quotes only a span the quotes cut grows,
-# to the name inside the outer quotes, so a quotation that mentions «ООО
-# «Кедр»» stays as it is, and quotes with a legal form inside them are a
-# quotation, no name. Two companies («ООО «Кедр» и АО «Север»»), a
-# defined term after one («ООО «Кедр» (далее — «Общество»)») and a quote
-# left open never make one name, nor do quotes nested deeper or across a
-# line.
+# Without a legal form before the quotes only the name's pieces grow, spans
+# with nothing but spaces and quotes between them, to the name inside the
+# outer quotes: quoted prose («деньги перевели «Кедру» и «Северу»») stays as
+# it is. A name opens with a capital or a digit and holds no legal form, or
+# it is a quotation («ООО «не исполнило … по договору «Кедр»»», «ООО «Кедр»
+# и АО «Север»»). Two companies, a defined term after one («ООО «Кедр»
+# (далее — «Общество»)») and a quote left open never make one name, nor do
+# quotes nested deeper or across a line, and a growth never takes another
+# category's span outside the inner name, markup, a table's cell border or
+# more than 300 bytes.
 [[span]]
 category = "ORG"
 nested_quotes = [

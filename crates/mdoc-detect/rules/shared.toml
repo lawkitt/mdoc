@@ -131,9 +131,12 @@
 #                         after one, every span on the form or in the
 #                         quotes grows to the whole name, form and closing
 #                         quotes included, as one span; without one, only
-#                         spans the quotes cut (holding one quote of a
-#                         pair, or two in the name) grow, to the name in
-#                         its outer quotes
+#                         its pieces (spans with only spaces and quotes
+#                         between and around them) grow, to the name in its
+#                         outer quotes. A name opens with a capital or a
+#                         digit and holds no form; a growth takes no other
+#                         category's span outside the last inner pair, no
+#                         markup or cell border, and 300 bytes at most
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
 #                         into part of another span of its category, and
