@@ -13,6 +13,7 @@
 #   role_surnames lowercase occupational surnames kept when capitalized as PERSON
 #   reference legal references and markers no model span is inside
 #   private   bodies that are never public, whoever owns them
+#   label     an identifier field's labels, beside values in one model span
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
@@ -215,6 +216,21 @@
 # пенсионный фонд «…»"), unless it matches one of its optional `unless`
 # regexes too ("Electoral College"). Anchor the patterns: a public body
 # may have the word inside ("Ministry of Colleges and Universities").
+#
+# A `label` entry lists lowercase `words` (phrases of them, without their
+# dots: "тел" for "тел."), each the label of a field of its `category`
+# (TAX, BANK, IDENTITY or PHONE). A model identifier span holding a rule's
+# value and the next field ("7701234567, р/с 40702810900000012345") keeps
+# that field's value when a label of this, a `context` or a `span` `trim`
+# list of these categories sits just before it, as the label's category
+# (#739). A `context` or `trim` label need not be repeated here; a value
+# after a `context`'s label must be one its `value` takes whole. A word is
+# one category's only. Optionally:
+#   strict     = true      the words name the category only for a value of
+#                          its strict, unlabelled shape ("счёт")
+#   only_after = [word…]   the label counts only after one of these words
+#                          in its field ("паспорт … серии"); alone it is
+#                          `strict`, after other words it names nothing
 #
 # A `shape` entry has any of:
 #   min_code_chars = n  a model value needs n digits and capital letters

@@ -167,6 +167,28 @@ trim = [
     "iban", "a/c", "account", "account no", "account number", "bank account",
 ]
 
+# Field labels beside values in one model span (#739): "Tax ID 9900123450,
+# Tel. +1 212 555 0142" keeps the phone. An amount's, an invoice's or a
+# ZIP code's word is none.
+[[label]]
+category = "TAX"
+words = ["tax id", "taxpayer id", "tax number", "vat", "vat number"]
+
+# Bank details' labels besides the trimmed ones above.
+[[label]]
+category = "BANK"
+words = ["acct", "bic", "swift", "routing number", "aba", "sort code"]
+
+# An identity document's labels.
+[[label]]
+category = "IDENTITY"
+words = ["passport", "passport number", "ssn", "national id", "id card"]
+
+# A phone's labels.
+[[label]]
+category = "PHONE"
+words = ["tel", "telephone", "phone", "fax", "mobile", "cell"]
+
 # A declaration or an affidavit is a person's: the model's organization
 # "Ostrand Decl." is the person "Ostrand" when a person's span names them
 # ("Mr Ivo Ostrand"; guide rule 1, issue #499).

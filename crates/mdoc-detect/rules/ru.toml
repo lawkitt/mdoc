@@ -799,6 +799,46 @@ min_digits = 8
 # only valid ones; these give the label's category over the model's guess.
 # A table column headed by the label takes its cells' values too.
 #
+# Field labels beside values in one model span (#739): "ИНН 7701234567,
+# КПП 770101001, р/с …, тел. …" keeps each field's value, of its label's
+# category (guide rule 6: ОГРН, ОГРНИП, ОКПО and КПП are TAX, a БИК is
+# BANK). ОКТМО and КБК are budget codes (#553 item 1), an amount's, an
+# address's or an invoice's word no label: they give nothing.
+[[label]]
+category = "TAX"
+words = ["кпп", "огрн", "огрнип", "огрн ип", "окпо", "код окпо"]
+
+# Bank details' labels besides the trimmed ones above.
+[[label]]
+category = "BANK"
+words = ["бик", "лицевой счет", "лицевой счёт", "корр счет", "корр счёт", "номер счета", "номер счёта"]
+
+# "Счёт" and "сч." alone are an invoice's as often as an account's ("счёт
+# № 12345678 от 01.02.2026"): only an account's twenty digits after them.
+[[label]]
+category = "BANK"
+words = ["счет", "счёт", "сч"]
+strict = true
+
+# An identity document's labels.
+[[label]]
+category = "IDENTITY"
+words = ["паспорт", "паспорта"]
+
+# A series is a passport's after "паспорт" ("паспорт гражданина РФ серии
+# 45 12 № 345678"); alone, only before a passport's series and number; a
+# certificate's or a form's ("свидетельство серии 77 № 012345678", "бланк
+# серии 7701 № 123456") is none.
+[[label]]
+category = "IDENTITY"
+words = ["серия", "серии", "серия и номер"]
+only_after = ["паспорт", "паспорта"]
+
+# A phone's labels.
+[[label]]
+category = "PHONE"
+words = ["тел", "телефон", "телефона", "тел/факс", "факс", "моб"]
+
 # ИНН: ten or twelve digits; OCR may read a digit as O, О, I, l or І.
 [[context]]
 category = "TAX"
