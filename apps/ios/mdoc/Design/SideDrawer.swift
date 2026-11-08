@@ -5,7 +5,9 @@ import SwiftUI
 /// moves toward the far edge, keeps a dimmed sliver with rounded corners,
 /// and a tap on the sliver or a swipe back closes the panel. It opens from
 /// a swipe at the near edge of the screen or from a button that sets
-/// `isOpen`, and follows the finger both ways.
+/// `isOpen`, and follows the finger both ways. Open, only a swipe that starts
+/// on the sliver or at the panel's inner edge moves it: a swipe over the
+/// panel's content is the content's, such as an Identities row's (ADR 0106).
 struct SideDrawer<Panel: View, Content: View>: View {
     enum Side { case leading, trailing }
 
@@ -101,7 +103,7 @@ struct SideDrawer<Panel: View, Content: View>: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: side == .leading ? .leading : .trailing)
             .background(Palette.background.ignoresSafeArea())
-            .simultaneousGesture(isOpen ? dragGesture(width: width) : nil)
+            .simultaneousGesture(isOpen ? dragGesture(width: width, frame: geometry.frame(in: .global)) : nil)
         }
     }
 
@@ -135,10 +137,15 @@ struct SideDrawer<Panel: View, Content: View>: View {
         }
     }
 
-    private func dragGesture(width: CGFloat) -> some Gesture {
+    /// The drawer's drag. `frame`, the drawer's own in global points, places
+    /// where an open drawer's drag starts.
+    private func dragGesture(width: CGFloat, frame: CGRect? = nil) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .onChanged { value in
                 let dx = value.translation.width * sign
+                if !dragging, isOpen, let frame, !DrawerDrag.movesOpenDrawer(
+                    startingAt: value.startLocation.x - frame.minX, width: frame.width,
+                    panelWidth: width, panelOnLeft: sign > 0) { return }
                 // Mostly sideways, or it belongs to a scroll.
                 guard dragging || abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
                 dragging = true
@@ -157,6 +164,25 @@ struct SideDrawer<Panel: View, Content: View>: View {
 
     private func setOpen(_ open: Bool) {
         slide(open: open)
+    }
+}
+
+/// Which drags move an open drawer (ADR 0106): those that start on the
+/// dimmed sliver or within `innerEdge` of the panel's edge beside it. One
+/// that starts over the panel's content belongs to the content: an
+/// Identities row's swipe, or putting its revealed actions away.
+enum DrawerDrag {
+    /// How far into the panel, from its edge beside the sliver, a drag
+    /// still moves the drawer.
+    static let innerEdge: CGFloat = 20
+
+    /// `x` is where the drag starts, in points from the drawer's left edge
+    /// on screen; `width` is the drawer's, `panelWidth` the panel's, which
+    /// sits at the left edge when `panelOnLeft`, else at the right.
+    static func movesOpenDrawer(startingAt x: CGFloat, width: CGFloat, panelWidth: CGFloat, panelOnLeft: Bool) -> Bool {
+        // How far into the panel the drag starts; the sliver is below zero.
+        let depth = panelOnLeft ? panelWidth - x : x - (width - panelWidth)
+        return depth <= innerEdge
     }
 }
 

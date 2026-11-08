@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is now %@" : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -436,6 +439,9 @@
 
     },
     "Downloading %@" : {
+
+    },
+    "Drag a name onto another to make them one" : {
 
     },
     "Each document you add starts a case, or joins one you choose." : {

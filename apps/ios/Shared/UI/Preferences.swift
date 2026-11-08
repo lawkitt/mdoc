@@ -17,6 +17,8 @@ final class Preferences: @unchecked Sendable {
         case haptics
         case swipeLearned = "hint.swipe.learned"
         case longPressLearned = "hint.longPress.learned"
+        /// Identities' "Drag a name onto another" (ADR 0106).
+        case dragMergeLearned = "hint.dragMerge.learned"
         case grabberBounced = "hint.grabber.bounced"
         case nudged = "reviewNudged"
         case setupCardDismissed
@@ -97,21 +99,32 @@ final class Preferences: @unchecked Sendable {
         set { withMutation(keyPath: \.nudged) { store.set(newValue, forKey: name(.nudged)) } }
     }
 
-    /// A review hint's key (`swipeLearned`, `longPressLearned`) is set: the
-    /// hint was used once, or dismissed, and never shows again.
+    /// The hints' keys: each set once its hint is learned.
+    static let hintKeys: [Key] = [.swipeLearned, .longPressLearned, .dragMergeLearned]
+
+    /// Changes whenever a hint is learned or reset, so a view showing a hint
+    /// line hears of it.
+    private var hintsRevision = 0
+
+    /// A hint's key (`hintKeys`) is set: the hint was used once, or
+    /// dismissed, and never shows again.
     func isLearned(_ key: Key) -> Bool {
-        bool(key)
+        _ = hintsRevision
+        return bool(key)
     }
 
     func learn(_ key: Key) {
+        guard !bool(key) else { return }
         store.set(true, forKey: name(key))
+        hintsRevision += 1
     }
 
     /// Settings › Review › Reset tips: every hint shows again, at once.
     func resetTips() {
-        for key in [Key.swipeLearned, .longPressLearned] {
+        for key in Self.hintKeys {
             store.removeObject(forKey: name(key))
         }
+        hintsRevision += 1
         withMutation(keyPath: \.grabberBounced) { store.removeObject(forKey: name(.grabberBounced)) }
         withMutation(keyPath: \.nudged) { store.removeObject(forKey: name(.nudged)) }
     }

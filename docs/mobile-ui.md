@@ -57,11 +57,11 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Chip` | Anything tappable that isn't a button is a filled capsule. A chip that opens a menu ends in a chevron; plain text never acts. Neutral fill, or tinted by category or state. At least 44 pt of target. |
 | `card()` | A raised surface: the review card, empty-state tiles. |
 | `StatusPill` | State as an icon and words in the state's color. |
-| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. |
+| `SideDrawer` | A panel under the screen that the screen slides aside to show, following the finger; the sliver dims and closes it on a tap. Open, a drag moves it only from the sliver or the panel's inner edge (20 pt, `DrawerDrag`); over the panel, the content owns the drag. |
 | `IconTile` | Settings: white symbol on a colored square. Start and document rows: tinted fill, colored symbol. |
-| `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo, Redo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
+| `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
-| `ReviewHintLine` | The review's one hint line: symbol, words, ×. |
+| `ReviewHintLine` | A hint line: symbol, words, ×. The review bar's, and Identities' one. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
 
 ## Screens
@@ -94,8 +94,8 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 
 - **Motion:** on iPhone the screen slides right over the sidebar,
   following the finger from ☰ or the left edge (22 pt), leaving a dimmed
-  72 pt sliver with `Radius.screen` corners; a tap on it or a swipe left
-  closes it. Reduce Motion fades. On a wide iPad it is the standing first
+  72 pt sliver with `Radius.screen` corners; a tap on it, or a swipe left
+  that starts on it or at the panel's inner edge (20 pt), closes it. Reduce Motion fades. On a wide iPad it is the standing first
   column; on a narrow one (portrait, Slide Over, a split) it slides over as
   on iPhone (`DocumentLayout`).
 - **Layout:** search (titles and cases) at the top, no title; the Cases
@@ -144,7 +144,10 @@ that only the view model changes; views send intents
   (`ReviewOrder`).
 - **Undo:** every core step is also registered with the window's undo
   manager, so shake, the three-finger swipe and ⌘Z share the bar's
-  history; Undo moves the bar back and the toast offers Redo.
+  history. Undo moves the bar back, with a haptic and no toast, and puts
+  an earlier toast away; VoiceOver hears what was undone. Redo is the
+  Undo button's long press, ⇧⌘Z and a VoiceOver action, and its toast
+  offers Undo ([ADR 0106](adr/0106-mobile-identities-gestures.md)).
 - **Menus:** the long press on a name, the card's buttons and the keys
   take their actions from `actions(for:)`, so they agree. The long press
   and the chips' menus show the outcome before the tap ("Organization → ORG_3"); Same as… lists hints
@@ -160,20 +163,37 @@ that only the view model changes; views send intents
 
 ## Identities
 
-[ADR 0103](adr/0103-mobile-identities-drawer.md); code in
+[ADR 0103](adr/0103-mobile-identities-drawer.md), with gestures from
+[ADR 0106](adr/0106-mobile-identities-gestures.md); code in
 [`IdentitiesView`](../apps/ios/mdoc/Document/IdentitiesView.swift),
-`IdentitiesPanel` and `DocumentViewModel+Identities`.
+`IdentitiesView+Gestures`, `IdentitiesPanel` and
+`DocumentViewModel+Identities`.
 
 - **Where:** iPhone, a drawer from the right edge or 🪪 (`SideDrawer`,
   trailing); a wide iPad, the standing right column. A tap on a name opens
   the review bar's full view on it.
 - **Top:** progress ring, "Identities", "9 names · 4 left", search circle,
-  Select, › close; then Replace N, filled.
+  Select, › close; then Replace N, filled; then, while Looks like has a
+  card or two names share a category, the hint line "Drag a name onto
+  another to make them one" (`ReviewHint.dragMerge`), gone for good after
+  the first drag-merge or Same as, or ×.
 - **Then:** Looks like cards (Same as, Not the same), category chips, and
   the names by what is left: To review, Replaced, Kept (folded).
 - **Rows:** category icon, the name (wrapped at words), the alias, "3×"
   and its other spellings in grey, and a round `StateButtonLabel`: replace, then Replaced ⇄
-  Kept, with Undo in the toast.
+  Kept, with Undo in the toast. A decided row's mark turns to its new
+  mark first (a cross-fade under Reduce Motion), then the row moves to
+  its section.
+- **Swipes:** right is Replace, a full swipe too; left shows Same as… and
+  Keep, never as a full swipe, since Keep sends the original to the AI.
+  In the drawer the rows own sideways swipes.
+- **Drag-to-merge** (iPhone and iPad): drag a row onto another. The row
+  under the finger gets an accent outline and "Same as PERSON_1" in its
+  alias line; the row being dragged takes no drop. The drop is the core's
+  link, as desktop's drag: the target keeps its alias and restore
+  wording, another category takes the target's, one undo step, a haptic
+  and "PERSON_3 is now PERSON_1 · Undo". Mention drags and drop-to-split
+  are desktop's only.
 - **Select:** tick rows, then Replace, Keep or Same as (into the name
   mentioned most); one Undo takes the selection back.
 
@@ -187,10 +207,11 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Review card | Swipe sideways, or tap a peek | Previous or next candidate |
 | Review bar grabber, progress line, card | Drag up or down | Full or compact, following the finger; × ends review |
 | A name in the text | Long press | Its menu (Replace, Keep, Same as…, Change category) |
-| Identities row | Swipe right or left, or tap its round button | Replace; Keep and Same as…; the button replaces, then switches Replaced and Kept |
+| Identities row | Swipe right or left, or tap its round button | Replace (a full swipe too); Same as… and Keep (no full swipe); the button replaces, then switches Replaced and Kept |
+| Identities row | Long press, then drag onto another row | Same as: the two names become one |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
-| Left edge (iPhone) | Swipe right | The sidebar; swipe left or tap the sliver to close |
-| Right edge (iPhone, a document open) | Swipe left | Identities; swipe right or tap the sliver to close |
+| Left edge (iPhone) | Swipe right | The sidebar; tap the sliver, or swipe left from it or the panel's inner edge, to close |
+| Right edge (iPhone, a document open) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
 
 No swipes on the document text.
 
@@ -198,7 +219,7 @@ No swipes on the document text.
 
 - Short, plain verbs: Replace, Keep, Same as…, New alias, Undo.
 - Toasts name what happened: "12 replaced", "Same as Maya Bennett",
-  "Undid Replace · Riverside Holdings".
+  "PERSON_3 is now PERSON_1".
 - Plain names for models ("Name finder"); the technical name sits one tap
   deeper.
 - US spelling.

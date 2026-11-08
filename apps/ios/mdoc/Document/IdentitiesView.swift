@@ -1,3 +1,4 @@
+import MdocFFI
 import SwiftUI
 
 /// Identities (2026-11-06 grill, round 2; docs/mobile-ui.md, Identities):
@@ -26,8 +27,15 @@ struct IdentitiesView: View {
     @State private var selecting = false
     @State private var selection: Set<IdentityID> = []
     @State private var showsKept = false
+    /// Names just decided, at the state whose section they stay in while
+    /// their marks turn (`IdentitiesView+Gestures`).
+    @State var held: [IdentityID: MentionState] = [:]
+    /// The row being dragged, and the row a drag is over.
+    @State var dragged: IdentityID?
+    @State var dropTarget: IdentityID?
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
-    private var identities: [Identity] { model.snapshot.identities }
+    var identities: [Identity] { model.snapshot.identities }
 
     private var shown: [Identity] {
         let needle = query.trimmingCharacters(in: .whitespaces)
@@ -66,9 +74,9 @@ struct IdentitiesView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
-                section("To review", shown.filter { $0.state == .proposed })
-                section("Replaced", shown.filter { $0.state == .replaced })
-                keptSection(shown.filter { $0.state == .kept })
+                section("To review", shown.filter { placed($0) == .proposed })
+                section("Replaced", shown.filter { placed($0) == .replaced })
+                keptSection(shown.filter { placed($0) == .kept })
             }
             .listStyle(.plain)
             .listSectionSpacing(Space.xs)
@@ -140,7 +148,7 @@ struct IdentitiesView: View {
             }
             if counts.toReview > 0 && !selecting {
                 Button {
-                    model.replaceAllPending()
+                    deciding(identities.filter { $0.state == .proposed }.map(\.id)) { model.replaceAllPending() }
                 } label: {
                     Label("Replace \(counts.toReview)", systemImage: "eye.slash")
                         .fontWeight(.semibold)
@@ -149,6 +157,9 @@ struct IdentitiesView: View {
                 .buttonStyle(.borderedProminent)
                 .accessibilityLabel(Text("Replace all \(counts.toReview) names left"))
                 .accessibilityIdentifier("identities-replace-all")
+            }
+            if model.showsDragMergeHint && !selecting {
+                ReviewHintLine(hint: .dragMerge) { model.learn(.dragMerge) }
             }
         }
         .padding(.horizontal, Space.m)
@@ -287,6 +298,7 @@ struct IdentitiesView: View {
 
     private func row(_ identity: Identity) -> some View {
         let selected = selection.contains(identity.id)
+        let dropHint = dropHint(on: identity)
         return HStack(spacing: Space.s) {
             if selecting {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -320,13 +332,20 @@ struct IdentitiesView: View {
                             .lineLimit(1)
                     }
                 }
+                // A drag over the row: "Same as PERSON_1" in its place.
+                .opacity(dropHint == nil ? 1 : 0)
+                .overlay(alignment: .leading) {
+                    if let dropHint { DropHintLabel(text: dropHint) }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !selecting {
                 Button {
-                    model.toggle(identity)
+                    deciding([identity.id]) { model.toggle(identity) }
                 } label: {
                     StateButtonLabel(state: identity.state)
+                        .id(identity.state)
+                        .transition(markTransition)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(ReviewDetails.stateName(identity.state)))
@@ -350,17 +369,21 @@ struct IdentitiesView: View {
         .accessibilityLabel(Text(Self.spoken(identity)))
         .accessibilityAddTraits(selecting ? (selected ? [.isSelected, .isButton] : .isButton) : .isButton)
         .accessibilityHint(Text(selecting ? "Selects it." : "Opens it in the review bar."))
-        .accessibilityAction(named: Text(identity.state == .replaced ? "Keep all" : "Replace all")) { model.toggle(identity) }
+        .accessibilityAction(named: Text(identity.state == .replaced ? "Keep all" : "Replace all")) {
+            deciding([identity.id]) { model.toggle(identity) }
+        }
         .accessibilityAction(named: Text("Review this identity")) { onFocus(.identity(identity.id)) }
         .accessibilityAction(named: Text("Same as…")) { onPickSameAs(identity.id) }
         .accessibilityIdentifier("identity-row")
-        // Right: Replace. Left: Keep, and Same as… (ADR 0098).
-        .swipeActions(edge: .leading) {
-            Button("Replace") { model.decide(identities: [identity.id], .replace) }
+        // Right: Replace, a full swipe too. Left: Keep and Same as…, never
+        // a full swipe: Keep sends the original to the AI, so it is a tap
+        // (ADR 0106).
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button("Replace") { decide(identity, .replace) }
                 .tint(Palette.accent)
         }
-        .swipeActions(edge: .trailing) {
-            Button("Keep") { model.decide(identities: [identity.id], .keep) }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Keep") { decide(identity, .keep) }
                 .tint(.gray)
             Button("Same as…") { onPickSameAs(identity.id) }
                 .tint(.indigo)
@@ -372,12 +395,12 @@ struct IdentitiesView: View {
                 Label("Review this identity", systemImage: "rectangle.stack")
             }
             Button {
-                model.decide(identities: [identity.id], .replace)
+                decide(identity, .replace)
             } label: {
                 Label("Replace all", systemImage: "eye.slash")
             }
             Button {
-                model.decide(identities: [identity.id], .keep)
+                decide(identity, .keep)
             } label: {
                 Label("Keep all", systemImage: "eye")
             }
@@ -387,14 +410,8 @@ struct IdentitiesView: View {
                 Label("Same as…", systemImage: "link")
             }
         }
-        // Drag one row onto another: the same name (ADR 0098, iPad first).
-        .draggable(identity.id.rawValue)
-        .dropDestination(for: String.self) { items, _ in
-            guard let dropped = items.first, dropped != identity.id.rawValue,
-                  identities.contains(where: { $0.id.rawValue == dropped }) else { return false }
-            model.link(IdentityID(rawValue: dropped), into: identity.id)
-            return true
-        }
+        // Drag one row onto another: the same name (ADR 0106).
+        .modifier(IdentityDrop(identity: identity, model: model, dragged: $dragged, target: $dropTarget))
     }
 
     // MARK: Select
@@ -404,14 +421,14 @@ struct IdentitiesView: View {
         let ids = identities.map(\.id).filter { selection.contains($0) }
         return HStack(spacing: Space.s) {
             Button {
-                model.decide(identities: ids, .replace)
+                deciding(ids) { model.decide(identities: ids, .replace) }
                 selection = []
             } label: {
                 Text("Replace").frame(maxWidth: .infinity, minHeight: Size.barButton)
             }
             .buttonStyle(.borderedProminent)
             Button {
-                model.decide(identities: ids, .keep)
+                deciding(ids) { model.decide(identities: ids, .keep) }
                 selection = []
             } label: {
                 Text("Keep").frame(maxWidth: .infinity, minHeight: Size.barButton)

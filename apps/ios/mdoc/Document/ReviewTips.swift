@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The review's hints (docs/mobile-ui.md, Tips): one quiet line inside the
-/// bar, at most one per document, gone once the gesture is used. No
+/// bar, at most one per document, gone once the gesture is used, and one in
+/// Identities (`dragMerge`). No
 /// popovers and no tip cards. Settings › Review › Reset tips shows them
 /// again; UI tests turn them off.
 enum ReviewHint: String, CaseIterable, Identifiable {
@@ -9,6 +10,9 @@ enum ReviewHint: String, CaseIterable, Identifiable {
     case swipe
     /// After a few decisions: a name's long-press menu.
     case longPress
+    /// In Identities, while two names could be one: drag-to-merge (ADR
+    /// 0106). Learned by the first drag-merge or Same as.
+    case dragMerge
 
     var id: String { rawValue }
 
@@ -16,6 +20,7 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         switch self {
         case .swipe: "Swipe the card for the next name"
         case .longPress: "Long-press any name for more"
+        case .dragMerge: "Drag a name onto another to make them one"
         }
     }
 
@@ -23,6 +28,7 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         switch self {
         case .swipe: "hand.draw"
         case .longPress: "hand.tap"
+        case .dragMerge: "hand.point.up.left"
         }
     }
 
@@ -30,6 +36,7 @@ enum ReviewHint: String, CaseIterable, Identifiable {
         switch self {
         case .swipe: .swipeLearned
         case .longPress: .longPressLearned
+        case .dragMerge: .dragMergeLearned
         }
     }
 
