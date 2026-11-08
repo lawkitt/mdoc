@@ -142,6 +142,12 @@ struct MarkdownTextView: UIViewRepresentable {
         /// Inside `render`, whose own layout pass shows a scroll it will
         /// undo: no reveal runs there.
         private var rendering = false
+        /// A reveal's scroll on its way: once it lands, the name is measured
+        /// again and the scroll corrected once, if the layout the scroll
+        /// brought moved it out of the band.
+        private(set) var landing: (range: SourceRange, offset: CGFloat)?
+        /// An animated reveal's scroll is running: it lands at its end.
+        private var scrolling = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
 
         init(parent: MarkdownTextView) {
@@ -231,8 +237,17 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The end of a layout pass: the pending reveal runs, once, when the
         /// view is on screen with a size to measure in.
         func layoutDone(_ view: CandidateTextView) {
-            guard !rendering, pending == nil, let reveal = pendingReveal,
-                  view.window != nil, view.textWidth > 0, view.bounds.height > 0 else { return }
+            guard !rendering, pending == nil, view.window != nil, view.textWidth > 0, view.bounds.height > 0 else { return }
+            guard let reveal = pendingReveal else {
+                // The scroll has landed: measured again, corrected once.
+                if let landing, !scrolling {
+                    self.landing = nil
+                    // Unless something else scrolled the text meanwhile.
+                    guard abs(view.contentOffset.y - landing.offset) < view.bounds.height / 2 else { return }
+                    self.reveal(range: landing.range, in: view, always: false, correcting: true)
+                }
+                return
+            }
             pendingReveal = nil
             switch reveal.target {
             case .candidate(let id):
@@ -255,38 +270,64 @@ struct MarkdownTextView: UIViewRepresentable {
             reveal(range: candidate.range, in: view, always: always)
         }
 
-        /// Scrolls a source range into the text's top third, briefly
-        /// selecting it when it is no candidate (a Find match).
-        func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true) {
+        /// Scrolls a source range into the top third of the text left in
+        /// view above the bar, briefly selecting it when it is no candidate
+        /// (a Find match). The text is laid out through the range first: its
+        /// rect is otherwise TextKit 2's estimate. Once the scroll lands, it
+        /// is measured again and, if still out of the band, corrected once
+        /// (`correcting`).
+        func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true, correcting: Bool = false) {
             let range = offsets.nsRange(source)
             let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
                 NSLocationInRange(range.location, NSRange(location: cell.location, length: cell.attributedText.length))
             }
             let rect: CGRect
             if let cell {
+                // The grid's place is the text's, laid out through it.
+                _ = view.laidOutRect(of: NSRange(location: cell.location, length: 0))
                 guard let local = Self.firstRect(in: cell, location: range.location - cell.location, length: range.length) else { return }
                 if let table = cell.superview as? MarkdownTableView {
                     table.scrollRectToVisible(cell.convert(local, to: table).insetBy(dx: -12, dy: 0), animated: false)
                 }
                 rect = cell.convert(local, to: view)
             } else {
-                guard let found = Self.firstRect(in: view, location: range.location, length: range.length) else { return }
+                guard let found = view.laidOutRect(of: range) else { return }
                 rect = found
             }
             let insets = view.adjustedContentInset
             let top = view.contentOffset.y + insets.top
-            let band = (view.bounds.height - insets.top - insets.bottom) / 3
+            // The text left in view above the bar, compact or full: the room
+            // added below the end is no bar.
+            let band = (view.bounds.height - insets.top - (insets.bottom - revealRoom)) / 3
             guard always || rect.minY < top + 8 || rect.maxY > top + band else { return }
             let highest = -insets.top
             let target = max(rect.minY - insets.top - band / 3, highest)
             // Room below the end, so a candidate there can rise above the sheet.
-            let lowest = view.contentSize.height + insets.bottom - view.bounds.height
+            let lowest = view.laidOutContentHeight + insets.bottom - view.bounds.height
             if target > lowest {
                 let more = target - lowest
                 view.contentInset.bottom += more
                 revealRoom += more
             }
-            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: !UIAccessibility.isReduceMotionEnabled)
+            let animated = !UIAccessibility.isReduceMotionEnabled && abs(target - view.contentOffset.y) > 0.5
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: target), animated: animated)
+            guard !correcting else { return }
+            landing = (source, target)
+            scrolling = animated
+            // Without an animation it has landed: the next pass measures.
+            if !animated { view.setNeedsLayout() }
+        }
+
+        func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+            guard scrolling else { return }
+            scrolling = false
+            scrollView.setNeedsLayout()
+        }
+
+        /// The reader took the text: no correction follows.
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            landing = nil
+            scrolling = false
         }
 
         /// The room `reveal` added below the text, taken away once no

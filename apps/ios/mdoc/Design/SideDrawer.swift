@@ -8,6 +8,9 @@ import SwiftUI
 /// `isOpen`, and follows the finger both ways. Open, only a swipe that starts
 /// on the sliver or at the panel's inner edge moves it: a swipe over the
 /// panel's content is the content's, such as an Identities row's (ADR 0106).
+/// While a drawer inside its content shows its panel, its own near edge
+/// leaves the swipe to that drawer: with Identities open, a swipe from the
+/// left edge closes Identities and never opens the sidebar over it.
 struct SideDrawer<Panel: View, Content: View>: View {
     enum Side { case leading, trailing }
 
@@ -29,6 +32,8 @@ struct SideDrawer<Panel: View, Content: View>: View {
     @State private var slidingShut = false
     /// Counts the slides, so an earlier slide's end leaves a later one be.
     @State private var slides = 0
+    /// A drawer inside the content shows its panel.
+    @State private var innerShows = false
 
     /// The panel is drawn only while it shows: open, dragged or sliding
     /// shut. Closed, it isn't there for VoiceOver, taps or tests. A close
@@ -105,8 +110,12 @@ struct SideDrawer<Panel: View, Content: View>: View {
                     .offset(x: reduceMotion ? 0 : sign * shown)
                     .opacity(reduceMotion ? Double(1 - 0.85 * progress) : 1)
                     .accessibilityHidden(isOpen)
-                if !isOpen {
-                    // The near edge opens the panel with a swipe.
+                    .onPreferenceChange(InnerDrawerShows.self) { shows in
+                        MainActor.assumeIsolated { innerShows = shows }
+                    }
+                if !isOpen && !innerShows {
+                    // The near edge opens the panel with a swipe; while an
+                    // inner drawer shows, the swipe is the inner one's.
                     Color.clear
                         .frame(width: Self.edgeWidth)
                         .frame(maxHeight: .infinity)
@@ -118,6 +127,7 @@ struct SideDrawer<Panel: View, Content: View>: View {
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: side == .leading ? .leading : .trailing)
             .background(Palette.background.ignoresSafeArea())
             .simultaneousGesture(isOpen ? dragGesture(width: width, frame: geometry.frame(in: .global)) : nil)
+            .transformPreference(InnerDrawerShows.self) { $0 = $0 || showsPanel }
         }
     }
 
@@ -178,6 +188,15 @@ struct SideDrawer<Panel: View, Content: View>: View {
 
     private func setOpen(_ open: Bool) {
         slide(open: open)
+    }
+}
+
+/// Whether a `SideDrawer` in a view shows its panel (open, dragged or
+/// sliding shut), for the drawer around it.
+private struct InnerDrawerShows: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 

@@ -1084,7 +1084,7 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     /// viewport, so a grid placed once drifted off its gap: after a restyle
     /// while scrolled, screens away. Here, after the viewport's layout, the
     /// fragment's frame is the one the text is drawn with.
-    private func placeTables() {
+    func placeTables() {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return }
         let start = content.documentRange.location
         let x = textContainerInset.left + textContainer.lineFragmentPadding
@@ -1110,6 +1110,48 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
                 view.frame = frame
             }
         }
+    }
+
+    /// Where the first line of `range` is drawn, in this view's
+    /// coordinates, and the grids put on their gaps again. TextKit 2 lays
+    /// out lazily: outside the viewport a fragment's place is an estimate,
+    /// which `firstRect(for:)` answers with, and an edit (recolouring the
+    /// name under review) makes every place after it an estimate again.
+    /// Laying out only up to the range, fragment by fragment or with
+    /// `ensureLayout(for:)`, kept the estimate; only the whole text gives
+    /// the place it is drawn at once scrolled there. So a range outside the
+    /// viewport lays out the whole text first; one inside it is measured
+    /// where it is drawn.
+    func laidOutRect(of range: NSRange) -> CGRect? {
+        guard let layout = textLayoutManager, let content = layout.textContentManager else { return nil }
+        let start = content.documentRange.location
+        guard NSMaxRange(range) <= attributedText.length,
+              let from = content.location(start, offsetBy: range.location) else { return nil }
+        let viewport = layout.textViewportLayoutController.viewportRange
+        let shown = viewport.map { $0.contains(from) && layout.textLayoutFragment(for: from)?.state == .layoutAvailable } ?? false
+        if !shown {
+            layout.ensureLayout(for: content.documentRange)
+            if !tableViews.isEmpty { placeTables() }
+        }
+        guard let fragment = layout.textLayoutFragment(for: from) else { return nil }
+        let into = content.offset(from: fragment.rangeInElement.location, to: from)
+        guard let line = fragment.textLineFragments.first(where: { NSLocationInRange(into, $0.characterRange) })
+            ?? fragment.textLineFragments.last else { return nil }
+        let frame = fragment.layoutFragmentFrame
+        let bounds = line.typographicBounds
+        let x = line.locationForCharacter(at: into).x
+        let end = line.locationForCharacter(at: min(into + range.length, NSMaxRange(line.characterRange))).x
+        return CGRect(
+            x: frame.minX + bounds.minX + min(x, end) + textContainerInset.left,
+            y: frame.minY + bounds.minY + textContainerInset.top,
+            width: abs(end - x), height: bounds.height)
+    }
+
+    /// The text's height as laid out so far: the content size lags behind
+    /// a layout `laidOutRect(of:)` asked for until the next pass.
+    var laidOutContentHeight: CGFloat {
+        let used = textLayoutManager?.usageBoundsForTextContainer.maxY ?? 0
+        return max(contentSize.height, used + textContainerInset.top + textContainerInset.bottom)
     }
 
     nonisolated func textLayoutManager(
