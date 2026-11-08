@@ -858,6 +858,8 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     trim_at_birth_dates(source, &view, &mut detections, &rules);
+    let rest = rest_beside_rule_values(source, &view, &detections, rules.iter().chain(&addresses));
+    detections.extend(rest);
     detections.extend(rules);
     detections.extend(addresses);
     // A model span a match holds as its own part ("Harrow House" of an
@@ -953,6 +955,187 @@ fn trim_at_birth_dates(
         {
             detection.range = part;
         }
+    }
+}
+
+/// The values a model identifier span holds beside a rule's narrower value
+/// in it (#739): "7701234567, р/с 40702810900000012345" after "ИНН", one
+/// bank account span, holds the account. The review takes the rule's value
+/// over the span it overlaps, which would show the account; each other
+/// value of the span's category's shape becomes a span of its own, of the
+/// model's category, its label left outside (guide rule 6). The wide span
+/// stays, for the review to drop; where the review turns the rule's value
+/// down, the wide span wins over these again. `rules` are every non-model
+/// span; one of an identifier category inside the model span is the
+/// trigger, and all of them bound the parts left. A part that is only a
+/// label, punctuation or words, an amount or a date gives nothing.
+fn rest_beside_rule_values<'a>(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    detections: &[Detection],
+    rules: impl Iterator<Item = &'a Detection>,
+) -> Vec<Detection> {
+    let identifier = |category: Category| {
+        matches!(
+            category,
+            Category::Tax | Category::Bank | Category::Identity | Category::Phone
+        )
+    };
+    let rules: Vec<&Detection> = rules.collect();
+    let mut found: Vec<Detection> = Vec::new();
+    for model in detections
+        .iter()
+        .filter(|d| d.recognizer == mdoc_pii::Recognizer::Model && identifier(d.category))
+    {
+        let range = &model.range;
+        if !rules.iter().any(|rule| {
+            identifier(rule.category)
+                && range.start <= rule.range.start
+                && rule.range.end <= range.end
+                && rule.range != *range
+        }) {
+            continue;
+        }
+        let mut taken: Vec<&Range<usize>> = rules
+            .iter()
+            .map(|rule| &rule.range)
+            .filter(|taken| taken.start < range.end && range.start < taken.end)
+            .collect();
+        taken.sort_by_key(|taken| taken.start);
+        let mut gaps = Vec::new();
+        let mut at = range.start;
+        for taken in taken {
+            if at < taken.start {
+                gaps.push(at..taken.start);
+            }
+            at = at.max(taken.end);
+        }
+        if at < range.end {
+            gaps.push(at..range.end);
+        }
+        for gap in gaps {
+            for (value, labelled) in values_in(&view.text, view.view_range(gap)) {
+                let part = view.source_range(value.clone());
+                let text = &view.text[value];
+                if part.is_empty()
+                    || !identifier_shaped(text, model.category, labelled)
+                    || !rules::pack().identifying_at(source, part.clone(), text, model.category)
+                    || detections.iter().chain(&found).any(|d| d.range == part)
+                {
+                    continue;
+                }
+                found.push(Detection {
+                    range: part,
+                    ..*model
+                });
+            }
+        }
+    }
+    found
+}
+
+/// The values in `range` of `text`, each with whether a word (its label)
+/// comes before it there: runs of tokens holding a digit, each line apart,
+/// ended by a word ("р/с", "паспорт", "Tel.", "и") or a token's comma or
+/// semicolon, and joined by punctuation alone ("№", "-"). A run's edges
+/// lose their punctuation, but a phone's "+" and parentheses stay.
+fn values_in(text: &str, range: Range<usize>) -> Vec<(Range<usize>, bool)> {
+    let edge = |c: char| ",;:.!?«»\"'“”„*_[]{}".contains(c);
+    let mut runs: Vec<(Range<usize>, bool)> = Vec::new();
+    let mut at = range.start;
+    for line in text[range].split_inclusive('\n') {
+        let mut labelled = false;
+        let mut run: Option<Range<usize>> = None;
+        let mut close = |run: &mut Option<Range<usize>>, labelled: bool| {
+            if let Some(found) = run.take() {
+                runs.push((found, labelled));
+            }
+        };
+        for token in line.split(char::is_whitespace).filter(|t| !t.is_empty()) {
+            let start = at + (token.as_ptr() as usize - line.as_ptr() as usize);
+            let core = token.trim_matches(edge);
+            if core.chars().any(char::is_numeric) {
+                let end = start + token.len();
+                run = Some(run.map_or(start..end, |found| found.start..end));
+            } else if core.chars().any(char::is_alphabetic) {
+                close(&mut run, labelled);
+                labelled = true;
+            }
+            if token.ends_with([',', ';']) {
+                close(&mut run, labelled);
+                labelled = false;
+            }
+        }
+        close(&mut run, labelled);
+        at += line.len();
+    }
+    runs.into_iter()
+        .filter_map(|(found, labelled)| {
+            let value = &text[found.clone()];
+            let lead = value.len()
+                - value
+                    .trim_start_matches(|c: char| !(c.is_alphanumeric() || "+(".contains(c)))
+                    .len();
+            let trail = value.len()
+                - value
+                    .trim_end_matches(|c: char| !(c.is_alphanumeric() || c == ')'))
+                    .len();
+            (found.start + lead < found.end - trail)
+                .then(|| (found.start + lead..found.end - trail, labelled))
+        })
+        .collect()
+}
+
+/// Whether `value` reads as one value of an identifier `category`: digits
+/// with spaces or dashes, of its typical length (#739). An account has
+/// twenty digits or an IBAN's shape, a passport its series and number, a
+/// tax number ten, twelve, thirteen or fifteen digits; after a label
+/// (`labelled`) an account, a document's or a tax number may be shorter. A
+/// phone has seven to fifteen digits. Thousands groups ("10 000 000"),
+/// decimals and dotted dates are none.
+fn identifier_shaped(value: &str, category: Category, labelled: bool) -> bool {
+    static GROUPED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static IBAN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static PASSPORT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let grouped = GROUPED
+        .get_or_init(|| regex::Regex::new(r"^\d{1,3}(?:\s\d{3})+$").expect("thousands pattern"));
+    let iban = IBAN.get_or_init(|| {
+        regex::Regex::new(r"^[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}$").expect("IBAN pattern")
+    });
+    let passport = PASSPORT.get_or_init(|| {
+        regex::Regex::new(r"^\d{2}\s?\d{2}\s?(?:№\s?)?\d{6}$").expect("passport pattern")
+    });
+    let digits = value.chars().filter(char::is_ascii_digit).count();
+    let letters = value.chars().filter(char::is_ascii_alphabetic).count();
+    let made_of = |extra: &str| {
+        value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || (c.is_whitespace() && c != '\n')
+                || "-‑".contains(c)
+                || extra.contains(c)
+        })
+    };
+    if grouped.is_match(value) {
+        return false;
+    }
+    match category {
+        Category::Phone => letters == 0 && made_of("+()") && (7..=15).contains(&digits),
+        Category::Bank => {
+            made_of("")
+                && (iban.is_match(value)
+                    || letters == 0 && (digits == 20 || labelled && (8..=34).contains(&digits)))
+        }
+        Category::Identity => {
+            made_of("№")
+                && (passport.is_match(value)
+                    || labelled && letters <= 3 && (6..=20).contains(&digits))
+        }
+        Category::Tax => {
+            letters == 0
+                && made_of("")
+                && (matches!(digits, 10 | 12 | 13 | 15) || labelled && (8..=15).contains(&digits))
+        }
+        _ => false,
     }
 }
 
@@ -2049,6 +2232,295 @@ mod tests {
             ["Alvora", "Nerian", "McVellin", "O’Kell–Venn"]
         );
         assert!(people("Фамилия: Истец\n").is_empty());
+    }
+
+    /// The model's `spans` (each its first occurrence) in `source`.
+    fn model_spans(source: &str, spans: &[(&str, &str)]) -> Vec<RawEntity> {
+        spans
+            .iter()
+            .map(|(text, label)| {
+                let start = source.find(text).unwrap();
+                RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect()
+    }
+
+    /// What the user is shown for `source` with the model's `spans`, as
+    /// (start, category, text) in source order.
+    fn shown_with(source: &str, spans: &[(&str, &str)]) -> Vec<(usize, String, String)> {
+        recognition::proposals(source, &model_spans(source, spans))
+            .unwrap()
+            .into_iter()
+            .map(|span| {
+                (
+                    span.range.start,
+                    span.category,
+                    source[span.range].to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    /// #739: a model identifier span from a labelled value into the next
+    /// field keeps that field's value, of the model's category and without
+    /// its label, where a rule's narrower value in it wins: each row of
+    /// the issue. Where no rule marks the first value (an ОКПО or an
+    /// invalid ОГРН before #563's rules), the wide span stays as it was; the
+    /// rule's value keeps the category the rule gives it alone.
+    #[test]
+    fn a_wide_identifier_span_keeps_the_field_beside_a_rule_value() {
+        for (source, wide, label, rest) in [
+            (
+                "ИНН 7701234567, р/с 40702810900000012345",
+                "7701234567, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")][..],
+            ),
+            (
+                "ИНН 772012345678, паспорт 4512 345678",
+                "772012345678, паспорт 4512 345678",
+                "passport_number",
+                &[("IDENTITY", "4512 345678")],
+            ),
+            (
+                "ОГРН 1027700132195, р/с 40702810900000012345",
+                "1027700132195, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОГРН 1029900000017, р/с 40702810900000012345",
+                "1029900000017, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОКПО 99887766, р/с 40702810900000012345",
+                "99887766, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОГРНИП 329990000000012, паспорт 4512 345678",
+                "329990000000012, паспорт 4512 345678",
+                "passport_number",
+                &[("IDENTITY", "4512 345678")],
+            ),
+            (
+                "ОГРНИП 329990000000019, паспорт серии 45 12 № 345678",
+                "329990000000019, паспорт серии 45 12 № 345678",
+                "passport_number",
+                &[("IDENTITY", "45 12 № 345678")],
+            ),
+            (
+                "ОГРН 1027700132195, тел. 8 (495) 123-45-67",
+                "1027700132195, тел. 8 (495) 123-45-67",
+                "phone_number",
+                &[("PHONE", "8 (495) 123-45-67")],
+            ),
+            (
+                "ИНН 7701234567 и Tel. +7 495 123-45-67.",
+                "7701234567 и Tel. +7 495 123-45-67",
+                "phone_number",
+                &[("PHONE", "+7 495 123-45-67")],
+            ),
+            // The value before the rule's, too.
+            (
+                "р/с 40702810900000012345, ИНН 7701234567",
+                "40702810900000012345, ИНН 7701234567",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            // English: a valid tax number after "Tax ID", an account after
+            // its label.
+            (
+                "Tax ID 9900123450, Account 000123456789",
+                "9900123450, Account 000123456789",
+                "bank_account",
+                &[("BANK", "000123456789")],
+            ),
+        ] {
+            let rules = shown_with(source, &[]);
+            let start = source.find(wide).unwrap();
+            let marked = rules
+                .iter()
+                .any(|(at, _, text)| start <= *at && at + text.len() <= start + wide.len());
+            let mut expected = if marked {
+                rules
+                    .into_iter()
+                    .chain(rest.iter().map(|(category, text)| {
+                        (
+                            source.find(text).unwrap(),
+                            (*category).into(),
+                            (*text).into(),
+                        )
+                    }))
+                    .collect()
+            } else {
+                let category = category_of(label).unwrap().token().to_owned();
+                vec![(start, category, wide.to_owned())]
+            };
+            expected.sort();
+            assert_eq!(shown_with(source, &[(wide, label)]), expected, "{source}");
+        }
+        // On main's rules a labelled ИНН is TAX and a valid ОГРН IDENTITY.
+        let pairs = |source: &str, spans: &[(&str, &str)]| -> Vec<(String, String)> {
+            shown_with(source, spans)
+                .into_iter()
+                .map(|(_, category, text)| (category, text))
+                .collect()
+        };
+        let source = "ИНН 7701234567, р/с 40702810900000012345";
+        let shown = pairs(
+            source,
+            &[("7701234567, р/с 40702810900000012345", "bank_account")],
+        );
+        assert!(
+            shown.contains(&("TAX".into(), "7701234567".into())),
+            "{shown:?}"
+        );
+        assert!(
+            shown.contains(&("BANK".into(), "40702810900000012345".into())),
+            "{shown:?}"
+        );
+        // The issue's synthetic reproduction: one span from each label's
+        // value to the end of its clause.
+        let source = "ИНН 7701234567, р/с 40702810900000012345; ОГРНИП 329990000000019, \
+                      паспорт 4512 345678";
+        let shown: Vec<String> = pairs(
+            source,
+            &[
+                ("7701234567, р/с 40702810900000012345", "bank_account"),
+                ("329990000000019, паспорт 4512 345678", "passport_number"),
+            ],
+        )
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+        assert_eq!(
+            shown,
+            [
+                "7701234567",
+                "40702810900000012345",
+                "329990000000019",
+                "4512 345678"
+            ]
+        );
+    }
+
+    /// #739's guards: a wide span's rest that is only a label, punctuation
+    /// or words, an amount or a date gives nothing; a value the model also
+    /// proposed on its own is not proposed twice; a rule's value that is
+    /// the whole model span, a name's or a company's span and a wide span
+    /// with no rule's value in it are as they were.
+    #[test]
+    fn a_wide_identifier_span_gives_no_amount_date_or_label() {
+        let tax = |source: &str| {
+            (
+                source.find("7701234567").unwrap(),
+                "TAX".to_owned(),
+                "7701234567".to_owned(),
+            )
+        };
+        for (source, wide, label) in [
+            ("ИНН 7701234567, р/с", "7701234567, р/с", "bank_account"),
+            (
+                "ИНН 7701234567, паспорт и",
+                "7701234567, паспорт и",
+                "passport_number",
+            ),
+            (
+                "ИНН 7701234567, на сумму 1 500 000,00 руб.",
+                "7701234567, на сумму 1 500 000,00",
+                "bank_account",
+            ),
+            (
+                "ИНН 7701234567, на сумму 10 000 000 руб.",
+                "7701234567, на сумму 10 000 000",
+                "phone_number",
+            ),
+            (
+                "ИНН 7701234567, сумма 150000000 рублей",
+                "7701234567, сумма 150000000 рублей",
+                "bank_account",
+            ),
+            (
+                "ИНН 7701234567 от 12.03.2031",
+                "7701234567 от 12.03.2031",
+                "passport_number",
+            ),
+            (
+                "ИНН 7701234567 от 12 марта 2031 г.",
+                "7701234567 от 12 марта 2031",
+                "tax_id",
+            ),
+            ("ИНН 7701234567", "7701234567", "tax_id"),
+            ("ИНН 7701234567", "7701234567", "bank_account"),
+        ] {
+            assert_eq!(
+                shown_with(source, &[(wide, label)]),
+                [tax(source)],
+                "{source}"
+            );
+        }
+        // The account the model proposed twice, on its own and in the wide
+        // span, is one span.
+        let source = "ИНН 7701234567, р/с 40702810900000012345";
+        let raw = model_spans(
+            source,
+            &[
+                ("7701234567, р/с 40702810900000012345", "bank_account"),
+                ("40702810900000012345", "bank_account"),
+            ],
+        );
+        let account = source.find("40702810900000012345").unwrap();
+        let account = account..account + 20;
+        assert_eq!(
+            correct(source, &raw)
+                .iter()
+                .filter(|detection| detection.range == account)
+                .count(),
+            1
+        );
+        assert_eq!(
+            shown_with(source, &[("40702810900000012345", "bank_account")]),
+            [
+                tax(source),
+                (account.start, "BANK".into(), "40702810900000012345".into())
+            ]
+        );
+        // No rule's value inside: the wide span is the model's as before.
+        let source = "Tax ID 12-3456789, Account 000123456789";
+        let wide = "12-3456789, Account 000123456789";
+        assert_eq!(
+            shown_with(source, &[(wide, "bank_account")]),
+            [(7, "BANK".to_owned(), wide.to_owned())]
+        );
+        // A company's or a person's span is no identifier's.
+        for (wide, label) in [
+            (
+                "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345",
+                "organization",
+            ),
+            (
+                "Иванов Иван, ИНН 7701234567, р/с 40702810900000012345",
+                "person",
+            ),
+        ] {
+            let source = format!("{wide}.");
+            assert!(
+                shown_with(&source, &[(wide, label)])
+                    .iter()
+                    .all(|(_, category, _)| category != "BANK"),
+                "{source}"
+            );
+        }
     }
 
     /// A wording the model gave two categories is copied to its other
