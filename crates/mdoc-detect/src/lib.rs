@@ -2116,7 +2116,7 @@ mod tests {
             ("ФИО: Ветлин Нил Олегович\n", &["Ветлин Нил Олегович"]),
             ("Ф. И. О.: Ветлин Нил Олегович;\n", &["Ветлин Нил Олегович"]),
             ("Имя: Лада;\nФамилия: Должник.\n", &["Лада", "Должник"]),
-            // A full name is another person's: it backs no role beside it.
+            // Two full names are two people: one backs no role beside it.
             (
                 "Ф.И.О.: Ветлин Нил Олегович\nФИО: Истец\n",
                 &["Ветлин Нил Олегович"],
@@ -2125,10 +2125,16 @@ mod tests {
                 "Full name: Edda Brannock\nFull name: Claimant\n",
                 &["Edda Brannock"],
             ),
+            // A full name and a name part back each other, as in #601.
             (
                 "Full name: Edda Brannock\nSurname: Trustee\n",
-                &["Edda Brannock"],
+                &["Edda Brannock", "Trustee"],
             ),
+            (
+                "Full name: Edda Brannock    Surname: Trustee\n",
+                &["Edda Brannock", "Trustee"],
+            ),
+            ("Full name: Edda\nSurname: Trustee\n", &["Edda", "Trustee"]),
         ] {
             assert_eq!(people(source), expected, "{source}");
         }
@@ -2144,10 +2150,49 @@ mod tests {
             "ФИО: ________\n",
             "Surname: N/A.\n",
             "`ФИО: Ветлин Нил Олегович`\n",
+            // A form's other fields after a blank label.
+            "ФИО: Подпись\n",
+            "ФИО: Дата\n",
+            "ФИО: Должность\n",
+            "ФИО: Полностью\n",
+            "ФИО: Прочерк\n",
+            "ФИО: Расшифровка\n",
+            "Full name: Signature.\n",
+            "Full name: Sign\n",
+            "Full name: Print Name.\n",
+            "Full name: Date.\n",
+            "Full name: Title\n",
+            "Full name: Position.\n",
         ] {
             let proposed = recognition::proposals(source, &[]).expect("proposals");
             assert!(proposed.is_empty(), "{source}: {proposed:?}");
         }
+        // The dot of a last "Jr." or "Sr." is the name's own: no labelled
+        // value cuts it, and the model's span stays as it read it.
+        let model = |source: &str, text: &str| -> Vec<String> {
+            let start = source.find(text).unwrap();
+            let raw = [RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.9,
+                text: text.into(),
+            }];
+            correct(source, &raw)
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert!(people("Full name: Orvel Lanmark Jr.\n").is_empty());
+        assert_eq!(
+            model("Full name: Orvel Lanmark Jr.\n", "Orvel Lanmark Jr."),
+            ["Orvel Lanmark Jr."]
+        );
+        assert_eq!(
+            model("Full name: Orvel Lanmark Sr.\n", "Orvel Lanmark"),
+            ["Orvel Lanmark"]
+        );
     }
 
     /// A wording the model gave two categories is copied to its other
