@@ -1,9 +1,11 @@
 ---
-status: pass
+status: known-flaw
 flaw: org-as-person
 issue: 548
 kind: judgment
 source: probe-r2
+expect: miss: ORG "Corvane" ×2
+expect: boundary: gold ORG "BRINDLE HARRIERS LLC"; proposed ORG "BRINDLE HARRIERS"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 # Judgment
