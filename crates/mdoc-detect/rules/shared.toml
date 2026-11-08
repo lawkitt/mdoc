@@ -76,6 +76,11 @@
 #                               do too where the span is a name alone
 #                               ("Суд Н. О."); a pattern entry needs
 #                               anywhere_in PERSON alone
+#   unless_last_named = true    for a pattern entry with anywhere_in PERSON
+#                               alone: the span stays a person where the
+#                               document names its last word, another
+#                               person span with it beside a name or a
+#                               title before it ("Ms Standard")
 #   person_role = true          with unless_named: an initial + capitalized
 #                               role remains PERSON; plural surnames must
 #                               be listed in role_surnames

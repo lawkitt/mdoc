@@ -204,6 +204,13 @@ trim_start = [
     'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
 ]
 
+# A model span that starts inside a caption's short "Ex p" ("Ex ⟦p Ossian
+# Draycott⟧") loses the "p": a lower-case "p" before a capitalised word
+# never starts a name (#500).
+[[span]]
+category = "PERSON"
+trim_start = ['p\.?[\p{Zs}\t]+(?P<rest>\p{Lu})']
+
 # Titles: never a name on their own ("Ms", "Dr."), also plural ("Drs").
 # French and German titles turn up in English documents too.
 [[never]]
@@ -444,6 +451,72 @@ words = [
 ]
 unless_named = true
 
+# Words of templates, manuals and headings, in title case or capitals:
+# a fire plan's "Fire" and "Location", an accident handbook's "Serious
+# Accident Investigation", "Index", "Manual" and "Briefing", a contract's
+# "OPERATING MANUAL", "Class A fires" (issue #500, guide rule 8; "Team",
+# "Safety" and "Plan" are listed elsewhere). Some are role modifiers too
+# ("Accident Investigation Advisor"). A title keeps a person ("Mr
+# Manual"), and so does a person span with the word beside a name ("Edda
+# Fire"); a company keeps any other word ("Acme Fire Safety Ltd", "General
+# Accident", "Index Ventures").
+[[never]]
+match = "plural"
+words = [
+    "investigation", "accident", "fire", "location", "index", "agreement",
+    "manual", "briefing", "operating", "serious", "class",
+]
+unless_named = true
+
+# The other plurals of "index".
+[[never]]
+match = "whole"
+words = ["indexes", "indices"]
+unless_named = true
+
+# Group and plural nouns for people: "Investors", "Issuers currently
+# provide", "Importers", "the Role of Intermediaries", "Adults", "Dashers",
+# the "Founding Fathers", "Female employees" (issue #500, guide rules 1 and
+# 8). Listed one by one, agent nouns in -er and -or too, so plural
+# surnames stay ("the Smiths", "Jones", "Williams", "Adams", "Roberts",
+# "Rogers"). A title or a person span with the word beside a name keeps
+# it ("Ms Adult", "Ivo Founding").
+[[never]]
+match = "plural"
+words = [
+    "investor", "issuer", "importer", "exporter", "intermediary", "adult",
+    "dasher", "founding", "female", "male",
+]
+unless_named = true
+
+# The same nouns' -ies plurals.
+[[never]]
+match = "whole"
+words = ["intermediaries"]
+unless_named = true
+
+# Professions in -ian and -ist: "Librarians", "Hospitalists",
+# "Physicians", "Biologists" (issue #500). Listed one by one: a family's
+# plural surname with the same ending stays ("the Lindquists", "the
+# Hagopians", "The Kardashians"), and so do given names in the plural
+# ("the Adrians"). A title or a person span with the word beside a name
+# keeps one ("Ms Chemist", "Rhea Dentist").
+[[never]]
+match = "plural"
+words = [
+    "librarian", "physician", "technician", "clinician", "hospitalist",
+    "biologist", "scientist", "pharmacist", "dentist", "therapist",
+    "economist", "statistician", "electrician", "pediatrician",
+    "paediatrician", "obstetrician", "dietitian", "dietician", "optician",
+    "mathematician", "musician", "historian", "politician", "veterinarian",
+    "chemist", "physicist", "psychologist", "psychiatrist", "journalist",
+    "geologist", "ecologist", "toxicologist", "epidemiologist", "radiologist",
+    "anesthesiologist", "anaesthetist", "cardiologist", "oncologist",
+    "neurologist", "dermatologist", "pathologist", "botanist", "entomologist",
+    "nutritionist", "hygienist", "analyst", "artist",
+]
+unless_named = true
+
 # Head words of programmes, plans, standards, projects and trials, and of
 # software, sites and portals: common words that name no one alone, and an
 # organization span ending in one is the programme or the product, not a
@@ -461,6 +534,23 @@ words = [
 ]
 unless_named = true
 last_word_of = ["ORG"]
+
+# A person span of three words or more that ends in a programme's head
+# word is the programme, no one: the model's "CAFTA-DR Environmental
+# Cooperation Program", "Bright Paths Reading Initiative" (guide rule 8,
+# issue #500); it would make every "Program" a name. Not the heads that
+# end people's names too ("Mary Ann Standard", "Maria Jose Portal", "Joan
+# Maria Plans"). Two words stay a person's name ("Paul Program"), and so
+# do initials ("J. R. Project"), a span after a title ("Mr Ivo Dane
+# Project") and one whose last word the document names ("Ms Project").
+[[never]]
+match = "pattern"
+patterns = [
+    '^[\s\p{P}]*(?:[Tt]he[\p{Zs}\t]+)?(?:\p{Uppercase}[\p{Alphabetic}\x27’-]+[\p{Zs}\t]+){2,}(?i:programs?|programmes?|initiatives?|projects?|trials?|platforms?)[\s\p{P}]*$',
+]
+anywhere_in = ["PERSON"]
+unless_titled = true
+unless_last_named = true
 
 # A manager is both a job's head and software's ("Application Manager").
 [[never]]
@@ -605,6 +695,43 @@ words = [
     "methodist", "lutheran", "anglican", "evangelical", "atheist", "agnostic",
 ]
 unless_named = true
+
+# Deities are never marked (guide rule 8, #506 item 8): "God", "Allah",
+# "Christ", "the Almighty" (issue #500). A person called so keeps the name
+# after a title ("Mr Christ") or where a person span has it beside a name
+# ("Carol Christ", then "Christ"). "Jesus" alone is a given name too ("Her
+# son, Jesus, testified"), so only its phrases below count.
+[[never]]
+match = "whole"
+words = [
+    "god", "gods", "goddess", "goddesses", "christ", "allah", "yahweh",
+    "jehovah", "almighty", "buddha",
+]
+unless_named = true
+
+# The same in two words: "the Holy Spirit", "the Holy Ghost".
+[[never]]
+match = "pattern"
+patterns = ['(?i)^[\s\p{P}]*(?:the[\p{Zs}\t]+)?holy[\p{Zs}\t]+(?:spirit|ghost)[\s\p{P}]*$']
+anywhere_in = ["PERSON"]
+unless_titled = true
+
+# Jesus by the phrases that name the deity, a span inside one included:
+# "Jesus Christ", "Lord Jesus" (whose "Lord" a title's trim would leave
+# out), "Jesus of Nazareth" (guide rule 8, #506 item 8). "Jesus Martinez"
+# and "Her son, Jesus" stay.
+[[reference]]
+pattern = '(?i)\b(?:(?:lord[\p{Zs}\t]+)?jesus[\p{Zs}\t]+christ|lord[\p{Zs}\t]+jesus|jesus[\p{Zs}\t]+of[\p{Zs}\t]+nazareth)\b'
+
+# A federal pay grade and a price index are no one and no company: "GS-14",
+# "GS-13/14", "GS 9", "the Consumer Price Index" (issue #500, guide rule 8).
+[[never]]
+match = "pattern"
+patterns = [
+    '^[\s\p{P}]*GS[\p{Zs}\t-]?\d{1,2}(?:[\p{Zs}\t]*[/–-][\p{Zs}\t]*(?:GS[\p{Zs}\t-]?)?\d{1,2})?[\s\p{P}]*$',
+    '(?i)\b(?:consumer|producer|retail)[\p{Zs}\t]+prices?[\p{Zs}\t]+index(?:es)?\b',
+]
+anywhere_in = ["PERSON", "ORG"]
 
 # Nationalities, demonyms and citizenship, alone or before a common noun:
 # "Americans", "Maltese lawyer", "American licensed drivers", "United
@@ -1029,16 +1156,16 @@ anywhere_in = ["PERSON"]
 unless_titled = true
 
 # A caption's opening words stay outside a party's span: "In re Quill", "In
-# the Matter of Quill" and "Ex parte Quill" are "Quill" (guide rule 1, issue
-# #500).
+# the Matter of Quill", "Ex parte Quill" and its short "Ex p Quill" are
+# "Quill" (guide rule 1, issue #500).
 [[span]]
 category = "PERSON"
-trim = ["in re", "in the matter of", "ex parte"]
+trim = ["in re", "in the matter of", "ex parte", "ex p"]
 
 # The same for an organization ("In re Quillon Freight LLC").
 [[span]]
 category = "ORG"
-trim = ["in re", "in the matter of", "ex parte"]
+trim = ["in re", "in the matter of", "ex parte", "ex p"]
 
 # English legal forms mark a manual selection as an organization
 # ("Acme Ltd.").
@@ -1840,6 +1967,12 @@ categories = ["PERSON", "ORG"]
 # initial: "J. Additional Questions" (guide rule 1, issue #499).
 [[reference]]
 pattern = '(?P<lead>(?m:^)[\p{Zs}\t#>*_|]*(?:(?:Part|Section|Item)[\p{Zs}\t]+)?)\p{Uppercase}\.(?P<tail>[\p{Zs}\t]+\p{Uppercase}\p{Ll}+(?:[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+|of|and|or|the|to|for|in))*[\p{Zs}\t]+\p{Uppercase}\p{Ll}+[\p{Zs}\t*_:|]*(?m:$))'
+
+# A plot's letter is its label, no initial: "Plot B lies east of Plot A",
+# "Plots C and D" (guide rule 1, issue #500). Only the letter goes: "Ivo
+# Plot" stays, and so does a name after the letter ("Plot 4, K Ashdale").
+[[reference]]
+pattern = '(?P<lead>\b(?:Plots?|PLOTS?)[\p{Zs}\t]+)\p{Uppercase}\b(?:(?:[\p{Zs}\t]*,[\p{Zs}\t]*|[\p{Zs}\t]+(?:and|or|&)[\p{Zs}\t]+)\p{Uppercase}\b)*'
 
 # A patent or trademark schedule's row is no identifier, address or name
 # (guide rule 8, issue #486): an office's code opening the row, then its
