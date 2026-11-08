@@ -2237,6 +2237,224 @@ fn signature_initials_join_their_full_name() {
     assert_eq!(initials.recognizer(), Some(Recognizer::Propagation));
 }
 
+/// #387: bare initials that spell a known name are that person: in a
+/// table column, in a letter's reference line (without the typist's), and
+/// in Russian in either order; and once some are in place, anywhere.
+#[test]
+fn bare_initials_of_a_known_name_join_it() {
+    let texts = |review: &Review, original: &str| -> Vec<String> {
+        proposed(review, original)
+            .mentions
+            .iter()
+            .map(|m| review.source[m.clone()].to_owned())
+            .collect()
+    };
+    let source = "Instructors: Jorin Brindle and Edda Hollin.\n\n\
+        | Week | Lead |\n|---|---|\n| 1 | JB |\n| 2 | EH |\n| 3 | EH |\n";
+    let review = ingest_names(source, &["Jorin Brindle", "Edda Hollin"]);
+    for (full, initials) in [("Jorin Brindle", "JB"), ("Edda Hollin", "EH")] {
+        let found = proposed(&review, initials);
+        assert_eq!(
+            review.variant_identity(found.id),
+            review.variant_identity(proposed(&review, full).id),
+            "{initials}"
+        );
+        assert_eq!(found.recognizer(), Some(Recognizer::Propagation));
+    }
+    assert_eq!(proposed(&review, "EH").mentions.len(), 2);
+
+    // The signer's initials of a name with a middle initial; the typist's
+    // "ms" stays unmarked.
+    for source in [
+        "Sincerely, Ivo D. Penrow, Member of Congress. IDP/ms",
+        "Sincerely,\n\nIvo D. Penrow\nMember of Congress\n\nIDP/ms\n",
+    ] {
+        let review = ingest_names(source, &["Ivo D. Penrow"]);
+        assert_eq!(texts(&review, "IDP"), ["IDP"], "{source}");
+        assert!(
+            review
+                .variants()
+                .iter()
+                .all(|v| v.original.as_ref() != "ms"),
+            "{source}"
+        );
+    }
+
+    // Russian: given names then surname, or surname first.
+    let source = "Исполнитель: Яков Викторович Ростов.\n\n\
+        | Этап | Исполнитель | Проверил |\n|---|---|---|\n| 1 | ЯВР | РЯВ |\n\nПодпись: Я. В.\n";
+    let review = ingest_names(source, &["Яков Викторович Ростов"]);
+    let full = review.variant_identity(proposed(&review, "Яков Викторович Ростов").id);
+    for initials in ["ЯВР", "РЯВ", "Я. В."] {
+        assert_eq!(
+            review.variant_identity(proposed(&review, initials).id),
+            full,
+            "{initials}"
+        );
+    }
+
+    // Placed initials repeat as the same person's; they never unlock
+    // another person's initials in prose, and a code is no repeat.
+    let source = "Leads: Jorin Brindle and Edda Hollin.\n\n| Week | Lead |\n|---|---|\n\
+        | 1 | JB |\n\nLater EH agreed, and so did JB. See JB-104 and JB.pdf.";
+    let review = ingest_names(source, &["Jorin Brindle", "Edda Hollin"]);
+    assert_eq!(texts(&review, "JB"), ["JB", "JB"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "EH")
+    );
+}
+
+/// #387: bare initials stay unmarked as an abbreviation, a Roman numeral,
+/// in prose, inside a run of capitals, glued into a path or a code, as a
+/// slash pair, in a column of codes, or when no known name spells them;
+/// one person's placed initials unlock no one else's (the pre-gate
+/// review's cases). `allowed`: the placed initials that are proposed.
+#[test]
+fn bare_initials_that_spell_no_one_or_are_abbreviations_stay() {
+    let lead = |rows: &str| format!("| Week | Lead |\n|---|---|\n{rows}");
+    let cases: Vec<(String, &[&str], &[&str])> = vec![
+        ("The claimant, Clara P. Rowe, applied under CPR 31.6.".into(), &["Clara P. Rowe"], &[]),
+        (
+            "This Master Services Agreement (the “MSA”) is signed by Mark S. Adams. \
+                Under the MSA, fees are due."
+                .into(),
+            &["Mark S. Adams"],
+            &[],
+        ),
+        ("Kevin Y. Cole leads compliance. KYC checks were completed.".into(), &["Kevin Y. Cole"], &[]),
+        ("Kevin Y. Cole wrote.\n\n## KYC POLICY\n\nKYC applies.".into(), &["Kevin Y. Cole"], &[]),
+        ("Kevin Y. Cole leads KYC/AML checks.".into(), &["Kevin Y. Cole"], &[]),
+        ("Alan M. Lewis leads compliance. AML screening passed.".into(), &["Alan M. Lewis"], &[]),
+        ("Adam D. Reed proposed ADR before trial.".into(), &["Adam D. Reed"], &[]),
+        ("Tara R. Owen moved for a TRO on Monday.".into(), &["Tara R. Owen"], &[]),
+        ("Fiona C. Allen reported the breach to the FCA.".into(), &["Fiona C. Allen"], &[]),
+        ("Uma S. Clarke sued under 42 USC 1983.".into(), &["Uma S. Clarke"], &[]),
+        (
+            "Alice B. Carter signed the ABC Agreement (the “ABC Agreement”).".into(),
+            &["Alice B. Carter"],
+            &[],
+        ),
+        (
+            "Истец Анна Андреевна Соколова обжаловала решение. Постановлением \
+                Девятого ААС жалоба оставлена без удовлетворения."
+                .into(),
+            &["Анна Андреевна Соколова"],
+            &[],
+        ),
+        (
+            "Ульяна Петровна Кузнецова заявила ходатайство по ст. 75 УПК РФ, оно отклонено."
+                .into(),
+            &["Ульяна Петровна Кузнецова"],
+            &[],
+        ),
+        (
+            "Марина Константиновна Дорофеева владеет квартирой в МКД.".into(),
+            &["Марина Константиновна Дорофеева"],
+            &[],
+        ),
+        (
+            format!(
+                "Instructors: Jorin Brindle and Wendy Lowe.\n\n{}\n\
+                    See Smith v Jones, 2020 WL 123456.",
+                lead("| 1 | JB |\n")
+            ),
+            &["Jorin Brindle", "Wendy Lowe"],
+            &["JB"],
+        ),
+        (
+            format!(
+                "TO: All staff\nFROM: Jorin Brindle\nCC: Tanya Owens\n\n{}",
+                lead("| 1 | JB |\n")
+            ),
+            &["Jorin Brindle", "Tanya Owens"],
+            &["JB"],
+        ),
+        (
+            format!(
+                "Bob Yates and Jorin Brindle signed.\n\n{}\nBY: ______\nName: Bob Yates",
+                lead("| 1 | JB |\n")
+            ),
+            &["Bob Yates", "Jorin Brindle"],
+            &["JB"],
+        ),
+        (
+            "Исполнитель: Татьяна Сергеевна Иванова.\n\n| Этап | Исп. |\n|---|---|\n\
+                | 1 | ТСИ |\n\nТС марки Лада принадлежит истцу."
+                .into(),
+            &["Татьяна Сергеевна Иванова"],
+            &["ТСИ"],
+        ),
+        (
+            "Исполнитель: Анна Андреевна Соколова.\n\n| Этап | Исп. |\n|---|---|\n\
+                | 1 | ААС |\n\nАС г. Москвы принял иск."
+                .into(),
+            &["Анна Андреевна Соколова"],
+            &["ААС"],
+        ),
+        (
+            "Directors: Felix Roth and Jorin Brindle.\n\n| Director | Country |\n|---|---|\n\
+                | Felix Roth | FR |\n| Jorin Brindle | DE |\n"
+                .into(),
+            &["Felix Roth", "Jorin Brindle"],
+            &[],
+        ),
+        ("Gary Price and Lena Park manage the fund.\n\nThe GP/LP split is 20/80.".into(), &["Gary Price", "Lena Park"], &[]),
+        ("Peter Evans invests. Returns for PE/VC funds fell.".into(), &["Peter Evans"], &[]),
+        (
+            format!("Edda Hollin led.\n\n{}\nSee report EH-2.", lead("| 1 | EH |\n")),
+            &["Edda Hollin"],
+            &["EH"],
+        ),
+        (
+            "Nadia York filed in NY.\n\n| 1 | NY |\n\nIvo Ditch has an ID.\n\n| ID |\n".into(),
+            &["Nadia York", "Ivo Ditch"],
+            &[],
+        ),
+        (lead("| 1 | II |\n| 2 | IV |\n") + "Ivo Ivanson and Ida Vex.", &["Ivo Ivanson", "Ida Vex"], &[]),
+        ("Jorin Brindle met us. JB said so.".into(), &["Jorin Brindle"], &[]),
+        ("Ivo D. Penrow wrote.\n\nSEE IDP REPORT\n".into(), &["Ivo D. Penrow"], &[]),
+        ("Ivo D. Penrow wrote.\n\nSaved as C:/files/IDP/letter.doc\n".into(), &["Ivo D. Penrow"], &[]),
+        (lead("| 1 | QZ |\n| 2 | BJ |\n") + "Jorin Brindle led.", &["Jorin Brindle"], &[]),
+        (
+            "Ответственный Яков Викторович Ростов.\n\n| Этап | Исполнитель |\n|---|---|\n| 1 | ВРЯ |\n".into(),
+            &["Яков Викторович Ростов"],
+            &[],
+        ),
+    ];
+    for (source, names, allowed) in &cases {
+        let review = ingest_names(source, names);
+        let unexpected: Vec<_> = review
+            .variants()
+            .iter()
+            .map(|v| v.original.as_ref())
+            .filter(|original| {
+                (crate::propagation::bare_initials(original).is_some()
+                    || original.chars().all(char::is_uppercase))
+                    && !allowed.contains(original)
+            })
+            .collect();
+        assert!(unexpected.is_empty(), "{source}: {unexpected:?}");
+        for initials in *allowed {
+            assert_eq!(proposed(&review, initials).mentions.len(), 1, "{source}");
+        }
+    }
+    // Two people spelling the same initials: proposed apart, joined to
+    // neither.
+    let source = format!("Jorin Brindle and Jana Bell.\n\n{}", lead("| 1 | JB |\n"));
+    let review = ingest_names(&source, &["Jorin Brindle", "Jana Bell"]);
+    let initials = review.variant_identity(proposed(&review, "JB").id);
+    for full in ["Jorin Brindle", "Jana Bell"] {
+        assert_ne!(
+            initials,
+            review.variant_identity(proposed(&review, full).id),
+            "{full}"
+        );
+    }
+}
+
 /// #392: a person the document names only in oblique cases still has a
 /// surname: the inflected full names are one identity, and the surname
 /// alone joins it.

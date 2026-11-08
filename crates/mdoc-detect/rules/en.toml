@@ -63,6 +63,20 @@ trim = [
 ]
 list_letter = true
 
+# A judge's or an officer's title before a full name comes off it too:
+# the model's "Judge K Ashdale" is "K Ashdale", "Justice Mary Ashdale" is
+# "Mary Ashdale" (guide rule 1, #387). Only before an initial and a
+# surname or a given name and a surname (the `rest` it leaves): these
+# words are also surnames and given names (`role_surnames` above), so
+# "Judge" alone, "Mary Judge", "Mr Judge" and "Judge Reinhold" stay as
+# they are. "Hon" only with its period: "Hon Wai Keung" is a surname
+# first. Not `trim` words: those also mark a titled surname.
+[[span]]
+category = "PERSON"
+trim_start = [
+    '(?:(?:Judge|Justice|Magistrate|Master|Recorder|Registrar|Dear|Officer|Detective|Constable|Sergeant|Inspector|Sheriff|Senator|Councillor|Commissioner)\.?|Hon\.)[ \t]+(?P<rest>(?:[A-HJ-Z]\.?|[A-Z][a-z]+)[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*)\z',
+]
+
 # Two initials before a surname belong to the name: the model's "Quill" in
 # "J. R. Quill" grows to the whole of it (guide rule 1, #391). Not after
 # it: "Smith J" is a judge's title. Only spaces between, never a line.
@@ -70,6 +84,56 @@ list_letter = true
 category = "PERSON"
 extend = [
     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
+]
+
+# One initial, with its period or without, right before a surname belongs
+# to the name: the model's "Ashdale" in "Judge K Ashdale" grows to "K
+# Ashdale" (guide rule 1, #387). The `lead` marks the letter as an
+# initial and stays outside the span: a title ("Judge", "Ms"), "by", "v",
+# "vs", "per", "cc", "attn" or "signed", "and" after a word ("Ashdale and
+# L Brown", never "Schedule A and B Jones"), or a judge's post-nominal and
+# comma ("Smith J, K Brown"). Without one the letter is no initial: at a
+# line start a list letter ("B. Smith"), at a sentence start an article
+# ("A Smith said"), after a heading word, a comma, a colon, "to" or "(" a
+# section or answer letter ("Part B Smith", "In Annex A, B Smith",
+# "Answer: A Smith", "Amendments to A Jones Trust"). "I" is a pronoun,
+# never in the letter class.
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?:\b(?:Judge|Justice|Magistrate|Master|Recorder|Registrar|Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Professor|Sir|Dame|Lord|Lady|Hon|Dear|Officer|Detective|Constable|Sergeant|Inspector|Sheriff|Senator|Councillor|Commissioner)\.?|\b(?:by|v|vs|per|cc|attn|signed)|\p{L}{2,}\.?[ \t]+and|\b(?:J|JJ|LJ|LJJ),)[ \t]+)[A-HJ-Z]\.?[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
+]
+
+# An all-caps given name before an initial and an all-caps surname belongs
+# to the name where a signature or a caption writes it: the model's "P.
+# WELK" in "DORIAN P. WELK, Magistrate" grows to the whole of it (guide
+# rule 1, #387). Only after a `lead` that marks a signature or caption
+# position, outside the span: a line start (list, quote or table marks
+# and "/s/ " allowed), "and" after a word, "by", "v", "vs", "per", "cc",
+# "attn", "signed" or a comma. Three letters at least, so "BY", "TO" and
+# "CC" never join; never the initial "V", which is a case caption's
+# "versus" ("SMITH V. WELK", "ACME LLC V. WELK"); and never over a
+# company or another category's span (in code). A role or title there is
+# a `never` word ("JUDGE P. WELK", "MRS P. WELK"), and a heading, a part
+# of a case or a caption's party word is an `unless_over` word ("EXHIBIT
+# A. WELK", "COUNT I. WELK", "PETITIONER J. DOE"). A signature's verbs,
+# all-caps connectors and "HON" come off the start of a span this entry
+# grew, case-sensitive ("SIGNED P. WELK" is "P. WELK"); a model's own
+# "HON WAI KEUNG" stays whole. Not `trim` words: those mark a titled
+# surname.
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?m:^)[ \t>*_#|-]*(?:/s/[ \t]*)?|(?:\b(?:by|v|vs|per|cc|attn|signed)|\p{L}{2,}\.?[ \t]+and|,)[ \t]+)[A-Z]{3,}[ \t]+[A-UW-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z]{2,}(?:-[A-Z]{2,})*\b',
+]
+trim_start = [
+    '(?:AND|FOR|FROM|ATTN|SIGNED|DATED|ATTEST|ATTESTED|WITNESSED|APPROVED|BEFORE|HON\.?|HONORABLE|HONOURABLE)[ \t]+',
+]
+unless_over = [
+    "exhibit", "schedule", "annex", "appendix", "attachment", "part", "section",
+    "article", "clause", "count", "item", "tab", "table", "figure", "form",
+    "petitioner", "respondent", "appellant", "appellee", "movant", "intervenor",
+    "relator", "commonwealth", "state", "people", "united", "states",
 ]
 
 # "& Anor" and "& Ors" (and another, and others) in a case name come off

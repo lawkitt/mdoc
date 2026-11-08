@@ -684,8 +684,86 @@ impl Person {
     }
 }
 
-/// The people of a document that forms are matched against.
-pub(crate) struct People(Vec<Person>);
+/// The people of a document that forms are matched against, and the
+/// initials their names spell.
+pub(crate) struct People(Vec<Person>, Vec<Spelling>);
+
+/// The initials one known person name spells, lowercase, for bare initials
+/// ("JB", "IDP"): given names then surname, the first name and surname
+/// alone where there are more given names, and a Russian name also surname
+/// first or as first name and patronymic, as dotted initials read
+/// ([`Form::InitialsOnly`]). `full`: the given name is written out, so
+/// the initials may be proposed; a surname with initials ("Y. Quill") only
+/// makes them ambiguous.
+struct Spelling {
+    owner: u64,
+    wording: String,
+    spelled: Vec<Vec<char>>,
+    full: bool,
+}
+
+impl Spelling {
+    fn new(owner: u64, wording: &str) -> Option<Self> {
+        let first = |word: &str| {
+            // A surname's particles are no initials: "де Лаваль" is "Л".
+            word.rsplit(' ').next().and_then(|w| w.chars().next())
+        };
+        let orders = |given: Vec<char>, surname: char, russian: bool| {
+            let mut spelled = vec![given.iter().copied().chain([surname]).collect::<Vec<_>>()];
+            if given.len() >= 2 {
+                spelled.push(vec![given[0], surname]);
+            }
+            if russian {
+                spelled.push([surname].into_iter().chain(given.iter().copied()).collect());
+                if given.len() == 2 {
+                    spelled.push(given.clone());
+                }
+            }
+            spelled
+        };
+        if let Some((surname, given, _)) = split_full_name_inflected(wording) {
+            let initials: Vec<char> = given.iter().filter_map(|g| first(g)).collect();
+            return Some(Self {
+                owner,
+                wording: wording.to_owned(),
+                spelled: orders(initials, first(&surname)?, cyrillic(&surname)),
+                full: true,
+            });
+        }
+        // A first name, middle initials and a surname: "Ivo D. Penrow".
+        let words = name_words_cased(wording);
+        let named = |w: &String| w.chars().filter(|c| c.is_alphabetic()).count() > 1;
+        if let [given, middle @ .., surname] = words.as_slice()
+            && !middle.is_empty()
+            && named(given)
+            && named(surname)
+            && middle
+                .iter()
+                .all(|w| initials_of(&w.to_lowercase()).is_some())
+        {
+            let initials: Vec<char> = std::iter::once(given.to_lowercase())
+                .chain(middle.iter().map(|w| w.to_lowercase()))
+                .flat_map(|w| initials_of(&w).unwrap_or_else(|| w.chars().take(1).collect()))
+                .collect();
+            let surname = surname.to_lowercase();
+            return Some(Self {
+                owner,
+                wording: wording.to_owned(),
+                spelled: orders(initials, first(&surname)?, false),
+                full: true,
+            });
+        }
+        let Some(Form::Initials { surname, initials }) = parse_form(wording) else {
+            return None;
+        };
+        Some(Self {
+            owner,
+            wording: wording.to_owned(),
+            spelled: orders(initials, first(&surname)?, cyrillic(&surname)),
+            full: false,
+        })
+    }
+}
 
 /// Who a form may stand for.
 #[derive(Debug, Default, PartialEq)]
@@ -703,7 +781,9 @@ impl People {
     /// targets, a surname with initials only a candidate.
     pub(crate) fn new<'a>(names: impl IntoIterator<Item = (u64, &'a str)>) -> Self {
         let mut people = Vec::new();
+        let mut spellings = Vec::new();
         for (owner, wording) in names {
+            spellings.extend(Spelling::new(owner, wording));
             if let Some((surname, given, written)) = split_full_name_inflected(wording) {
                 people.push(Person::new(owner, surname, given, true, written));
             } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
@@ -711,10 +791,10 @@ impl People {
                 people.push(Person::new(owner, surname, given, false, None));
             }
         }
-        Self(people)
+        Self(people, spellings)
     }
     pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.0.is_empty() && self.1.is_empty()
     }
     /// Whether `owner` is a full name's identity, which forms may join.
     pub(crate) fn is_target(&self, owner: u64) -> bool {
@@ -778,8 +858,12 @@ impl People {
                             given.len() >= 2 && [given[0], given[1]] == [*a, *b]
                                 || given.first() == Some(a) && surname == *b
                         }
+                        // A Russian name also surname first: «Ф. Я. В.» (#387).
                         [a, b, c] => {
-                            given.len() >= 2 && [given[0], given[1], surname] == [*a, *b, *c]
+                            given.len() >= 2
+                                && ([given[0], given[1], surname] == [*a, *b, *c]
+                                    || cyrillic(&person.surname)
+                                        && [surname, given[0], given[1]] == [*a, *b, *c])
                         }
                         _ => false,
                     };
@@ -801,6 +885,41 @@ impl People {
                 .then_some(owner);
         }
         found
+    }
+    /// Who bare initials ("jb", lowercase) may stand for: every person
+    /// whose name spells them. Proposed when a written-out name spells
+    /// them; joined to the one candidate when it is a full name.
+    pub(crate) fn spelled(&self, initials: &[char]) -> Candidates {
+        let mut found = Candidates::default();
+        for spelling in &self.1 {
+            if spelling.spelled.iter().any(|s| s.as_slice() == initials) {
+                found.link.insert(spelling.owner);
+                found.proposed |= spelling.full;
+            }
+        }
+        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
+            found.target = self.is_target(owner).then_some(owner);
+        }
+        found
+    }
+    /// The written-out names that spell bare initials ("jb", lowercase).
+    fn spellers(&self, initials: &[char]) -> Vec<&str> {
+        self.1
+            .iter()
+            .filter(|s| s.full && s.spelled.iter().any(|s| s.as_slice() == initials))
+            .map(|s| s.wording.as_str())
+            .collect()
+    }
+    /// The identity `wording` joins: its form's one candidate full name
+    /// (`surname`: found only after a title), or, for bare initials, the
+    /// one full name that spells them.
+    pub(crate) fn target_of(&self, wording: &str, surname: bool) -> Option<u64> {
+        form_in_context(wording, surname)
+            .and_then(|form| self.candidates(&form).target)
+            .or_else(|| {
+                let initials = bare_initials(wording.trim())?;
+                self.spelled(&initials).target
+            })
     }
     /// Whether `wording` is a form of the full name `full`, linked or not.
     pub(crate) fn form_of(wording: &str, full: &str) -> bool {
@@ -860,6 +979,256 @@ pub(crate) fn sentence_start(source: &str, start: usize) -> bool {
 pub(crate) fn glued(source: &str, range: &Range<usize>) -> bool {
     let glue = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
     glue(source[..range.start].chars().next_back()) || glue(source[range.end..].chars().next())
+}
+
+/// Upper-case words of two or three letters that are abbreviations, never a
+/// person's initials, though a name's letters may spell them: US state and
+/// territory codes, countries, legal forms, post-nominals and titles, court
+/// and agency abbreviations, letter and document marks, currencies, and
+/// their Russian counterparts. mdoc-pii has no rule pack (ADR 0092), so the
+/// list lives here; a word missing from it is still held back by the
+/// position [`bare_initials_at`] asks of all bare initials.
+#[rustfmt::skip]
+const ABBREVIATIONS: &[&str] = &[
+    // US states, DC and territories.
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+    "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT",
+    "VA", "WA", "WV", "WI", "WY", "DC", "PR", "GU", "VI", "AS", "MP",
+    // Countries and unions.
+    "US", "USA", "UK", "GB", "EU", "UN", "UAE", "NZ", "AU", "RF",
+    // Legal forms.
+    "LLC", "LLP", "LP", "LTD", "INC", "PLC", "PC", "NA", "AG", "SA", "SE", "BV", "SPA",
+    // Post-nominals, titles and roles.
+    "KC", "QC", "JP", "MBE", "OBE", "CBE", "KBE", "ESQ", "PHD", "DDS", "RN", "CPA", "CEO",
+    "CFO", "COO", "CTO", "CIO", "VP", "SVP", "EVP", "GC", "LJ", "LJJ", "MR", "JJ", "DJ", "HHJ",
+    "SJ", "CJ", "MRS", "DR", "MX", "HON",
+    // Courts, agencies and law reports.
+    "IRS", "FBI", "CIA", "SEC", "DOJ", "DOL", "EPA", "FDA", "FTC", "FCC", "DOT", "DHS", "NHS",
+    "CPS", "QB", "KB", "CH", "CL", "AC", "WLR", "ALL", "ER", "UKSC", "SCT", "CIR", "APP",
+    // Letter, document and date marks.
+    "RE", "CC", "BCC", "FYI", "NB", "PS", "PPS", "TBD", "TBA", "OK", "AKA", "FKA", "DBA", "NDA",
+    "SOW", "MOU", "LOI", "PO", "POA", "ATM", "PIN", "API", "URL", "PDF", "DOC", "FAQ", "ISO",
+    "AM", "PM", "AD", "BC", "CE", "BCE", "DOB", "SSN", "EIN", "TIN", "VAT", "GST", "HR", "IT",
+    "TV", "IP", "GDP", "CPI", "NO", "TEL", "FAX", "REF", "ENC", "ATTN", "VS", "ET",
+    // Currencies.
+    "USD", "EUR", "GBP", "RUB", "CAD", "AUD", "JPY", "CHF", "CNY",
+    // Russian.
+    "РФ", "ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "АНО", "ИП", "ИНН", "КПП", "БИК", "МВД",
+    "ФНС", "ФСБ", "ГК", "УК", "ТК", "НК", "ЖК", "СК", "АПК", "ГПК", "ВС", "КС", "ЕС", "США",
+    "ДТП", "ЧП", "МО", "ГУ", "СО", "ОВД", "ФЗ", "ПФР", "ФСС", "ЦБ", "РТ", "РБ", "КБК", "НДС",
+    "ТН", "ТТН", "АЗС", "ЭДО", "ЭЦП", "ЭП", "КЭП", "НЭП", "ПЭП", "ИО", "СНТ", "ТСЖ", "ЖСК",
+    "ГСК", "ФИО", "ПО", "ОКС",
+];
+
+/// A whole word of two or three capital letters, undotted ("JB", "IDP",
+/// "ЯВР"), as lowercase initials: an abbreviation ([`ABBREVIATIONS`]) or a
+/// Roman numeral made of I, V and X ("II", "XIV") is none.
+pub(crate) fn bare_initials(word: &str) -> Option<Vec<char>> {
+    let letters: Vec<char> = word.chars().collect();
+    ((2..=3).contains(&letters.len())
+        && letters.iter().all(|c| c.is_uppercase())
+        && !letters.iter().all(|c| matches!(c, 'I' | 'V' | 'X'))
+        && !ABBREVIATIONS.contains(&word))
+    .then(|| letters.iter().flat_map(|c| c.to_lowercase()).collect())
+}
+
+/// Whether bare initials at `range` end a letter's reference line: a
+/// slash and the typist's initials in lower case, which end the line
+/// ("IDP/ms"). Only the signer's initials are a name; the typist's stay
+/// unmarked, as GUIDE has no case for them (#387). "GP/LP" and "KYC/AML"
+/// are no reference line.
+pub(crate) fn reference_initials(source: &str, range: &Range<usize>) -> bool {
+    let Some(rest) = source[range.end..].strip_prefix('/') else {
+        return false;
+    };
+    let typist = rest.chars().take_while(char::is_ascii_lowercase).count();
+    let line_end = rest[typist..].split('\n').next().unwrap_or_default();
+    bare_initials(&source[range.clone()]).is_some()
+        && (1..=3).contains(&typist)
+        && line_end.chars().all(|c| c == ' ' || c == '\t' || c == '\r')
+        && !source[..range.start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| "_/@\\".contains(c) || c.is_alphanumeric())
+}
+
+/// Whether bare initials at `range` are glued into an identifier: a path,
+/// an address or a reference ([`glued`]) unless a reference line's
+/// ([`reference_initials`]), or a hyphen or period with a letter or digit
+/// beyond it ("JB-104", "JB.pdf", "2-EH"). A sentence's period ("EH.")
+/// is none.
+pub(crate) fn initials_glued(source: &str, range: &Range<usize>) -> bool {
+    let mut after = source[range.end..].chars();
+    let mut before = source[..range.start].chars().rev();
+    let joined = |mark: Option<char>, next: Option<char>| {
+        mark.is_some_and(|c| c == '-' || c == '.') && next.is_some_and(char::is_alphanumeric)
+    };
+    glued(source, range) && !reference_initials(source, range)
+        || joined(after.next(), after.next())
+        || joined(before.next(), before.next())
+}
+
+/// The text of `range`'s line before and after it.
+fn line_around<'a>(source: &'a str, range: &Range<usize>) -> (&'a str, &'a str) {
+    let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[range.end..]
+        .find('\n')
+        .map_or(source.len(), |i| range.end + i);
+    (
+        &source[line_start..range.start],
+        &source[range.end..line_end],
+    )
+}
+
+/// Whether `range` is one of a run of capital words ("SEE JB REPORT"), as
+/// an all-caps heading or an abbreviation's expansion writes them: no
+/// initials there.
+fn in_capitals(source: &str, range: &Range<usize>) -> bool {
+    let (before, after) = line_around(source, range);
+    let capital_word = |word: Option<&str>| {
+        word.is_some_and(|w| {
+            let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+            w.chars().count() > 1 && w.chars().all(char::is_uppercase)
+        })
+    };
+    capital_word(
+        before
+            .strip_suffix(' ')
+            .and_then(|b| b.split(' ').next_back()),
+    ) || capital_word(after.strip_prefix(' ').and_then(|a| a.split(' ').next()))
+}
+
+/// Table headers, as [`header_name`](crate::view::header_name) writes them
+/// without a final period, that make a column one of people's initials:
+/// "Lead", "Initials", "Подпись", "Исп.".
+const INITIALS_HEADERS: &[&str] = &[
+    "lead",
+    "leads",
+    "lead instructor",
+    "instructor",
+    "instructors",
+    "teacher",
+    "tutor",
+    "trainer",
+    "by",
+    "initials",
+    "signed",
+    "signed by",
+    "signature",
+    "approved by",
+    "checked by",
+    "reviewed by",
+    "prepared by",
+    "reviewer",
+    "author",
+    "owner",
+    "assignee",
+    "responsible",
+    "who",
+    "подпись",
+    "подписи",
+    "исполнитель",
+    "исполнители",
+    "исп",
+    "преподаватель",
+    "ответственный",
+    "отв",
+    "инициалы",
+    "проверил",
+    "утвердил",
+    "согласовал",
+    "составил",
+    "автор",
+    "кто",
+];
+
+/// Table cells of bare initials that a column places as a person's: under
+/// a header of [`INITIALS_HEADERS`], or where every other cell of the
+/// column is a known name's initials too ("| JB |" over "| EH |"). A
+/// "Country" column's "FR" beside "DE" is not (#387).
+fn initials_cells(source: &str, people: &People) -> Vec<Range<usize>> {
+    use crate::view::{cells, header_name, tables};
+    let known = |text: &str| bare_initials(text).is_some_and(|i| people.spelled(&i).proposed);
+    let mut out = Vec::new();
+    for table in tables(source) {
+        let (_, header) = table.header;
+        let rows: Vec<Vec<Range<usize>>> = table
+            .rows
+            .iter()
+            .map(|&(start, line)| {
+                cells(line)
+                    .into_iter()
+                    .map(|cell| {
+                        let text = &line[cell.clone()];
+                        let lead = text.len() - text.trim_start().len();
+                        start + cell.start + lead..start + cell.start + text.trim_end().len()
+                    })
+                    .collect()
+            })
+            .collect();
+        for (column, title) in table.columns.iter().enumerate() {
+            let title = header_name(&header[title.clone()]);
+            let labelled = INITIALS_HEADERS.contains(&title.trim_end_matches('.'));
+            let column: Vec<&Range<usize>> =
+                rows.iter().filter_map(|row| row.get(column)).collect();
+            for cell in &column {
+                if !known(&source[(*cell).clone()]) {
+                    continue;
+                }
+                let others: Vec<&str> = column
+                    .iter()
+                    .filter(|other| other != &cell)
+                    .map(|other| &source[(*other).clone()])
+                    .filter(|text| !matches!(*text, "" | "-" | "–" | "—"))
+                    .collect();
+                if labelled || !others.is_empty() && others.iter().all(|text| known(text)) {
+                    out.push((*cell).clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether bare initials at `range` stand where a person's initials do
+/// and an abbreviation seldom does: a cell [`initials_cells`] places, a
+/// reference line ([`reference_initials`]), a line of their own right after
+/// a signature block that names the person, or after an "initials" label.
+fn bare_initials_at(
+    source: &str,
+    range: &Range<usize>,
+    people: &People,
+    cells: &[Range<usize>],
+) -> bool {
+    let (before, after) = line_around(source, range);
+    let alone = before
+        .chars()
+        .all(|c| c.is_whitespace() || "*_>".contains(c))
+        && after.chars().all(|c| c.is_whitespace() || "*_".contains(c));
+    // The block before: up to four lines, back to a blank one.
+    let block: Vec<&str> = source[..range.start - before.len()]
+        .lines()
+        .rev()
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| !line.trim().is_empty())
+        .take(4)
+        .collect();
+    let signed = bare_initials(&source[range.clone()]).is_some_and(|initials| {
+        let names = people.spellers(&initials);
+        block
+            .iter()
+            .any(|line| names.iter().any(|name| line.contains(name)))
+    });
+    let label = before
+        .trim_end()
+        .trim_end_matches(':')
+        .trim_end()
+        .to_lowercase();
+    let labelled = ["initials", "инициалы"]
+        .iter()
+        .any(|word| label.ends_with(word));
+    cells.contains(range) || reference_initials(source, range) || alone && signed || labelled
 }
 
 /// Whether `range` can be proposed: plain text outside protected syntax and
@@ -951,6 +1320,27 @@ fn find_forms(
     covered: &[Range<usize>],
     fixed: &[Range<usize>],
 ) -> Vec<(Range<usize>, bool, bool)> {
+    find_forms_with(source, people, covered, fixed, false)
+}
+
+/// [`find_forms`], and with `bare` bare initials too: a whole word of two
+/// or three capitals that spells a known name's initials ("JB" of "Jorin
+/// Brindle", "IDP" of "Ivo D. Penrow"; [`People::spelled`]) and is no
+/// abbreviation ([`bare_initials`]). Codes and acronyms spell names too
+/// ("CPR", "KYC", "WL"), so initials count only where they stand
+/// ([`bare_initials_at`]: a column of initials, a reference line, a line
+/// of their own after the person's signature, an "initials" label), and
+/// never glued into a code ([`initials_glued`]). Elsewhere a token is a
+/// person only as a repeat of the same wording found so, the same
+/// person's: one person's initials never make another's. A reference
+/// line's typist ("IDP/ms") stays outside the span.
+fn find_forms_with(
+    source: &str,
+    people: &People,
+    covered: &[Range<usize>],
+    fixed: &[Range<usize>],
+    bare: bool,
+) -> Vec<(Range<usize>, bool, bool)> {
     let protected = protected_syntax(source);
     // A word split by a line-end hyphen is one token, as the view reads it:
     // "Верес-\nтова Дарья Ильинична" is a whole name (#388).
@@ -987,10 +1377,42 @@ fn find_forms(
     };
     // A name word: a capital and more letters.
     let word = |k: usize| capital(k) && source[tokens[k].clone()].chars().count() > 1;
+    // Bare initials of a known name where initials stand; their repeats
+    // elsewhere are the same wording's mentions, the same person's.
+    let cells = if bare {
+        initials_cells(source, people)
+    } else {
+        Vec::new()
+    };
+    let spelled: Vec<usize> = if bare {
+        tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, range)| {
+                let text = &source[(*range).clone()];
+                bare_initials(text).is_some_and(|initials| people.spelled(&initials).proposed)
+                    && !initials_glued(source, range)
+                    && safe_span(text)
+                    && !intersects(&protected, range)
+                    && !intersects(covered, range)
+                    && exact_boundary(source, range, text)
+                    && !in_capitals(source, range)
+                    && bare_initials_at(source, range, people, &cells)
+            })
+            .map(|(k, _)| k)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut found = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
         let start = tokens[i].start;
+        if spelled.contains(&i) {
+            found.push((tokens[i].clone(), false, false));
+            i += 1;
+            continue;
+        }
         // Candidate spans at `i`, longest first, each with the token after it.
         // `true`: a surname after a title, which stays outside the span.
         let mut tries: Vec<(Range<usize>, usize, bool)> = Vec::new();
@@ -1182,6 +1604,22 @@ pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
         .collect()
 }
 
+/// Bare initials in `source` that spell one of the full person names
+/// `names` and stand where initials do ([`find_forms_with`]): "ЯВР" in an
+/// "Исполнитель" column beside «Яков Викторович Ростов» (#387). The
+/// detector reads a model's organization there as the person.
+pub fn placed_initials(source: &str, names: &[&str]) -> Vec<Range<usize>> {
+    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
+    if people.is_empty() {
+        return Vec::new();
+    }
+    find_forms_with(source, &people, &[], &[], true)
+        .into_iter()
+        .map(|(range, ..)| range)
+        .filter(|range| bare_initials(&source[range.clone()]).is_some())
+        .collect()
+}
+
 impl Review {
     /// Full person names that propagate, as `(identity, wording)`: proposed
     /// (not kept) or applied. With a surname and initials, which only block.
@@ -1207,8 +1645,10 @@ impl Review {
     }
     /// The identity a person wording joins: its one candidate full name.
     pub(super) fn propagation_target(&self, wording: &str) -> Option<u64> {
-        let form = parse_form(wording)?;
-        self.people().candidates(&form).target
+        let people = self.people();
+        parse_form(wording)
+            .and_then(|form| people.candidates(&form).target)
+            .or_else(|| people.spelled(&bare_initials(wording.trim())?).target)
     }
     /// Seed a form found by propagation: in its one candidate's identity,
     /// or an identity of its own.
@@ -1302,7 +1742,8 @@ impl Review {
         // Each wording once; a surname when every place it was found
         // follows a title ("Mr Paul": James Paul, not Paul Smith).
         let mut found: Vec<(&str, bool, bool)> = Vec::new();
-        for (range, common, after_title) in find_forms(source, &people, &covered, &fixed) {
+        for (range, common, after_title) in find_forms_with(source, &people, &covered, &fixed, true)
+        {
             let wording = &source[range];
             match found.iter_mut().find(|(w, ..)| *w == wording) {
                 Some((_, _, surname)) => *surname &= after_title,
@@ -1314,8 +1755,7 @@ impl Review {
             if self.candidates.by_original(wording).is_some() {
                 continue;
             }
-            let target =
-                form_in_context(wording, surname).and_then(|form| people.candidates(&form).target);
+            let target = people.target_of(wording, surname);
             let id = self.seed_form(wording, target);
             if let Some(variant) = self.candidates.variant_mut(id) {
                 variant.recognizer = Some(Recognizer::Propagation);
@@ -1382,8 +1822,7 @@ impl Review {
                         .any(|a| a.step.original_shared().as_ref() == v.original.as_ref())
             })
             .filter_map(|v| {
-                let target = form_in_context(&v.original, v.surname)
-                    .and_then(|f| people.candidates(&f).target);
+                let target = people.target_of(&v.original, v.surname);
                 let current = self.variant_identity(v.id)?;
                 let desired = match target {
                     Some(target) => Some(target),
@@ -1624,6 +2063,106 @@ mod tests {
         assert_eq!((abbreviated.target, abbreviated.proposed), (None, true));
         // A third initial that does not fit breaks the match.
         assert_eq!(target(&["John Smith"], "J. S. X."), None);
+    }
+
+    /// #387: two or three capitals spell a known name's initials in order,
+    /// never an abbreviation or a Roman numeral; Russian also surname first.
+    #[test]
+    fn bare_initials_spell_a_known_name() {
+        assert_eq!(bare_initials("JB"), Some(vec!['j', 'b']));
+        assert_eq!(bare_initials("ЯВР"), Some(vec!['я', 'в', 'р']));
+        for word in [
+            "J", "JBEH", "Jb", "NY", "LLC", "USA", "ID", "II", "XIV", "ООО", "РФ",
+        ] {
+            assert_eq!(bare_initials(word), None, "{word}");
+        }
+        let spelled = |names: &[&str], initials: &str| {
+            let found = people(names).spelled(&bare_initials(initials).unwrap());
+            (found.proposed, found.target)
+        };
+        assert_eq!(spelled(&["Jorin Brindle"], "JB"), (true, Some(1)));
+        assert_eq!(spelled(&["Jorin Brindle"], "BJ"), (false, None));
+        // A middle initial: all of them, or the first name and surname.
+        // Such a name is no propagation target, so the initials stay apart.
+        assert_eq!(spelled(&["Ivo D. Penrow"], "IDP"), (true, None));
+        let first_and_surname = people(&["Ivo D. Penrow"]).spelled(&['i', 'p']);
+        assert!(first_and_surname.proposed);
+        assert_eq!(spelled(&["Ivo D. Penrow"], "DP"), (false, None));
+        let russian = ["Яков Викторович Ростов"];
+        for initials in ["ЯВР", "РЯВ", "ЯВ", "ЯР"] {
+            assert_eq!(spelled(&russian, initials), (true, Some(1)), "{initials}");
+        }
+        assert_eq!(spelled(&russian, "ВЯР"), (false, None));
+        // Surname first only in Russian.
+        assert_eq!(spelled(&["Edda Mae Hollin"], "HEM"), (false, None));
+        // Two people, or one known by initials too: proposed, joined to neither.
+        assert_eq!(spelled(&["Jorin Brindle", "Jana Bell"], "JB"), (true, None));
+        assert_eq!(spelled(&["Jorin Brindle", "J. Bell"], "JB"), (true, None));
+        // A surname with initials alone proposes nothing.
+        assert_eq!(spelled(&["J. Bell"], "JB"), (false, None));
+        // Dotted initials surname first, in Russian only.
+        assert_eq!(target(&russian, "Р. Я. В."), Some(1));
+        assert_eq!(target(&["Edda Mae Hollin"], "H. E. M."), None);
+    }
+
+    /// #387: bare initials count only where initials stand: a table column
+    /// of people's initials, a reference line, a line of their own after a
+    /// signature naming the person, an "initials" label. Elsewhere, glued
+    /// into a code, in a run of capitals or as a slash pair, never.
+    #[test]
+    fn bare_initials_are_found_where_initials_stand() {
+        let names = [
+            "Jorin Brindle",
+            "Edda Hollin",
+            "Ivo D. Penrow",
+            "Felix Roth",
+        ];
+        let found = |source: &str| -> Vec<String> {
+            find_forms_with(source, &people(&names), &[], &[], true)
+                .into_iter()
+                .map(|(r, ..)| source[r].to_owned())
+                .filter(|text| bare_initials(text).is_some())
+                .collect()
+        };
+        // A column of known initials, or under a person's header.
+        let table = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 | EH |\n";
+        assert_eq!(found(table), ["JB", "EH"]);
+        assert_eq!(found("| Week | Lead |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
+        assert_eq!(found("| Этап | Исп. |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
+        // A country column, a lone row, a code beside a known pair.
+        let country =
+            "| Director | Country |\n|---|---|\n| Felix Roth | FR |\n| Jorin Brindle | DE |\n";
+        assert!(found(country).is_empty());
+        assert!(found("| 1 | JB |\n").is_empty());
+        let mixed = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 | ZZ |\n";
+        assert!(found(mixed).is_empty());
+        // A reference line ends with the typist's lowercase initials.
+        assert_eq!(found("Yours. IDP/ms"), ["IDP"]);
+        assert_eq!(found("Yours.\n\nEH/ms\n"), ["EH"]);
+        assert!(found("The GP/LP split. IDP/LP rules. IDP/ms apply").is_empty());
+        // A line of its own right after a signature naming the person.
+        assert_eq!(found("Edda Hollin checked.\n\nEH\n"), ["EH"]);
+        assert!(found("Signed\n\nEH\n").is_empty());
+        assert!(found("Jorin Brindle checked.\n\nEH\n").is_empty());
+        // An "initials" label.
+        assert_eq!(found("Lead initials: EH"), ["EH"]);
+        // Prose, glue, capitals.
+        for source in [
+            "EH agreed with JB.",
+            "per IDP today",
+            "SEE IDP REPORT",
+            "Initials: JB-104",
+            "Initials: JB.pdf",
+            "files/IDP/x and EH_2",
+        ] {
+            assert!(found(source).is_empty(), "{source}");
+        }
+        // Off unless asked: the Always list's forms take no bare initials.
+        assert!(
+            find_forms(table, &people(&names), &[], &[])
+                .iter()
+                .all(|(r, ..)| r.len() != 2)
+        );
     }
 
     #[test]
