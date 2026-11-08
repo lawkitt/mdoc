@@ -8,6 +8,7 @@ pub mod handoff;
 mod identities;
 mod manual;
 pub mod merge_hints;
+pub mod mrz;
 mod propagation;
 pub use identities::{Identity, IdentitySnapshot};
 pub use propagation::{nicknames, person_forms_in, placed_initials};
@@ -313,7 +314,8 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
         && source[..range.start]
             .chars()
             .next_back()
-            .is_some_and(char::is_alphanumeric);
+            .is_some_and(char::is_alphanumeric)
+        && !mrz::surname_at(source, range);
     let right = original
         .chars()
         .next_back()

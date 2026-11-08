@@ -2933,3 +2933,65 @@ fn an_always_listed_date_counts_every_mention() {
     review.refresh(&edited);
     assert_eq!(mention_count(&review, "14/03/1988"), 2);
 }
+
+/// #495: a surname right after a machine-readable zone's document head
+/// ("P<RUSKRENC<<") is a word of its own: proposed, found again in another
+/// such line (escaped, as an entity, indented with no-break spaces, in a
+/// blockquote, after a label, with the type OCR lost) and markable by hand;
+/// glued to any other letters it is not.
+#[test]
+fn a_surname_after_a_machine_readable_zones_head_is_a_word_of_its_own() {
+    let lines = [
+        "P<RUSKRENC<<LIDIIA<ARSENEVNA<<<<<<<<<<<<<<<<",
+        "P\\<NORKRENC<\\<LIDIIA<<<<<<<<<<<<<<<<<<<<<<<<<\\",
+        "P&lt;D&lt;&lt;KRENC&lt;&lt;LIDIIA",
+        "\u{a0}\u{a0}P<FINKRENC<<LIDIIA<<<<<<<<<<<<<<<<<<<<<<<<<",
+        "> MRZ: **P<NORKRENC<<LIDIIA<<<<<<<<<<<<<<<<<<<<<<<<<<**",
+        "PRUSKRENC<<LIDIIA<<<<<<<<<<<<<<<<<<<<<<<<<<",
+        "THEKRENC<< and PARTYKRENC.",
+    ];
+    let source = lines.join("\n") + "\n";
+    let review = ingest_names(&source, &["KRENC", "LIDIIA", "ARSENEVNA"]);
+    let surnames: Vec<usize> = source.match_indices("KRENC").map(|(at, _)| at).collect();
+    assert_eq!(
+        proposed(&review, "KRENC").mentions,
+        surnames[..6]
+            .iter()
+            .map(|&at| at..at + 5)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(mention_count(&review, "LIDIIA"), 6);
+    assert_eq!(mention_count(&review, "ARSENEVNA"), 1);
+    let mut review = Review::default();
+    review.refresh(&source);
+    let mark = review.add_manual(&source, 5..10, Category::Person).unwrap();
+    assert_eq!(review.variant(mark).unwrap().mentions.len(), 6);
+}
+
+/// #495: a known name glued inside another word on a line that is no
+/// zone's stays inside it: no state's head before it ("CHRISTINA",
+/// "PAULAANNA", "CLAIMANNA"), or no zone's line after it.
+#[test]
+fn a_name_glued_inside_a_word_outside_a_machine_readable_line_is_no_mention() {
+    for (source, name) in [
+        (
+            "Ms TINA Moor signs.\nCHRISTINA<<MARIA<<<<<<<<<<<<<<<<<<<<<<<<\n",
+            "TINA",
+        ),
+        ("ANNA Lind signs.\nPAULAANNA<\n", "ANNA"),
+        ("ANNA signs.\nP<NORANNA< and more\n", "ANNA"),
+        ("ANNA signs.\nP<NORANNA<B<C\n", "ANNA"),
+    ] {
+        let review = ingest_names(source, &[name]);
+        assert_eq!(mention_count(&review, name), 1, "{source}");
+    }
+    let source = "CLAIMANNA<\nCLAIMANNA<\n";
+    let mut review = Review::default();
+    review.refresh(source);
+    assert!(
+        review
+            .add_manual(source, 5..9, Category::Person)
+            .map(|mark| review.variant(mark).unwrap().mentions.is_empty())
+            .unwrap_or(true)
+    );
+}

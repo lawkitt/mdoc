@@ -754,18 +754,27 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
             ..d.clone()
         })
         .collect();
-    let rules = rules::pack()
-        .context(&view.text)
+    // Each span with the whole match a split one was cut from.
+    let spans: Vec<(Detection, Option<Range<usize>>)> = rules::pack()
+        .spans_beside(&view.text, &names)
         .into_iter()
-        .chain(rules::pack().spans_beside(&view.text, &names))
-        .chain(structured::scan(&view.text));
-    let (spans, rules): (Vec<Detection>, Vec<Detection>) = rules
-        .filter_map(|mut detection| {
+        .filter_map(|found| {
+            let mut detection = found.detection;
             detection.range = view.source_range(detection.range);
             // One only over an inserted table header names nothing.
+            (!detection.range.is_empty())
+                .then(|| (detection, found.whole.map(|whole| view.source_range(whole))))
+        })
+        .collect();
+    let rules: Vec<Detection> = rules::pack()
+        .context(&view.text)
+        .into_iter()
+        .chain(structured::scan(&view.text))
+        .filter_map(|mut detection| {
+            detection.range = view.source_range(detection.range);
             (!detection.range.is_empty()).then_some(detection)
         })
-        .partition(|detection| detection.recognizer == mdoc_pii::Recognizer::Span);
+        .collect();
     // A precedent's docket number is part of its citation, no case number
     // of the case at hand (guide rule 8, #506 item 3): "Grant v. Finecy,
     // Case No. 4:20-cv-1234 (N.D. Tex. 2024)".
@@ -785,7 +794,10 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         source,
         &rules,
         &precedents,
-        detections.iter().chain(&rules).chain(&spans),
+        detections
+            .iter()
+            .chain(&rules)
+            .chain(spans.iter().map(|(span, _)| span)),
     )
     .into_iter()
     .chain(rules)
@@ -821,17 +833,28 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
                 view.view_range(detection.range.clone()),
             )
     };
+    // A model span inside the whole match a split span was cut from is no
+    // evidence against it either: "KRENC<<LIDIIA" across a machine-readable
+    // zone's filler holds two names, and the review turns it down for its
+    // "<" (#495).
+    let held = |detection: &Detection, whole: &Option<Range<usize>>| {
+        detection.recognizer == mdoc_pii::Recognizer::Model
+            && whole.as_ref().is_some_and(|whole| {
+                whole.start <= detection.range.start && detection.range.end <= whole.end
+            })
+    };
     // Span matches stand only where they are the widest evidence.
     let spans: Vec<Detection> = spans
         .into_iter()
-        .filter(|span| {
+        .filter(|(span, whole)| {
             stands(
                 detections
                     .iter()
-                    .filter(|detection| !absorbed(detection, span)),
+                    .filter(|detection| !absorbed(detection, span) && !held(detection, whole)),
                 span,
             )
         })
+        .map(|(span, _)| span)
         .collect();
     detections.extend(spans);
     detections

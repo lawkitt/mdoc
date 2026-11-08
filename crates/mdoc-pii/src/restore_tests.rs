@@ -1287,3 +1287,29 @@ fn a_restored_marked_wording_is_pseudonymized_again() {
         0
     );
 }
+
+/// #495: a surname's alias stands glued to a machine-readable zone's head
+/// ("P<RUSPERSON_1"), and restores there, a filler after it; glued to
+/// other letters, or with no filler after it, it is no token.
+#[test]
+fn an_alias_after_a_machine_readable_zones_head_restores() {
+    let map = fixture_map();
+    assert_eq!(
+        apply(&map, "P<RUSPERSON_1<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"),
+        "P<RUSAnna Petrova<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+    );
+    assert_eq!(
+        apply(&map, "  P\\<NORPERSON_1\\<\\<"),
+        "  P\\<NORAnna Petrova\\<\\<"
+    );
+    for text in [
+        "XP<RUSPERSON_1<<",
+        "PARTYPERSON_1 signs.",
+        "PARTYSeller signs.",
+        "CLAIMEMAIL_1 x",
+        "ABCDEPERSON_1",
+        "P<RUSPERSON_1 signs.",
+    ] {
+        assert_eq!(apply(&map, text), text);
+    }
+}
