@@ -16,16 +16,16 @@ struct ReviewPager: View {
     let candidate: Candidate
     /// The card's one-time nudge, which moves the strip a little and back.
     var nudge: CGFloat = 0
-    /// The bar's vertical drag from the card, which the bar reads.
-    let pull: GestureState<ReviewBar.CardDrag>
-    /// A vertical drag let go: the bar settles compact or full.
-    let onPullEnded: (CGFloat) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The finger's sideways travel, resisted at the ends.
     @State private var swipe: CGFloat = 0
-    /// The drag's axis, fixed by its first movement.
+    /// The drag's axis, fixed by its first movement. A vertical drag is
+    /// the bar's, which pulls it open or shut with a gesture of its own.
     @State private var axis: Axis?
+    /// A finger is on the strip; gesture state, so a cancelled drag (a
+    /// notification, leaving the app) ends too.
+    @GestureState private var touching = false
     /// The strip's width: the bar's, out to its edges.
     @State private var width: CGFloat = 0
 
@@ -55,7 +55,9 @@ struct ReviewPager: View {
         }
         // Two each side, so the card that comes in as a neighbor slides in
         // from off the bar's edge.
-        let reach = reduceMotion ? 1 : 2
+        // Before the strip's width is known, the card alone: a neighbor
+        // can't be placed yet.
+        let reach = width == 0 ? 0 : reduceMotion ? 1 : 2
         let range = max(0, index - reach)...min(order.count - 1, index + reach)
         return range.map { at in
             let card = order.candidates[at]
@@ -80,10 +82,11 @@ struct ReviewPager: View {
         // Out to the bar's edges, so a card slides off them.
         .padding(.horizontal, -Space.m)
         .simultaneousGesture(drag(hasPrevious: hasPrevious, hasNext: hasNext))
-        // A cancelled drag (a notification, leaving the app) puts it back.
-        .onChange(of: pull.wrappedValue.axis == nil) { _, ended in
-            if ended, swipe != 0 { settle(by: 0) }
-            if ended { axis = nil }
+        // A drag cancelled before its end puts the strip back.
+        .onChange(of: touching) { _, touching in
+            guard !touching else { return }
+            if swipe != 0 { settle(by: 0) }
+            axis = nil
         }
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: Text("Previous")) { Self.step(model, -1, reduceMotion: reduceMotion) }
@@ -96,7 +99,7 @@ struct ReviewPager: View {
         let x = CGFloat(item.place) * pitch + (reduceMotion ? 0 : swipe + nudge)
         // The neighbors dim with their distance from the middle.
         let dim: CGFloat = pitch > 0 ? min(1, abs(x) / pitch) : (current ? 0 : 1)
-        ReviewCard(model: model, candidate: item.card)
+        ReviewCard(model: model, candidate: item.card, isCurrent: current)
             .id(item.card.id)
             .transition(.opacity)
             .frame(width: width > 0 ? cardWidth : nil)
@@ -123,11 +126,7 @@ struct ReviewPager: View {
 
     private func drag(hasPrevious: Bool, hasNext: Bool) -> some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .global)
-            .updating(pull) { value, card, _ in
-                let dx = value.translation.width, dy = value.translation.height
-                if card.axis == nil { card.axis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
-                card.dy = dy
-            }
+            .updating($touching) { _, touching, _ in touching = true }
             .onChanged { value in
                 let dx = value.translation.width, dy = value.translation.height
                 if axis == nil { axis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
@@ -139,11 +138,8 @@ struct ReviewPager: View {
             }
             .onEnded { value in
                 defer { axis = nil }
-                let dx = value.translation.width, dy = value.translation.height
-                if axis == .vertical || (axis == nil && abs(dy) > abs(dx)) {
-                    onPullEnded(value.predictedEndTranslation.height)
-                    return
-                }
+                let dx = value.translation.width
+                guard axis == .horizontal else { return }
                 let predicted = value.predictedEndTranslation.width
                 let threshold = max(ReviewBarMetrics.swipeThreshold, cardWidth / 3)
                 let delta = dx < -threshold || predicted < -pitch / 2 ? 1

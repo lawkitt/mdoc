@@ -1125,7 +1125,8 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     func laidOutRect(of range: NSRange) -> CGRect? {
         guard let layout = textLayoutManager, let content = layout.textContentManager else { return nil }
         let start = content.documentRange.location
-        guard NSMaxRange(range) <= attributedText.length,
+        // The storage's length: `attributedText` copies the whole text.
+        guard NSMaxRange(range) <= textStorage.length,
               let from = content.location(start, offsetBy: range.location) else { return nil }
         let viewport = layout.textViewportLayoutController.viewportRange
         let shown = viewport.map { $0.contains(from) && layout.textLayoutFragment(for: from)?.state == .layoutAvailable } ?? false
@@ -1134,7 +1135,9 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
             if !tableViews.isEmpty { placeTables() }
         }
         guard let fragment = layout.textLayoutFragment(for: from) else { return nil }
-        let into = content.offset(from: fragment.rangeInElement.location, to: from)
+        // Lines count from their paragraph's start, as in `placeTables`.
+        let paragraphStart = fragment.textElement?.elementRange?.location ?? fragment.rangeInElement.location
+        let into = content.offset(from: paragraphStart, to: from)
         guard let line = fragment.textLineFragments.first(where: { NSLocationInRange(into, $0.characterRange) })
             ?? fragment.textLineFragments.last else { return nil }
         let frame = fragment.layoutFragmentFrame

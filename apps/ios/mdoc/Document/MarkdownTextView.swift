@@ -227,6 +227,8 @@ struct MarkdownTextView: UIViewRepresentable {
         /// selected, the room a reveal added below the text goes.
         private func afterSelection(from previous: CandidateID?, in view: CandidateTextView) {
             if let selected = decoration.selected, selected != previous {
+                // A correction owed to the name before is no longer wanted.
+                landing = nil
                 if pendingReveal?.always != true { pendingReveal = (.candidate(selected), false) }
                 view.setNeedsLayout()
             } else if decoration.selected == nil {
@@ -272,10 +274,10 @@ struct MarkdownTextView: UIViewRepresentable {
 
         /// Scrolls a source range into the top third of the text left in
         /// view above the bar, briefly selecting it when it is no candidate
-        /// (a Find match). The text is laid out through the range first: its
-        /// rect is otherwise TextKit 2's estimate. Once the scroll lands, it
-        /// is measured again and, if still out of the band, corrected once
-        /// (`correcting`).
+        /// (a Find match). It is measured where the laid-out text draws it
+        /// (`laidOutRect`), not at TextKit 2's estimate. Once the scroll
+        /// lands, it is measured again and, if still out of the band,
+        /// corrected once (`correcting`).
         func reveal(range source: SourceRange, in view: CandidateTextView, always: Bool = true, correcting: Bool = false) {
             let range = offsets.nsRange(source)
             let cell = view.tableViews.lazy.flatMap { $0.cells.joined() }.first { cell in
@@ -335,6 +337,9 @@ struct MarkdownTextView: UIViewRepresentable {
         var revealRoom: CGFloat = 0
 
         func dropRevealRoom(in view: CandidateTextView) {
+            // Review ended: no correction brings the room back.
+            landing = nil
+            scrolling = false
             guard revealRoom > 0 else { return }
             view.contentInset.bottom -= revealRoom
             revealRoom = 0

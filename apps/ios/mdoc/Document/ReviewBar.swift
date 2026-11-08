@@ -78,9 +78,8 @@ struct ReviewBar: View {
                     ReviewHintLine(hint: hint) { model.learn(hint) }
                         .transition(.opacity)
                 }
-                ReviewPager(
-                    model: model, candidate: candidate, nudge: drag, pull: $cardDrag,
-                    onPullEnded: { pullEnded(predicted: $0) })
+                ReviewPager(model: model, candidate: candidate, nudge: drag)
+                    .simultaneousGesture(cardPullGesture)
                 VStack(spacing: 0) {
                     // Always built, at no height while the bar is compact, so
                     // the bar knows where full is before it opens; spaced
@@ -182,6 +181,21 @@ struct ReviewBar: View {
         if expand != was {
             Haptics.selection()
         }
+    }
+
+    /// Up or down on the card pulls the bar; sideways is the pager's. The
+    /// axis is fixed by the first movement, as the pager fixes its own.
+    private var cardPullGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .updating($cardDrag) { value, card, _ in
+                let dx = value.translation.width, dy = value.translation.height
+                if card.axis == nil { card.axis = abs(dx) >= abs(dy) ? .horizontal : .vertical }
+                card.dy = dy
+            }
+            .onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                if abs(dy) > abs(dx) { pullEnded(predicted: value.predictedEndTranslation.height) }
+            }
     }
 
     private var pullGesture: some Gesture {

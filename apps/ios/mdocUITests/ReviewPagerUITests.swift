@@ -8,25 +8,23 @@ final class ReviewPagerUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// A sideways drag of `dx` points at `velocity` points a second, held
+    /// A drag of `dx` across (and `dy` down) at `velocity` points a second, held
     /// still for `hold` before letting go, across the card's first line
     /// between the name and the mentions chip, where nothing takes a tap.
     @MainActor
-    private func drag(_ app: XCUIApplication, by dx: CGFloat, velocity: CGFloat, hold: TimeInterval) {
-        // The current card's: XCUITest also lists the neighbors' (hidden
-        // from VoiceOver), which sit off to the sides.
-        let chips = app.buttons.matching(identifier: "review-mentions").allElementsBoundByIndex
-        guard let chip = chips.first(where: { $0.frame.minX >= 0 && $0.frame.maxX <= app.frame.width }) else {
-            return XCTFail("no mentions chip on screen")
-        }
+    private func drag(_ app: XCUIApplication, by dx: CGFloat, dy: CGFloat = 0, velocity: CGFloat, hold: TimeInterval) {
+        // The card under review's: the neighbors carry no identifiers.
+        let chips = app.buttons.matching(identifier: "review-mentions")
+        XCTAssertEqual(chips.count, 1, "the neighbors' controls are not the card's")
+        let chip = chips.firstMatch
         let point = CGVector(dx: chip.frame.minX - 40, dy: chip.frame.midY)
         let start = app.coordinate(withNormalizedOffset: .zero).withOffset(point)
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: dy)),
                     withVelocity: XCUIGestureVelocity(velocity), thenHoldForDuration: hold)
     }
 
     @MainActor
-    func testTheCardSettlesOnANeighborPastAThirdOrWithAFlingBothWays() throws {
+    func testTheCardSwipesAsACarouselAndStillPullsTheBar() throws {
         let app = MdocUITest.launch()
         let document = MdocUITest.documentRow(app)
         XCTAssertTrue(document.waitForExistence(timeout: 60))
@@ -47,8 +45,8 @@ final class ReviewPagerUITests: XCTestCase {
         let card = app.descendants(matching: .any)["review-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         let progress = app.buttons["review-progress"]
-        // "3 of 15, 0 decided": two steps one way, then two back, toward the side with
-        // room for them (a swipe left is the next card).
+        // "3 of 15, 0 decided": two steps one way, then two back, toward the
+        // side with room for them (a swipe left is the next card).
         let numbers = Array(progress.label.split { !$0.isNumber }.compactMap { Int($0) }.prefix(2))
         XCTAssertEqual(numbers.count, 2, progress.label)
         let roomAhead = (numbers.last ?? 0) - (numbers.first ?? 0)
@@ -81,5 +79,14 @@ final class ReviewPagerUITests: XCTestCase {
                 "past a third steps (\(direction))")
             MdocUITest.settledScreen()
         }
+
+        // Up and down on the card still pull the bar open and shut.
+        let details = app.descendants(matching: .any)["review-details"].firstMatch
+        let shown = { details.exists && details.frame.height > 40 }
+        drag(app, by: 0, dy: -220, velocity: 600, hold: 0)
+        XCTAssertTrue(MdocUITest.wait(timeout: 5, until: shown), "a drag up on the card shows the mentions")
+        MdocUITest.settledScreen()
+        drag(app, by: 0, dy: 260, velocity: 600, hold: 0)
+        XCTAssertTrue(MdocUITest.wait(timeout: 5) { !shown() }, "a drag down on the card hides them")
     }
 }
