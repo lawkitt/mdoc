@@ -118,7 +118,9 @@ impl RestoreMap {
         for (alias, index) in &self.custom {
             for (start, _) in text.match_indices(alias.as_str()) {
                 let range = start..start + alias.len();
-                if word_start(text, start) && word_end(text, range.end) {
+                if (word_start(text, start) || zone_surname(text, &range))
+                    && word_end(text, range.end)
+                {
                     tokens.push(Token {
                         range,
                         identity: Some(*index),
@@ -496,6 +498,12 @@ fn word_char(c: char) -> bool {
 fn word_start(text: &str, at: usize) -> bool {
     !text[..at].chars().next_back().is_some_and(word_char)
 }
+/// Whether `range` is a token glued to a machine-readable zone's document
+/// head, as a surname's alias stands there, a filler after it
+/// ("P<RUSPERSON_1<<PERSON_2", #495).
+fn zone_surname(text: &str, range: &Range<usize>) -> bool {
+    crate::mrz::filler_at(text, range.end) && crate::mrz::head_before(text, range.start)
+}
 /// A token ends at a non-word character, or where Cyrillic letters are glued
 /// on as an inflection (`PERSON_1у`). Latin letters continue the word.
 fn word_end(text: &str, at: usize) -> bool {
@@ -519,7 +527,14 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
     let mut found = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        if !bytes[at].is_ascii_alphabetic() || !word_start(text, at) {
+        if !bytes[at].is_ascii_alphabetic() {
+            at += 1;
+            continue;
+        }
+        // Glued to the letters before it, a token is only a zone's surname
+        // (checked once its end is known).
+        let glued = !word_start(text, at);
+        if glued && !bytes[at].is_ascii_uppercase() {
             at += 1;
             continue;
         }
@@ -545,7 +560,11 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
                 .take_while(u8::is_ascii_digit)
                 .count();
             let end = digits_start + digits;
-            if digits == 0 || digits > 9 || !word_end(text, end) {
+            if digits == 0
+                || digits > 9
+                || !word_end(text, end)
+                || glued && !zone_surname(text, &(at..end))
+            {
                 continue;
             }
             let number = text[digits_start..end].parse().unwrap_or(u64::MAX);

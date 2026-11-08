@@ -1,12 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: mrz-name
 issue: 495
 kind: ocr
 source: hunt-r7
-expect: miss: PERSON "KRENC"
-expect: miss: PERSON "LIDIIA"
-expect: miss: PERSON "ARSENEVNA"
 ---
 КОПИЯ СТРАНИЦЫ ПАСПОРТА / приложено к заявлению
 

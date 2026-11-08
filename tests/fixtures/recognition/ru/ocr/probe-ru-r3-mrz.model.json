@@ -1,0 +1,8 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":212,"end":262,"label":"person","score":0.8724561,"text":"Мирослава Тихоновна Вельде"},
+    {"start":282,"end":291,"label":"passport_number","score":0.99549675,"text":"759204168"}
+  ]
+}

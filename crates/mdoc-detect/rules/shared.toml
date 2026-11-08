@@ -96,7 +96,25 @@
 # span leaves out ("адресу " before a city). A match wins over a model
 # span inside it and gives way to a model span of its category that
 # reaches past it, a span of another category across its edge and any
-# other rule's span in it; a match before a colon (a field's label) goes. Without a pattern an entry
+# other rule's span in it; a match before a colon (a field's label) goes.
+# A pattern entry may also have:
+#   split       = regex       the match, `lead` and `tail` left out, is cut
+#                             at each of its matches: every piece between
+#                             them is a span of its own (a passport's name
+#                             fields between their `<` fillers); no
+#                             continuation. A model span inside the whole
+#                             match, `lead` and `tail` included, is no
+#                             evidence against its pieces
+#   line_length = [least, most]  each line of the whole match that is not
+#                             blank, `lead` and `tail` included, has least
+#                             to most characters, without the whitespace
+#                             at its ends, its backslashes (Markdown's
+#                             escapes and hard breaks) and the text of its
+#                             groups named `mark`, `mark2`, … (a
+#                             blockquote's marks, a label)
+#   skip        = regex       a span in which it matches is not proposed (a
+#                             masked name, "XXXXX")
+# Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
@@ -239,8 +257,9 @@
 # Context rules are per language.
 context = []
 
-# Span patterns and fixes are per language.
-span = []
+# Span patterns and fixes are per language, but for a machine-readable
+# zone's names, which ICAO 9303 writes the same in every language (end
+# of this file).
 
 # Nicknames, as [[variants]] with `name` and its `forms`. None yet.
 variants = []
@@ -570,3 +589,56 @@ forbid_unlabelled = ['^\s*\d\.\d{1,3}\.\d{2}\s*$']
 # a lone " R " is a street, block or passport letter ("1500 R Street").
 [[reference]]
 pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+(?:[.,]\d+)?[\p{Zs}\t]+R[\p{Zs}\t]+to[\p{Zs}\t]+inside\b'
+
+# The names in a passport's or an ID card's machine-readable zone (ICAO
+# 9303; issue #495). Each surname and given-name part between the «<»
+# fillers is its own PERSON span, without them (fixture guide:
+# "P<RUS⟦PERSON|KRENC⟧<<⟦PERSON|LIDIIA⟧<⟦PERSON|ARSENEVNA⟧<<<"); a
+# surname of several parts gives a span per part. A passport's first line
+# (TD3, 44 characters) and a TD2 card's (36) open with the document's
+# code («P», or «I», «A», «C» for a card), its type («<» or a capital,
+# which OCR may lose) and the issuing state, one of ICAO 9303 Part 3's
+# codes (`state`, the same list as `mdoc_pii::mrz::STATES`: «RUS», «D<<»,
+# «UNO», «XXA»), then the surname, «<<» and the given names, one or two
+# fillers between them, padded with «<» to the line's end: capitals and
+# «<» alone. OCR may lose or add some fillers, so 32 to 52 characters do.
+# Imported text writes a filler escaped («\<», anydoc) and may end the
+# line in a hard break («\»); an entity («&lt;») reads as «<». The line
+# may sit in Markdown: a blockquote, a list item, a table cell, bold or
+# code marks, or after a label («MRZ: »), which the length leaves out
+# (`mark` groups). A masked name («XXXXX») is no name. The zone's other
+# lines (number, dates, check digits) stay unmarked, and so do visas
+# («V…»), left out for now. A lone «<<» in prose, HTML or code, a row of
+# «<», capitals without a state's head («ACTION<<REQUIRED») and a short
+# line match nothing.
+[[span]]
+category = "PERSON"
+pattern = '(?m)(?P<lead>^(?P<mark>{opening})[PIAC](?:[A-Z]|\\?<)?(?:{state}))(?:{surname}(?:\\?<){2}(?:{given})?)(?P<tail>(?:\\?<)*(?P<mark2>{closing})$)'
+parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:[^\n:<|`*]{1,40}:[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
+parts.closing = '(?:\*{1,2}|_{1,2}|`{1,2})?(?:[\p{Zs}\t]*\|[^\n]*)?[\p{Zs}\t]*\\?[\p{Zs}\t\r]*'
+parts.surname = '[A-Z]+(?:\\?<[A-Z]+)*'
+parts.given = '[A-Z]+(?:(?:\\?<){1,2}[A-Z]+)*'
+parts.state = 'ABW|AFG|AGO|AIA|ALA|ALB|AND|ARE|ARG|ARM|ASM|ATA|ATF|ATG|AUS|AUT|AZE|BDI|BEL|BEN|BES|BFA|BGD|BGR|BHR|BHS|BIH|BLM|BLR|BLZ|BMU|BOL|BRA|BRB|BRN|BTN|BVT|BWA|CAF|CAN|CCK|CHE|CHL|CHN|CIV|CMR|COD|COG|COK|COL|COM|CPV|CRI|CUB|CUW|CXR|CYM|CYP|CZE|DEU|DJI|DMA|DNK|DOM|DZA|ECU|EGY|ERI|ESH|ESP|EST|ETH|FIN|FJI|FLK|FRA|FRO|FSM|GAB|GBR|GEO|GGY|GHA|GIB|GIN|GLP|GMB|GNB|GNQ|GRC|GRD|GRL|GTM|GUF|GUM|GUY|HKG|HMD|HND|HRV|HTI|HUN|IDN|IMN|IND|IOT|IRL|IRN|IRQ|ISL|ISR|ITA|JAM|JEY|JOR|JPN|KAZ|KEN|KGZ|KHM|KIR|KNA|KOR|KWT|LAO|LBN|LBR|LBY|LCA|LIE|LKA|LSO|LTU|LUX|LVA|MAC|MAF|MAR|MCO|MDA|MDG|MDV|MEX|MHL|MKD|MLI|MLT|MMR|MNE|MNG|MNP|MOZ|MRT|MSR|MTQ|MUS|MWI|MYS|MYT|NAM|NCL|NER|NFK|NGA|NIC|NIU|NLD|NOR|NPL|NRU|NZL|OMN|PAK|PAN|PCN|PER|PHL|PLW|PNG|POL|PRI|PRK|PRT|PRY|PSE|PYF|QAT|REU|ROU|RUS|RWA|SAU|SDN|SEN|SGP|SGS|SHN|SJM|SLB|SLE|SLV|SMR|SOM|SPM|SRB|SSD|STP|SUR|SVK|SVN|SWE|SWZ|SXM|SYC|SYR|TCA|TCD|TGO|THA|TJK|TKL|TKM|TLS|TON|TTO|TUN|TUR|TUV|TWN|TZA|UGA|UKR|UMI|URY|USA|UZB|VAT|VCT|VEN|VGB|VIR|VNM|VUT|WLF|WSM|YEM|ZAF|ZMB|ZWE|D\\?<\\?<|GBD|GBN|GBO|GBP|GBS|RKS|EUE|UNO|UNA|UNK|XBA|XIM|XCC|XCE|XCO|XEC|XPO|XES|XMP|XOM|XDC|XXA|XXB|XXC|XXX'
+split = '(?:\\?<)+'
+skip = '^X+$|XXX'
+line_length = [32, 52]
+
+# The names on a TD1 ID card's third line (30 characters), under its first
+# line (the code «I», «A» or «C», type, state and document number) and its
+# second (birth date, check digit, sex, expiry date, check digit,
+# nationality): "ERIKSSON<<ANNA<MARIA<<<<<<<<<<". Each part is a PERSON
+# span as on a passport (above), escapes, hard breaks, masks and states
+# alike; the first two lines stay unmarked. The lines may stand in a
+# blockquote or a paragraph each (a blank line between). Each line has 26
+# to 34 characters, for OCR's lost or extra fillers.
+[[span]]
+category = "PERSON"
+pattern = '(?m)(?P<lead>^(?P<mark>{indent})[IAC](?:[A-Z]|\\?<)?(?:{state})(?:[A-Z0-9]|\\?<)+{end}(?P<mark2>{indent})[0-9]{6}(?:[0-9]|\\?<)(?:[MFX]|\\?<)[0-9]{6}(?:[0-9]|\\?<)(?:[A-Z]|\\?<){3}(?:[A-Z0-9]|\\?<)*{end}(?P<mark3>{indent}))(?:{surname}(?:\\?<){2}(?:{given})?)(?P<tail>(?:\\?<)*[\p{Zs}\t]*\\?[\p{Zs}\t\r]*$)'
+parts.indent = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*'
+parts.end = '[\p{Zs}\t]*\\?\r?\n(?:[\p{Zs}\t]*\r?\n)?'
+parts.surname = '[A-Z]+(?:\\?<[A-Z]+)*'
+parts.given = '[A-Z]+(?:(?:\\?<){1,2}[A-Z]+)*'
+parts.state = 'ABW|AFG|AGO|AIA|ALA|ALB|AND|ARE|ARG|ARM|ASM|ATA|ATF|ATG|AUS|AUT|AZE|BDI|BEL|BEN|BES|BFA|BGD|BGR|BHR|BHS|BIH|BLM|BLR|BLZ|BMU|BOL|BRA|BRB|BRN|BTN|BVT|BWA|CAF|CAN|CCK|CHE|CHL|CHN|CIV|CMR|COD|COG|COK|COL|COM|CPV|CRI|CUB|CUW|CXR|CYM|CYP|CZE|DEU|DJI|DMA|DNK|DOM|DZA|ECU|EGY|ERI|ESH|ESP|EST|ETH|FIN|FJI|FLK|FRA|FRO|FSM|GAB|GBR|GEO|GGY|GHA|GIB|GIN|GLP|GMB|GNB|GNQ|GRC|GRD|GRL|GTM|GUF|GUM|GUY|HKG|HMD|HND|HRV|HTI|HUN|IDN|IMN|IND|IOT|IRL|IRN|IRQ|ISL|ISR|ITA|JAM|JEY|JOR|JPN|KAZ|KEN|KGZ|KHM|KIR|KNA|KOR|KWT|LAO|LBN|LBR|LBY|LCA|LIE|LKA|LSO|LTU|LUX|LVA|MAC|MAF|MAR|MCO|MDA|MDG|MDV|MEX|MHL|MKD|MLI|MLT|MMR|MNE|MNG|MNP|MOZ|MRT|MSR|MTQ|MUS|MWI|MYS|MYT|NAM|NCL|NER|NFK|NGA|NIC|NIU|NLD|NOR|NPL|NRU|NZL|OMN|PAK|PAN|PCN|PER|PHL|PLW|PNG|POL|PRI|PRK|PRT|PRY|PSE|PYF|QAT|REU|ROU|RUS|RWA|SAU|SDN|SEN|SGP|SGS|SHN|SJM|SLB|SLE|SLV|SMR|SOM|SPM|SRB|SSD|STP|SUR|SVK|SVN|SWE|SWZ|SXM|SYC|SYR|TCA|TCD|TGO|THA|TJK|TKL|TKM|TLS|TON|TTO|TUN|TUR|TUV|TWN|TZA|UGA|UKR|UMI|URY|USA|UZB|VAT|VCT|VEN|VGB|VIR|VNM|VUT|WLF|WSM|YEM|ZAF|ZMB|ZWE|D\\?<\\?<|GBD|GBN|GBO|GBP|GBS|RKS|EUE|UNO|UNA|UNK|XBA|XIM|XCC|XCE|XCO|XEC|XPO|XES|XMP|XOM|XDC|XXA|XXB|XXC|XXX'
+split = '(?:\\?<)+'
+skip = '^X+$|XXX'
+line_length = [26, 34]
