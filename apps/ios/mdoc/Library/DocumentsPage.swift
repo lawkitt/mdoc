@@ -82,7 +82,7 @@ struct DocumentsPage: View {
                         Label("Scan", systemImage: "doc.viewfinder")
                             .labelStyle(.titleAndIcon)
                     }
-                    .accentProminent()
+                    .primaryAction()
                     .accessibilityIdentifier("scan-button")
                 }
                 Spacer()

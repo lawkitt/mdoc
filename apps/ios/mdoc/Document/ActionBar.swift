@@ -43,7 +43,7 @@ struct ActionBar: View {
                 Button("Cancel", role: .cancel) {
                     model.cancelJob()
                 }
-                .buttonStyle(.bordered)
+                .secondaryAction()
             }
         case .waiting:
             Text("Waiting for another document to finish.")
@@ -58,7 +58,7 @@ struct ActionBar: View {
                     Label("Review", systemImage: "list.bullet.rectangle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .secondaryAction()
                 primary("Replace \(count)", systemImage: "eye.slash") {
                     model.replaceAllPending()
                 }
@@ -76,7 +76,7 @@ struct ActionBar: View {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
-                .accentProminent()
+                .primaryAction()
                 .accessibilityLabel(Text("Share reply"))
                 .accessibilityIdentifier("share-reply")
                 Button {
@@ -85,7 +85,7 @@ struct ActionBar: View {
                     Label("Copy", systemImage: "doc.on.doc")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .secondaryAction()
                 .accessibilityLabel(Text("Copy reply"))
                 .accessibilityIdentifier("copy-reply")
                 pasteReply(accessibilityLabel: "Paste another reply")
@@ -110,7 +110,7 @@ struct ActionBar: View {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
-                .accentProminent()
+                .primaryAction()
                 .contextMenu {
                     Button {
                         model.share(asFile: true)
@@ -128,7 +128,7 @@ struct ActionBar: View {
                     Label("Copy", systemImage: "doc.on.doc")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .secondaryAction()
                 .accessibilityHint(Text("Copies the text for an AI app, with the note about placeholders."))
                 .accessibilityIdentifier("copy-for-ai")
                 pasteReply(accessibilityLabel: "Paste reply")
@@ -143,7 +143,7 @@ struct ActionBar: View {
             Label("Paste", systemImage: "arrow.uturn.backward")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier("paste-reply")
     }
@@ -168,7 +168,7 @@ struct ActionBar: View {
             Label(title, systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         }
-        .accentProminent()
+        .primaryAction()
         .accessibilityIdentifier("primary-action")
     }
 

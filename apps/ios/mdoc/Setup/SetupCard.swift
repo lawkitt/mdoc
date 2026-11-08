@@ -36,7 +36,7 @@ struct SetupCard: View {
                     Button("Cancel", role: .cancel) {
                         model.cancel()
                     }
-                    .buttonStyle(.bordered)
+                    .secondaryAction()
                     .accessibilityIdentifier("setup-cancel")
                 }
                 .lineLimit(1)
@@ -226,7 +226,7 @@ struct UseCellularButton: View {
         } label: {
             Label("Use cellular", systemImage: "antenna.radiowaves.left.and.right")
         }
-        .buttonStyle(.bordered)
+        .secondaryAction()
         .accessibilityHint(Text("Asks before downloading over cellular."))
         .accessibilityIdentifier("setup-use-cellular")
     }

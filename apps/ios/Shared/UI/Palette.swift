@@ -89,35 +89,3 @@ extension Color {
     /// Words and symbols on an accent fill (`UIColor.onAccent`).
     static let onAccent = Color(uiColor: .onAccent)
 }
-
-extension View {
-    /// The filled accent button (Replace N, Share, the review bar's
-    /// Replace): the accent's fill with the words that read on it, white in
-    /// light mode and black in dark mode. The system's filled button keeps
-    /// white words whatever its fill, and they vanish on near-white. A
-    /// disabled one has grey words on the greyed fill.
-    func accentProminent() -> some View {
-        modifier(AccentProminent())
-    }
-
-    /// A text-only button ("Select", "Not now", "Try a sample"): the primary
-    /// text colour at medium weight, so it stands out without a colour
-    /// (ADR 0099).
-    func textAction() -> some View {
-        tint(.primary)
-            .fontWeight(.medium)
-    }
-}
-
-/// `accentProminent()`: the on-accent words only while the button can be
-/// tapped; a disabled one has the secondary colour on the greyed fill.
-private struct AccentProminent: ViewModifier {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func body(content: Content) -> some View {
-        content
-            .buttonStyle(.borderedProminent)
-            .tint(Color.ink)
-            .foregroundStyle(isEnabled ? Color.onAccent : Color.secondary)
-    }
-}
