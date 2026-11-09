@@ -611,6 +611,10 @@ final class CandidateTextView: RenderedTextView {
     var onEdited: (() -> Void)?
     /// Edit mode's undo: the core's, never UIKit's own (`CoreUndoManager`).
     let coreUndo = CoreUndoManager()
+    /// Edit mode's watch on the text storage (`watchStorage`).
+    var storageObserver: NSObjectProtocol?
+    /// Each edit of the storage's characters, as it is processed.
+    var onStorageEdit: ((NSTextStorage) -> Void)?
 
     /// Editable, with the core behind it.
     var isEditMode: Bool { isEditable && editActions != nil }

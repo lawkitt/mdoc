@@ -241,6 +241,29 @@ final class EditModeTests: XCTestCase {
         }
     }
 
+    // MARK: Find and replace
+
+    /// The find bar's Replace and Replace All are UIKit's own storage edits,
+    /// which no delegate call announces: each reaches the core as an edit
+    /// of its own, so an alias between two matches keeps restoring.
+    func testFindBarReplacementsAreCoreEdits() throws {
+        let harness = try harness(text: "The rent is due. Maya Bennett pays the rent.\n")
+        _ = try harness.session.replaceAllPending()
+        harness.model.refresh()
+        show(harness)
+        edit(harness)
+        let storage = harness.view.textStorage
+        for match in ["rent", "rent"] {
+            // Last match first, as a replace-all keeps earlier places.
+            let range = (storage.string as NSString).range(of: match, options: .backwards)
+            storage.replaceCharacters(in: range, with: "fee")
+        }
+        harness.view.onEdited?()
+        XCTAssertEqual(harness.shown, "The fee is due. PERSON_1 pays the fee.\n")
+        XCTAssertEqual(coreText(harness), harness.shown)
+        XCTAssertEqual(harness.session.snapshot().counts?.replaced, 1, "the alias between the matches still restores")
+    }
+
     // MARK: Clipboard and menu
 
     func testCutAndPasteStayInMdoc() throws {

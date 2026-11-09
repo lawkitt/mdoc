@@ -67,6 +67,10 @@ extension MarkdownTextView.Coordinator {
             guard let self, let view else { return }
             self.bridge.didChange(view)
         }
+        view.onStorageEdit = { [weak self, weak view] storage in
+            guard let self, let view else { return }
+            self.bridge.storageEdited(storage, in: view)
+        }
         bridge.send = { range, text in actions?.typed(range, text) }
         bridge.endTyping = { actions?.caretMoved() }
         bridge.onTyped = { [weak self] typed in self?.shownTextChanged(to: typed.textRevision) }
@@ -219,6 +223,7 @@ extension CandidateTextView {
         accessibilityHint = on
             ? String(localized: "Edits the text. Changes save as you type.")
             : String(localized: "Underlined words are names mdoc found. Use the Candidates rotor to move between them.")
+        watchStorage(on)
         guard on else {
             resignFirstResponder()
             return
@@ -242,6 +247,35 @@ extension CandidateTextView {
         InAppClipboard.shared.write(text)
         replace(range, withText: "")
         onEdited?()
+    }
+
+    /// A change UIKit makes without telling the delegate (the find bar's
+    /// Replace and Replace All) still reaches the core: each edit of the
+    /// characters is noted as it happens, so separate replacements stay
+    /// separate core edits, and once the change is over the typing path
+    /// syncs it. A change the delegate saw is synced already, and nothing
+    /// is sent again.
+    func watchStorage(_ on: Bool) {
+        if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
+        storageObserver = nil
+        guard on else { return }
+        storageObserver = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: textStorage, queue: nil
+        ) { [weak self] notification in
+            guard (notification.object as? NSTextStorage)?.editedMask.contains(.editedCharacters) == true else { return }
+            MainActor.assumeIsolated { self?.charactersEdited() }
+        }
+    }
+
+    /// `watchStorage`'s step: the edit is noted now, while the storage
+    /// still knows its range, and synced once the change is over.
+    private func charactersEdited() {
+        guard isEditMode else { return }
+        onStorageEdit?(textStorage)
+        Task { @MainActor [weak self] in
+            guard let self, self.isEditMode else { return }
+            self.onEdited?()
+        }
     }
 
     func pasteClipboard() {

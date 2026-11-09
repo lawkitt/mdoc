@@ -65,6 +65,19 @@ final class TypingBridge {
         return true
     }
 
+    /// An edit of the text storage's characters, as UIKit processes it.
+    /// Outside a change the delegate announced (the find bar's Replace and
+    /// Replace All), it is noted as that change's edit: the range it had
+    /// before and the text it holds now.
+    func storageEdited(_ storage: NSTextStorage, in view: UITextView) {
+        guard !changing else { return }
+        if view.markedTextRange != nil { composing = true }
+        let edited = storage.editedRange
+        let before = NSRange(location: edited.location, length: edited.length - storage.changeInLength)
+        guard edited.location != NSNotFound, before.length >= 0 else { return }
+        announced.append((before, (storage.string as NSString).substring(with: edited)))
+    }
+
     /// Return (ADR 0109): a plain newline in this slice. The editor core's
     /// list continuation (`wsl/editor-core-ffi`) takes over here: ask it for
     /// the edit Return makes at `range`, apply that through the text view's
