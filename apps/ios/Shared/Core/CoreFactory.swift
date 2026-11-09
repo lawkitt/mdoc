@@ -25,7 +25,7 @@ enum CoreFactory {
         let defaults = UserDefaults(suiteName: MdocStorage.appGroup)
         if launch.isUITesting {
             let storage = try MdocStorage.shared(folder: uiTestingFolder)
-            clearKeepingDetector(storage)
+            if !launch.keepsLibrary { clearKeepingDetector(storage) }
             if launch.detectorTier && launch.realDownloads, let library = try? MdocStorage.shared() {
                 reuseDetector(from: library, into: storage)
             }

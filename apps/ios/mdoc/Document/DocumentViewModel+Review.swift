@@ -192,8 +192,10 @@ extension DocumentViewModel {
 
     // MARK: Undo
 
-    var canUndo: Bool { snapshot.canUndo }
-    var canRedo: Bool { snapshot.canRedo }
+    /// What Undo and Redo reach now, edits typed since the snapshot
+    /// included (ADR 0109).
+    var canUndo: Bool { typing.canUndo ?? snapshot.canUndo }
+    var canRedo: Bool { typing.canRedo ?? snapshot.canRedo }
 
     /// Undo: the bar moves back to what it undid. No toast: the change and
     /// a haptic say it, and an earlier toast's Undo goes, since it would
@@ -204,7 +206,10 @@ extension DocumentViewModel {
         guard perform(undoable: false, { try session.undo() }) else { return }
         Haptics.warning()
         let step = snapshot.redoStep
-        updateReview { $0.follow(step) }
+        // In edit mode the bar stays hidden: the text shows what changed,
+        // and the notice names the step (ADR 0109).
+        if !isEditing { updateReview { $0.follow(step) } }
+        announceEditUndo(true)
         toast = nil
         UIAccessibility.post(
             notification: .announcement,
@@ -215,7 +220,7 @@ extension DocumentViewModel {
         guard canRedo, !reviewWaitsForJob() else { return }
         guard perform(undoable: false, { try session.redo() }) else { return }
         let step = snapshot.undoStep
-        updateReview { $0.follow(step) }
+        if !isEditing { updateReview { $0.follow(step) } }
         toast = ToastMessage(
             text: step.map { String(localized: "Redid \($0.label)") } ?? String(localized: "Redone"),
             actionTitle: String(localized: "Undo"), action: { [weak self] in self?.undoTapped() })
@@ -440,11 +445,11 @@ extension DocumentViewModel {
     /// Mirrors each core step in the window's undo manager, so shake to
     /// undo, the three-finger swipe and ⌘Z reach the same history as the
     /// bar's Undo (ADR 0098).
-    func registerSystemUndo() {
+    func registerSystemUndo(label: String? = nil) {
         systemUndoSteps = min(systemUndoSteps + 1, Self.systemUndoLevels)
         guard let manager = systemUndo else { return }
         manager.registerUndo(withTarget: self) { $0.undoFromSystem() }
-        manager.setActionName(snapshot.undoStep?.label ?? "")
+        manager.setActionName(label ?? snapshot.undoStep?.label ?? "")
     }
 
     /// As many steps as the core keeps (`DocumentSession`, 256).

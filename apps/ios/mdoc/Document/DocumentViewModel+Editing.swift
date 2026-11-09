@@ -1,0 +1,148 @@
+import Foundation
+import MdocFFI
+
+/// Typing between the core's snapshots (ADR 0109): what the last typed edit
+/// answered, until a snapshot is newer, and the pending discovery.
+struct TypingState {
+    /// The text revision the last typed edit left; nil before any typing.
+    var revision: UInt64?
+    /// Undo and Redo as the last typed edit left them; nil when the
+    /// snapshot is newer.
+    var canUndo: Bool?
+    var canRedo: Bool?
+    /// The one-line hint about an edited alias has shown in this edit
+    /// session.
+    var hintedAlias = false
+    /// Discovery, once typing pauses.
+    var discovery: Task<Void, Never>?
+
+    /// A snapshot newer than any typed edit came: it says what Undo does.
+    mutating func settled(at snapshot: DocumentSnapshot) {
+        revision = snapshot.textRevision
+        canUndo = nil
+        canRedo = nil
+    }
+}
+
+/// Edit mode (ADR 0109): Edit on the document screen (⌘E), typing into the
+/// core as "Typing" steps in the one undo line, discovery and the save once
+/// typing pauses, and Done. In this slice the text is edited with Show
+/// Markdown on; the rendered view stays read-only.
+extension DocumentViewModel {
+    /// Why Edit waits: OCR or Find names runs for this document, and an
+    /// edit would make the core throw its result away.
+    var editBlockedReason: String? {
+        guard let job = runningJob else { return nil }
+        return job.kind == .scan
+            ? String(localized: "Finding names. Edit when it finishes.")
+            : String(localized: "Recognizing. Edit when it finishes.")
+    }
+
+    /// The document has text to edit: read, and not empty.
+    var hasEditableText: Bool {
+        snapshot.phase != nil && !snapshot.markdown.isEmpty
+    }
+
+    /// Edit: the keyboard comes up on the text; the review bar closes.
+    func enterEditMode() {
+        guard hasEditableText, !isEditing else { return }
+        if let reason = editBlockedReason {
+            say(reason, symbol: "hourglass")
+            return
+        }
+        if isReviewing { endReview() }
+        toast = nil
+        typing = TypingState(revision: snapshot.textRevision)
+        if pane != .text && !layout.isRegular { show(.text) }
+        isEditing = true
+    }
+
+    /// Done: back to review. Discovery runs now rather than after the
+    /// pause, and the typing is saved then rather than after it.
+    func doneEditing() {
+        guard isEditing else { return }
+        // The text as typed, before review shows it: the snapshot is older.
+        applyReview(session.snapshot())
+        isEditing = false
+        session.endTyping()
+        typing.discovery?.cancel()
+        typing.discovery = nil
+        Task {
+            await discoverNow()
+            do {
+                try session.saveChanges()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// One committed edit from the text view: the core's answer, or nil
+    /// when it refused (the view then syncs again).
+    func typed(_ range: SourceRange, _ text: String) -> Typed? {
+        guard isEditing else { return nil }
+        let typed: Typed
+        do {
+            typed = try session.type(range, text)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+        typing.revision = typed.textRevision
+        typing.canUndo = typed.canUndo
+        typing.canRedo = typed.canRedo
+        // Each new typing step mirrors on the window's undo stack, as a
+        // review step does (ADR 0098).
+        if typed.newStep { registerSystemUndo(label: String(localized: "Typing")) }
+        if typed.brokeAlias && !typing.hintedAlias {
+            typing.hintedAlias = true
+            say(String(localized: "You edited an alias: that mention no longer restores."), symbol: "info.circle")
+        }
+        scheduleDiscovery()
+        return typed
+    }
+
+    /// The caret moved away: the next keystroke starts a new undo step.
+    func caretMoved() {
+        session.endTyping()
+    }
+
+    /// The core's text, for the view to sync to when the two differ. Not
+    /// shown as a snapshot: the view is about to change the core's text.
+    func coreText() -> String {
+        session.snapshot().markdown
+    }
+
+    /// Discovery once typing pauses (ADR 0109); a keystroke before then
+    /// starts the wait again.
+    private func scheduleDiscovery() {
+        typing.discovery?.cancel()
+        typing.discovery = Task { [weak self] in
+            // timing: typing pauses this long before discovery (ADR 0109)
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.discoverNow()
+        }
+    }
+
+    /// Runs discovery off the main thread and shows its snapshot, unless
+    /// typing changed the text meanwhile: the next pause runs it again.
+    func discoverNow() async {
+        let session = session
+        let revision = typing.revision
+        let found = await Task.detached(priority: .userInitiated) { try? session.discover() }.value
+        guard let found, revision == typing.revision, found.textRevision == revision else { return }
+        applyReview(found)
+    }
+
+    /// Undo and Redo in edit mode name the step they reached (ADR 0109).
+    func announceEditUndo(_ undid: Bool) {
+        guard isEditing else { return }
+        let step = undid ? snapshot.redoStep : snapshot.undoStep
+        say(
+            undid
+                ? step.map { String(localized: "Undid \($0.label)") } ?? String(localized: "Undone")
+                : step.map { String(localized: "Redid \($0.label)") } ?? String(localized: "Redone"),
+            symbol: undid ? "arrow.uturn.backward" : "arrow.uturn.forward")
+    }
+}

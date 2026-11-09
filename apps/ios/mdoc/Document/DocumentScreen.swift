@@ -74,7 +74,15 @@ struct DocumentScreen: View {
                 model.attachSystemUndo(undoManager, for: screenID)
                 model.refresh()
             }
-            .onDisappear { model.detachSystemUndo(for: screenID) }
+            .onDisappear {
+                // Leaving the document ends edit mode; its save follows (ADR 0109).
+                model.doneEditing()
+                model.detachSystemUndo(for: screenID)
+            }
+            // The rendered view stays read-only in this slice (ADR 0109).
+            .onChange(of: preferences.showsSource) { _, shows in
+                if !shows { model.doneEditing() }
+            }
             // Where Identities show follows the window (ADR 0104).
             .onChange(of: layout, initial: true) { _, layout in model.windowChanged(to: layout) }
     }
@@ -172,7 +180,42 @@ struct DocumentScreen: View {
             onReplace: { model.markSelection($0) },
             onReviewNext: { model.reviewNext() },
             onMenu: { model.menuOpened(on: $0) },
-            menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } })
+            menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } },
+            edit: model.isEditing ? EditActions(model) : nil,
+            findBar: model.findBarRequest)
+    }
+
+    /// Edit is offered with Show Markdown on, while the text shows; Done
+    /// ends edit mode (ADR 0109).
+    private var offersEdit: Bool {
+        preferences.showsSource && model.hasEditableText && (isRegular || model.pane == .text)
+    }
+
+    @ViewBuilder
+    private var editButton: some View {
+        if model.isEditing {
+            Button {
+                model.doneEditing()
+            } label: {
+                Text("Done").fontWeight(.semibold)
+            }
+            .keyboardShortcut("e", modifiers: .command)
+            .accessibilityLabel(Text("Done editing"))
+            .accessibilityHint(Text("Back to reviewing names. Your changes are saved."))
+            .accessibilityIdentifier("done-editing")
+        } else if offersEdit {
+            Button {
+                model.enterEditMode()
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .keyboardShortcut("e", modifiers: .command)
+            // Waiting for a job: it says why when tapped (ADR 0109).
+            .foregroundStyle(model.editBlockedReason == nil ? Color.accentColor : Color.secondary)
+            .accessibilityLabel(Text("Edit text"))
+            .accessibilityHint(model.editBlockedReason.map { Text($0) } ?? Text("Edits the document's text."))
+            .accessibilityIdentifier("edit-button")
+        }
     }
 
     private enum PickerSource: Identifiable, Hashable {
@@ -286,6 +329,7 @@ struct DocumentScreen: View {
         }
         // One group: beside a title menu, separate items overflow into More.
         ToolbarItemGroup(placement: .topBarTrailing) {
+            editButton
             Button {
                 model.showIdentities(!model.identitiesShowing)
             } label: {
@@ -295,7 +339,8 @@ struct DocumentScreen: View {
             .accessibilityIdentifier("identities-button")
             Menu {
                 Button {
-                    model.showsFind = true
+                    // Editing: the system find bar, with Replace (ADR 0109).
+                    if model.isEditing { model.findBarRequest += 1 } else { model.showsFind = true }
                 } label: {
                     Label("Find in document", systemImage: "magnifyingglass")
                 }
@@ -337,26 +382,37 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if model.isReviewing && model.runningJob == nil {
+        if model.isEditing {
+            // Edit mode: no review bar and no Find names (ADR 0109); a
+            // notice (the alias hint, what Undo undid) shows above the keys.
+            if let notice = model.notice {
+                noticeLabel(notice)
+                    .padding(.vertical, 6)
+            }
+        } else if model.isReviewing && model.runningJob == nil {
             ReviewBar(model: model, detailsHeight: ReviewBarMetrics.detailsHeight(screen: screenHeight))
         } else {
             actionBottomBar
         }
     }
 
+    private func noticeLabel(_ notice: String) -> some View {
+        Label(notice, systemImage: model.noticeSymbol)
+            .font(.subheadline)
+            // Grows with the bar's text, no further (see `layout`).
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.thinMaterial, in: Capsule())
+            .accessibilityIdentifier("notice")
+            .task(id: notice) { await model.noticeShown(notice) }
+    }
+
     private var actionBottomBar: some View {
         VStack(spacing: 8) {
             if let notice = model.notice {
-                Label(notice, systemImage: model.noticeSymbol)
-                    .font(.subheadline)
-                    // Grows with the bar's text, no further (see `layout`).
-                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.thinMaterial, in: Capsule())
-                    .accessibilityIdentifier("notice")
-                    .task(id: notice) { await model.noticeShown(notice) }
+                noticeLabel(notice)
             }
             if let needs = model.setupNeeds, setup.isWorking || !setup.missing(needs).isEmpty {
                 // The card's download, of the model this job needs, is the

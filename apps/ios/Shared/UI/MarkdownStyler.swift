@@ -23,6 +23,9 @@ struct MarkdownStyler {
     /// The text column's width, which tables are laid out for; nil leaves
     /// tables as source lines.
     var width: CGFloat?
+    /// Edit mode (ADR 0109): candidates are no links and their underlines
+    /// dimmed; applied aliases are tinted, so an edit into one shows.
+    var editing = false
 
     static func link(for id: CandidateID) -> URL {
         var components = URLComponents()
@@ -181,6 +184,10 @@ struct MarkdownStyler {
 
         for candidate in candidates {
             guard let range = clamp(candidate.range) else { continue }
+            if editing {
+                text.addAttributes(Self.editingAttributes(of: candidate, dark: traits.userInterfaceStyle == .dark), range: range)
+                continue
+            }
             let colour = candidate.category.uiColor
             var attributes: [NSAttributedString.Key: Any] = [
                 .link: Self.link(for: candidate.id),
@@ -256,6 +263,34 @@ struct MarkdownStyler {
         }
         return [:]
     }
+
+    /// A candidate in edit mode (ADR 0109): no link, so a tap places the
+    /// caret; a proposal's underline thin and faint; an applied alias
+    /// tinted in its category's colour, in the text's own font, so typing
+    /// into it reads as typing; a kept original's dotted line as in review.
+    static func editingAttributes(of candidate: Candidate, dark: Bool) -> [NSAttributedString.Key: Any] {
+        let colour = candidate.category.uiColor
+        var attributes: [NSAttributedString.Key: Any] = [
+            .accessibilityTextCustom: [spokenState(of: candidate)],
+        ]
+        switch candidate.state {
+        case .proposed:
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            attributes[.underlineColor] = colour.withAlphaComponent(0.45)
+        case .replaced:
+            attributes[.backgroundColor] = colour.withAlphaComponent(fill(dark: dark).replaced)
+        case .kept:
+            attributes[.underlineStyle] = NSUnderlineStyle.single.union(.patternDot).rawValue
+            attributes[.underlineColor] = UIColor.quaternaryLabel
+        }
+        return attributes
+    }
+
+    /// The keys a candidate's look sets in edit mode or in review: what
+    /// typed text never inherits from the character before it.
+    static let candidateKeys: [NSAttributedString.Key] = [
+        .link, .backgroundColor, .underlineStyle, .underlineColor, .mdocOutline, .accessibilityTextCustom,
+    ]
 
     /// What VoiceOver adds after a candidate's words.
     static func spokenState(of candidate: Candidate) -> String {

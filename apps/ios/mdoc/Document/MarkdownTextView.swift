@@ -31,6 +31,15 @@ struct MarkdownTextView: UIViewRepresentable {
     var onMenu: (CandidateID) -> Void = { _ in }
     /// A candidate's long-press menu (ADR 0098); nil leaves none.
     var menu: (CandidateID) -> UIMenu? = { _ in nil }
+    /// Edit mode (ADR 0109), with Show Markdown on only in this slice: the
+    /// text is editable and typing reaches the core through these. Nil in
+    /// review.
+    var edit: EditActions?
+    /// Bumped to show the system find bar (Replace in edit mode).
+    var findBar = 0
+
+    /// The text is edited now: edit actions given, and the source shown.
+    var editing: Bool { edit != nil && !rendered }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -51,6 +60,9 @@ struct MarkdownTextView: UIViewRepresentable {
         view.accessibilityIdentifier = "document-text"
         view.accessibilityHint = String(localized: "Underlined words are names mdoc found. Use the Candidates rotor to move between them.")
         view.installAccessibility()
+        // The system find bar, in both modes; Replace only while editable
+        // (ADR 0109).
+        view.isFindInteractionEnabled = true
         context.coordinator.attach(to: view)
         return view
     }
@@ -70,6 +82,7 @@ struct MarkdownTextView: UIViewRepresentable {
         var styling: MarkdownStyling
         var candidates: [Candidate]
         var rendered: Bool
+        var editing: Bool
         var serif: Bool
         var dynamicTypeSize: DynamicTypeSize
         var colorScheme: ColorScheme
@@ -80,13 +93,15 @@ struct MarkdownTextView: UIViewRepresentable {
             styling = view.snapshot.styling
             candidates = view.snapshot.candidates
             rendered = view.rendered
+            editing = view.editing
             serif = view.serif
             self.dynamicTypeSize = dynamicTypeSize
             self.colorScheme = colorScheme
         }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
-            guard lhs.candidates == rhs.candidates, lhs.rendered == rhs.rendered, lhs.serif == rhs.serif,
+            guard lhs.candidates == rhs.candidates, lhs.rendered == rhs.rendered, lhs.editing == rhs.editing,
+                  lhs.serif == rhs.serif,
                   lhs.dynamicTypeSize == rhs.dynamicTypeSize, lhs.colorScheme == rhs.colorScheme else { return false }
             if let left = lhs.textRevision, let right = rhs.textRevision { return left == right }
             return lhs.textRevision == rhs.textRevision && lhs.markdown == rhs.markdown && lhs.styling == rhs.styling
@@ -149,6 +164,12 @@ struct MarkdownTextView: UIViewRepresentable {
         /// An animated reveal's scroll is running: it lands at its end.
         private var scrolling = false
         nonisolated(unsafe) private var foreground: NSObjectProtocol?
+        /// Edit mode's typing path to the core (ADR 0109).
+        let bridge = TypingBridge()
+        /// A restyle that waits for marked (IME) text to be committed.
+        var restyleAfterComposing = false
+        /// The find bar request last shown.
+        var shownFindBar = 0
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -181,6 +202,7 @@ struct MarkdownTextView: UIViewRepresentable {
         func update(_ view: CandidateTextView, with parent: MarkdownTextView, dynamicTypeSize: DynamicTypeSize, colorScheme: ColorScheme) {
             self.parent = parent
             view.onReviewNext = parent.onReviewNext
+            connectEditing(view)
             let content = ContentKey(parent, dynamicTypeSize: dynamicTypeSize, colorScheme: colorScheme)
             let decoration = DecorationKey(selected: parent.selected, scoped: parent.scoped)
             if let reveal = parent.reveal, reveal.id != takenReveal {
@@ -207,6 +229,18 @@ struct MarkdownTextView: UIViewRepresentable {
                 }
             }
             if pendingReveal != nil { view.setNeedsLayout() }
+            view.setEditMode(parent.editing)
+            if parent.findBar != shownFindBar {
+                shownFindBar = parent.findBar
+                view.findInteraction?.presentFindNavigator(showingReplace: view.isEditable)
+            }
+        }
+
+        /// Typing changed the shown text, to the core's `revision`: a
+        /// snapshot of that text needs no rebuild, and one of any other,
+        /// even the text before the typing (an undo), does.
+        func shownTextChanged(to revision: UInt64) {
+            content?.textRevision = revision
         }
 
         /// Builds the styled document for `content`.
@@ -391,10 +425,20 @@ struct MarkdownTextView: UIViewRepresentable {
             // Built undecorated, its candidates' stretches noted, then
             // decorated as a selection change recolours them, so the two
             // never differ; the view gets the text decorated already.
-            let styler = MarkdownStyler(
+            var styler = MarkdownStyler(
                 traits: view.traitCollection, selected: nil, scoped: [], rendered: parent.rendered,
                 width: width > 0 ? width : nil)
+            styler.editing = parent.editing
             var document = styler.document(for: snapshot)
+            if parent.editing {
+                // The view's string is the source while editing: restyled
+                // in place, never replaced (ADR 0109). A snapshot older than
+                // the typing waits for the pause's.
+                if let latest = parent.edit?.revision(), snapshot.textRevision != latest,
+                   view.textStorage.string != snapshot.markdown { return }
+                showEditing(document.text, in: view)
+                return
+            }
             let text = NSMutableAttributedString(attributedString: document.text)
             var cells: [DecoratedRun.Place: NSMutableAttributedString] = [:]
             for (table, rendered) in document.tables.enumerated() {
@@ -503,7 +547,7 @@ struct MarkdownTextView: UIViewRepresentable {
         }
 
         func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
-            guard case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) else {
+            guard !textView.isEditable, case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) else {
                 return nil
             }
             return UIAction { [weak self] _ in
@@ -513,7 +557,7 @@ struct MarkdownTextView: UIViewRepresentable {
 
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             // A candidate's tap opens the bar; its long press, its menu.
-            if case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
+            if !textView.isEditable, case .link(let url) = textItem.content, let id = MarkdownStyler.candidateID(from: url) {
                 parent.onMenu(id)
                 return parent.menu(id).map { UITextItem.MenuConfiguration(menu: $0) }
             }
@@ -524,6 +568,8 @@ struct MarkdownTextView: UIViewRepresentable {
         /// never a plain Copy, Share, Look Up or Translate of the selection
         /// (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            // Edit mode: Cut, Copy, Paste and Select All only (ADR 0109).
+            if textView.isEditable { return CandidateTextView.editMenu(from: suggestedActions) }
             guard range.length > 0 else { return UIMenu(children: []) }
             // A selection in the main text that runs into a folded table
             // holds hidden source: no Replace… (ADR 0096). Cells are their
@@ -558,6 +604,20 @@ final class CandidateTextView: RenderedTextView {
 
     var rotorItems: [RotorItem] = []
     var onReviewNext: (() -> Void)?
+    /// Edit mode's actions (ADR 0109); nil in review.
+    var editActions: EditActions?
+    /// After a change made through the view's own API (Paste, Cut, a find
+    /// replacement): the typing path syncs it.
+    var onEdited: (() -> Void)?
+    /// Edit mode's undo: the core's, never UIKit's own (`CoreUndoManager`).
+    let coreUndo = CoreUndoManager()
+
+    /// Editable, with the core behind it.
+    var isEditMode: Bool { isEditable && editActions != nil }
+
+    override var undoManager: UndoManager? {
+        isEditMode ? coreUndo : super.undoManager
+    }
 
     /// VoiceOver reads what the rendered view shows (ADR 0096): hidden
     /// markers and folded table source come back as word joiners, so
@@ -566,6 +626,8 @@ final class CandidateTextView: RenderedTextView {
     /// is off here, so nothing else takes text from this.
     override func text(in range: UITextRange) -> String? {
         guard let text = super.text(in: range) else { return nil }
+        // Editing shows the source: nothing hidden, nothing to speak apart.
+        if isEditable { return text }
         return attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
     }
 
@@ -587,6 +649,7 @@ final class CandidateTextView: RenderedTextView {
 
     override var accessibilityValue: String? {
         get {
+            if isEditable { return super.accessibilityValue }
             if let spokenValue { return spokenValue }
             let value = attributedText.spoken(attributedText.string, at: 0)
             spokenValue = value
@@ -603,10 +666,22 @@ final class CandidateTextView: RenderedTextView {
     ]
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        Self.allowedActions.contains(action)
+        if isEditMode { return canPerformEditAction(action, withSender: sender) }
+        if Self.findActions.contains(action) { return super.canPerformAction(action, withSender: sender) }
+        return Self.allowedActions.contains(action)
     }
 
-    override func copy(_ sender: Any?) {}
+    override func copy(_ sender: Any?) {
+        if isEditMode { copySelection() }
+    }
+
+    override func cut(_ sender: Any?) {
+        if isEditMode { cutSelection() }
+    }
+
+    override func paste(_ sender: Any?) {
+        if isEditMode { pasteClipboard() }
+    }
 
     func installAccessibility() {
         let rotor = UIAccessibilityCustomRotor(name: String(localized: "Candidates")) { [weak self] predicate in

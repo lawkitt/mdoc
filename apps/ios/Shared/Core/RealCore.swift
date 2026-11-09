@@ -160,6 +160,8 @@ final class RealLibrary: Library, @unchecked Sendable {
     fileprivate let saveQueue = DispatchQueue(label: "io.github.lawkitt.mdoc.save", qos: .utility)
     /// How long taps pause before their save; the tests shorten it.
     var savePause = SaveScheduler.pause
+    /// How long typing pauses before its save (ADR 0109); the tests shorten it.
+    var typingPause = SaveScheduler.typingPause
     private var saveObserver: (@MainActor @Sendable (SaveEvent) -> Void)?
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
@@ -886,10 +888,28 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return snapshot(of: review, path: ffi.info()?.path)
     }
 
+    // MARK: Edit mode (ADR 0109)
+
+    func type(_ range: SourceRange, _ text: String) throws -> Typed {
+        let typed = try core { try ffi.typeText(range: range.textRange, text: text) }
+        // Typing saves once it pauses, as taps do, only later (ADR 0109).
+        scheduleSave(pause: library.typingPause)
+        return typed
+    }
+
+    func endTyping() {
+        ffi.endTyping()
+    }
+
+    func discover() throws -> DocumentSnapshot {
+        let review = try core { try ffi.discover() }
+        return snapshot(of: review, path: ffi.info()?.path)
+    }
+
     /// The taps' save, once they pause (`SaveScheduler`). Told to the app:
     /// a failure shows as "could not save this change" and stays to save.
-    private func scheduleSave() {
-        saver.schedule(pause: library.savePause) { [weak self] in
+    private func scheduleSave(pause: DispatchTimeInterval? = nil) {
+        saver.schedule(pause: pause ?? library.savePause) { [weak self] in
             guard let self else { return }
             do {
                 try saveChanges()

@@ -146,6 +146,20 @@ protocol DocumentSession: AnyObject, Sendable {
     func setOwner(_ identity: IdentityID, to owner: IdentityID?) throws -> DocumentSnapshot
     /// × on a merge hint: hidden from now on, in the case too. Not a step.
     func dismissHint(_ hint: LinkHint) throws -> DocumentSnapshot
+
+    // MARK: Edit mode (ADR 0109)
+
+    /// An edit typed in edit mode, committed (never marked IME text): the
+    /// text at `range` becomes `text`. Typing joins the undo line beside
+    /// review decisions, a run of keystrokes as one "Typing" step; the
+    /// change saves once typing pauses. Returns at once with what the edit
+    /// view needs, not a snapshot.
+    func type(_ range: SourceRange, _ text: String) throws -> Typed
+    /// The next typed edit starts a step of its own: the caret moved.
+    func endTyping()
+    /// After a typing pause: the names under review found again in what
+    /// was typed. Safe off the main thread; typing goes on meanwhile.
+    func discover() throws -> DocumentSnapshot
 }
 
 /// Models that fit the device, and verifying and installing downloads.

@@ -24,6 +24,9 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_SLOW_TOASTS=1`: the UI survey: a toast stays long enough to
     /// photograph, its countdown still, so its screen settles.
     var slowToasts = false
+    /// `MDOC_KEEP_LIBRARY=1`: a relaunch in a UI test opens the test library
+    /// as the last launch left it, to check what was saved.
+    var keepsLibrary = false
 
     init() {}
 
@@ -34,6 +37,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         slowToasts = environment["MDOC_SLOW_TOASTS"] == "1"
         realDownloads = environment["MDOC_REAL_DOWNLOADS"] == "1"
         detectorTier = environment["MDOC_UI_DETECTOR_TIER"] == "1"
+        keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
     }
 
     /// This process's launch, parsed on first use.
