@@ -91,6 +91,43 @@ struct File {
     url: Vec<UrlEntry>,
     #[serde(default)]
     private: Vec<PrivateEntry>,
+    #[serde(default)]
+    label: Vec<LabelEntry>,
+}
+
+/// An identifier field's labels (#739): a value just after one, in a wider
+/// model span beside a rule's value, is a value of its own, of `category`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LabelEntry {
+    category: String,
+    words: Vec<String>,
+    /// The words name the category only for a value of its strict shape,
+    /// as if unlabelled: "счёт" before an invoice's number is none.
+    #[serde(default)]
+    strict: bool,
+    /// Words one of which must come earlier in the field for the label to
+    /// count ("паспорт … серии"); alone the label is `strict`, after other
+    /// words ("свидетельство серии") it names nothing.
+    #[serde(default)]
+    only_after: Vec<String>,
+}
+
+/// A `label` entry's word, as `Pack::field_label` reads it.
+struct Label {
+    words: String,
+    category: Category,
+    strict: bool,
+    only_after: Vec<String>,
+}
+
+/// What a field's label says of the value just after it (#739).
+pub(crate) enum FieldLabel<'p> {
+    /// A value of the category after its label, which the `context` regex
+    /// must take whole where the label is a `context`'s.
+    Labelled(Category, Option<&'p Regex>),
+    /// A value of the category in its strict, unlabelled shape only.
+    Strict(Category),
 }
 
 /// Bodies that are never public, whoever owns them: a span that matches
@@ -454,6 +491,8 @@ pub(crate) struct Pack {
     /// Bodies never public: a span matching one of an entry's patterns and
     /// none of its `unless` is no court or public body.
     private: Vec<(Vec<Regex>, Vec<Regex>)>,
+    /// Identifier fields' `label` words, without their dots.
+    labels: Vec<Label>,
 }
 
 /// A cited case in the view's text: its range without `lead` and `tail`,
@@ -1155,6 +1194,7 @@ impl Pack {
             party_roles: std::collections::HashSet::new(),
             own_before: Vec::new(),
             private: Vec::new(),
+            labels: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         let mut defined_seen = std::collections::HashSet::new();
@@ -1482,6 +1522,37 @@ impl Pack {
                 shape.quotes.extend(quotes);
                 shape.quotes_after.extend(entry.quotes_after);
                 shape.quotes_after_words.extend(entry.quotes_after_words);
+            }
+            for (index, entry) in file.label.into_iter().enumerate() {
+                let at = |problem: String| format!("{name}: label #{}: {problem}", index + 1);
+                let category = category(&entry.category).map_err(at)?;
+                if !identifier_field(category) {
+                    return Err(at("needs TAX, BANK, IDENTITY or PHONE".into()));
+                }
+                if entry.words.is_empty() {
+                    return Err(at("needs words".into()));
+                }
+                if let Some(word) = entry.words.iter().chain(&entry.only_after).find(|word| {
+                    word.is_empty() || **word != word.to_lowercase() || *word != &label_words(word)
+                }) {
+                    return Err(at(format!(
+                        "{word:?} needs lowercase words, single-spaced, without dots"
+                    )));
+                }
+                if let Some(word) = entry.words.iter().find(|word| {
+                    pack.labels
+                        .iter()
+                        .any(|label| label.words == **word && label.category != category)
+                }) {
+                    return Err(at(format!("{word:?} is another category's label too")));
+                }
+                pack.labels
+                    .extend(entry.words.into_iter().map(|words| Label {
+                        words,
+                        category,
+                        strict: entry.strict,
+                        only_after: entry.only_after.clone(),
+                    }));
             }
             for (index, entry) in file.context.iter().enumerate() {
                 let at = |problem: String| format!("{name}: context #{}: {problem}", index + 1);
@@ -4792,6 +4863,66 @@ impl Pack {
             })
     }
 
+    /// What a field's label says of the value after it (#739): its
+    /// `label` words, an identifier `context`'s labels or an identifier
+    /// span fix's `trim` words, as `label_words` reads them ("Тел.:" is
+    /// "тел"), ending the words given, the longest first ("паспорт серии"
+    /// by "серии"). A `label` entry's words come first, so "счёт" is
+    /// `strict` though BANK trims it. None when no label ends the words or
+    /// an `only_after` label follows other words. The number sign is no
+    /// label.
+    pub(crate) fn field_label(&self, words: &str) -> Option<FieldLabel<'_>> {
+        let words = label_words(words);
+        let words: Vec<&str> = words.split(' ').filter(|w| !w.is_empty()).collect();
+        for from in 0..words.len() {
+            let label = words[from..].join(" ");
+            if let Some(found) = self.labels.iter().find(|found| found.words == label) {
+                let before = &words[..from];
+                return if found.only_after.is_empty() {
+                    Some(if found.strict {
+                        FieldLabel::Strict(found.category)
+                    } else {
+                        FieldLabel::Labelled(found.category, None)
+                    })
+                } else if before.is_empty() {
+                    Some(FieldLabel::Strict(found.category))
+                } else if before
+                    .iter()
+                    .any(|word| found.only_after.iter().any(|after| after == word))
+                {
+                    Some(if found.strict {
+                        FieldLabel::Strict(found.category)
+                    } else {
+                        FieldLabel::Labelled(found.category, None)
+                    })
+                } else {
+                    None
+                };
+            }
+            let same = |words: &str| label_words(words) == label;
+            if let Some(context) = self
+                .contexts
+                .iter()
+                .filter(|context| identifier_field(context.category))
+                .find(|context| context.labels.iter().any(|words| same(words)))
+            {
+                return Some(FieldLabel::Labelled(context.category, Some(&context.value)));
+            }
+            if let Some(category) = self.spans.iter().find_map(|span| match span {
+                Span::Fix(fix)
+                    if identifier_field(fix.category)
+                        && fix.trim.iter().any(|words| same(words)) =>
+                {
+                    Some(fix.category)
+                }
+                _ => None,
+            }) {
+                return Some(FieldLabel::Labelled(category, None));
+            }
+        }
+        None
+    }
+
     /// Whether a model span of `category` at `at` of `text`, inside a
     /// `span` pattern's match of `matched` at `within`, is that match's own
     /// part (its `absorbs`), read within the match alone: "Harrow House"
@@ -5516,6 +5647,28 @@ fn class(predicate: fn(char) -> bool) -> String {
     }
     class.push(']');
     class
+}
+
+/// Whether `category` is an identifier field's, which a `label` names.
+pub(crate) fn identifier_field(category: Category) -> bool {
+    matches!(
+        category,
+        Category::Tax | Category::Bank | Category::Identity | Category::Phone
+    )
+}
+
+/// A label as `label` entries write it: lowercase words, single-spaced,
+/// without their dots and edge punctuation ("Тел.:" is "тел", "р/с" stays).
+pub(crate) fn label_words(text: &str) -> String {
+    text.split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_alphanumeric())
+                .replace('.', "")
+                .to_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A category by its token (`PERSON`, `ORG`, …).
@@ -18498,6 +18651,39 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("[[url]]\nzones = [\"co.uk\"]", "is not a domain"),
             ("[[url]]\npublic = [\"Gov.ru\"]", "is not lowercase"),
             ("[[url]]\npublic = [\"gov\", \"gov\"]", "listed twice"),
+            (
+                "[[label]]\ncategory = \"NAME\"\nwords = [\"tel\"]",
+                "unknown category",
+            ),
+            (
+                "[[label]]\ncategory = \"PERSON\"\nwords = [\"mr\"]",
+                "needs TAX, BANK, IDENTITY or PHONE",
+            ),
+            ("[[label]]\ncategory = \"PHONE\"\nwords = []", "needs words"),
+            (
+                "[[label]]\ncategory = \"PHONE\"\nwords = [\"Tel\"]",
+                "needs lowercase words",
+            ),
+            (
+                "[[label]]\ncategory = \"PHONE\"\nwords = [\"tel.\"]",
+                "without dots",
+            ),
+            (
+                "[[label]]\ncategory = \"PHONE\"\nwords = [\"\"]",
+                "needs lowercase words",
+            ),
+            (
+                "[[label]]\ncategory = \"IDENTITY\"\nwords = [\"серии\"]\nonly_after = [\"Паспорт\"]",
+                "needs lowercase words",
+            ),
+            (
+                "[[label]]\ncategory = \"PHONE\"\nwords = [\"fax\"]\n[[label]]\ncategory = \"BANK\"\nwords = [\"fax\"]",
+                "label #2: \"fax\" is another category's label too",
+            ),
+            (
+                "[[label]]\ncategory = \"PHONE\"\nwords = [\"tel\"]\nlabels = [\"x\"]",
+                "unknown field",
+            ),
         ] {
             let Err(error) = Pack::load(&[("test.toml", source)]) else {
                 panic!("accepted {source:?}");
