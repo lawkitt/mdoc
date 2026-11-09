@@ -1593,6 +1593,27 @@ between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '(?-i:[A-Z]{1,2})\d[0-9OoIlB]{5,8}|\d[0-9OoIlB]{7,9}'
 min_digits = 6
 
+# A US Social Security number identifies a person, like СНИЛС, so it is
+# IDENTITY after its label, whatever its check (guide rule 6, the
+# maintainer's decision on #381): "SSN: 123-45-6789", "SSN # …", "S.S.N.
+# …", "Social Security No. …", "Social Security Number: …". Three, two
+# and four digits, dashes or spaces between them or none, the last group
+# a digit short or long, nine digits grouped in threes ("123 456 789"),
+# OCR letters for digits ("l23-45-67B9"), also in
+# the next cell of a table's row ("| SSN | 123-45-6789 |"). The model's
+# TAX guess on the value gives way. An EIN ("12-3456789"), a TIN
+# and an ITIN stay TAX, and "Social Security Administration" gives
+# nothing.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "ssn", "ssn no", "ssn number", "s.s.n", "social security",
+    "social security no", "social security number",
+]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OoIlB]{3}[\p{Zs}-]?[0-9OoIlB]{2}[\p{Zs}-]?[0-9OoIlB]{3,5}|[0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}'
+min_digits = 7
+
 # A payment card's number after its label is bank details (guide rule 6,
 # #381), whatever its Luhn check: "Card number: 4111 1111 1111 1112",
 # sixteen digits in fours, a digit fewer or more in the last group, or
@@ -2223,11 +2244,12 @@ forbid = ['(?i)[$£€]|\b(?:hundred|thousand|million|billion|trillion)\b']
 
 # A labelled TAX value stays beside money; only contextual amount
 # guards are bypassed, never the category's ordinary shape checks.
-# SSN and UTR are personal identifiers too.
+# UTR is a personal tax identifier too. An SSN is IDENTITY (#381), whose
+# shape has no amount guards to lift.
 # A tab or two spaces ends the labelled value at the next column.
 [[shape]]
 category = "TAX"
-unless_in = ['(?i:\b(?:tax id|tin|ein|inn|vat|ssn|utr)\b)[\p{Zs}\t:*_№.#]{1,8}[A-Z]{0,2}\d[0-9OIl-]*(?:\p{Zs}[0-9OIl-]+)*\b']
+unless_in = ['(?i:\b(?:tax id|tin|ein|inn|vat|utr)\b)[\p{Zs}\t:*_№.#]{1,8}[A-Z]{0,2}\d[0-9OIl-]*(?:\p{Zs}[0-9OIl-]+)*\b']
 
 # A labelled BANK value stays beside money; only contextual amount
 # guards are bypassed, never the category's ordinary shape checks.

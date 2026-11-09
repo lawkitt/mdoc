@@ -76,7 +76,9 @@ the maintainer's: agents add examples, never change a rule (a change is a
 6. **Identifiers** (`EMAIL`, `PHONE`, `IDENTITY`, `TAX`, `BANK`): the value
    only, without its label; an invalid or OCR-damaged value is still
    marked.
-   ОГРН, ОГРНИП and ОКПО are TAX, like ИНН (#484 item 6). A public body's
+   ОГРН, ОГРНИП and ОКПО are TAX, like ИНН (#484 item 6). A US Social
+   Security number (SSN) is IDENTITY, like СНИЛС; EIN and TIN are TAX
+   (#381). A public body's
    or a court's own phone, fax, e-mail and registration numbers are marked
    like anyone's, and its account number and БИК are BANK; КБК and ОКТМО
    are budget codes and stay unmarked (#553 item 1, #484 item 6).
@@ -166,5 +168,6 @@ a boundary case.
 - A citation's numbers are a legal reference, never an identifier: "26 U.S.C. § 6212", "2031 WL 1234567", "Tr. 112-14", "tax year 2029/30", "№ 999-ФЗ", "статьи 431 ГК РФ" stay unmarked (probe-en-r1-citation-tax, probe-ru-r1-law-numbers).
 - A cadastral number or a right's registration number pins down one property, so it is `IDENTITY`, the value only: "кадастровый номер ⟦IDENTITY|99:07:0012345:678⟧", "номер регистрации права ⟦IDENTITY|99:07:0012345:678-99/011/2031-4⟧" (the maintainer's decision on #484, item 2).
 - A certificate or register number assigned to one person is `IDENTITY` (rule 6), the value only: an attorney's, an arbitration manager's or a notary's register or certificate number, an attorney's bar number: "регистрационный номер в сводном реестре ⟦IDENTITY|99887⟧", "удостоверение адвоката № ⟦IDENTITY|9917⟧", "Ohio State Bar No. ⟦IDENTITY|0099911⟧", "SBN ⟦IDENTITY|299911⟧" (the maintainer's decision on #484, item 3; #483).
+- A US Social Security number is `IDENTITY`, like СНИЛС; an EIN stays `TAX`: "SSN: ⟦IDENTITY|123-45-6789⟧", "EIN ⟦TAX|12-3456789⟧" (#381).
 - A party code that an English judgment defines for a named party ("C1", "D2") is a defined term and stays unmarked; the name stays marked: "Mrs ⟦PERSON|Brannock⟧ (C2)" (probe-en-r2-party-codes, #546).
 - A lowercase list letter stays outside a name: "a. ⟦PERSON|Penrow⟧", "d. ⟦ORG|Quillon Media Inc⟧" (probe-en-r2-party-codes, #546).

@@ -3440,7 +3440,8 @@ mod tests {
                 "E4 ssn amount",
                 "SSN 123-45-6789, amount 15000000 USD",
                 &[("123-45-6789, amount 15000000", "bank_account", 0.8)][..],
-                "BANK«123-45-6789, amount 15000000»",
+                // The SSN after its label is IDENTITY (#381).
+                "IDENTITY«123-45-6789»",
             ),
             (
                 "E5 invoice",
@@ -3986,7 +3987,8 @@ mod tests {
                     "phone_number",
                     0.8,
                 )][..],
-                "DATE«03/12/1985» | PHONE«Phone (212) 555-0142»",
+                // The SSN after its label is IDENTITY (#381).
+                "IDENTITY«123-45-6789» | DATE«03/12/1985» | PHONE«Phone (212) 555-0142»",
             ),
         ] {
             let raw: Vec<RawEntity> = model
@@ -4152,7 +4154,9 @@ mod tests {
                 "a21-en-ssn",
                 "SSN: 123-45-6789. SSN 123456789. Social Security No. 123-45-678.\n",
                 &[][..],
-                "SSN: 123-45-6789. SSN 123456789. Social Security No. 123-45-678.",
+                // An SSN after its label is IDENTITY, damaged too (#381).
+                "SSN: ⟦IDENTITY|123-45-6789⟧. SSN ⟦IDENTITY|123456789⟧. Social Security No. \
+                 ⟦IDENTITY|123-45-678⟧.",
             ),
             (
                 "a22-en-passport-mixed",
