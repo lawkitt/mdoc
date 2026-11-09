@@ -25,7 +25,7 @@ struct FormattingKeyboard: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.s) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 // The table slice (ADR 0109) shows table controls here while
                 // the caret is in a table (`model.state?.inTable`); until
                 // then the block keys are off there.
@@ -53,7 +53,8 @@ struct FormattingKeyboard: View {
                     }
                 }
             }
-            .padding(Space.s)
+            .padding(.horizontal, Space.s)
+            .padding(.vertical, Space.xs)
         }
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("formatting-keyboard")
@@ -93,9 +94,9 @@ struct FormattingKey: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: Space.xxs) {
+            VStack(spacing: 0) {
                 Image(systemName: symbol)
-                    .font(.body.weight(.medium))
+                    .font(.callout.weight(.medium))
                 label
                     .font(.caption2)
                     .lineLimit(2)
@@ -103,9 +104,9 @@ struct FormattingKey: View {
                     .minimumScaleFactor(0.8)
             }
             .foregroundStyle(on ? Color.onAccent : enabled ? Color.primary : Color.secondary)
-            .padding(.vertical, Space.xs)
+            .padding(.vertical, Space.xxs)
             .padding(.horizontal, Space.xxs)
-            .frame(maxWidth: .infinity, minHeight: Size.target * 1.2)
+            .frame(maxWidth: .infinity, minHeight: Size.target)
             .background(
                 on ? Color.ink : Color(uiColor: .formattingKey),
                 in: .rect(cornerRadius: Radius.control, style: .continuous))

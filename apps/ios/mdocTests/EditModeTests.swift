@@ -393,7 +393,10 @@ final class EditModeTests: XCTestCase {
         harness.view.selectedRange = NSRange(location: 0, length: 3)
         XCTAssertTrue(harness.view.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
         XCTAssertFalse(harness.view.canPerformAction(NSSelectorFromString("_define:"), withSender: nil))
-        XCTAssertFalse(harness.view.canPerformAction(#selector(UIResponderStandardEditActions.toggleBoldface(_:)), withSender: nil))
+        // ⌘B reaches the editor core's toggle (slice 4), never UIKit's text
+        // styles; the menu above leaves it out.
+        XCTAssertTrue(harness.view.canPerformAction(#selector(UIResponderStandardEditActions.toggleBoldface(_:)), withSender: nil))
+        XCTAssertFalse(harness.view.allowsEditingTextAttributes)
         XCTAssertTrue(harness.view.undoManager is CoreUndoManager, "UIKit's own typing undo never runs")
         XCTAssertEqual(harness.view.autocorrectionType, .yes)
         XCTAssertEqual(harness.view.spellCheckingType, .yes)

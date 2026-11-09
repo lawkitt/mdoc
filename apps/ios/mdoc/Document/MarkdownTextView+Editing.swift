@@ -310,6 +310,15 @@ extension CandidateTextView {
             return textStorage.length > 0
         case #selector(UIResponder.findAndReplace(_:)):
             return super.canPerformAction(action, withSender: sender)
+        case #selector(UIResponderStandardEditActions.toggleBoldface(_:)),
+             #selector(UIResponderStandardEditActions.toggleItalics(_:)):
+            // ⌘B and ⌘I through the system's menu: the editor core's
+            // toggles (`toggleBoldface`), never UIKit's text styles; the
+            // edit menu leaves them out.
+            return true
+        case #selector(linkKey):
+            // ⌘K (the app's menu sends it here first).
+            return true
         default:
             return Self.findActions.contains(action) && super.canPerformAction(action, withSender: sender)
         }

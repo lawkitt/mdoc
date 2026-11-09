@@ -23,18 +23,18 @@ struct EditToolbar: View {
                         HStack(spacing: 0) {
                             buttons
                         }
-                        .padding(.horizontal, Space.xxs)
                     }
                     .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                     .glassEffect(.regular, in: .capsule)
                     ToolbarKey(
-                        symbol: "keyboard.chevron.compact.down", label: Text("Hide keyboard"), id: "toolbar-hide-keyboard"
+                        symbol: "keyboard.chevron.compact.down", label: Text("Hide keyboard"), id: "toolbar-hide-keyboard",
+                        round: true
                     ) { model.hideKeyboard() }
                         .glassEffect(.regular.interactive(), in: .circle)
                 }
             }
         }
-        .padding(.horizontal, Space.s)
+        .padding(.horizontal, Space.xs)
         .padding(.vertical, Space.xxs)
     }
 
@@ -81,17 +81,23 @@ struct ToolbarKey: View {
     var enabled = true
     var value: String?
     var hint: Text?
+    /// The round button beside the capsule is 44 pt square.
+    var round = false
     let action: () -> Void
 
+    /// 44 pt high; 35 pt wide, so the capsule's nine buttons and the round
+    /// one fit a 390 pt phone at the default text size, as a keyboard's
+    /// keys do.
     @ScaledMetric(relativeTo: .body) private var side = Size.target
+    @ScaledMetric(relativeTo: .body) private var width: CGFloat = 35
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.body.weight(.medium))
                 .foregroundStyle(on ? Color.onAccent : enabled ? Color.primary : Color.secondary)
-                .frame(minWidth: side, minHeight: side)
-                .background { if on { Capsule().fill(Color.ink).padding(Space.xxs) } }
+                .frame(minWidth: round ? side : width, minHeight: side)
+                .background { if on { Capsule().fill(Color.ink).padding(.vertical, Space.xxs) } }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

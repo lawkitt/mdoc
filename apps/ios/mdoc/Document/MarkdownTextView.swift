@@ -187,6 +187,7 @@ struct MarkdownTextView: UIViewRepresentable {
         /// The system keyboard's height with the toolbar, as it last showed.
         var keyboardHeight: CGFloat?
         nonisolated(unsafe) var keyboardObserver: NSObjectProtocol?
+        nonisolated(unsafe) var keyboardMoved: NSObjectProtocol?
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -199,8 +200,8 @@ struct MarkdownTextView: UIViewRepresentable {
             if let foreground {
                 NotificationCenter.default.removeObserver(foreground)
             }
-            if let keyboardObserver {
-                NotificationCenter.default.removeObserver(keyboardObserver)
+            for observer in [keyboardObserver, keyboardMoved].compactMap({ $0 }) {
+                NotificationCenter.default.removeObserver(observer)
             }
         }
 
@@ -684,6 +685,33 @@ final class CandidateTextView: RenderedTextView {
     override var keyCommands: [UIKeyCommand]? {
         guard isEditMode, isFirstResponder else { return super.keyCommands }
         return (super.keyCommands ?? []) + Self.editKeyCommands
+    }
+
+    /// Tab and ⇧Tab from a hardware keyboard in edit mode: indent and
+    /// outdent. The text view would type a tab, and the key command above
+    /// does not reach it before the text input does.
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if isEditMode, presses.count == 1, let key = presses.first?.key, key.keyCode == .keyboardTab,
+           key.modifierFlags.subtracting([.shift, .numericPad]).isEmpty {
+            if key.modifierFlags.contains(.shift) { outdentKey() } else { indentKey() }
+            return
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if isEditMode, presses.count == 1, presses.first?.key?.keyCode == .keyboardTab { return }
+        super.pressesEnded(presses, with: event)
+    }
+
+    /// The system's own ⌘B and ⌘I (its Format menu), which UIKit may match
+    /// before the responder's: the same commands in edit mode.
+    override func toggleBoldface(_ sender: Any?) {
+        if isEditMode { boldKey() }
+    }
+
+    override func toggleItalics(_ sender: Any?) {
+        if isEditMode { italicKey() }
     }
 
     @objc func boldKey() { onCommand?(.format(.bold)) }

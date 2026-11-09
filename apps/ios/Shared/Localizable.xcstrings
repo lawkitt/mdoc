@@ -227,6 +227,9 @@
     "Add from Files" : {
 
     },
+    "Add link" : {
+
+    },
     "Additional permission under GNU GPL version 3 section 7: mdoc may be distributed through app stores whose terms add usage restrictions, provided the corresponding source stays available under the GPL." : {
 
     },
@@ -287,6 +290,18 @@
     "Belongs to…" : {
 
     },
+    "Bold" : {
+
+    },
+    "Brings back the keyboard." : {
+
+    },
+    "Bulleted list" : {
+
+    },
+    "Callout" : {
+
+    },
     "Cancel" : {
 
     },
@@ -326,13 +341,25 @@
     "Change category" : {
 
     },
+    "Changes the link's text or address." : {
+
+    },
+    "Checked" : {
+
+    },
     "Checking and installing" : {
+
+    },
+    "Clear the URL to remove the link and keep its text." : {
 
     },
     "Close Identities" : {
 
     },
     "Close sidebar" : {
+
+    },
+    "Code block" : {
 
     },
     "Continue" : {
@@ -459,6 +486,9 @@
     "Edit" : {
 
     },
+    "Edit link" : {
+
+    },
     "Edit text" : {
 
     },
@@ -522,10 +552,28 @@
     "Finish import" : {
 
     },
+    "Format" : {
+
+    },
+    "Formatting" : {
+
+    },
     "Goes to the next name to decide." : {
 
     },
     "Haptics" : {
+
+    },
+    "Heading 1" : {
+
+    },
+    "Heading 2" : {
+
+    },
+    "Heading 3" : {
+
+    },
+    "Hide keyboard" : {
 
     },
     "Hide mentions" : {
@@ -538,6 +586,9 @@
 
     },
     "Hides the kept names." : {
+
+    },
+    "Highlight" : {
 
     },
     "Identities" : {
@@ -558,6 +609,15 @@
     "In Select, drag ≡ onto a name to make them one" : {
 
     },
+    "Indent" : {
+
+    },
+    "Inline code" : {
+
+    },
+    "Insert" : {
+
+    },
     "Installed" : {
 
     },
@@ -568,6 +628,9 @@
 
     },
     "Installing %@" : {
+
+    },
+    "Italic" : {
 
     },
     "Its case keeps its names." : {
@@ -603,10 +666,22 @@
     "Kept" : {
 
     },
+    "Keyboard" : {
+
+    },
     "License" : {
 
     },
     "Light" : {
+
+    },
+    "Link" : {
+
+    },
+    "Link to %@" : {
+
+    },
+    "Link…" : {
 
     },
     "Long-press any name for more" : {
@@ -785,6 +860,9 @@
     "Nobody" : {
 
     },
+    "Not checked" : {
+
+    },
     "Not downloaded" : {
 
     },
@@ -821,6 +899,9 @@
     "Opens it in the review bar." : {
 
     },
+    "Opens the link in your browser." : {
+
+    },
     "Organization" : {
 
     },
@@ -840,6 +921,9 @@
 
     },
     "Other categories" : {
+
+    },
+    "Outdent" : {
 
     },
     "Paste" : {
@@ -891,6 +975,9 @@
 
     },
     "Proposed" : {
+
+    },
+    "Quote" : {
 
     },
     "Reading the document. Review when it finishes." : {
@@ -1072,6 +1159,9 @@
     "Review this identity" : {
 
     },
+    "Rule" : {
+
+    },
     "Same as" : {
 
     },
@@ -1162,6 +1252,9 @@
     "Show sidebar" : {
 
     },
+    "Shows formatting keys in place of the keyboard." : {
+
+    },
     "Shows the kept names." : {
 
     },
@@ -1180,6 +1273,9 @@
     "Stopped." : {
 
     },
+    "Strikethrough" : {
+
+    },
     "Swipe the card for the next name" : {
 
     },
@@ -1188,6 +1284,9 @@
     },
     "Table" : {
       "comment" : "VoiceOver name of a Markdown table"
+    },
+    "Task" : {
+
     },
     "Tax identifier" : {
 
@@ -1267,6 +1366,9 @@
     "Try a sample" : {
 
     },
+    "Turn into" : {
+
+    },
     "Typing" : {
 
     },
@@ -1280,6 +1382,9 @@
 
     },
     "Undone" : {
+
+    },
+    "URL" : {
 
     },
     "Use cellular" : {

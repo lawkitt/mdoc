@@ -290,6 +290,39 @@ final class SurveyUITests: XCTestCase {
         shot("44-live-preview-bold")
     }
 
+    /// Edit mode's toolbar and formatting keyboard (ADR 0109, slice 4), live
+    /// preview: the capsule over the keyboard with Bold on in a bold word,
+    /// and Aa's formatting keyboard with the line's block selected.
+    @MainActor
+    func test9EditToolbar() throws {
+        let app = launch(seed: MdocUITest.markdownFixture)
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
+        app.typeKey(.downArrow, modifierFlags: .command)
+        app.typeText("\nPay **monthly**")
+        for _ in 0..<4 { app.typeKey(.leftArrow, modifierFlags: []) }
+        XCTAssertTrue(app.buttons["toolbar-bold"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        shot("45-edit-toolbar")
+        app.buttons["toolbar-formatting"].tap()
+        XCTAssertTrue(app.buttons["turn-text"].wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
+        shot("46-formatting-keyboard")
+        // The caret in the link: its chip offers Open and Edit.
+        app.buttons["formatting-keyboard-return"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        app.typeKey(.downArrow, modifierFlags: .command)
+        app.typeText(" to [the agent](https://example.com)")
+        app.typeKey(.leftArrow, modifierFlags: [])
+        XCTAssertTrue(app.buttons["link-edit"].waitForExistence(timeout: 5))
+        shot("47-edit-link-chip")
+    }
+
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.

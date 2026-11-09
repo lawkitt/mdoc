@@ -53,6 +53,14 @@ extension MarkdownTextView.Coordinator {
                     self.keyboardHeight = frame.height
                 }
             }
+            keyboardMoved = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardDidChangeFrameNotification, object: nil, queue: .main
+            ) { [weak self, weak view] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let view else { return }
+                    self.keepCaretInView(view)
+                }
+            }
         }
         if view.inputAccessoryView == nil {
             view.inputAccessoryView = EditToolbarHost(model: toolbar)
@@ -88,6 +96,16 @@ extension MarkdownTextView.Coordinator {
         } else {
             view.becomeFirstResponder()
         }
+    }
+
+    /// The keys below the text changed height (the formatting keyboard,
+    /// the link chip): the caret's line is scrolled back into view above
+    /// them, once the text has its new size.
+    func keepCaretInView(_ view: CandidateTextView) {
+        guard view.isFirstResponder, view.isEditMode, let end = view.selectedTextRange?.end else { return }
+        let caret = view.caretRect(for: end)
+        guard !caret.isNull, !caret.isInfinite else { return }
+        view.scrollRectToVisible(caret.insetBy(dx: 0, dy: -Space.xs), animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     /// The link sheet for the link at the caret, or for the selection: Done

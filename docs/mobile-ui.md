@@ -62,6 +62,8 @@ iOS: [`apps/ios/mdoc/Design/`](../apps/ios/mdoc/Design/).
 | `Toast` / `.toast($message)` | A short message after an action, with at most one action (Undo). Announced to VoiceOver; gone after about 4 s, or 6 s with an action, where a ring shows the seconds left. |
 | `StateMark` / `StateButtonLabel` | A mention's state as a round mark: dashed ring proposed, accent disc replaced, eye kept. As a button it has a 44 pt target and the state as its label. |
 | `ReviewHintLine` | A hint line: symbol, words, ×. The review bar's, and Identities' one. |
+| `EditToolbar` / `ToolbarKey` | Edit mode's bar above the keyboard (ADR 0109): a glass capsule of icon buttons, 44 pt targets that grow with the text, scrolling sideways when they don't fit, and a glass circle beside it that hides the keyboard. A button that is on is an ink capsule (VoiceOver: selected); one that can't apply is secondary and disabled. A link chip (glass capsule) sits above it while the caret is in a link. The host never becomes first responder. |
+| `FormattingKeyboard` / `FormattingKey` | Aa's keys in place of the keyboard, grouped Turn into, Format, Insert: a symbol over its name on a keyboard-coloured key, the selected block in ink, scrolling at large text sizes; its keyboard key brings the system keyboard back. |
 | `Haptics` | `selection` per card, `decision` on Replace, Keep and Same as, `edge` at the end of a list, `success` on All reviewed, `warning` on undo. Off when Settings › Review › Haptics is off. |
 
 ## Screens
