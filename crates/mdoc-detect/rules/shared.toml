@@ -36,6 +36,8 @@
 #   ocr_person_words regexes for a read-back word after the first, lowercase
 #             and whole, that makes such a span a person's alone (a
 #             patronymic)
+#   lookalike letters of another script that read as Cyrillic ones, and
+#             the common words they spell (#549)
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
@@ -256,6 +258,22 @@
 # regexes too ("Electoral College"). Anchor the patterns: a public body
 # may have the word inside ("Ministry of Colleges and Universities").
 #
+# A `lookalike` entry lists `letters`, pairs of a letter of another script
+# and the Cyrillic letter it reads as ("HН", "πп"), and lowercase Cyrillic
+# `words`, an abbreviation's inner dots kept ("на", "т.п"). A person's or
+# an organization's model span goes when each of its words, outside
+# punctuation at its edges, holds only Cyrillic and look-alike letters
+# and dots, one at least a look-alike, and read in Cyrillic is one of the
+# words or a `never` word ("Ha", "Bce", "T.π."), in Russian text: more
+# Cyrillic than Latin letters within 200 bytes either side. It stays
+# beside a legal form, in quotes («Bce»), after a person's title, a role
+# (`person_role`) or one of the entry's `unless_after` stems (lowercase
+# Cyrillic, up to four letters of ending: «фамили», «свидетел») up to four
+# words before it in its clause, and where a word of it is one capital
+# (an initial), look-alikes all in capitals ("BCE") or, all look-alikes,
+# written beside a Latin name in the document, in any case ("Ha Jin",
+# "HA THI").
+#
 # A `label` entry lists lowercase `words` (phrases of them, without their
 # dots: "тел" for "тел."), each the label of a field of its `category`
 # (TAX, BANK, IDENTITY or PHONE). A model identifier span holding a rule's
@@ -453,6 +471,19 @@ word = '.'
 category = "IDENTITY"
 require = ['\p{N}']
 
+# OCR garbles a scan's filler or ruled line into a long run of one digit:
+# "2808888888R" alone, without its label, is no identity document's
+# number (#549). One token: up to three digits, then a run of seven or
+# more of one digit, ten digits together at least, up to three digits more
+# and a capital at its end.
+# A number after an identity label stays ("Passport number: 2808888888R",
+# `unless_in`), and so do runs without the capital ("4500000001",
+# "70000000001") or shorter ones ("10000000A").
+[[shape]]
+category = "IDENTITY"
+unless_in = ['(?P<lead>\b(?i:passport|паспорт\p{Alphabetic}*|identity|id|licen[cs]e|number|no\.?|номер|№)[\p{Zs}\t]*[:#№.]?[\p{Zs}\t]*)[0-9A-Z]+']
+forbid_unlabelled = ['^\s*(?:\d{3}(?:0{7,}|1{7,}|2{7,}|3{7,}|4{7,}|5{7,}|6{7,}|7{7,}|8{7,}|9{7,})|\d{2}(?:0{8,}|1{8,}|2{8,}|3{8,}|4{8,}|5{8,}|6{8,}|7{8,}|8{8,}|9{8,})|\d(?:0{9,}|1{9,}|2{9,}|3{9,}|4{9,}|5{9,}|6{9,}|7{9,}|8{9,}|9{9,})|(?:0{10,}|1{10,}|2{10,}|3{10,}|4{10,}|5{10,}|6{10,}|7{10,}|8{10,}|9{10,}))\d{0,3}\p{Lu}\s*$']
+
 # Tax identifiers need a digit; "ИНН" alone is not one. A rate ("20 percent
 # tax", "НДС 20%") is no identifier, and neither is a Russian document series
 # before its number ("ФС 086731924", a writ).
@@ -476,6 +507,14 @@ forbid_in = [
 ]
 require = ['\p{N}']
 forbid = ['(?i)percent|per cent|%|процент', '[А-ЯЁа-яё]{2,}\s+\d']
+
+# OCR damage is no tax number either: a lone lowercase Latin letter, a
+# space and one token of digits and hex letters ("t e43b7", #549). An
+# OCR-damaged number with its own shape stays ("54О8 1l62З7", "77l12345O7",
+# "n 7712345l07": an "l" is no hex letter).
+[[shape]]
+category = "TAX"
+forbid_unlabelled = ['^\s*[a-z][\p{Zs}\t]+(?:\d*[a-f]+\d[a-f\d]*|\d+[a-f][a-f\d]*)\s*$']
 
 # Bank details need a digit and no `/` beside a digit: case and claim
 # numbers ("6001842/2026") are not bank details, while an account's label

@@ -128,6 +128,26 @@ struct File {
     private: Vec<PrivateEntry>,
     #[serde(default)]
     label: Vec<LabelEntry>,
+    #[serde(default)]
+    lookalike: Vec<LookalikeEntry>,
+}
+
+/// Letters of another script that read as Cyrillic ones, and the common
+/// words they spell in Russian text (#549): a model's name written so
+/// («Ha» for «На», «T.π.» for «т.п.») is no name.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LookalikeEntry {
+    /// Pairs of two letters: the look-alike, then its Cyrillic letter.
+    #[serde(default)]
+    letters: Vec<String>,
+    /// Lowercase Cyrillic words, abbreviations' inner dots kept.
+    #[serde(default)]
+    words: Vec<String>,
+    /// Lowercase Cyrillic stems of a person's labels and roles («фамили»,
+    /// «свидетел»), up to four letters of ending: a span after one stays.
+    #[serde(default)]
+    unless_after: Vec<String>,
 }
 
 /// An identifier field's labels (#739): a value just after one, in a wider
@@ -552,6 +572,12 @@ pub(crate) struct Pack {
     private: Vec<(Vec<Regex>, Vec<Regex>)>,
     /// Identifier fields' `label` words, without their dots.
     labels: Vec<Label>,
+    /// `lookalike` letters: each look-alike and its Cyrillic letter.
+    lookalike_letters: std::collections::HashMap<char, char>,
+    /// `lookalike` words, lowercase Cyrillic.
+    lookalike_words: std::collections::HashSet<String>,
+    /// `lookalike` `unless_after` stems, lowercase Cyrillic.
+    lookalike_after: Vec<String>,
 }
 
 /// A role before bare initials, as [`Pack::initials_role`] reads it
@@ -1550,6 +1576,9 @@ impl Pack {
             own_before: Vec::new(),
             private: Vec::new(),
             labels: Vec::new(),
+            lookalike_letters: std::collections::HashMap::new(),
+            lookalike_words: std::collections::HashSet::new(),
+            lookalike_after: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         let mut defined_seen = std::collections::HashSet::new();
@@ -1953,6 +1982,57 @@ impl Pack {
                 shape.quotes.extend(quotes);
                 shape.quotes_after.extend(entry.quotes_after);
                 shape.quotes_after_words.extend(entry.quotes_after_words);
+            }
+            for (index, entry) in file.lookalike.into_iter().enumerate() {
+                let at = |problem: &str| format!("{name}: lookalike #{}: {problem}", index + 1);
+                if entry.letters.is_empty()
+                    && entry.words.is_empty()
+                    && entry.unless_after.is_empty()
+                {
+                    return Err(at("needs letters, words or unless_after"));
+                }
+                if entry.unless_after.iter().any(|stem| {
+                    stem.is_empty()
+                        || !stem
+                            .chars()
+                            .all(|c| cyrillic_letter(c) && !c.is_uppercase())
+                }) {
+                    return Err(at("unless_after needs lowercase Cyrillic stems"));
+                }
+                pack.lookalike_after.extend(entry.unless_after);
+                for pair in &entry.letters {
+                    let (look, cyrillic) = match pair.chars().collect::<Vec<_>>()[..] {
+                        [look, cyrillic] => (look, cyrillic),
+                        _ => return Err(at(&format!("{pair:?} is no pair of two letters"))),
+                    };
+                    if !look.is_alphabetic() || cyrillic_letter(look) || !cyrillic_letter(cyrillic)
+                    {
+                        return Err(at(&format!(
+                            "{pair:?} needs another script's letter, then a Cyrillic one"
+                        )));
+                    }
+                    if pack
+                        .lookalike_letters
+                        .insert(look, cyrillic)
+                        .is_some_and(|before| before != cyrillic)
+                    {
+                        return Err(at(&format!("{look:?} reads as two letters")));
+                    }
+                }
+                for word in entry.words {
+                    let letters = word.split('.').all(|part| {
+                        !part.is_empty()
+                            && part
+                                .chars()
+                                .all(|c| cyrillic_letter(c) && !c.is_uppercase())
+                    });
+                    if !letters {
+                        return Err(at(&format!(
+                            "{word:?} needs lowercase Cyrillic letters, dots only inside"
+                        )));
+                    }
+                    pack.lookalike_words.insert(word);
+                }
             }
             for (index, entry) in file.label.into_iter().enumerate() {
                 let at = |problem: String| format!("{name}: label #{}: {problem}", index + 1);
@@ -4233,6 +4313,167 @@ impl Pack {
             })
     }
 
+    /// Whether a person's or an organization's model span `text` at `range`
+    /// of `source` is a common Russian word written in another script's
+    /// look-alike letters (`lookalike`, #549): «Ha» before a date is «На»,
+    /// «Bce» is «Все», «T.π.» is «т.п.». Each word of the span holds only
+    /// Cyrillic and look-alike letters (and an abbreviation's dots), one of
+    /// them at least a look-alike, and read in Cyrillic it is a `lookalike`
+    /// word or a `never` word. The text around is Russian: more Cyrillic
+    /// letters than Latin ones within 200 bytes on either side. A name
+    /// stays: a word with a letter of its own («Ивaнов», "Hans"), a capital
+    /// alone (an initial), a word of look-alikes all in capitals ("BCE",
+    /// an abbreviation), a span in quotes («Bce»), one after a person's
+    /// title, label or role in its clause («Фамилия: Ha», «гражданка
+    /// Республики Корея Ha»: `unless_after`, a `person_role` word or a
+    /// person's `trim` word), and a word the document writes beside a
+    /// Latin name in any case ("Nguyễn Thị Ha", "HA THI LAN").
+    fn lookalike_word(&self, source: &str, range: std::ops::Range<usize>, text: &str) -> bool {
+        if self.lookalike_letters.is_empty() || self.titled(source, range.start) {
+            return false;
+        }
+        let (mut foreign, mut any) = (Vec::new(), false);
+        for word in text.split_whitespace().map(bare).filter(|w| !w.is_empty()) {
+            let (mut letters, mut looks, mut capitals) = (0, 0, 0);
+            let mut read = String::new();
+            for c in word.chars() {
+                let cyrillic = if c == '.' {
+                    read.push(c);
+                    continue;
+                } else if cyrillic_letter(c) {
+                    c
+                } else if let Some(&cyrillic) = self.lookalike_letters.get(&c) {
+                    looks += 1;
+                    cyrillic
+                } else {
+                    return false;
+                };
+                letters += 1;
+                capitals += usize::from(c.is_uppercase());
+                read.extend(cyrillic.to_lowercase());
+            }
+            let initial = letters == 1 && capitals == 1;
+            let abbreviation = letters > 1 && capitals == letters && looks == letters;
+            if looks > 0 && (initial || abbreviation)
+                || !(self.lookalike_words.contains(&read) || self.never(&read))
+            {
+                return false;
+            }
+            any |= looks > 0;
+            if looks == letters {
+                foreign.push(word);
+            }
+        }
+        if !any {
+            return false;
+        }
+        // Quoted, it is a name of its own («Bce»), however it reads.
+        let (before, after, inner) = (&source[..range.start], &source[range.end..], text.trim());
+        if [('«', '»'), ('“', '”'), ('"', '"')]
+            .iter()
+            .any(|&(open, close)| {
+                before.ends_with(open) && after.starts_with(close)
+                    || inner.len() > 2 && inner.starts_with(open) && inner.ends_with(close)
+            })
+        {
+            return false;
+        }
+        // A person's label, role or title in its clause, up to four words
+        // before it: «Фамилия: Ha», «Свидетель Ha», «гражданка Республики
+        // Корея Ha», «Работник: Ha».
+        let clause = before
+            .rsplit(['\n', '.', '!', '?', ';', ','])
+            .next()
+            .unwrap_or_default();
+        let person = clause
+            .split(|c: char| !c.is_alphabetic() && c != '-')
+            .filter(|word| !word.is_empty())
+            .rev()
+            .take(4)
+            .any(|word| {
+                let word = word.to_lowercase();
+                self.lookalike_after.iter().any(|stem| {
+                    word.strip_prefix(stem.as_str())
+                        .is_some_and(|ending| ending.chars().count() <= 4)
+                }) || self
+                    .never
+                    .iter()
+                    .any(|entry| entry.person_role && entry.has(&word))
+                    || self.spans.iter().any(|span| match span {
+                        Span::Fix(fix) => {
+                            fix.category == Category::Person && fix.trim.contains(&word)
+                        }
+                        Span::Pattern { .. } => false,
+                    })
+            });
+        if person {
+            return false;
+        }
+        // A Latin name: capitalized, two letters or more of any script but
+        // Cyrillic, one of them no look-alike ("Jin" of "Ha Jin", "Thị").
+        let latin_name = |word: &str| {
+            word.chars().count() > 1
+                && word.starts_with(char::is_uppercase)
+                && word
+                    .chars()
+                    .all(|c| c.is_alphabetic() && !cyrillic_letter(c))
+                && word
+                    .chars()
+                    .any(|c| !self.lookalike_letters.contains_key(&c))
+        };
+        // Beside one anywhere in the document, in any case ("HA THI LAN").
+        let beside_name = |word: &str| {
+            let Ok(written) = Regex::new(&format!("(?i){}", regex::escape(word))) else {
+                return false;
+            };
+            written.find_iter(source).any(|found| {
+                let before = &source[..found.start()];
+                let after = &source[found.end()..];
+                if before.ends_with(char::is_alphanumeric)
+                    || after.starts_with(char::is_alphanumeric)
+                {
+                    return false;
+                }
+                let next = after.trim_start_matches([' ', '\t']);
+                let previous = before.trim_end_matches([' ', '\t']);
+                (next.len() < after.len()
+                    && latin_name(
+                        next.split(|c: char| !c.is_alphabetic())
+                            .next()
+                            .unwrap_or(""),
+                    ))
+                    || (previous.len() < before.len()
+                        && latin_name(
+                            previous
+                                .rsplit(|c: char| !c.is_alphabetic())
+                                .next()
+                                .unwrap_or(""),
+                        ))
+            })
+        };
+        if foreign.iter().any(|word| beside_name(word)) {
+            return false;
+        }
+        let mut start = range.start.saturating_sub(200);
+        while !source.is_char_boundary(start) {
+            start += 1;
+        }
+        let mut end = (range.end + 200).min(source.len());
+        while !source.is_char_boundary(end) {
+            end -= 1;
+        }
+        let around = source[start..range.start]
+            .chars()
+            .chain(source[range.end..end].chars());
+        let (cyrillic, latin) = around.fold((0, 0), |(cyrillic, latin), c| {
+            (
+                cyrillic + usize::from(cyrillic_letter(c)),
+                latin + usize::from(c.is_ascii_alphabetic()),
+            )
+        });
+        cyrillic > latin
+    }
+
     /// Whether a model span at `range` of `source` has its category's
     /// `shape`, its surroundings included: wrapped exactly in a forbidden
     /// quote pair, or holding one, after a `quotes_after` or
@@ -4267,6 +4508,11 @@ impl Pack {
         // the abbreviation (#481), and so is "C.F.R." in "ООО «C.F.R.»".
         if self.grows_to_company(source, range.clone(), category) {
             return true;
+        }
+        if matches!(category, Category::Person | Category::Organization)
+            && self.lookalike_word(source, range.clone(), text)
+        {
+            return false;
         }
         if self.in_reference(source, range.clone()) {
             // A complete company name needs the same protection as one
@@ -6468,6 +6714,11 @@ fn cells(line: &str, at: usize) -> Vec<std::ops::Range<usize>> {
         }
     }
     cells
+}
+
+/// Whether `c` is a letter of the Cyrillic block (U+0400–U+04FF).
+fn cyrillic_letter(c: char) -> bool {
+    ('\u{0400}'..='\u{04FF}').contains(&c) && c.is_alphabetic()
 }
 
 /// `pattern` with `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` meaning
@@ -21381,5 +21632,447 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("ОКТМО 99701000", "national_id_number"),
         ];
         assert_eq!(shown(source, &raw), pairs(&[]));
+    }
+
+    /// #549: common Russian words in Latin or Greek look-alike letters are
+    /// no names, the issue's synthetic reproduction first: «Ha» before a
+    /// date («На»), «Bce» («Все»), «T.π.» («т.п.»), and words mixing both
+    /// scripts («yл.», «Pуб.», a Latin y and P).
+    #[test]
+    fn russian_words_in_look_alike_letters_are_no_names() {
+        let source = "Ha 01.01.2031 r. Bce расходы учтены, и T.π. Подпись: \
+            Пахомцева И.А. Управляющий.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Ha", "organization"),
+                    ("Bce", "organization"),
+                    ("T.π.", "person"),
+                    ("r.", "organization"),
+                    ("Пахомцева И.А.", "person"),
+                ]
+            ),
+            pairs(&[("Пахомцева И.А.", "PERSON")])
+        );
+        for (source, span, label) in [
+            (
+                "Ha основании договора стороны пришли к соглашению.",
+                "Ha",
+                "organization",
+            ),
+            ("Ha 01.02.2031 r. проведена проверка", "Ha", "person"),
+            ("Bcё имущество передано по акту.", "Bcё", "organization"),
+            (
+                "Проживает: г. Энск, yл. Лесная, д. 5.",
+                "yл.",
+                "organization",
+            ),
+            (
+                "Оплата услуг связи и почты, Pуб. 1500",
+                "Pуб.",
+                "organization",
+            ),
+            (
+                "Ведомость, расходы и T.n. приложены к акту.",
+                "T.n.",
+                "person",
+            ),
+        ] {
+            assert!(
+                shown(source, &[(span, label)]).is_empty(),
+                "{source}: {span}"
+            );
+        }
+    }
+
+    /// #549 guards: a real name with a letter of its own stays, in Russian
+    /// text or not: a Cyrillic name with a Latin typo («Ивaнов»), a Latin
+    /// name ("Smith", "Hans"), a company in Latin letters after its legal
+    /// form («ООО «Abc»», «ООО «Ha»»), an initial alone, a word in
+    /// capitals ("BCE"), a name after a title, one the document writes
+    /// beside a Latin name ("Ha Jin") and look-alikes in English text.
+    #[test]
+    fn real_names_with_look_alike_letters_stay() {
+        let source = "Акт составлен Ивaновым Петром, ООО «Abc» и Smith, Hans.";
+        assert_eq!(
+            shown(
+                source,
+                &[
+                    ("Ивaновым Петром", "person"),
+                    ("ООО «Abc»", "organization"),
+                    ("Smith", "person"),
+                    ("Hans", "person"),
+                ]
+            ),
+            pairs(&[
+                ("Ивaновым Петром", "PERSON"),
+                ("ООО «Abc»", "ORG"),
+                ("Smith", "PERSON"),
+                ("Hans", "PERSON"),
+            ])
+        );
+        for (source, span, n, label, expected) in [
+            (
+                "Поставщик ООО «Ha» передал товар покупателю.",
+                "ООО «Ha»",
+                0,
+                "organization",
+                "ООО «Ha»",
+            ),
+            (
+                "Поставщик ООО «Ha» передал товар покупателю.",
+                "Ha",
+                0,
+                "organization",
+                "ООО «Ha»",
+            ),
+            (
+                "Акт подписал гражданин Ivanov, а также C. по доверенности.",
+                "C.",
+                0,
+                "person",
+                "C.",
+            ),
+            (
+                "Акционер BCE передал акции по договору купли-продажи.",
+                "BCE",
+                0,
+                "organization",
+                "BCE",
+            ),
+            (
+                "Заявление подала г-жа Ha по месту жительства.",
+                "Ha",
+                0,
+                "person",
+                "Ha",
+            ),
+            (
+                "Ha Jin прибыл в город. Позже Ha подписал акт приёма.",
+                "Ha",
+                1,
+                "person",
+                "Ha",
+            ),
+            (
+                "Ha said the contract was signed on 1 March 2031 in London.",
+                "Ha",
+                0,
+                "person",
+                "Ha",
+            ),
+        ] {
+            let found = shown_at(source, &[(span, n, label)]);
+            assert!(
+                found.iter().any(|(text, _)| text == expected),
+                "{source}: {span} {found:?}"
+            );
+        }
+    }
+
+    /// #549: an English scan's OCR-damaged words are no names: "PagelD"
+    /// (a "PageID" stamp), "IntereStee", "(LIU name of company)" ("Full"),
+    /// "Branwick Freight LIZ" ("LLC"), "V.S. agriculture" and
+    /// "Netberlaads", and a public body whose "U" OCR lost ("S. Depertuent
+    /// of Agriculture").
+    #[test]
+    fn english_ocr_damaged_words_are_no_names() {
+        for (source, span, label) in [
+            ("PageID 99; see PagelD 99.", "PagelD", "organization"),
+            ("Exhibit 12, Page1D 4 of 9", "Page1D", "person"),
+            (
+                "Parties IntereStee in the outcome must file.",
+                "IntereStee",
+                "person",
+            ),
+            ("Signature (LIU name of company) and title", "LIU", "person"),
+            (
+                "Contractor: Branwick Freight LIZ, a Wyoming company.",
+                "LIZ",
+                "organization",
+            ),
+            (
+                "Prepared for V.S. agriculture, the yields rose.",
+                "V.S. agriculture",
+                "organization",
+            ),
+            (
+                "Prepared for U.S. agriculture, the yields rose.",
+                "U.S. agriculture",
+                "organization",
+            ),
+            (
+                "Seed came from Netberlaads in 1931.",
+                "Netberlaads",
+                "organization",
+            ),
+            (
+                "Issued by the S. Depertuent of Agriculture in 1931.",
+                "S. Depertuent of Agriculture",
+                "person",
+            ),
+        ] {
+            let found = shown(source, &[(span, label)]);
+            assert!(found.is_empty(), "{source}: {span} {found:?}");
+        }
+    }
+
+    /// #549 guards: English names with "l" and "I" stay ("Ilya", "Lily",
+    /// "Liu", "Liz"), and so do "U.S. Bank", initials alone ("V.S."), a
+    /// name ending in "d" ("McLeod") and a company of common words.
+    #[test]
+    fn english_names_like_ocr_damage_stay() {
+        for (source, span, label, category) in [
+            (
+                "Witness Ilya Penrow signed the form.",
+                "Ilya Penrow",
+                "person",
+                "PERSON",
+            ),
+            (
+                "Witness Lily Brannock signed the form.",
+                "Lily Brannock",
+                "person",
+                "PERSON",
+            ),
+            (
+                "Signed by Wei Liu on 3 March 2031.",
+                "Wei Liu",
+                "person",
+                "PERSON",
+            ),
+            ("Signed by LIU on 3 March 2031.", "LIU", "person", "PERSON"),
+            ("Ask Liz about the delivery.", "Liz", "person", "PERSON"),
+            ("LIZ signed the agreement.", "LIZ", "organization", "ORG"),
+            (
+                "The account is held at U.S. Bank in Ohio.",
+                "U.S. Bank",
+                "organization",
+                "ORG",
+            ),
+            ("Signed by V.S. at the office.", "V.S.", "person", "PERSON"),
+            (
+                "Signed by David McLeod in 2031.",
+                "David McLeod",
+                "person",
+                "PERSON",
+            ),
+            (
+                "Signed by Interested Parties Ltd in 2031.",
+                "Interested Parties Ltd",
+                "organization",
+                "ORG",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(span, label)]),
+                pairs(&[(span, category)]),
+                "{source}"
+            );
+        }
+    }
+
+    /// #549: a garbled token is no tax number ("t e43b7") and a run of one
+    /// digit no identity document's number ("2808888888R") without a
+    /// label; OCR-damaged numbers and other runs stay.
+    #[test]
+    fn garbled_tokens_are_no_tax_or_identity_numbers() {
+        for (source, span, label) in [
+            ("The hash t e43b7 was printed below.", "t e43b7", "tax_id"),
+            (
+                "Stamp 2808888888R on the page.",
+                "2808888888R",
+                "national_id_number",
+            ),
+            (
+                "Stamp 8888888888R on the page.",
+                "8888888888R",
+                "passport_number",
+            ),
+        ] {
+            assert!(
+                shown(source, &[(span, label)]).is_empty(),
+                "{source}: {span}"
+            );
+        }
+        for (source, span, label, category) in [
+            (
+                "ИНН 77l12345O7 указан в договоре.",
+                "77l12345O7",
+                "tax_id",
+                "TAX",
+            ),
+            (
+                "Passport number 4510 123456 issued.",
+                "4510 123456",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Passport 4510 888888 issued.",
+                "4510 888888",
+                "passport_number",
+                "IDENTITY",
+            ),
+            // A label keeps the issue's own shape, and runs without the
+            // final capital or shorter ones stay (pre-gate review, #549).
+            (
+                "Passport number: 2808888888R",
+                "2808888888R",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 4500000001 on the page.",
+                "4500000001",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 10000000A on the page.",
+                "10000000A",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 70000000001 on the page.",
+                "70000000001",
+                "national_id_number",
+                "IDENTITY",
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(span, label)]),
+                pairs(&[(span, category)]),
+                "{source}"
+            );
+        }
+    }
+
+    /// #549 pre-gate review: only hex letters make a garbled tax token; an
+    /// OCR-damaged number after a stray letter keeps its value.
+    #[test]
+    fn a_stray_letter_before_a_damaged_tax_number_keeps_it() {
+        let source = "ИНН n 7712345l07 указан в договоре.";
+        let found = shown(source, &[("n 7712345l07", "tax_id")]);
+        assert!(
+            found
+                .iter()
+                .any(|(text, category)| text.contains("7712345l07") && category == "TAX"),
+            "{found:?}"
+        );
+    }
+
+    /// #549 pre-gate review: a lone Latin "Ha" stays a person where the
+    /// document names her: beside a Latin name in any script or case
+    /// ("Nguyễn Thị Ha", "HA THI LAN"), after a person's label or role in
+    /// its clause («Гражданка», «Свидетель», «Фамилия:», «Работник:»,
+    /// «гражданка Республики Корея»); and a quoted «Bce» is a company's
+    /// name.
+    #[test]
+    fn a_named_or_labelled_look_alike_word_stays() {
+        for (source, raw, expected, category) in [
+            (
+                "Переводчик Nguyễn Thị Ha разъяснила права. Затем Ha подтвердила показания.",
+                &[("Nguyễn Thị Ha", 0, "person"), ("Ha", 1, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Гражданка Ha пояснила суду, что договор подписан.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Свидетель Ha пояснила, что расписку не видела.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Анкета заявителя. Фамилия: Ha\nИмя: Lan\nДата рождения указана.",
+                &[("Ha", 0, "person"), ("Lan", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Работник: Ha, гражданин Вьетнама, принят на должность.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "В заседании гражданка Республики Корея Ha пояснила, что долг погашен.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "HA THI LAN разъяснила права. Подсудимый Ha вину признал.",
+                &[("HA THI LAN", 0, "person"), ("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Затем HA THI LAN подписала. Позже Ha уехала из города.",
+                &[("HA THI LAN", 0, "person"), ("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Поставщик «Bce» передал товар покупателю по накладной.",
+                &[("Bce", 0, "organization")][..],
+                "Bce",
+                "ORG",
+            ),
+        ] {
+            let found = shown_at(source, raw);
+            assert!(
+                found
+                    .iter()
+                    .any(|(text, found)| text.trim_matches(['«', '»']) == expected
+                        && found == category),
+                "{source}: {found:?}"
+            );
+        }
+    }
+
+    /// #549: a `lookalike` entry's mistakes are named.
+    #[test]
+    fn mistakes_in_a_lookalike_entry_are_named() {
+        for (entry, problem) in [
+            ("[[lookalike]]\n", "needs letters, words or unless_after"),
+            (
+                "[[lookalike]]\nunless_after = [\"Свидетел\"]\n",
+                "unless_after needs lowercase Cyrillic stems",
+            ),
+            (
+                "[[lookalike]]\nletters = [\"H\"]\n",
+                "is no pair of two letters",
+            ),
+            (
+                "[[lookalike]]\nletters = [\"НH\"]\n",
+                "needs another script's letter",
+            ),
+            (
+                "[[lookalike]]\nletters = [\"HН\", \"HА\"]\n",
+                "reads as two letters",
+            ),
+            (
+                "[[lookalike]]\nwords = [\"На\"]\n",
+                "needs lowercase Cyrillic letters",
+            ),
+            (
+                "[[lookalike]]\nwords = [\"т.п.\"]\n",
+                "needs lowercase Cyrillic letters",
+            ),
+        ] {
+            let error = Pack::load(&[("test.toml", entry)])
+                .err()
+                .unwrap_or_default();
+            assert!(error.contains(problem), "{entry}: {error}");
+        }
     }
 }

@@ -1864,3 +1864,39 @@ forbid_in = ['(?P<lead>(?:^|[:,;(«"]|\p{Alphabetic}{2})[\p{Zs}\t]*)\d{6}\b(?P<t
 # required; a bare «учетный номер» stays.
 [[reference]]
 pattern = '(?i)(?P<lead>\bуч[её]тный[\p{Zs}\t]+номер[\p{Zs}\t]+в[\p{Zs}\t]+ЕРКНМ[\p{Zs}\t:№]*)\d+'
+
+# OCR of a Russian scan writes common words in Latin or Greek look-alike
+# letters, and the model takes them for names (#549): «Ha 01.01.2031 r.»
+# (Latin H and a for «На», r for «г»), «Bce расходы» («Все»), «и T.π.» («т.п.», a
+# Latin T and a Greek π). A person's or an organization's span that reads,
+# look-alikes as their Cyrillic letters, as one of these words or a
+# `never` word is dropped in Russian text (rules.rs `lookalike_word`).
+# The letters are the shapes OCR confuses: capitals and lowercase letters
+# drawn alike in both scripts, and the lowercase r, n and u of an italic or
+# worn «г», «п» and «и». A name with a letter of its own stays («Ивaнов»
+# with a Latin a, "Hans", "Smith", «ООО «Abc»»), and so do a capital alone
+# (an initial), a word in capitals ("BCE"), a word in quotes («Bce»), a
+# name beside a Latin one in any case ("Nguyễn Thị Ha", "HA THI LAN") and
+# one after a person's label or role in its clause, up to four words
+# before it: the `unless_after` stems below («Фамилия: Ha», «гражданка
+# Республики Корея Ha»), the role stems of `never` («Работник: Ha») and a
+# person's titles. The words are prepositions, pronouns and abbreviations that
+# name no one; short words that are also Latin surnames («по» for "Po",
+# «но» for "Ho", «ко» for "Ko") are left out.
+[[lookalike]]
+letters = [
+    "AА", "BВ", "CС", "EЕ", "HН", "KК", "MМ", "OО", "PР", "TТ", "XХ", "YУ",
+    "aа", "cс", "eе", "kк", "oо", "pр", "xх", "yу", "rг", "nп", "uи",
+    "ΑА", "ΒВ", "ΕЕ", "ΗН", "ΚК", "ΜМ", "ΟО", "ΡР", "ΤТ", "ΧХ",
+    "αа", "κк", "οо", "ρр", "τт", "πп", "χх",
+]
+words = [
+    "на", "все", "всё", "всех", "всем", "всего", "при", "от", "до", "из",
+    "за", "об", "или", "т.п", "т.д", "т.е", "т.к", "т.ч", "т.н", "и.т.д",
+    "и.т.п", "г", "гг", "ул", "д", "кв", "стр", "тел", "см", "ст", "руб",
+]
+unless_after = [
+    "фамили", "имя", "имени", "отчеств", "фио", "граждан", "свидетел",
+    "подсудим", "обвиняем", "осужденн", "осуждённ", "потерпевш", "переводчи",
+    "сотрудник", "понят", "участник",
+]
