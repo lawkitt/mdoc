@@ -1508,6 +1508,32 @@ between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '\d{2}-\d{2}-\d{2}(?:[/\p{Zs}]\d{6,10})?|[A-Z]{2}\d{2}[A-Z0-9]{11,30}|\d{8,20}'
 min_digits = 6
 
+# A passport's number after its label (guide rule 6, #381): "Passport:
+# 123456789", "Passport No. C01234567", up to two capitals then six to
+# nine digits, or eight to ten digits, OCR letters as above. "Passport:
+# pending" and a date after the label give nothing.
+[[context]]
+category = "IDENTITY"
+labels = ["passport", "passport number", "passport no"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[A-Z]{1,2}[0-9OoIlB]{6,9}|[0-9OoIlB]{8,10}'
+min_digits = 6
+
+# A payment card's number after its label is bank details (guide rule 6,
+# #381), whatever its Luhn check: "Card number: 4111 1111 1111 1112",
+# sixteen digits in fours, a digit fewer or more in the last group, or
+# thirteen to nineteen together. "Credit card fees of $1,250" and a card's
+# last four digits ("card ending 1234") give nothing.
+[[context]]
+category = "BANK"
+labels = [
+    "card", "card number", "card no", "credit card", "credit card number",
+    "credit card no", "debit card", "debit card number", "debit card no",
+]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{3,5}|[0-9OoIlB]{13,19}'
+min_digits = 12
+
 # A staff or member ID after its label, even one of letters only
 # ("**Staff ID:** VELK-QUEN", "Employee ID: TERN-WISP"): capitals or digits
 # in hyphenated parts, or letters then digits. Never a person.

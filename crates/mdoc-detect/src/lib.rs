@@ -2115,10 +2115,15 @@ mod tests {
             .into_iter()
             .map(|d| (&source[d.range], d.category))
             .collect();
-        // The surname by its column (#397), the INN by its label's.
+        // The surname by its column (#397), the INN and the passport by
+        // their labels' (#381).
         assert_eq!(
             found,
-            [("Кий", Category::Person), ("508614729031", Category::Tax)]
+            [
+                ("Кий", Category::Person),
+                ("508614729031", Category::Tax),
+                ("46 82 731609", Category::Identity)
+            ]
         );
     }
 
@@ -2646,6 +2651,9 @@ mod tests {
                 vec![(start, category, wide.to_owned())]
             };
             expected.sort();
+            // A field the rules mark and the wide span keeps is one (#381:
+            // an account after "р/с").
+            expected.dedup();
             assert_eq!(shown_with(source, &[(wide, label)]), expected, "{source}");
         }
         // On main's rules a labelled ИНН is TAX and a valid ОГРН IDENTITY.
@@ -3012,7 +3020,9 @@ mod tests {
                         0.8,
                     ),
                 ][..],
-                "TAX«7701234567» | IDENTITY«40702810900000012345, паспорт 4512 345678»",
+                // The account's and the passport's labels give their own
+                // fields (#381).
+                "TAX«7701234567» | BANK«40702810900000012345» | IDENTITY«4512 345678»",
             ),
             (
                 "X7 passport then date",
@@ -3050,7 +3060,7 @@ mod tests {
                 "X11 table cell",
                 "| ИНН | 7701234567, р/с 40702810900000012345 |\n|---|---|\n",
                 &[("7701234567, р/с 40702810900000012345", "bank_account", 0.8)][..],
-                "BANK«7701234567, р/с 40702810900000012345»",
+                "TAX«7701234567» | BANK«40702810900000012345»",
             ),
             (
                 "X12 name inside wide",
@@ -3083,7 +3093,8 @@ mod tests {
                     "passport_number",
                     0.8,
                 )][..],
-                "IDENTITY«4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001»",
+                // The passport's label gives its number alone (#381).
+                "IDENTITY«4512 345678»",
             ),
             (
                 "X14 wide over org",
@@ -3183,13 +3194,15 @@ mod tests {
                     "bank_account",
                     0.8,
                 )][..],
-                "TAX«772012345678»",
+                // The card's label gives its number (#381).
+                "TAX«772012345678» | BANK«4276 3800 1234 5678»",
             ),
             (
                 "Q1 passport rule?",
                 "паспорт 4512 345678, выдан ОВД",
                 &[][..],
-                "",
+                // A passport's label proposes its number (#381).
+                "IDENTITY«4512 345678»",
             ),
             (
                 "Q2 passport+addr",
@@ -3697,10 +3710,14 @@ mod tests {
         );
         let account = source.find("40702810900000012345").unwrap();
         let account = account..account + 20;
+        // Besides the label's own (#381).
         assert_eq!(
             correct(source, &raw)
                 .iter()
-                .filter(|detection| detection.range == account)
+                .filter(|detection| {
+                    detection.range == account
+                        && detection.recognizer != mdoc_pii::Recognizer::Context
+                })
                 .count(),
             1
         );
@@ -3718,7 +3735,8 @@ mod tests {
             shown_with(source, &[(wide, "bank_account")]),
             [(7, "BANK".to_owned(), wide.to_owned())]
         );
-        // A company's or a person's span is no identifier's.
+        // A company's or a person's span is no identifier's: only the
+        // account its own label proposes is bank details (#381).
         for (wide, label) in [
             (
                 "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345",
@@ -3733,7 +3751,8 @@ mod tests {
             assert!(
                 shown_with(&source, &[(wide, label)])
                     .iter()
-                    .all(|(_, category, _)| category != "BANK"),
+                    .all(|(_, category, text)| category != "BANK"
+                        || text == "40702810900000012345"),
                 "{source}"
             );
         }

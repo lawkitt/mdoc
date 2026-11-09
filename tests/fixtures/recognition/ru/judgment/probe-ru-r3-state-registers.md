@@ -1,11 +1,10 @@
 ---
-status: known-flaw
+status: pass
 flaw: state-register-category
 issue: 563
 kind: judgment
 source: probe-r2
 # SPDX-License-Identifier: CC0-1.0
-expect: boundary: gold BANK "049999999"; proposed ORG "БИК 049999999"
 ---
 # Решение
 

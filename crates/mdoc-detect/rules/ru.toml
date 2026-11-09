@@ -924,12 +924,18 @@ only_after = ["паспорт", "паспорта"]
 category = "PHONE"
 words = ["тел", "телефон", "телефона", "тел/факс", "факс", "моб"]
 
-# ИНН: ten or twelve digits; OCR may read a digit as O, О, I, l or І.
+# ИНН: ten or twelve digits, and nine or eleven for an invalid or damaged
+# value (guide rule 6, #381); OCR may read a digit as O, О, I, l, І, З or B
+# (В). Thirteen are an ОГРН's ("ОГРН/ИНН 1029900000017/…", left to the
+# model). Only right after the label: an unlabelled number whose checksum
+# fails stays the model's. The value may sit in the next cell of a table's
+# row ("| ИНН | 7701234567, р/с … |"), as may those of СНИЛС, a passport,
+# an account, a БИК and a card below.
 [[context]]
 category = "TAX"
 labels = ["инн"]
-between = '[\p{Zs}\t:*_№#.]{1,8}'
-value = '[0-9OОoIlІ]{10}(?:[0-9OОoIlІ]{2})?'
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{9,12}'
 min_digits = 8
 
 # ОГРН and ОГРНИП are TAX like ИНН, a public body's own too (guide rule 6,
@@ -950,7 +956,7 @@ labels = [
     "основным государственным регистрационным номером",
 ]
 between = '(?:[\p{Zs}\t]+индивидуального[\p{Zs}\t]+предпринимателя)?(?:[\p{Zs}\t]*\((?:ОГРН|ОГРНИП)\))?[\p{Zs}\t:*_№#.(]{1,8}'
-value = '[0-9OОoIlІ]{12,16}'
+value = '[0-9OОoIlІЗBВ]{12,16}'
 min_digits = 11
 unless_slashed = true
 
@@ -963,17 +969,102 @@ unless_slashed = true
 category = "TAX"
 labels = ["окпо", "код окпо", "код по окпо"]
 between = '[\p{Zs}\t:*_№#.(]{1,8}'
-value = '[0-9OОoIlІ]{7,11}'
+value = '[0-9OОoIlІЗBВ]{7,11}'
 min_digits = 6
 unless_slashed = true
 
-# СНИЛС: "123-456-789 00" or eleven digits.
+# СНИЛС: "123-456-789 00" or eleven digits, whatever its checksum (guide
+# rule 6, #381: "СНИЛС: 123-456-789 00" is marked). One group a digit
+# short or long, or ten or twelve digits, is a damaged value, and OCR may
+# read a digit as O, О, I, l, І, З or B (В). A word ("СНИЛС: нет"), a date
+# or an amount after the label is no value.
 [[context]]
 category = "IDENTITY"
 labels = ["снилс"]
-between = '[\p{Zs}\t:*_№#.]{1,8}'
-value = '\d{3}-\d{3}-\d{3}[\p{Zs}-]\d{2}|\d{11}'
-min_digits = 11
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{3}[\p{Zs}\t-][0-9OОoIlІЗBВ]{1,3}|[0-9OОoIlІЗBВ]{2,4}-[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{3}[\p{Zs}\t-][0-9OОoIlІЗBВ]{2}|[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{2,4}-[0-9OОoIlІЗBВ]{3}[\p{Zs}\t-][0-9OОoIlІЗBВ]{2}|[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{3}-[0-9OОoIlІЗBВ]{2,4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{2}|[0-9OОoIlІЗBВ]{10,12}'
+min_digits = 9
+
+# A passport's series and number after its label, whatever the model
+# guessed (guide rule 6, #381): "Паспорт: 4510 123456", "паспорт 46 82
+# 731604", "паспорта № 4512345678", "паспорт гражданина РФ серии и номер
+# 4510 123456". A number a digit short or long is a damaged value, and OCR
+# may read a digit as O, О, I, l, І, З or B (В): "46I7 82О634". A series
+# and a number split by "№" ("серии 45 10 № 123456"), a date ("паспорт
+# 12.03.2026 выдан"), a code or words after the label are left to the
+# model.
+[[context]]
+category = "IDENTITY"
+labels = ["паспорт", "паспорта", "паспорту", "паспортом", "паспорте"]
+between = '(?:[\p{Zs}\t]+(?:гражданина|РФ|Российской|Федерации|серии|серия|и|номер)){0,6}[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{2}[\p{Zs}\t]?[0-9OОoIlІЗBВ]{2}[\p{Zs}\t][0-9OОoIlІЗBВ]{5,7}|[0-9OОoIlІЗBВ]{9,11}'
+min_digits = 8
+
+# A bank account after its label (guide rule 6, #381): twenty digits, and
+# one fewer or more for a damaged value, OCR letters as above ("р/с
+# 40702810900000001234", "корр. счёт: 3010181040000000022"). "Счёт" alone
+# keeps its strict label above: an invoice's number is no account.
+[[context]]
+category = "BANK"
+labels = [
+    "р/с", "р/сч", "к/с", "к/сч", "л/с", "расчетный счет", "расчётный счёт",
+    "корреспондентский счет", "корреспондентский счёт", "корр. счет", "корр. счёт",
+    "лицевой счет", "лицевой счёт", "номер счета", "номер счёта",
+]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{19,21}'
+min_digits = 17
+
+# A БИК after its label (guide rule 6, #381): nine digits, and one fewer or
+# more for a damaged value ("БИК: 04452522"). A slash-joined label ("БИК/к/с
+# …") leaves the run to the model.
+[[context]]
+category = "BANK"
+labels = ["бик"]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{8,10}'
+min_digits = 7
+unless_slashed = true
+
+# A payment card's number after its label is bank details (guide rule 6,
+# #381), whatever its Luhn check: "Номер карты: 4111 1111 1111 1112",
+# "карта № 4276 3800 1234 567", sixteen digits in fours, a digit fewer or
+# more in the last group, or thirteen to nineteen together. A shorter
+# number ("карта № 12", a map's) is none.
+[[context]]
+category = "BANK"
+labels = [
+    "номер карты", "номер банковской карты", "банковская карта", "банковской карты",
+    "банковской картой", "карта", "карты", "карте", "картой",
+]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{3,5}|[0-9OОoIlІЗBВ]{13,19}'
+min_digits = 12
+
+# An employee's personnel number is one person's (guide rule 6 and its
+# staff ID example; #381): "Табельный номер: VK-731628", "таб. № 004512".
+# Letters then digits, or five digits or more alone: the review marks the
+# value everywhere, so a short one would take a year or an article's
+# number too. "Табельный номер не присвоен" gives nothing.
+[[context]]
+category = "IDENTITY"
+labels = [
+    "табельный номер", "табельного номера", "табельным номером", "табельный",
+    "табельного", "табельным",
+]
+between = '(?:[\p{Zs}\t]+(?:номер\p{Alphabetic}{0,2}|№))?[\p{Zs}\t:*_№#.]{1,8}'
+value = '\p{Uppercase}{1,4}-?\d{3,10}|\d{5,10}'
+min_digits = 4
+
+# The same number after the label's short form, which needs its number word
+# or sign: "таб. № 004512", "таб. номер VK-731628". "Таб." alone may be
+# another word's.
+[[context]]
+category = "IDENTITY"
+labels = ["таб"]
+between = '\.?[\p{Zs}\t]*(?:номер|№)[\p{Zs}\t:*_№#.]{1,8}'
+value = '\p{Uppercase}{1,4}-?\d{3,10}|\d{5,10}'
+min_digits = 4
 
 # A card or membership code after its label: "Код карточки: CARD-918264".
 [[context]]
