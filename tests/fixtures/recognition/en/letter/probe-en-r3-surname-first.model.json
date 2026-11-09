@@ -1,0 +1,15 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":478,"end":485,"label":"person","score":0.9582261,"text":"Quessel"},
+    {"start":351,"end":359,"label":"person","score":0.9457011,"text":"Brannock"},
+    {"start":373,"end":381,"label":"person","score":0.93698055,"text":"Draycott"},
+    {"start":311,"end":317,"label":"person","score":0.8989441,"text":"Penrow"},
+    {"start":331,"end":338,"label":"person","score":0.89368117,"text":"Ostrand"},
+    {"start":434,"end":441,"label":"person","score":0.8828325,"text":"Alvarne"},
+    {"start":158,"end":173,"label":"organization","score":0.9036349,"text":"drainage survey"},
+    {"start":247,"end":262,"label":"organization","score":0.86938226,"text":"project library"},
+    {"start":102,"end":117,"label":"organization","score":0.7676898,"text":"drainage survey"}
+  ]
+}
