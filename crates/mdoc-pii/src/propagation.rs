@@ -1401,7 +1401,10 @@ fn initials_cells(source: &str, people: &People) -> Vec<Range<usize>> {
                     .map(|cell| {
                         let text = &line[cell.clone()];
                         let lead = text.len() - text.trim_start().len();
-                        start + cell.start + lead..start + cell.start + text.trim_end().len()
+                        // A blank cell ("|   |") trims to nothing at its lead,
+                        // not to a range that ends before it starts.
+                        let end = text.trim_end().len().max(lead);
+                        start + cell.start + lead..start + cell.start + end
                     })
                     .collect()
             })
@@ -2587,6 +2590,10 @@ mod tests {
         // A column of known initials, or under a person's header.
         let table = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 | EH |\n";
         assert_eq!(found(table), ["JB", "EH"]);
+        // Blank cells, of spaces or a no-break space, neither panic nor
+        // count as another value in the column.
+        let blank = "| Week | Code | Note |\n|---|---|---|\n| 1 | JB |   |\n| 2 | EH |\u{a0}|\n|   | EH | |\n";
+        assert_eq!(found(blank), ["JB", "EH", "EH"]);
         assert_eq!(found("| Week | Lead |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
         assert_eq!(found("| Этап | Исп. |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
         // A country column, a lone row, a code beside a known pair.
