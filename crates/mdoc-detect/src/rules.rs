@@ -4945,6 +4945,93 @@ impl Pack {
         }
     }
 
+    /// The companies in `text` that a `nested_quotes` legal form and its
+    /// quoted name make, one inner pair of quotes at most, in order and none
+    /// over another: "ПАО «Банк»" and "ООО «Ромашка»" of "в ПАО «Банк» для
+    /// ООО «Ромашка», к/с" (#381).
+    pub(crate) fn quoted_companies(&self, text: &str) -> Vec<std::ops::Range<usize>> {
+        let mut found: Vec<std::ops::Range<usize>> = self
+            .spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Organization => Some(fix),
+                _ => None,
+            })
+            .flat_map(|fix| &fix.nested_quotes)
+            .flat_map(|(_, anywhere)| anywhere.find_iter(text))
+            .filter_map(|form| {
+                let open = form.end()
+                    + (text[form.end()..].len()
+                        - text[form.end()..]
+                            .trim_start_matches([' ', '\t', '\u{a0}'])
+                            .len());
+                let mut chars = text[open..].char_indices();
+                let (_, quote) = chars.next()?;
+                let closing = if quote == '«' { '»' } else { quote };
+                if !matches!(quote, '«' | '"') {
+                    return None;
+                }
+                // The inner pair open, a line's end or a second inner pair
+                // ends the search.
+                let mut inner = 0;
+                for (at, c) in chars {
+                    match c {
+                        '\n' => return None,
+                        '«' if quote == '«' => {
+                            inner += 1;
+                            if inner > 1 {
+                                return None;
+                            }
+                        }
+                        c if c == closing && quote == '«' && inner == 1 => inner = 2,
+                        c if c == closing && quote == '«' && inner == 2 => {
+                            return Some(form.start()..open + at + c.len_utf8());
+                        }
+                        c if c == closing && (quote == '"' || inner == 0) => {
+                            return Some(form.start()..open + at + c.len_utf8());
+                        }
+                        _ => {}
+                    }
+                }
+                None
+            })
+            .collect();
+        // The earliest first, the longest of those starting together.
+        found.sort_by_key(|range| (range.start, std::cmp::Reverse(range.end)));
+        let mut end = 0;
+        found.retain(|range| {
+            let free = end <= range.start;
+            if free {
+                end = range.end;
+            }
+            free
+        });
+        found
+    }
+
+    /// Where the label before the `context` value at `value` starts, on the
+    /// value's line of `source` ("паспорт" of "Иванов Иван, паспорт 4510
+    /// 123456"); `None` for a value with no label before it on its line (a
+    /// table column's cell, a label after its value).
+    pub(crate) fn label_start(
+        &self,
+        source: &str,
+        value: &std::ops::Range<usize>,
+    ) -> Option<usize> {
+        let line = source[..value.start].rfind('\n').map_or(0, |at| at + 1);
+        let text = &source[line..value.end];
+        self.contexts
+            .iter()
+            .filter(|context| !context.after)
+            .find_map(|context| {
+                context.pattern.captures_iter(text).find_map(|found| {
+                    let at = found.get(1)?;
+                    (line + at.start() == value.start && line + at.end() == value.end)
+                        .then(|| line + found.get(0).map_or(at.start(), |whole| whole.start()))
+                })
+            })
+    }
+
     /// Values beside their labels in `source`, as `context` rules propose
     /// them: the value only, without its label.
     pub(crate) fn context(&self, source: &str) -> Vec<Detection> {
@@ -6372,6 +6459,195 @@ mod tests {
             "ИНН: 123; СНИЛС: 12-34",
         ] {
             assert!(found(source).is_empty(), "{source}");
+        }
+    }
+
+    /// What the review proposes for `source` without a model: each span's
+    /// text and category token.
+    fn proposed(source: &str) -> Vec<(String, String)> {
+        crate::recognition::proposals(source, &[])
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect()
+    }
+
+    /// Issue #381: a Russian identifier after its label is proposed with
+    /// the label's category whatever its checksum, a digit short or long
+    /// or with an OCR letter for a digit (guide rule 6: an invalid or
+    /// damaged value is still marked). Valid values stay as they were.
+    #[test]
+    fn labelled_invalid_russian_identifiers_are_proposed() {
+        for (source, value, category) in [
+            // A failing checksum.
+            ("СНИЛС: 123-456-789 00.", "123-456-789 00", "IDENTITY"),
+            ("СНИЛС 12345678900", "12345678900", "IDENTITY"),
+            ("ИНН: 7701234567.", "7701234567", "TAX"),
+            ("ОГРН: 1027700132190", "1027700132190", "TAX"),
+            // Valid ones, unchanged.
+            ("СНИЛС: 112-233-445 95.", "112-233-445 95", "IDENTITY"),
+            ("ИНН: 7707083893.", "7707083893", "TAX"),
+            ("ИНН: 500100732259", "500100732259", "TAX"),
+            ("ОГРН: 1027700132195", "1027700132195", "TAX"),
+            // A digit short or long, an OCR letter for a digit.
+            ("СНИЛС: 123-456-789 0.", "123-456-789 0", "IDENTITY"),
+            ("СНИЛС: 123-456-7890 00.", "123-456-7890 00", "IDENTITY"),
+            ("СНИЛС: 1234567890", "1234567890", "IDENTITY"),
+            ("СНИЛС: 12З-456-789 0O.", "12З-456-789 0O", "IDENTITY"),
+            ("ИНН 770123456", "770123456", "TAX"),
+            ("ИНН 77012345678", "77012345678", "TAX"),
+            ("ИНН 77012З4567", "77012З4567", "TAX"),
+            ("ИНН 77B1234567", "77B1234567", "TAX"),
+            ("ОКПО: 9988776B", "9988776B", "TAX"),
+            // A passport's series and number.
+            ("Паспорт: 4510 123456.", "4510 123456", "IDENTITY"),
+            ("паспорт 46 82 731604, выдан", "46 82 731604", "IDENTITY"),
+            ("владельцу паспорта № 4512345678", "4512345678", "IDENTITY"),
+            (
+                "паспорт гражданина РФ серии и номер 4510 123456",
+                "4510 123456",
+                "IDENTITY",
+            ),
+            ("Паспорт: 4510 12345.", "4510 12345", "IDENTITY"),
+            ("Паспорт: 46I7 82О634", "46I7 82О634", "IDENTITY"),
+            // Bank details and a card's number.
+            (
+                "Расчётный счёт: 40702810900000001234.",
+                "40702810900000001234",
+                "BANK",
+            ),
+            (
+                "р/с 4070281090000000123 в банке",
+                "4070281090000000123",
+                "BANK",
+            ),
+            (
+                "корр. счёт: 30101810400000000225",
+                "30101810400000000225",
+                "BANK",
+            ),
+            ("БИК: 044525225.", "044525225", "BANK"),
+            ("БИК: 04452522.", "04452522", "BANK"),
+            (
+                "Номер карты: 4111 1111 1111 1112.",
+                "4111 1111 1111 1112",
+                "BANK",
+            ),
+            ("карта № 4276 3800 1234 5678", "4276 3800 1234 5678", "BANK"),
+            (
+                "банковская карта № 4276380012345678",
+                "4276380012345678",
+                "BANK",
+            ),
+            // A personnel number.
+            ("Табельный номер: VK-731628", "VK-731628", "IDENTITY"),
+            ("табельный № 731628", "731628", "IDENTITY"),
+            ("таб. № 004512", "004512", "IDENTITY"),
+            // The value in the next cell of a table's row.
+            ("| ИНН | 7701234567 |", "7701234567", "TAX"),
+            ("| Паспорт | 4510 123456 |", "4510 123456", "IDENTITY"),
+        ] {
+            assert_eq!(
+                proposed(source),
+                [(value.to_owned(), category.to_owned())],
+                "{source}"
+            );
+        }
+        for source in [
+            // No label: a failing checksum stays the model's.
+            "Отправить 12345678900 и 7701234567 и 123-456-789 00 без меток.",
+            "Номер 4111 1111 1111 1112 и 40702810900000001234.",
+            // A label in prose, or a word after it.
+            "Номер СНИЛС указывается в анкете.",
+            "СНИЛС: нет.",
+            "Паспорт: не предъявлен.",
+            "Табельный номер: не присвоен",
+            "Табельный номер работника 12345 указан в приказе.",
+            "банковская карта утеряна",
+            // Another field's value after the label.
+            "СНИЛС: 01.02.2026",
+            "СНИЛС: 1 000 000 рублей",
+            "СНИЛС: +7 900 000-00-00",
+            "ИНН: 01.02.2026",
+            "ИНН: 1 000 000 рублей",
+            "Паспорт 12.03.2026 выдан",
+            "паспорт выдан 12 марта 2026 года",
+            // Too short for its label, or a series split from its number.
+            "ИНН: 123; СНИЛС: 12-34",
+            "карта № 12",
+            "Табельный № 2026",
+            // A bare "карта" takes a card's four groups only, never a run or
+            // a process's or a fuel card's number; "и" after "паспорт" is
+            // no filler; a damaged ИНН's length waits for "ИНН" alone.
+            "карта № 4276380012345678",
+            "Технологическая карта № 4276 3800 1234 5678",
+            "Топливная карта 7824861090001234567",
+            "паспорт и 89161234567",
+            "КПП/ИНН 770101001/7701234567",
+            "БИК/ИНН 044525225/7701234567",
+            "таб. 12345",
+            "БИК/к/с 044525225/30101810400000000225",
+            "| ИНН | КПП |\n| --- | --- |\n| нет | — |\n",
+        ] {
+            assert!(
+                proposed(source).is_empty(),
+                "{source}: {:?}",
+                proposed(source)
+            );
+        }
+    }
+
+    /// Issue #381 in English: a passport's and a card's number after their
+    /// labels, whatever their check, a digit short or long or with an OCR
+    /// letter for a digit.
+    #[test]
+    fn labelled_invalid_english_identifiers_are_proposed() {
+        for (source, value, category) in [
+            ("Passport: 123456789", "123456789", "IDENTITY"),
+            ("Passport: 12345678O", "12345678O", "IDENTITY"),
+            ("**Passport No.** 12345678", "12345678", "IDENTITY"),
+            ("Passport No. C01234567", "C01234567", "IDENTITY"),
+            (
+                "Card number: 4111 1111 1111 1112",
+                "4111 1111 1111 1112",
+                "BANK",
+            ),
+            ("Credit card: 4111111111111111", "4111111111111111", "BANK"),
+            ("card 4111 1111 1111 1111", "4111 1111 1111 1111", "BANK"),
+            (
+                "Card number: 4111 1111 1111 111",
+                "4111 1111 1111 111",
+                "BANK",
+            ),
+        ] {
+            assert_eq!(
+                proposed(source),
+                [(value.to_owned(), category.to_owned())],
+                "{source}"
+            );
+        }
+        for source in [
+            "Unlabelled 4111 1111 1111 1112 and 123-45-6789 here.",
+            "Passport: pending",
+            "passport 12/03/2026",
+            "the passport was renewed in 2026",
+            "Credit card fees of $1,250.00",
+            // "Card" alone takes four groups only, never an ID, SIM or
+            // loyalty card's number; a passport starts with a capital or a
+            // digit.
+            "SIM card 8901260123456789012",
+            "ID card 1234 5678 9012 3456",
+            "Loyalty card 6006491123456789",
+            "card 6006491123456789",
+            "Passport No1234567",
+            "Passport: lo123456",
+            "card ending 1234",
+        ] {
+            assert!(
+                proposed(source).is_empty(),
+                "{source}: {:?}",
+                proposed(source)
+            );
         }
     }
 
@@ -12110,7 +12386,11 @@ Privacy Act (“BIPA”). BIPA applies.",
             (
                 "Адрес: ул. Лесная, д. 5, кв. 7, р/с 40702810900000012345",
                 &[][..],
-                &[("ул. Лесная, д. 5, кв. 7", "ADDRESS")][..],
+                // The account after its label is the bank's (#381).
+                &[
+                    ("ул. Лесная, д. 5, кв. 7", "ADDRESS"),
+                    ("40702810900000012345", "BANK"),
+                ][..],
             ),
             (
                 "Адрес: ул. Лесная, д. 5, кв. 7, 8–916–123–45–67.",
@@ -19475,11 +19755,13 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "bank_account",
                 "BANK",
             ),
+            // The passport's label decides its category over the model's
+            // guess (#381).
             (
                 "Паспорт 4506 123456 01.02.2020",
                 "4506 123456",
                 "tax_id",
-                "TAX",
+                "IDENTITY",
             ),
             ("770912345678 01.02.2020", "770912345678", "tax_id", "TAX"),
             (
@@ -19866,7 +20148,14 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ),
             ("SSN 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
             ("UTR 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
-            ("Паспорт 4506 123456 руб.", "4506 123456", "tax_id", "TAX"),
+            // The passport's label decides its category over the model's
+            // guess (#381).
+            (
+                "Паспорт 4506 123456 руб.",
+                "4506 123456",
+                "tax_id",
+                "IDENTITY",
+            ),
         ] {
             assert_eq!(
                 shown(source, &[(value, label)]),
@@ -20654,6 +20943,9 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 ("Ветлин Н. О.", "PERSON"),
                 ("329990000000012", "TAX"),
                 ("9901000017", "TAX"),
+                // The БИК and the account after their labels (#381).
+                ("049999999", "BANK"),
+                ("03100643000000019900", "BANK"),
             ])
         );
         // A valid ОГРН's structured rule says TAX too.

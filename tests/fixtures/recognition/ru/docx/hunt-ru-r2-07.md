@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ru-identifier-category
 issue: 380
 kind: docx
 source: hunt-r2
-expect: boundary: gold TAX "５０８６１４７２９０３１"; proposed IDENTITY "５０８６１４７２９０３１"
 ---
 # Приложение к заявлению о возврате образца ткани
 
