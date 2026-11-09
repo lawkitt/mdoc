@@ -510,44 +510,36 @@ fn block_tree(source: &str, at: usize) -> Option<(markdown::mdast::Node, usize)>
         .ok()
         .map(|tree| (tree, start))
 }
-/// Where the emphasis or strong emphasis that opens at `at` of `source`
-/// ends, the furthest if several do, so the `_` or `*` there is a
-/// delimiter, not text ("_quill@…_", #412).
-pub(super) fn emphasis_opens_at(source: &str, at: usize) -> Option<usize> {
+/// The length of the emphasis delimiters at `at` of `source` whose
+/// emphasis or strong emphasis ends after `end`: Markdown around a value
+/// there, not its text ("_quill@…_" has 1, "___a_@…__" 2, #412, #746).
+pub(super) fn emphasis_delimiters_at(source: &str, at: usize, end: usize) -> usize {
     use markdown::mdast::Node;
-    let (tree, start) = block_tree(source, at)?;
+    let Some((tree, start)) = block_tree(source, at) else {
+        return 0;
+    };
+    // Each such emphasis by where it opens, with where its content starts.
+    let mut opens = std::collections::HashMap::new();
     let mut stack = vec![&tree];
-    let mut end = None;
     while let Some(node) = stack.pop() {
         if matches!(node, Node::Emphasis(_) | Node::Strong(_))
             && let Some(p) = node.position()
-            && p.start.offset + start == at
+            && p.end.offset + start > end
+            && let Some(content) = node
+                .children()
+                .and_then(|children| children.first())
+                .and_then(Node::position)
         {
-            end = end.max(Some(p.end.offset + start));
+            opens.insert(p.start.offset + start, content.start.offset + start);
         }
         stack.extend(node.children().into_iter().flatten());
     }
-    end
-}
-/// Whether `at` of `source` is in code or raw HTML, where a `\` is text
-/// and escapes nothing (`` `snake\_case@…` ``, #746).
-pub(super) fn literal_at(source: &str, at: usize) -> bool {
-    use markdown::mdast::Node;
-    let Some((tree, start)) = block_tree(source, at) else {
-        return false;
-    };
-    let mut stack = vec![&tree];
-    while let Some(node) = stack.pop() {
-        if matches!(node, Node::InlineCode(_) | Node::Code(_) | Node::Html(_))
-            && node
-                .position()
-                .is_some_and(|p| p.start.offset + start <= at && at < p.end.offset + start)
-        {
-            return true;
-        }
-        stack.extend(node.children().into_iter().flatten());
+    // Nested emphasis opening together ("___x@…___") adds up.
+    let mut inner = at;
+    while let Some(&content) = opens.get(&inner) {
+        inner = content;
     }
-    false
+    inner - at
 }
 /// Node kinds and child counts in document order, ignoring text values.
 /// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
@@ -593,8 +585,9 @@ fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>
         _ => false,
     }
 }
-/// `node`'s children, with those of emphasis wholly inside `value` in its
-/// place when `inner_emphasis` holds.
+/// `node`'s children, with those of emphasis, strong emphasis and
+/// strikethrough wholly inside `value` in its place when `inner_emphasis`
+/// holds.
 fn children_of<'a>(
     node: &'a markdown::mdast::Node,
     value: &std::ops::Range<usize>,
@@ -604,7 +597,7 @@ fn children_of<'a>(
     use markdown::mdast::Node;
     for child in node.children().map_or(&[][..], Vec::as_slice) {
         if inner_emphasis
-            && matches!(child, Node::Emphasis(_) | Node::Strong(_))
+            && matches!(child, Node::Emphasis(_) | Node::Strong(_) | Node::Delete(_))
             && child
                 .position()
                 .is_some_and(|at| value.start <= at.start.offset && at.end.offset <= value.end)

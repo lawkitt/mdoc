@@ -737,22 +737,15 @@ impl Review {
             // #412: an address's leading `_` that opens emphasis around it
             // ("_quill@…_") is Markdown, and the address is the rest; one
             // that opens none is the address's own ("_roman@…"), and so is
-            // one whose emphasis ends inside it ("__init__@…", #746).
-            if detection.category == Category::Email
-                && text.starts_with('_')
-                && syntax::emphasis_opens_at(source, detection.range.start)
-                    .is_some_and(|end| end > detection.range.end)
-            {
-                let rest = text.trim_start_matches('_');
-                detection.range.start = detection.range.end - rest.len();
-            }
-            // #746: an escaped `_` ("snake\_case@…", "\_roman@…") is the
-            // address's, but in code or raw HTML its `\` is text.
-            if detection.category == Category::Email
-                && text.contains("\\_")
-                && syntax::literal_at(source, detection.range.start)
-            {
-                continue;
+            // one whose emphasis ends inside it ("__init__@…", "___a_@…__"
+            // keeps "_a_@…"; #746).
+            if detection.category == Category::Email && text.starts_with('_') {
+                let outer = syntax::emphasis_delimiters_at(
+                    source,
+                    detection.range.start,
+                    detection.range.end,
+                );
+                detection.range.start += outer.min(text.len());
             }
             if !detected_span(source, &markup, &detection)
                 || syntax::crosses_syntax(&protected, &markup, source, &detection.range)

@@ -5770,9 +5770,10 @@ mod tests {
 
     /// #746: an escaped `_` (as the importer writes one) is the local
     /// part's, its `\` too, with or without the model's span; so is
-    /// emphasis wholly inside the address, whose rendered text it is.
-    /// Emphasis around an address, `\_` in prose or a web address, code,
-    /// an escaped `\` and a mention stay as they were.
+    /// emphasis wholly inside the address, whose rendered text it is. In
+    /// code and raw HTML the whole run is the address, as a plain one is.
+    /// Emphasis around an address, `\_` in prose or a web address, an
+    /// escaped `\` and a mention stay as they were.
     #[test]
     fn escaped_and_emphasis_underscores_keep_the_whole_address() {
         let emails = |source: &str, spans: &[(&str, &str)]| -> Vec<String> {
@@ -5826,13 +5827,31 @@ mod tests {
             (r"Use snake\_case names.", &[], &[]),
             (r"See https://wiki.invalid/snake\_case/page.", &[], &[]),
             (r"Ping @snake\_case today.", &[], &[]),
-            (r"Copy `snake\_case@kadry.invalid` here.", &[], &[]),
+            (
+                r"Copy `snake\_case@kadry.invalid` here.",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
             (
                 r"Copy `snake\_case@kadry.invalid` here.",
                 &[("case@kadry.invalid", "email")],
-                &["case@kadry.invalid"],
+                &[r"snake\_case@kadry.invalid"],
             ),
-            ("```\nsnake\\_case@kadry.invalid\n```", &[], &[]),
+            (
+                "```\nsnake\\_case@kadry.invalid\n```",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                "<!-- snake\\_case@kadry.invalid -->",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                "```\ncode\n\n```\n\\_roman@kadry.invalid now",
+                &[],
+                &[r"\_roman@kadry.invalid"],
+            ),
         ] {
             assert_eq!(emails(source, spans), expected, "{source}");
         }
