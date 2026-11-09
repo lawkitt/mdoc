@@ -1315,18 +1315,27 @@ fn an_alias_after_a_machine_readable_zones_head_restores() {
 }
 
 /// #495: a zone's document number's alias stands glued to the check digit
-/// after it ("IDENTITY_18RUS…" is `IDENTITY_1`, then 8), and on a TD1 card
-/// to the head before it too; it restores there when it names a known
-/// identity, padded with fillers or not. Elsewhere the digits stay its own.
+/// after it ("IDENTITY_12RUS…" is `IDENTITY_1`, then 2), and on a TD1 card
+/// to the head before it too. Only an identity document's alias is cut
+/// there, where it names a known identity: by its value's check digit
+/// (760531842's is 2), else on a passport's or a TD2 card's line the
+/// longest alias, and never on a TD1 card. Padded with fillers, or glued
+/// to a table's or a label's marks, it restores the same; elsewhere the
+/// digits stay the alias's own.
 #[test]
 fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
-    let map = RestoreMap::new(vec![identity(
-        "IDENTITY_1",
-        Category::Identity,
-        &["760531842"],
-    )]);
+    let map = RestoreMap::new(vec![
+        identity("IDENTITY_1", Category::Identity, &["760531842"]),
+        identity("PERSON_1", Category::Person, &["Anna Petrova"]),
+    ]);
     let card = "\n8807145F3307019RUS<<<<<<<<<<<6";
     for (text, restored) in [
+        (
+            "IDENTITY_12RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318422RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        ),
+        // A check digit that does not validate: the nationality still
+        // fixes where it is.
         (
             "IDENTITY_18RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
             "7605318428RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
@@ -1336,16 +1345,24 @@ fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
             "760531842<8RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
         ),
         (
-            r"MRZ: IDENTITY_18RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
-            r"MRZ: 7605318428RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
+            r"**MRZ:** IDENTITY_18RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
+            r"**MRZ:** 7605318428RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
         ),
         (
-            format!("I<RUSIDENTITY_18<<<<<<<<<<<<<<<{card}"),
-            format!("I<RUS7605318428<<<<<<<<<<<<<<<{card}"),
+            format!("I<RUSIDENTITY_12<<<<<<<<<<<<<<<{card}"),
+            format!("I<RUS7605318422<<<<<<<<<<<<<<<{card}"),
         ),
         (
-            format!("I<RUSIDENTITY_182999999990<<<<<{card}"),
-            format!("I<RUS76053184282999999990<<<<<{card}"),
+            format!("I<RUSIDENTITY_122999999990<<<<<{card}"),
+            format!("I<RUS76053184222999999990<<<<<{card}"),
+        ),
+        (
+            format!("I<RUSIDENTITY_1<2<<<<<<<<<<<<<<{card}"),
+            format!("I<RUS760531842<2<<<<<<<<<<<<<<{card}"),
+        ),
+        (
+            "| I<RUSIDENTITY_12<<<<<<<<<<<<<<< |\n| 8807145F3307019RUS<<<<<<<<<<<6 |".to_owned(),
+            "| I<RUS7605318422<<<<<<<<<<<<<<< |\n| 8807145F3307019RUS<<<<<<<<<<<6 |".to_owned(),
         ),
     ] {
         assert_eq!(apply(&map, &text), restored, "{text}");
@@ -1355,7 +1372,14 @@ fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
         "IDENTITY_18RUS and more.".to_owned(),
         "XIDENTITY_18RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
         "IDENTITY_18XYZ9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
-        "I<RUSIDENTITY_18<<<<<<<<<<<<<<< and no card line".to_owned(),
+        "I<RUSIDENTITY_12<<<<<<<<<<<<<<< and no card line".to_owned(),
+        // On a TD1 card a check digit that does not validate settles
+        // nothing: the alias stays as it is.
+        format!("I<RUSIDENTITY_18<<<<<<<<<<<<<<<{card}"),
+        format!("I<RUSIDENTITY_182999999990<<<<<{card}"),
+        // Another category's alias is never cut.
+        "PERSON_18RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        format!("I<RUSPERSON_12<<<<<<<<<<<<<<<{card}"),
     ] {
         assert_eq!(apply(&map, &text), text);
     }
@@ -1368,5 +1392,62 @@ fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
     assert_eq!(
         apply(&other, "IDENTITY_18<6NOR8807145M3307019<<<<<<<<<<<<<<02"),
         "X0042917<6NOR8807145M3307019<<<<<<<<<<<<<<02"
+    );
+}
+
+/// #495, the review's rows: on a TD1 card, `IDENTITY_12` padded with a
+/// filler is `IDENTITY_12`, though `IDENTITY_1` names someone too; and
+/// `IDENTITY_1` whose check digit is no 2, then optional data, settles
+/// nothing, so neither identity is restored there.
+#[test]
+fn a_td1_alias_whose_digits_extend_another_restores_by_its_check_digit() {
+    let card = "\n8807145F3307019NOR<<<<<<<<<<<6";
+    let map = RestoreMap::new(vec![
+        identity("IDENTITY_1", Category::Identity, &["D2314589"]),
+        identity("IDENTITY_12", Category::Identity, &["A1234567"]),
+    ]);
+    assert_eq!(
+        apply(&map, &format!("I<NORIDENTITY_12<7<<<<<<<<<<<<<{card}")),
+        format!("I<NORA1234567<7<<<<<<<<<<<<<{card}")
+    );
+    let text = format!("I<NLDIDENTITY_12999999990<<<<<{card}");
+    assert_eq!(apply(&map, &text), text);
+    // Nine characters each, their check digits 7 and 4 settle the cut, on
+    // a TD1 card and on a passport's line alike; neither settles "5".
+    let map = RestoreMap::new(vec![
+        identity("IDENTITY_1", Category::Identity, &["D23145890"]),
+        identity("IDENTITY_12", Category::Identity, &["A12345678"]),
+    ]);
+    for (text, restored) in [
+        (
+            format!("I<NORIDENTITY_17<<<<<<<<<<<<<<<{card}"),
+            format!("I<NORD231458907<<<<<<<<<<<<<<<{card}"),
+        ),
+        (
+            format!("I<NORIDENTITY_124<<<<<<<<<<<<<<{card}"),
+            format!("I<NORA123456784<<<<<<<<<<<<<<{card}"),
+        ),
+        (
+            "IDENTITY_17NOR8807145M3307019<<<<<<<<<<<<<<02".to_owned(),
+            "D231458907NOR8807145M3307019<<<<<<<<<<<<<<02".to_owned(),
+        ),
+        (
+            "IDENTITY_124NOR8807145M3307019<<<<<<<<<<<<<<02".to_owned(),
+            "A123456784NOR8807145M3307019<<<<<<<<<<<<<<02".to_owned(),
+        ),
+    ] {
+        assert_eq!(apply(&map, &text), restored, "{text}");
+    }
+    let text = format!("I<NORIDENTITY_125<<<<<<<<<<<<<<{card}");
+    assert_eq!(apply(&map, &text), text);
+    // Padded, the longer alias keeps its digits when its own check digit,
+    // after the fillers, validates, though the shorter's does too.
+    let map = RestoreMap::new(vec![
+        identity("IDENTITY_1", Category::Identity, &["760531842"]),
+        identity("IDENTITY_12", Category::Identity, &["A1234567"]),
+    ]);
+    assert_eq!(
+        apply(&map, &format!("I<NORIDENTITY_12<6<<<<<<<<<<<<<{card}")),
+        format!("I<NORA1234567<6<<<<<<<<<<<<<{card}")
     );
 }

@@ -106,15 +106,19 @@ impl RestoreMap {
     }
     /// Alias-shaped tokens in `text`, in source order and non-overlapping.
     pub fn tokens(&self, text: &str) -> Vec<Token> {
-        let mut tokens = generated_tokens(text, &|key| self.generated.contains_key(key))
-            .into_iter()
-            .filter_map(|(range, key, strict)| {
-                let identity = self.generated.get(&key).copied();
-                // Loose forms ("Tax 2023", "date-1") are only placeholders
-                // when they name a known identity.
-                (identity.is_some() || strict).then_some(Token { range, identity })
-            })
-            .collect::<Vec<_>>();
+        let mut tokens = generated_tokens(text, &|key| {
+            self.generated
+                .get(key)
+                .map(|&index| self.identities[index].wording())
+        })
+        .into_iter()
+        .filter_map(|(range, key, strict)| {
+            let identity = self.generated.get(&key).copied();
+            // Loose forms ("Tax 2023", "date-1") are only placeholders
+            // when they name a known identity.
+            (identity.is_some() || strict).then_some(Token { range, identity })
+        })
+        .collect::<Vec<_>>();
         for (alias, index) in &self.custom {
             for (start, _) in text.match_indices(alias.as_str()) {
                 let range = start..start + alias.len();
@@ -180,7 +184,7 @@ impl RestoreMap {
     /// Identity indices to offer for an unresolved `token`: those of the
     /// category it names first (`PERSON_9` offers people first).
     pub fn choices(&self, token: &str) -> Vec<usize> {
-        let category = generated_tokens(token, &|_| false)
+        let category = generated_tokens(token, &|_| None)
             .first()
             .map(|(_, (category, _), _)| *category);
         let mut choices: Vec<_> = (0..self.identities.len()).collect();
@@ -422,10 +426,7 @@ impl RestoreMap {
                 continue;
             };
             let old = &text[token.range.clone()];
-            let new = match (
-                generated_tokens(old, &|_| false).first(),
-                parse_alias(alias),
-            ) {
+            let new = match (generated_tokens(old, &|_| None).first(), parse_alias(alias)) {
                 (Some((range, (category, _), _)), Some((new_category, number)))
                     if range.len() == old.len() && *category == new_category =>
                 {
@@ -523,12 +524,13 @@ fn is_cyrillic(c: char) -> bool {
 /// Generated-alias candidates: a category token in any case, one separator
 /// (`_`, `-`, space or no-break space) and up to nine digits. `strict` marks the
 /// canonical look (uppercase, `_` or `-`) that is reported even when unknown.
-/// Where a zone's document number stood, its alias is glued to the check
-/// digit after it ("IDENTITY_18RUS…" is `IDENTITY_1` then 8, #495): a
-/// token that leaves digits there is read only when it is `known`.
-fn generated_tokens(
+/// Where a zone's document number stood, an identity document's alias is
+/// glued to the check digit after it ("IDENTITY_18RUS…" is `IDENTITY_1`
+/// then 8, #495), so a token there may leave digits after it: only one
+/// whose `lookup` gives the value it restores (see [`zone_number_cut`]).
+fn generated_tokens<'w>(
     text: &str,
-    known: &dyn Fn(&(Category, u64)) -> bool,
+    lookup: &dyn Fn(&(Category, u64)) -> Option<&'w str>,
 ) -> Vec<(Range<usize>, (Category, u64), bool)> {
     // Longest first, so REDACTED is not read as a shorter token.
     let mut categories = Category::ALL;
@@ -571,13 +573,14 @@ fn generated_tokens(
                 .count();
             let number = |end: usize| text[digits_start..end].parse().unwrap_or(u64::MAX);
             let strict = prefix == token && matches!(separator, '_' | '-');
-            let zone_number = (1..digits.min(10))
-                .rev()
-                .map(|n| digits_start + n)
-                .find(|&end| {
-                    crate::mrz::number_at(text, &(at..end)) && known(&(category, number(end)))
-                });
-            if let Some(end) = zone_number {
+            let cut = (category == Category::Identity)
+                .then(|| {
+                    zone_number_cut(text, at, digits_start, digits, &|end| {
+                        lookup(&(category, number(end)))
+                    })
+                })
+                .flatten();
+            if let Some(end) = cut {
                 matched = Some((at..end, (category, number(end)), strict));
                 break;
             }
@@ -601,6 +604,55 @@ fn generated_tokens(
         }
     }
     found
+}
+
+/// Where an identity document's alias at `at`, its `digits` digits from
+/// `digits_start`, ends when it stands where a zone's document number did
+/// and leaves digits after it (#495): the check digit and, on a TD1 card,
+/// optional data may follow it in digits too. The ICAO 9303 check digit of
+/// the value a cut restores (`value`, by the cut's end) settles it when it
+/// is the character right after the cut. A filler right after all the
+/// digits makes them all the alias's (a number shorter than nine, padded),
+/// unless a cut's check digit settles it and theirs, after the fillers,
+/// does not ("IDENTITY_17<<<" is `IDENTITY_1` with check digit 7). Else,
+/// on a passport's or a TD2 card's line, whose nationality fixes where the
+/// check digit is, the longest known alias there; on a TD1 card nothing is
+/// cut: a visible alias is better than a wrong value.
+fn zone_number_cut<'w>(
+    text: &str,
+    at: usize,
+    digits_start: usize,
+    digits: usize,
+    value: &dyn Fn(usize) -> Option<&'w str>,
+) -> Option<usize> {
+    use crate::mrz::{NumberLine, check_digit};
+    if digits < 2 {
+        return None;
+    }
+    let checks = |value: &str, at: usize| {
+        check_digit(value).is_some_and(|check| text[at..].starts_with(check))
+    };
+    let cuts: Vec<(usize, NumberLine, &str)> = (1..digits.min(10))
+        .rev()
+        .filter_map(|n| {
+            let end = digits_start + n;
+            let line = crate::mrz::number_line_at(text, &(at..end))?;
+            Some((end, line, value(end)?))
+        })
+        .collect();
+    let settled = cuts.iter().find(|(end, _, value)| checks(value, *end));
+    let full = digits_start + digits;
+    if digits <= 9 && crate::mrz::filler_at(text, full) {
+        let whole =
+            value(full).is_some_and(|value| checks(value, crate::mrz::after_fillers(text, full)));
+        return settled.filter(|_| !whole).map(|(end, _, _)| *end);
+    }
+    settled
+        .or_else(|| {
+            cuts.iter()
+                .find(|(_, line, _)| *line == NumberLine::Passport)
+        })
+        .map(|(end, _, _)| *end)
 }
 
 impl Review {

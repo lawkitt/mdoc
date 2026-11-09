@@ -42,8 +42,11 @@ const FILLER: &str = r"(?:<|\\<|&lt;)";
 
 /// What may open the line before the head: an indent (a no-break space
 /// too), blockquote marks, a list marker, table cells before the zone's,
-/// a label ("MRZ: ") and an emphasis or code mark.
-const OPENING: &str = r"[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:[^\n:<|`*]{1,40}:[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?";
+/// a label ("MRZ: ", "**MRZ:** ") and an emphasis or code mark.
+const OPENING: &str = r"[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:\*{0,2}[^\n:<|`*]{1,40}\*{0,2}:\*{0,2}[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?";
+
+/// A digit of a date or a check digit, or the letter OCR reads for one.
+const DIGIT: &str = "[0-9OISBl]";
 
 /// What may close the line after the zone: an emphasis or code mark, the
 /// table's other cells, a hard break's backslash.
@@ -73,9 +76,6 @@ fn states() -> String {
         .join("|")
 }
 
-/// What opens a TD1 card's lines: an indent and blockquote marks.
-const INDENT: &str = r"[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*";
-
 /// What may open a passport's or a TD2 card's second line before its
 /// document number (the name line's openings).
 fn opening() -> &'static Regex {
@@ -86,43 +86,55 @@ fn opening() -> &'static Regex {
 /// A passport's or a TD2 card's second line after its document number:
 /// the fillers that pad it, its check digit, the nationality, the birth
 /// date and its check digit, the sex, the expiry date and its check digit,
-/// then capitals, digits and fillers, and what closes the line.
+/// then capitals, digits and fillers, and what closes the line. A date's or
+/// a check digit's digit may be the letter OCR reads for it.
 fn number_line() -> &'static Regex {
     static LINE: OnceLock<Regex> = OnceLock::new();
     LINE.get_or_init(|| {
         let states = states();
         Regex::new(&format!(
-            r"\A{FILLER}*(?:[0-9]|{FILLER})(?:{states})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[MFX]|{FILLER})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\z"
+            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:{states}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\z"
         ))
         .expect("the zone's number line")
     })
 }
 
-/// A TD1 card's first line before its document number: its indent, the
-/// card's code, its type and the issuing state.
+/// A TD1 card's first line before its document number: what opens it (as
+/// a passport's line), the card's code, its type and the issuing state.
 fn card_head() -> &'static Regex {
     static HEAD: OnceLock<Regex> = OnceLock::new();
     HEAD.get_or_init(|| {
         let states = states();
         Regex::new(&format!(
-            r"\A{INDENT}[IAC](?:[A-Z]|{FILLER})?(?:{states})\z"
+            r"\A{OPENING}[IAC](?:[A-Z]|{FILLER})?(?:{states})\z"
         ))
         .expect("the card's head")
     })
 }
 
 /// A TD1 card's text after its document number: the fillers that pad it,
-/// its check digit and the optional data to the line's end, then (a blank
-/// line between too) the card's second line's birth date and its check
-/// digit, sex, expiry date and its check digit, and nationality.
+/// its check digit and the optional data, what closes the line, then (a
+/// blank line between too) what opens the card's second line, its birth
+/// date and its check digit, sex, expiry date and its check digit, and
+/// nationality.
 fn card_rest() -> &'static Regex {
     static REST: OnceLock<Regex> = OnceLock::new();
     REST.get_or_init(|| {
         Regex::new(&format!(
-            r"\A{FILLER}*(?:[0-9]|{FILLER})(?:[A-Z0-9]|{FILLER})*[\p{{Zs}}\t]*\\?\r?\n(?:[\p{{Zs}}\t]*\r?\n)?{INDENT}[0-9]{{6}}(?:[0-9]|{FILLER})(?:[MFX]|{FILLER})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[A-Z]|{FILLER}){{3}}"
+            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}{DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[A-Z]|{FILLER}){{3}}"
         ))
         .expect("the card's lines")
     })
+}
+
+/// Which zone line a document number stands on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NumberLine {
+    /// A passport's or a TD2 card's second line, whose nationality right
+    /// after the check digit fixes where the number ends.
+    Passport,
+    /// A TD1 card's first line, whose optional data may go on in digits.
+    Card,
 }
 
 /// Whether `range` of `text` stands where a zone's document number does
@@ -131,15 +143,43 @@ fn card_rest() -> &'static Regex {
 /// line under it. What `range` holds is not read (a damaged number, or its
 /// alias), nor is any check digit checked.
 pub(crate) fn number_at(text: &str, range: &Range<usize>) -> bool {
+    number_line_at(text, range).is_some()
+}
+
+/// The zone line on which `range` stands where a document number does, as
+/// [`number_at`] reads it.
+pub(crate) fn number_line_at(text: &str, range: &Range<usize>) -> Option<NumberLine> {
     if range.is_empty() || text[range.clone()].contains('\n') {
-        return false;
+        return None;
     }
     let start = text[..range.start].rfind('\n').map_or(0, |i| i + 1);
     let before = &text[start..range.start];
     let after = &text[range.end..];
     let line = &after[..after.find('\n').unwrap_or(after.len())];
-    (opening().is_match(before) && number_line().is_match(line))
-        || (card_head().is_match(before) && card_rest().is_match(after))
+    if opening().is_match(before) && number_line().is_match(line) {
+        Some(NumberLine::Passport)
+    } else if card_head().is_match(before) && card_rest().is_match(after) {
+        Some(NumberLine::Card)
+    } else {
+        None
+    }
+}
+
+/// A document number's check digit (ICAO 9303 Part 3: weights 7, 3, 1; a
+/// digit its value, `A` to `Z` 10 to 35, a filler 0), or none for a value
+/// with any other character.
+pub(crate) fn check_digit(value: &str) -> Option<char> {
+    let mut sum = 0u32;
+    for (index, c) in value.chars().enumerate() {
+        let worth = match c {
+            '0'..='9' => c as u32 - '0' as u32,
+            'A'..='Z' => c as u32 - 'A' as u32 + 10,
+            '<' => 0,
+            _ => return None,
+        };
+        sum += worth * [7, 3, 1][index % 3];
+    }
+    char::from_digit(sum % 10, 10)
 }
 
 /// The line from a surname on: capitals and fillers alone, then what closes
@@ -155,6 +195,17 @@ fn rest() -> &'static Regex {
 pub(crate) fn head_before(text: &str, at: usize) -> bool {
     let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
     head().is_match(&text[start..at])
+}
+
+/// Where the fillers from `at` in `text` end.
+pub(crate) fn after_fillers(text: &str, mut at: usize) -> usize {
+    while filler_at(text, at) {
+        at += ["<", "\\<", "&lt;"]
+            .into_iter()
+            .find(|filler| text[at..].starts_with(filler))
+            .map_or(1, str::len);
+    }
+    at
 }
 
 /// Whether a filler starts at `at` in `text`.

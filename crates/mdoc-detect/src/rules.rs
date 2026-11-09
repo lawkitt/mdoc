@@ -21085,7 +21085,9 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
 
     /// #495: OCR's damage leaves the number IDENTITY while the line keeps
     /// its shape: a letter for a digit, a check digit that does not
-    /// validate, a filler lost or added.
+    /// validate, a filler lost or added, and "O", "I", "S", "B" or "l" for a
+    /// digit of a date or a check digit, on a passport's line and on a TD1
+    /// card's second line (whose names stay PERSON too).
     #[test]
     fn an_ocr_damaged_document_number_is_still_identity() {
         for (source, number) in [
@@ -21093,14 +21095,95 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("7605318421RUS9104123F3102154<<<<<<<<<<<<<<06", "760531842"),
             ("X00429176NOR8807145M3307019<<<<<<<<<<<<<<02", "X0042917"),
             ("X0042917<<6NOR8807145M3307019<<<<<<<<<<<<<<<02", "X0042917"),
+            ("7605318428RUS91O4123F3102154<<<<<<<<<<<<<<06", "760531842"),
+            ("760531842BRUSI1O4l2SFS1O2l54<<<<<<<<<<<<<<06", "760531842"),
+            ("760531842ORUS9104123F3102154<<<<<<<<<<<<<<06", "760531842"),
         ] {
             assert_eq!(mrz_numbers(source), [number], "{source}");
         }
+        let lines = [
+            mrz_line("I<NORD231458907", 30),
+            mrz_line("88O7145F33O7Ol9NOR", 29) + "6",
+            mrz_line("QUILLAN<<ODA<RENATE", 30),
+        ];
+        assert_eq!(
+            mrz_spans_beside(&lines.join("\n"), &[])
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>(),
+            ["D23145890", "QUILLAN", "ODA", "RENATE"]
+        );
+        assert_eq!(
+            mrz_numbers(&format!(
+                "{}\n{}",
+                mrz_line("I<NORD23145890S", 30),
+                mrz_line("8807145F3307019NOR", 29) + "6"
+            )),
+            ["D23145890"]
+        );
+    }
+
+    /// #495: a zone's lines open as Markdown writes them, a TD1 card's as a
+    /// passport's: after a bold label ("**MRZ:** "), in a table's cells, in
+    /// list items, after a label, in code spans; the card's names come with
+    /// its number.
+    #[test]
+    fn a_document_number_after_a_bold_label_or_in_a_td1_card_in_markdown_is_identity() {
+        for source in [
+            format!("**MRZ:** {MRZ_NUMBER_LINE}"),
+            format!("**MRZ**: {MRZ_NUMBER_LINE}"),
+            format!("- **Строка 2:** {MRZ_NUMBER_LINE}"),
+        ] {
+            assert_eq!(mrz_numbers(&source), ["760531842"], "{source}");
+        }
+        let lines = [
+            mrz_line("I<NORD231458907", 30),
+            mrz_line("8807145F3307019NOR", 29) + "6",
+            mrz_line("QUILLAN<<ODA<RENATE", 30),
+        ];
+        for source in [
+            format!(
+                "| Поле | Значение |\n|---|---|\n| MRZ | {} |\n| | {} |\n| | {} |",
+                lines[0], lines[1], lines[2]
+            ),
+            format!("- {}\n- {}\n- {}", lines[0], lines[1], lines[2]),
+            format!("1. {}\n2. {}\n3. {}", lines[0], lines[1], lines[2]),
+            format!("`{}`\n`{}`\n`{}`", lines[0], lines[1], lines[2]),
+            format!(
+                "MRZ: {}\n**Строка 2:** {}\nСтрока 3: {}",
+                lines[0], lines[1], lines[2]
+            ),
+        ] {
+            assert_eq!(
+                mrz_spans_beside(&source, &[])
+                    .into_iter()
+                    .map(|(text, category)| format!("{category} {text}"))
+                    .collect::<Vec<_>>(),
+                [
+                    "IDENTITY D23145890",
+                    "PERSON QUILLAN",
+                    "PERSON ODA",
+                    "PERSON RENATE"
+                ],
+                "{source}"
+            );
+        }
+        // A bold label opens a passport's names line too.
+        assert_eq!(
+            mrz_names(&format!(
+                "**MRZ:** {}",
+                mrz_line("P<RUSKRENC<<LIDIIA<ARSENEVNA", 44)
+            )),
+            ["KRENC", "LIDIIA", "ARSENEVNA"]
+        );
     }
 
     /// #495: a masked number, or fillers alone, give nothing; so does text
-    /// of a zone line's length without its shape (an unknown state, no
-    /// sex, letters for a date, a TD1 card's first line without its second).
+    /// of a zone line's length without its shape (an unknown state or one
+    /// with a digit, no sex or a digit for it, a letter OCR never reads for
+    /// a digit in a date, a TD1 card's first line without its second). A
+    /// partly masked number keeps its real digits and is proposed, and so is
+    /// one of zeros.
     #[test]
     fn a_masked_number_or_a_line_without_the_zones_shape_gives_no_identity() {
         for source in [
@@ -21116,7 +21199,9 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             "THE PARTIES AGREE TO THE TERMS SET OUT BELOW".to_owned(),
             "7605318428XYZ9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
             "7605318428RUS9104123Q3102154<<<<<<<<<<<<<<06".to_owned(),
-            "7605318428RUS91O4123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS91Z4123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RU59104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS91041230F102154<<<<<<<<<<<<<<06".to_owned(),
             "7605318428RUS9104123F3102154".to_owned(),
             format!("{MRZ_NUMBER_LINE}<<<<<<<<<<"),
             "Invoice 7605318428RUS9104123F3102154<<<<<<06".to_owned(),
@@ -21127,6 +21212,12 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ),
         ] {
             assert!(mrz_numbers(&source).is_empty(), "{source}");
+        }
+        for (source, number) in [
+            ("XXXXX18428RUS9104123F3102154<<<<<<<<<<<<<<06", "XXXXX1842"),
+            ("0000000000RUS9104123F3102154<<<<<<<<<<<<<<06", "000000000"),
+        ] {
+            assert_eq!(mrz_numbers(source), [number], "{source}");
         }
     }
 

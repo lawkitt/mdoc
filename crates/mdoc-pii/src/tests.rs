@@ -3324,7 +3324,7 @@ fn a_decomposed_initial_is_an_initial() {
 
 /// #495: a machine-readable zone's document number, glued to its check
 /// digit ("7605318428RUS…") or on a TD1 card to its head too
-/// ("I<RUS7605318428<<<"), is a word of its own: the number found in the
+/// ("I<RUS7605318422<<<"), is a word of its own: the number found in the
 /// text is found again there (escaped, as an entity), markable by hand,
 /// and its alias restores the zone. Glued to a digit outside a zone's line
 /// it is not.
@@ -3334,7 +3334,7 @@ fn a_document_number_in_a_machine_readable_zone_is_a_word_of_its_own() {
         7605318428RUS9104123F3102154<<<<<<<<<<<<<<06\n\
         7605318428RUS9104123F3102154\\<\\<<<<<<<<<<<<<06\n\
         7605318428RUS9104123F3102154&lt;&lt;<<<<<<<<<<<<06\n\
-        I<RUS7605318428<<<<<<<<<<<<<<<\n\
+        I<RUS7605318422<<<<<<<<<<<<<<<\n\
         8807145F3307019RUS<<<<<<<<<<<6\n\
         Счёт 7605318428 и 17605318429.\n";
     let numbers: Vec<usize> = source
@@ -3367,7 +3367,7 @@ fn a_document_number_in_a_machine_readable_zone_is_a_word_of_its_own() {
     );
     assert!(
         applied.contains("\nIDENTITY_18RUS9104123F3102154<<")
-            && applied.contains("\nI<RUSIDENTITY_18<<<"),
+            && applied.contains("\nI<RUSIDENTITY_12<<<"),
         "{applied}"
     );
     let map = crate::restore::RestoreMap::new(review.export_identities());
