@@ -28,6 +28,14 @@
 #   reference legal references and markers no model span is inside
 #   private   bodies that are never public, whoever owns them
 #   label     an identifier field's labels, beside values in one model span
+#   ocr_letters each a digit, then the letters of a language OCR reads as
+#             it ("1Il"): a model organization that reads as a person's
+#             name with them is that person (#377)
+#   ocr_company_words lowercase words that keep such a span a company's
+#             ("legal", "bank"), as read back
+#   ocr_person_words regexes for a read-back word after the first, lowercase
+#             and whole, that makes such a span a person's alone (a
+#             patronymic)
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.

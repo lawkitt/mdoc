@@ -15,6 +15,43 @@ role_surnames = [
     "leader", "chair", "chairman",
 ]
 
+# OCR reads a letter of a name as a digit, and the model may then take the
+# person for a company: "A1ice M0rgan" (#377). Each entry is a digit, then
+# the capital and the small letter it stands for, if English has them. A
+# model organization of two or three capitalized words, or a surname and
+# initials, with a digit between two letters of a word, may be a person
+# where its digits read back make every word a name ("Alice Morgan"). A
+# surname with initials or after a comma ("J. Sm1th", "M00re, Alice") is
+# one alone; plain words ("G0ldman Sachs" reads as a name too) only with a
+# person's evidence: a title before them, an email whose local part holds
+# their words ("alice.morgan@…"), or the model's person of their wording or
+# last word. Never with a legal form, an `ocr_company_words` word, quotes,
+# or another company of the document that starts with it ("M0rgan Stanley"
+# beside "Morgan Stanley"). A digit at a word's end or alone names no
+# letter ("A1 Group", "Studio 54"), and nor does 2, 3, 4, 6, 7 or 9 here
+# ("A1B2 C3D4").
+ocr_letters = ["0Oo", "1Il", "5Ss", "8B"]
+
+# Words that keep a model organization OCR damaged a company's, as read
+# back ("N0rthbridge Legal", "Gr0up"), though its words are name-shaped
+# (#377). Surnames that are also such words stay out: "Law", "Banks",
+# "Chambers", "Mason".
+ocr_company_words = [
+    "bank", "group", "holding", "holdings", "partners", "partnership",
+    "associates", "legal", "capital", "studio", "studios", "systems",
+    "solutions", "services", "consulting", "consultants", "trust", "fund",
+    "foundation", "company", "corporation", "industries", "international",
+    "technologies", "technology", "media", "energy", "motors", "labs",
+    "logistics", "ventures", "insurance", "investments", "properties",
+    "realty", "finance", "financial", "global", "airlines", "airways",
+    "centre", "center", "clinic", "hospital", "school", "academy",
+    "university", "college", "institute", "agency", "stores", "market",
+    "foods", "pharma", "network", "software", "digital", "construction",
+    "engineering", "management", "enterprises", "trading", "builders",
+    "estates", "homes", "hotel", "hotels", "resources", "products",
+    "supplies", "healthcare", "health", "council", "society", "club",
+]
+
 # Complete job titles come off a name's edges (#385). Do not trim their
 # individual heads: "Ivo Leader" and "Edda Chair" may be full names.
 [[span]]

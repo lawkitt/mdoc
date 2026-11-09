@@ -975,6 +975,42 @@ fn role_initials_are_people(source: &str, detections: &mut Vec<Detection>) {
     }
 }
 
+/// Each raw entity's category from its label, but a model organization
+/// that is a person's name OCR damaged is a person (the rule pack's
+/// `ocr_letters`, #377): "A1ice M0rgan" beside "alice.morgan@…" is
+/// Alice Morgan. Not where the document writes it in quotes, as it does a
+/// company's name.
+fn model_categories(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    raw: &[RawEntity],
+) -> Vec<Option<Category>> {
+    let text = |entity: &RawEntity| &view.text[view.view_range(entity.start..entity.end)];
+    let labelled = |category: Category| -> Vec<&str> {
+        raw.iter()
+            .filter(|entity| category_of(&entity.label) == Some(category))
+            .map(text)
+            .collect()
+    };
+    let organizations = labelled(Category::Organization);
+    let people = labelled(Category::Person);
+    raw.iter()
+        .map(|entity| {
+            let category = category_of(&entity.label)?;
+            let text = text(entity);
+            let person = category == Category::Organization
+                && !quoted(source, text.trim())
+                && rules::pack().ocr_person(
+                    &view.text,
+                    view.view_range(entity.start..entity.end),
+                    &organizations,
+                    &people,
+                );
+            Some(if person { Category::Person } else { category })
+        })
+        .collect()
+}
+
 /// The correction stage (ADR 0092): the model's raw entities through the
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
@@ -984,12 +1020,14 @@ fn role_initials_are_people(source: &str, detections: &mut Vec<Detection>) {
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let view = mdoc_pii::view::View::new(source);
+    let categories = model_categories(source, &view, raw);
     // Establish model company names before filtering reference-looking
     // short names. A trading name needs no legal form (guide rule 2).
     let organizations: Vec<&str> = raw
         .iter()
-        .filter(|entity| category_of(&entity.label) == Some(Category::Organization))
-        .filter_map(|entity| {
+        .zip(&categories)
+        .filter(|(_, category)| **category == Some(Category::Organization))
+        .filter_map(|(entity, _)| {
             let text = &view.text[view.view_range(entity.start..entity.end)];
             rules::pack()
                 .identifying_at(
@@ -1003,8 +1041,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     let mut detections: Vec<Detection> = raw
         .iter()
-        .filter_map(|entity| {
-            let mut category = category_of(&entity.label)?;
+        .zip(categories)
+        .filter_map(|(entity, category)| {
+            let mut category = category?;
             // Read as the model read it: "%41lice" in a link target is "Alice".
             let mut seen = view.view_range(entity.start..entity.end);
             let mut range = entity.start..entity.end;
@@ -3050,6 +3089,219 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// #377: a model organization that is a person's name OCR damaged, a
+    /// digit between two letters of a word ("A1ice M0rgan"), is a person
+    /// where the digits read back make a name: alone in a person's own form
+    /// (a surname with initials or after a comma, a patronymic after a
+    /// name), else with the document's evidence of a person (a title before
+    /// it, an email of its words, the model's person of its wording or
+    /// surname), in English and Russian; the model's person so damaged
+    /// stays one.
+    #[test]
+    fn an_ocr_damaged_name_the_model_took_for_a_company_is_a_person() {
+        let org = "organization";
+        for (source, spans, name) in [
+            (
+                "Client: A1ice M0rgan\nE-mail: alice.morgan@example.invalid\n",
+                &[("A1ice M0rgan", org)][..],
+                "A1ice M0rgan",
+            ),
+            (
+                "Client: A1ice M0rgan\n",
+                &[("A1ice M0rgan", "person")],
+                "A1ice M0rgan",
+            ),
+            (
+                "Tenant: Ms Alice Mary M0rgan.\n",
+                &[("Alice Mary M0rgan", org)],
+                "Alice Mary M0rgan",
+            ),
+            ("Witness: J. Sm1th\n", &[("J. Sm1th", org)], "J. Sm1th"),
+            (
+                "Signed: M00re, Alice\n",
+                &[("M00re, Alice", org)],
+                "M00re, Alice",
+            ),
+            (
+                "Tenant: Mrs 0lga Petr0va\n",
+                &[("0lga Petr0va", org)],
+                "0lga Petr0va",
+            ),
+            (
+                "Tenant: Dr Eileen O'Br1en\n",
+                &[("Eileen O'Br1en", org)],
+                "Eileen O'Br1en",
+            ),
+            (
+                "Tenant: Mr Ann Hart-W1lson\n",
+                &[("Ann Hart-W1lson", org)],
+                "Ann Hart-W1lson",
+            ),
+            (
+                "Tenant: Eileen Morgan. Later E1leen M0rgan signed.\n",
+                &[("Eileen Morgan", "person"), ("E1leen M0rgan", org)],
+                "E1leen M0rgan",
+            ),
+            (
+                "Ms Morgan paid. Later A1ice M0rgan signed.\n",
+                &[("Morgan", "person"), ("A1ice M0rgan", org)],
+                "A1ice M0rgan",
+            ),
+            (
+                "Заявитель: Нина Ефим0вна Костель.\n",
+                &[("Нина Ефим0вна Костель", org)],
+                "Нина Ефим0вна Костель",
+            ),
+            (
+                "Заявитель: Нина Ефим0вна Костель.\n",
+                &[("Нина Ефим0вна Костель", "person")],
+                "Нина Ефим0вна Костель",
+            ),
+            (
+                "Истец: Иван Петр0вич.\n",
+                &[("Иван Петр0вич", org)],
+                "Иван Петр0вич",
+            ),
+            (
+                "Ответчик: Ко3лов И. П.\n",
+                &[("Ко3лов И. П.", org)],
+                "Ко3лов И. П.",
+            ),
+            (
+                "Ответчик: Ко3лов И.П.\n",
+                &[("Ко3лов И.П.", org)],
+                "Ко3лов И.П.",
+            ),
+            // A Latin look-alike in a Cyrillic word: the second "o" is Latin.
+            (
+                "Истец: г-н Иван Ко3лoв\n",
+                &[("Иван Ко3лoв", org)],
+                "Иван Ко3лoв",
+            ),
+            (
+                "Истец: г-жа Ольга Се6ова\n",
+                &[("Ольга Се6ова", org)],
+                "Ольга Се6ова",
+            ),
+        ] {
+            let shown: Vec<(String, String)> = shown_with(source, spans)
+                .into_iter()
+                .map(|(_, category, text)| (category, text))
+                .collect();
+            assert!(
+                shown.contains(&("PERSON".to_owned(), name.to_owned()))
+                    && !shown.contains(&("ORG".to_owned(), name.to_owned())),
+                "{source:?}: {shown:?}"
+            );
+        }
+    }
+
+    /// #377's guards: companies with digits, codes, the names a legal form,
+    /// a company's word or quotes make a company's, a company the document
+    /// names that starts with it, the model's companies without OCR's
+    /// damage, and companies, products and vessels whose damaged words
+    /// read back as a name but that nothing in the document makes a
+    /// person's (no title, email or person of the name), all stay
+    /// organizations.
+    #[test]
+    fn companies_with_digits_and_codes_stay_organizations() {
+        let org = "organization";
+        let names = [
+            "3M",
+            "3M Company",
+            "7-Eleven Stores",
+            "Studio 54",
+            "1С Бухгалтерия",
+            "A1 Group",
+            "A1 Telekom",
+            "M0rgan Stanley Ltd",
+            "N0rthbridge Legal",
+            "Gr0up Alpha",
+            "A1B2 C3D4",
+            "Blue Ocean",
+            "Банк Ро3сия",
+            "ООО Ко3лов",
+            "М0сквич Авто",
+            "Bo0ts Pharmacy",
+            "Ca5h Converters",
+            "Aston Mart1n",
+            "Hew1ett Packard",
+            "G0ldman Sachs",
+            "Ernst Y0ung",
+            "Morgan Stan1ey",
+            "Rolls R0yce",
+            "Ka1ser Permanente",
+            "Barc1ays Wealth",
+            "Xb0x Series",
+            "Pa1m Pilot",
+            "Ga1axy Note",
+            "Sp0tify Premium",
+            "Amazon Pr1me",
+            "Pixar Ani1ation",
+            "Ar1ana Star",
+            "Queen Mar1a",
+            "Wh1sper Chat",
+            "Мега Ф0н",
+            "Газ0ром Нефть",
+            "Ро3сия Сегодня",
+        ];
+        let alone: Vec<String> = names
+            .iter()
+            .map(|name| format!("Party: {name}\n"))
+            .collect();
+        let mut cases: Vec<(&str, Vec<(&str, &str)>)> = alone
+            .iter()
+            .zip(names)
+            .map(|(source, name)| (source.as_str(), vec![(name, org)]))
+            .collect();
+        cases.extend([
+            (
+                "Поставщик: ООО «Ко3лов Плюс». Ко3лов Плюс поставил товар.\n",
+                vec![("Ко3лов Плюс", org)],
+            ),
+            (
+                "Поставщик «Ко3лов Плюс» отгрузил товар.\n",
+                vec![("Ко3лов Плюс", org)],
+            ),
+            (
+                "Broker: Morgan Stanley Ltd. Later M0rgan Stanley agreed.\n",
+                vec![("Morgan Stanley Ltd", org), ("M0rgan Stanley", org)],
+            ),
+            (
+                "Broker: Morgan Stanley. Later M0rgan Stan1ey agreed.\n",
+                vec![("Morgan Stanley", org), ("M0rgan Stan1ey", org)],
+            ),
+            (
+                "Client: A1ice M0rgan. Later Alice Morgan signed.\n",
+                vec![("A1ice M0rgan", org), ("Alice Morgan", org)],
+            ),
+            // The model's company of the same name, clean, outweighs even a
+            // title: it is no person's.
+            (
+                "Client: Alice Morgan. Later Ms A1ice M0rgan signed.\n",
+                vec![("Alice Morgan", org), ("A1ice M0rgan", org)],
+            ),
+            (
+                "Carrier: Pellam Airlines (Pe11am). Later Pe11am Air flew.\n",
+                vec![
+                    ("Pellam Airlines", org),
+                    ("Pe11am", org),
+                    ("Pe11am Air", org),
+                ],
+            ),
+        ]);
+        for (source, spans) in &cases {
+            let shown = shown_with(source, spans);
+            assert!(
+                shown.iter().all(|(_, category, _)| category == "ORG")
+                    && spans
+                        .iter()
+                        .all(|(name, _)| shown.iter().any(|(_, _, text)| text.contains(name))),
+                "{source:?}: {shown:?}"
+            );
+        }
     }
 
     /// #739: a model identifier span from a labelled value into the next
