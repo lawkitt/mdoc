@@ -22,6 +22,11 @@ repo=lawkitt/mdoc
 dir=${MDOC_HUB_GATE_DIR:-$(dirname "$PWD")/$(basename "$PWD")-hub-gate}
 min_recall=${MDOC_HOLDOUT_RECALL:-97.6}
 min_precision=${MDOC_HOLDOUT_PRECISION:-94.0}
+# lib.sh moved to the repository root; a relative holdout path is the caller's.
+case ${MDOC_HOLDOUT:-} in
+  '' | /* | [A-Za-z]:*) ;;
+  *) MDOC_HOLDOUT=$OLDPWD/$MDOC_HOLDOUT ;;
+esac
 
 command -v gh >/dev/null || die "gh is needed to read the merge queue"
 
@@ -72,7 +77,8 @@ set +e
 (cd "$dir" && cargo nextest run --locked -p mdoc-detect -p mdoc-pii --no-fail-fast) 2>&1 | tee "$log"
 tests=${PIPESTATUS[0]}
 set -e
-summary=$(grep -E '^ *Summary ' "$log" | tail -1 | sed -E 's/^ *Summary +\[[^]]*\] +//')
+summary=$(grep -E '^ *Summary ' "$log" | tail -1 | sed -E 's/^ *Summary +\[[^]]*\] +//' || true)
+summary=${summary:-no test summary: the build failed}
 [ "$tests" -eq 0 ] || {
   echo "hub-gate #$pr: FAIL tests ($summary) on $stack"
   exit 1
@@ -81,13 +87,14 @@ summary=$(grep -E '^ *Summary ' "$log" | tail -1 | sed -E 's/^ *Summary +\[[^]]*
 holdout="holdout not run (MDOC_HOLDOUT unset)"
 if [ -n "${MDOC_HOLDOUT:-}" ]; then
   [ -d "$MDOC_HOLDOUT" ] || die "MDOC_HOLDOUT is not a folder: $MDOC_HOLDOUT"
+  # Its output may name the private documents: only its exit status is shown.
   (cd "$dir" && just recognize --scoreboard "$MDOC_HOLDOUT") >"$log" 2>&1 ||
-    die "the holdout run failed: $(tail -5 "$log")"
+    die "the holdout run failed (exit $?); rerun it by hand to see why"
   # The scoreboard's last "all all all" row: gold found recall proposed right precision.
   read -r recall precision < <(awk '$1 == "all" && $2 == "all" && $3 == "all" {
       r = $6; p = $9; sub(/%/, "", r); sub(/%/, "", p) } END { print r, p }' "$log")
   [ -n "$recall" ] && [ -n "$precision" ] || die "no overall row in the holdout's scoreboard"
-  passing=$(grep -E '^[0-9]+ fixtures, [0-9]+ passing' "$log" | sed -E 's/^([0-9]+) fixtures, ([0-9]+) passing.*/\2 of \1 documents pass/')
+  passing=$(grep -E '^[0-9]+ fixtures, [0-9]+ passing' "$log" | sed -E 's/^([0-9]+) fixtures, ([0-9]+) passing.*/\2 of \1 documents pass/' || true)
   holdout="holdout recall $recall% precision $precision%${passing:+, $passing}"
   if awk -v r="$recall" -v p="$precision" -v mr="$min_recall" -v mp="$min_precision" \
     'BEGIN { exit !(r < mr || p < mp) }'; then
