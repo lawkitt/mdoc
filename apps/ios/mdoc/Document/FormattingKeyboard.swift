@@ -6,11 +6,11 @@ import UIKit
 /// system keyboard as Bear and Taio do: Turn into (text, three headings,
 /// quote, code block, callout), strikethrough, inline code, highlight,
 /// link, rule and table, and a key back to the system keyboard. The caret's
-/// block shows selected. It scrolls when the text size leaves it no room.
+/// block shows selected. In a table's cell it shows the table controls
+/// instead, as Bear's table keyboard does. It scrolls when the text size
+/// leaves it no room.
 struct FormattingKeyboard: View {
     let model: EditToolbarModel
-
-    @ScaledMetric(relativeTo: .body) private var keyWidth: CGFloat = 64
 
     /// The turn-into kinds, in the keyboard's order.
     static let kinds: [(EditorBlockKind, String, LocalizedStringKey, String)] = [
@@ -26,31 +26,10 @@ struct FormattingKeyboard: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xs) {
-                // The table slice (ADR 0109) shows table controls here while
-                // the caret is in a table (`model.state?.inTable`); until
-                // then the block keys are off there.
-                section(Text("Turn into")) {
-                    ForEach(Self.kinds, id: \.3) { kind, symbol, label, id in
-                        key(.turnInto(kind), symbol: symbol, label: Text(label), id: id)
-                    }
-                }
-                section(Text("Format")) {
-                    key(.format(.strikethrough), symbol: "strikethrough", label: Text("Strikethrough"), id: "format-strikethrough")
-                    key(.format(.code), symbol: "chevron.left.forwardslash.chevron.right", label: Text("Inline code"), id: "format-code")
-                    key(.format(.highlight), symbol: "highlighter", label: Text("Highlight"), id: "format-highlight")
-                    FormattingKey(symbol: "link", label: Text("Link"), id: "format-link", on: model.state?.link != nil) {
-                        model.editLink()
-                    }
-                }
-                section(Text("Insert")) {
-                    key(.rule, symbol: "minus", label: Text("Rule"), id: "insert-rule")
-                    key(.table, symbol: "tablecells", label: Text("Table"), id: "insert-table")
-                    FormattingKey(
-                        symbol: "keyboard", label: Text("Keyboard"), id: "formatting-keyboard-return",
-                        hint: Text("Brings back the keyboard.")
-                    ) {
-                        model.setFormatting(false)
-                    }
+                if model.inCell {
+                    TableControls(model: model)
+                } else {
+                    keys
                 }
             }
             .padding(.horizontal, Space.s)
@@ -60,7 +39,32 @@ struct FormattingKeyboard: View {
         .accessibilityIdentifier("formatting-keyboard")
     }
 
-    private func section(_ title: Text, @ViewBuilder keys: () -> some View) -> some View {
+    /// The formatting keys, outside a table's cells.
+    @ViewBuilder private var keys: some View {
+        KeySection(title: Text("Turn into")) {
+            ForEach(Self.kinds, id: \.3) { kind, symbol, label, id in
+                CommandKey(model: model, command: .turnInto(kind), symbol: symbol, label: Text(label), id: id)
+            }
+        }
+        KeySection(title: Text("Format")) {
+            FormatKeys(model: model)
+        }
+        KeySection(title: Text("Insert")) {
+            CommandKey(model: model, command: .rule, symbol: "minus", label: Text("Rule"), id: "insert-rule")
+            CommandKey(model: model, command: .insertTable, symbol: "tablecells", label: Text("Table"), id: "insert-table")
+            KeyboardKey(model: model)
+        }
+    }
+}
+
+/// A titled group of keys, as many to a row as fit.
+struct KeySection<Keys: View>: View {
+    let title: Text
+    @ViewBuilder let keys: () -> Keys
+
+    @ScaledMetric(relativeTo: .body) private var keyWidth: CGFloat = 64
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Space.xxs) {
             title
                 .font(.caption.weight(.medium))
@@ -71,12 +75,56 @@ struct FormattingKeyboard: View {
             }
         }
     }
+}
 
-    private func key(_ command: EditCommand, symbol: String, label: Text, id: String) -> some View {
+/// A key that runs one editor command, on where it applies and off where
+/// it cannot.
+struct CommandKey: View {
+    let model: EditToolbarModel
+    let command: EditCommand
+    let symbol: String
+    let label: Text
+    let id: String
+
+    var body: some View {
         FormattingKey(
             symbol: symbol, label: label, id: id, on: model.isOn(command), enabled: model.isEnabled(command)
         ) {
             model.run(command)
+        }
+    }
+}
+
+/// Strikethrough, inline code, highlight and link: in text and in cells.
+struct FormatKeys: View {
+    let model: EditToolbarModel
+
+    var body: some View {
+        CommandKey(
+            model: model, command: .format(.strikethrough), symbol: "strikethrough", label: Text("Strikethrough"),
+            id: "format-strikethrough")
+        CommandKey(
+            model: model, command: .format(.code), symbol: "chevron.left.forwardslash.chevron.right",
+            label: Text("Inline code"), id: "format-code")
+        CommandKey(
+            model: model, command: .format(.highlight), symbol: "highlighter", label: Text("Highlight"),
+            id: "format-highlight")
+        FormattingKey(symbol: "link", label: Text("Link"), id: "format-link", on: model.state?.link != nil) {
+            model.editLink()
+        }
+    }
+}
+
+/// The key back to the system keyboard.
+struct KeyboardKey: View {
+    let model: EditToolbarModel
+
+    var body: some View {
+        FormattingKey(
+            symbol: "keyboard", label: Text("Keyboard"), id: "formatting-keyboard-return",
+            hint: Text("Brings back the keyboard.")
+        ) {
+            model.setFormatting(false)
         }
     }
 }

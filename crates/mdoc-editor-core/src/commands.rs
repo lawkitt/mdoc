@@ -14,6 +14,7 @@ use std::ops::Range;
 use mdoc_markdown::lines::blockquote_prefix;
 use mdoc_markdown::tables::Align;
 
+use crate::cells::{self, CellMove};
 use crate::markdown::{image_row, toggle_task_checkbox};
 use crate::tables::{self as table_rules, TableEdit};
 use crate::text::{line_end, line_starts, next_boundary, previous_boundary, row_col};
@@ -100,18 +101,17 @@ pub fn enter(source: &str, selection: Range<usize>, rendered: bool) -> EditResul
     let blocks = scan.view();
     let caret = selection.end.min(source.len());
     if in_table_cell(source, blocks, caret, rendered)
-        && let Some((row, cell, in_cell)) = table_rules::cell_pos(source, blocks, caret)
-        && let Some(region) = blocks.table_at(row)
+        && let Some(cell) = cells::cell_at(source, caret)
     {
-        let sep = region.lines.start + 1;
-        let below = if row + 1 == sep { row + 2 } else { row + 1 };
-        if below < region.lines.end {
-            let to = table_rules::caret_pos_for_cell(source, below, cell, in_cell);
-            return EditResult {
-                edits: Vec::new(),
-                selection: to..to,
-            };
+        // The cell below, keeping the column; from the last row out below.
+        if cell.row + 1 < cell.rows
+            && let Some(moved) = cells::move_caret(source, caret..caret, CellMove::Down)
+        {
+            return moved;
         }
+        let region = blocks
+            .table_at(row_col(source, caret).0)
+            .expect("a table row");
         let (range, text, offset) = enter::table_exit_edit(source, region.lines.end - 1);
         let to = range.start + offset;
         return EditResult::one(range, text, to);
@@ -166,7 +166,8 @@ pub fn shift_enter(source: &str, selection: Range<usize>, rendered: bool) -> Edi
     let blocks = scan.view();
     let caret = selection.end.min(source.len());
     if in_table_cell(source, blocks, caret, rendered) {
-        return type_over(&selection, "<br>");
+        return cells::type_text(source, selection.clone(), "\n", false)
+            .unwrap_or_else(|| type_over(&selection, "<br>"));
     }
     if blocks.row_is_literal(source, row_col(source, caret).0) {
         return type_over(&selection, "\n");
@@ -205,13 +206,19 @@ fn delete_range(range: Range<usize>, caret: usize) -> EditResult {
 /// character of a formatting construct (`**a**`) deletes its markers too,
 /// as desktop does.
 pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Option<EditResult> {
-    if selection.start != selection.end {
+    if selection.start != selection.end
+        && !(rendered && cells::cell_at(source, selection.end).is_some())
+    {
         let sel = sorted(&selection);
         let caret = sel.start;
         return Some(delete_range(sel, caret));
     }
     let scan = BlockScan::new(source);
     let blocks = scan.view();
+    // In a drawn table's cell: only that cell's bytes (ADR 0109).
+    if rendered && let Some(result) = cells::delete(source, blocks, selection.clone(), false) {
+        return Some(result);
+    }
     let off = selection.end.min(source.len());
     let (row, col) = row_col(source, off);
     if rendered
@@ -268,13 +275,18 @@ fn emptied_pair(source: &str, blocks: Blocks, deleted: Range<usize>) -> Option<R
 /// ⌦: as [`backspace`], forward — a rendered image row, the paragraph break
 /// at a paragraph's end, or one character. `None` at the document end.
 pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> Option<EditResult> {
-    if selection.start != selection.end {
+    if selection.start != selection.end
+        && !(rendered && cells::cell_at(source, selection.end).is_some())
+    {
         let sel = sorted(&selection);
         let caret = sel.start;
         return Some(delete_range(sel, caret));
     }
     let scan = BlockScan::new(source);
     let blocks = scan.view();
+    if rendered && let Some(result) = cells::delete(source, blocks, selection.clone(), true) {
+        return Some(result);
+    }
     let off = selection.end.min(source.len());
     let (row, _) = row_col(source, off);
     if rendered
@@ -413,10 +425,41 @@ pub fn table_command(
     Some(from_table(edit))
 }
 
+/// Tab, ⇧Tab or an arrow key in a rendered table (ADR 0109): the caret to
+/// the next or previous cell, or a character or a cell over. `None` outside
+/// a rendered table, where the key does what it does elsewhere.
+pub fn table_move(
+    source: &str,
+    selection: Range<usize>,
+    by: CellMove,
+    rendered: bool,
+) -> Option<EditResult> {
+    rendered
+        .then(|| cells::move_caret(source, selection, by))
+        .flatten()
+}
+
+/// Typing `typed` over the selection in a rendered table's cell, as that
+/// cell's own bytes: a line break as `<br>`, a pipe escaped. `None` outside
+/// a rendered table, where typing is plain.
+pub fn type_in_table(
+    source: &str,
+    selection: Range<usize>,
+    typed: &str,
+    rendered: bool,
+) -> Option<EditResult> {
+    rendered
+        .then(|| cells::type_text(source, selection, typed, false))
+        .flatten()
+}
+
 /// Paste `text` over the selection, normalised as desktop does: line
 /// endings, a rendered table cell's newlines and pipes, words-attached
 /// `$$` fences in a rendered view.
 pub fn paste(source: &str, selection: Range<usize>, text: String, rendered: bool) -> EditResult {
+    if rendered && let Some(result) = cells::type_text(source, selection.clone(), &text, true) {
+        return result;
+    }
     let scan = BlockScan::new(source);
     let caret = selection.end.min(source.len());
     let target = crate::paste::PasteTarget {

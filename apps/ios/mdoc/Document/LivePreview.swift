@@ -43,14 +43,15 @@ final class LivePreview {
 
     /// The core took `edits`: candidates, grids and the reveal move with
     /// them, and the block around the edit restyles with the lines the
-    /// caret left and entered. False when more than a block changed (a
-    /// fence typed or removed, several edits at once, a table edited): the
-    /// owner restyles the whole text.
+    /// caret left and entered; a table typed into keeps its grid and
+    /// columns, and only what changed in it is laid out again. False when
+    /// more than a block changed (a fence typed or removed, several edits
+    /// at once): the owner restyles the whole text.
     func edited(_ edits: [AppliedEdit], in view: CandidateTextView, look: Look) -> Bool {
         // The whole keystroke's restyle, as ADR 0109's budget counts it.
         let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
         defer { editingSignposter.endInterval("Restyle", interval) }
-        var intact = edits.count == 1
+        let intact = edits.count == 1
         for edit in edits {
             candidates = candidates.compactMap { candidate in
                 Self.moved(candidate.range, by: edit).map { range in
@@ -62,12 +63,8 @@ final class LivePreview {
             fences = fences.map { $0.compactMap { Self.grown($0, by: edit) } }
             visible = visible.compactMap { Self.moved($0, by: edit) }
             caretLines = caretLines.flatMap { Self.grown($0, by: edit) }
-            for table in view.tableViews {
-                if NSMaxRange(edit.range) <= table.table.range.location {
-                    table.shift(by: edit.length - edit.range.length)
-                } else if edit.range.location < NSMaxRange(table.table.range) {
-                    intact = false
-                }
+            for table in view.tableViews where NSMaxRange(edit.range) <= table.table.range.location {
+                table.shift(by: edit.length - edit.range.length)
             }
         }
         guard intact, let edit = edits.first else { return false }
@@ -155,6 +152,11 @@ final class LivePreview {
         }
         var styler = MarkdownStyler(traits: look.traits, selected: nil, scoped: [], rendered: look.rendered, width: look.width)
         styler.editing = true
+        // Its tables keep their columns while their cells are typed into.
+        styler.pinnedColumns = Dictionary(
+            view.tableViews.filter { NSLocationInRange($0.table.anchor, range) }
+                .map { ($0.table.anchor - range.location, $0.table.columns) },
+            uniquingKeysWith: { first, _ in first })
         if look.rendered {
             styler.revealed = visible.compactMap(local)
                 + (caretLines.flatMap(local).map { Self.shownLines(in: block.styling, caret: $0) } ?? [])
@@ -250,20 +252,5 @@ enum CaretSnap {
             return NSRange(location: run.location - 1, length: 0)
         }
         return NSRange(location: NSMaxRange(run), length: 0)
-    }
-}
-
-extension RenderedTable {
-    /// The table `delta` UTF-16 units further on.
-    func shifted(by delta: Int) -> RenderedTable {
-        var table = self
-        table.anchor += delta
-        table.range.location += delta
-        for row in table.rows.indices {
-            for column in table.rows[row].indices {
-                table.rows[row][column].location += delta
-            }
-        }
-        return table
     }
 }

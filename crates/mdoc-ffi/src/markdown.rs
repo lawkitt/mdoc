@@ -18,7 +18,7 @@ use mdoc_markdown::{
     },
     spans::{Background, Color, Span, inline_image_spans, is_backslash_escaped, scan_line},
     syntax::{AlertKind, TableStyle, alert_prefix, ordered_marker},
-    tables::{Align, table_cell_ranges, table_regions},
+    tables::{Align, table_cell_ranges, table_cell_spans, table_regions},
 };
 
 use crate::library::TextRange;
@@ -155,6 +155,9 @@ pub struct MarkdownTableRow {
     /// Each cell's content without its spaces; an empty cell is an empty
     /// range where its content would be.
     pub cells: Vec<TextRange>,
+    /// Each cell's whole span between its pipes, its spaces included: where
+    /// a caret in that cell rests in edit mode (ADR 0109).
+    pub spans: Vec<TextRange>,
 }
 
 /// A GFM table the rendered view draws as a grid (ADR 0096).
@@ -503,6 +506,10 @@ fn table_of(
                 cells: row_cells(&text[range.clone()])
                     .into_iter()
                     .map(|cell| TextRange::of(&(range.start + cell.start..range.start + cell.end)))
+                    .collect(),
+                spans: table_cell_spans(&text[range.clone()])
+                    .into_iter()
+                    .map(|span| TextRange::of(&(range.start + span.start..range.start + span.end)))
                     .collect(),
             }
         })
@@ -1291,6 +1298,7 @@ mod block_tests {
                         .map(|r| MarkdownTableRow {
                             range: shifted(r.range, start),
                             cells: r.cells.iter().map(|c| shifted(*c, start)).collect(),
+                            spans: r.spans.iter().map(|c| shifted(*c, start)).collect(),
                         })
                         .collect(),
                     ..t.clone()

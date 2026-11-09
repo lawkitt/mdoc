@@ -7,7 +7,7 @@ use crate::spans::is_backslash_escaped;
 use crate::syntax::{TableStyle, base_direction, table_col_widths, table_style_marker};
 
 /// Per-column text alignment of a GFM table.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Align {
     Left,
     Center,
@@ -146,6 +146,30 @@ pub fn table_cell_ranges(line: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// Each cell's whole span between its pipes, line-local, in the order of
+/// [`table_cell_ranges`]: the cell's content with its spaces, where typing
+/// in the cell stays in the cell (ADR 0109). A row left without its closing
+/// pipe (`| a | b`) ends with the text after its last pipe, when there is
+/// some.
+pub fn table_cell_spans(line: &str) -> Vec<Range<usize>> {
+    let (Some(first), Some(last)) = (line.find('|'), line.rfind('|')) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if last > first {
+        let base = first + 1;
+        let mut seg = 0;
+        for piece in split_unescaped_pipes(&line[base..last]) {
+            out.push(base + seg..base + seg + piece.len());
+            seg += piece.len() + 1;
+        }
+    }
+    if !line[last + 1..].trim().is_empty() {
+        out.push(last + 1..line.len());
+    }
+    out
+}
+
 /// If `line` is a table separator row (every cell is dashes with optional
 /// alignment colons), return its per-column alignment, else `None`.
 fn separator_aligns(line: &str) -> Option<Vec<Align>> {
@@ -215,6 +239,21 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert_eq!(&line[ranges[0].clone()], r"left \| right");
         assert_eq!(&line[ranges[1].clone()], "ok");
+    }
+
+    #[test]
+    fn cell_spans_hold_their_content() {
+        let line = r"|  a \| b | | c";
+        let spans = table_cell_spans(line);
+        let pieces: Vec<&str> = spans.iter().map(|r| &line[r.clone()]).collect();
+        assert_eq!(pieces, [r"  a \| b ", " ", " c"]);
+        let line = "| a |  |";
+        let spans = table_cell_spans(line);
+        for (span, cell) in spans.iter().zip(table_cell_ranges(line)) {
+            assert!(span.start <= cell.start && cell.end <= span.end);
+        }
+        assert_eq!(spans, [1..4, 5..7]);
+        assert!(table_cell_spans("no pipes").is_empty());
     }
 
     #[test]

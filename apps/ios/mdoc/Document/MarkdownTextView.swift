@@ -662,6 +662,9 @@ final class CandidateTextView: RenderedTextView {
     /// Edit mode's hardware shortcuts (⌘B, ⌘I, Tab, ⇧Tab) and ⌘K.
     var onCommand: ((EditCommand) -> Void)?
     var onLinkKey: (() -> Void)?
+    /// Paste with the caret in a table cell (ADR 0109): true when made
+    /// there, as the cell's own bytes.
+    var onCellPaste: ((String) -> Bool)?
 
     /// Edit mode's shortcuts, listed when ⌘ is held (ADR 0109). ⌘E is the
     /// Edit and Done button's, and ⌘Z and ⇧⌘Z the system's Undo and Redo,
@@ -682,15 +685,62 @@ final class CandidateTextView: RenderedTextView {
         ]
     }()
 
+    /// In a table cell Tab and ⇧Tab move between cells (ADR 0109).
+    @MainActor static let cellKeyCommands: [UIKeyCommand] = {
+        func key(_ title: String, _ flags: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
+            let command = UIKeyCommand(
+                title: title, action: action, input: "\t", modifierFlags: flags, discoverabilityTitle: title)
+            command.wantsPriorityOverSystemBehavior = true
+            return command
+        }
+        return [
+            key(String(localized: "Next Cell"), [], #selector(indentKey)),
+            key(String(localized: "Previous Cell"), .shift, #selector(outdentKey)),
+        ]
+    }()
+
     override var keyCommands: [UIKeyCommand]? {
         guard isEditMode, isFirstResponder else { return super.keyCommands }
-        return (super.keyCommands ?? []) + Self.editKeyCommands
+        let edit = caretCell == nil ? Self.editKeyCommands : Array(Self.editKeyCommands.prefix(3)) + Self.cellKeyCommands
+        return (super.keyCommands ?? []) + edit
+    }
+
+    /// The move a hardware key makes in a table cell: Tab, ⇧Tab and the
+    /// arrows (no other modifier); nil for any other key or outside a cell.
+    private func cellMove(_ presses: Set<UIPress>) -> EditorTableMove? {
+        guard editsCells, presses.count == 1, let key = presses.first?.key,
+              key.modifierFlags.subtracting([.shift, .numericPad]).isEmpty, caretCell != nil else { return nil }
+        let shift = key.modifierFlags.contains(.shift)
+        switch key.keyCode {
+        case .keyboardTab: return shift ? .previous : .next
+        case .keyboardLeftArrow where !shift: return .left
+        case .keyboardRightArrow where !shift: return .right
+        case .keyboardUpArrow where !shift: return .up
+        case .keyboardDownArrow where !shift: return .down
+        default: return nil
+        }
+    }
+
+    /// ⇧Return in a table cell: `<br>`, a line break in the cell.
+    private func isCellLineBreak(_ presses: Set<UIPress>) -> Bool {
+        guard editsCells, presses.count == 1, let key = presses.first?.key, caretCell != nil else { return false }
+        return key.keyCode == .keyboardReturnOrEnter
+            && key.modifierFlags.subtracting([.numericPad]) == .shift
     }
 
     /// Tab and ⇧Tab from a hardware keyboard in edit mode: indent and
-    /// outdent. The text view would type a tab, and the key command above
-    /// does not reach it before the text input does.
+    /// outdent, or in a table cell the next and previous cell, as the
+    /// arrows move between cells there. The text view would type a tab, and
+    /// the key command above does not reach it before the text input does.
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if let move = cellMove(presses) {
+            onCommand?(.moveInTable(move))
+            return
+        }
+        if isCellLineBreak(presses) {
+            onCommand?(.lineBreak)
+            return
+        }
         if isEditMode, presses.count == 1, let key = presses.first?.key, key.keyCode == .keyboardTab,
            key.modifierFlags.subtracting([.shift, .numericPad]).isEmpty {
             if key.modifierFlags.contains(.shift) { outdentKey() } else { indentKey() }
@@ -700,8 +750,36 @@ final class CandidateTextView: RenderedTextView {
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if cellMove(presses) != nil || isCellLineBreak(presses) { return }
         if isEditMode, presses.count == 1, presses.first?.key?.keyCode == .keyboardTab { return }
         super.pressesEnded(presses, with: event)
+    }
+
+    // MARK: The caret in a table cell (ADR 0109)
+
+    override func caretRect(for position: UITextPosition) -> CGRect {
+        cellCaretRect(for: position) ?? super.caretRect(for: position)
+    }
+
+    override func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {
+        cellSelectionRects(for: range) ?? super.selectionRects(for: range)
+    }
+
+    override func firstRect(for range: UITextRange) -> CGRect {
+        cellFirstRect(for: range) ?? super.firstRect(for: range)
+    }
+
+    override func closestPosition(to point: CGPoint) -> UITextPosition? {
+        cellPosition(at: point) ?? super.closestPosition(to: point)
+    }
+
+    /// The caret is drawn where UIKit last asked for it: after its cell is
+    /// laid out again or scrolled, it asks again.
+    func redrawCaret() {
+        guard caretCell != nil else { return }
+        for case let display as UITextSelectionDisplayInteraction in interactions {
+            display.setNeedsSelectionUpdate()
+        }
     }
 
     /// The system's own ⌘B and ⌘I (its Format menu), which UIKit may match
@@ -717,8 +795,8 @@ final class CandidateTextView: RenderedTextView {
     @objc func boldKey() { onCommand?(.format(.bold)) }
     @objc func italicKey() { onCommand?(.format(.italic)) }
     @objc func linkKey() { onLinkKey?() }
-    @objc func indentKey() { onCommand?(.indent) }
-    @objc func outdentKey() { onCommand?(.outdent) }
+    @objc func indentKey() { onCommand?(caretCell == nil ? .indent : .moveInTable(.next)) }
+    @objc func outdentKey() { onCommand?(caretCell == nil ? .outdent : .moveInTable(.previous)) }
 
     /// Editable, with the core behind it.
     var isEditMode: Bool { isEditable && editActions != nil }

@@ -101,25 +101,25 @@ extension MarkdownTextView.Coordinator {
             guard let self, let view else { return }
             self.restyle(after: edits, in: view)
         }
+        bridge.onMoved = { [weak self, weak view] in
+            guard let self, let view else { return }
+            self.followSelection(view)
+        }
         let rendered = parent.rendered
         bridge.structural = { [weak view] key, range, selection in
             guard let view else { return .native }
+            // In a cell the core keeps the key inside it (ADR 0109).
+            let inCell = view.cell(at: NSMaxRange(selection))?.table
             return StructuralKeys.outcome(
                 key, text: view.textStorage.string as NSString, selection: selection, native: range, rendered: rendered,
                 // A table and the line breaks around it: joining a line to
                 // a row would change the table.
-                protected: rendered ? view.tableViews.map { Self.protected($0.table.range, in: view.textStorage.length) } : [])
+                protected: rendered
+                    ? view.tableViews.filter { $0 !== inCell }.map { Self.protected($0.table.range, in: view.textStorage.length) }
+                    : [])
         }
         view.hidesMarkers = parent.rendered
-        view.onTableTap = actions == nil ? nil : { [weak view] table in
-            // Tables are not edited in this slice: the caret goes after one.
-            guard let view else { return }
-            let text = view.textStorage.string as NSString
-            var after = min(NSMaxRange(table.table.range), text.length)
-            if after < text.length { after = NSMaxRange(text.lineRange(for: NSRange(location: after, length: 0))) }
-            if !view.isFirstResponder { view.becomeFirstResponder() }
-            view.selectedRange = NSRange(location: after, length: 0)
-        }
+        connectTables(view)
     }
 
     /// A table's range and the line breaks either side of it, within the
@@ -214,6 +214,11 @@ extension MarkdownTextView.Coordinator {
                 ?? (caret..<NSMaxRange(line)).first(where: shown)
                 ?? location
         }
+        if let view = view as? CandidateTextView, view.caretCell != nil {
+            // Typed into a cell's hidden source: the grid shows it.
+            view.typingAttributes = MarkdownStyler.hiddenAttributes
+            return
+        }
         var attributes = storage.attributes(at: location, effectiveRange: nil)
         for key in MarkdownStyler.candidateKeys { attributes[key] = nil }
         if attributes[.mdocHidden] != nil {
@@ -238,6 +243,11 @@ extension MarkdownTextView.Coordinator {
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         guard textView.isEditable, !(textView is CellTextView) else { return false }
+        // A pipe, backslash or line break typed in a table cell, or a word
+        // delete there, stays the cell's own bytes.
+        if let view = textView as? CandidateTextView, typedInCell(view, range: range, text: text) {
+            return false
+        }
         // Typing right after a table (at the text's end, where a tap on it
         // puts the caret) starts a paragraph below it rather than adding to
         // its last row: tables are not edited in this slice.
@@ -270,7 +280,9 @@ extension MarkdownTextView.Coordinator {
         guard textView.isEditable, let view = textView as? CandidateTextView else { return }
         let moved = !bridge.isChanging && view.markedTextRange == nil
         if moved, parent.rendered, !snapping {
-            let snapped = CaretSnap.snap(view.selectedRange, from: lastSelection, in: view.textStorage)
+            // In a drawn table the caret stays in a cell (ADR 0109).
+            let snapped = keptInCell(view)
+                ?? CaretSnap.snap(view.selectedRange, from: lastSelection, in: view.textStorage)
             if snapped != view.selectedRange {
                 snapping = true
                 view.selectedRange = snapped
@@ -279,12 +291,21 @@ extension MarkdownTextView.Coordinator {
         }
         bridge.selectionChanged(textView)
         if moved {
-            lastSelection = view.selectedRange
-            livePreview.selectionChanged(in: view, look: look(view))
-            view.invalidateSpoken()
-            toolbarChanged(view)
+            followSelection(view)
+        } else {
+            updateTypingAttributes(textView)
         }
-        updateTypingAttributes(textView)
+    }
+
+    /// The caret moved: the reveal, the toolbar and the typing look follow.
+    func followSelection(_ view: CandidateTextView) {
+        lastSelection = view.selectedRange
+        livePreview.selectionChanged(in: view, look: look(view))
+        view.invalidateSpoken()
+        toolbarChanged(view)
+        updateTypingAttributes(view)
+        view.redrawCaret()
+        view.revealCaretCell()
     }
 }
 
@@ -424,6 +445,8 @@ extension CandidateTextView {
 
     func pasteClipboard() {
         guard let range = selectedTextRange, let text = InAppClipboard.shared.read(), !text.isEmpty else { return }
+        // In a table cell the core makes the paste the cell's own bytes.
+        if onCellPaste?(text) == true { return }
         replace(range, withText: text)
         onEdited?()
     }

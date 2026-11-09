@@ -12,6 +12,7 @@ use std::ops::Range;
 use mdoc_markdown::lines::{list_prefix, task_prefix};
 use mdoc_markdown::syntax::links;
 
+use crate::cells::{self, Cell};
 use crate::commands::InlineFormat;
 use crate::markdown::fmt_marker_pairs;
 use crate::text::{line_bounds, row_col};
@@ -38,6 +39,9 @@ pub struct CaretState {
     pub can_outdent: bool,
     /// The caret is in a table the view draws.
     pub in_table: bool,
+    /// In live preview, the drawn table's cell holding the caret: the
+    /// formatting keyboard's table controls (ADR 0109).
+    pub cell: Option<Cell>,
     /// The link holding or touching the caret.
     pub link: Option<LinkAt>,
 }
@@ -189,6 +193,7 @@ pub fn caret_state(source: &str, selection: Range<usize>, rendered: bool) -> Car
         can_indent: item && !table_cell && item_above(source, line_start),
         can_outdent: !table_cell && format::outdent(source, caret, TAB_INDENT).is_some(),
         in_table,
+        cell: table_cell.then(|| cells::cell_at(source, caret)).flatten(),
         link: link_at(source, caret),
     }
 }
@@ -399,12 +404,10 @@ pub fn insert_rule(source: &str, selection: Range<usize>) -> EditResult {
 }
 
 /// The formatting keyboard's Table: a two-column table, a header row and a
-/// body row, empty. With Show Markdown on the caret goes into its first
-/// cell; live preview edits cells in a later slice, so the caret goes below
-/// it there.
-pub fn insert_table(source: &str, selection: Range<usize>, rendered: bool) -> EditResult {
+/// body row, empty, the caret in its first cell.
+pub fn insert_table(source: &str, selection: Range<usize>) -> EditResult {
     let block = "|  |  |\n| --- | --- |\n|  |  |";
-    insert_block(source, selection, block, (!rendered).then_some(2))
+    insert_block(source, selection, block, Some(2))
 }
 
 #[cfg(test)]
@@ -622,11 +625,15 @@ mod tests {
         );
         assert_eq!(run("", Some(insert_rule("", caret(0)))).0, "---\n\n");
         let table = "|  |  |\n| --- | --- |\n|  |  |";
-        let (out, sel) = run("abc", Some(insert_table("abc", caret(3), false)));
+        let (out, sel) = run("abc", Some(insert_table("abc", caret(3))));
         assert_eq!(out, format!("abc\n\n{table}\n\n"));
         assert_eq!(sel, caret(7));
-        let (out, sel) = run("abc", Some(insert_table("abc", caret(3), true)));
-        assert_eq!(sel, caret(out.len()));
         assert_eq!(mdoc_markdown::tables::table_regions(&out).len(), 1);
+        // The caret is in the first cell, live preview or not.
+        let cell = caret_state(&out, sel, true).cell.unwrap();
+        assert_eq!(
+            (cell.row, cell.column, cell.rows, cell.columns),
+            (0, 0, 2, 2)
+        );
     }
 }

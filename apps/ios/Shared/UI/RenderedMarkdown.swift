@@ -62,6 +62,10 @@ struct RenderedCell {
     var text: NSAttributedString
     /// The cell's UTF-16 location in the document, for Replace… offsets.
     var location: Int
+    /// Between the cell's pipes, in UTF-16: where edit mode's caret rests
+    /// in this cell (ADR 0109). Its location is `NSNotFound` for a cell the
+    /// row leaves out.
+    var span = NSRange(location: NSNotFound, length: 0)
 }
 
 /// A table as its grid draws it: column widths and row heights for the text
@@ -81,6 +85,24 @@ struct RenderedTable {
 
     var width: CGFloat { columns.reduce(0, +) }
     var height: CGFloat { heights.reduce(0, +) }
+}
+
+extension RenderedTable {
+    /// The table `delta` UTF-16 units further on.
+    func shifted(by delta: Int) -> RenderedTable {
+        var table = self
+        table.anchor += delta
+        table.range.location += delta
+        for row in table.rows.indices {
+            for column in table.rows[row].indices {
+                table.rows[row][column].location += delta
+                if table.rows[row][column].span.location != NSNotFound {
+                    table.rows[row][column].span.location += delta
+                }
+            }
+        }
+        return table
+    }
 }
 
 /// What one rendered line draws. Colours are resolved for the traits the
@@ -120,12 +142,16 @@ struct BlockLayout {
     /// Edit mode: a line of nothing but hidden markers keeps its height, so
     /// the caret can reach it; tables and fences still fold.
     let editing: Bool
+    /// Column widths to keep, by the table's UTF-16 location: while a cell
+    /// is typed into, its table keeps its columns (ADR 0109).
+    let pinned: [Int: [CGFloat]]
 
     init(
         text: NSMutableAttributedString, source: NSString, offsets: TextOffsets, styling: MarkdownStyling,
         hidden ranges: [NSRange], traits: UITraitCollection, body: UIFont, paragraph: NSParagraphStyle,
-        revealed: [NSRange] = [], editing: Bool = false
+        revealed: [NSRange] = [], editing: Bool = false, pinned: [Int: [CGFloat]] = [:]
     ) {
+        self.pinned = pinned
         self.text = text
         self.source = source
         self.offsets = offsets
@@ -169,6 +195,7 @@ struct BlockLayout {
             let count = max(table.aligns.count, table.rows.map(\.cells.count).max() ?? 0)
             guard count > 0 else { return nil }
             var rows: [[RenderedCell]] = []
+            let spans = table.rows.map(\.spans)
             for (rowIndex, row) in table.rows.map(\.cells).enumerated() {
                 var cells: [RenderedCell] = []
                 for column in 0..<count {
@@ -200,9 +227,29 @@ struct BlockLayout {
                             }
                         }
                     }
-                    cells.append(RenderedCell(text: piece, location: content?.location ?? tableRange.location))
+                    var cell = RenderedCell(text: piece, location: content?.location ?? tableRange.location)
+                    if column < row.count, column < spans[rowIndex].count {
+                        cell.span = offsets.nsRange(spans[rowIndex][column])
+                    }
+                    cells.append(cell)
                 }
                 rows.append(cells)
+            }
+            let heights = { (columns: [CGFloat]) -> [CGFloat] in
+                rows.map { row -> CGFloat in
+                    row.enumerated().map { column, cell -> CGFloat in
+                        let inner = columns[column] - padding.left - padding.right
+                        let size = cell.text.boundingRect(
+                            with: CGSize(width: inner, height: .greatestFiniteMagnitude),
+                            options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+                        return ceil(size.height) + padding.top + padding.bottom + 2
+                    }.max() ?? 0
+                }
+            }
+            if let kept = pinned[tableRange.location], kept.count == count {
+                return RenderedTable(
+                    anchor: tableRange.location, range: tableRange, rows: rows, columns: kept, heights: heights(kept),
+                    style: table.style, rtl: table.rtl, padding: padding)
             }
             // Natural widths: each column's longest unwrapped cell; floors:
             // its longest word, so a word never breaks inside.
@@ -238,17 +285,8 @@ struct BlockLayout {
                 columns = zip(natural, floors).map { max($0 / total * width, $1) }
             }
             columns = columns.map { $0.rounded(.up) }
-            let heights: [CGFloat] = rows.map { row -> CGFloat in
-                row.enumerated().map { column, cell -> CGFloat in
-                    let inner = columns[column] - padding.left - padding.right
-                    let size = cell.text.boundingRect(
-                        with: CGSize(width: inner, height: .greatestFiniteMagnitude),
-                        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-                    return ceil(size.height) + padding.top + padding.bottom + 2
-                }.max() ?? 0
-            }
             return RenderedTable(
-                anchor: tableRange.location, range: tableRange, rows: rows, columns: columns, heights: heights,
+                anchor: tableRange.location, range: tableRange, rows: rows, columns: columns, heights: heights(columns),
                 style: table.style, rtl: table.rtl, padding: padding)
         }
     }
@@ -844,20 +882,40 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
 
     func accessibilityRowRange() -> NSRange { NSRange(location: row, length: 1) }
     func accessibilityColumnRange() -> NSRange { NSRange(location: column, length: 1) }
+
+    /// Edit mode (ADR 0109): VoiceOver's double-tap puts the caret in this
+    /// cell, where the keyboard types into it. Nil in review.
+    var onActivate: (() -> Bool)? {
+        didSet {
+            accessibilityHint = onActivate == nil
+                ? nil
+                : String(localized: "Double-tap to edit this cell.", comment: "VoiceOver hint on a table cell in edit mode")
+        }
+    }
+
+    override func accessibilityActivate() -> Bool {
+        onActivate?() ?? super.accessibilityActivate()
+    }
 }
 
 /// One table's grid: cell text views over drawn lines and fills, scrolling
 /// sideways when wider than the text column, with a fade at the edge that
 /// has more. VoiceOver reads it as a data table.
+///
+/// In edit mode (ADR 0109) the cells take no touches: the text view behind
+/// keeps the caret, in the cell's source, and draws it in the cell. A tap
+/// on the grid says where (`onTap`), and the grid still scrolls sideways.
 final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibilityContainerDataTable {
     /// The table drawn; edit mode moves its place as text before it changes.
     var table: RenderedTable
     private(set) var cells: [[CellTextView]] = []
     private let grid: GridView
     private let fade = CAGradientLayer()
+    private let configure: (CellTextView) -> Void
 
-    init(table: RenderedTable, configure: (CellTextView) -> Void) {
+    init(table: RenderedTable, configure: @escaping (CellTextView) -> Void) {
         self.table = table
+        self.configure = configure
         grid = GridView(table: table)
         super.init(frame: .zero)
         showsHorizontalScrollIndicator = false
@@ -866,43 +924,16 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
         isDirectionalLockEnabled = true
         delegate = self
         addSubview(grid)
-        var y: CGFloat = 0
         for (rowIndex, row) in table.rows.enumerated() {
-            var x: CGFloat = 0
             var views: [CellTextView] = []
             for (column, cell) in row.enumerated() {
-                // TextKit 2, so the cell's layout fragments draw Image chips;
-                // `configure` sets their delegate before the text arrives.
-                let view = CellTextView(usingTextLayoutManager: true)
-                view.isEditable = false
-                view.isSelectable = true
-                view.isScrollEnabled = false
-                view.backgroundColor = .clear
-                view.dataDetectorTypes = []
-                view.writingToolsBehavior = .none
-                view.linkTextAttributes = [:]
-                view.textDragInteraction?.isEnabled = false
-                view.textContainerInset = table.padding
-                view.textContainer.lineFragmentPadding = 0
-                view.textLayoutManager?.usesHyphenation = false
-                configure(view)
-                view.attributedText = cell.text
-                view.location = cell.location
-                view.row = rowIndex
-                view.column = column
-                view.frame = CGRect(x: x, y: y, width: table.columns[column], height: table.heights[rowIndex])
-                if rowIndex == 0 {
-                    view.accessibilityTraits.insert(.header)
-                }
+                let view = makeCell(cell, row: rowIndex, column: column)
                 addSubview(view)
                 views.append(view)
-                x += table.columns[column]
             }
             cells.append(views)
-            y += table.heights[rowIndex]
         }
-        grid.frame = CGRect(x: 0, y: 0, width: table.width, height: table.height)
-        contentSize = grid.frame.size
+        layoutCells()
         fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
         fade.startPoint = CGPoint(x: 0, y: 0.5)
         fade.endPoint = CGPoint(x: 1, y: 0.5)
@@ -913,38 +944,184 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unused") }
 
+    private func makeCell(_ cell: RenderedCell, row: Int, column: Int) -> CellTextView {
+        // TextKit 2, so the cell's layout fragments draw Image chips;
+        // `configure` sets their delegate before the text arrives.
+        let view = CellTextView(usingTextLayoutManager: true)
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.dataDetectorTypes = []
+        view.writingToolsBehavior = .none
+        view.linkTextAttributes = [:]
+        view.textDragInteraction?.isEnabled = false
+        view.textContainerInset = table.padding
+        view.textContainer.lineFragmentPadding = 0
+        view.textLayoutManager?.usesHyphenation = false
+        configure(view)
+        view.attributedText = cell.text
+        view.location = cell.location
+        view.row = row
+        view.column = column
+        if row == 0 {
+            view.accessibilityTraits.insert(.header)
+        }
+        view.isUserInteractionEnabled = onTap == nil
+        view.onActivate = onTap == nil ? nil : { [weak self, weak view] in
+            guard let self, let view else { return false }
+            self.onTap?(view.center)
+            return true
+        }
+        return view
+    }
+
+    /// Frames for every cell and the grid at the table's sizes.
+    private func layoutCells() {
+        var y: CGFloat = 0
+        for (rowIndex, views) in cells.enumerated() {
+            var x: CGFloat = 0
+            for (column, view) in views.enumerated() {
+                let frame = CGRect(x: x, y: y, width: table.columns[column], height: table.heights[rowIndex])
+                if view.frame != frame { view.frame = frame }
+                x += table.columns[column]
+            }
+            y += table.heights[rowIndex]
+        }
+        grid.frame = CGRect(x: 0, y: 0, width: table.width, height: table.height)
+        contentSize = grid.frame.size
+    }
+
+    /// Shows `new` in place when it has the same rows and columns: only the
+    /// cells whose text changed take it, and frames follow the new sizes. A
+    /// cell typed into relayouts its row and leaves the other cells alone
+    /// (ADR 0109). False, changing nothing, when the shape differs.
+    func update(to new: RenderedTable) -> Bool {
+        guard new.rows.count == table.rows.count,
+              zip(new.rows, table.rows).allSatisfy({ $0.count == $1.count }),
+              new.columns.count == table.columns.count, new.padding == table.padding, new.rtl == table.rtl else { return false }
+        for (row, views) in cells.enumerated() {
+            for (column, view) in views.enumerated() {
+                let cell = new.rows[row][column]
+                if !view.attributedText.isEqual(to: cell.text) {
+                    view.attributedText = cell.text
+                }
+                view.location = cell.location
+            }
+        }
+        let resized = new.columns != table.columns || new.heights != table.heights || new.style != table.style
+        table = new
+        if resized {
+            grid.table = new
+            grid.setNeedsDisplay()
+            layoutCells()
+        }
+        return true
+    }
+
     /// A horizontal offset to return to once the grid has its frame.
     var restoredOffset: CGFloat?
 
-    /// Edit mode (ADR 0109): cells are not edited in this slice, so they take
-    /// no touches; a tap on the grid runs this (the caret goes after the
-    /// table). Nil outside edit mode, where cells are selectable.
-    var onTap: (() -> Void)? {
+    /// Edit mode (ADR 0109): a tap on the grid runs this with where it
+    /// landed, in this view's coordinates, and the cells take no touches.
+    /// Nil outside edit mode, where cells are selectable.
+    var onTap: ((CGPoint) -> Void)? {
         didSet {
-            for cell in cells.joined() { cell.isUserInteractionEnabled = onTap == nil }
-            if onTap != nil, tap == nil {
-                let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+            let editing = onTap != nil
+            for view in cells.joined() {
+                view.isUserInteractionEnabled = !editing
+                view.onActivate = editing ? { [weak self, weak view] in
+                    guard let self, let view else { return false }
+                    self.onTap?(view.center)
+                    return true
+                } : nil
+            }
+            if editing, tap == nil {
+                let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
                 addGestureRecognizer(tap)
                 self.tap = tap
             }
-            tap?.isEnabled = onTap != nil
+            tap?.isEnabled = editing
         }
     }
 
+    /// The grid scrolled sideways: edit mode draws its caret again.
+    var onScroll: (() -> Void)?
+
     private var tap: UITapGestureRecognizer?
 
-    @objc private func tapped() {
-        onTap?()
+    @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+        onTap?(recognizer.location(in: self))
+    }
+
+    /// The cell at `point` (this view's coordinates), or the nearest one.
+    func cellView(at point: CGPoint) -> CellTextView? {
+        cells.joined().min { a, b in
+            Self.distance(from: point, to: a.frame) < Self.distance(from: point, to: b.frame)
+        }
+    }
+
+    private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return dx * dx + dy * dy
+    }
+
+    /// The document's UTF-16 offset a tap at `point` puts the caret at: the
+    /// nearest cell's character there.
+    func offset(at point: CGPoint) -> Int? {
+        guard let view = cellView(at: point) else { return nil }
+        let inside = convert(point, to: view)
+        let position = view.closestPosition(to: inside) ?? view.endOfDocument
+        return view.location + view.offset(from: view.beginningOfDocument, to: position)
+    }
+
+    /// The cell whose span holds the document's UTF-16 `offset`, and where
+    /// in its text that is: a caret in the cell's spaces sits at its text's
+    /// edge.
+    func cell(at offset: Int) -> (view: CellTextView, offset: Int)? {
+        for (row, cellsInRow) in table.rows.enumerated() {
+            for (column, cell) in cellsInRow.enumerated() where cell.span.location != NSNotFound {
+                guard cell.span.location <= offset, offset <= NSMaxRange(cell.span),
+                      cells.indices.contains(row), cells[row].indices.contains(column) else { continue }
+                let view = cells[row][column]
+                let length = view.textStorage.length
+                return (view, min(max(offset - view.location, 0), length))
+            }
+        }
+        return nil
+    }
+
+    /// The span between `view`'s pipes, in the document's UTF-16 offsets.
+    func span(of view: CellTextView) -> NSRange? {
+        guard table.rows.indices.contains(view.row), table.rows[view.row].indices.contains(view.column) else { return nil }
+        let span = table.rows[view.row][view.column].span
+        return span.location == NSNotFound ? nil : span
+    }
+
+    /// Scrolls sideways so `rect` (this view's coordinates) shows, with a
+    /// cell's padding beside it.
+    func reveal(_ rect: CGRect) {
+        guard contentSize.width > bounds.width, bounds.width > 0 else { return }
+        let wanted = rect.insetBy(dx: -table.padding.left - 2, dy: 0)
+        var x = contentOffset.x
+        if wanted.minX < x {
+            x = wanted.minX
+        } else if wanted.maxX > x + bounds.width {
+            x = wanted.maxX - bounds.width
+        }
+        x = min(max(x, 0), contentSize.width - bounds.width)
+        if abs(x - contentOffset.x) > 0.5 {
+            setContentOffset(CGPoint(x: x, y: 0), animated: false)
+        }
     }
 
     /// Moves the table's place by `delta` UTF-16 units: text before it changed.
     func shift(by delta: Int) {
-        table.anchor += delta
-        table.range.location += delta
-        for (row, views) in cells.enumerated() {
-            for (column, view) in views.enumerated() {
+        table = table.shifted(by: delta)
+        for views in cells {
+            for view in views {
                 view.location += delta
-                table.rows[row][column].location += delta
             }
         }
     }
@@ -960,6 +1137,7 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         updateFade()
+        onScroll?()
     }
 
     /// Fades the trailing edge while more of the table is off screen.
@@ -999,7 +1177,7 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
 
 /// A table's lines and fills, in its style.
 private final class GridView: UIView {
-    let table: RenderedTable
+    var table: RenderedTable
 
     init(table: RenderedTable) {
         self.table = table
@@ -1108,16 +1286,25 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
         setTables(document.tables)
     }
 
-    /// Edit mode's tap on a table (ADR 0109): nil outside edit mode, where
-    /// cells are selectable.
-    var onTableTap: ((MarkdownTableView) -> Void)? {
+    /// Edit mode's tap on a table, with where it landed in the table's
+    /// coordinates (ADR 0109): nil outside edit mode, where cells are
+    /// selectable.
+    var onTableTap: ((MarkdownTableView, CGPoint) -> Void)? {
+        didSet {
+            for view in tableViews { connectTap(view) }
+        }
+    }
+
+    /// A table scrolled sideways (edit mode draws its caret again).
+    var onTableScroll: ((MarkdownTableView) -> Void)? {
         didSet {
             for view in tableViews { connectTap(view) }
         }
     }
 
     private func connectTap(_ view: MarkdownTableView) {
-        view.onTap = onTableTap.map { tap in { [weak view] in if let view { tap(view) } } }
+        view.onTap = onTableTap.map { tap in { [weak view] point in if let view { tap(view, point) } } }
+        view.onScroll = onTableScroll.map { scrolled in { [weak view] in if let view { scrolled(view) } } }
     }
 
     /// Lays `tables` over the text, in place of the grids shown. Restyling
@@ -1132,15 +1319,30 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     func replaceTables(in range: NSRange?, with tables: [RenderedTable]) {
         var scrolled: [Int: CGFloat] = [:]
         var kept: [MarkdownTableView] = []
+        var replaced: [Int: MarkdownTableView] = [:]
         for view in tableViews {
             if let range, NSIntersectionRange(range, view.table.range).length == 0 && !NSLocationInRange(view.table.anchor, range) {
                 kept.append(view)
                 continue
             }
+            replaced[view.table.anchor] = view
+        }
+        // A table of the same shape is shown again in place (a cell typed
+        // into), keeping its cells and where it is scrolled.
+        var fresh: [RenderedTable] = []
+        for table in tables {
+            if let view = replaced[table.anchor], view.update(to: table) {
+                replaced[table.anchor] = nil
+                kept.append(view)
+            } else {
+                fresh.append(table)
+            }
+        }
+        for view in replaced.values {
             scrolled[view.table.anchor] = view.contentOffset.x
             view.removeFromSuperview()
         }
-        let added = tables.map { table in
+        let added = fresh.map { table in
             let view = MarkdownTableView(table: table) { [weak self] cell in
                 cell.textLayoutManager?.delegate = self
                 self?.configureCell?(cell)
