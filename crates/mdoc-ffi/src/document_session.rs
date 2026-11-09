@@ -1,11 +1,12 @@
 //! `DocumentSession` (ADR 0085): one document from intake to the AI and
 //! back. Import and OCR through `mdoc_import`, scans through `mdoc_detect`,
 //! the review of `mdoc_pii` as snapshots and transitions with undo and redo
-//! (ADR 0098), Copy for AI and Share text, and the mapping saved into its
-//! case. Long jobs report their
-//! stage to the platform and stop when it cancels; the platform runs them
-//! off its main thread.
+//! (ADR 0098), typing in edit mode (ADR 0109), Copy for AI and Share text,
+//! and the mapping saved into its case. Long jobs report their stage to the
+//! platform and stop when it cancels; the platform runs them off its main
+//! thread.
 mod actions;
+mod editing;
 mod intake;
 mod review;
 mod saving;
@@ -17,6 +18,7 @@ use crate::{
     setup::{DetectorPaths, OcrPaths},
 };
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
+pub use editing::Typed;
 use mdoc_pii::restore::RestoreMap;
 pub(crate) use review::Counts;
 use review::ReviewText;

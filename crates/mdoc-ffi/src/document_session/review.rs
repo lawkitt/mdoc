@@ -3,13 +3,14 @@
 //! `mdoc_pii::Review` as the same `mdoc_history` transactions, in the same
 //! order, as on desktop (`src/pii/ui.rs` `commit_plans` and
 //! `checkpoint_review`, `src/pii/ui/mapping/popup.rs`, `src/pii/ui/mapping.rs`
-//! and `src/pii/ui/case_sync.rs`). Mobile has no text editing, so the
-//! history is a line of states, each one user action: Undo and Redo travel
-//! it as desktop's editor does (`history`, ADR 0098), and the identity tools
-//! are desktop's mapping changes (`mapping`).
+//! and `src/pii/ui/case_sync.rs`). The history is a line of states, each
+//! one user action, typing coalesced into "Typing" steps (`typing`, ADR
+//! 0109): Undo and Redo travel it as desktop's editor does (`history`, ADR
+//! 0098), and the identity tools are desktop's mapping changes (`mapping`).
 mod history;
 mod ids;
 mod mapping;
+mod typing;
 
 use crate::CoreError;
 pub use history::StepKind;
@@ -26,6 +27,7 @@ use std::{
     ops::Range,
     sync::Arc,
 };
+pub use typing::Typed;
 
 /// Where a decision or an identity change reaches (ADR 0085's review sheet,
 /// ADR 0098's scope chip).
@@ -71,6 +73,8 @@ pub(crate) struct ReviewText {
     /// The text's hash, taken when it changes: an app keeps what it built
     /// from the text while this stays.
     pub text_revision: u64,
+    /// The run of typing the next typed edit may join (`typing`).
+    typing: typing::Run,
 }
 
 /// A review's counts (`ReviewText::counts`).
@@ -179,6 +183,14 @@ impl ReviewText {
             }
             end = range.end;
         }
+        debug_assert!(self.base.is_some(), "every change is part of a step");
+        self.commit_checked(edits);
+        Ok(())
+    }
+
+    /// `commit_edits` once the geometry is checked: the text changes and
+    /// the review follows, as the next history state.
+    fn commit_checked(&mut self, edits: &[(Range<usize>, String)]) {
         let source_edits = if edits.is_empty() {
             vec![SourceEdit {
                 range: 0..0,
@@ -196,7 +208,6 @@ impl ReviewText {
                 })
                 .collect()
         };
-        debug_assert!(self.base.is_some(), "every change is part of a step");
         if !edits.is_empty() {
             self.text_revision = text_revision(&self.text);
         }
@@ -215,7 +226,6 @@ impl ReviewText {
             retained: self.retained(),
         };
         self.review.on_transaction(&transaction, &self.text);
-        Ok(())
     }
 
     /// A metadata-only review change as its own step (`checkpoint_review`).
