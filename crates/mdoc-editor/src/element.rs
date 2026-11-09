@@ -24,6 +24,7 @@ use gpui::{
     MouseUpEvent, PaintQuad, PathBuilder, Pixels, Point, RenderImage, SharedString, Style, TextRun,
     Window, WrappedLine, fill, hsla, point, px, relative, rgba, size,
 };
+use mdoc_editor_core::reveal::RevealRule;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -3887,16 +3888,18 @@ fn shape_document(
         // used to reveal whole (raw prefix at raw indent), so every edit
         // jumped the text left. Only a caret inside the hidden prefix (left
         // arrow past the body start) reveals the raw marker for editing.
-        let caret_in_prefix = gutter
-            .as_ref()
-            .zip(caret_col)
-            .is_some_and(|(&(plen, _), col)| col < plen);
+        let reveal = RevealRule::Desktop.line(
+            caret_col,
+            sel_touches,
+            gutter.as_ref().map(|&(plen, _)| plen),
+        );
+        let caret_in_prefix = reveal.show_prefix;
         // A selection across a gutter line keeps the mark too: the whole-line
         // raw reveal made list rows renumber (source digits) and jump to raw
         // indent mid-select. The BODY still reveals its inline markers (see
         // `reveal_inline` below) so what's highlighted is what's copied.
         let full_source = full_source && gutter.is_none();
-        let reveal_inline = sel_touches;
+        let reveal_inline = reveal.reveal_inline;
         let mark = if is_rule {
             md.map(|st| LineMark::Rule(st.rule))
         } else {
@@ -3904,12 +3907,8 @@ fn shape_document(
                 .filter(|_| !caret_in_prefix && !full_source)
                 .map(|(_, m)| m)
         };
-        let reveal_prefix = gutter
-            .filter(|_| caret_in_prefix)
-            .map_or(0, |(plen, _)| plen);
-        let hide_prefix = gutter
-            .filter(|_| !caret_in_prefix)
-            .map_or(0, |(plen, _)| plen);
+        let reveal_prefix = reveal.reveal_prefix;
+        let hide_prefix = reveal.hide_prefix;
         // Footnote definitions (`[^1]: …`) and raw-HTML lines render muted, the way
         // the reading view shows them — a whole-line color, no hidden markers.
         let muted_line = md

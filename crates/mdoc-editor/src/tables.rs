@@ -2,11 +2,12 @@
 //! painting — split from `lib.rs`.
 
 use crate::markdown_syntax;
-use crate::{CellAlign, ColEdit, EditorState, LINE_HEIGHT_RATIO, TableRow};
+use crate::{CellAlign, EditorState, LINE_HEIGHT_RATIO, TableRow};
 use gpui::{
     App, BorderStyle, Bounds, Context, Corners, Edges, Font, Hitbox, Hsla, PaintQuad, Pixels,
     Point, SharedString, TextRun, Window, WrappedLine, fill, hsla, point, px, size,
 };
+use mdoc_editor_core::tables as table_rules;
 use std::ops::Range;
 
 impl EditorState {
@@ -633,61 +634,37 @@ impl EditorState {
         let cell = table_cell_at(t, col);
         // Read the table's columns from the current content (fresh), so repeated
         // clicks build on the latest alignment, not a stale painted snapshot.
-        let scan = self.scan_data();
-        let Some(region) = scan.tables.iter().find(|r| r.lines.contains(&row)) else {
-            return;
-        };
-        let mut aligns = region.aligns.clone();
-        if cell >= aligns.len() {
-            return;
-        }
-        aligns[cell] = match align {
+        let align = match align {
             CellAlign::Left => markdown_syntax::Align::Left,
             CellAlign::Center => markdown_syntax::Align::Center,
             CellAlign::Right => markdown_syntax::Align::Right,
         };
-        let sep_row = region.lines.start + 1;
-        let mut new_sep = String::from("|");
-        for a in &aligns {
-            new_sep.push_str(match a {
-                markdown_syntax::Align::Left => " :-- |",
-                markdown_syntax::Align::Center => " :-: |",
-                markdown_syntax::Align::Right => " --: |",
-            });
-        }
-        let starts = self.line_starts();
-        let sep_start = starts[sep_row];
-        let sep_end = starts
-            .get(sep_row + 1)
-            .map_or(self.content.len(), |&s| s - 1);
-        let old_caret = self.cursor_offset();
-        let range = sep_start..sep_end;
-        self.record_edit(&range, &new_sep);
-        self.content = self.content[..sep_start].to_owned() + &new_sep + &self.content[sep_end..];
-        let delta = new_sep.len() as isize - (sep_end - sep_start) as isize;
-        let caret = if old_caret >= sep_end {
-            (old_caret as isize + delta).max(0) as usize
-        } else {
-            old_caret
+        let Some((range, new_sep, caret)) = table_rules::set_align(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+            cell,
+            align,
+        ) else {
+            return;
         };
+        self.record_edit(&range, &new_sep);
+        self.content =
+            self.content[..range.start].to_owned() + &new_sep + &self.content[range.end..];
         self.selected_range = caret..caret;
         self.remap_diagnostics(&range, new_sep.len());
         self.emit_changed(cx);
         cx.notify();
     }
 
-    /// The caret's table block as `(header_line, separator_line, end_exclusive,
-    /// columns)`, or `None` outside a table.
-    fn caret_table_block(&self) -> Option<(usize, usize, usize, usize)> {
-        let (row, _) = self.row_col(self.cursor_offset());
-        let scan = self.scan_data();
-        let region = scan.tables.iter().find(|r| r.lines.contains(&row))?;
-        Some((
-            region.lines.start,
-            region.lines.start + 1,
-            region.lines.end,
-            region.aligns.len().max(1),
-        ))
+    /// Apply a table command's edit as one undo step, leaving the caret at
+    /// `caret` and closing the table menu.
+    fn apply_table_edit(&mut self, (range, text, caret): table_rules::TableEdit) {
+        self.record_edit(&range, &text);
+        self.content = self.content[..range.start].to_owned() + &text + &self.content[range.end..];
+        self.remap_diagnostics(&range, text.len());
+        self.selected_range = caret..caret;
+        self.table_menu = None;
     }
 
     /// Insert an empty row above/below the caret's row (Word-style); the caret
@@ -696,27 +673,15 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let (row, _) = self.row_col(self.cursor_offset());
-        let Some((header, sep, _end, cols)) = self.caret_table_block() else {
+        let Some(edit) = table_rules::insert_row(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+            below,
+        ) else {
             return;
         };
-        // From the header a new row always lands below the separator (the first
-        // body row); above/below a body row is literal.
-        let after = if row == header {
-            sep
-        } else if below {
-            row
-        } else {
-            (row - 1).max(sep)
-        };
-        let new_row = format!("\n|{}", "  |".repeat(cols));
-        let pos = self.line_end(after);
-        let range = pos..pos;
-        self.record_edit(&range, &new_row);
-        self.content = self.content[..pos].to_owned() + &new_row + &self.content[pos..];
-        self.remap_diagnostics(&range, new_row.len());
-        self.selected_range = (pos + 3)..(pos + 3); // first cell, after "\n| "
-        self.table_menu = None;
+        self.apply_table_edit(edit);
         self.emit_changed(cx);
         cx.notify();
     }
@@ -728,38 +693,14 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
+        let Some(edit) = table_rules::delete_row(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+        ) else {
             return;
         };
-        let Some((header, sep, end, _cols)) = self.caret_table_block() else {
-            return;
-        };
-        if row == header || row == sep {
-            return;
-        }
-        let start = self.line_starts()[row];
-        let line_end = self.line_end(row);
-        // Remove the line + its trailing newline; for the last line, eat the
-        // preceding newline instead so no blank line is left behind.
-        let (del_start, del_end) = if line_end < self.content.len() {
-            (start, line_end + 1)
-        } else {
-            (start.saturating_sub(1), line_end)
-        };
-        let range = del_start..del_end;
-        self.record_edit(&range, "");
-        self.content = self.content[..del_start].to_owned() + &self.content[del_end..];
-        self.remap_diagnostics(&range, 0);
-        // Stay at the same cell/offset, on the row now at this position (shifted
-        // up), or the header if no body rows remain.
-        let target = if end <= sep + 2 {
-            header
-        } else {
-            row.min(end - 2)
-        };
-        let caret = self.caret_pos_for_cell(target, cell, in_cell);
-        self.selected_range = caret..caret;
-        self.table_menu = None;
+        self.apply_table_edit(edit);
         self.emit_changed(cx);
         cx.notify();
     }
@@ -771,36 +712,16 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let Some((header, _sep, end, _cols)) = self.caret_table_block() else {
+        let Some(edit) = table_rules::delete_table(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+        ) else {
             return;
         };
-        let starts = self.line_starts();
-        let mut first = header;
-        if first > 0
-            && markdown_syntax::table_style_marker(
-                &self.content[starts[first - 1]..starts[first] - 1],
-            )
-            .is_some()
-        {
-            first -= 1;
-        }
-        let line_end_last = self.line_end(end - 1);
-        // Remove the table's lines + the trailing newline; at the document end, eat
-        // the preceding newline instead so no blank line is left behind.
-        let (del_start, del_end) = if line_end_last < self.content.len() {
-            (starts[first], line_end_last + 1)
-        } else {
-            (starts[first].saturating_sub(1), line_end_last)
-        };
-        let range = del_start..del_end;
-        self.record_edit(&range, "");
-        self.content = self.content[..del_start].to_owned() + &self.content[del_end..];
-        self.remap_diagnostics(&range, 0);
-        let caret = del_start.min(self.content.len());
-        self.selected_range = caret..caret;
+        self.apply_table_edit(edit);
         self.selection_reversed = false;
         self.goal_x = None;
-        self.table_menu = None;
         self.emit_changed(cx);
         cx.notify();
     }
@@ -821,28 +742,14 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
+        let Some(edit) = table_rules::duplicate_row(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+        ) else {
             return;
         };
-        let Some((_header, sep, _end, _cols)) = self.caret_table_block() else {
-            return;
-        };
-        if row == sep {
-            return;
-        }
-        let starts = self.line_starts();
-        let line = self.content[starts[row]..self.line_end(row)].to_string();
-        // A duplicated header lands below the separator (as a body row).
-        let after = if row + 1 == sep { sep } else { row };
-        let insert = format!("\n{line}");
-        let pos = self.line_end(after);
-        let range = pos..pos;
-        self.record_edit(&range, &insert);
-        self.content = self.content[..pos].to_owned() + &insert + &self.content[pos..];
-        self.remap_diagnostics(&range, insert.len());
-        let caret = self.caret_pos_for_cell(after + 1, cell, in_cell);
-        self.selected_range = caret..caret;
-        self.table_menu = None;
+        self.apply_table_edit(edit);
         self.emit_changed(cx);
         cx.notify();
     }
@@ -853,13 +760,10 @@ impl EditorState {
         let Some(region) = self.caret_table_region() else {
             return;
         };
-        let starts = self.line_starts();
-        let first = region.marker_line.unwrap_or(region.lines.start);
-        let Some(&start) = starts.get(first) else {
+        let Some(range) = table_rules::table_source_range(&self.content, &region) else {
             return;
         };
-        let end = self.line_end(region.lines.end - 1);
-        let text = self.content[start..end].to_string();
+        let text = self.content[range].to_string();
         self.table_menu = None;
         self.write_clipboard(text, cx);
         cx.notify();
@@ -880,52 +784,16 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let starts = self.line_starts();
-        let (range, new) = match (region.marker_line, marker) {
-            // Marker present → replace its line, or remove it (with the newline).
-            (Some(m), Some(text)) => (starts[m]..self.line_end(m), text),
-            (Some(m), None) => (starts[m]..self.line_end(m) + 1, String::new()),
-            // No marker → insert one above the header.
-            (None, Some(text)) => (
-                starts[region.lines.start]..starts[region.lines.start],
-                format!("{text}\n"),
-            ),
-            (None, None) => return,
+        let Some(edit) = table_rules::rewrite_marker(
+            &self.content,
+            region,
+            marker,
+            self.caret_table_cell_pos(),
+            self.selected_range.start,
+        ) else {
+            return;
         };
-        let cell_pos = self.caret_table_cell_pos();
-        let old_caret = self.selected_range.start;
-        // The marker edit adds/removes one line ABOVE the table (or replaces in
-        // place) — shift the caret's row index to keep it in its cell.
-        let row_shift: isize = match (region.marker_line, new.is_empty()) {
-            (Some(_), true) => -1,
-            (None, false) => 1,
-            _ => 0,
-        };
-        self.record_edit(&range, &new);
-        self.content.replace_range(range.clone(), &new);
-        self.remap_diagnostics(&range, new.len());
-        let caret = match cell_pos {
-            Some((row, cell, in_cell)) => {
-                let same_row = (row as isize + row_shift).max(0) as usize;
-                self.caret_pos_for_cell(same_row, cell, in_cell)
-            }
-            // Caret wasn't in this table (e.g. a border drag from elsewhere):
-            // keep it where it was, shifted by the edit's byte delta — seating
-            // it "in a cell" would land it on the marker line and reveal it.
-            None => {
-                let delta = new.len() as isize - (range.end - range.start) as isize;
-                if old_caret >= range.end {
-                    (old_caret as isize + delta).max(0) as usize
-                } else if old_caret > range.start {
-                    range.start + new.len()
-                } else {
-                    old_caret
-                }
-            }
-        };
-        let caret = caret.min(self.content.len());
-        self.selected_range = caret..caret;
-        self.table_menu = None;
+        self.apply_table_edit(edit);
         self.emit_changed(cx);
         cx.notify();
     }
@@ -936,10 +804,7 @@ impl EditorState {
         let Some(region) = self.caret_table_region() else {
             return;
         };
-        let style = mdoc_markdown::syntax::TableStyle::from_name(name.unwrap_or("grid"))
-            .unwrap_or_default();
-        let marker =
-            mdoc_markdown::syntax::table_marker_text(style, region.col_widths_attr.as_deref());
+        let marker = table_rules::style_marker(&region, name);
         self.rewrite_table_marker(&region, marker, cx);
     }
 
@@ -1034,63 +899,30 @@ impl EditorState {
     /// The caret's table position as `(row, cell_index, offset_within_cell)`, or
     /// `None` outside a table. Lets structural edits keep the caret put.
     pub(crate) fn caret_table_cell_pos(&self) -> Option<(usize, usize, usize)> {
-        // Prepaint asks on every frame; stay off the whole-document line table.
-        let offset = self.cursor_offset().min(self.content.len());
-        let (row, line_col) = self.row_col(offset);
-        self.caret_table_block()?;
-        let row_start = offset - line_col;
-        let row_end = self.content[row_start..]
-            .find('\n')
-            .map_or(self.content.len(), |i| row_start + i);
-        let line = &self.content[row_start..row_end];
-        let ranges = markdown_syntax::table_cell_ranges(line);
-        let cell = ranges
-            .iter()
-            .position(|r| line_col <= r.end)
-            .unwrap_or(ranges.len().saturating_sub(1));
-        let in_cell = ranges
-            .get(cell)
-            .map_or(0, |r| line_col.saturating_sub(r.start).min(r.len()));
-        Some((row, cell, in_cell))
+        table_rules::cell_pos(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+        )
     }
 
     /// Byte offset of `(row, cell, offset_within_cell)` in the current content,
     /// clamping the cell + offset to what that row actually has.
     pub(crate) fn caret_pos_for_cell(&self, row: usize, cell: usize, in_cell: usize) -> usize {
-        let starts = self.line_starts();
-        let Some(&row_start) = starts.get(row) else {
-            return self.content.len();
-        };
-        let line = &self.content[row_start..self.line_end(row)];
-        let ranges = markdown_syntax::table_cell_ranges(line);
-        if ranges.is_empty() {
-            return row_start;
-        }
-        let r = &ranges[cell.min(ranges.len() - 1)];
-        // Keep the caret strictly inside the cell, before its closing pipe — an
-        // empty cell's trimmed range collapses onto that pipe (the line end for the
-        // last cell), which would drop the caret out of the rendered table.
-        let bytes = line.as_bytes();
-        let close = (r.end..bytes.len())
-            .find(|&i| bytes[i] == b'|')
-            .unwrap_or(bytes.len());
-        row_start + (r.start + in_cell).min(close.saturating_sub(1))
+        table_rules::caret_pos_for_cell(&self.content, row, cell, in_cell)
     }
 
     /// Insert an empty column left/right of the caret's column (a cell added to
     /// every row; the separator gets a default-left marker). The caret stays in its
     /// cell. No-op outside a table.
     pub(crate) fn insert_table_column(&mut self, right: bool, cx: &mut Context<Self>) {
-        let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
-            return;
-        };
-        let at = if right { cell + 1 } else { cell };
-        if self.rewrite_table_columns(ColEdit::Insert(at)) {
-            // Inserting to the left shifts the caret's cell one column right.
-            let new_cell = if right { cell } else { cell + 1 };
-            let caret = self.caret_pos_for_cell(row, new_cell, in_cell);
-            self.selected_range = caret..caret;
-            self.table_menu = None;
+        if let Some(edit) = table_rules::insert_column(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+            right,
+        ) {
+            self.apply_table_edit(edit);
             self.emit_changed(cx);
             cx.notify();
         }
@@ -1099,57 +931,15 @@ impl EditorState {
     /// Delete the caret's column from every row; the caret stays near where the
     /// column was. No-op outside a table, or on the last remaining column.
     pub(crate) fn delete_table_column(&mut self, cx: &mut Context<Self>) {
-        let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
-            return;
-        };
-        if self.rewrite_table_columns(ColEdit::Delete(cell)) {
-            let caret = self.caret_pos_for_cell(row, cell, in_cell);
-            self.selected_range = caret..caret;
-            self.table_menu = None;
+        if let Some(edit) = table_rules::delete_column(
+            &self.content,
+            self.scan_data().blocks(),
+            self.cursor_offset(),
+        ) {
+            self.apply_table_edit(edit);
             self.emit_changed(cx);
             cx.notify();
         }
-    }
-
-    /// Rewrite every row of the caret's table to insert/delete a cell, normalizing
-    /// cell spacing. Returns `false` (no edit) outside a table or when a delete
-    /// would remove the last column; the caller restores the caret.
-    fn rewrite_table_columns(&mut self, edit: ColEdit) -> bool {
-        let Some((header, sep, end, _cols)) = self.caret_table_block() else {
-            return false;
-        };
-        let lines: Vec<&str> = self.content.split('\n').collect();
-        let mut new_rows: Vec<String> = Vec::with_capacity(end - header);
-        for (i, &line) in lines[header..end].iter().enumerate() {
-            let is_sep = header + i == sep;
-            let mut cells: Vec<String> = markdown_syntax::table_cells(line)
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect();
-            match edit {
-                ColEdit::Insert(at) => cells.insert(
-                    at.min(cells.len()),
-                    if is_sep { "---".into() } else { String::new() },
-                ),
-                ColEdit::Delete(c) => {
-                    if cells.len() <= 1 || c >= cells.len() {
-                        return false; // never delete the last column
-                    }
-                    cells.remove(c);
-                }
-            }
-            new_rows.push(format!("| {} |", cells.join(" | ")));
-        }
-        let starts = self.line_starts();
-        let block_start = starts[header];
-        let block_end = self.line_end(end - 1);
-        let new_block = new_rows.join("\n");
-        let range = block_start..block_end;
-        self.record_edit(&range, &new_block);
-        self.content =
-            self.content[..block_start].to_owned() + &new_block + &self.content[block_end..];
-        self.remap_diagnostics(&range, new_block.len());
-        true
     }
 }
 

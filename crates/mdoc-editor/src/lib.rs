@@ -37,21 +37,20 @@ use gpui::{
     Render, RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Task,
     TextRun, Window, WrappedLine, actions, div, point, px, rgb, rgba, size,
 };
-use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
 pub use markdown_syntax::{Heading, SyntaxStyle, headings};
 
-mod search;
 mod search_geometry;
-pub use search::{SearchIndex, SearchMatch, SearchOptions};
-mod spell_exclusions;
-pub use spell_exclusions::spell_exclusions;
+pub use mdoc_editor_core::search::{SearchIndex, SearchMatch, SearchOptions};
+pub use mdoc_editor_core::spell_exclusions::spell_exclusions;
 
 mod input;
-use input::{EditKind, Snapshot};
+use mdoc_editor_core::history::{EditKind, History};
+use mdoc_editor_core::turn_into::TurnKind;
+use mdoc_editor_core::{Blocks, TAB_INDENT, text, turn_into, words};
+use mdoc_history::SourceEdit;
 pub use mdoc_history::{EditorTransaction, HistoryPath};
-use mdoc_history::{HistoryChange, SourceEdit};
 mod transactions;
 
 mod tables;
@@ -307,56 +306,6 @@ struct DiagMenu {
     turn_into: bool,
 }
 
-/// A block kind the right-click "Turn into" menu converts between —
-/// flat-markdown natural: each conversion is a line-prefix rewrite (fenced
-/// kinds wrap/unwrap the block's lines).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TurnKind {
-    Text,
-    H1,
-    H2,
-    H3,
-    Bullet,
-    Numbered,
-    Todo,
-    Quote,
-    Callout,
-    Code,
-    Math,
-}
-
-impl TurnKind {
-    const ALL: [TurnKind; 11] = [
-        TurnKind::Text,
-        TurnKind::H1,
-        TurnKind::H2,
-        TurnKind::H3,
-        TurnKind::Bullet,
-        TurnKind::Numbered,
-        TurnKind::Todo,
-        TurnKind::Quote,
-        TurnKind::Callout,
-        TurnKind::Code,
-        TurnKind::Math,
-    ];
-
-    fn label(self) -> SharedString {
-        match self {
-            TurnKind::Text => SharedString::new_static("Text"),
-            TurnKind::H1 => SharedString::new_static("Heading 1"),
-            TurnKind::H2 => SharedString::new_static("Heading 2"),
-            TurnKind::H3 => SharedString::new_static("Heading 3"),
-            TurnKind::Bullet => SharedString::new_static("Bulleted list"),
-            TurnKind::Numbered => SharedString::new_static("Numbered list"),
-            TurnKind::Todo => SharedString::new_static("To-do"),
-            TurnKind::Quote => SharedString::new_static("Quote"),
-            TurnKind::Callout => SharedString::new_static("Callout"),
-            TurnKind::Code => SharedString::new_static("Code block"),
-            TurnKind::Math => SharedString::new_static("Math block"),
-        }
-    }
-}
-
 /// If `offset` sits on a collapsed marker line (a table style marker or a
 /// math align marker), the offset of the nearest line that reveals nothing
 /// when the caret rests there: the table's header, or the line after the
@@ -387,44 +336,6 @@ fn caret_off_marker_line(content: &str, offset: usize) -> usize {
         return line_start(m.range.end);
     }
     offset
-}
-
-/// Strip a line's block dressing (heading hashes, list/todo bullet, ordered
-/// number, quote `>`), leaving the text a "Turn into" conversion re-prefixes.
-fn strip_block_prefix(line: &str) -> &str {
-    // Composes the renderer's own recognizers so the strip grammar can't
-    // drift from what WYSIWYG classifies (task/list/heading/quote).
-    if let Some((p, ..)) = markdown_syntax::task_prefix(line) {
-        return &line[p..];
-    }
-    if let Some((p, ..)) = markdown_syntax::list_prefix(line) {
-        return &line[p..];
-    }
-    if let Some(n) = markdown_syntax::heading_level(line) {
-        let after = &line[n as usize..];
-        return after.strip_prefix(' ').unwrap_or(after);
-    }
-    if let Some(p) = markdown_syntax::blockquote_prefix(line) {
-        return &line[p..];
-    }
-    line.trim_start()
-}
-
-/// Join `body` lines each carrying the prefix `p(index)` produces — the
-/// assembly half of a "Turn into" conversion.
-fn prefix_lines(body: &[String], p: impl Fn(usize) -> String) -> String {
-    body.iter()
-        .enumerate()
-        .map(|(i, l)| format!("{}{l}", p(i)))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// A column edit applied to every row of a table (insert/delete a cell at index).
-#[derive(Clone, Copy)]
-enum ColEdit {
-    Insert(usize),
-    Delete(usize),
 }
 
 /// An item in the table right-click menu (Word-style table editing).
@@ -744,13 +655,10 @@ pub struct EditorState {
     selection_bounds: Vec<Bounds<Pixels>>,
     /// Window-space bounds of the pill's choice part from the last paint.
     selection_choice_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
-    undo_stack: Vec<Snapshot>,
-    redo_stack: Vec<Snapshot>,
-    history_id: u64,
-    next_history_id: u64,
-    pending_changes: Vec<HistoryChange>,
+    /// Undo/redo and the history-state ids hosts follow; the last edit's
+    /// kind decides what the next one coalesces with.
+    history: History,
     last_transaction: Option<Arc<EditorTransaction>>,
-    last_edit: EditKind,
     /// Whether the last content edit was a single typed grapheme or a single-char
     /// backspace — the only edits auto-pairing should react to, so programmatic /
     /// structural edits (table ops, etc.) don't trip it.
@@ -968,13 +876,8 @@ impl EditorState {
             selection_action_dismissed: None,
             selection_bounds: Vec::new(),
             selection_choice_bounds: Default::default(),
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            history_id: 0,
-            next_history_id: 0,
-            pending_changes: Vec::new(),
+            history: History::default(),
             last_transaction: None,
-            last_edit: EditKind::Other,
             last_edit_keystroke: false,
             goal_x: None,
             upstream_caret: None,
@@ -1481,14 +1384,7 @@ impl EditorState {
             return data.clone();
         }
         let lines: Vec<&str> = self.content.split('\n').collect();
-        let mut fence_odd = Vec::with_capacity(lines.len());
-        let mut odd = false;
-        for l in &lines {
-            fence_odd.push(odd);
-            if l.trim_start().starts_with("```") {
-                odd = !odd;
-            }
-        }
+        let fence_odd = mdoc_editor_core::blocks::fence_parity(&lines);
         let (ordered, ordered_lists) = markdown_syntax::ordered_scan(&lines);
         let data = std::rc::Rc::new(ScanData {
             generation: self.content_gen,
@@ -1707,7 +1603,7 @@ impl EditorState {
         // Set the caret directly (not via `move_to`) to keep the goal column.
         self.selected_range = step.offset..step.offset;
         self.finish_vertical_step(&step);
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         cx.emit(EditorEvent::SelectionChanged);
         cx.notify();
     }
@@ -2285,7 +2181,7 @@ impl EditorState {
         self.table_menu = None;
         self.image_menu = None;
         self.goal_x = None;
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         match event.click_count {
             // Double-click selects the word under the cursor.
             // Double-click selects the word under the cursor; holding and
@@ -2918,88 +2814,21 @@ impl EditorState {
     /// closing fence row (`None` when the block runs unclosed to the end).
     /// The single source for turn-into, block drag, and drop snapping.
     fn fence_block_rows(&self, row: usize) -> (usize, Option<usize>) {
-        let scan = self.scan_data();
-        let starts = self.line_starts();
-        let last_row = starts.len().saturating_sub(1);
-        let open = (0..=row)
-            .rev()
-            .find(|&r| !scan.fence_odd.get(r).copied().unwrap_or(false))
-            .unwrap_or(0);
-        let close = ((open + 1)..=last_row).find(|&r| {
-            self.content[starts[r]..self.line_end(r)]
-                .trim_start()
-                .starts_with("```")
-        });
-        (open, close)
+        self.scan_data()
+            .blocks()
+            .fence_block_rows(&self.content, row)
     }
 
     /// The contiguous blockquote run containing `row` (first row..=last row),
     /// by the renderer's `blockquote_prefix` test.
     fn quote_run_rows(&self, row: usize) -> (usize, usize) {
-        let starts = self.line_starts();
-        let last_row = starts.len().saturating_sub(1);
-        let is_q = |r: usize| {
-            markdown_syntax::blockquote_prefix(&self.content[starts[r]..self.line_end(r)]).is_some()
-        };
-        let mut first = row;
-        while first > 0 && is_q(first - 1) {
-            first -= 1;
-        }
-        let mut last = row;
-        while last < last_row && is_q(last + 1) {
-            last += 1;
-        }
-        (first, last)
+        turn_into::quote_run_rows(&self.content, row)
     }
 
     /// The "Turn into" kind of the block containing `row` — what the flyout
     /// shows checked.
     fn block_kind_at(&self, row: usize) -> TurnKind {
-        let scan = self.scan_data();
-        if scan.math.iter().any(|m| m.range.contains(&row)) {
-            return TurnKind::Math;
-        }
-        let starts = self.line_starts();
-        let Some(&start) = starts.get(row) else {
-            return TurnKind::Text;
-        };
-        // The renderer's own recognizers (task/list/heading/quote/alert), so
-        // the checked kind always agrees with what WYSIWYG actually renders.
-        let line = &self.content[start..self.line_end(row)];
-        if scan.fence_odd.get(row).copied().unwrap_or(false) || line.trim_start().starts_with("```")
-        {
-            return TurnKind::Code;
-        }
-        if markdown_syntax::task_prefix(line).is_some() {
-            return TurnKind::Todo;
-        }
-        match markdown_syntax::heading_level(line) {
-            Some(1) => return TurnKind::H1,
-            Some(2) => return TurnKind::H2,
-            Some(3) => return TurnKind::H3,
-            _ => {}
-        }
-        if let Some((_, _, ordered, _)) = markdown_syntax::list_prefix(line) {
-            return if ordered {
-                TurnKind::Numbered
-            } else {
-                TurnKind::Bullet
-            };
-        }
-        if markdown_syntax::blockquote_prefix(line).is_some() {
-            // Callout if the caret's contiguous `>`-run carries a VALID
-            // `[!KIND]` marker anywhere (marker line or body line).
-            let (first, last) = self.quote_run_rows(row);
-            for (r, &start) in starts.iter().enumerate().take(last + 1).skip(first) {
-                let l = &self.content[start..self.line_end(r)];
-                let p = markdown_syntax::blockquote_prefix(l).unwrap_or(0);
-                if markdown_syntax::alert_kind(&l[p..]).is_some() {
-                    return TurnKind::Callout;
-                }
-            }
-            return TurnKind::Quote;
-        }
-        TurnKind::Text
+        turn_into::block_kind_at(&self.content, self.scan_data().blocks(), row)
     }
 
     /// Convert the caret's block to `kind` — the "Turn into" menu action.
@@ -3007,83 +2836,18 @@ impl EditorState {
     /// math) and quote runs convert as whole blocks.
     fn turn_into(&mut self, kind: TurnKind, window: &mut Window, cx: &mut Context<Self>) {
         let row = self.row_col(self.selected_range.start).0;
-        let cur = self.block_kind_at(row);
-        if cur == kind {
+        let Some(edit) = turn_into::turn_into(&self.content, self.scan_data().blocks(), row, kind)
+        else {
             return;
-        }
-        let scan = self.scan_data();
-        let starts = self.line_starts();
-        let last_row = starts.len().saturating_sub(1);
-        let line_at = |r: usize| self.content[starts[r]..self.line_end(r)].to_string();
-        // The block's line span + its content with the current dressing removed.
-        let (first, last, mut body): (usize, usize, Vec<String>) = match cur {
-            TurnKind::Code => {
-                let (open, close) = self.fence_block_rows(row);
-                let last = close.unwrap_or(last_row);
-                let body_end = close.map(|c| c.saturating_sub(1)).unwrap_or(last_row);
-                let body = ((open + 1)..=body_end).map(line_at).collect();
-                (open, last, body)
-            }
-            TurnKind::Math => {
-                let Some(reg) = scan.math.iter().find(|m| m.range.contains(&row)) else {
-                    return;
-                };
-                let first = reg.range.start;
-                let last = reg.range.end.saturating_sub(1).max(first);
-                let body = ((first + 1)..last).map(line_at).collect();
-                (first, last, body)
-            }
-            TurnKind::Quote | TurnKind::Callout => {
-                let (first, last) = self.quote_run_rows(row);
-                let body = (first..=last)
-                    .filter_map(|r| {
-                        let line = line_at(r);
-                        let stripped = strip_block_prefix(&line);
-                        // Drop the `[!KIND]` marker token; keep any title text
-                        // after it (and skip the line if that leaves nothing).
-                        if let Some(rest) = stripped.trim_start().strip_prefix("[!") {
-                            let after = rest.split_once(']').map(|(_, a)| a).unwrap_or("");
-                            let after = after.trim_start_matches(['-', '+']).trim();
-                            return (!after.is_empty()).then(|| after.to_string());
-                        }
-                        Some(stripped.to_string())
-                    })
-                    .collect();
-                (first, last, body)
-            }
-            _ => (
-                row,
-                row,
-                vec![strip_block_prefix(&line_at(row)).to_string()],
-            ),
         };
-        if body.is_empty() {
-            body.push(String::new());
-        }
-        let text = match kind {
-            TurnKind::Text => body.join("\n"),
-            TurnKind::H1 => prefix_lines(&body, |_| "# ".into()),
-            TurnKind::H2 => prefix_lines(&body, |_| "## ".into()),
-            TurnKind::H3 => prefix_lines(&body, |_| "### ".into()),
-            TurnKind::Bullet => prefix_lines(&body, |_| "- ".into()),
-            TurnKind::Numbered => prefix_lines(&body, |i| format!("{}. ", i + 1)),
-            TurnKind::Todo => prefix_lines(&body, |_| "- [ ] ".into()),
-            TurnKind::Quote => prefix_lines(&body, |_| "> ".into()),
-            TurnKind::Callout => format!("> [!NOTE]\n{}", prefix_lines(&body, |_| "> ".into())),
-            TurnKind::Code => format!("```\n{}\n```", body.join("\n")),
-            TurnKind::Math => format!("$$\n{}\n$$", body.join("\n")),
-        };
-        let range = starts[first]..self.line_end(last);
-        let range_start = range.start;
-        self.selected_range = range;
+        self.selected_range = edit.range;
         self.selection_reversed = false;
-        self.replace_text_in_range(None, &text, window, cx);
+        self.replace_text_in_range(None, &edit.text, window, cx);
         // Fenced kinds: the caret parks after the closing fence, revealing the
         // raw markers (reveal-on-caret) — seat it on the body's first line
         // instead, like `set_code_lang`.
-        if matches!(kind, TurnKind::Code | TurnKind::Math) {
-            let caret =
-                (range_start + text.find('\n').map_or(0, |i| i + 1)).min(self.content.len());
+        if let Some(caret) = edit.caret {
+            let caret = caret.min(self.content.len());
             self.selected_range = caret..caret;
         }
     }
@@ -3260,7 +3024,7 @@ impl EditorState {
         self.cell_goal = None;
         // A deliberate caret move ends the current typing/deleting run and the
         // vertical-movement goal column.
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         self.goal_x = None;
         cx.emit(EditorEvent::SelectionChanged);
         cx.notify();
@@ -3423,36 +3187,18 @@ impl EditorState {
     /// Byte offset where each visual line starts (line 0 starts at 0; each line
     /// after a `\n`). Always has at least one entry.
     fn line_starts(&self) -> Vec<usize> {
-        let mut starts = vec![0];
-        for (i, b) in self.content.bytes().enumerate() {
-            if b == b'\n' {
-                starts.push(i + 1);
-            }
-        }
-        starts
+        text::line_starts(&self.content)
     }
 
     /// The `(row, byte-column)` of a byte offset.
     fn row_col(&self, offset: usize) -> (usize, usize) {
-        // Counts newlines before `offset` without building the whole-document
-        // `line_starts` table: layout asks for the caret row on every frame.
-        let before = &self.content.as_bytes()[..offset.min(self.content.len())];
-        let row = before.iter().filter(|&&b| b == b'\n').count();
-        let start = before
-            .iter()
-            .rposition(|&b| b == b'\n')
-            .map_or(0, |i| i + 1);
-        (row, offset - start)
+        text::row_col(&self.content, offset)
     }
 
     /// Byte offset of the end of a row's text (before its `\n`, or the document
     /// end for the last row).
     fn line_end(&self, row: usize) -> usize {
-        let starts = self.line_starts();
-        starts
-            .get(row + 1)
-            .map(|&s| s - 1)
-            .unwrap_or(self.content.len())
+        text::line_end(&self.content, row)
     }
 
     /// Offset one row up/down from the caret, preserving the byte column where
@@ -3603,28 +3349,13 @@ impl EditorState {
 
     /// The end of the next word at/after `offset` (⌥→ on macOS).
     fn next_word(&self, offset: usize) -> usize {
-        self.content
-            .unicode_word_indices()
-            .map(|(i, w)| i + w.len())
-            .find(|&end| end > offset)
-            .unwrap_or(self.content.len())
+        words::next_word(&self.content, offset)
     }
 
     /// The start of the next word after `offset`, or the end of its line if
     /// that comes first (Ctrl+→ and Ctrl+Delete on Windows).
     fn next_word_start(&self, offset: usize) -> usize {
-        let word = self
-            .content
-            .unicode_word_indices()
-            .map(|(i, _)| i)
-            .find(|&start| start > offset)
-            .unwrap_or(self.content.len());
-        let line_end = self.content[offset.min(self.content.len())..]
-            .char_indices()
-            .skip(1)
-            .find(|&(_, c)| c == '\n')
-            .map_or(self.content.len(), |(i, _)| offset + i);
-        word.min(line_end)
+        words::next_word_start(&self.content, offset)
     }
 
     /// The document's last caret position that reveals nothing: the end of
@@ -3647,26 +3378,12 @@ impl EditorState {
 
     /// The start of the previous word before `offset` (⌥← on macOS).
     fn prev_word(&self, offset: usize) -> usize {
-        self.content
-            .unicode_word_indices()
-            .map(|(i, _)| i)
-            .rfind(|&start| start < offset)
-            .unwrap_or(0)
+        words::prev_word(&self.content, offset)
     }
 
     /// The byte range of the word at `offset` (double-click); `None` in whitespace.
     fn word_range_at(&self, offset: usize) -> Option<Range<usize>> {
-        let mut ends_at = None;
-        for (i, w) in self.content.unicode_word_indices() {
-            let range = i..i + w.len();
-            if range.start <= offset && offset < range.end {
-                return Some(range);
-            }
-            if range.end == offset {
-                ends_at = Some(range);
-            }
-        }
-        ends_at
+        words::word_range_at(&self.content, offset)
     }
 
     fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
@@ -4020,59 +3737,12 @@ impl EditorState {
     /// no hidden markers involved (the plain grapheme deletion applies).
     fn fmt_delete_range(&self, off: usize, back: bool) -> Option<Range<usize>> {
         self.markdown_style.as_ref()?;
-        let (row, col) = self.row_col(off);
-        let line_start = self.line_starts()[row];
-        let line_end = self.line_end(row);
-        let line = &self.content[line_start..line_end];
-        // Inside a fenced code block the text is verbatim — no markers there.
-        if *self.scan_data().fence_odd.get(row).unwrap_or(&false)
-            || line.trim_start().starts_with("```")
-        {
-            return None;
-        }
-        let pairs = markdown_syntax::fmt_marker_pairs(line);
-        if pairs.is_empty() {
-            return None;
-        }
-        let markers: Vec<&Range<usize>> = pairs.iter().flat_map(|(o, c)| [o, c]).collect();
-        // Skip marker bytes in the deletion direction to the visible char.
-        let mut edge = col;
-        if back {
-            while let Some(sp) = markers.iter().find(|sp| sp.end == edge) {
-                edge = sp.start;
-            }
-        } else {
-            while let Some(sp) = markers.iter().find(|sp| sp.start == edge) {
-                edge = sp.end;
-            }
-        }
-        // The visible grapheme adjacent to the (possibly skipped-to) edge —
-        // staying on this line; a line join takes the default path.
-        let (del_start, del_end) = if back {
-            if edge == 0 {
-                return None;
-            }
-            let p = self.previous_boundary(line_start + edge) - line_start;
-            (p, edge)
-        } else {
-            if edge >= line.len() {
-                return None;
-            }
-            let n = self.next_boundary(line_start + edge).min(line_end) - line_start;
-            (edge, n)
-        };
-        // Would this empty a construct? Only a real PAIR collapses: ITS opener
-        // ending at the deletion's start and ITS closer starting at the end
-        // (adjacent different constructs must not fuse).
-        let emptied = pairs
-            .iter()
-            .find(|(o, c)| o.end == del_start && c.start == del_end);
-        let range = match emptied {
-            Some((o, c)) => o.start..c.end,
-            None if edge == col => return None, // no markers were involved
-            None => del_start..del_end,
-        };
-        Some(line_start + range.start..line_start + range.end)
+        mdoc_editor_core::delete::fmt_delete_range(
+            &self.content,
+            self.scan_data().blocks(),
+            off,
+            back,
+        )
     }
 }
 
@@ -5500,11 +5170,6 @@ pub(crate) fn paint_doc_icon(
     }
 }
 
-/// How many wrap rows table row `cells` need at `col_widths` — 1 for content
-/// that fits; more once a drag-narrowed column forces its text to wrap.
-/// Spaces inserted per Tab / list-nesting level.
-const TAB_INDENT: usize = 4;
-
 /// The gutter grip's left edge for an editor whose content starts at
 /// `bounds_left` — THE grip x formula, shared by prepaint (fresh geometry)
 /// and the event-time hover mirror so the two can't drift.
@@ -5600,6 +5265,17 @@ pub(crate) struct ScanData {
     /// Whether each line STARTS inside a fenced code block (odd count of ```
     /// fences above it).
     fence_odd: Vec<bool>,
+}
+
+impl ScanData {
+    /// The block structure the editing rules read (fences, math, tables).
+    fn blocks(&self) -> Blocks<'_> {
+        Blocks {
+            fence_odd: &self.fence_odd,
+            math: &self.math,
+            tables: &self.tables,
+        }
+    }
 }
 
 /// One frame's shaping, memoized between the measure pass and prepaint —
@@ -6123,27 +5799,6 @@ mod tests {
         // Plain lines pass through untouched.
         assert_eq!(caret_off_marker_line("hello\nworld", 0), 0);
         assert_eq!(caret_off_marker_line("", 0), 0);
-    }
-
-    #[test]
-    fn strip_block_prefix_cases() {
-        use super::strip_block_prefix;
-        assert_eq!(strip_block_prefix("# Title"), "Title");
-        assert_eq!(strip_block_prefix("### Deep"), "Deep");
-        assert_eq!(strip_block_prefix("- [x] done"), "done");
-        assert_eq!(strip_block_prefix("- item"), "item");
-        assert_eq!(strip_block_prefix("12. nth"), "nth");
-        assert_eq!(strip_block_prefix("> quoted"), "quoted");
-        assert_eq!(strip_block_prefix(">bare"), "bare");
-        assert_eq!(strip_block_prefix("plain"), "plain");
-        // Renderer-grammar forms the old hand-rolled version missed.
-        assert_eq!(strip_block_prefix("* [ ] star task"), "star task");
-        assert_eq!(strip_block_prefix("+ [x] plus task"), "plus task");
-        assert_eq!(strip_block_prefix("3) paren"), "paren");
-        assert_eq!(strip_block_prefix("#### H4"), "H4");
-        // Not block prefixes: mid-word hash runs, `#tag`, a lone dash.
-        assert_eq!(strip_block_prefix("#tag"), "#tag");
-        assert_eq!(strip_block_prefix("-dash"), "-dash");
     }
 
     use super::{display_col_in, set_image_width};

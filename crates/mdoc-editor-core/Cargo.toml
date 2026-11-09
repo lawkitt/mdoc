@@ -1,0 +1,28 @@
+[package]
+name = "mdoc-editor-core"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free Markdown editing rules shared by mdoc's desktop editor and its mobile apps: Enter and joins, formatting toggles, indent, turn into, tables, paste, undo history, the reveal rule and search (ADR 0109)."
+license = "MIT"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+# No GUI framework (ADR 0069): the desktop editor (GPUI) and the phones
+# (TextKit, Compose through mdoc-ffi) apply the edits these rules return.
+# `scripts/gui-free.sh` keeps gpui out of this crate's tree.
+[dependencies]
+# Unicode full default case folding for semantic search (without normalization).
+caseless = "0.2"
+
+# Source-edit records for the coalescing undo history.
+mdoc-history = { path = "../mdoc-history" }
+
+# The one Markdown recognizer (ADR 0085): line prefixes, spans, tables.
+mdoc-markdown = { path = "../mdoc-markdown" }
+
+# Grapheme-cluster boundaries and word boundaries for deletes, undo
+# coalescing and word movement.
+unicode-segmentation = "1"
+
+[lints]
+workspace = true

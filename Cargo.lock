@@ -4744,14 +4744,24 @@ dependencies = [
 name = "mdoc-editor"
 version = "0.10.0"
 dependencies = [
- "caseless",
  "gpui-bidi",
  "gpui-pre",
  "gpui-pre-platform",
  "markdown",
+ "mdoc-editor-core",
  "mdoc-history",
  "mdoc-markdown",
  "mdoc-spell",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "mdoc-editor-core"
+version = "0.1.0"
+dependencies = [
+ "caseless",
+ "mdoc-history",
+ "mdoc-markdown",
  "unicode-segmentation",
 ]
 
