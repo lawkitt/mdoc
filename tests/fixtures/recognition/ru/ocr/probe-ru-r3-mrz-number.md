@@ -1,9 +1,10 @@
 ---
-status: pass
+status: known-flaw
 flaw: mrz-number
 issue: 495
 kind: ocr
 source: probe-r3
+expect: boundary: gold PERSON "Ярослава Ильинична Мерц"; proposed PERSON "Ярослава Ильинична"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 КОПИЯ ЗАГРАНИЧНОГО ПАСПОРТА / приложение 4 к заявлению

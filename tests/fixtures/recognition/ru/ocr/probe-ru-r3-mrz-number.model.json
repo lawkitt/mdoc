@@ -1,0 +1,9 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":212,"end":247,"label":"person","score":0.8414352,"text":"Ярослава Ильинична"},
+    {"start":276,"end":285,"label":"passport_number","score":0.90665317,"text":"763318094"},
+    {"start":392,"end":420,"label":"passport_number","score":0.77424216,"text":"7633180943RUS8804178F3402122"}
+  ]
+}
