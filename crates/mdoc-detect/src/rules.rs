@@ -21181,7 +21181,8 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
     /// #495: a masked number, or fillers alone, give nothing; so does text
     /// of a zone line's length without its shape (an unknown state or one
     /// with a digit, no sex or a digit for it, a letter OCR never reads for
-    /// a digit in a date, a TD1 card's first line without its second). A
+    /// a digit in a date, a date of OCR's letters alone with no real digit,
+    /// a TD1 card's first line without its second). A
     /// partly masked number keeps its real digits and is proposed, and so is
     /// one of zeros.
     #[test]
@@ -21202,6 +21203,13 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             "7605318428RUS91Z4123F3102154<<<<<<<<<<<<<<06".to_owned(),
             "7605318428RU59104123F3102154<<<<<<<<<<<<<<06".to_owned(),
             "7605318428RUS91041230F102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUSOOOOOO3F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS9104123FSIOBlO4<<<<<<<<<<<<<<06".to_owned(),
+            format!(
+                "{}\n{}",
+                mrz_line("I<NORD231458907", 30),
+                mrz_line("OOOOOO5F3307019NOR", 29) + "6"
+            ),
             "7605318428RUS9104123F3102154".to_owned(),
             format!("{MRZ_NUMBER_LINE}<<<<<<<<<<"),
             "Invoice 7605318428RUS9104123F3102154<<<<<<06".to_owned(),
@@ -21213,6 +21221,16 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         ] {
             assert!(mrz_numbers(&source).is_empty(), "{source}");
         }
+        // Nor do the card's names come with a date of letters alone.
+        assert!(
+            mrz_names(&format!(
+                "{}\n{}\n{}",
+                mrz_line("I<NORD231458907", 30),
+                mrz_line("OOOOOO5F3307019NOR", 29) + "6",
+                mrz_line("QUILLAN<<ODA<RENATE", 30)
+            ))
+            .is_empty()
+        );
         for (source, number) in [
             ("XXXXX18428RUS9104123F3102154<<<<<<<<<<<<<<06", "XXXXX1842"),
             ("0000000000RUS9104123F3102154<<<<<<<<<<<<<<06", "000000000"),

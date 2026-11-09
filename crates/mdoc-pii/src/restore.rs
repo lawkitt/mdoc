@@ -573,16 +573,20 @@ fn generated_tokens<'w>(
                 .count();
             let number = |end: usize| text[digits_start..end].parse().unwrap_or(u64::MAX);
             let strict = prefix == token && matches!(separator, '_' | '-');
-            let cut = (category == Category::Identity)
-                .then(|| {
-                    zone_number_cut(text, at, digits_start, digits, &|end| {
-                        lookup(&(category, number(end)))
-                    })
+            let reading = if category == Category::Identity {
+                zone_number_reading(text, at, digits_start, digits, &|end| {
+                    lookup(&(category, number(end)))
                 })
-                .flatten();
-            if let Some(end) = cut {
-                matched = Some((at..end, (category, number(end)), strict));
-                break;
+            } else {
+                ZoneReading::Plain
+            };
+            match reading {
+                ZoneReading::Cut(end) => {
+                    matched = Some((at..end, (category, number(end)), strict));
+                    break;
+                }
+                ZoneReading::Leave => continue,
+                ZoneReading::Plain => {}
             }
             let end = digits_start + digits;
             if digits == 0
@@ -606,53 +610,103 @@ fn generated_tokens<'w>(
     found
 }
 
-/// Where an identity document's alias at `at`, its `digits` digits from
-/// `digits_start`, ends when it stands where a zone's document number did
-/// and leaves digits after it (#495): the check digit and, on a TD1 card,
-/// optional data may follow it in digits too. The ICAO 9303 check digit of
-/// the value a cut restores (`value`, by the cut's end) settles it when it
-/// is the character right after the cut. A filler right after all the
-/// digits makes them all the alias's (a number shorter than nine, padded),
-/// unless a cut's check digit settles it and theirs, after the fillers,
-/// does not ("IDENTITY_17<<<" is `IDENTITY_1` with check digit 7). Else,
-/// on a passport's or a TD2 card's line, whose nationality fixes where the
-/// check digit is, the longest known alias there; on a TD1 card nothing is
-/// cut: a visible alias is better than a wrong value.
-fn zone_number_cut<'w>(
+/// How an identity document's alias reads where a zone's document number
+/// stood (#495).
+enum ZoneReading {
+    /// It ends here, before its check digit.
+    Cut(usize),
+    /// It is read as anywhere else.
+    Plain,
+    /// It is left as it is: no reading is sure, and a visible alias is
+    /// better than a wrong value.
+    Leave,
+}
+
+/// How an identity document's alias at `at`, its `digits` digits from
+/// `digits_start`, reads where a zone's document number stood (#495): the
+/// check digit right after it may be a digit, or a letter OCR reads for one
+/// ("IDENTITY_1ORUS…"), and on a TD1 card optional data may follow it in
+/// digits too. A reading validates when the ICAO 9303 check digit of the
+/// value it restores (`value`, by its end) is the character after it; a
+/// filler after all the digits (a number shorter than nine, padded) makes
+/// them a reading too, checked after the fillers.
+///
+/// On a passport's or a TD2 card's line, whose nationality fixes where the
+/// check digit is, the longest cut that validates wins, else the longest
+/// known one; padded, the whole run wins unless only a cut validates. On a
+/// TD1 card a reading is taken only when it alone validates; where another
+/// is known, the card's composite check digit must not fail for it (it
+/// fails where the first line it restores is not of 30 characters; it
+/// cannot be read where the second line is not), and settles two that
+/// validate when it holds for one alone. Else the alias is left as it is.
+fn zone_number_reading<'w>(
     text: &str,
     at: usize,
     digits_start: usize,
     digits: usize,
     value: &dyn Fn(usize) -> Option<&'w str>,
-) -> Option<usize> {
-    use crate::mrz::{NumberLine, check_digit};
-    if digits < 2 {
-        return None;
+) -> ZoneReading {
+    use crate::mrz::{NumberLine, card_composite, check_digit, ocr_digit};
+    if digits == 0 {
+        return ZoneReading::Plain;
     }
+    let full = digits_start + digits;
+    let padded = digits <= 9 && crate::mrz::filler_at(text, full);
+    let lettered = digits <= 9 && text[full..].starts_with(['O', 'I', 'S', 'B', 'l']);
     let checks = |value: &str, at: usize| {
-        check_digit(value).is_some_and(|check| text[at..].starts_with(check))
+        check_digit(value)
+            .is_some_and(|check| text[at..].chars().next().map(ocr_digit) == Some(check))
     };
-    let cuts: Vec<(usize, NumberLine, &str)> = (1..digits.min(10))
-        .rev()
-        .filter_map(|n| {
-            let end = digits_start + n;
+    let ends = (1..digits.min(10))
+        .map(|n| digits_start + n)
+        .chain(lettered.then_some(full));
+    let mut cuts: Vec<(usize, NumberLine, &str)> = ends
+        .filter_map(|end| {
             let line = crate::mrz::number_line_at(text, &(at..end))?;
             Some((end, line, value(end)?))
         })
         .collect();
-    let settled = cuts.iter().find(|(end, _, value)| checks(value, *end));
-    let full = digits_start + digits;
-    if digits <= 9 && crate::mrz::filler_at(text, full) {
-        let whole =
-            value(full).is_some_and(|value| checks(value, crate::mrz::after_fillers(text, full)));
-        return settled.filter(|_| !whole).map(|(end, _, _)| *end);
+    cuts.reverse();
+    let Some(&(_, line, _)) = cuts.first() else {
+        return ZoneReading::Plain;
+    };
+    let settled: Vec<_> = cuts
+        .iter()
+        .filter(|(end, _, value)| checks(value, *end))
+        .collect();
+    let whole_value = value(full).filter(|_| padded);
+    let whole =
+        whole_value.is_some_and(|value| checks(value, crate::mrz::after_fillers(text, full)));
+    if line == NumberLine::Passport {
+        let cut = if padded {
+            settled.first().copied().filter(|_| !whole)
+        } else {
+            settled.first().copied().or(cuts.first())
+        };
+        return cut.map_or(ZoneReading::Plain, |(end, _, _)| ZoneReading::Cut(*end));
     }
-    settled
-        .or_else(|| {
-            cuts.iter()
-                .find(|(_, line, _)| *line == NumberLine::Passport)
-        })
-        .map(|(end, _, _)| *end)
+    // Each reading that validates, by its end (none for the whole run), with
+    // the card's composite check digit for it.
+    let mut readings: Vec<(Option<usize>, Option<bool>)> = settled
+        .iter()
+        .map(|(end, _, value)| (Some(*end), card_composite(text, &(at..*end), value)))
+        .chain(
+            whole_value
+                .filter(|_| whole)
+                .map(|value| (None, card_composite(text, &(at..full), value))),
+        )
+        .collect();
+    if cuts.len() + usize::from(whole_value.is_some()) > 1 {
+        readings.retain(|(_, composite)| *composite != Some(false));
+        if readings.len() > 1 {
+            readings.retain(|(_, composite)| *composite == Some(true));
+        }
+    }
+    match readings.as_slice() {
+        [(Some(end), _)] => ZoneReading::Cut(*end),
+        [(None, _)] => ZoneReading::Plain,
+        _ => ZoneReading::Leave,
+    }
 }
 
 impl Review {

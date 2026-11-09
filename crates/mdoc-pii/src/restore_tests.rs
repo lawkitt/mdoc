@@ -1395,37 +1395,77 @@ fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
     );
 }
 
-/// #495, the review's rows: on a TD1 card, `IDENTITY_12` padded with a
-/// filler is `IDENTITY_12`, though `IDENTITY_1` names someone too; and
-/// `IDENTITY_1` whose check digit is no 2, then optional data, settles
-/// nothing, so neither identity is restored there.
+/// `identities` as a restore map: each alias, an identity document's, and
+/// the value it restores.
+fn documents(identities: &[(&str, &str)]) -> RestoreMap {
+    RestoreMap::new(
+        identities
+            .iter()
+            .map(|(alias, value)| identity(alias, Category::Identity, &[value]))
+            .collect(),
+    )
+}
+
+/// #495, the reviews' rows: on a TD1 card an alias whose digits could end
+/// in more than one place is cut only where one reading alone validates
+/// (its value's ICAO check digit is the character after it), or where the
+/// card's composite check digit settles two; else it stays as it is, a
+/// damaged check digit too, though one alias is known.
 #[test]
-fn a_td1_alias_whose_digits_extend_another_restores_by_its_check_digit() {
+fn a_td1_alias_whose_digits_extend_another_restores_by_its_check_digits() {
     let card = "\n8807145F3307019NOR<<<<<<<<<<<6";
-    let map = RestoreMap::new(vec![
-        identity("IDENTITY_1", Category::Identity, &["D2314589"]),
-        identity("IDENTITY_12", Category::Identity, &["A1234567"]),
-    ]);
+    // `IDENTITY_12` padded, its check digit 6 read as 7: no reading
+    // validates (`IDENTITY_1`'s is 7, not 2), so neither is restored; nor
+    // with optional data after a check digit 2 that neither has.
+    let map = documents(&[("IDENTITY_1", "D2314589"), ("IDENTITY_12", "A1234567")]);
+    for text in [
+        format!("I<NORIDENTITY_12<7<<<<<<<<<<<<<{card}"),
+        format!("I<NLDIDENTITY_12999999990<<<<<{card}"),
+    ] {
+        assert_eq!(apply(&map, &text), text);
+    }
+    // Both validate by chance (check digits 2 and 3): the composite check
+    // digit settles it for 760531842, and a damaged one leaves the alias.
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_12", "K00000003")]);
     assert_eq!(
-        apply(&map, &format!("I<NORIDENTITY_12<7<<<<<<<<<<<<<{card}")),
-        format!("I<NORA1234567<7<<<<<<<<<<<<<{card}")
+        apply(
+            &map,
+            "I<RUSIDENTITY_12345678<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<9"
+        ),
+        "I<RUS7605318422345678<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<9"
     );
-    let text = format!("I<NLDIDENTITY_12999999990<<<<<{card}");
-    assert_eq!(apply(&map, &text), text);
-    // Nine characters each, their check digits 7 and 4 settle the cut, on
-    // a TD1 card and on a passport's line alike; neither settles "5".
-    let map = RestoreMap::new(vec![
-        identity("IDENTITY_1", Category::Identity, &["D23145890"]),
-        identity("IDENTITY_12", Category::Identity, &["A12345678"]),
-    ]);
+    let text = "I<RUSIDENTITY_12345678<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<0";
+    assert_eq!(apply(&map, text), text);
+    // 760531842's check digit read as 3, and `IDENTITY_13`'s 4 matching by
+    // chance: the composite check digit does not hold for it.
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_13", "K00000004")]);
+    let text = "I<RUSIDENTITY_1345678<<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<8";
+    assert_eq!(apply(&map, text), text);
+    // A1234567 padded, its check digit 6 read as 7, and `IDENTITY_1`'s 2
+    // matching by chance: left as it is; with its check digit whole, both
+    // validate and the composite check digit keeps it whole.
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_12", "A1234567")]);
+    let text = "I<RUSIDENTITY_12<7<<<<<<<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<2";
+    assert_eq!(apply(&map, text), text);
+    assert_eq!(
+        apply(
+            &map,
+            "I<RUSIDENTITY_12<6<<<<<<<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<2"
+        ),
+        "I<RUSA1234567<6<<<<<<<<<<<<<<<\n8807146F3307010RUS<<<<<<<<<<<2"
+    );
+    // Nine characters each, check digits 7 and 4: alone, or settled by
+    // the composite check digit; on a passport's line the nationality
+    // settles it. Neither validates "5".
+    let map = documents(&[("IDENTITY_1", "D23145890"), ("IDENTITY_12", "A12345678")]);
     for (text, restored) in [
         (
             format!("I<NORIDENTITY_17<<<<<<<<<<<<<<<{card}"),
             format!("I<NORD231458907<<<<<<<<<<<<<<<{card}"),
         ),
         (
-            format!("I<NORIDENTITY_124<<<<<<<<<<<<<<{card}"),
-            format!("I<NORA123456784<<<<<<<<<<<<<<{card}"),
+            "I<NORIDENTITY_124<<<<<<<<<<<<<<<\n8807146F3307010NOR<<<<<<<<<<<6".to_owned(),
+            "I<NORA123456784<<<<<<<<<<<<<<<\n8807146F3307010NOR<<<<<<<<<<<6".to_owned(),
         ),
         (
             "IDENTITY_17NOR8807145M3307019<<<<<<<<<<<<<<02".to_owned(),
@@ -1440,14 +1480,53 @@ fn a_td1_alias_whose_digits_extend_another_restores_by_its_check_digit() {
     }
     let text = format!("I<NORIDENTITY_125<<<<<<<<<<<<<<{card}");
     assert_eq!(apply(&map, &text), text);
-    // Padded, the longer alias keeps its digits when its own check digit,
-    // after the fillers, validates, though the shorter's does too.
-    let map = RestoreMap::new(vec![
-        identity("IDENTITY_1", Category::Identity, &["760531842"]),
-        identity("IDENTITY_12", Category::Identity, &["A1234567"]),
-    ]);
-    assert_eq!(
-        apply(&map, &format!("I<NORIDENTITY_12<6<<<<<<<<<<<<<{card}")),
-        format!("I<NORA1234567<6<<<<<<<<<<<<<{card}")
-    );
+}
+
+/// #495: OCR may read a check digit as a letter ("O" for 0), and the alias
+/// glued to it restores: on a passport's line and on a TD1 card, one alias
+/// or two whose digits extend each other's.
+#[test]
+fn an_alias_before_a_letter_check_digit_restores() {
+    let map = documents(&[("IDENTITY_1", "760531840")]);
+    let card = "\n8807146F3307010RUS<<<<<<<<<<<4";
+    for (text, restored) in [
+        (
+            "IDENTITY_1ORUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "760531840ORUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        ),
+        (
+            format!("I<RUSIDENTITY_1O<<<<<<<<<<<<<<<{card}"),
+            format!("I<RUS760531840O<<<<<<<<<<<<<<<{card}"),
+        ),
+    ] {
+        assert_eq!(apply(&map, &text), restored, "{text}");
+    }
+    // `IDENTITY_1`'s check digit is 2 too, so on the card both validate and
+    // the composite check digit settles it.
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_12", "760531840")]);
+    for (text, restored) in [
+        (
+            "IDENTITY_12ORUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "760531840ORUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        ),
+        (
+            format!("I<RUSIDENTITY_12O<<<<<<<<<<<<<<<{card}"),
+            format!("I<RUS760531840O<<<<<<<<<<<<<<<{card}"),
+        ),
+    ] {
+        assert_eq!(apply(&map, &text), restored, "{text}");
+    }
+    // Another category's alias, or one before a letter that is no check
+    // digit's, stays as it is.
+    let map = RestoreMap::new(vec![identity(
+        "PERSON_1",
+        Category::Person,
+        &["Anna Petrova"],
+    )]);
+    for text in [
+        "PERSON_1ORUS9104123F3102154<<<<<<<<<<<<<<06",
+        "IDENTITY_1ARUS9104123F3102154<<<<<<<<<<<<<<06",
+    ] {
+        assert_eq!(apply(&map, text), text);
+    }
 }

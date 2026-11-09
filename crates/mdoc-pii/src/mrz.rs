@@ -48,6 +48,30 @@ const OPENING: &str = r"[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{
 /// A digit of a date or a check digit, or the letter OCR reads for one.
 const DIGIT: &str = "[0-9OISBl]";
 
+/// A zone's date: six of [`DIGIT`], at least one a real digit.
+fn date() -> String {
+    let alternatives: Vec<String> = (0..6)
+        .map(|real| {
+            (0..6)
+                .map(|at| if at == real { "[0-9]" } else { DIGIT })
+                .collect()
+        })
+        .collect();
+    format!("(?:{})", alternatives.join("|"))
+}
+
+/// The digit OCR's letter `c` stands for in a date or a check digit
+/// (`O` 0, `I` and `l` 1, `S` 5, `B` 8), or `c` itself.
+pub(crate) fn ocr_digit(c: char) -> char {
+    match c {
+        'O' => '0',
+        'I' | 'l' => '1',
+        'S' => '5',
+        'B' => '8',
+        other => other,
+    }
+}
+
 /// What may close the line after the zone: an emphasis or code mark, the
 /// table's other cells, a hard break's backslash.
 const CLOSING: &str =
@@ -87,13 +111,14 @@ fn opening() -> &'static Regex {
 /// the fillers that pad it, its check digit, the nationality, the birth
 /// date and its check digit, the sex, the expiry date and its check digit,
 /// then capitals, digits and fillers, and what closes the line. A date's or
-/// a check digit's digit may be the letter OCR reads for it.
+/// a check digit's digit may be the letter OCR reads for it, though not a
+/// whole date's.
 fn number_line() -> &'static Regex {
     static LINE: OnceLock<Regex> = OnceLock::new();
     LINE.get_or_init(|| {
-        let states = states();
+        let (states, date) = (states(), date());
         Regex::new(&format!(
-            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:{states}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\z"
+            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:{states}){date}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){date}(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\z"
         ))
         .expect("the zone's number line")
     })
@@ -120,11 +145,79 @@ fn card_head() -> &'static Regex {
 fn card_rest() -> &'static Regex {
     static REST: OnceLock<Regex> = OnceLock::new();
     REST.get_or_init(|| {
+        let date = date();
         Regex::new(&format!(
-            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}{DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){DIGIT}{{6}}(?:{DIGIT}|{FILLER})(?:[A-Z]|{FILLER}){{3}}"
+            r"\A{FILLER}*(?:{DIGIT}|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}{date}(?:{DIGIT}|{FILLER})(?:[MFX]|{FILLER}){date}(?:{DIGIT}|{FILLER})(?:[A-Z]|{FILLER}){{3}}"
         ))
         .expect("the card's lines")
     })
+}
+
+/// What opens a TD1 card's second line, from its first line's end: a blank
+/// line, then what opens a passport's line.
+fn card_second_opening() -> &'static Regex {
+    static OPENS: OnceLock<Regex> = OnceLock::new();
+    OPENS.get_or_init(|| {
+        Regex::new(&format!(r"\A\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}"))
+            .expect("the card's second line's opening")
+    })
+}
+
+/// A zone line's characters from `at` in `text`, each filler as `<`, up to
+/// the first that is none.
+fn zone_chars(text: &str, mut at: usize) -> String {
+    let mut out = String::new();
+    while let Some(c) = text[at..].chars().next() {
+        if filler_at(text, at) {
+            out.push('<');
+            at += filler_len(text, at);
+        } else if c.is_ascii_uppercase() || c.is_ascii_digit() || c == 'l' {
+            out.push(c);
+            at += 1;
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+/// The length of the filler at `at` in `text`.
+fn filler_len(text: &str, at: usize) -> usize {
+    ["<", "\\<", "&lt;"]
+        .into_iter()
+        .find(|filler| text[at..].starts_with(filler))
+        .map_or(1, str::len)
+}
+
+/// Whether a TD1 card's composite check digit (its second line's last,
+/// ICAO 9303: over the first line's positions 6 to 30 and the second
+/// line's dates and optional data with their check digits) holds with
+/// `value` restored at `range`, its alias's place on the first line: not
+/// when the first line so restored is not of 30 characters; none when the
+/// second line is not, or either holds a character the check cannot read.
+pub(crate) fn card_composite(text: &str, range: &Range<usize>, value: &str) -> Option<bool> {
+    let end = range.end + text[range.end..].find('\n')?;
+    let opening = card_second_opening().find(&text[end..])?;
+    let second: Vec<char> = zone_chars(text, end + opening.end()).chars().collect();
+    if second.len() != 30 {
+        return None;
+    }
+    let mut first: Vec<char> = value.chars().collect();
+    first.extend(zone_chars(text, range.end).chars());
+    if first.len() != 25 {
+        return Some(false);
+    }
+    // The document number's check digit, after the nine positions.
+    first[9] = ocr_digit(first[9]);
+    let digits = |range: Range<usize>| second[range].iter().map(|&c| ocr_digit(c));
+    let composite: String = first
+        .iter()
+        .copied()
+        .chain(digits(0..7))
+        .chain(digits(8..15))
+        .chain(second[18..29].iter().copied())
+        .collect();
+    Some(check_digit(&composite)? == ocr_digit(second[29]))
 }
 
 /// Which zone line a document number stands on.
@@ -200,10 +293,7 @@ pub(crate) fn head_before(text: &str, at: usize) -> bool {
 /// Where the fillers from `at` in `text` end.
 pub(crate) fn after_fillers(text: &str, mut at: usize) -> usize {
     while filler_at(text, at) {
-        at += ["<", "\\<", "&lt;"]
-            .into_iter()
-            .find(|filler| text[at..].starts_with(filler))
-            .map_or(1, str::len);
+        at += filler_len(text, at);
     }
     at
 }
