@@ -4741,6 +4741,80 @@ impl Pack {
         }
     }
 
+    /// The first company in `text` that a `nested_quotes` legal form and its
+    /// quoted name make, one inner pair of quotes at most: "ПАО «Сбербанк»"
+    /// of "в ПАО «Сбербанк», к/с" (#381).
+    pub(crate) fn quoted_company(&self, text: &str) -> Option<std::ops::Range<usize>> {
+        self.spans
+            .iter()
+            .filter_map(|span| match span {
+                Span::Fix(fix) if fix.category == Category::Organization => Some(fix),
+                _ => None,
+            })
+            .flat_map(|fix| &fix.nested_quotes)
+            .flat_map(|(_, anywhere)| anywhere.find_iter(text))
+            .filter_map(|form| {
+                let open = form.end()
+                    + (text[form.end()..].len()
+                        - text[form.end()..]
+                            .trim_start_matches([' ', '\t', '\u{a0}'])
+                            .len());
+                let mut chars = text[open..].char_indices();
+                let (_, quote) = chars.next()?;
+                let closing = if quote == '«' { '»' } else { quote };
+                if !matches!(quote, '«' | '"') {
+                    return None;
+                }
+                // The inner pair open, a line's end or a second inner pair
+                // ends the search.
+                let mut inner = 0;
+                for (at, c) in chars {
+                    match c {
+                        '\n' => return None,
+                        '«' if quote == '«' => {
+                            inner += 1;
+                            if inner > 1 {
+                                return None;
+                            }
+                        }
+                        c if c == closing && quote == '«' && inner == 1 => inner = 2,
+                        c if c == closing && quote == '«' && inner == 2 => {
+                            return Some(form.start()..open + at + c.len_utf8());
+                        }
+                        c if c == closing && (quote == '"' || inner == 0) => {
+                            return Some(form.start()..open + at + c.len_utf8());
+                        }
+                        _ => {}
+                    }
+                }
+                None
+            })
+            .min_by_key(|range| range.start)
+    }
+
+    /// Where the label before the `context` value at `value` starts, on the
+    /// value's line of `source` ("паспорт" of "Иванов Иван, паспорт 4510
+    /// 123456"); `None` for a value with no label before it on its line (a
+    /// table column's cell, a label after its value).
+    pub(crate) fn label_start(
+        &self,
+        source: &str,
+        value: &std::ops::Range<usize>,
+    ) -> Option<usize> {
+        let line = source[..value.start].rfind('\n').map_or(0, |at| at + 1);
+        let text = &source[line..value.end];
+        self.contexts
+            .iter()
+            .filter(|context| !context.after)
+            .find_map(|context| {
+                context.pattern.captures_iter(text).find_map(|found| {
+                    let at = found.get(1)?;
+                    (line + at.start() == value.start && line + at.end() == value.end)
+                        .then(|| line + found.get(0).map_or(at.start(), |whole| whole.start()))
+                })
+            })
+    }
+
     /// Values beside their labels in `source`, as `context` rules propose
     /// them: the value only, without its label.
     pub(crate) fn context(&self, source: &str) -> Vec<Detection> {
@@ -6242,7 +6316,12 @@ mod tests {
                 "4111 1111 1111 1112",
                 "BANK",
             ),
-            ("карта № 4276380012345678", "4276380012345678", "BANK"),
+            ("карта № 4276 3800 1234 5678", "4276 3800 1234 5678", "BANK"),
+            (
+                "банковская карта № 4276380012345678",
+                "4276380012345678",
+                "BANK",
+            ),
             // A personnel number.
             ("Табельный номер: VK-731628", "VK-731628", "IDENTITY"),
             ("табельный № 731628", "731628", "IDENTITY"),
@@ -6280,6 +6359,15 @@ mod tests {
             "ИНН: 123; СНИЛС: 12-34",
             "карта № 12",
             "Табельный № 2026",
+            // A bare "карта" takes a card's four groups only, never a run or
+            // a process's or a fuel card's number; "и" after "паспорт" is
+            // no filler; a damaged ИНН's length waits for "ИНН" alone.
+            "карта № 4276380012345678",
+            "Технологическая карта № 4276 3800 1234 5678",
+            "Топливная карта 7824861090001234567",
+            "паспорт и 89161234567",
+            "КПП/ИНН 770101001/7701234567",
+            "БИК/ИНН 044525225/7701234567",
             "таб. 12345",
             "БИК/к/с 044525225/30101810400000000225",
             "| ИНН | КПП |\n| --- | --- |\n| нет | — |\n",
@@ -6308,6 +6396,7 @@ mod tests {
                 "BANK",
             ),
             ("Credit card: 4111111111111111", "4111111111111111", "BANK"),
+            ("card 4111 1111 1111 1111", "4111 1111 1111 1111", "BANK"),
             (
                 "Card number: 4111 1111 1111 111",
                 "4111 1111 1111 111",
@@ -6326,6 +6415,15 @@ mod tests {
             "passport 12/03/2026",
             "the passport was renewed in 2026",
             "Credit card fees of $1,250.00",
+            // "Card" alone takes four groups only, never an ID, SIM or
+            // loyalty card's number; a passport starts with a capital or a
+            // digit.
+            "SIM card 8901260123456789012",
+            "ID card 1234 5678 9012 3456",
+            "Loyalty card 6006491123456789",
+            "card 6006491123456789",
+            "Passport No1234567",
+            "Passport: lo123456",
             "card ending 1234",
         ] {
             assert!(

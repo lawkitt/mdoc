@@ -935,8 +935,19 @@ words = ["тел", "телефон", "телефона", "тел/факс", "ф�
 category = "TAX"
 labels = ["инн"]
 between = '[\p{Zs}\t:*_№#.|]{1,8}'
-value = '[0-9OОoIlІЗBВ]{9,12}'
+value = '[0-9OОoIlІЗBВ]{10}(?:[0-9OОoIlІЗBВ]{2})?'
 min_digits = 8
+
+# The damaged lengths, nine or eleven, only after "ИНН" alone: after a
+# label slash-joined to it ("БИК/ИНН 044525225/7701234567", "КПП/ИНН
+# 770101001/…") the first value is the other label's (#381).
+[[context]]
+category = "TAX"
+labels = ["инн"]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{11}|[0-9OОoIlІЗBВ]{9}'
+min_digits = 8
+unless_slashed = true
 
 # ОГРН and ОГРНИП are TAX like ИНН, a public body's own too (guide rule 6,
 # the maintainer's decisions on #484 item 6 and #553 item 1; #563): "ОГРН
@@ -992,11 +1003,12 @@ min_digits = 9
 # may read a digit as O, О, I, l, І, З or B (В): "46I7 82О634". A series
 # and a number split by "№" ("серии 45 10 № 123456"), a date ("паспорт
 # 12.03.2026 выдан"), a code or words after the label are left to the
-# model.
+# model. "И" only in «серии и номер», and «РФ» only after «гражданина»:
+# «паспорт и 89161234567» holds a phone.
 [[context]]
 category = "IDENTITY"
 labels = ["паспорт", "паспорта", "паспорту", "паспортом", "паспорте"]
-between = '(?:[\p{Zs}\t]+(?:гражданина|РФ|Российской|Федерации|серии|серия|и|номер)){0,6}[\p{Zs}\t:*_№#.|]{1,8}'
+between = '(?:[\p{Zs}\t]+гражданина(?:[\p{Zs}\t]+(?:РФ|Российской[\p{Zs}\t]+Федерации))?)?(?:[\p{Zs}\t]+сери[яи](?:[\p{Zs}\t]+и[\p{Zs}\t]+номер)?|[\p{Zs}\t]+номер)?[\p{Zs}\t:*_№#.|]{1,8}'
 value = '[0-9OОoIlІЗBВ]{2}[\p{Zs}\t]?[0-9OОoIlІЗBВ]{2}[\p{Zs}\t][0-9OОoIlІЗBВ]{5,7}|[0-9OОoIlІЗBВ]{9,11}'
 min_digits = 8
 
@@ -1035,11 +1047,27 @@ unless_slashed = true
 category = "BANK"
 labels = [
     "номер карты", "номер банковской карты", "банковская карта", "банковской карты",
-    "банковской картой", "карта", "карты", "карте", "картой",
+    "банковской картой", "банковской карте", "банковскую карту",
 ]
 between = '[\p{Zs}\t:*_№#.|]{1,8}'
 value = '[0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{3,5}|[0-9OОoIlІЗBВ]{13,19}'
 min_digits = 12
+
+# "Карта" alone names many cards: only a payment card's four groups follow
+# it ("карта 4276 3800 1234 5678"). A run of digits, and a process's, a
+# route's, a fuel or a discount card's number («Технологическая карта №
+# 1234567890123», «Топливная карта …»), are no bank details.
+[[context]]
+category = "BANK"
+labels = ["карта", "карты", "карте", "картой", "карту"]
+between = '[\p{Zs}\t:*_№#.|]{1,8}'
+value = '[0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{4}[\p{Zs}\t-][0-9OОoIlІЗBВ]{3,5}'
+min_digits = 12
+unless_after = [
+    "технологическая", "технологической", "технологическую", "маршрутная",
+    "маршрутной", "маршрутную", "топливная", "топливной", "топливную",
+    "дисконтная", "дисконтной", "дисконтную",
+]
 
 # An employee's personnel number is one person's (guide rule 6 and its
 # staff ID example; #381): "Табельный номер: VK-731628", "таб. № 004512".

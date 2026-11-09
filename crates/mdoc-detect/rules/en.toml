@@ -1510,13 +1510,14 @@ min_digits = 6
 
 # A passport's number after its label (guide rule 6, #381): "Passport:
 # 123456789", "Passport No. C01234567", up to two capitals then six to
-# nine digits, or eight to ten digits, OCR letters as above. "Passport:
+# nine digits, or eight to ten digits, OCR letters as above but never
+# first: "Passport No1234567" and "Passport: lo123456" are words. "Passport:
 # pending" and a date after the label give nothing.
 [[context]]
 category = "IDENTITY"
 labels = ["passport", "passport number", "passport no"]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
-value = '[A-Z]{1,2}[0-9OoIlB]{6,9}|[0-9OoIlB]{8,10}'
+value = '(?-i:[A-Z]{1,2})\d[0-9OoIlB]{5,8}|\d[0-9OoIlB]{7,9}'
 min_digits = 6
 
 # A payment card's number after its label is bank details (guide rule 6,
@@ -1527,12 +1528,24 @@ min_digits = 6
 [[context]]
 category = "BANK"
 labels = [
-    "card", "card number", "card no", "credit card", "credit card number",
-    "credit card no", "debit card", "debit card number", "debit card no",
+    "card number", "card no", "credit card", "credit card number", "credit card no",
+    "debit card", "debit card number", "debit card no",
 ]
 between = '[\p{Zs}\t:*_№#.]{1,8}'
 value = '[0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{3,5}|[0-9OoIlB]{13,19}'
 min_digits = 12
+
+# "Card" alone names many cards: only a payment card's four groups follow
+# it ("card 4111 1111 1111 1111"), never an ID, a SIM, a loyalty, a
+# membership, a gift, a green or a health card's number, nor a run of
+# digits ("SIM card 8901260123456789012").
+[[context]]
+category = "BANK"
+labels = ["card"]
+between = '[\p{Zs}\t:*_№#.]{1,8}'
+value = '[0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{4}[\p{Zs}\t-][0-9OoIlB]{3,5}'
+min_digits = 12
+unless_after = ["id", "sim", "loyalty", "membership", "gift", "green", "health"]
 
 # A staff or member ID after its label, even one of letters only
 # ("**Staff ID:** VELK-QUEN", "Employee ID: TERN-WISP"): capitals or digits

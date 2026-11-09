@@ -867,6 +867,8 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     trim_at_birth_dates(source, &view, &mut detections, &rules);
+    let rules = yield_to_whole_values(source, &mut detections, rules);
+    names_beside_rule_values(source, &view, &mut detections, &rules);
     let rest = rest_beside_rule_values(
         source,
         &view,
@@ -975,6 +977,136 @@ fn trim_at_birth_dates(
     }
 }
 
+/// A labelled value that a model span of its category holds with a damaged
+/// value's one or two characters beside it, digits, OCR letters or "?",
+/// and "-" and blanks on its line ("770123456 7" after "ИНН", "4510
+/// 12345?" after "Паспорт"), gives way to that span (#381): the rule's
+/// one-short shape would cut the value the model read whole. More beside
+/// it is another field or noise ("1199900000011 500 руб.", "7701234567 1 0
+/// 1 1 0 0 1 0"), and the rule keeps it; so does a valid value's own rule
+/// (a checksum's), and the label's rule where the model has nothing.
+/// Returns the rules left.
+fn yield_to_whole_values(
+    source: &str,
+    detections: &mut [Detection],
+    rules: Vec<Detection>,
+) -> Vec<Detection> {
+    let damaged = |c: char| c.is_ascii_digit() || "OОoIlІЗBВ?- \t\u{a0}".contains(c);
+    let read = |c: char| c.is_alphanumeric() || c == '?';
+    let read_count = |text: &str| text.chars().filter(|&c| read(c)).count();
+    let checked: Vec<Range<usize>> = rules
+        .iter()
+        .filter(|rule| rule.recognizer != mdoc_pii::Recognizer::Context)
+        .map(|rule| rule.range.clone())
+        .collect();
+    let mut left = Vec::with_capacity(rules.len());
+    for rule in rules {
+        let whole = (rule.recognizer == mdoc_pii::Recognizer::Context
+            && rules::identifier_field(rule.category)
+            && !checked.contains(&rule.range))
+        .then(|| {
+            detections.iter_mut().find(|model| {
+                let beside = || {
+                    [
+                        &source[model.range.start..rule.range.start],
+                        &source[rule.range.end..model.range.end],
+                    ]
+                };
+                model.recognizer == mdoc_pii::Recognizer::Model
+                    && model.category == rule.category
+                    && model.range.start <= rule.range.start
+                    && rule.range.end <= model.range.end
+                    && model.range != rule.range
+                    && beside().iter().all(|text| text.chars().all(damaged))
+                    && (1..=2)
+                        .contains(&beside().iter().map(|text| read_count(text)).sum::<usize>())
+            })
+        })
+        .flatten();
+        match whole {
+            Some(model) => model.category = rule.category,
+            None => left.push(rule),
+        }
+    }
+    left
+}
+
+/// A person's or a company's model span that runs into a labelled value
+/// keeps its parts outside the values and their labels (#381): "Иванов
+/// Иван" of "Иванов Иван, паспорт 4510 123456", "ООО «Ромашка»" of "ООО
+/// «Ромашка», р/с …", "Иванов Пётр Сергеевич" of "731628, Иванов Пётр
+/// Сергеевич" after "Табельный номер:". The review takes the rule's value
+/// over the span it overlaps, which would drop the name. Each part loses
+/// the punctuation and spaces that join it to a label or a value and must
+/// keep its category's shape; with no such part the span stays as it was.
+fn names_beside_rule_values(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    detections: &mut Vec<Detection>,
+    rules: &[Detection],
+) {
+    let joint = |c: char| c.is_whitespace() || ",;:–—-()".contains(c);
+    let mut parts_of: Vec<Detection> = Vec::new();
+    for detection in detections.iter_mut().filter(|d| {
+        d.recognizer == mdoc_pii::Recognizer::Model
+            && matches!(d.category, Category::Person | Category::Organization)
+    }) {
+        let range = detection.range.clone();
+        let mut values: Vec<&Detection> = rules
+            .iter()
+            .filter(|rule| {
+                rules::identifier_field(rule.category)
+                    && rule.range.start < range.end
+                    && range.start < rule.range.end
+            })
+            .collect();
+        if values.is_empty() {
+            continue;
+        }
+        values.sort_by_key(|rule| rule.range.start);
+        let mut cuts = Vec::new();
+        let mut at = range.start;
+        for value in values {
+            let label = rules::pack()
+                .label_start(&view.text, &view.view_range(value.range.clone()))
+                .map_or(value.range.start, |label| {
+                    view.source_range(label..label).start
+                })
+                .min(value.range.start);
+            if at < label {
+                cuts.push(at..label);
+            }
+            at = at.max(value.range.end);
+        }
+        if at < range.end {
+            cuts.push(at..range.end);
+        }
+        let parts: Vec<Range<usize>> = cuts
+            .into_iter()
+            .filter_map(|cut| {
+                let text = &source[cut.clone()];
+                let start = cut.start + (text.len() - text.trim_start_matches(joint).len());
+                let end = cut.start + text.trim_end_matches(joint).len();
+                (start < end).then_some(start..end)
+            })
+            .filter(|part| {
+                let text = &view.text[view.view_range(part.clone())];
+                rules::pack().identifying_at(source, part.clone(), text, detection.category)
+            })
+            .collect();
+        let mut parts = parts.into_iter();
+        let Some(first) = parts.next() else {
+            continue;
+        };
+        detection.range = first;
+        parts_of.extend(parts.map(|part| Detection {
+            range: part,
+            ..detection.clone()
+        }));
+    }
+    detections.extend(parts_of);
+}
+
 /// The values a model identifier span holds beside a rule's narrower value
 /// in it (#739): "7701234567, р/с 40702810900000012345" after "ИНН", one
 /// bank account span, holds the account. The review takes the rule's value
@@ -1039,6 +1171,27 @@ fn rest_beside_rule_values<'a>(
             gaps.push(at..range.end);
         }
         for gap in gaps {
+            // A company's legal form and quoted name between the values is
+            // the company's: "ПАО «Сбербанк»" of "40702810900000012345 в ПАО
+            // «Сбербанк», к/с …" (#381), which the wide span would lose.
+            let seen = view.view_range(gap.clone());
+            if let Some(company) = rules::pack().quoted_company(&view.text[seen.clone()]) {
+                let company = seen.start + company.start..seen.start + company.end;
+                let part = view.source_range(company.clone());
+                if rules::pack().identifying_at(
+                    source,
+                    part.clone(),
+                    &view.text[company],
+                    Category::Organization,
+                ) && !detections.iter().chain(&found).any(|d| d.range == part)
+                {
+                    found.push(Detection {
+                        range: part,
+                        category: Category::Organization,
+                        ..*model
+                    });
+                }
+            }
             for (value, label) in values_in(&view.text, view.view_range(gap)) {
                 let (category, labelled, whole) = match &label {
                     None => (model.category, false, None),
@@ -3104,7 +3257,8 @@ mod tests {
                     "bank_account",
                     0.8,
                 )][..],
-                "TAX«7701234567» | BANK«40702810900000012345»",
+                // The company inside keeps its name (#381).
+                "TAX«7701234567» | ORG«ООО «Ромашка-2000»» | BANK«40702810900000012345»",
             ),
             (
                 "X15 wide phone over address",
@@ -3461,7 +3615,8 @@ mod tests {
                     "bank_account",
                     0.8,
                 )][..],
-                "TAX«7701234567» | BANK«40702810900000012345» | BANK«044525225»",
+                // The bank inside keeps its name (#381).
+                "TAX«7701234567» | BANK«40702810900000012345» | ORG«ПАО «Банк»» | BANK«044525225»",
             ),
             (
                 "U3 passport wide with issue date code",
@@ -3503,6 +3658,485 @@ mod tests {
                 .map(|span| format!("{}«{}»", span.category, &source[span.range]))
                 .collect();
             assert_eq!(shown.join(" | "), expected, "{id}: {source}");
+        }
+    }
+
+    /// #381's pre-gate review inputs (target/review-v2, a1–d8), each with
+    /// the model's spans, as the user is shown them: a damaged value the
+    /// model read whole stays whole, in its label's category ("770123456
+    /// 7" after "ИНН"); a person or a company the model ran into a labelled
+    /// value keeps its name ("Иванов Иван, паспорт …", "в ПАО «Сбербанк»,
+    /// к/с …"); "карта" and "card" alone take a card's four groups only, never
+    /// a process, a fuel, a SIM or an ID card's number; "и" after "паспорт"
+    /// is no filler; an English passport starts with a capital or a digit;
+    /// a damaged ИНН's length waits for "ИНН" alone.
+    #[test]
+    fn labelled_value_review_inputs_keep_whole_values_and_names() {
+        // An input's id, its source, the model's spans and what is shown.
+        type Row<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)], &'a str);
+        let rows: &[Row] = &[
+            (
+                "a01-inn-kpp",
+                "Реквизиты: ИНН/КПП 7701234567/770101001.\n",
+                &[][..],
+                "Реквизиты: ИНН/КПП 7701234567/770101001.",
+            ),
+            (
+                "a02-kpp-inn",
+                "Реквизиты: КПП/ИНН 770101001/7701234567.\n",
+                &[][..],
+                "Реквизиты: КПП/ИНН 770101001/7701234567.",
+            ),
+            (
+                "a03-bik-inn",
+                "Реквизиты: БИК/ИНН 044525225/7701234567.\n",
+                &[][..],
+                "Реквизиты: БИК/ИНН 044525225/7701234567.",
+            ),
+            (
+                "a04-inn-word",
+                "ИНН: в 2026 году не присвоен. ИНН ВЗ отсутствует.\n",
+                &[][..],
+                "ИНН: в 2026 году не присвоен. ИНН ВЗ отсутствует.",
+            ),
+            (
+                "a05-inn-ocr-word",
+                "ИНН ВВВЗЗЗООО12 указан.\n",
+                &[][..],
+                "ИНН ВВВЗЗЗООО12 указан.",
+            ),
+            (
+                "a06-rs-prose",
+                "Оплата на р/с указанный в договоре; лицевой счёт открыт 01.02.2026; номер счёта 2026.\n",
+                &[][..],
+                "Оплата на р/с указанный в договоре; лицевой счёт открыт 01.02.2026; номер счёта 2026.",
+            ),
+            (
+                "a07-invoice",
+                "Оплата по счёту № 123 от 01.02.2026. Счёт № 12345678901234567890 от 01.02.2026.\n",
+                &[][..],
+                "Оплата по счёту № 123 от 01.02.2026. Счёт № 12345678901234567890 от 01.02.2026.",
+            ),
+            (
+                "a08-invoice-number",
+                "Номер счёта 4070281090000000123 указан в акте.\n",
+                &[][..],
+                "Номер счёта ⟦BANK|4070281090000000123⟧ указан в акте.",
+            ),
+            (
+                "a09-bik-words",
+                "БИК банка получателя: 044525225.\n",
+                &[][..],
+                "БИК банка получателя: 044525225.",
+            ),
+            (
+                "a10-card-masked",
+                "Номер карты: **** **** **** 1234. Карта **** 1234. Номер карты 2202 **** **** 1234.\n",
+                &[][..],
+                "Номер карты: **** **** **** 1234. Карта **** 1234. Номер карты 2202 **** **** 1234.",
+            ),
+            (
+                "a11-tab-date",
+                "Табельный номер 01.02.2026. Табельный номер: от 15.03.2020. Табельный номер 12345 от 01.02.2026.\n",
+                &[][..],
+                "Табельный номер 01.02.2026. Табельный номер: от 15.03.2020. Табельный номер ⟦IDENTITY|12345⟧ от 01.02.2026.",
+            ),
+            (
+                "a12-table-cols",
+                "| ИНН | КПП |\n|---|---|\n| 7701234567 | 770101001 |\n",
+                &[][..],
+                "| ИНН | КПП |\n|---|---|\n| ⟦TAX|7701234567⟧ | 770101001 |",
+            ),
+            (
+                "a13-table-empty-cell",
+                "| ИНН | | 4510 123456 |\n|---|---|---|\n",
+                &[][..],
+                "| ИНН | | 4510 123456 |\n|---|---|---|",
+            ),
+            (
+                "a14-table-pass-date",
+                "| Паспорт | Дата выдачи |\n|---|---|\n| 4510 123456 | 01.02.2010 |\n",
+                &[][..],
+                "| Паспорт | Дата выдачи |\n|---|---|\n| ⟦IDENTITY|4510 123456⟧ | 01.02.2010 |",
+            ),
+            (
+                "a15-table-kv",
+                "| Поле | Значение |\n|---|---|\n| ИНН | 01.02.2026 |\n| БИК | Сбербанк |\n| СНИЛС | нет |\n| Карта | 1 000 000 |\n",
+                &[][..],
+                "| Поле | Значение |\n|---|---|\n| ИНН | 01.02.2026 |\n| БИК | Сбербанк |\n| СНИЛС | нет |\n| Карта | 1 000 000 |",
+            ),
+            (
+                "a16-passport-i",
+                "Предъявлены паспорт и 89161234567 — номер телефона.\n",
+                &[][..],
+                "Предъявлены паспорт и 89161234567 — номер телефона.",
+            ),
+            (
+                "a17-snils-phone",
+                "СНИЛС: 900-123-45-67.\n",
+                &[][..],
+                "СНИЛС: ⟦IDENTITY|900-123-45-67⟧.",
+            ),
+            (
+                "a18-karta-misc",
+                "Технологическая карта № 1234567890123. Топливная карта 7824861090001234567. Карта водителя 1234567890123456.\n",
+                &[][..],
+                "Технологическая карта № 1234567890123. Топливная карта 7824861090001234567. Карта водителя 1234567890123456.",
+            ),
+            (
+                "a19-en",
+                "Passport photo attached. Card number below. Passport photo 123456789. Card number below: 4111 1111 1111 1111.\n",
+                &[][..],
+                "Passport photo attached. Card number below. Passport photo 123456789. Card number below: 4111 1111 1111 1111.",
+            ),
+            (
+                "a20-en-cards",
+                "SIM card 8901260123456789012. ID card 1234567890123. Loyalty card 6006491123456789.\n",
+                &[][..],
+                "SIM card 8901260123456789012. ID card 1234567890123. Loyalty card 6006491123456789.",
+            ),
+            (
+                "a21-en-ssn",
+                "SSN: 123-45-6789. SSN 123456789. Social Security No. 123-45-678.\n",
+                &[][..],
+                "SSN: 123-45-6789. SSN 123456789. Social Security No. 123-45-678.",
+            ),
+            (
+                "a22-en-passport-mixed",
+                "Passport: 2026-01-15. Passport No1234567. Passport: lo123456.\n",
+                &[][..],
+                "Passport: 2026-01-15. Passport No1234567. Passport: lo123456.",
+            ),
+            (
+                "a23-snils-11-inn",
+                "СНИЛС 7701234567 указан ошибочно вместо ИНН.\n",
+                &[][..],
+                "СНИЛС ⟦IDENTITY|7701234567⟧ указан ошибочно вместо ИНН.",
+            ),
+            (
+                "a24-tab-lower",
+                "табельный номер ао12345 и таб. № ab-123.\n",
+                &[][..],
+                "табельный номер ао12345 и таб. № ab-123.",
+            ),
+            (
+                "a25-karta-lower",
+                "по карте 2202200012345678 и карты 4276 3800 1234 5678.\n",
+                &[][..],
+                "по карте 2202200012345678 и карты ⟦BANK|4276 3800 1234 5678⟧.",
+            ),
+            (
+                "b01-inn-split9",
+                "ИНН 770123456 7 указан.\n",
+                &[("770123456 7", "tax_id")][..],
+                "ИНН ⟦TAX|770123456 7⟧ указан.",
+            ),
+            (
+                "b02-inn-split11",
+                "ИНН 77012345678 9 указан.\n",
+                &[("77012345678 9", "tax_id")][..],
+                "ИНН ⟦TAX|77012345678 9⟧ указан.",
+            ),
+            (
+                "b03-passport-split",
+                "Паспорт 4510 12345 6 выдан.\n",
+                &[("4510 12345 6", "passport_number")][..],
+                "Паспорт ⟦IDENTITY|4510 12345 6⟧ выдан.",
+            ),
+            (
+                "b04-snils-split",
+                "СНИЛС 123-456-789 0 0 указан.\n",
+                &[("123-456-789 0 0", "national_id_number")][..],
+                "СНИЛС ⟦IDENTITY|123-456-789 0 0⟧ указан.",
+            ),
+            (
+                "b05-rs-split",
+                "р/с 4070281090000000123 4 в банке.\n",
+                &[("4070281090000000123 4", "bank_account")][..],
+                "р/с ⟦BANK|4070281090000000123 4⟧ в банке.",
+            ),
+            (
+                "b06-bik-split",
+                "БИК 04452522 5 банка.\n",
+                &[("04452522 5", "bank_account")][..],
+                "БИК ⟦BANK|04452522 5⟧ банка.",
+            ),
+            (
+                "b07-snils-q",
+                "СНИЛС 123-456-789 0? указан.\n",
+                &[("123-456-789 0?", "national_id_number")][..],
+                "СНИЛС ⟦IDENTITY|123-456-789 0?⟧ указан.",
+            ),
+            (
+                "b08-passport-q",
+                "Паспорт 4510 12345? выдан.\n",
+                &[("4510 12345?", "passport_number")][..],
+                "Паспорт ⟦IDENTITY|4510 12345?⟧ выдан.",
+            ),
+            (
+                "b09-inn-q",
+                "ИНН 77012345?7 указан.\n",
+                &[("77012345?7", "tax_id")][..],
+                "ИНН ⟦TAX|77012345?7⟧ указан.",
+            ),
+            (
+                "b10-card-split",
+                "Номер карты: 4276 3800 1234 5678 9 указан.\n",
+                &[("4276 3800 1234 5678 9", "bank_account")][..],
+                "Номер карты: ⟦BANK|4276 3800 1234 5678 9⟧ указан.",
+            ),
+            (
+                "b11-passport-wide",
+                "паспорт 4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001\n",
+                &[(
+                    "4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001",
+                    "passport_number",
+                )][..],
+                "паспорт ⟦IDENTITY|4512 345678⟧, выдан ОВД района Энск 01.02.2010, код подразделения 770-001",
+            ),
+            (
+                "b12-passport-seria-no",
+                "Паспорт серия 4510 № 123456 выдан.\n",
+                &[("4510 № 123456", "passport_number")][..],
+                "Паспорт серия ⟦IDENTITY|4510 № 123456⟧ выдан.",
+            ),
+            (
+                "b13-passport-hyphen",
+                "Паспорт: 4510-123456 выдан.\n",
+                &[("4510-123456", "passport_number")][..],
+                "Паспорт: ⟦IDENTITY|4510-123456⟧ выдан.",
+            ),
+            (
+                "b14-acc-bank-wide",
+                "р/с 40702810900000012345 в ПАО «Сбербанк», к/с 30101810400000000225, БИК 044525225\n",
+                &[(
+                    "40702810900000012345 в ПАО «Сбербанк», к/с 30101810400000000225, БИК 044525225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ в ⟦ORG|ПАО «Сбербанк»⟧, к/с ⟦BANK|30101810400000000225⟧, БИК ⟦BANK|044525225⟧",
+            ),
+            (
+                "b15-tab-person-wide",
+                "Табельный номер: 731628 Иванов Пётр Сергеевич\n",
+                &[("731628 Иванов Пётр Сергеевич", "person")][..],
+                "Табельный номер: ⟦IDENTITY|731628⟧ ⟦PERSON|Иванов Пётр Сергеевич⟧",
+            ),
+            (
+                "b16-passport-name-wide",
+                "паспорт 4510 123456 Иванова Анна Петровна\n",
+                &[("4510 123456 Иванова Анна Петровна", "passport_number")][..],
+                "паспорт ⟦IDENTITY|4510 123456⟧ Иванова Анна Петровна",
+            ),
+            (
+                "b17-card-holder",
+                "Карта 4276 3800 1234 5678 IVAN PETROV\n",
+                &[("4276 3800 1234 5678 IVAN PETROV", "bank_account")][..],
+                "Карта ⟦BANK|4276 3800 1234 5678⟧ IVAN PETROV",
+            ),
+            (
+                "b18-inn-model-other",
+                "ИНН 770123456 Иванов И. И.\n",
+                &[("Иванов И. И.", "person")][..],
+                "ИНН ⟦TAX|770123456⟧ ⟦PERSON|Иванов И. И.⟧",
+            ),
+            (
+                "b19-table-row",
+                "| ИНН | 7701234567, р/с 40702810900000012345 |\n|---|---|\n",
+                &[("7701234567, р/с 40702810900000012345", "bank_account")][..],
+                "| ИНН | ⟦TAX|7701234567⟧, р/с ⟦BANK|40702810900000012345⟧ |\n|---|---|",
+            ),
+            (
+                "b20-en-passport-wide",
+                "Passport No. C01234567 issued 01/02/2020 in London\n",
+                &[("C01234567 issued 01/02/2020", "passport_number")][..],
+                "Passport No. ⟦IDENTITY|C01234567⟧ issued 01/02/2020 in London",
+            ),
+            (
+                "b21-en-card-exp",
+                "Card number: 4111 1111 1111 1112 exp 12/29 CVV 123\n",
+                &[("4111 1111 1111 1112 exp 12/29 CVV 123", "bank_account")][..],
+                "Card number: ⟦BANK|4111 1111 1111 1112⟧ exp 12/29 CVV 123",
+            ),
+            (
+                "b22-snils-ocr-split",
+                "СНИЛС: 123-456-78 9 00 указан.\n",
+                &[("123-456-78 9 00", "national_id_number")][..],
+                "СНИЛС: ⟦IDENTITY|123-456-78 9 00⟧ указан.",
+            ),
+            (
+                "b23-passport-fullwidth",
+                "Паспорт: ４５１０ １２３４５６ выдан.\n",
+                &[("４５１０ １２３４５６", "passport_number")][..],
+                "Паспорт: ⟦IDENTITY|４５１０ １２３４５６⟧ выдан.",
+            ),
+            (
+                "b24-inn-12-ocr13",
+                "ИНН 77О1234567891 указан.\n",
+                &[("77О1234567891", "tax_id")][..],
+                "ИНН ⟦TAX|77О1234567891⟧ указан.",
+            ),
+            (
+                "b25-passport-model-tax",
+                "Паспорт 4506 123456 01.02.2020\n",
+                &[("4506 123456", "tax_id")][..],
+                "Паспорт ⟦IDENTITY|4506 123456⟧ 01.02.2020",
+            ),
+            (
+                "c01-inn-person-wide",
+                "ИНН 7701234567 Иванов Пётр Сергеевич\n",
+                &[("7701234567 Иванов Пётр Сергеевич", "person")][..],
+                "ИНН ⟦TAX|7701234567⟧ ⟦PERSON|Иванов Пётр Сергеевич⟧",
+            ),
+            (
+                "c02-inn-org-wide",
+                "ИНН 7701234567 в ПАО «Сбербанк», ОГРН 1027700132195\n",
+                &[("7701234567 в ПАО «Сбербанк», ОГРН 1027700132195", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567⟧ в ПАО «Сбербанк», ОГРН ⟦TAX|1027700132195⟧",
+            ),
+            (
+                "c03-inn-wrap9",
+                "ИНН 770123456\n7 указан.\n",
+                &[("770123456\n7", "tax_id")][..],
+                "ИНН ⟦TAX|770123456⟧\n7 указан.",
+            ),
+            (
+                "c04-inn-wrap9-nomodel",
+                "ИНН 770123456\n7 указан.\n",
+                &[][..],
+                "ИНН ⟦TAX|770123456⟧\n7 указан.",
+            ),
+            (
+                "c05-snils-person-wide",
+                "СНИЛС 123-456-789 00 Иванов Пётр Сергеевич\n",
+                &[("123-456-789 00 Иванов Пётр Сергеевич", "person")][..],
+                "СНИЛС ⟦IDENTITY|123-456-789 00⟧ ⟦PERSON|Иванов Пётр Сергеевич⟧",
+            ),
+            (
+                "c06-pass-wrap",
+                "паспорт 4510\n123456 выдан\n",
+                &[("4510\n123456", "passport_number")][..],
+                "паспорт 4510\n123456 выдан",
+            ),
+            (
+                "c07-acc-wrap",
+                "р/с 4070281090000000\n1234 в банке\n",
+                &[("4070281090000000\n1234", "bank_account")][..],
+                "р/с 4070281090000000\n1234 в банке",
+            ),
+            (
+                "c08-inn-split10",
+                "ИНН 7701234567 8 указан.\n",
+                &[("7701234567 8", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567 8⟧ указан.",
+            ),
+            (
+                "c09-pass-name-two",
+                "паспорт 4510 123456 Иванова Анна Петровна\n",
+                &[
+                    ("4510 123456", "passport_number"),
+                    ("Иванова Анна Петровна", "person"),
+                ][..],
+                "паспорт ⟦IDENTITY|4510 123456⟧ ⟦PERSON|Иванова Анна Петровна⟧",
+            ),
+            (
+                "c10-card-name-two",
+                "Карта 4276 3800 1234 5678 IVAN PETROV\n",
+                &[("IVAN PETROV", "person")][..],
+                "Карта ⟦BANK|4276 3800 1234 5678⟧ ⟦PERSON|IVAN PETROV⟧",
+            ),
+            (
+                "c11-tab-name",
+                "Табельный номер: 731628, Иванов Пётр Сергеевич\n",
+                &[("731628, Иванов Пётр Сергеевич", "person")][..],
+                "Табельный номер: ⟦IDENTITY|731628⟧, ⟦PERSON|Иванов Пётр Сергеевич⟧",
+            ),
+            (
+                "c12-snils-wrap",
+                "СНИЛС 123-456-789\n00 указан.\n",
+                &[("123-456-789\n00", "national_id_number")][..],
+                "СНИЛС 123-456-789\n00 указан.",
+            ),
+            (
+                "c13-bik-name",
+                "БИК 044525225 ПАО «Сбербанк»\n",
+                &[("044525225 ПАО «Сбербанк»", "bank_account")][..],
+                "БИК ⟦BANK|044525225⟧ ⟦ORG|ПАО «Сбербанк»⟧",
+            ),
+            (
+                "d01-org-wide",
+                "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345.\n",
+                &[(
+                    "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345",
+                    "organization",
+                )][..],
+                "⟦ORG|ООО «Ромашка»⟧, ИНН ⟦TAX|7701234567⟧, р/с ⟦BANK|40702810900000012345⟧.",
+            ),
+            (
+                "d02-person-wide",
+                "Иванов Иван, ИНН 7701234567, р/с 40702810900000012345.\n",
+                &[(
+                    "Иванов Иван, ИНН 7701234567, р/с 40702810900000012345",
+                    "person",
+                )][..],
+                "⟦PERSON|Иванов Иван⟧, ИНН ⟦TAX|7701234567⟧, р/с ⟦BANK|40702810900000012345⟧.",
+            ),
+            (
+                "d03-org-wide-norinn",
+                "ООО «Ромашка», р/с 40702810900000012345.\n",
+                &[("ООО «Ромашка», р/с 40702810900000012345", "organization")][..],
+                "⟦ORG|ООО «Ромашка»⟧, р/с ⟦BANK|40702810900000012345⟧.",
+            ),
+            (
+                "d04-person-wide-pass",
+                "Иванов Иван, паспорт 4510 123456.\n",
+                &[("Иванов Иван, паспорт 4510 123456", "person")][..],
+                "⟦PERSON|Иванов Иван⟧, паспорт ⟦IDENTITY|4510 123456⟧.",
+            ),
+            (
+                "d05-table-empty",
+                "| ИНН | | 7701234567 |\n|---|---|---|\n| СНИЛС | | 12345678901 |\n",
+                &[][..],
+                "| ИНН | | ⟦TAX|7701234567⟧ |\n|---|---|---|\n| СНИЛС | | ⟦IDENTITY|12345678901⟧ |",
+            ),
+            (
+                "d06-table-shift",
+                "| БИК | ИНН | 7701234567 |\n|---|---|---|\n",
+                &[][..],
+                "| БИК | ИНН | ⟦TAX|7701234567⟧ |\n|---|---|---|",
+            ),
+            (
+                "d07-card-en-below",
+                "Card number (see below): 4111 1111 1111 1112. Card no. 1234 5678 9012 3456 expired.\n",
+                &[][..],
+                "Card number (see below): 4111 1111 1111 1112. Card no. ⟦BANK|1234 5678 9012 3456⟧ expired.",
+            ),
+            (
+                "d08-person-wide-card",
+                "Держатель Иванов Иван, карта 4276 3800 1234 5678.\n",
+                &[("Иванов Иван, карта 4276 3800 1234 5678", "person")][..],
+                "Держатель ⟦PERSON|Иванов Иван⟧, карта ⟦BANK|4276 3800 1234 5678⟧.",
+            ),
+        ];
+        for (id, source, model, expected) in rows {
+            let raw: Vec<RawEntity> = model
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.9,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            let spans = recognition::proposals(source, &raw).unwrap();
+            assert_eq!(
+                recognition::annotate(source, &spans).trim_end(),
+                *expected,
+                "{id}"
+            );
         }
     }
 
@@ -3736,24 +4370,32 @@ mod tests {
             [(7, "BANK".to_owned(), wide.to_owned())]
         );
         // A company's or a person's span is no identifier's: only the
-        // account its own label proposes is bank details (#381).
-        for (wide, label) in [
+        // account its own label proposes is bank details, and the name
+        // keeps its own span, its labelled values outside (#381).
+        for (wide, label, name, category) in [
             (
                 "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345",
                 "organization",
+                "ООО «Ромашка»",
+                "ORG",
             ),
             (
                 "Иванов Иван, ИНН 7701234567, р/с 40702810900000012345",
                 "person",
+                "Иванов Иван",
+                "PERSON",
             ),
         ] {
             let source = format!("{wide}.");
+            let shown = shown_with(&source, &[(wide, label)]);
             assert!(
-                shown_with(&source, &[(wide, label)])
-                    .iter()
-                    .all(|(_, category, text)| category != "BANK"
-                        || text == "40702810900000012345"),
+                shown.iter().all(|(_, category, text)| category != "BANK"
+                    || text == "40702810900000012345"),
                 "{source}"
+            );
+            assert!(
+                shown.contains(&(0, category.to_owned(), name.to_owned())),
+                "{source}: {shown:?}"
             );
         }
     }
