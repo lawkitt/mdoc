@@ -986,6 +986,114 @@ mod tests {
         );
     }
 
+    /// #749: the model tags only a surname with initials; its later bare
+    /// surname is shown, as a whole name's is, and the same guards hold: an
+    /// ordinary word only mid-sentence, a role surname as after a whole
+    /// name, initials alone and an organization's span unchanged.
+    #[test]
+    fn a_surname_with_initials_shows_its_later_surname() {
+        let shown = |source: &str, raw: &[(&str, &str)]| -> Vec<(String, String)> {
+            let raw: Vec<RawEntity> = raw
+                .iter()
+                .map(|(text, label)| {
+                    let start = source.find(text).unwrap();
+                    RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: 0.8,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| (source[span.range].to_owned(), span.category))
+                .collect()
+        };
+        let person = |texts: &[&str]| -> Vec<(String, String)> {
+            texts
+                .iter()
+                .map(|text| ((*text).to_owned(), "PERSON".to_owned()))
+                .collect()
+        };
+        for (source, name, expected) in [
+            (
+                "References: Penrow, J. L. 1971.\n\nAs Penrow showed, the J. L. Penrow survey held.",
+                "Penrow, J. L.",
+                &["Penrow, J. L.", "Penrow", "J. L. Penrow"][..],
+            ),
+            (
+                "Employee: VALECROFT, Jorin P.\n\nVALECROFT agrees.",
+                "VALECROFT, Jorin P.",
+                &["VALECROFT, Jorin P.", "VALECROFT"],
+            ),
+            (
+                "Литература: Иванов, И. И. 1999.\n\nИванов показал.",
+                "Иванов, И. И.",
+                &["Иванов, И. И.", "Иванов"],
+            ),
+            (
+                "Подписал И. И. Иванов.\n\nИванову вручили, с Ивановым согласились.",
+                "И. И. Иванов",
+                &["И. И. Иванов", "Иванову", "Ивановым"],
+            ),
+            // Initials alone are no form of it (#387).
+            (
+                "Signed: J. L. Penrow\nJ. L. went home. Penrow left.",
+                "J. L. Penrow",
+                &["J. L. Penrow", "Penrow"],
+            ),
+        ] {
+            assert_eq!(
+                shown(source, &[(name, "person")]),
+                person(expected),
+                "{source}"
+            );
+        }
+        // Two people with one surname: the bare one is still shown.
+        let source = "Авторы: Иванов И. И. и Иванов П. С.\n\nИванов показал.";
+        assert_eq!(
+            shown(
+                source,
+                &[("Иванов И. И.", "person"), ("Иванов П. С.", "person")]
+            ),
+            person(&["Иванов И. И.", "Иванов П. С.", "Иванов"])
+        );
+        // As after a whole name: an ordinary word starts no sentence as a
+        // name, a role surname spreads, and a company keeps its span.
+        for (initialled, whole, rest) in [
+            (
+                "Smith, J.",
+                "John Smith",
+                " signed. Smith left. Then Smith agreed.",
+            ),
+            ("R. Masters", "Robert Masters", " signed. Masters met them."),
+            (
+                "Penrow, J. L.",
+                "John Penrow",
+                " signed for Penrow Holdings. Penrow agreed.",
+            ),
+        ] {
+            let raw = |name: &'static str| {
+                let mut raw = vec![(name, "person")];
+                if rest.contains("Holdings") {
+                    raw.push(("Penrow Holdings", "organization"));
+                }
+                raw
+            };
+            let initialled_source = format!("{initialled}{rest}");
+            let whole_source = format!("{whole}{rest}");
+            let mut found = shown(&initialled_source, &raw(initialled));
+            found.remove(0);
+            let mut expected = shown(&whole_source, &raw(whole));
+            expected.remove(0);
+            assert!(!found.is_empty(), "{initialled_source}");
+            assert_eq!(found, expected, "{initialled_source}");
+        }
+    }
+
     // Inject only the first mention. Exact ranges below also verify that
     // the review discovers every later mention with its own category.
     fn assert_address_proposals(source: &str, model: &[(&str, &str)], expected: &[(&str, &str)]) {

@@ -2543,6 +2543,97 @@ fn a_case_repeat_follows_merges_and_stays_out_of_paths() {
     assert_eq!(repeat.mentions, vec![prose..prose + "iara veldune".len()]);
 }
 
+/// #749: a surname with initials spreads its surname to later mentions,
+/// which join its identity; the issue's reproduction and review rows.
+#[test]
+fn a_surname_with_initials_propagates_its_surname() {
+    let joined = |source: &str, names: &[&str], forms: &[&str]| {
+        let review = ingest_names(source, names);
+        let name = review.variant_identity(proposed(&review, names[0]).id);
+        for form in forms {
+            let variant = proposed(&review, form);
+            assert_eq!(variant.mentions.len(), 1, "{source}: {form}");
+            assert_eq!(
+                review.variant_identity(variant.id),
+                name,
+                "{source}: {form}"
+            );
+        }
+        assert_eq!(review.active_identities().len(), 1, "{source}");
+    };
+    joined(
+        "References: Penrow, J. L. 1971.
+
+As Penrow showed, the J. L. Penrow survey held.",
+        &["Penrow, J. L."],
+        &["Penrow", "J. L. Penrow"],
+    );
+    joined(
+        "Employee: VALECROFT, Jorin P.
+
+VALECROFT agrees.",
+        &["VALECROFT, Jorin P."],
+        &["VALECROFT"],
+    );
+    joined(
+        "Литература: Иванов, И. И. 1999.
+
+Иванов показал, что Иванову и Ивановым верят.",
+        &["Иванов, И. И."],
+        &["Иванов", "Иванову", "Ивановым"],
+    );
+    joined(
+        "Автор: И. И. Иванов.
+
+Иванова спросили.",
+        &["И. И. Иванов"],
+        &["Иванова"],
+    );
+    // Both wordings the model's: one person.
+    joined(
+        "Penrow, J. L. wrote it; J. L. Penrow signed. Penrow left.",
+        &["Penrow, J. L.", "J. L. Penrow"],
+        &["Penrow"],
+    );
+    // Two people with one surname: the bare surname is proposed and joins
+    // neither.
+    let source = "Авторы: Иванов И. И. и Иванов П. С.
+
+Иванов показал.";
+    let review = ingest_names(source, &["Иванов И. И.", "Иванов П. С."]);
+    let bare = review.variant_identity(proposed(&review, "Иванов").id);
+    for name in ["Иванов И. И.", "Иванов П. С."] {
+        assert_ne!(review.variant_identity(proposed(&review, name).id), bare);
+    }
+    assert_eq!(review.active_identities().len(), 3);
+    // Initials alone stay unproposed (#387), and nothing is proposed inside
+    // a company's span.
+    let source = "Penrow, J. L. signed for Penrow Holdings.
+J. L.
+
+Penrow Holdings pays.";
+    let mut review = Review::default();
+    let company = source.find("Penrow Holdings").unwrap();
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0.."Penrow, J. L.".len(), Category::Person),
+                detection(
+                    company..company + "Penrow Holdings".len(),
+                    Category::Organization,
+                ),
+            ],
+        )
+        .unwrap();
+    let originals: Vec<&str> = review
+        .variants()
+        .iter()
+        .map(|v| v.original.as_ref())
+        .collect();
+    assert_eq!(originals, ["Penrow, J. L.", "Penrow Holdings"]);
+}
+
 /// #403: a surname's particle stays in its span and its identity.
 #[test]
 fn a_surname_keeps_its_particle() {

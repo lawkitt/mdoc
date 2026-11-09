@@ -850,9 +850,15 @@ impl Review {
             .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
+            // A surname with initials waits only for a full name: beside
+            // none it is a name of its own, whose surname spreads (#749).
             let joins = detection.category == Category::Person
-                && propagation::parse_form(text)
-                    .is_some_and(|form| people.candidates(&form).target.is_some());
+                && propagation::parse_form(text).is_some_and(|form| {
+                    people.candidates(&form).target.is_some_and(|target| {
+                        people.is_full(target)
+                            || !matches!(form, propagation::Form::Initials { .. })
+                    })
+                });
             if joins {
                 forms.push(detection);
             } else {

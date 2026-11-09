@@ -7,7 +7,9 @@
 //! and patronymic, the surname with initials, the whole name in another
 //! wording (a case form, a patronymic added), Russian case forms of each (a
 //! fixed suffix table, not morphology) and nicknames from [`nicknames`]. A
-//! whole name is found before its parts, so it is one proposal.
+//! whole name is found before its parts, so it is one proposal. A surname
+//! with initials ("Penrow, J. L.", «И. И. Иванов») spreads its surname's
+//! forms and other initialled wordings as a full name does (#749).
 use super::{
     Category, Recognizer, Review, exact_boundary,
     identities::{
@@ -582,9 +584,14 @@ struct Person {
     surname: String,
     /// Given names in order: the first name, then a middle name or patronymic.
     given: Vec<String>,
-    /// A full name, so a form may join it; a surname with initials only
-    /// blocks ("Петров И.И." beside "Петрова Марина": "Петрову" is either).
-    target: bool,
+    /// A full name: its first name, patronymic and bare initials spread
+    /// too.
+    full: bool,
+    /// Its forms are proposed and may join it: a full name, or a surname
+    /// with initials ("Penrow, J. L.", "Ivo D. Penrow"), whose surname's
+    /// forms spread (#749). Any name blocks a form it fits ("Петров И.И."
+    /// beside "Петрова Марина": "Петрову" is either).
+    source: bool,
     surname_forms: HashSet<String>,
     own_surname_forms: HashSet<String>,
     /// The first name's forms and its nicknames' (full names only).
@@ -624,7 +631,7 @@ impl Person {
         owner: u64,
         surname: String,
         given: Vec<String>,
-        target: bool,
+        full: bool,
         written: crate::identities::Written,
     ) -> Self {
         if let Some((written_surname, written_given)) = written {
@@ -644,18 +651,19 @@ impl Person {
                 surname_forms: surnames,
                 surname,
                 given,
-                target,
+                full,
+                source: true,
             };
         }
         let first_forms = match given.first() {
-            Some(first) if target => given_forms(first)
+            Some(first) if full => given_forms(first)
                 .into_iter()
                 .chain(nicknames(first).iter().flat_map(|n| given_forms(n)))
                 .collect(),
             _ => HashSet::new(),
         };
         let patronymic_forms = match given.as_slice() {
-            [_, second] if target => patronymic_forms(second).into_iter().collect(),
+            [_, second] if full => patronymic_forms(second).into_iter().collect(),
             _ => HashSet::new(),
         };
         // A woman's surname that ends in a consonant does not decline.
@@ -677,7 +685,8 @@ impl Person {
             own_surname_forms,
             surname,
             given,
-            target,
+            full,
+            source: true,
             first_forms,
             patronymic_forms,
         }
@@ -776,19 +785,88 @@ pub(crate) struct Candidates {
     pub(crate) target: Option<u64>,
 }
 
+/// A surname with initials, as [`Form::Initials`] reads it ("Penrow, J.
+/// L.", "И. И. Иванов"), or with a first name and middle initials, the
+/// surname first before a comma or last ("VALECROFT, Jorin P.", "Ivo D.
+/// Penrow"): the surname and the given names, each initial a letter.
+fn initialed_name(wording: &str) -> Option<(String, Vec<String>)> {
+    if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
+        return Some((surname, initials.iter().map(char::to_string).collect()));
+    }
+    let cased = name_words_cased(wording);
+    let initial = |w: &String| initials_of(&w.to_lowercase()).is_some();
+    let named = |w: &String| {
+        w.chars().filter(|c| c.is_alphabetic()).count() > 1
+            && w.chars()
+                .all(|c| c.is_alphabetic() || matches!(c, '-' | '\'' | '’'))
+    };
+    // The surname comes first only with a comma after it.
+    let comma = crate::view::unwrapped(wording)
+        .split_whitespace()
+        .find(|w| {
+            !TITLES.contains(
+                &w.trim_matches(|c: char| !c.is_alphabetic())
+                    .to_lowercase()
+                    .as_str(),
+            )
+        })
+        .is_some_and(|w| w.trim_end_matches(['»', '"', '”', '*', '_']).ends_with(','));
+    let letters = |words: &[String]| -> Vec<String> {
+        words
+            .iter()
+            .flat_map(|w| initials_of(&w.to_lowercase()).unwrap_or_default())
+            .map(String::from)
+            .collect()
+    };
+    let words = merge_particles(&cased);
+    let (surname, given, middle) = match words.as_slice() {
+        [surname, given, middle @ ..] if comma => (surname, given, middle),
+        [given, middle @ .., surname] if !comma => (surname, given, middle),
+        _ => return None,
+    };
+    (!middle.is_empty()
+        && named(given)
+        && named(&surname.replace(' ', ""))
+        && middle.iter().all(initial))
+    .then(|| {
+        let given = std::iter::once(given.clone()).chain(letters(middle));
+        (surname.clone(), given.collect())
+    })
+}
+
 impl People {
-    /// `(owner, wording)` of every known person name: full names are
-    /// targets, a surname with initials only a candidate.
+    /// `(owner, wording)` of every known person name: a full name, or a
+    /// surname with initials ([`initialed_name`]), whose surname's forms
+    /// join it as a full name's do (#749). Two wordings of one surname and
+    /// the same initials ("Penrow, J. L.", "J. L. Penrow") are one person.
     pub(crate) fn new<'a>(names: impl IntoIterator<Item = (u64, &'a str)>) -> Self {
-        let mut people = Vec::new();
+        let mut people: Vec<Person> = Vec::new();
         let mut spellings = Vec::new();
         for (owner, wording) in names {
             spellings.extend(Spelling::new(owner, wording));
             if let Some((surname, given, written)) = split_full_name_inflected(wording) {
                 people.push(Person::new(owner, surname, given, true, written));
-            } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
-                let given = initials.iter().map(char::to_string).collect();
-                people.push(Person::new(owner, surname, given, false, None));
+            } else if let Some((surname, given)) = initialed_name(wording) {
+                // Written as initials, each with its period: "C1 Penrow"
+                // (a party code) and "P Ossian" only block.
+                let initials = given.iter().filter(|g| g.chars().count() == 1).count();
+                let source =
+                    !wording.contains(char::is_numeric) && wording.matches('.').count() >= initials;
+                if !source && !matches!(parse_form(wording), Some(Form::Initials { .. })) {
+                    continue;
+                }
+                let letters = |given: &[String]| -> Vec<Option<char>> {
+                    given.iter().map(|g| g.chars().next()).collect()
+                };
+                let owner = people
+                    .iter()
+                    .find(|p| {
+                        !p.full && p.surname == surname && letters(&p.given) == letters(&given)
+                    })
+                    .map_or(owner, |p| p.owner);
+                let mut person = Person::new(owner, surname, given, false, None);
+                person.source = source;
+                people.push(person);
             }
         }
         Self(people, spellings)
@@ -796,16 +874,27 @@ impl People {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty() && self.1.is_empty()
     }
-    /// Whether `owner` is a full name's identity, which forms may join.
+    /// Whether `owner` is a known name's identity, which forms may join.
     pub(crate) fn is_target(&self, owner: u64) -> bool {
-        self.0.iter().any(|p| p.owner == owner && p.target)
+        self.0.iter().any(|p| p.owner == owner && p.source)
+    }
+    /// Whether `owner` is a full name's identity, which bare initials and a
+    /// scan's surname with initials may join.
+    pub(crate) fn is_full(&self, owner: u64) -> bool {
+        self.0.iter().any(|p| p.owner == owner && p.full)
     }
     pub(crate) fn candidates(&self, form: &Form) -> Candidates {
         let mut found = Candidates::default();
+        // Bare initials are a full name's only: a surname with initials
+        // ("Y. Quill") blocks them, but never proposes them (#387).
+        let initials_only = matches!(form, Form::InitialsOnly(_));
+        // Names with initials that this form rewords: theirs when no one
+        // else's ("J. L. Penrow" of "Penrow, J. L.").
+        let mut rewords = BTreeSet::new();
         for person in &self.0 {
             // A name with initials does not block its own form.
             if let Form::Initials { surname, initials } = form
-                && !person.target
+                && !person.full
                 && person.surname == *surname
                 && person
                     .given
@@ -813,6 +902,9 @@ impl People {
                     .map(|g| g.chars().next())
                     .eq(initials.iter().map(|c| Some(*c)))
             {
+                if person.source {
+                    rewords.insert(person.owner);
+                }
                 continue;
             }
             let (links, proposes) = match form {
@@ -852,7 +944,7 @@ impl People {
                     let surname = first(&person.surname);
                     let spelled: Vec<_> = initials.iter().map(|c| Some(*c)).collect();
                     // A name with initials ("Y. Quill") matches too, so it
-                    // blocks a link, though it never becomes a target.
+                    // blocks a link, though it never becomes a target here.
                     let matching = match spelled.as_slice() {
                         [a, b] => {
                             given.len() >= 2 && [given[0], given[1]] == [*a, *b]
@@ -873,15 +965,18 @@ impl People {
             if links {
                 found.link.insert(person.owner);
             }
-            // A surname with initials alone proposes nothing: only full
-            // names propagate.
-            found.proposed |= person.target && (proposes || links);
+            found.proposed |=
+                (person.full || person.source && !initials_only) && (proposes || links);
+        }
+        if found.link.is_empty() && !rewords.is_empty() {
+            found.link = rewords;
+            found.proposed = true;
         }
         if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
             found.target = self
                 .0
                 .iter()
-                .any(|p| p.owner == owner && p.target)
+                .any(|p| p.owner == owner && (p.full || p.source && !initials_only))
                 .then_some(owner);
         }
         found
@@ -898,7 +993,7 @@ impl People {
             }
         }
         if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
-            found.target = self.is_target(owner).then_some(owner);
+            found.target = self.is_full(owner).then_some(owner);
         }
         found
     }
@@ -925,7 +1020,7 @@ impl People {
     pub(crate) fn form_of(wording: &str, full: &str) -> bool {
         parse_form(wording).is_some_and(|form| {
             let people = Self::new([(0, full)]);
-            people.0.first().is_some_and(|p| p.target) && people.candidates(&form).proposed
+            people.0.first().is_some_and(|p| p.full) && people.candidates(&form).proposed
         })
     }
 }
@@ -1621,8 +1716,9 @@ pub fn placed_initials(source: &str, names: &[&str]) -> Vec<Range<usize>> {
 }
 
 impl Review {
-    /// Full person names that propagate, as `(identity, wording)`: proposed
-    /// (not kept) or applied. With a surname and initials, which only block.
+    /// Person names that propagate, as `(identity, wording)`: proposed (not
+    /// kept) or applied. Full names, and surnames with initials, whose
+    /// surname's forms propagate too (#749).
     pub(super) fn known_people(&self) -> Vec<(u64, Arc<str>)> {
         let mut names: Vec<(u64, Arc<str>)> = self
             .variants()
@@ -2006,12 +2102,13 @@ mod tests {
         // A first name two people share; a surname that is another's first name.
         assert_eq!(target(&["Paul Smith", "Paul Jones"], "Paul"), None);
         assert_eq!(target(&["Paul Smith", "James Paul"], "Paul"), None);
-        // A relative named by initials is a candidate, never a target.
+        // A relative named by initials is a candidate too; alone, his
+        // surname's forms are his (#749).
         assert_eq!(
             target(&["Петров И.И.", "Петрова Марина Сергеевна"], "Петрову"),
             None
         );
-        assert_eq!(target(&["Петров И.И."], "Петрову"), None);
+        assert_eq!(target(&["Петров И.И."], "Петрову"), Some(1));
     }
 
     #[test]
@@ -2037,6 +2134,133 @@ mod tests {
             target(&["Maya Bennett", "Daniel Bennett"], "D. Bennett"),
             Some(2)
         );
+    }
+
+    /// #749: a surname with initials, in either order, with a comma or
+    /// not, or with a first name and a middle initial, is a source of its
+    /// surname's forms, as a whole name is.
+    #[test]
+    fn a_surname_with_initials_spreads_its_surname() {
+        let named = |wording: &str| initialed_name(wording);
+        let read = |surname: &str, given: &[&str]| {
+            Some((
+                surname.to_owned(),
+                given.iter().map(|g| (*g).to_owned()).collect(),
+            ))
+        };
+        assert_eq!(named("Penrow, J. L."), read("penrow", &["j", "l"]));
+        assert_eq!(named("И. И. Иванов"), read("иванов", &["и", "и"]));
+        assert_eq!(
+            named("VALECROFT, Jorin P."),
+            read("valecroft", &["jorin", "p"])
+        );
+        assert_eq!(named("Ivo D. Penrow"), read("penrow", &["ivo", "d"]));
+        // A whole name, or a first name first and a comma: none.
+        for wording in [
+            "Jorin Valecroft",
+            "VALECROFT Jorin P.",
+            "Jorin, P. Valecroft",
+        ] {
+            assert_eq!(named(wording), None, "{wording}");
+        }
+        for (name, initials) in [
+            ("Penrow, J. L.", ["J. Penrow", "Penrow J. L."]),
+            ("J. L. Penrow", ["J. Penrow", "Penrow J. L."]),
+            ("Penrow J. L.", ["J. Penrow", "J. L. Penrow"]),
+            ("J.L. Penrow", ["J. Penrow", "Penrow J. L."]),
+            ("Ivo D. Penrow", ["I. Penrow", "Penrow I. D."]),
+        ] {
+            for wording in ["Penrow", "Mr Penrow"].into_iter().chain(initials) {
+                assert_eq!(target(&[name], wording), Some(1), "{name}: {wording}");
+            }
+            // Another initial: proposed apart.
+            let other = people(&[name]).candidates(&form("K. Penrow"));
+            assert_eq!((other.target, other.proposed), (None, true), "{name}");
+        }
+        assert_eq!(target(&["VALECROFT, Jorin P."], "VALECROFT"), Some(1));
+        assert_eq!(target(&["VALECROFT, Jorin P."], "J. P. Valecroft"), Some(1));
+        // The first name is no initial's: it does not spread.
+        assert_eq!(target(&["VALECROFT, Jorin P."], "Jorin"), None);
+        for name in ["Иванов, И. И.", "Иванов И. И.", "И. И. Иванов"] {
+            for wording in [
+                "Иванов",
+                "Иванова",
+                "Иванову",
+                "Ивановым",
+                "Иванове",
+                "Иванову И. И.",
+            ] {
+                assert_eq!(target(&[name], wording), Some(1), "{name}: {wording}");
+            }
+        }
+        // Two people with one surname: the bare surname is either, so it is
+        // proposed and joins neither; initials tell them apart.
+        let names = ["Иванов И. И.", "Иванов П. С."];
+        let either = people(&names).candidates(&form("Иванов"));
+        assert_eq!(
+            (either.link.len(), either.target, either.proposed),
+            (2, None, true)
+        );
+        assert_eq!(target(&names, "Иванову И. И."), Some(1));
+        assert_eq!(target(&names, "П. С. Иванов"), Some(2));
+        // A full name and a surname with initials: either too.
+        assert_eq!(target(&["Ivo Penrow", "K. Penrow"], "Penrow"), None);
+        // Two wordings of one surname and initials are one person.
+        assert_eq!(
+            target(&["Penrow, J. L.", "J. L. Penrow"], "Penrow"),
+            Some(1)
+        );
+        // Initials alone stay a full name's (#387): blocked, never proposed.
+        for initials in ["J. L.", "J. P."] {
+            let found = people(&["Penrow, J. L."]).candidates(&form(initials));
+            assert_eq!((found.target, found.proposed), (None, false), "{initials}");
+        }
+        assert_eq!(
+            people(&["Penrow, J. L."]).spelled(&['j', 'l', 'p']),
+            Candidates {
+                link: BTreeSet::from([1]),
+                ..Candidates::default()
+            }
+        );
+        // No period, or a code for an initial: it only blocks.
+        for name in ["P Ossian", "C1 Ossian"] {
+            let found = people(&[name]).candidates(&form("Ossian"));
+            assert_eq!((found.target, found.proposed), (None, false), "{name}");
+            assert_eq!(target(&[name, "Paul Ossian"], "Ossian"), None, "{name}");
+        }
+    }
+
+    /// #749: a surname with initials proposes its surname as a whole name
+    /// does: an ordinary word only capitalised mid-sentence, never inside
+    /// another span.
+    #[test]
+    fn a_surname_with_initials_proposes_where_a_whole_name_would() {
+        let found = |name: &str, source: &str, covered: &[Range<usize>]| -> Vec<String> {
+            let people = people(&[name]);
+            find_forms(source, &people, covered, &[])
+                .into_iter()
+                .map(|(range, ..)| source[range].to_owned())
+                .collect()
+        };
+        let source = "As Penrow showed, the J. L. Penrow survey held.";
+        assert_eq!(
+            found("Penrow, J. L.", source, &[]),
+            ["Penrow", "J. L. Penrow"]
+        );
+        // Inside an organization's span: nothing.
+        let source = "Penrow Holdings pays. Penrow agrees.";
+        let company = 0.."Penrow Holdings".len();
+        assert_eq!(found("Penrow, J. L.", source, &[company]), ["Penrow"]);
+        // An ordinary word starts no sentence as a name.
+        let ordinary = |name: &str| {
+            let source = "Smith left. Then Smith agreed and a smith came.";
+            find_forms(source, &people(&[name]), &[], &[])
+                .into_iter()
+                .map(|(range, common, _)| (range.start, common))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ordinary("Smith, J."), ordinary("John Smith"));
+        assert_eq!(ordinary("Smith, J."), [(17, true)]);
     }
 
     #[test]
