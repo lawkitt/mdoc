@@ -298,11 +298,10 @@ mod tests {
             ("> [!TIP]- body", 12),
             ("> [!NOTE]", 9),
         ] {
-            assert_eq!(
-                visible_markers(s, caret..caret, RevealRule::CaretSpan),
-                [0..s.len().min(s.find("body").unwrap_or(s.len()))],
-                "{s:?}"
-            );
+            let marker_end = s.find("body").unwrap_or(s.len());
+            let shown = visible_markers(s, caret..caret, RevealRule::CaretSpan);
+            assert_eq!(shown.len(), 1, "{s:?}");
+            assert_eq!(shown[0], 0..marker_end, "{s:?}");
         }
         assert_eq!(line_prefix_len("> [!WARNING]+ x"), Some(14));
         assert_eq!(line_prefix_len("> plain"), Some(2));
