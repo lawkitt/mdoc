@@ -844,7 +844,7 @@ impl Review {
                 *owner = target;
             }
         }
-        let people = propagation::People::new(people);
+        let people = propagation::People::new(people).reading(source);
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
@@ -866,9 +866,15 @@ impl Review {
             .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
+            // A surname with initials waits only for a full name: beside
+            // none it is a name of its own, whose surname spreads (#749).
             let joins = detection.category == Category::Person
-                && propagation::parse_form(text)
-                    .is_some_and(|form| people.candidates(&form).target.is_some());
+                && propagation::parse_form(text).is_some_and(|form| {
+                    people.candidates(&form).target.is_some_and(|target| {
+                        people.is_full(target)
+                            || !matches!(form, propagation::Form::Initials { .. })
+                    })
+                });
             if joins {
                 forms.push(detection);
             } else {
@@ -1025,8 +1031,12 @@ impl Review {
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
-        // A marked full name proposes its forms elsewhere (ADR 0092).
-        if category == Category::Person && identities::split_full_name(original).is_some() {
+        // A marked full name proposes its forms elsewhere (ADR 0092), and
+        // so does a surname with initials (#749).
+        if category == Category::Person
+            && (identities::split_full_name(original).is_some()
+                || propagation::People::spreads_initialled(original))
+        {
             self.propagate(source, true);
         }
         Ok(id)
