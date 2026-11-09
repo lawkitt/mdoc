@@ -394,6 +394,10 @@ struct SpanEntry {
     /// "XXXXX").
     #[serde(default)]
     skip: Option<String>,
+    /// A match that a span of its category already overlaps (the model's,
+    /// a name cell's) is not proposed: the pattern only fills gaps.
+    #[serde(default)]
+    gaps_only: bool,
     #[serde(default)]
     trim: Vec<String>,
     /// ORG role trims need an explicit separator and an identifying remainder.
@@ -537,6 +541,8 @@ enum Span {
         line_length: Option<std::ops::RangeInclusive<usize>>,
         /// A span in which it matches is not proposed.
         skip: Option<Regex>,
+        /// A match a name span of the category overlaps is not proposed.
+        gaps_only: bool,
     },
     Fix(SpanFix),
 }
@@ -1813,6 +1819,7 @@ impl Pack {
                         split,
                         line_length,
                         skip,
+                        gaps_only: entry.gaps_only,
                     });
                     continue;
                 }
@@ -1823,9 +1830,10 @@ impl Pack {
                     || entry.split.is_some()
                     || entry.line_length.is_some()
                     || entry.skip.is_some()
+                    || entry.gaps_only
                 {
                     return Err(at(
-                        "parts, absorbs, continuations, split, line_length and skip need a pattern"
+                        "parts, absorbs, continuations, split, line_length, skip and gaps_only need a pattern"
                             .into(),
                     ));
                 }
@@ -5046,13 +5054,14 @@ impl Pack {
                     split,
                     line_length,
                     skip,
+                    gaps_only,
                     ..
                 } => Some((
                     *category,
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip),
+                    (split, skip, *gaps_only),
                     line_length,
                 )),
                 Span::Fix(_) => None,
@@ -5063,7 +5072,7 @@ impl Pack {
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip),
+                    (split, skip, gaps_only),
                     line_length,
                 )| {
                     span_ranges_sized(pattern, source, line_length.as_ref())
@@ -5150,6 +5159,15 @@ impl Pack {
                                 && skip
                                     .as_ref()
                                     .is_none_or(|skip| !skip.is_match(&source[range.clone()]))
+                                // A gap filler gives way to any name span of
+                                // its category over its text ("Смитом" of
+                                // the model in "Великобритании Смитом").
+                                && !(gaps_only
+                                    && names.iter().any(|name| {
+                                        name.category == category
+                                            && name.range.start < range.end
+                                            && range.start < name.range.end
+                                    }))
                                 && (category != Category::Address
                                     || !source[range.end..]
                                         .trim_start_matches([' ', '\t'])
@@ -6661,7 +6679,7 @@ mod tests {
                 &["Силва"],
                 &["да Силва"],
             ),
-            ("Отто фон Пален прибыл.", &["Пален"], &["фон Пален"]),
+            ("Передать О. фон Пален лично.", &["Пален"], &["фон Пален"]),
             (
                 "Явился мушкетёр д'Артаньян.",
                 &["Артаньян"],
@@ -6679,11 +6697,8 @@ mod tests {
                 &["Berg"],
                 &["J. R. van der Berg"],
             ),
-            (
-                "The claim was heard by Hans ten Brink yesterday.",
-                &["Brink"],
-                &["ten Brink"],
-            ),
+            ("Dear Ms ten Brink, thank you.", &["Brink"], &["ten Brink"]),
+            ("Ms von Stein signed.", &["Stein"], &["von Stein"]),
             ("Ms Leonor de la Cruz attended.", &["Cruz"], &["de la Cruz"]),
             (
                 "The letter came from Valéry Giscard d'Estaing himself.",
@@ -6720,9 +6735,50 @@ mod tests {
                 &["Smith"],
             ),
             ("It took ten Smith employees.", &["Smith"], &["Smith"]),
+            // Nor after a bare capitalised word (#403 review): «да» joins
+            // two names, «фон» is a noun, "von" a German preposition.
+            (
+                "Пришли Петров да Сидоров.",
+                &["Петров", "Сидоров"],
+                &["Петров", "Сидоров"],
+            ),
+            (
+                "Сказка про Ивана да Марью.",
+                &["Ивана", "Марью"],
+                &["Ивана", "Марью"],
+            ),
+            ("Шумовой фон Петрова не смущал.", &["Петрова"], &["Петрова"]),
+            ("Отто фон Пален прибыл.", &["Пален"], &["Пален"]),
+            (
+                "Das Schreiben von Schmidt liegt vor.",
+                &["Schmidt"],
+                &["Schmidt"],
+            ),
+            (
+                "The claim was heard by Hans ten Brink yesterday.",
+                &["Brink"],
+                &["Brink"],
+            ),
         ] {
             assert_eq!(proposed_people(source, model), expected, "{source:?}");
         }
+    }
+
+    /// #403 review: a glued particle keeps a surname, but "al-Qaeda" and
+    /// «аль-Каида», in any case form, are no person.
+    #[test]
+    fn al_qaeda_is_no_person() {
+        for (source, model) in [
+            ("Funds went to al-Qaeda last year.", "al-Qaeda"),
+            ("Средства ушли аль-Каиде в прошлом году.", "аль-Каиде"),
+            ("Член аль-Каиды задержан.", "аль-Каиды"),
+        ] {
+            assert!(proposed_people(source, &[model]).is_empty(), "{source:?}");
+        }
+        assert_eq!(
+            proposed_people("Свидетель аль-Хадид показал.", &["аль-Хадид"]),
+            ["аль-Хадид"]
+        );
     }
 
     /// #403: a surname with its particle repeats with it, inflected too.
@@ -6760,9 +6816,39 @@ mod tests {
             ("гражданина Украины Петренко, проживающего", &[]),
             ("Направить господину Председателю Суда.", &[]),
             ("Mr Justice Ashdale held that the claim failed.", &[]),
+            // Words of five letters or more are no short name (#404
+            // review): a country, an office, a form's heading, a suffix.
+            ("Он был гражданином Советского Союза.", &[]),
+            ("гражданке Канады Браун, проживающей", &[]),
+            ("Гражданин Петров Подпись", &[]),
+            ("Направить господину Мэру Москвы.", &[]),
+            ("Mr Smith Said: no.", &[]),
+            ("Ms Jones Counsel, for the claimant", &[]),
+            ("Mr Inspector Morse arrived.", &[]),
+            // Short suffixes are skipped.
+            ("Mr Bo Esq, for the claimant", &[]),
+            ("Mr Li Jr, the son", &[]),
+            ("Ms Li QC, for the claimant", &[]),
         ] {
             assert_eq!(proposed_people(source, &[]), expected, "{source:?}");
         }
+        // Only a gap: a model span over the match keeps its own wording,
+        // and a wrong word beside it never spreads (#404 review).
+        assert_eq!(
+            proposed_people(
+                "Договор заключён с гражданином Великобритании Смитом.",
+                &["Смитом"]
+            ),
+            ["Смитом"]
+        );
+        assert_eq!(
+            proposed_people("Я уполномочиваю гражданина Лю Бо.", &["Бо"]),
+            ["Бо"]
+        );
+        assert_eq!(
+            proposed_people("I authorise Mr Li Na to act.", &["Li Na"]),
+            ["Li Na"]
+        );
         // A longer name is left to the model: the rule takes no part of it.
         let source = "уполномочиваю гражданина Иванова Ивана Ивановича получить";
         assert!(proposed_people(source, &[]).is_empty(), "{source:?}");
@@ -18670,6 +18756,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
             (
                 "[[span]]\ncategory = \"PERSON\"\nsplit = '<'",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\ngaps_only = true",
                 "need a pattern",
             ),
             (

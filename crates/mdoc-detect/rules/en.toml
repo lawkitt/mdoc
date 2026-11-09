@@ -94,15 +94,17 @@ extend = [
 # sit between, never a line. Written lowercase a particle is no sentence's
 # first word, so it joins anywhere. "van", "den", "ten", "bin" and "al" are
 # also words ("the van Smith drove", "ten Smith employees", "The van Smith
-# rented") and join only after a title, an initial or a capitalised word
-# mid-sentence on the same line, the `lead` that stays outside ("by Hans
-# ten Brink"), or before a second particle ("the van der Berg file"). Two
-# initials before the particle go with the span ("J. R. van der Berg").
+# rented"), and so is "von" in German ("Das Schreiben von Schmidt"; #403
+# review): they join only after a title or an initial on the same line,
+# the `lead` that stays outside ("Ms ten Brink", "K. van Berg"), or before
+# a second particle ("the van der Berg file"); a capitalised word is no
+# lead, as a German noun is one. Two initials before the particle go with
+# the span ("J. R. van der Berg").
 [[span]]
 category = "PERSON"
 extend = [
-    '\b(?:(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?|(?:van|den|ten|bin|al)[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
-    '(?P<lead>(?:\b(?:Mr|Mrs|Ms|Mx|Miss|Dr|Prof|Professor|Sir|Dame|Lord|Lady|Judge|Justice)\.?|\b[B-HJ-Z]\.?|\b[AI]\.|[\p{L},][ \t]+[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])[ \t]+)(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+    '\b(?:(?:de|da|di|du|del|della|der|la|le|dos|das|ter|ibn)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?|(?:van|von|den|ten|bin|al)[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+    '(?P<lead>(?:\b(?:Mr|Mrs|Ms|Mx|Miss|Dr|Prof|Professor|Sir|Dame|Lord|Lady|Judge|Justice)\.?|\b[B-HJ-Z]\.?|\b[AI]\.)[ \t]+)(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
     '\b(?:d[\x27’]|(?:al|el)-)(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
 ]
@@ -249,18 +251,29 @@ trim_start = [
 
 # A short two-part name after a courtesy title is PERSON, whatever the
 # model made of it: "Mr Li Na", "Ms Ko Un" (guide rule 1, #404). Two
-# capitalised words of two letters or more and no third one after them; the
-# title stays outside. A judge's, a speaker's or an officer's title after
-# the courtesy one is no name ("Mr Justice Ashdale", "Mr Deputy Mayor"),
-# and neither is a heading's word ("Ms Smith Re: the lease"): both are skipped.
+# short capitalised words, of two to four letters each, and no third one
+# after them ("Mr Smith Said:", "Ms Jones Counsel" are none); the title
+# stays outside. Only a gap: where a name span overlaps the match it is
+# not proposed (`gaps_only`, #404 review). A judge's, a speaker's or an
+# officer's title after the courtesy one is no name ("Mr Deputy Mayor"),
+# nor is a suffix ("Mr Bo Esq", "Mr Bo Jr", "Ms Li QC") or a heading's
+# word ("Ms Li Re: the lease"): all are skipped.
 # "Dr" is left out, as it is also a street's "Drive".
 [[span]]
 category = "PERSON"
 pattern = '(?P<lead>{lead})(?:{name})(?P<tail>{tail})'
 parts.lead = '\b(?:Mr|Mrs|Ms|Mx|Miss)\.?[\p{Zs}\t]+'
-parts.name = '[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])?[\p{Zs}\t]+[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])?'
+parts.name = '[\p{Latin}&&\p{Lu}][\p{Latin}&&\p{Ll}]{1,3}[\p{Zs}\t]+[\p{Latin}&&\p{Lu}][\p{Latin}&&\p{Ll}]{1,3}'
 parts.tail = '[\p{Zs}\t]*(?:[^\p{L}\p{N}\p{Zs}\t]|(?m:$))|[\p{Zs}\t]+[\p{Ll}\p{N}]'
-skip = '\b(?:Justice|Speaker|President|Chairman|Chairwoman|Chair|Deputy|Recorder|Registrar|Commissioner|Secretary|Attorney|General|Lord|Lady|Sir|Dame|Judge|Senator|Governor|Mayor|Chief|Vice|Acting|Dear|Re|The|And|Of)\b'
+skip = '\b(?:Justice|Speaker|President|Chairman|Chairwoman|Chair|Deputy|Recorder|Registrar|Commissioner|Secretary|Attorney|General|Lord|Lady|Sir|Dame|Judge|Senator|Governor|Mayor|Chief|Vice|Acting|Dear|Re|The|And|Of|(?i:esq|jr|jnr|sr|snr|junior|senior|kc|qc|bart|phd))\b'
+gaps_only = true
+
+# A glued particle makes a capitalised word a name's ("al-Hadid"), but
+# "al-Qaeda" is an organization, never a person (#403 review).
+[[never]]
+match = "pattern"
+patterns = ['(?i)^[\s\p{P}]*al-qaeda[\s\p{P}]*$']
+anywhere_in = ["PERSON"]
 
 # A model span that starts inside a caption's short "Ex p" ("Ex ⟦p Ossian
 # Draycott⟧") loses the "p": a lower-case "p" before a capitalised word

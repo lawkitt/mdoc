@@ -4586,9 +4586,6 @@ mod tests {
                 ("Jane Federal", Category::Person),
                 ("Dawn French", Category::Person),
                 ("French", Category::Person),
-                // The short-name rule after "Mr" (#404) proposes the same
-                // name; the review takes the two as one.
-                ("Ossian Draycott", Category::Person),
             ]
         );
     }

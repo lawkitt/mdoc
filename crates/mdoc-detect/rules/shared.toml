@@ -124,6 +124,9 @@
 #                             blockquote's marks, a label)
 #   skip        = regex       a span in which it matches is not proposed (a
 #                             masked name, "XXXXX")
+#   gaps_only   = true        a match that a span of its category already
+#                             overlaps (the model's, a name cell's) is not
+#                             proposed: the pattern only fills gaps
 # Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
