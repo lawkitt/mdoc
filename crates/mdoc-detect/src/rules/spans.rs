@@ -1,6 +1,7 @@
 //! Span patterns: whole spans a `span` entry's pattern proposes, an
 //! address from its first element to its postcode or city, a passport's
 //! name fields.
+use super::alternation::{Alternation, Search};
 use super::context::CONTEXT_SCORE;
 use super::{Pack, Span, SpanMatch};
 use mdoc_pii::{Category, Detection, Recognizer};
@@ -58,7 +59,7 @@ impl Pack {
         &self,
         source: &str,
         names: &[Detection],
-        pattern: &Regex,
+        pattern: &Alternation,
         mut range: std::ops::Range<usize>,
     ) -> Option<std::ops::Range<usize>> {
         let front = names
@@ -268,7 +269,7 @@ impl Pack {
 /// context around a span ("адресу " before a city). Each search starts
 /// where the last span ended, so one address's tail ("; ") can be the next
 /// one's lead.
-pub(super) fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<usize>> {
+pub(super) fn span_ranges(pattern: &impl Search, source: &str) -> Vec<std::ops::Range<usize>> {
     span_ranges_sized(pattern, source, None)
         .into_iter()
         .map(|(range, _)| range)
@@ -281,7 +282,7 @@ pub(super) fn span_ranges(pattern: &Regex, source: &str) -> Vec<std::ops::Range<
 /// breaks) and its `mark` groups (a blockquote's or a table's marks, a
 /// label), each with its whole match.
 fn span_ranges_sized(
-    pattern: &Regex,
+    pattern: &impl Search,
     source: &str,
     line_length: Option<&std::ops::RangeInclusive<usize>>,
 ) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {

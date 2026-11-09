@@ -14,10 +14,12 @@
 //! - `fixes`: span fixes and `Pack::fix_spans`, which applies every rule to model spans;
 //! - `context`: labelled values, table columns and identifier fields' labels;
 //! - `ocr`: digits read for letters and look-alike letters;
-//! - `spans`: span patterns' whole spans: addresses, machine-readable names.
+//! - `spans`: span patterns' whole spans: addresses, machine-readable names;
+//! - `alternation`: a pattern of several regexes searched as one.
 //!
 //! Their tests are in `tests/<layer>.rs`, sharing `test_support`.
 
+mod alternation;
 mod companies;
 mod context;
 mod defined;
@@ -34,6 +36,7 @@ mod test_support;
 #[cfg(test)]
 mod tests;
 
+use alternation::Alternation;
 pub(crate) use context::{identifier_field, label_words};
 use load::Form;
 use mdoc_pii::{Category, Detection};
@@ -102,11 +105,11 @@ pub(crate) struct Pack {
     /// subdomains.
     public: std::collections::HashSet<String>,
     /// Legal references: a model span inside a match is never proposed.
-    references: Vec<Regex>,
+    references: Vec<Alternation>,
     conditional_references: Vec<ConditionalReference>,
     /// Cited cases, references naming their parties: a model span inside
     /// a match goes unless it names a party of the case at hand.
-    cases: Vec<Regex>,
+    cases: Vec<Alternation>,
     /// Lowercase words that make the name beside them a party of the case at
     /// hand ("plaintiff").
     party_roles: std::collections::HashSet<String>,
@@ -150,7 +153,7 @@ enum Span {
     /// postcode or city.
     Pattern {
         category: Category,
-        pattern: Regex,
+        pattern: Alternation,
         /// A model span of the category, read from its start by the regex
         /// (anchored there) as its `span` group, is the match's own part
         /// where the match holds it: a building's name in an address is no

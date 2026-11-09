@@ -1,6 +1,7 @@
 //! Reading and checking the pack: the TOML entries as written, and
 //! `Pack::load`, which compiles and checks them, naming the file and entry
 //! of the first problem.
+use super::alternation::Alternation;
 use super::context::{identifier_field, label_words};
 use super::ocr::cyrillic_letter;
 use super::spans::numbered;
@@ -348,7 +349,7 @@ pub(super) struct SpanEntry {
     /// What a whole span looks like; `{name}` stands for a part. An
     /// entry without one fixes model spans' boundaries instead.
     #[serde(default)]
-    pattern: Option<String>,
+    pattern: Option<Pattern>,
     /// Named pieces of the pattern, each a regex.
     #[serde(default)]
     pub(super) parts: std::collections::BTreeMap<String, String>,
@@ -426,7 +427,7 @@ pub(super) struct SpanEntry {
 struct ReferenceEntry {
     /// What the reference looks like; `{name}` stands for a part, and a
     /// group named `lead` or `tail` is context it leaves out.
-    pattern: String,
+    pattern: Pattern,
     #[serde(default)]
     parts: std::collections::BTreeMap<String, String>,
     /// For a cited case: lowercase words that, beside a name, make it a
@@ -445,6 +446,17 @@ struct ReferenceEntry {
     /// Conditional references filter only these categories after fixes.
     #[serde(default)]
     categories: Vec<String>,
+}
+
+/// A `span` or `reference` pattern: one regex, or a list of them that is
+/// one alternation of its items in order (`Alternation`), each compiled
+/// alone, for a pattern that would come near the regex size limit as one.
+/// The parts are every item's.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Pattern {
+    One(String),
+    Any(Vec<String>),
 }
 
 #[derive(Deserialize)]
@@ -1149,7 +1161,7 @@ impl Pack {
                     } else {
                         &["lead", "tail"]
                     };
-                    let pattern = with_groups(pattern, &entry.parts, groups, false).map_err(at)?;
+                    let pattern = alternation(pattern, &entry.parts, groups, false).map_err(at)?;
                     let continuation_after = entry
                         .continuation_after
                         .as_ref()
@@ -1439,8 +1451,11 @@ impl Pack {
                             "when needs categories and takes no cited-case fields".into()
                         ));
                     }
+                    let Pattern::One(pattern) = &entry.pattern else {
+                        return Err(at("when takes one pattern, no list".into()));
+                    };
                     let pattern = with_groups(
-                        &entry.pattern,
+                        pattern,
                         &entry.parts,
                         &["lead", "tail", "series", "series2"],
                         false,
@@ -1477,7 +1492,7 @@ impl Pack {
                 if !entry.categories.is_empty() {
                     return Err(at("categories needs when".into()));
                 }
-                let pattern = with_groups(
+                let pattern = alternation(
                     &entry.pattern,
                     &entry.parts,
                     &["lead", "tail", "docket"],
@@ -1597,6 +1612,40 @@ fn with_groups(
         });
     }
     Ok(pattern)
+}
+
+/// [`with_groups`] for a `pattern` that may be a list: each part is used by
+/// some item and replaced in every item, and each item is compiled and
+/// checked alone.
+fn alternation(
+    pattern: &Pattern,
+    parts: &std::collections::BTreeMap<String, String>,
+    groups: &[&str],
+    parties: bool,
+) -> Result<Alternation, String> {
+    let mut items = match pattern {
+        Pattern::One(pattern) => {
+            return with_groups(pattern, parts, groups, parties).map(|one| Alternation(vec![one]));
+        }
+        Pattern::Any(items) if items.len() < 2 => {
+            return Err("a list of patterns has two at least".into());
+        }
+        Pattern::Any(items) => items.clone(),
+    };
+    for (part, regex) in parts {
+        let name = format!("{{{part}}}");
+        if !items.iter().any(|item| item.contains(&name)) {
+            return Err(format!("part {part:?} is never used"));
+        }
+        for item in &mut items {
+            *item = item.replace(&name, &format!("(?:{regex})"));
+        }
+    }
+    items
+        .iter()
+        .map(|item| with_groups(item, &Default::default(), groups, parties))
+        .collect::<Result<_, _>>()
+        .map(Alternation)
 }
 
 /// `pattern` with `\p{Uppercase}`, `\p{Alphabetic}` and `\p{N}` meaning

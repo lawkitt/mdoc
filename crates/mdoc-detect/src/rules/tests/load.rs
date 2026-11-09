@@ -1,7 +1,9 @@
 //! Reading and checking the pack.
 use super::*;
+use crate::rules::alternation::Alternation;
 use crate::rules::load::rust_classes;
 use mdoc_pii::Recognizer;
+use regex::Captures;
 
 #[test]
 fn every_rule_file_loads_and_each_entry_is_commented() {
@@ -514,3 +516,38 @@ fn mistakes_in_a_lookalike_entry_are_named() {
         assert!(error.contains(problem), "{entry}: {error}");
     }
 }
+
+/// Regexes searched one by one find what their alternation finds: the
+/// leftmost match, the first regex's where two start together, and
+/// each next match after the last.
+#[test]
+fn an_alternation_finds_what_one_regex_would() {
+    let forms = [r"(?P<lead>a)b+", r"ab|b(?P<tail>c)", r"\bc\w*"];
+    let one = Regex::new(&forms.join("|")).unwrap();
+    let split = Alternation(forms.iter().map(|form| Regex::new(form).unwrap()).collect());
+    for haystack in ["", "abbc cab", "bc ab abb cc", "c bcab", "xyz", "ab ab bc"] {
+        let all = |found: Captures<'_>| {
+            ["lead", "tail"]
+                .map(|name| found.name(name).map(|group| group.range()))
+                .into_iter()
+                .chain([found.get(0).map(|whole| whole.range())])
+                .collect::<Vec<_>>()
+        };
+        let expected: Vec<_> = one.captures_iter(haystack).map(all).collect();
+        assert_eq!(
+            split.captures_iter(haystack).map(all).collect::<Vec<_>>(),
+            expected,
+            "{haystack:?}"
+        );
+        for start in 0..=haystack.len() {
+            assert_eq!(
+                split.captures_at(haystack, start).map(all),
+                one.captures_at(haystack, start).map(all),
+                "{haystack:?} at {start}"
+            );
+        }
+    }
+    let names: Vec<_> = split.capture_names().flatten().collect();
+    assert_eq!(names, ["lead", "tail"]);
+}
+

@@ -1422,7 +1422,13 @@ parts.flat = '\b(?:кв|КВ|оф|ОФ|пом|ПОМ|помещ|ПОМЕЩ|ко�
 # alone, or an index and a city with no street, is no match here.
 [[span]]
 category = "ADDRESS"
-pattern = '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:{area}{sep})*(?:{bare_city}{sep}(?:{area}{sep})*)?|{areas}|(?P<lead>{lead})(?:{area}{sep})*{bare_city}{sep})?{street}{sep}(?:{house}|{bare_house})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*(?:{item}+(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}){item}*)*(?P<tail>{tail}))?|(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})*|{areas})(?:{street_mask}[\p{Zs}\t]*,?[\p{Zs}\t]*|,[\p{Zs}\t]*)(?:{street}{sep})?(?:{house}|{flat})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*|(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})+(?:{street}|{box})'
+# The pattern is a list of its three forms, which match as their
+# alternation would: as one regex it comes near the regex size limit.
+pattern = [
+    '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:{area}{sep})*(?:{bare_city}{sep}(?:{area}{sep})*)?|{areas}|(?P<lead>{lead})(?:{area}{sep})*{bare_city}{sep})?{street}{sep}(?:{house}|{bare_house})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*(?:{item}+(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}){item}*)*(?P<tail>{tail}))?',
+    '(?:(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})*|{areas})(?:{street_mask}[\p{Zs}\t]*,?[\p{Zs}\t]*|,[\p{Zs}\t]*)(?:{street}{sep})?(?:{house}|{flat})(?:(?:{sep}|[\p{Zs}\t]+)(?:{building}|{flat}))*',
+    '(?:(?:{country}|{gsp})[\p{Zs}\t]*,?[\p{Zs}\t]*)?{index}{sep}(?:(?:{area}|{bare_city}){sep})+(?:{street}|{box})',
+]
 parts.lead = '(?m:^)[\p{Zs}\t]*|[:|>(«"—–;,][\p{Zs}\t]*|\b\p{Ll}[\p{Ll}-]*[\p{Zs}\t]+'
 # A list ends its field: a line's end, "|", "<", ";", a closing bracket or
 # quote, a full stop or a dash before no digit ("кв. 1, 2." but not "кв.
