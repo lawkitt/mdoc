@@ -33,6 +33,9 @@
 #             name with them is that person (#377)
 #   ocr_company_words lowercase words that keep such a span a company's
 #             ("legal", "bank"), as read back
+#   ocr_person_words regexes for a read-back word after the first, lowercase
+#             and whole, that makes such a span a person's alone (a
+#             patronymic)
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.

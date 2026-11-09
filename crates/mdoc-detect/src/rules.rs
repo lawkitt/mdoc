@@ -104,6 +104,10 @@ struct File {
     /// back ("legal", "банк").
     #[serde(default)]
     ocr_company_words: Vec<String>,
+    /// Regexes for a read-back word, lowercase, that makes such a name a
+    /// person's on its own: a patronymic ("ефимовна").
+    #[serde(default)]
+    ocr_person_words: Vec<String>,
     #[serde(default)]
     never: Vec<NeverEntry>,
     #[serde(default)]
@@ -518,6 +522,8 @@ pub(crate) struct Pack {
     ocr_letters: Vec<(char, Vec<char>)>,
     /// `ocr_company_words`.
     ocr_company_words: std::collections::HashSet<String>,
+    /// `ocr_person_words`, each anchored to a whole word.
+    ocr_person_words: Vec<Regex>,
     never: Vec<Never>,
     /// Generic nouns a document may define as a term (see `DefinedEntry`).
     defined: Vec<Defined>,
@@ -1529,6 +1535,7 @@ impl Pack {
             initials_never: Vec::new(),
             ocr_letters: Vec::new(),
             ocr_company_words: std::collections::HashSet::new(),
+            ocr_person_words: Vec::new(),
             never: Vec::new(),
             defined: Vec::new(),
             shapes: Vec::new(),
@@ -1627,6 +1634,11 @@ impl Pack {
                 return Err(format!("{name}: ocr_company_words needs lowercase words"));
             }
             pack.ocr_company_words.extend(file.ocr_company_words);
+            for pattern in &file.ocr_person_words {
+                let regex = Regex::new(&rust_classes(&format!("^(?:{pattern})$")))
+                    .map_err(|e| format!("{name}: ocr_person_words {pattern:?}: {e}"))?;
+                pack.ocr_person_words.push(regex);
+            }
             for (index, entry) in file.never.into_iter().enumerate() {
                 let at = |problem: String| format!("{name}: never #{}: {problem}", index + 1);
                 let ending = match (entry.form, entry.ending) {
@@ -5204,19 +5216,35 @@ impl Pack {
         found
     }
 
-    /// Whether a model organization's `text` is a person's name OCR
-    /// damaged (#377): two or three words, each a capitalized name word or
-    /// initials ("A.", "Н.Е."), one of them a name word with a digit
-    /// between two letters, whose digits read back as `ocr_letters` make
-    /// a person's name of the PERSON shape ("A1ice M0rgan" is "Alice
-    /// Morgan"). Never with a legal form or an `ocr_company_words` word,
-    /// as written or read back, nor where another of the document's model
-    /// `organizations`, read back, is a longer company starting with it
-    /// ("M0rgan Stanley" beside "Morgan Stanley Ltd").
-    pub(crate) fn ocr_person(&self, text: &str, organizations: &[&str]) -> bool {
+    /// Whether the model organization at `range` of `document` (the view's
+    /// text) is a person's name OCR damaged (#377): two or three words,
+    /// each a capitalized name word or initials ("A.", "Н.Е."), one of them
+    /// a name word with a digit between two letters, whose digits read
+    /// back as `ocr_letters` make a person's name of the PERSON shape. Never
+    /// with a legal form or an `ocr_company_words` word, as written or read
+    /// back, nor where another of the document's model `organizations`,
+    /// read back, starts with it ("M0rgan Stanley" beside "Morgan Stanley
+    /// Ltd" or "Morgan Stanley").
+    ///
+    /// A name of a person's own form is one alone: initials beside a
+    /// surname ("J. Sm1th", «Ко3лов И. П.»), a surname, a comma and a name
+    /// ("M00re, Alice"), or an `ocr_person_words` word («Ефим0вна»). Plain
+    /// capitalized words ("A1ice M0rgan", but also "G0ldman Sachs") need
+    /// the document's evidence of a person: a person's title right before
+    /// them, an email whose local part holds each of their words
+    /// ("alice.morgan@…"), or the model's person (`people`) with the same
+    /// words or their last one.
+    pub(crate) fn ocr_person(
+        &self,
+        document: &str,
+        range: std::ops::Range<usize>,
+        organizations: &[&str],
+        people: &[&str],
+    ) -> bool {
         if self.ocr_letters.is_empty() {
             return false;
         }
+        let text = &document[range.clone()];
         let tokens: Vec<&str> = text
             .trim_matches(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
             .split_whitespace()
@@ -5233,10 +5261,14 @@ impl Pack {
                     .all(|pair| pair[0].is_uppercase() && pair[1] == '.')
         };
         let mut read = Vec::new();
+        // Each name word as written and read back, lowercase.
+        let mut names: Vec<(String, String)> = Vec::new();
         let mut damaged = false;
+        let mut alone = false;
         let last = tokens.len() - 1;
         for (index, token) in tokens.iter().enumerate() {
             if initials(token) {
+                alone = true;
                 read.push((*token).to_owned());
                 continue;
             }
@@ -5244,13 +5276,24 @@ impl Pack {
             // period after the last word.
             let word = if index == last {
                 token.strip_suffix('.').unwrap_or(token)
+            } else if let Some(word) = token.strip_suffix(',') {
+                alone = true;
+                word
             } else {
-                token.strip_suffix(',').unwrap_or(token)
+                token
             };
             let Some(name) = self.ocr_name_word(word) else {
                 return false;
             };
             damaged |= digit_inside(word);
+            let lower = name.to_lowercase();
+            // A patronymic follows a name: «М0сквич Авто» is a car's.
+            alone |= index > 0
+                && self
+                    .ocr_person_words
+                    .iter()
+                    .any(|pattern| pattern.is_match(&lower));
+            names.push((word.to_lowercase(), lower));
             read.push(name);
         }
         if !damaged {
@@ -5280,13 +5323,40 @@ impl Pack {
         if words.iter().any(company) || lower(text).iter().any(company) {
             return false;
         }
-        let longer = organizations.iter().any(|other| {
-            let other = lower(other);
-            other.len() > words.len() && other.starts_with(&words)
+        // Another span of this wording, damaged alike, is no other company.
+        let named_company = organizations.iter().any(|other| {
+            *other != text && {
+                let other = lower(other);
+                other.len() >= words.len() && other.starts_with(&words)
+            }
         });
-        !longer
-            && self.unlabelled_shape(&read, Category::Person)
-            && self.identifying_named(&read, Category::Person, &|_| false, false)
+        if named_company
+            || !self.unlabelled_shape(&read, Category::Person)
+            || !self.identifying_named(&read, Category::Person, &|_| false, false)
+        {
+            return false;
+        }
+        alone || self.titled(document, range.start) || {
+            let surname = &names.last().expect("a damaged name word").1;
+            people.iter().any(|person| {
+                let person = lower(person);
+                person == words || person.contains(surname)
+            }) || {
+                static EMAIL: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+                    Regex::new(r"([\p{L}\p{N}._%+-]+)@[\p{L}\p{N}-]+\.")
+                        .expect("constant email pattern")
+                });
+                EMAIL.captures_iter(document).any(|captures| {
+                    let local: Vec<String> = captures[1]
+                        .split(|c: char| !c.is_alphanumeric())
+                        .map(str::to_lowercase)
+                        .collect();
+                    names
+                        .iter()
+                        .all(|(written, read)| local.contains(written) || local.contains(read))
+                })
+            }
+        }
     }
 
     /// `word` with its digits read back as `ocr_letters` letters, when that
