@@ -2594,6 +2594,8 @@ mod tests {
         // count as another value in the column.
         let blank = "| Week | Code | Note |\n|---|---|---|\n| 1 | JB |   |\n| 2 | EH |\u{a0}|\n|   | EH | |\n";
         assert_eq!(found(blank), ["JB", "EH", "EH"]);
+        let gap = "| Week | Code |\n|---|---|\n| 1 | JB |\n| 2 |   |\n| 3 | EH |\n";
+        assert_eq!(found(gap), ["JB", "EH"]);
         assert_eq!(found("| Week | Lead |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
         assert_eq!(found("| Этап | Исп. |\n|---|---|\n| 1 | JB |\n"), ["JB"]);
         // A country column, a lone row, a code beside a known pair.
