@@ -29,8 +29,8 @@ struct TypingState {
 
 /// Edit mode (ADR 0109): Edit on the document screen (⌘E), typing into the
 /// core as "Typing" steps in the one undo line, discovery and the save once
-/// typing pauses, and Done. In this slice the text is edited with Show
-/// Markdown on; the rendered view stays read-only.
+/// typing pauses, and Done. The text is edited in live preview (markers
+/// hidden but the caret's) or with Show Markdown on.
 extension DocumentViewModel {
     /// Why Edit waits: OCR or Find names runs for this document, and an
     /// edit would make the core throw its result away.

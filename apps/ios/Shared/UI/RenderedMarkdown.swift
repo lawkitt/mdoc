@@ -115,10 +115,16 @@ struct BlockLayout {
     let paragraph: NSParagraphStyle
     /// Whether each UTF-16 unit is a hidden marker.
     private var hidden: [Bool]
+    /// The markers live preview's caret shows (ADR 0109), in UTF-16.
+    let revealed: [NSRange]
+    /// Edit mode: a line of nothing but hidden markers keeps its height, so
+    /// the caret can reach it; tables and fences still fold.
+    let editing: Bool
 
     init(
         text: NSMutableAttributedString, source: NSString, offsets: TextOffsets, styling: MarkdownStyling,
-        hidden ranges: [NSRange], traits: UITraitCollection, body: UIFont, paragraph: NSParagraphStyle
+        hidden ranges: [NSRange], traits: UITraitCollection, body: UIFont, paragraph: NSParagraphStyle,
+        revealed: [NSRange] = [], editing: Bool = false
     ) {
         self.text = text
         self.source = source
@@ -127,6 +133,8 @@ struct BlockLayout {
         self.traits = traits
         self.body = body
         self.paragraph = paragraph
+        self.revealed = revealed
+        self.editing = editing
         var hidden = Array(repeating: false, count: text.length)
         for range in ranges {
             for index in range.location..<min(NSMaxRange(range), hidden.count) {
@@ -374,13 +382,13 @@ struct BlockLayout {
             }
             switch line.role {
             case .plain, .muted:
-                fold = isHidden(range)
+                fold = !editing && isHidden(range)
             case .blank:
                 break
             case .heading(let level):
                 style.paragraphSpacingBefore = [14, 10, 6][min(level, 3) - 1] * scale
                 style.paragraphSpacing = 4 * scale
-                fold = isHidden(range)
+                fold = !editing && isHidden(range)
             case .quote:
                 card(style)
                 style.firstLineHeadIndent = 16 * scale
@@ -397,7 +405,11 @@ struct BlockLayout {
                 decoration.card = (0, colour.withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.18 : 0.08), title, last)
                 style.minimumLineHeight = lineHeight * (title ? 1.5 : 1.1)
                 style.tailIndent = -8 * scale
-                if title {
+                if title && shows(range) {
+                    // The caret's line shows the `[!NOTE]` marker, not the title.
+                    style.firstLineHeadIndent = indent
+                    style.headIndent = indent
+                } else if title {
                     let font = body.withTraits(.traitBold)
                     let name = NSAttributedString(string: Self.name(of: kind), attributes: [.font: font, .foregroundColor: colour])
                     let symbol = UIImage(systemName: Self.symbol(of: kind), withConfiguration: UIImage.SymbolConfiguration(font: body))?
@@ -414,10 +426,16 @@ struct BlockLayout {
                 decorated = true
             case .fence(let open):
                 card(style)
-                // The fence folds to the card's top or bottom padding.
-                style.minimumLineHeight = 8 * scale
-                style.maximumLineHeight = 8 * scale
-                text.addAttributes(MarkdownStyler.hiddenAttributes, range: range)
+                if shows(range) {
+                    // The caret's fence shows its source on the card's edge.
+                    style.firstLineHeadIndent = 12 * scale
+                    style.headIndent = 12 * scale
+                } else {
+                    // The fence folds to the card's top or bottom padding.
+                    style.minimumLineHeight = 8 * scale
+                    style.maximumLineHeight = 8 * scale
+                    text.addAttributes(MarkdownStyler.hiddenAttributes, range: range)
+                }
                 decoration.card = (0, resolved(.secondarySystemBackground), open, !open)
                 decorated = true
             case .code:
@@ -429,13 +447,22 @@ struct BlockLayout {
                 decorated = true
             case .rule:
                 style.minimumLineHeight = lineHeight
-                decoration.rule = resolved(.separator)
-                decorated = true
+                // The caret's rule shows its source instead.
+                if !shows(range) {
+                    decoration.rule = resolved(.separator)
+                    decorated = true
+                }
             case .list(let item):
                 let x = CGFloat(item.depth) * 22 * scale
                 let column: CGFloat
                 let marker = resolved(.secondaryLabel)
-                if let checked = item.task {
+                let source = shows(range)
+                if source {
+                    // The caret's line shows its marker where the label was;
+                    // wrapped lines keep the body's indent.
+                    let width = item.list.flatMap { labelWidths[$0] } ?? labelWidth(item.label)
+                    column = item.task == nil ? max(width + 6 * scale, 18 * scale) : ceil(body.capHeight * 1.25) + 8 * scale
+                } else if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
                     decoration.task = (checked, x, size, marker, resolved(.tintColor), resolved(.onAccent))
                     column = size + 8 * scale
@@ -445,10 +472,10 @@ struct BlockLayout {
                     decoration.label = (label, x)
                     column = max(width + 6 * scale, 18 * scale)
                 }
-                style.firstLineHeadIndent = x + column
+                style.firstLineHeadIndent = source ? x : x + column
                 style.headIndent = x + column
                 style.minimumLineHeight = lineHeight
-                decorated = true
+                decorated = !source
             case .table(let table, let anchor):
                 if anchor, let grid = laidOut[tableRanges[table].location] {
                     text.addAttributes(MarkdownStyler.hiddenAttributes, range: range)
@@ -469,6 +496,8 @@ struct BlockLayout {
             for (image, alt) in images where NSLocationInRange(image.location, range) && image.length > 2 {
                 if case .table = line.role { continue }
                 if case .code = line.role { continue }
+                // The caret's image shows its syntax, not a chip.
+                if revealed.contains(where: { NSIntersectionRange($0, image).length > 0 }) { continue }
                 decoration.chips.append(chip(in: text, image: image, alt: alt, font: body, paragraph: range.location))
                 decorated = true
                 fold = false
@@ -518,6 +547,15 @@ struct BlockLayout {
     private func card(_ style: NSMutableParagraphStyle) {
         style.paragraphSpacing = 0
         style.paragraphSpacingBefore = 0
+    }
+
+    /// Whether the caret shows this line's first marker (ADR 0109): its line
+    /// prefix, or the whole fence or rule.
+    private func shows(_ line: NSRange) -> Bool {
+        guard !revealed.isEmpty else { return false }
+        var first = line.location
+        while first < NSMaxRange(line), [0x20, 0x09].contains(source.character(at: first)) { first += 1 }
+        return revealed.contains { NSLocationInRange(first, $0) }
     }
 
     /// Whether every visible character of a line is a hidden marker.
@@ -812,7 +850,8 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
 /// sideways when wider than the text column, with a fade at the edge that
 /// has more. VoiceOver reads it as a data table.
 final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibilityContainerDataTable {
-    let table: RenderedTable
+    /// The table drawn; edit mode moves its place as text before it changes.
+    var table: RenderedTable
     private(set) var cells: [[CellTextView]] = []
     private let grid: GridView
     private let fade = CAGradientLayer()
@@ -876,6 +915,39 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
 
     /// A horizontal offset to return to once the grid has its frame.
     var restoredOffset: CGFloat?
+
+    /// Edit mode (ADR 0109): cells are not edited in this slice, so they take
+    /// no touches; a tap on the grid runs this (the caret goes after the
+    /// table). Nil outside edit mode, where cells are selectable.
+    var onTap: (() -> Void)? {
+        didSet {
+            for cell in cells.joined() { cell.isUserInteractionEnabled = onTap == nil }
+            if onTap != nil, tap == nil {
+                let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+                addGestureRecognizer(tap)
+                self.tap = tap
+            }
+            tap?.isEnabled = onTap != nil
+        }
+    }
+
+    private var tap: UITapGestureRecognizer?
+
+    @objc private func tapped() {
+        onTap?()
+    }
+
+    /// Moves the table's place by `delta` UTF-16 units: text before it changed.
+    func shift(by delta: Int) {
+        table.anchor += delta
+        table.range.location += delta
+        for (row, views) in cells.enumerated() {
+            for (column, view) in views.enumerated() {
+                view.location += delta
+                table.rows[row][column].location += delta
+            }
+        }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -1033,24 +1105,54 @@ class RenderedTextView: UITextView, NSTextLayoutManagerDelegate {
     func show(_ document: RenderedDocument, width: CGFloat) {
         attributedText = document.text
         shownWidth = width
-        // Restyling (a candidate opened or decided) keeps each table where
-        // the reader scrolled it.
+        setTables(document.tables)
+    }
+
+    /// Edit mode's tap on a table (ADR 0109): nil outside edit mode, where
+    /// cells are selectable.
+    var onTableTap: ((MarkdownTableView) -> Void)? {
+        didSet {
+            for view in tableViews { connectTap(view) }
+        }
+    }
+
+    private func connectTap(_ view: MarkdownTableView) {
+        view.onTap = onTableTap.map { tap in { [weak view] in if let view { tap(view) } } }
+    }
+
+    /// Lays `tables` over the text, in place of the grids shown. Restyling
+    /// (a candidate opened or decided) keeps each table where the reader
+    /// scrolled it.
+    func setTables(_ tables: [RenderedTable]) {
+        replaceTables(in: nil, with: tables)
+    }
+
+    /// Replaces the grids of the tables inside `range` (UTF-16; every grid
+    /// when nil) with `tables`: edit mode restyles one block at a time.
+    func replaceTables(in range: NSRange?, with tables: [RenderedTable]) {
         var scrolled: [Int: CGFloat] = [:]
+        var kept: [MarkdownTableView] = []
         for view in tableViews {
+            if let range, NSIntersectionRange(range, view.table.range).length == 0 && !NSLocationInRange(view.table.anchor, range) {
+                kept.append(view)
+                continue
+            }
             scrolled[view.table.anchor] = view.contentOffset.x
             view.removeFromSuperview()
         }
-        tableViews = document.tables.map { table in
+        let added = tables.map { table in
             let view = MarkdownTableView(table: table) { [weak self] cell in
                 cell.textLayoutManager?.delegate = self
                 self?.configureCell?(cell)
             }
             addSubview(view)
+            connectTap(view)
             if let x = scrolled[table.anchor] {
                 view.restoredOffset = x
             }
             return view
         }
+        tableViews = (kept + added).sorted { $0.table.anchor < $1.table.anchor }
         setNeedsLayout()
     }
 

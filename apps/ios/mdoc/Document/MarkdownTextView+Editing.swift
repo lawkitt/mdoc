@@ -88,13 +88,69 @@ extension MarkdownTextView.Coordinator {
             guard let self, let view, let actions else { return }
             self.resync(view, core: actions.coreText())
         }
+        bridge.onApplied = { [weak self, weak view] edits in
+            guard let self, let view else { return }
+            self.restyle(after: edits, in: view)
+        }
+        let rendered = parent.rendered
+        bridge.structural = { [weak view] key, range, selection in
+            guard let view else { return .native }
+            return StructuralKeys.outcome(
+                key, text: view.textStorage.string as NSString, selection: selection, native: range, rendered: rendered,
+                // A table and the line breaks around it: joining a line to
+                // a row would change the table.
+                protected: rendered ? view.tableViews.map { NSRange(location: max($0.table.range.location - 1, 0), length: $0.table.range.length + 2) } : [])
+        }
+        view.hidesMarkers = parent.rendered
+        view.onTableTap = actions == nil ? nil : { [weak view] table in
+            // Tables are not edited in this slice: the caret goes after one.
+            guard let view else { return }
+            let text = view.textStorage.string as NSString
+            var after = min(NSMaxRange(table.table.range), text.length)
+            if after < text.length { after = NSMaxRange(text.lineRange(for: NSRange(location: after, length: 0))) }
+            if !view.isFirstResponder { view.becomeFirstResponder() }
+            view.selectedRange = NSRange(location: after, length: 0)
+        }
+    }
+
+    /// What the styler needs from the view now.
+    func look(_ view: CandidateTextView) -> LivePreview.Look {
+        LivePreview.Look(traits: view.traitCollection, rendered: parent.rendered, width: view.textWidth > 0 ? view.textWidth : nil)
+    }
+
+    /// The core took typed edits: the block around them restyles in place,
+    /// or the whole text when more than a block changed.
+    func restyle(after edits: [AppliedEdit], in view: CandidateTextView) {
+        guard view.markedTextRange == nil else {
+            restyleAfterComposing = true
+            return
+        }
+        if !livePreview.edited(edits, in: view, look: look(view)) {
+            restyleWhole(view)
+        }
+        lastSelection = view.selectedRange
+        view.invalidateSpoken()
+        updateTypingAttributes(view)
+    }
+
+    /// Restyles the whole text as the view has it, with the candidates as
+    /// edits left them: a fence typed or removed, a Replace All.
+    func restyleWhole(_ view: CandidateTextView) {
+        let text = view.textStorage.string
+        var styler = MarkdownStyler(
+            traits: view.traitCollection, selected: nil, scoped: [], rendered: parent.rendered,
+            width: view.textWidth > 0 ? view.textWidth : nil)
+        styler.editing = true
+        let document = styler.document(markdown: text, styling: MarkdownStyling(markdown: text), candidates: livePreview.candidates)
+        showEditing(document.text, tables: parent.rendered ? document.tables : [], in: view)
+        livePreview.selectionChanged(in: view, look: look(view), force: true)
     }
 
     /// Shows `styled` while editing: when the view's string is the same,
     /// only the attributes that differ change; when the core changed the
     /// text (undo, redo, a case rejoined), the stretch that differs is
     /// replaced and the caret kept beside it. Waits while text is marked.
-    func showEditing(_ styled: NSAttributedString, in view: CandidateTextView) {
+    func showEditing(_ styled: NSAttributedString, tables: [RenderedTable]? = nil, in view: CandidateTextView) {
         guard view.markedTextRange == nil else {
             restyleAfterComposing = true
             return
@@ -113,29 +169,40 @@ extension MarkdownTextView.Coordinator {
                 selection = NSRange(location: change.range.location + (change.text as NSString).length, length: 0)
             }
         }
-        let whole = NSRange(location: 0, length: styled.length)
-        styled.enumerateAttributes(in: whole) { attributes, run, _ in
-            var current = NSRange()
-            let old = storage.attributes(at: run.location, longestEffectiveRange: &current, in: run)
-            if current != run || !NSDictionary(dictionary: old).isEqual(to: attributes) {
-                storage.setAttributes(attributes, range: run)
-            }
-        }
         storage.endEditing()
+        LivePreview.apply(styled, at: 0, in: storage)
+        if let tables { view.setTables(tables) }
         let location = min(selection.location, storage.length)
         view.selectedRange = NSRange(location: location, length: min(selection.length, storage.length - location))
+        lastSelection = view.selectedRange
         bridge.reset(to: styled.string)
+        view.invalidateSpoken()
         updateTypingAttributes(view)
     }
 
     /// Typed text takes the look of the text before the caret, without a
-    /// candidate's: until the pause restyles it, a new word is no name.
+    /// candidate's: until the pause restyles it, a new word is no name. A
+    /// hidden marker's look is never taken: the shown character nearest
+    /// the caret on its line gives it.
     func updateTypingAttributes(_ view: UITextView) {
         let storage = view.textStorage
         guard storage.length > 0 else { return }
-        let location = max(0, min(view.selectedRange.location, storage.length) - 1)
+        let caret = min(view.selectedRange.location, storage.length)
+        let line = (storage.string as NSString).lineRange(for: NSRange(location: caret, length: 0))
+        func shown(_ index: Int) -> Bool {
+            index >= 0 && index < storage.length && storage.attribute(.mdocHidden, at: index, effectiveRange: nil) == nil
+        }
+        var location = max(0, caret - 1)
+        if !shown(location) {
+            location = (line.location..<caret).reversed().first(where: shown)
+                ?? (caret..<NSMaxRange(line)).first(where: shown)
+                ?? location
+        }
         var attributes = storage.attributes(at: location, effectiveRange: nil)
         for key in MarkdownStyler.candidateKeys { attributes[key] = nil }
+        if attributes[.mdocHidden] != nil {
+            attributes = [.font: MarkdownStyler.font(.body, traits: view.traitCollection), .foregroundColor: UIColor.label]
+        }
         view.typingAttributes = attributes
     }
 
@@ -147,6 +214,8 @@ extension MarkdownTextView.Coordinator {
             restored.replaceCharacters(in: NSRange(location: 0, length: restored.length), with: core)
             showEditing(restored, in: view)
         }
+        // Where the text changed is not known: all of it restyles.
+        restyleWhole(view)
     }
 
     // MARK: Text view delegate, while editing
@@ -166,9 +235,25 @@ extension MarkdownTextView.Coordinator {
         }
     }
 
+    /// A caret moved by the reader: out of a hidden marker run (live
+    /// preview), the typing step ends, and the reveal follows it.
     func textViewDidChangeSelection(_ textView: UITextView) {
-        guard textView.isEditable else { return }
+        guard textView.isEditable, let view = textView as? CandidateTextView else { return }
+        let moved = !bridge.isChanging && view.markedTextRange == nil
+        if moved, parent.rendered, !snapping {
+            let snapped = CaretSnap.snap(view.selectedRange, from: lastSelection, in: view.textStorage)
+            if snapped != view.selectedRange {
+                snapping = true
+                view.selectedRange = snapped
+                snapping = false
+            }
+        }
         bridge.selectionChanged(textView)
+        if moved {
+            lastSelection = view.selectedRange
+            livePreview.selectionChanged(in: view, look: look(view))
+            view.invalidateSpoken()
+        }
         updateTypingAttributes(textView)
     }
 }
@@ -250,13 +335,20 @@ extension CandidateTextView {
         becomeFirstResponder()
     }
 
+    /// The selected source, as typed: never what VoiceOver hears.
+    private var selectedSource: String? {
+        let range = selectedRange
+        guard range.length > 0, NSMaxRange(range) <= textStorage.length else { return nil }
+        return (textStorage.string as NSString).substring(with: range)
+    }
+
     func copySelection() {
-        guard let range = selectedTextRange, !range.isEmpty, let text = text(in: range) else { return }
+        guard let text = selectedSource else { return }
         InAppClipboard.shared.write(text)
     }
 
     func cutSelection() {
-        guard let range = selectedTextRange, !range.isEmpty, let text = text(in: range) else { return }
+        guard let range = selectedTextRange, !range.isEmpty, let text = selectedSource else { return }
         InAppClipboard.shared.write(text)
         replace(range, withText: "")
         onEdited?()

@@ -171,7 +171,9 @@ fn delete_range(range: Range<usize>, caret: usize) -> EditResult {
 /// ([`delete::fmt_delete_range`]); under the phone's reveal rule
 /// ([`crate::reveal::RevealRule::CaretSpan`]) the construct the caret
 /// touches shows its markers, so the character before the caret is always
-/// visible and is the one deleted.
+/// visible and is the one deleted. In live preview, deleting the last
+/// character of a formatting construct (`**a**`) deletes its markers too,
+/// as desktop does.
 pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Option<EditResult> {
     if selection.start != selection.end {
         let sel = sorted(&selection);
@@ -200,7 +202,37 @@ pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Optio
         return Some(delete_range(range, caret));
     }
     let prev = previous_boundary(source, off);
-    (prev != off).then(|| delete_range(prev..off, prev))
+    (prev != off).then(|| {
+        let range = rendered
+            .then(|| emptied_pair(source, blocks, prev..off))
+            .flatten()
+            .unwrap_or(prev..off);
+        let caret = range.start;
+        delete_range(range, caret)
+    })
+}
+
+/// Deleting `deleted`, one character, empties a formatting construct (its
+/// opening marker ends where the character starts and its closing marker
+/// starts where it ends): the construct's whole range, so no empty `****`
+/// is left behind, as desktop deletes it. `None` otherwise, and in code and
+/// math, where markers are literal text.
+fn emptied_pair(source: &str, blocks: Blocks, deleted: Range<usize>) -> Option<Range<usize>> {
+    let (row, _) = row_col(source, deleted.start);
+    if blocks.row_is_literal(source, row) {
+        return None;
+    }
+    let start = line_starts(source)[row];
+    let end = line_end(source, row);
+    if deleted.end > end {
+        return None;
+    }
+    crate::markdown::fmt_marker_pairs(&source[start..end])
+        .into_iter()
+        .find(|(open, close)| {
+            open.end + start == deleted.start && close.start + start == deleted.end
+        })
+        .map(|(open, close)| open.start + start..close.end + start)
 }
 
 /// ⌦: as [`backspace`], forward — a rendered image row, the paragraph break
@@ -231,7 +263,14 @@ pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> 
         return Some(delete_range(range, caret));
     }
     let next = next_boundary(source, off);
-    (next != off).then(|| delete_range(off..next, off))
+    (next != off).then(|| {
+        let range = rendered
+            .then(|| emptied_pair(source, blocks, off..next))
+            .flatten()
+            .unwrap_or(off..next);
+        let caret = range.start;
+        delete_range(range, caret)
+    })
 }
 
 /// Toggle `format` around the selection; the same text stays selected.
@@ -487,6 +526,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn an_emptied_construct_goes_with_its_last_character() {
+        assert_eq!(
+            run("a **b** c", backspace("a **b** c", caret(5), true)),
+            Some(("a  c".into(), caret(2)))
+        );
+        assert_eq!(
+            run("x ~~y~~", delete_forward("x ~~y~~", caret(4), true)),
+            Some(("x ".into(), caret(2)))
+        );
+        // Not emptied, Show Markdown, or literal code: one character.
+        assert_eq!(
+            run("**bc**", backspace("**bc**", caret(4), true))
+                .unwrap()
+                .0,
+            "**b**"
+        );
+        assert_eq!(
+            run("**b**", backspace("**b**", caret(3), false)).unwrap().0,
+            "****"
+        );
+        let s = "```\n**b**\n```";
+        assert_eq!(
+            run(s, backspace(s, caret(7), true)).unwrap().0,
+            "```\n****\n```"
+        );
     }
 
     #[test]

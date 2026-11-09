@@ -62,11 +62,13 @@ final class EditModeTests: XCTestCase {
         XCTAssertTrue(harness.view.isEditable)
     }
 
-    /// One change as UIKit makes it: announced, applied, then reported.
+    /// One change as UIKit makes it: announced, applied, then reported. A
+    /// structural key (Return, ⌫ or ⌦ of one character) the editor core
+    /// made itself is refused, and UIKit applies nothing.
     private func change(_ harness: Harness, _ range: NSRange, _ text: String, announced: Bool = true) {
         let view = harness.view
-        if announced {
-            XCTAssertTrue(harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text))
+        if announced, !harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text) {
+            return
         }
         view.textStorage.replaceCharacters(in: range, with: text)
         view.selectedRange = NSRange(location: range.location + (text as NSString).length, length: 0)

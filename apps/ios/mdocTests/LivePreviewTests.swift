@@ -1,0 +1,474 @@
+import MdocFFI
+import UIKit
+import XCTest
+@testable import mdoc
+
+/// Live-preview editing (ADR 0109, slice 3), on the real core: the rendered
+/// view is edited with its string staying the source; the caret's construct
+/// and line prefix show dimmed and the rest stays hidden; the caret never
+/// rests in a hidden run and skips tables; Return, ⌫ and ⌦ are the editor
+/// core's, one core edit each; and each keystroke restyles only its block,
+/// to exactly what a whole restyle draws.
+@MainActor
+final class LivePreviewTests: XCTestCase {
+    static let text = """
+        # Lease
+
+        The **tenant** pays [rent](https://example.com) monthly.
+
+        - first item
+        - [ ] a task
+
+        > quoted words
+
+        | A | B |
+        | --- | --- |
+        | 1 | 2 |
+
+        ![](scan.png)
+
+        ```
+        code **literal**
+        ```
+
+        ---
+
+        Last line.
+        """
+
+    struct Harness {
+        let session: any mdoc.DocumentSession
+        let model: DocumentViewModel
+        let window: UIWindow
+        let view: CandidateTextView
+        let coordinator: MarkdownTextView.Coordinator
+        let rendered: Bool
+
+        var shown: String { view.textStorage.string }
+        var string: NSString { view.textStorage.string as NSString }
+    }
+
+    func harness(text: String = text, rendered: Bool = true) throws -> Harness {
+        let (core, storage) = try Fixture.core()
+        let session = try core.library.importDocument(.text(text), title: "Lease", into: .newCase(name: "Lease"))
+        _ = try session.recognize(observer: TestObserver())
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: storage)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let view = CandidateTextView()
+        view.frame = window.bounds
+        window.addSubview(view)
+        window.isHidden = false
+        let coordinator = MarkdownTextView.Coordinator(parent: Self.textView(model, rendered: rendered))
+        coordinator.attach(to: view)
+        view.delegate = coordinator
+        let harness = Harness(
+            session: session, model: model, window: window, view: view, coordinator: coordinator, rendered: rendered)
+        show(harness)
+        harness.model.enterEditMode()
+        show(harness)
+        XCTAssertTrue(view.isEditable)
+        return harness
+    }
+
+    static func textView(_ model: DocumentViewModel, rendered: Bool) -> MarkdownTextView {
+        MarkdownTextView(
+            snapshot: model.snapshot, selected: nil, rendered: rendered,
+            onCandidate: { _ in }, onReplace: { _ in }, onReviewNext: {},
+            edit: model.isEditing ? EditActions(model) : nil)
+    }
+
+    func show(_ harness: Harness) {
+        harness.coordinator.update(
+            harness.view, with: Self.textView(harness.model, rendered: harness.rendered), dynamicTypeSize: .large,
+            colorScheme: .light)
+        harness.view.layoutIfNeeded()
+    }
+
+    /// The reader puts the caret at `location`.
+    func caret(_ harness: Harness, at location: Int) {
+        harness.view.selectedRange = NSRange(location: location, length: 0)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+    }
+
+    /// One change as UIKit makes it, at the caret; refused when the core
+    /// made it itself.
+    @discardableResult
+    func change(_ harness: Harness, _ range: NSRange, _ text: String) -> Bool {
+        let view = harness.view
+        guard harness.coordinator.textView(view, shouldChangeTextIn: range, replacementText: text) else { return false }
+        view.textStorage.replaceCharacters(in: range, with: text)
+        view.selectedRange = NSRange(location: range.location + (text as NSString).length, length: 0)
+        harness.coordinator.textViewDidChange(view)
+        return true
+    }
+
+    func type(_ harness: Harness, _ text: String) {
+        for character in text {
+            let at = harness.view.selectedRange
+            change(harness, at, String(character))
+        }
+    }
+
+    /// ⌫ as UIKit sends it: the character before the caret.
+    func backspace(_ harness: Harness) {
+        let caret = harness.view.selectedRange.location
+        let range = harness.string.rangeOfComposedCharacterSequence(at: caret - 1)
+        change(harness, range, "")
+    }
+
+    func location(of needle: String, in harness: Harness) -> Int {
+        harness.string.range(of: needle).location
+    }
+
+    func hidden(_ harness: Harness, at location: Int) -> Bool {
+        harness.view.textStorage.attribute(.mdocHidden, at: location, effectiveRange: nil) != nil
+    }
+
+    func decoration(_ harness: Harness, at location: Int) -> LineDecoration? {
+        harness.view.textStorage.attribute(.mdocDecoration, at: location, effectiveRange: nil) as? LineDecoration
+    }
+
+    func coreText(_ harness: Harness) -> String {
+        harness.session.snapshot().markdown
+    }
+
+    // MARK: The reveal rule
+
+    func testTheCaretsBoldShowsItsMarkersDimmed() throws {
+        let harness = try harness()
+        let bold = location(of: "**tenant**", in: harness)
+        let link = location(of: "[rent]", in: harness)
+        XCTAssertTrue(hidden(harness, at: bold), "away from the caret the markers hide")
+        caret(harness, at: bold + 4)
+        for offset in [0, 1, 8, 9] {
+            XCTAssertFalse(hidden(harness, at: bold + offset), "the caret's bold shows its markers")
+            let colour = harness.view.textStorage.attribute(.foregroundColor, at: bold + offset, effectiveRange: nil) as? UIColor
+            XCTAssertEqual(colour, MarkdownStyler.marker, "dimmed")
+        }
+        XCTAssertTrue(hidden(harness, at: link), "the link on the same line keeps its markers hidden")
+        // Leaving the line hides them again.
+        caret(harness, at: (harness.shown as NSString).length)
+        XCTAssertTrue(hidden(harness, at: bold))
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testTheCaretsLineShowsItsPrefix() throws {
+        let harness = try harness()
+        let heading = location(of: "# Lease", in: harness)
+        let item = location(of: "- first", in: harness)
+        let task = location(of: "- [ ] a task", in: harness)
+        caret(harness, at: heading + 4)
+        XCTAssertFalse(hidden(harness, at: heading), "the heading's # shows on its line")
+        XCTAssertTrue(hidden(harness, at: item))
+        XCTAssertNotNil(decoration(harness, at: item)?.label, "another line keeps its bullet")
+        caret(harness, at: item + 5)
+        XCTAssertTrue(hidden(harness, at: heading))
+        XCTAssertFalse(hidden(harness, at: item), "the item's - shows")
+        XCTAssertNil(decoration(harness, at: item)?.label, "and no bullet beside it")
+        caret(harness, at: task + 8)
+        XCTAssertFalse(hidden(harness, at: task + 2), "the task's box shows as source")
+        XCTAssertNil(decoration(harness, at: task)?.task)
+        // A hidden fence line is stepped over, onto its code, where both
+        // fences show their source; a rule on the caret's line shows too.
+        let fence = location(of: "```", in: harness)
+        let code = location(of: "code **literal**", in: harness)
+        let close = location(of: "```\n\n---", in: harness)
+        caret(harness, at: fence + 3)
+        XCTAssertEqual(harness.view.selectedRange.location, code)
+        XCTAssertFalse(hidden(harness, at: fence))
+        XCTAssertFalse(hidden(harness, at: close))
+        caret(harness, at: fence + 3)
+        XCTAssertEqual(harness.view.selectedRange.location, fence + 3, "a shown fence takes the caret")
+        let rule = location(of: "---\n\nLast", in: harness)
+        caret(harness, at: rule + 1)
+        XCTAssertFalse(hidden(harness, at: rule))
+        XCTAssertNil(decoration(harness, at: rule)?.rule)
+    }
+
+    func testVoiceOverDoesNotHearHiddenMarkers() throws {
+        let harness = try harness()
+        caret(harness, at: (harness.shown as NSString).length)
+        let value = try XCTUnwrap(harness.view.accessibilityValue)
+        XCTAssertFalse(value.contains("**tenant**"))
+        XCTAssertTrue(value.contains("tenant"))
+        XCTAssertEqual((value as NSString).length, harness.string.length, "offsets line up")
+        // Copy takes the source, not what VoiceOver hears.
+        let bold = location(of: "**tenant**", in: harness)
+        harness.view.selectedRange = NSRange(location: bold, length: 10)
+        harness.view.copySelection()
+        XCTAssertEqual(InAppClipboard.shared.read(), "**tenant**")
+    }
+
+    // MARK: Caret over hidden markers
+
+    func testTheCaretSnapsOutOfHiddenRuns() throws {
+        let harness = try harness()
+        caret(harness, at: (harness.shown as NSString).length)
+        let bold = location(of: "**tenant**", in: harness)
+        // A tap where the hidden `**` draws lands after it, inside the bold.
+        caret(harness, at: bold)
+        XCTAssertEqual(harness.view.selectedRange.location, bold + 2)
+        XCTAssertFalse(hidden(harness, at: bold), "and the bold reveals")
+        // Onto a hidden line prefix: after it.
+        caret(harness, at: (harness.shown as NSString).length)
+        let item = location(of: "- first", in: harness)
+        caret(harness, at: item)
+        XCTAssertEqual(harness.view.selectedRange.location, item + 2)
+    }
+
+    func testTheCaretSkipsATable() throws {
+        let harness = try harness()
+        let table = location(of: "| A | B |", in: harness)
+        let after = location(of: "\n\n![](scan.png)", in: harness) + 1
+        let before = table - 1
+        XCTAssertTrue(hidden(harness, at: table))
+        XCTAssertFalse(hidden(harness, at: after), "the blank line after the table shows")
+        // Moving down into the table goes past it…
+        caret(harness, at: before - 1)
+        caret(harness, at: table + 2)
+        XCTAssertEqual(harness.view.selectedRange.location, after)
+        // …and moving up into it, before it, onto the blank line above.
+        caret(harness, at: after - 1)
+        XCTAssertEqual(harness.view.selectedRange.location, before)
+        // A tap on a cell puts the caret after the table.
+        let grid = try XCTUnwrap(harness.view.tableViews.first)
+        caret(harness, at: 0)
+        harness.view.onTableTap?(grid)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        XCTAssertEqual(harness.view.selectedRange.location, after)
+        XCTAssertTrue(grid.cells.joined().allSatisfy { !$0.isUserInteractionEnabled }, "cells take no edits")
+    }
+
+    // MARK: Structural keys
+
+    func testReturnContinuesAndEndsAList() throws {
+        let harness = try harness()
+        let end = location(of: "- first item", in: harness) + 12
+        caret(harness, at: end)
+        XCTAssertFalse(change(harness, NSRange(location: end, length: 0), "\n"), "the core makes Return's edit")
+        XCTAssertTrue(harness.shown.contains("- first item\n- \n- [ ] a task"))
+        XCTAssertEqual(harness.view.selectedRange.location, end + 3)
+        XCTAssertEqual(coreText(harness), harness.shown)
+        type(harness, "second")
+        XCTAssertTrue(harness.shown.contains("- first item\n- second\n"))
+        // A task continues as a task; Return on the empty one ends the list.
+        let task = location(of: "- [ ] a task", in: harness) + 12
+        caret(harness, at: task)
+        change(harness, NSRange(location: task, length: 0), "\n")
+        XCTAssertTrue(harness.shown.contains("- [ ] a task\n- [ ] \n"))
+        let empty = harness.view.selectedRange
+        change(harness, empty, "\n")
+        XCTAssertTrue(harness.shown.contains("- [ ] a task\n\n"))
+        XCTAssertFalse(harness.shown.contains("- [ ] \n"))
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testReturnContinuesAQuoteAndNumbers() throws {
+        let harness = try harness(text: "1. one\n\n> said\n")
+        caret(harness, at: 6)
+        change(harness, NSRange(location: 6, length: 0), "\n")
+        XCTAssertTrue(harness.shown.hasPrefix("1. one\n2. "))
+        let quote = location(of: "> said", in: harness) + 6
+        caret(harness, at: quote)
+        change(harness, NSRange(location: quote, length: 0), "\n")
+        XCTAssertTrue(harness.shown.hasSuffix("> said\n>\n> \n"), harness.shown)
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testReturnInCodeIsANewlineAndAFenceDoesNotCloseItself() throws {
+        let harness = try harness(text: "a\n\n```\ncode\n```\n")
+        let code = location(of: "code", in: harness) + 4
+        caret(harness, at: code)
+        change(harness, NSRange(location: code, length: 0), "\n")
+        XCTAssertTrue(harness.shown.contains("code\n\n```"))
+        // A typed opening fence: Return types a newline (the core closes no
+        // fence yet; slice 4 decides).
+        caret(harness, at: 1)
+        type(harness, "\n```")
+        let at = harness.view.selectedRange.location
+        change(harness, NSRange(location: at, length: 0), "\n")
+        XCTAssertTrue(harness.shown.hasPrefix("a\n\n```\n\n"), harness.shown)
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testBackspaceJoinsParagraphsAndEmptiesAPair() throws {
+        let harness = try harness(text: "one\n\ntwo **b** z\n")
+        caret(harness, at: 5)
+        backspace(harness)
+        XCTAssertEqual(harness.shown, "onetwo **b** z\n", "one ⌫ undoes Return's paragraph break")
+        XCTAssertEqual(harness.view.selectedRange.location, 3)
+        // The caret on the bold's letter reveals it; then after the letter.
+        let b = location(of: "b**", in: harness)
+        caret(harness, at: b)
+        caret(harness, at: b + 1)
+        backspace(harness)
+        XCTAssertEqual(harness.shown, "onetwo  z\n", "the emptied bold goes with its letter")
+        XCTAssertEqual(coreText(harness), harness.shown)
+        // Each is one step on the undo line.
+        harness.model.undoTapped()
+        show(harness)
+        XCTAssertEqual(harness.shown, "onetwo **b** z\n")
+    }
+
+    func testDeleteTakesAnImageLineWholeAndLeavesTablesAlone() throws {
+        let harness = try harness()
+        let image = location(of: "![](scan.png)", in: harness)
+        let end = image + 13
+        caret(harness, at: end)
+        backspace(harness)
+        XCTAssertFalse(harness.shown.contains("scan.png"), "the image's line goes whole")
+        XCTAssertEqual(coreText(harness), harness.shown)
+        // ⌫ at the start of the line after a table would join it: nothing.
+        let harness2 = try self.harness(text: "| A |\n| - |\n| 1 |\nnext\n")
+        let next = location(of: "next", in: harness2)
+        let before = harness2.shown
+        harness2.view.selectedRange = NSRange(location: next, length: 0)
+        change(harness2, NSRange(location: next - 1, length: 1), "")
+        XCTAssertEqual(harness2.shown, before)
+    }
+
+    func testStructuralKeysInShowMarkdown() throws {
+        let harness = try harness(text: "- a\n", rendered: false)
+        caret(harness, at: 3)
+        XCTAssertFalse(change(harness, NSRange(location: 3, length: 0), "\n"))
+        XCTAssertEqual(harness.shown, "- a\n- \n")
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testOutcomesAreOneReplacement() {
+        let text = "- a\n- " as NSString
+        XCTAssertEqual(
+            StructuralKeys.outcome(.enter, text: "- a", selection: NSRange(location: 3, length: 0), native: NSRange(location: 3, length: 0), rendered: true),
+            .replace(range: NSRange(location: 3, length: 0), text: "\n- ", selection: NSRange(location: 6, length: 0)))
+        XCTAssertEqual(
+            StructuralKeys.outcome(.enter, text: text, selection: NSRange(location: 6, length: 0), native: NSRange(location: 6, length: 0), rendered: true),
+            .replace(range: NSRange(location: 4, length: 2), text: "\n", selection: NSRange(location: 5, length: 0)))
+        // A plain ⌫ is UIKit's own; past a surrogate pair the offsets stay UTF-16.
+        XCTAssertEqual(
+            StructuralKeys.outcome(.backspace, text: "ab", selection: NSRange(location: 2, length: 0), native: NSRange(location: 1, length: 1), rendered: true),
+            .native)
+        XCTAssertEqual(
+            StructuralKeys.outcome(.enter, text: "😀 - x", selection: NSRange(location: 6, length: 0), native: NSRange(location: 6, length: 0), rendered: true),
+            .replace(range: NSRange(location: 6, length: 0), text: "\n\n", selection: NSRange(location: 8, length: 0)))
+        XCTAssertNil(StructuralKey(range: NSRange(location: 0, length: 3), text: "", selection: NSRange(location: 3, length: 0), in: "abc"),
+                     "holding ⌫ deletes a word: UIKit's")
+    }
+
+    // MARK: Incremental restyle
+
+    /// Each keystroke restyles its block and the caret's lines, and the
+    /// view ends up exactly as a whole restyle draws it.
+    func testARestyleTouchesOnlyTheBlockAndMatchesAWholeOne() throws {
+        let paragraphs = (1...40).map { "Paragraph \($0) has **bold** and *italic* words." }.joined(separator: "\n\n")
+        let harness = try harness(text: Self.text + "\n\n" + paragraphs + "\n")
+        let rebuilds = harness.coordinator.rebuilds
+        let target = location(of: "Paragraph 20 has", in: harness) + 10
+        caret(harness, at: target)
+        type(harness, "x**y**")
+        XCTAssertEqual(harness.coordinator.rebuilds, rebuilds, "no whole rebuild per keystroke")
+        let styled = harness.coordinator.livePreview.lastStyled
+        XCTAssertFalse(styled.isEmpty)
+        XCTAssertTrue(styled.allSatisfy { $0.length < 120 }, "only the paragraph: \(styled)")
+        assertMatchesAWholeRestyle(harness)
+    }
+
+    /// Random edits and caret moves in live preview: the core's text stays
+    /// the view's string, saves write exactly it, and the attributes stay a
+    /// whole restyle's (ADR 0109's acceptance).
+    func testTypingFuzzInLivePreview() throws {
+        let harness = try harness()
+        var random = SeededRandom(seed: 0x6c697665)
+        let pieces = ["a", " ", "\n", "**", "*", "#", "# ", "- ", "> ", "`", "```", "[x](y)", "é", "😀", "|", "---"]
+        for step in 1...300 {
+            let length = harness.string.length
+            func boundary(_ value: Int) -> Int {
+                guard value < length else { return length }
+                return harness.string.rangeOfComposedCharacterSequence(at: value).location
+            }
+            let at = boundary(random.next(below: length + 1))
+            caret(harness, at: at)
+            let caret = harness.view.selectedRange.location
+            let op = random.next(below: 10)
+            switch op {
+            case 0...4:
+                type(harness, pieces[random.next(below: pieces.count)])
+            case 5, 6:
+                if caret > 0 { backspace(harness) }
+            case 7:
+                if caret < harness.string.length {
+                    change(harness, harness.string.rangeOfComposedCharacterSequence(at: caret), "")
+                }
+            case 8:
+                harness.model.undoTapped()
+                show(harness)
+            default:
+                harness.model.redoTapped()
+                show(harness)
+            }
+            let core = harness.session.snapshot()
+            if core.markdown != harness.shown {
+                XCTFail("step \(step) op \(op) at \(at) caret \(caret): core \(core.markdown.debugDescription) view \(harness.shown.debugDescription)")
+                return
+            }
+            if harness.coordinator.content?.textRevision != core.textRevision {
+                XCTFail("step \(step) op \(op) at \(at) caret \(caret): the shown revision lags the core's, \(core.markdown.debugDescription)")
+                return
+            }
+            if step % 50 == 0 {
+                try harness.session.saveChanges()
+                let path = try XCTUnwrap((harness.session as? RealSession)?.path)
+                let saved = try Data(contentsOf: URL(fileURLWithPath: path))
+                XCTAssertEqual(saved, Data(harness.shown.utf8), "saved bytes at step \(step)")
+                assertMatchesAWholeRestyle(harness, "step \(step)")
+            }
+        }
+    }
+
+    /// The view's attributes are what a whole restyle of its text gives,
+    /// with the same reveal.
+    func assertMatchesAWholeRestyle(_ harness: Harness, _ message: String = "", file: StaticString = #filePath, line: UInt = #line) {
+        let text = harness.shown
+        let preview = harness.coordinator.livePreview
+        var styler = MarkdownStyler(
+            traits: harness.view.traitCollection, selected: nil, scoped: [], rendered: harness.rendered,
+            width: harness.view.textWidth)
+        styler.editing = true
+        let styling = MarkdownStyling(markdown: text)
+        styler.revealed = preview.visible + (preview.caretLines.map { LivePreview.shownLines(in: styling, caret: $0) } ?? [])
+        let expected = styler.document(markdown: text, styling: styling, candidates: preview.candidates).text
+        let actual = harness.view.textStorage
+        XCTAssertEqual(expected.length, actual.length, file: file, line: line)
+        for index in 0..<min(expected.length, actual.length) {
+            let want = Self.summary(expected.attributes(at: index, effectiveRange: nil))
+            let got = Self.summary(actual.attributes(at: index, effectiveRange: nil))
+            if want != got {
+                let around = (text as NSString).substring(with: (text as NSString).lineRange(for: NSRange(location: index, length: 0)))
+                XCTFail("\(message) at \(index) in \(around.debugDescription): want \(want), got \(got)", file: file, line: line)
+                return
+            }
+        }
+    }
+
+    /// What a character's attributes draw, comparable.
+    static func summary(_ attributes: [NSAttributedString.Key: Any]) -> String {
+        let traits = UITraitCollection(userInterfaceStyle: .light)
+        func colour(_ key: NSAttributedString.Key) -> String {
+            guard let colour = attributes[key] as? UIColor else { return "-" }
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            colour.resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a)
+            return String(format: "%.2f,%.2f,%.2f,%.2f", r, g, b, a)
+        }
+        let font = (attributes[.font] as? UIFont).map { "\($0.fontName) \($0.pointSize)" } ?? "-"
+        let paragraph = (attributes[.paragraphStyle] as? NSParagraphStyle).map {
+            "\($0.firstLineHeadIndent) \($0.headIndent) \($0.minimumLineHeight) \($0.maximumLineHeight) \($0.paragraphSpacing) \($0.paragraphSpacingBefore)"
+        } ?? "-"
+        let decoration = (attributes[.mdocDecoration] as? LineDecoration).map {
+            "label:\($0.label?.text.string ?? "-") task:\($0.task.map { "\($0.checked)" } ?? "-") bar:\($0.bar != nil) card:\($0.card.map { "\($0.top)\($0.bottom)" } ?? "-") title:\($0.title?.text.string ?? "-") rule:\($0.rule != nil) chips:\($0.chips.count)"
+        } ?? "-"
+        return [
+            font, colour(.foregroundColor), colour(.backgroundColor), "\(attributes[.underlineStyle] ?? "-")",
+            "\(attributes[.mdocHidden] != nil)", paragraph, decoration, "\(attributes[.kern] ?? "-")",
+        ].joined(separator: " | ")
+    }
+}

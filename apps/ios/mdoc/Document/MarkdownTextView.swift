@@ -31,15 +31,15 @@ struct MarkdownTextView: UIViewRepresentable {
     var onMenu: (CandidateID) -> Void = { _ in }
     /// A candidate's long-press menu (ADR 0098); nil leaves none.
     var menu: (CandidateID) -> UIMenu? = { _ in nil }
-    /// Edit mode (ADR 0109), with Show Markdown on only in this slice: the
+    /// Edit mode (ADR 0109), in live preview or with Show Markdown on: the
     /// text is editable and typing reaches the core through these. Nil in
     /// review.
     var edit: EditActions?
     /// Bumped to show the system find bar (Replace in edit mode).
     var findBar = 0
 
-    /// The text is edited now: edit actions given, and the source shown.
-    var editing: Bool { edit != nil && !rendered }
+    /// The text is edited now.
+    var editing: Bool { edit != nil }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -173,6 +173,12 @@ struct MarkdownTextView: UIViewRepresentable {
         var restyleAfterComposing = false
         /// The find bar request last shown.
         var shownFindBar = 0
+        /// Edit mode's restyling and reveal (ADR 0109).
+        let livePreview = LivePreview()
+        /// The selection before the latest move, for snapping the caret.
+        var lastSelection: NSRange?
+        /// Setting a snapped selection: its own change is not snapped again.
+        var snapping = false
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -449,10 +455,17 @@ struct MarkdownTextView: UIViewRepresentable {
             if parent.editing {
                 // The view's string is the source while editing: restyled
                 // in place, never replaced (ADR 0109). A snapshot older than
-                // the typing waits for the pause's.
+                // the typing waits for the pause's, and the shown text keeps
+                // its own revision, so a later snapshot of the older text (an
+                // undo) is not taken for what shows.
                 if let latest = parent.edit?.revision(), snapshot.textRevision != latest,
-                   view.textStorage.string != snapshot.markdown { return }
-                showEditing(document.text, in: view)
+                   view.textStorage.string != snapshot.markdown {
+                    content?.textRevision = latest
+                    return
+                }
+                livePreview.reset(candidates: snapshot.candidates)
+                showEditing(document.text, tables: parent.rendered ? document.tables : [], in: view)
+                livePreview.selectionChanged(in: view, look: look(view), force: true)
                 return
             }
             let text = NSMutableAttributedString(attributedString: document.text)
@@ -634,6 +647,8 @@ final class CandidateTextView: RenderedTextView {
 
     /// Editable, with the core behind it.
     var isEditMode: Bool { isEditable && editActions != nil }
+    /// Live preview hides markers (Show Markdown off), in edit mode too.
+    var hidesMarkers = true
 
     override var undoManager: UndoManager? {
         isEditMode ? coreUndo : super.undoManager
@@ -646,8 +661,13 @@ final class CandidateTextView: RenderedTextView {
     /// is off here, so nothing else takes text from this.
     override func text(in range: UITextRange) -> String? {
         guard let text = super.text(in: range) else { return nil }
-        // Editing shows the source: nothing hidden, nothing to speak apart.
-        if isEditMode { return text }
+        if isEditMode {
+            // Show Markdown hides nothing. Live preview's hidden markers are
+            // not spoken (ADR 0109); without VoiceOver the keyboard reads
+            // the source here, for autocorrect and spelling.
+            guard hidesMarkers, UIAccessibility.isVoiceOverRunning else { return text }
+            return textStorage.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
+        }
         return attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
     }
 
@@ -667,11 +687,17 @@ final class CandidateTextView: RenderedTextView {
         super.show(document, width: width)
     }
 
+    /// Edit mode changed the text or what it hides: the spoken text is built
+    /// again when next asked.
+    func invalidateSpoken() {
+        spokenValue = nil
+    }
+
     override var accessibilityValue: String? {
         get {
-            if isEditMode { return super.accessibilityValue }
+            if isEditMode && !hidesMarkers { return super.accessibilityValue }
             if let spokenValue { return spokenValue }
-            let value = attributedText.spoken(attributedText.string, at: 0)
+            let value = textStorage.spoken(textStorage.string, at: 0)
             spokenValue = value
             spokenBuilds += 1
             return value
