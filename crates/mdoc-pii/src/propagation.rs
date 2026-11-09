@@ -1019,6 +1019,12 @@ const ABBREVIATIONS: &[&str] = &[
     "ДТП", "ЧП", "МО", "ГУ", "СО", "ОВД", "ФЗ", "ПФР", "ФСС", "ЦБ", "РТ", "РБ", "КБК", "НДС",
     "ТН", "ТТН", "АЗС", "ЭДО", "ЭЦП", "ЭП", "КЭП", "НЭП", "ПЭП", "ИО", "СНТ", "ТСЖ", "ЖСК",
     "ГСК", "ФИО", "ПО", "ОКС",
+    // Russian codes, public bodies, institutions' forms and well-known
+    // companies a party's role may stand before ("представитель УФК",
+    // "ответчик РЖД"; #491).
+    "УПК", "УФК", "ЖКХ", "ГБУ", "ГКУ", "ГАУ", "ФКУ", "МКУ", "МБУ", "ГУП", "МУП", "ОСП",
+    "СПИ", "МФЦ", "ГАИ", "КФХ", "СФР", "УИИ", "ТСН", "ДНП", "ФАС", "ГИТ", "ТИК", "УИК",
+    "ЦИК", "РЖД", "ВТБ", "МТС",
 ];
 
 /// A whole word of two or three capital letters, undotted ("JB", "IDP",
@@ -1031,6 +1037,26 @@ pub(crate) fn bare_initials(word: &str) -> Option<Vec<char>> {
         && !letters.iter().all(|c| matches!(c, 'I' | 'V' | 'X'))
         && !ABBREVIATIONS.contains(&word))
     .then(|| letters.iter().flat_map(|c| c.to_lowercase()).collect())
+}
+
+/// Whether `range` of `source` holds bare initials on their own
+/// ([`bare_initials`]): a whole word of two or three capitals, undotted,
+/// that is no abbreviation or Roman numeral, not glued into an identifier
+/// ([`initials_glued`]: "JB-104", "ЯВР.pdf"). Where they stand is the
+/// caller's to judge: the detector reads them after a person's role
+/// («потерпевший КЛМ», #491).
+pub fn lone_initials(source: &str, range: &Range<usize>) -> bool {
+    source.get(range.clone()).is_some_and(|word| {
+        let whole = !source[..range.start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric)
+            && !source[range.end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric);
+        whole && bare_initials(word).is_some() && !initials_glued(source, range)
+    })
 }
 
 /// Whether bare initials at `range` end a letter's reference line: a
