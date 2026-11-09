@@ -147,6 +147,8 @@ extension MarkdownTextView.Coordinator {
         view.invalidateSpoken()
         updateTypingAttributes(view)
         toolbarChanged(view)
+        // A cell typed into was laid out again: its caret moves with it.
+        view.redrawCaret()
     }
 
     /// Restyles the whole text as the view has it, with the candidates as

@@ -694,8 +694,8 @@ final class CandidateTextView: RenderedTextView {
             return command
         }
         return [
-            key(String(localized: "Next Cell"), [], #selector(indentKey)),
-            key(String(localized: "Previous Cell"), .shift, #selector(outdentKey)),
+            key(String(localized: "Next cell"), [], #selector(indentKey)),
+            key(String(localized: "Previous cell"), .shift, #selector(outdentKey)),
         ]
     }()
 

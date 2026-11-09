@@ -142,16 +142,17 @@ struct BlockLayout {
     /// Edit mode: a line of nothing but hidden markers keeps its height, so
     /// the caret can reach it; tables and fences still fold.
     let editing: Bool
-    /// Column widths to keep, by the table's UTF-16 location: while a cell
-    /// is typed into, its table keeps its columns (ADR 0109).
-    let pinned: [Int: [CGFloat]]
+    /// The grids shown, by the table's UTF-16 location: while a cell is
+    /// typed into, its table keeps its columns, and only rows whose cells
+    /// changed are measured again (ADR 0109).
+    let kept: [Int: RenderedTable]
 
     init(
         text: NSMutableAttributedString, source: NSString, offsets: TextOffsets, styling: MarkdownStyling,
         hidden ranges: [NSRange], traits: UITraitCollection, body: UIFont, paragraph: NSParagraphStyle,
-        revealed: [NSRange] = [], editing: Bool = false, pinned: [Int: [CGFloat]] = [:]
+        revealed: [NSRange] = [], editing: Bool = false, kept: [Int: RenderedTable] = [:]
     ) {
-        self.pinned = pinned
+        self.kept = kept
         self.text = text
         self.source = source
         self.offsets = offsets
@@ -235,20 +236,24 @@ struct BlockLayout {
                 }
                 rows.append(cells)
             }
-            let heights = { (columns: [CGFloat]) -> [CGFloat] in
-                rows.map { row -> CGFloat in
-                    row.enumerated().map { column, cell -> CGFloat in
-                        let inner = columns[column] - padding.left - padding.right
-                        let size = cell.text.boundingRect(
-                            with: CGSize(width: inner, height: .greatestFiniteMagnitude),
-                            options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-                        return ceil(size.height) + padding.top + padding.bottom + 2
-                    }.max() ?? 0
-                }
+            let height = { (row: [RenderedCell], columns: [CGFloat]) -> CGFloat in
+                row.enumerated().map { column, cell -> CGFloat in
+                    let inner = columns[column] - padding.left - padding.right
+                    let size = cell.text.boundingRect(
+                        with: CGSize(width: inner, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+                    return ceil(size.height) + padding.top + padding.bottom + 2
+                }.max() ?? 0
             }
-            if let kept = pinned[tableRange.location], kept.count == count {
+            if let shown = kept[tableRange.location], shown.columns.count == count, shown.padding == padding {
+                // A row whose cells are as shown keeps its height.
+                let heights = rows.enumerated().map { index, row -> CGFloat in
+                    let same = shown.rows.indices.contains(index) && shown.rows[index].count == row.count
+                        && zip(shown.rows[index], row).allSatisfy { $0.text.isEqual(to: $1.text) }
+                    return same ? shown.heights[index] : height(row, shown.columns)
+                }
                 return RenderedTable(
-                    anchor: tableRange.location, range: tableRange, rows: rows, columns: kept, heights: heights(kept),
+                    anchor: tableRange.location, range: tableRange, rows: rows, columns: shown.columns, heights: heights,
                     style: table.style, rtl: table.rtl, padding: padding)
             }
             // Natural widths: each column's longest unwrapped cell; floors:
@@ -286,7 +291,8 @@ struct BlockLayout {
             }
             columns = columns.map { $0.rounded(.up) }
             return RenderedTable(
-                anchor: tableRange.location, range: tableRange, rows: rows, columns: columns, heights: heights(columns),
+                anchor: tableRange.location, range: tableRange, rows: rows, columns: columns,
+                heights: rows.map { height($0, columns) },
                 style: table.style, rtl: table.rtl, padding: padding)
         }
     }

@@ -153,9 +153,9 @@ final class LivePreview {
         var styler = MarkdownStyler(traits: look.traits, selected: nil, scoped: [], rendered: look.rendered, width: look.width)
         styler.editing = true
         // Its tables keep their columns while their cells are typed into.
-        styler.pinnedColumns = Dictionary(
+        styler.keptTables = Dictionary(
             view.tableViews.filter { NSLocationInRange($0.table.anchor, range) }
-                .map { ($0.table.anchor - range.location, $0.table.columns) },
+                .map { ($0.table.anchor - range.location, $0.table.shifted(by: -range.location)) },
             uniquingKeysWith: { first, _ in first })
         if look.rendered {
             styler.revealed = visible.compactMap(local)

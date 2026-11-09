@@ -493,8 +493,8 @@ final class LivePreviewTests: XCTestCase {
             width: harness.view.textWidth)
         styler.editing = true
         // Tables keep their columns while their cells are typed into.
-        styler.pinnedColumns = Dictionary(
-            harness.view.tableViews.map { ($0.table.anchor, $0.table.columns) }, uniquingKeysWith: { first, _ in first })
+        styler.keptTables = Dictionary(
+            harness.view.tableViews.map { ($0.table.anchor, $0.table) }, uniquingKeysWith: { first, _ in first })
         let styling = MarkdownStyling(markdown: text)
         styler.revealed = preview.visible + (preview.caretLines.map { LivePreview.shownLines(in: styling, caret: $0) } ?? [])
         let expected = styler.document(markdown: text, styling: styling, candidates: preview.candidates).text
