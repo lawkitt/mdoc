@@ -79,10 +79,6 @@ struct DocumentScreen: View {
                 model.doneEditing()
                 model.detachSystemUndo(for: screenID)
             }
-            // The rendered view stays read-only in this slice (ADR 0109).
-            .onChange(of: preferences.showsSource) { _, shows in
-                if !shows { model.doneEditing() }
-            }
             // Where Identities show follows the window (ADR 0104).
             .onChange(of: layout, initial: true) { _, layout in model.windowChanged(to: layout) }
     }
@@ -193,10 +189,10 @@ struct DocumentScreen: View {
             findBar: model.findBarRequest)
     }
 
-    /// Edit is offered with Show Markdown on, while the text shows; Done
-    /// ends edit mode (ADR 0109).
+    /// Edit is offered while the text shows, in live preview or with Show
+    /// Markdown on; Done ends edit mode (ADR 0109).
     private var offersEdit: Bool {
-        preferences.showsSource && model.hasEditableText && (isRegular || model.pane == .text)
+        model.hasEditableText && (isRegular || model.pane == .text)
     }
 
     @ViewBuilder

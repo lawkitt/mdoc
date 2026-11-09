@@ -20,8 +20,8 @@ final class EditModeUITests: XCTestCase {
         let text = app.textViews["document-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
 
-        // Edit is offered with Show Markdown on.
-        XCTAssertFalse(app.buttons["edit-button"].exists, "the rendered view stays read-only in this slice")
+        // Edit is offered with Show Markdown on, as in live preview.
+        XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: 5))
         app.buttons["document-menu"].tap()
         let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
         XCTAssertTrue(showMarkdown.waitForExistence(timeout: 5))

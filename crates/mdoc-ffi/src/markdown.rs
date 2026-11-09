@@ -206,6 +206,100 @@ pub fn markdown_styling(text: String) -> MarkdownStyling {
     styling(&text)
 }
 
+/// The block an edit or the caret touched, styled on its own (ADR 0109): edit
+/// mode restyles it in place on each keystroke rather than the whole text.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MarkdownBlockStyling {
+    /// The block: whole lines, with the line break after the last one.
+    pub range: TextRange,
+    /// Where the block starts in UTF-16 units, and how many it has, for the
+    /// platform's strings.
+    pub utf16_start: u64,
+    pub utf16_len: u64,
+    /// The block's styling, in offsets from its start: what
+    /// [`markdown_styling`] gives for those lines of the whole text.
+    pub styling: MarkdownStyling,
+    /// Every fenced code block of the whole text, from its opening line's
+    /// start to its closing line's end: a fence typed or removed restyles
+    /// more than the block, which the caller sees as a changed list.
+    pub fences: Vec<TextRange>,
+}
+
+/// The lines around `range` that style the same on their own as in the
+/// whole text, and their styling. Lists, alerts and tables end at a blank
+/// line, so the block runs between blank lines; a blank line inside fenced
+/// code is code, so a fence widens it to the whole fenced block (to the end
+/// of the text when it is never closed). Offsets past the text or inside a
+/// character are pulled back.
+#[uniffi::export]
+pub fn markdown_block_styling(text: String, range: TextRange) -> MarkdownBlockStyling {
+    block_styling(&text, range)
+}
+
+pub(crate) fn block_styling(text: &str, range: TextRange) -> MarkdownBlockStyling {
+    let clamp = |offset: u64| {
+        let mut i = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(text.len());
+        while !text.is_char_boundary(i) {
+            i -= 1;
+        }
+        i
+    };
+    let (from, to) = {
+        let (a, b) = (clamp(range.start), clamp(range.end));
+        (a.min(b), a.max(b))
+    };
+    let mut starts = vec![0];
+    starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    let line_end = |index: usize| starts.get(index + 1).map_or(text.len(), |&next| next - 1);
+    let line = |index: usize| &text[starts[index]..line_end(index)];
+    let row = |offset: usize| starts.partition_point(|&start| start <= offset) - 1;
+
+    // Which lines fenced code holds, and each fenced block, as `styling` reads them.
+    let mut fenced = vec![false; starts.len()];
+    let mut fences = Vec::new();
+    let mut open: Option<((u8, usize), usize)> = None;
+    for (index, inside) in fenced.iter_mut().enumerate() {
+        let source = line(index);
+        if let Some((fence, first)) = open {
+            *inside = true;
+            if closes_fence(source, fence) {
+                fences.push(TextRange::of(&(starts[first]..line_end(index))));
+                open = None;
+            }
+        } else if let Some(fence) = opens_fence(source) {
+            *inside = true;
+            open = Some((fence, index));
+        }
+    }
+    if let Some((_, first)) = open {
+        fences.push(TextRange::of(&(starts[first]..text.len())));
+    }
+
+    // Grow to lines a blank line outside code bounds on each side.
+    let free_blank = |index: usize| !fenced[index] && line(index).trim().is_empty();
+    let mut first = row(from);
+    while first > 0 && !free_blank(first - 1) {
+        first -= 1;
+    }
+    let mut last = row(to);
+    while last + 1 < starts.len() && !free_blank(last + 1) {
+        last += 1;
+    }
+    let start = starts[first];
+    let end = (line_end(last) + 1).min(text.len());
+    let block = &text[start..end];
+    let utf16_start = text[..start].encode_utf16().count() as u64;
+    MarkdownBlockStyling {
+        range: TextRange::of(&(start..end)),
+        utf16_start,
+        utf16_len: block.encode_utf16().count() as u64,
+        styling: styling(block),
+        fences,
+    }
+}
+
 /// What a copy holding HTML and perhaps plain text pastes as: the ChatGPT
 /// iOS app copies no Markdown, so it comes from the HTML (ADR 0105). Nil when
 /// neither holds text.
@@ -1126,5 +1220,183 @@ mod tests {
                 .iter()
                 .all(|line| line.kind == MarkdownLineKind::CodeBlock)
         );
+    }
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+
+    const FIXTURE: &str = include_str!("../../../tests/fixtures/mobile-markdown/review.md");
+
+    fn shifted(range: TextRange, by: u64) -> TextRange {
+        TextRange {
+            start: range.start - by,
+            end: range.end - by,
+        }
+    }
+
+    /// The whole text's styling of `start..end`, in offsets from `start`,
+    /// list ids numbered from 0 in order (they count from the text's start).
+    fn restricted(styling: &MarkdownStyling, start: u64, end: u64) -> MarkdownStyling {
+        let keep = |range: &TextRange| start <= range.start && range.end <= end;
+        MarkdownStyling {
+            spans: styling
+                .spans
+                .iter()
+                .filter(|s| keep(&s.range))
+                .map(|s| MarkdownSpan {
+                    range: shifted(s.range, start),
+                    ..s.clone()
+                })
+                .collect(),
+            lines: styling
+                .lines
+                .iter()
+                .filter(|l| keep(&l.range))
+                .map(|l| MarkdownLine {
+                    range: shifted(l.range, start),
+                    kind: l.kind,
+                })
+                .collect(),
+            list_items: renumbered(
+                styling
+                    .list_items
+                    .iter()
+                    .filter(|i| keep(&i.range))
+                    .map(|i| MarkdownListItem {
+                        range: shifted(i.range, start),
+                        ..i.clone()
+                    })
+                    .collect(),
+            ),
+            blocks: styling
+                .blocks
+                .iter()
+                .filter(|b| keep(&b.range))
+                .map(|b| MarkdownBlock {
+                    range: shifted(b.range, start),
+                    kind: b.kind,
+                })
+                .collect(),
+            tables: styling
+                .tables
+                .iter()
+                .filter(|t| keep(&t.range))
+                .map(|t| MarkdownTable {
+                    range: shifted(t.range, start),
+                    rows: t
+                        .rows
+                        .iter()
+                        .map(|r| MarkdownTableRow {
+                            range: shifted(r.range, start),
+                            cells: r.cells.iter().map(|c| shifted(*c, start)).collect(),
+                        })
+                        .collect(),
+                    ..t.clone()
+                })
+                .collect(),
+            images: styling
+                .images
+                .iter()
+                .filter(|i| keep(&i.range))
+                .map(|i| MarkdownImage {
+                    range: shifted(i.range, start),
+                    alt: shifted(i.alt, start),
+                })
+                .collect(),
+        }
+    }
+
+    fn renumbered(mut items: Vec<MarkdownListItem>) -> Vec<MarkdownListItem> {
+        let mut seen: Vec<u32> = Vec::new();
+        for item in &mut items {
+            if let Some(list) = item.list {
+                let index = seen.iter().position(|&l| l == list).unwrap_or_else(|| {
+                    seen.push(list);
+                    seen.len() - 1
+                });
+                item.list = Some(index as u32);
+            }
+        }
+        items
+    }
+
+    fn caret(offset: u64) -> TextRange {
+        TextRange {
+            start: offset,
+            end: offset,
+        }
+    }
+
+    fn of<'a>(text: &'a str, block: &MarkdownBlockStyling) -> &'a str {
+        &text[block.range.start as usize..block.range.end as usize]
+    }
+
+    /// At every caret position the block styles as the whole text styles
+    /// those lines, and its UTF-16 place is right.
+    fn check(text: &str) {
+        let whole = styling(text);
+        let mut offset = 0;
+        while offset <= text.len() {
+            let block = block_styling(text, caret(offset as u64));
+            let (start, end) = (block.range.start, block.range.end);
+            assert!(start as usize <= offset && offset <= end as usize);
+            let mut own = block.styling.clone();
+            own.list_items = renumbered(own.list_items);
+            assert_eq!(
+                own,
+                restricted(&whole, start, end),
+                "block {start}..{end} at {offset} of {text:?}"
+            );
+            let prefix = &text[..start as usize];
+            assert_eq!(block.utf16_start as usize, prefix.encode_utf16().count());
+            assert_eq!(
+                block.utf16_len as usize,
+                of(text, &block).encode_utf16().count()
+            );
+            offset += text[offset..].chars().next().map_or(1, char::len_utf8);
+        }
+    }
+
+    #[test]
+    fn a_block_styles_as_the_whole_text_does() {
+        check(FIXTURE);
+        check(
+            "1. a\n2. b\n\n3. c\n   hanging\n4. d\n\n- x\n  - y\n\n> [!NOTE]\n> body\n> more\n\nplain",
+        );
+        check("intro\n```rust\nfn a() {}\n\n**not bold**\n```\nafter\n\n# Head\ntext");
+        check("a\n\n~~~\nnever closed\n\n| a | b |\n| - | - |");
+        check(
+            "<!-- table:striped -->\n| a | b |\n| --- | --- |\n| 1 | 2 |\npara\n\nтекст **жирный** ![](x.png)",
+        );
+        check("crlf **b**\r\n\r\n- i\r\n- j\r\n");
+        check("");
+        check("\n\n");
+    }
+
+    #[test]
+    fn a_block_runs_between_blank_lines() {
+        let text = "one\ntwo\n\nthree\nfour\n\nfive";
+        assert_eq!(of(text, &block_styling(text, caret(10))), "three\nfour\n");
+        let block = block_styling(text, TextRange { start: 2, end: 12 });
+        assert_eq!(block.range, TextRange { start: 0, end: 20 });
+        assert_eq!(of(text, &block_styling(text, caret(99))), "five");
+        // Inside a character: pulled back.
+        let text = "я\n\nb";
+        assert_eq!(of(text, &block_styling(text, caret(1))), "я\n");
+    }
+
+    #[test]
+    fn a_fence_widens_the_block_and_is_listed() {
+        let text = "a\n\n```\none\n\ntwo\n```\n\nb";
+        let block = block_styling(text, caret(12));
+        assert_eq!(of(text, &block), "```\none\n\ntwo\n```\n");
+        assert_eq!(block.fences, [TextRange { start: 3, end: 19 }]);
+        // Never closed: to the end of the text.
+        let text = "```\na\n\nb";
+        let block = block_styling(text, caret(0));
+        assert_eq!(block.range, TextRange { start: 0, end: 8 });
+        assert_eq!(block.fences, [TextRange { start: 0, end: 8 }]);
     }
 }

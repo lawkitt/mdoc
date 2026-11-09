@@ -497,6 +497,10 @@ final class RealLibrary: Library, @unchecked Sendable {
 /// call and the snapshot the app makes of its result.
 private let reviewSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc", category: "Review")
 
+/// One typed edit's core call in edit mode (ADR 0109), beside the app's
+/// "Restyle" and "Structural" intervals.
+private let typingSignposter = OSSignposter(subsystem: "io.github.lawkitt.mdoc", category: "Editing")
+
 /// One document over the core's `DocumentSession`. What the document is
 /// (its title, file, case, review and whether it was scanned) is the core's,
 /// read with `info()` and `snapshot()` each time (#681, ADR 0104). This side
@@ -891,6 +895,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     // MARK: Edit mode (ADR 0109)
 
     func type(_ range: SourceRange, _ text: String) throws -> Typed {
+        let interval = typingSignposter.beginInterval("Typing", id: typingSignposter.makeSignpostID())
+        defer { typingSignposter.endInterval("Typing", interval) }
         let typed = try core { try ffi.typeText(range: range.textRange, text: text) }
         // Typing saves once it pauses, as taps do, only later (ADR 0109).
         scheduleSave(pause: library.typingPause)

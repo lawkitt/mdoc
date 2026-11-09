@@ -26,6 +26,11 @@ struct MarkdownStyler {
     /// Edit mode (ADR 0109): candidates are no links and their underlines
     /// dimmed; applied aliases are tinted, so an edit into one shows.
     var editing = false
+    /// Live preview's reveal (ADR 0109): the markers the caret shows, dimmed
+    /// instead of hidden, in the styled text's UTF-8 offsets. A line whose
+    /// first marker shows draws its source instead of what the marker paints
+    /// (a bullet, a task box, an alert's title, a fence's card edge, a rule).
+    var revealed: [SourceRange] = []
 
     static func link(for id: CandidateID) -> URL {
         var components = URLComponents()
@@ -171,9 +176,11 @@ struct MarkdownStyler {
         }
         // Markers last, so they stay dimmed, or hidden, whatever they sit in.
         var hidden: [NSRange] = []
+        let shown = revealed.compactMap { clamp($0) }
         for span in styling.spans where span.marker {
             guard let range = clamp(span.range) else { continue }
-            if rendered {
+            let covered = shown.reduce(0) { $0 + NSIntersectionRange($1, range).length }
+            if rendered && covered < range.length {
                 text.addAttributes(Self.hiddenAttributes, range: range)
                 text.removeAttribute(.backgroundColor, range: range)
                 hidden.append(range)
@@ -230,7 +237,7 @@ struct MarkdownStyler {
         guard rendered else { return RenderedDocument(text: text, tables: []) }
         var layout = BlockLayout(
             text: text, source: source, offsets: offsets, styling: styling, hidden: hidden,
-            traits: traits, body: body, paragraph: paragraph)
+            traits: traits, body: body, paragraph: paragraph, revealed: shown, editing: editing)
         let tables = width.map { layout.tables(width: $0) } ?? []
         layout.apply(tables: tables)
         return RenderedDocument(text: text, tables: tables)

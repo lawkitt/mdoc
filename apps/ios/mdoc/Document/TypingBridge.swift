@@ -14,6 +14,18 @@ import UIKit
 /// a drop). Whatever the core answers, its length is checked too; on any
 /// doubt the bridge asks to sync again (`onResync`). So the core's text,
 /// which is what saves, stays the view's string (ADR 0030, ADR 0060).
+/// One edit the core took: its range in the text before it, in UTF-16 and
+/// UTF-8, and the text that replaced it.
+struct AppliedEdit: Equatable {
+    var range: NSRange
+    var source: SourceRange
+    var text: String
+
+    /// What it replaced with, in UTF-16 and UTF-8 units.
+    var length: Int { (text as NSString).length }
+    var sourceLength: Int { text.utf8.count }
+}
+
 @MainActor
 final class TypingBridge {
     /// Sends one edit to the core; nil when the core refused it.
@@ -26,6 +38,13 @@ final class TypingBridge {
     var onResync: () -> Void = {}
     /// The core took the view's text as `Typed.text_revision`.
     var onTyped: (Typed) -> Void = { _ in }
+    /// After a sync sent edits: each, in order, in the offsets of the text
+    /// before it (live preview restyles around them).
+    var onApplied: ([AppliedEdit]) -> Void = { _ in }
+    /// Return, ⌫ and ⌦ as the editor core decides them (ADR 0109): what the
+    /// key does to `mirror` with the view's selection, where UIKit would
+    /// change `range`.
+    var structural: (StructuralKey, _ range: NSRange, _ selection: NSRange) -> KeyOutcome = { _, _, _ in .native }
 
     /// The text as the core has it.
     private(set) var mirror = NSMutableString()
@@ -41,6 +60,11 @@ final class TypingBridge {
     private var caretAfterEdit: NSRange?
     /// How many edits reached the core: a test hook.
     private(set) var sent = 0
+    /// Applying a structural key's edit: its own change is plain.
+    private var applying = false
+    /// Between `willChange` and `didChange`: a selection change now is the
+    /// edit's own, not the reader's.
+    var isChanging: Bool { changing || applying }
 
     /// The view shows `text`, which is the core's. A restyle that kept the
     /// text keeps where typing left the caret, so a move after it still
@@ -60,8 +84,13 @@ final class TypingBridge {
     /// `textView(_:shouldChangeTextIn:replacementText:)`: notes the edit,
     /// and says whether UIKit applies it.
     func willChange(_ view: UITextView, range: NSRange, text: String) -> Bool {
-        if text == "\n", range.length == 0, view.markedTextRange == nil, !returnKey(in: view, at: range) {
-            return false
+        if !applying, view.markedTextRange == nil,
+           let key = StructuralKey(range: range, text: text, selection: view.selectedRange, in: mirror) {
+            let outcome = structural(key, range, view.selectedRange)
+            if outcome != .native {
+                apply(outcome, in: view)
+                return false
+            }
         }
         changing = true
         if view.markedTextRange != nil { composing = true }
@@ -82,13 +111,32 @@ final class TypingBridge {
         announced.append((before, (storage.string as NSString).substring(with: edited)))
     }
 
-    /// Return (ADR 0109): a plain newline in this slice. The editor core's
-    /// list continuation (`wsl/editor-core-ffi`) takes over here: ask it for
-    /// the edit Return makes at `range`, apply that through the text view's
+    /// Replaces `range` with `text` as one edit on the typing path, then
+    /// selects `selection`: what a key makes that UIKit would make otherwise.
+    func replace(_ range: NSRange, with text: String, selection: NSRange, in view: UITextView) {
+        apply(.replace(range: range, text: text, selection: selection), in: view)
+    }
+
+    /// A structural key's edit, made through the text view's own
     /// `replace(_:withText:)` (which reaches `willChange` as an ordinary
-    /// edit), and return false so UIKit inserts nothing itself.
-    func returnKey(in view: UITextView, at range: NSRange) -> Bool {
-        true
+    /// edit) so it is one core edit on the typing path and its undo line,
+    /// then the core's selection.
+    private func apply(_ outcome: KeyOutcome, in view: UITextView) {
+        applying = true
+        defer { applying = false }
+        switch outcome {
+        case .native, .ignored:
+            return
+        case .select(let selection):
+            view.selectedRange = selection
+        case .replace(let range, let text, let selection):
+            guard let start = view.position(from: view.beginningOfDocument, offset: range.location),
+                  let end = view.position(from: start, offset: range.length),
+                  let textRange = view.textRange(from: start, to: end) else { return }
+            view.replace(textRange, withText: text)
+            if NSMaxRange(selection) <= view.textStorage.length { view.selectedRange = selection }
+            didChange(view)
+        }
     }
 
     /// `textViewDidChange`, and after any change made through the view's own
@@ -105,17 +153,17 @@ final class TypingBridge {
         let planned = composing ? nil : plan(against: current)
         announced.removeAll()
         composing = false
-        let edits: [(SourceRange, String)]
+        let edits: [AppliedEdit]
         if let planned {
             edits = planned
         } else {
             guard let change = Self.difference(from: mirror, to: current) else { return }
-            edits = [(Self.sourceRange(change.range, in: mirror), change.text)]
+            edits = [AppliedEdit(range: change.range, source: Self.sourceRange(change.range, in: mirror), text: change.text)]
             mirror.replaceCharacters(in: change.range, with: change.text)
         }
         var last: Typed?
-        for (range, text) in edits {
-            guard let typed = send(range, text) else {
+        for edit in edits {
+            guard let typed = send(edit.source, edit.text) else {
                 onResync()
                 return
             }
@@ -126,7 +174,9 @@ final class TypingBridge {
         caretAfterEdit = view.selectedRange
         if let last, Int(last.utf16Len) != mirror.length || mirror.length != current.length {
             onResync()
+            return
         }
+        if !edits.isEmpty { onApplied(edits) }
     }
 
     /// `textViewDidChangeSelection`: a caret moved by the reader, not by an
@@ -158,23 +208,23 @@ final class TypingBridge {
 
     /// The announced edits applied to the mirror, as UTF-8 edits, when
     /// they give `current`; nil when they don't, and the mirror is as it was.
-    private func plan(against current: NSString) -> [(SourceRange, String)]? {
+    private func plan(against current: NSString) -> [AppliedEdit]? {
         guard !announced.isEmpty, let trial = mirror.mutableCopy() as? NSMutableString else { return nil }
-        var edits: [(SourceRange, String)] = []
+        var edits: [AppliedEdit] = []
         for (range, text) in announced {
             guard NSMaxRange(range) <= trial.length else { return nil }
-            edits.append((Self.sourceRange(range, in: trial), text))
+            edits.append(AppliedEdit(range: range, source: Self.sourceRange(range, in: trial), text: text))
             trial.replaceCharacters(in: range, with: text)
         }
         guard trial.isEqual(to: current as String) else { return nil }
         mirror = trial
-        return edits.filter { !($0.0.length == 0 && $0.1.isEmpty) }
+        return edits.filter { !($0.range.length == 0 && $0.text.isEmpty) }
     }
 
     /// The one stretch where `old` and `new` differ: its range in `old` and
     /// what `new` has there; nil when they are equal. Never splits a
     /// surrogate pair.
-    static func difference(from old: NSString, to new: NSString) -> (range: NSRange, text: String)? {
+    nonisolated static func difference(from old: NSString, to new: NSString) -> (range: NSRange, text: String)? {
         let oldLength = old.length, newLength = new.length
         var prefix = 0
         let shorter = min(oldLength, newLength)
@@ -191,12 +241,12 @@ final class TypingBridge {
     }
 
     /// `range` of `text` in UTF-8 offsets, counted without copying.
-    static func sourceRange(_ range: NSRange, in text: NSString) -> SourceRange {
+    nonisolated static func sourceRange(_ range: NSRange, in text: NSString) -> SourceRange {
         let start = utf8Count(text, NSRange(location: 0, length: range.location))
         return SourceRange(start: start, end: start + utf8Count(text, range))
     }
 
-    private static func utf8Count(_ text: NSString, _ range: NSRange) -> Int {
+    nonisolated private static func utf8Count(_ text: NSString, _ range: NSRange) -> Int {
         guard range.length > 0 else { return 0 }
         var used: CFIndex = 0
         CFStringGetBytes(
