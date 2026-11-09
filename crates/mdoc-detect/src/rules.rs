@@ -131,6 +131,10 @@ struct LookalikeEntry {
     /// Lowercase Cyrillic words, abbreviations' inner dots kept.
     #[serde(default)]
     words: Vec<String>,
+    /// Lowercase Cyrillic stems of a person's labels and roles («фамили»,
+    /// «свидетел»), up to four letters of ending: a span after one stays.
+    #[serde(default)]
+    unless_after: Vec<String>,
 }
 
 /// An identifier field's labels (#739): a value just after one, in a wider
@@ -553,6 +557,8 @@ pub(crate) struct Pack {
     lookalike_letters: std::collections::HashMap<char, char>,
     /// `lookalike` words, lowercase Cyrillic.
     lookalike_words: std::collections::HashSet<String>,
+    /// `lookalike` `unless_after` stems, lowercase Cyrillic.
+    lookalike_after: Vec<String>,
 }
 
 /// A role before bare initials, as [`Pack::initials_role`] reads it
@@ -1535,6 +1541,7 @@ impl Pack {
             labels: Vec::new(),
             lookalike_letters: std::collections::HashMap::new(),
             lookalike_words: std::collections::HashSet::new(),
+            lookalike_after: Vec::new(),
         };
         let mut never_seen = std::collections::HashSet::new();
         let mut defined_seen = std::collections::HashSet::new();
@@ -1913,9 +1920,21 @@ impl Pack {
             }
             for (index, entry) in file.lookalike.into_iter().enumerate() {
                 let at = |problem: &str| format!("{name}: lookalike #{}: {problem}", index + 1);
-                if entry.letters.is_empty() && entry.words.is_empty() {
-                    return Err(at("needs letters or words"));
+                if entry.letters.is_empty()
+                    && entry.words.is_empty()
+                    && entry.unless_after.is_empty()
+                {
+                    return Err(at("needs letters, words or unless_after"));
                 }
+                if entry.unless_after.iter().any(|stem| {
+                    stem.is_empty()
+                        || !stem
+                            .chars()
+                            .all(|c| cyrillic_letter(c) && !c.is_uppercase())
+                }) {
+                    return Err(at("unless_after needs lowercase Cyrillic stems"));
+                }
+                pack.lookalike_after.extend(entry.unless_after);
                 for pair in &entry.letters {
                     let (look, cyrillic) = match pair.chars().collect::<Vec<_>>()[..] {
                         [look, cyrillic] => (look, cyrillic),
@@ -4239,8 +4258,11 @@ impl Pack {
     /// letters than Latin ones within 200 bytes on either side. A name
     /// stays: a word with a letter of its own («Ивaнов», "Hans"), a capital
     /// alone (an initial), a word of look-alikes all in capitals ("BCE",
-    /// an abbreviation), a span after a person's title, and a word the
-    /// document writes beside a Latin name ("Ha Jin").
+    /// an abbreviation), a span in quotes («Bce»), one after a person's
+    /// title, label or role in its clause («Фамилия: Ha», «гражданка
+    /// Республики Корея Ha»: `unless_after`, a `person_role` word or a
+    /// person's `trim` word), and a word the document writes beside a
+    /// Latin name in any case ("Nguyễn Thị Ha", "HA THI LAN").
     fn lookalike_word(&self, source: &str, range: std::ops::Range<usize>, text: &str) -> bool {
         if self.lookalike_letters.is_empty() || self.titled(source, range.start) {
             return false;
@@ -4280,20 +4302,68 @@ impl Pack {
         if !any {
             return false;
         }
-        // A Latin name: capitalized, two letters or more, one of them no
-        // look-alike ("Jin" of "Ha Jin").
+        // Quoted, it is a name of its own («Bce»), however it reads.
+        let (before, after, inner) = (&source[..range.start], &source[range.end..], text.trim());
+        if [('«', '»'), ('“', '”'), ('"', '"')]
+            .iter()
+            .any(|&(open, close)| {
+                before.ends_with(open) && after.starts_with(close)
+                    || inner.len() > 2 && inner.starts_with(open) && inner.ends_with(close)
+            })
+        {
+            return false;
+        }
+        // A person's label, role or title in its clause, up to four words
+        // before it: «Фамилия: Ha», «Свидетель Ha», «гражданка Республики
+        // Корея Ha», «Работник: Ha».
+        let clause = before
+            .rsplit(['\n', '.', '!', '?', ';', ','])
+            .next()
+            .unwrap_or_default();
+        let person = clause
+            .split(|c: char| !c.is_alphabetic() && c != '-')
+            .filter(|word| !word.is_empty())
+            .rev()
+            .take(4)
+            .any(|word| {
+                let word = word.to_lowercase();
+                self.lookalike_after.iter().any(|stem| {
+                    word.strip_prefix(stem.as_str())
+                        .is_some_and(|ending| ending.chars().count() <= 4)
+                }) || self
+                    .never
+                    .iter()
+                    .any(|entry| entry.person_role && entry.has(&word))
+                    || self.spans.iter().any(|span| match span {
+                        Span::Fix(fix) => {
+                            fix.category == Category::Person && fix.trim.contains(&word)
+                        }
+                        Span::Pattern { .. } => false,
+                    })
+            });
+        if person {
+            return false;
+        }
+        // A Latin name: capitalized, two letters or more of any script but
+        // Cyrillic, one of them no look-alike ("Jin" of "Ha Jin", "Thị").
         let latin_name = |word: &str| {
             word.chars().count() > 1
-                && word.starts_with(|c: char| c.is_ascii_uppercase())
-                && word.chars().all(|c| c.is_ascii_alphabetic())
+                && word.starts_with(char::is_uppercase)
+                && word
+                    .chars()
+                    .all(|c| c.is_alphabetic() && !cyrillic_letter(c))
                 && word
                     .chars()
                     .any(|c| !self.lookalike_letters.contains_key(&c))
         };
+        // Beside one anywhere in the document, in any case ("HA THI LAN").
         let beside_name = |word: &str| {
-            source.match_indices(word).any(|(at, _)| {
-                let before = &source[..at];
-                let after = &source[at + word.len()..];
+            let Ok(written) = Regex::new(&format!("(?i){}", regex::escape(word))) else {
+                return false;
+            };
+            written.find_iter(source).any(|found| {
+                let before = &source[..found.start()];
+                let after = &source[found.end()..];
                 if before.ends_with(char::is_alphanumeric)
                     || after.starts_with(char::is_alphanumeric)
                 {
@@ -21254,7 +21324,11 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "2808888888R",
                 "national_id_number",
             ),
-            ("Stamp 8888888 on the page.", "8888888", "passport_number"),
+            (
+                "Stamp 8888888888R on the page.",
+                "8888888888R",
+                "passport_number",
+            ),
         ] {
             assert!(
                 shown(source, &[(span, label)]).is_empty(),
@@ -21280,6 +21354,32 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "passport_number",
                 "IDENTITY",
             ),
+            // A label keeps the issue's own shape, and runs without the
+            // final capital or shorter ones stay (pre-gate review, #549).
+            (
+                "Passport number: 2808888888R",
+                "2808888888R",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 4500000001 on the page.",
+                "4500000001",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 10000000A on the page.",
+                "10000000A",
+                "passport_number",
+                "IDENTITY",
+            ),
+            (
+                "Stamp 70000000001 on the page.",
+                "70000000001",
+                "national_id_number",
+                "IDENTITY",
+            ),
         ] {
             assert_eq!(
                 shown(source, &[(span, label)]),
@@ -21289,11 +21389,104 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         }
     }
 
+    /// #549 pre-gate review: only hex letters make a garbled tax token; an
+    /// OCR-damaged number after a stray letter keeps its value.
+    #[test]
+    fn a_stray_letter_before_a_damaged_tax_number_keeps_it() {
+        let source = "ИНН n 7712345l07 указан в договоре.";
+        let found = shown(source, &[("n 7712345l07", "tax_id")]);
+        assert!(
+            found
+                .iter()
+                .any(|(text, category)| text.contains("7712345l07") && category == "TAX"),
+            "{found:?}"
+        );
+    }
+
+    /// #549 pre-gate review: a lone Latin "Ha" stays a person where the
+    /// document names her: beside a Latin name in any script or case
+    /// ("Nguyễn Thị Ha", "HA THI LAN"), after a person's label or role in
+    /// its clause («Гражданка», «Свидетель», «Фамилия:», «Работник:»,
+    /// «гражданка Республики Корея»); and a quoted «Bce» is a company's
+    /// name.
+    #[test]
+    fn a_named_or_labelled_look_alike_word_stays() {
+        for (source, raw, expected, category) in [
+            (
+                "Переводчик Nguyễn Thị Ha разъяснила права. Затем Ha подтвердила показания.",
+                &[("Nguyễn Thị Ha", 0, "person"), ("Ha", 1, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Гражданка Ha пояснила суду, что договор подписан.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Свидетель Ha пояснила, что расписку не видела.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Анкета заявителя. Фамилия: Ha\nИмя: Lan\nДата рождения указана.",
+                &[("Ha", 0, "person"), ("Lan", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Работник: Ha, гражданин Вьетнама, принят на должность.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "В заседании гражданка Республики Корея Ha пояснила, что долг погашен.",
+                &[("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "HA THI LAN разъяснила права. Подсудимый Ha вину признал.",
+                &[("HA THI LAN", 0, "person"), ("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Затем HA THI LAN подписала. Позже Ha уехала из города.",
+                &[("HA THI LAN", 0, "person"), ("Ha", 0, "person")][..],
+                "Ha",
+                "PERSON",
+            ),
+            (
+                "Поставщик «Bce» передал товар покупателю по накладной.",
+                &[("Bce", 0, "organization")][..],
+                "Bce",
+                "ORG",
+            ),
+        ] {
+            let found = shown_at(source, raw);
+            assert!(
+                found
+                    .iter()
+                    .any(|(text, found)| text.trim_matches(['«', '»']) == expected
+                        && found == category),
+                "{source}: {found:?}"
+            );
+        }
+    }
+
     /// #549: a `lookalike` entry's mistakes are named.
     #[test]
     fn mistakes_in_a_lookalike_entry_are_named() {
         for (entry, problem) in [
-            ("[[lookalike]]\n", "needs letters or words"),
+            ("[[lookalike]]\n", "needs letters, words or unless_after"),
+            (
+                "[[lookalike]]\nunless_after = [\"Свидетел\"]\n",
+                "unless_after needs lowercase Cyrillic stems",
+            ),
             (
                 "[[lookalike]]\nletters = [\"H\"]\n",
                 "is no pair of two letters",

@@ -1723,8 +1723,12 @@ pattern = '(?i)(?P<lead>\bуч[её]тный[\p{Zs}\t]+номер[\p{Zs}\t]+в[\
 # drawn alike in both scripts, and the lowercase r, n and u of an italic or
 # worn «г», «п» and «и». A name with a letter of its own stays («Ивaнов»
 # with a Latin a, "Hans", "Smith", «ООО «Abc»»), and so do a capital alone
-# (an initial), a word in capitals ("BCE") and a name beside a Latin one
-# ("Ha Jin"). The words are prepositions, pronouns and abbreviations that
+# (an initial), a word in capitals ("BCE"), a word in quotes («Bce»), a
+# name beside a Latin one in any case ("Nguyễn Thị Ha", "HA THI LAN") and
+# one after a person's label or role in its clause, up to four words
+# before it: the `unless_after` stems below («Фамилия: Ha», «гражданка
+# Республики Корея Ha»), the role stems of `never` («Работник: Ha») and a
+# person's titles. The words are prepositions, pronouns and abbreviations that
 # name no one; short words that are also Latin surnames («по» for "Po",
 # «но» for "Ho", «ко» for "Ko") are left out.
 [[lookalike]]
@@ -1738,4 +1742,9 @@ words = [
     "на", "все", "всё", "всех", "всем", "всего", "при", "от", "до", "из",
     "за", "об", "или", "т.п", "т.д", "т.е", "т.к", "т.ч", "т.н", "и.т.д",
     "и.т.п", "г", "гг", "ул", "д", "кв", "стр", "тел", "см", "ст", "руб",
+]
+unless_after = [
+    "фамили", "имя", "имени", "отчеств", "фио", "граждан", "свидетел",
+    "подсудим", "обвиняем", "осужденн", "осуждённ", "потерпевш", "переводчи",
+    "сотрудник", "понят", "участник",
 ]
