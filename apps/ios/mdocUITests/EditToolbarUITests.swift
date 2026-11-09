@@ -29,6 +29,10 @@ final class EditToolbarUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the toolbar above the keyboard")
+        // A fresh Simulator's keyboard first shows its slide-to-type tip
+        // over the keys and the toolbar.
+        let tip = app.buttons["Continue"]
+        if tip.waitForExistence(timeout: 2) { tip.tap() }
         // A key sent while edit mode is still settling can be lost: check
         // the caret reached the end with a letter typed there.
         var there = false
@@ -45,8 +49,9 @@ final class EditToolbarUITests: XCTestCase {
     @MainActor
     func testToolbarBoldAndTheFormattingKeyboard() throws {
         let (app, text) = edit()
-        app.typeText("Pay monthly")
-        for _ in 0..<3 { app.typeKey(.leftArrow, modifierFlags: []) }
+        // Typed only on the software keyboard: an arrow key from the hardware
+        // keyboard hides it a moment, and the toolbar moves under the tap.
+        app.typeText("Pay ")
         let bold = app.buttons["toolbar-bold"]
         XCTAssertFalse(bold.isSelected)
         // Every button the toolbar shows is a 44 pt target.
@@ -55,7 +60,12 @@ final class EditToolbarUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
         }
         XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable, "Aa always shows")
+        // Bold between words: an empty pair, the caret inside it.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(bold.waitUntilHittable(timeout: 5))
         bold.tap()
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS %@", "Pay **"), timeout: 5))
+        app.typeText("monthly")
         // The caret is in the bold word: its markers show, and Bold is on.
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Pay **monthly**"), timeout: 5))
         XCTAssertTrue(bold.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))

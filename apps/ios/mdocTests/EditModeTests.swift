@@ -91,6 +91,30 @@ final class EditModeTests: XCTestCase {
 
     // MARK: Typing and undo
 
+    /// Two steps made in one turn of the run loop (Return, then the next
+    /// letter, typed fast) are two steps on the window's undo stack too: ⌘Z
+    /// takes back one. Grouped by event, they joined one group and one ⌘Z
+    /// undid both (the hosted runner's `testAListTypedWithReturnAndUndone`).
+    func testStepsMadeInOneTurnAreSeparateSystemUndoSteps() throws {
+        let harness = try harness()
+        edit(harness)
+        let window = UndoManager()
+        XCTAssertTrue(window.groupsByEvent)
+        harness.model.attachSystemUndo(window, for: UUID())
+        let text = harness.session.snapshot().markdown
+        let end = text.utf8.count
+        // Both edits in this one synchronous turn, each a step of its own.
+        XCTAssertEqual(harness.model.typed(SourceRange(start: end, end: end), "\n\n- ")?.newStep, true)
+        XCTAssertEqual(harness.model.typed(SourceRange(start: end + 4, end: end + 4), "B")?.newStep, true)
+        XCTAssertEqual(harness.session.snapshot().markdown, text + "\n\n- B")
+        window.undo()
+        XCTAssertEqual(harness.session.snapshot().markdown, text + "\n\n- ", "one ⌘Z, one step")
+        window.undo()
+        XCTAssertEqual(harness.session.snapshot().markdown, text)
+        window.redo()
+        XCTAssertEqual(harness.session.snapshot().markdown, text + "\n\n- ")
+    }
+
     func testTypingIsOneUndoStepBesideDecisions() async throws {
         let harness = try harness()
         _ = try harness.session.replaceAllPending()
