@@ -394,6 +394,10 @@ struct SpanEntry {
     /// "XXXXX").
     #[serde(default)]
     skip: Option<String>,
+    /// A match that a span of its category already overlaps (the model's,
+    /// a name cell's) is not proposed: the pattern only fills gaps.
+    #[serde(default)]
+    gaps_only: bool,
     #[serde(default)]
     trim: Vec<String>,
     /// ORG role trims need an explicit separator and an identifying remainder.
@@ -537,6 +541,8 @@ enum Span {
         line_length: Option<std::ops::RangeInclusive<usize>>,
         /// A span in which it matches is not proposed.
         skip: Option<Regex>,
+        /// A match a name span of the category overlaps is not proposed.
+        gaps_only: bool,
     },
     Fix(SpanFix),
 }
@@ -1813,6 +1819,7 @@ impl Pack {
                         split,
                         line_length,
                         skip,
+                        gaps_only: entry.gaps_only,
                     });
                     continue;
                 }
@@ -1823,9 +1830,10 @@ impl Pack {
                     || entry.split.is_some()
                     || entry.line_length.is_some()
                     || entry.skip.is_some()
+                    || entry.gaps_only
                 {
                     return Err(at(
-                        "parts, absorbs, continuations, split, line_length and skip need a pattern"
+                        "parts, absorbs, continuations, split, line_length, skip and gaps_only need a pattern"
                             .into(),
                     ));
                 }
@@ -5046,13 +5054,14 @@ impl Pack {
                     split,
                     line_length,
                     skip,
+                    gaps_only,
                     ..
                 } => Some((
                     *category,
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip),
+                    (split, skip, *gaps_only),
                     line_length,
                 )),
                 Span::Fix(_) => None,
@@ -5063,7 +5072,7 @@ impl Pack {
                     pattern,
                     continuation_after,
                     continuation_stop,
-                    (split, skip),
+                    (split, skip, gaps_only),
                     line_length,
                 )| {
                     span_ranges_sized(pattern, source, line_length.as_ref())
@@ -5150,6 +5159,15 @@ impl Pack {
                                 && skip
                                     .as_ref()
                                     .is_none_or(|skip| !skip.is_match(&source[range.clone()]))
+                                // A gap filler gives way to any name span of
+                                // its category over its text ("Смитом" of
+                                // the model in "Великобритании Смитом").
+                                && !(gaps_only
+                                    && names.iter().any(|name| {
+                                        name.category == category
+                                            && name.range.start < range.end
+                                            && range.start < name.range.end
+                                    }))
                                 && (category != Category::Address
                                     || !source[range.end..]
                                         .trim_start_matches([' ', '\t'])
@@ -6610,6 +6628,232 @@ mod tests {
             fixed("ИП Ветлин Н. О.", &[("ИП Ветлин", Category::Organization)]),
             ["ИП Ветлин"]
         );
+    }
+
+    /// #403: a surname's lowercase particle joins the model's surname, in
+    /// Russian and English, chained, glued, with the given names, initials
+    /// or a patronymic around it, never across a line; a particle that is
+    /// also a word («да», «фон», "van", "ten") only after a name's word, a
+    /// title or an introducing word.
+    #[test]
+    fn a_surnames_particle_joins_the_name() {
+        for (source, model, expected) in [
+            (
+                "В журнале выдачи заказ записан на фамилию де Лаваль.",
+                &["Лаваль"][..],
+                &["де Лаваль"][..],
+            ),
+            (
+                "Я, Генриетта Яновна де Лаваль, уполномочиваю представителя.",
+                &["Лаваль"],
+                &["Генриетта Яновна де Лаваль"],
+            ),
+            (
+                "Я, Генриетта Яновна де Лаваль, уполномочиваю представителя.",
+                &["Генриетта Яновна", "Лаваль"],
+                &["Генриетта Яновна де Лаваль"],
+            ),
+            (
+                "Решение согласовано с Генриеттой Яновной де Лаваль отдельно.",
+                &["Лаваль"],
+                &["Генриеттой Яновной де Лаваль"],
+            ),
+            (
+                "Иск подан против де Лаваль Генриетты Яновны в мае.",
+                &["Лаваль Генриетты Яновны"],
+                &["де Лаваль Генриетты Яновны"],
+            ),
+            (
+                "Опись передаётся Г. Я. де Лаваль лично.",
+                &["Лаваль"],
+                &["Г. Я. де Лаваль"],
+            ),
+            (
+                "Договор подписал барон фон дер Пален.",
+                &["Пален"],
+                &["фон дер Пален"],
+            ),
+            ("Ответчик ван Хорн возражал.", &["Хорн"], &["ван Хорн"]),
+            (
+                "Доверенность выдана гражданке да Силва.",
+                &["Силва"],
+                &["да Силва"],
+            ),
+            ("Передать О. фон Пален лично.", &["Пален"], &["фон Пален"]),
+            (
+                "Явился мушкетёр д'Артаньян.",
+                &["Артаньян"],
+                &["д'Артаньян"],
+            ),
+            ("Свидетель аль-Хадид показал.", &["Хадид"], &["аль-Хадид"]),
+            (
+                "The deed was signed by van der Berg today.",
+                &["Berg"],
+                &["van der Berg"],
+            ),
+            ("Dear Ms de Vries, thank you.", &["Vries"], &["de Vries"]),
+            (
+                "Witness: J. R. van der Berg, notary.",
+                &["Berg"],
+                &["J. R. van der Berg"],
+            ),
+            ("Dear Ms ten Brink, thank you.", &["Brink"], &["ten Brink"]),
+            ("Ms von Stein signed.", &["Stein"], &["von Stein"]),
+            ("Ms Leonor de la Cruz attended.", &["Cruz"], &["de la Cruz"]),
+            (
+                "The letter came from Valéry Giscard d'Estaing himself.",
+                &["Estaing"],
+                &["d'Estaing"],
+            ),
+            // Written lowercase, a particle joins at a line's or a
+            // sentence's start too.
+            ("де Лаваль подписала опись.", &["Лаваль"], &["де Лаваль"]),
+            (
+                "Опись подписана. де Лаваль согласна.",
+                &["Лаваль"],
+                &["де Лаваль"],
+            ),
+            ("van der Berg signed.", &["Berg"], &["van der Berg"]),
+            // A particle that is also a word stays out after a lowercase
+            // word or a line's break, and no particle joins across a line.
+            ("Он сказал да Петрову.", &["Петрову"], &["Петрову"]),
+            (
+                "Всё это создаёт фон Петровой.",
+                &["Петровой"],
+                &["Петровой"],
+            ),
+            (
+                "Всё это создаёт\nфон Петровой.",
+                &["Петровой"],
+                &["Петровой"],
+            ),
+            ("Заказ на фамилию де\nЛаваль.", &["Лаваль"], &["Лаваль"]),
+            ("The van Smith rented broke down.", &["Smith"], &["Smith"]),
+            (
+                "The delivery van Smith rented broke down.",
+                &["Smith"],
+                &["Smith"],
+            ),
+            ("It took ten Smith employees.", &["Smith"], &["Smith"]),
+            // Nor after a bare capitalised word (#403 review): «да» joins
+            // two names, «фон» is a noun, "von" a German preposition.
+            (
+                "Пришли Петров да Сидоров.",
+                &["Петров", "Сидоров"],
+                &["Петров", "Сидоров"],
+            ),
+            (
+                "Сказка про Ивана да Марью.",
+                &["Ивана", "Марью"],
+                &["Ивана", "Марью"],
+            ),
+            ("Шумовой фон Петрова не смущал.", &["Петрова"], &["Петрова"]),
+            ("Отто фон Пален прибыл.", &["Пален"], &["Пален"]),
+            (
+                "Das Schreiben von Schmidt liegt vor.",
+                &["Schmidt"],
+                &["Schmidt"],
+            ),
+            (
+                "The claim was heard by Hans ten Brink yesterday.",
+                &["Brink"],
+                &["Brink"],
+            ),
+        ] {
+            assert_eq!(proposed_people(source, model), expected, "{source:?}");
+        }
+    }
+
+    /// #403 review: a glued particle keeps a surname, but "al-Qaeda" and
+    /// «аль-Каида», in any case form, are no person.
+    #[test]
+    fn al_qaeda_is_no_person() {
+        for (source, model) in [
+            ("Funds went to al-Qaeda last year.", "al-Qaeda"),
+            ("Средства ушли аль-Каиде в прошлом году.", "аль-Каиде"),
+            ("Член аль-Каиды задержан.", "аль-Каиды"),
+        ] {
+            assert!(proposed_people(source, &[model]).is_empty(), "{source:?}");
+        }
+        assert_eq!(
+            proposed_people("Свидетель аль-Хадид показал.", &["аль-Хадид"]),
+            ["аль-Хадид"]
+        );
+    }
+
+    /// #403: a surname with its particle repeats with it, inflected too.
+    #[test]
+    fn a_surnames_particle_repeats_with_it() {
+        let source = "Я, Генриетта Яновна де Лаваль, уполномочиваю. Решение \
+            согласовано с Генриеттой Яновной де Лаваль. Заказ записан на фамилию \
+            де Лаваль.";
+        assert_eq!(
+            proposed_people(source, &["Лаваль"]),
+            [
+                "Генриетта Яновна де Лаваль",
+                "Генриеттой Яновной де Лаваль",
+                "де Лаваль"
+            ]
+        );
+    }
+
+    /// #404: a short two-part name after a word that introduces a person
+    /// is PERSON with no model span; a country after «гражданин», an office
+    /// after «господин» or "Mr", and a longer name are not this rule's.
+    #[test]
+    fn a_short_name_after_an_introducing_word_is_a_person() {
+        for (source, expected) in [
+            (
+                "Я уполномочиваю гражданина Лю Бо получить экземпляры.",
+                &["Лю Бо"][..],
+            ),
+            ("Передать гражданке Ким Ир, проживающей рядом.", &["Ким Ир"]),
+            ("Направить господину Ли Вэй.", &["Ли Вэй"]),
+            ("I authorise Mr Li Na to collect the copies.", &["Li Na"]),
+            ("Ms Ko Un, the agent, signed.", &["Ko Un"]),
+            ("паспорт гражданина Российской Федерации серии 45", &[]),
+            ("гражданки Республики Казахстан, проживающей", &[]),
+            ("гражданина Украины Петренко, проживающего", &[]),
+            ("Направить господину Председателю Суда.", &[]),
+            ("Mr Justice Ashdale held that the claim failed.", &[]),
+            // Words of five letters or more are no short name (#404
+            // review): a country, an office, a form's heading, a suffix.
+            ("Он был гражданином Советского Союза.", &[]),
+            ("гражданке Канады Браун, проживающей", &[]),
+            ("Гражданин Петров Подпись", &[]),
+            ("Направить господину Мэру Москвы.", &[]),
+            ("Mr Smith Said: no.", &[]),
+            ("Ms Jones Counsel, for the claimant", &[]),
+            ("Mr Inspector Morse arrived.", &[]),
+            // Short suffixes are skipped.
+            ("Mr Bo Esq, for the claimant", &[]),
+            ("Mr Li Jr, the son", &[]),
+            ("Ms Li QC, for the claimant", &[]),
+        ] {
+            assert_eq!(proposed_people(source, &[]), expected, "{source:?}");
+        }
+        // Only a gap: a model span over the match keeps its own wording,
+        // and a wrong word beside it never spreads (#404 review).
+        assert_eq!(
+            proposed_people(
+                "Договор заключён с гражданином Великобритании Смитом.",
+                &["Смитом"]
+            ),
+            ["Смитом"]
+        );
+        assert_eq!(
+            proposed_people("Я уполномочиваю гражданина Лю Бо.", &["Бо"]),
+            ["Бо"]
+        );
+        assert_eq!(
+            proposed_people("I authorise Mr Li Na to act.", &["Li Na"]),
+            ["Li Na"]
+        );
+        // A longer name is left to the model: the rule takes no part of it.
+        let source = "уполномочиваю гражданина Иванова Ивана Ивановича получить";
+        assert!(proposed_people(source, &[]).is_empty(), "{source:?}");
+        let source = "I authorise Mr John Paul Smith to collect.";
+        assert!(proposed_people(source, &[]).is_empty(), "{source:?}");
     }
 
     /// The person proposals for the model's `people` spans in `source`
@@ -18512,6 +18756,10 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             ("[[span]]\ncategory = \"ADDRESS\"", "pattern"),
             (
                 "[[span]]\ncategory = \"PERSON\"\nsplit = '<'",
+                "need a pattern",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\ngaps_only = true",
                 "need a pattern",
             ),
             (
