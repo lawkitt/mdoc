@@ -174,8 +174,9 @@ pub fn editor_shift_enter(text: String, selection: TextRange, rendered: bool) ->
 }
 
 /// ⌫: the selection, or before the caret — a rendered image's line, the
-/// paragraph break at a paragraph's start, the visible character before
-/// hidden markers, or one character. Nil at the start.
+/// paragraph break at a paragraph's start, or one character (under the
+/// phone's reveal rule the character before the caret always shows). Nil at
+/// the start.
 #[uniffi::export]
 pub fn editor_backspace(
     text: String,
@@ -371,11 +372,19 @@ mod tests {
     }
 
     #[test]
-    fn delete_forward_skips_hidden_markers_when_rendered() {
+    fn delete_forward_takes_the_shown_marker() {
+        // The caret touching the bold shows its markers, so ⌦ deletes the `*`.
         let s = "**ab**";
         let c = editor_delete_forward(s.into(), caret(0), true).unwrap();
-        assert_eq!(applied(s, &c).0, "**b**");
+        assert_eq!(applied(s, &c).0, "*ab**");
         assert_eq!(editor_delete_forward("x".into(), caret(1), true), None);
+    }
+
+    #[test]
+    fn enter_in_a_table_never_returns_a_caret_inside_a_character() {
+        let t = "| ab |\n| --- |\n| я |";
+        let c = editor_enter(t.into(), caret(3), true);
+        assert!(t.is_char_boundary(c.selection.start as usize));
     }
 
     #[test]

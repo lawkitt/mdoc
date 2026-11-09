@@ -79,10 +79,17 @@ fn from_table((range, text, caret): TableEdit) -> EditResult {
     EditResult::one(range, text, caret)
 }
 
+/// Whether line `row` is part of a table the view draws: table-shaped text
+/// in a code block or display math is literal text, not a table.
+fn row_in_drawn_table(source: &str, blocks: Blocks, row: usize) -> bool {
+    blocks.row_in_table(row) && !blocks.row_is_literal(source, row)
+}
+
 /// Whether the caret's row is an editable table row in a rendered view, where
 /// desktop's table rules apply.
 fn in_table_cell(source: &str, blocks: Blocks, caret: usize, rendered: bool) -> bool {
-    rendered && blocks.row_in_table_cell(row_col(source, caret).0)
+    let row = row_col(source, caret).0;
+    rendered && blocks.row_in_table_cell(row) && row_in_drawn_table(source, blocks, row)
 }
 
 /// Enter: a new block (ADR 0060). In a rendered table it moves to the cell
@@ -141,8 +148,11 @@ pub fn shift_enter(source: &str, selection: Range<usize>, rendered: bool) -> Edi
 }
 
 /// A rendered image row's whole line and its newline (what one ⌫ or ⌦
-/// removes Word-style).
-fn image_row_range(source: &str, row: usize) -> Option<Range<usize>> {
+/// removes Word-style). An image's text in code or math is literal.
+fn image_row_range(source: &str, blocks: Blocks, row: usize) -> Option<Range<usize>> {
+    if blocks.row_is_literal(source, row) {
+        return None;
+    }
     let start = *line_starts(source).get(row)?;
     let end = line_end(source, row);
     image_row(&source[start..end])?;
@@ -154,9 +164,14 @@ fn delete_range(range: Range<usize>, caret: usize) -> EditResult {
 }
 
 /// ⌫: the selection, or before the caret — a whole rendered image row, the
-/// paragraph break at a paragraph's start (joining the two), the visible
-/// character before hidden markers (an emptied construct's markers too), or
-/// one character. `None` at the document start.
+/// paragraph break at a paragraph's start (joining the two), or one
+/// character. `None` at the document start.
+///
+/// Desktop also skips hidden formatting markers here
+/// ([`delete::fmt_delete_range`]); under the phone's reveal rule
+/// ([`crate::reveal::RevealRule::CaretSpan`]) the construct the caret
+/// touches shows its markers, so the character before the caret is always
+/// visible and is the one deleted.
 pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Option<EditResult> {
     if selection.start != selection.end {
         let sel = sorted(&selection);
@@ -168,9 +183,9 @@ pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Optio
     let off = selection.end.min(source.len());
     let (row, col) = row_col(source, off);
     if rendered
-        && let Some(range) = image_row_range(source, row).or_else(|| {
+        && let Some(range) = image_row_range(source, blocks, row).or_else(|| {
             (col == 0 && row > 0)
-                .then(|| image_row_range(source, row - 1))
+                .then(|| image_row_range(source, blocks, row - 1))
                 .flatten()
         })
     {
@@ -184,15 +199,12 @@ pub fn backspace(source: &str, selection: Range<usize>, rendered: bool) -> Optio
     {
         return Some(delete_range(range, caret));
     }
-    if rendered && let Some(range) = delete::fmt_delete_range(source, blocks, off, true) {
-        let caret = range.start;
-        return Some(delete_range(range, caret));
-    }
     let prev = previous_boundary(source, off);
     (prev != off).then(|| delete_range(prev..off, prev))
 }
 
-/// ⌦: as [`backspace`], forward. `None` at the document end.
+/// ⌦: as [`backspace`], forward — a rendered image row, the paragraph break
+/// at a paragraph's end, or one character. `None` at the document end.
 pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> Option<EditResult> {
     if selection.start != selection.end {
         let sel = sorted(&selection);
@@ -204,9 +216,9 @@ pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> 
     let off = selection.end.min(source.len());
     let (row, _) = row_col(source, off);
     if rendered
-        && let Some(range) = image_row_range(source, row).or_else(|| {
+        && let Some(range) = image_row_range(source, blocks, row).or_else(|| {
             (off == line_end(source, row))
-                .then(|| image_row_range(source, row + 1))
+                .then(|| image_row_range(source, blocks, row + 1))
                 .flatten()
         })
     {
@@ -216,10 +228,6 @@ pub fn delete_forward(source: &str, selection: Range<usize>, rendered: bool) -> 
     if off == line_end(source, row)
         && let Some((range, caret)) = delete::break_delete_range(source, blocks, row, true)
     {
-        return Some(delete_range(range, caret));
-    }
-    if rendered && let Some(range) = delete::fmt_delete_range(source, blocks, off, false) {
-        let caret = range.start;
         return Some(delete_range(range, caret));
     }
     let next = next_boundary(source, off);
@@ -311,6 +319,9 @@ pub fn table_command(
     let scan = BlockScan::new(source);
     let blocks = scan.view();
     let caret = selection.end.min(source.len());
+    if !row_in_drawn_table(source, blocks, row_col(source, caret).0) {
+        return None;
+    }
     let edit = match command {
         TableCommand::InsertRowAbove => table_rules::insert_row(source, blocks, caret, false),
         TableCommand::InsertRowBelow => table_rules::insert_row(source, blocks, caret, true),
@@ -433,15 +444,14 @@ mod tests {
             Some(("onetwo".into(), caret(3)))
         );
         let s = "a **b** c";
-        assert_eq!(
-            run(s, backspace(s, caret(7), true)),
-            Some(("a  c".into(), caret(2)))
-        );
-        // With markers shown, ⌫ deletes the visible `*`.
-        assert_eq!(
-            run(s, backspace(s, caret(7), false)),
-            Some(("a **b* c".into(), caret(6)))
-        );
+        // The caret touching the bold shows its markers (CaretSpan), so ⌫
+        // deletes the visible `*` in both views.
+        for rendered in [true, false] {
+            assert_eq!(
+                run(s, backspace(s, caret(7), rendered)),
+                Some(("a **b* c".into(), caret(6)))
+            );
+        }
         assert_eq!(backspace(s, caret(0), true), None);
         assert_eq!(delete_forward(s, caret(9), true), None);
         let s = "x\n![](a.png)\ny";
@@ -453,6 +463,81 @@ mod tests {
             run(s, backspace(s, 0..2, true)),
             Some(("![](a.png)\ny".into(), caret(0)))
         );
+    }
+
+    #[test]
+    fn deletes_take_the_character_the_reveal_rule_shows() {
+        use crate::reveal::{RevealRule, visible_markers};
+        for (s, off) in [("**ab**", 6), ("**ab**", 0), ("x *y* z", 5), ("x *y* z", 2)] {
+            let shown = visible_markers(s, off..off, RevealRule::CaretSpan);
+            let back = backspace(s, caret(off), true).map(|r| r.edits[0].range.clone());
+            let fwd = delete_forward(s, caret(off), true).map(|r| r.edits[0].range.clone());
+            for deleted in [back, fwd].into_iter().flatten() {
+                // A deleted marker byte is one the view shows.
+                let marker = shown
+                    .iter()
+                    .any(|m| m.start <= deleted.start && deleted.end <= m.end);
+                let hidden_marker = crate::markdown::fmt_marker_pairs(s)
+                    .iter()
+                    .flat_map(|(o, c)| [o.clone(), c.clone()])
+                    .any(|m| m.start <= deleted.start && deleted.end <= m.end);
+                assert!(
+                    !hidden_marker || marker,
+                    "{s:?} at {off} deletes hidden {deleted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn code_blocks_stay_literal() {
+        // An image's text in a code block deletes one character.
+        let s = "```\n![](a.png)\n```";
+        assert_eq!(
+            run(s, backspace(s, caret(14), true)).unwrap().0,
+            "```\n![](a.png\n```"
+        );
+        assert_eq!(
+            run(s, delete_forward(s, caret(3), true)).unwrap().0,
+            "```![](a.png)\n```"
+        );
+        // Table-shaped code: Enter and ⇧Enter type newlines, paste keeps its
+        // pipes, and table commands don't apply.
+        let s = "```\n| a |\n| - |\n| b |\n```";
+        assert_eq!(
+            run(s, Some(enter(s, caret(7), true))).unwrap().0,
+            "```\n| a\n |\n| - |\n| b |\n```"
+        );
+        assert_eq!(
+            run(s, Some(shift_enter(s, caret(7), true))).unwrap().0,
+            "```\n| a\n |\n| - |\n| b |\n```"
+        );
+        assert_eq!(
+            run(s, Some(paste(s, caret(7), "x|y".into(), true)))
+                .unwrap()
+                .0,
+            "```\n| ax|y |\n| - |\n| b |\n```"
+        );
+        assert_eq!(
+            table_command(s, caret(7), &TableCommand::InsertRowBelow),
+            None
+        );
+        assert_eq!(
+            indent(s, caret(7), true).map(|r| r.apply(s)),
+            Some("```\n| a     |\n| - |\n| b |\n```".into())
+        );
+    }
+
+    #[test]
+    fn table_enter_lands_on_a_character() {
+        let s = "| ab |\n| --- |\n| я |";
+        // One byte into `ab` would be inside `я`: it lands before it; after
+        // `ab` it lands after `я`.
+        for (from, rest) in [(3, "я |"), (4, " |")] {
+            let r = enter(s, caret(from), true);
+            assert!(r.edits.is_empty());
+            assert_eq!(&s[r.selection.start..], rest);
+        }
     }
 
     #[test]
