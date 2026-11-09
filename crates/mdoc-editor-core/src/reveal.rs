@@ -20,6 +20,7 @@ use std::ops::Range;
 
 use mdoc_markdown::lines::{blockquote_prefix, heading_level, list_prefix, task_prefix};
 use mdoc_markdown::spans::{Span, SpanStyle, scan};
+use mdoc_markdown::syntax::alert_prefix;
 
 /// Which markers the caret and selection reveal (see the module docs).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -123,13 +124,48 @@ pub fn construct_at(spans: &[Span], c: usize) -> Range<usize> {
     0..0
 }
 
-/// The byte length of a line's prefix: a task, list or quote marker, or a
-/// heading's hashes with their space.
+/// The caret's construct under `rule`: the run of adjacent spans holding
+/// column `caret_col` of `line` (see [`construct_at`]). Under `CaretSpan`
+/// only the inline constructs of the line's body count: a heading styles its
+/// whole body, which would otherwise merge every construct on the line into
+/// one, and the prefix shows by its own rule.
+pub fn caret_construct(
+    rule: RevealRule,
+    line: &str,
+    spans: &[Span],
+    caret_col: usize,
+    prefix_len: Option<usize>,
+) -> Range<usize> {
+    match rule {
+        RevealRule::Desktop => construct_at(spans, caret_col),
+        RevealRule::CaretSpan => {
+            let plen = prefix_len.unwrap_or(0).min(line.len());
+            let Some(col) = caret_col.checked_sub(plen) else {
+                return 0..0;
+            };
+            let mut body = scan(&line[plen..]);
+            body.sort_by_key(|s| s.range.start);
+            let r = construct_at(&body, col);
+            if r.is_empty() {
+                0..0
+            } else {
+                r.start + plen..r.end + plen
+            }
+        }
+    }
+}
+
+/// The byte length of a line's prefix: a task, list or quote marker (with an
+/// alert's `[!KIND]` token, fold char and space), or a heading's hashes with
+/// their space.
 pub fn line_prefix_len(line: &str) -> Option<usize> {
     task_prefix(line)
         .map(|(l, ..)| l)
         .or_else(|| list_prefix(line).map(|(l, ..)| l))
-        .or_else(|| blockquote_prefix(line))
+        .or_else(|| {
+            let quote = blockquote_prefix(line)?;
+            Some(quote + alert_prefix(&line[quote..]).map_or(0, |(_, len, _)| len))
+        })
         .or_else(|| {
             heading_level(line).map(|n| {
                 let n = n as usize;
@@ -161,8 +197,10 @@ pub fn visible_markers(
         let caret_col = collapsed.then(|| lo - line_start);
         let mut spans = scan(line);
         spans.sort_by_key(|s| s.range.start);
-        let construct = caret_col.map_or(0..0, |c| construct_at(&spans, c));
-        let reveal = rule.line(caret_col, !collapsed, line_prefix_len(line));
+        let prefix_len = line_prefix_len(line);
+        let construct =
+            caret_col.map_or(0..0, |c| caret_construct(rule, line, &spans, c, prefix_len));
+        let reveal = rule.line(caret_col, !collapsed, prefix_len);
         out.extend(
             spans
                 .iter()
@@ -240,6 +278,34 @@ mod tests {
         let s = "## Title\nbody";
         assert_eq!(shown(s, 5..5, RevealRule::CaretSpan).concat(), "## ");
         assert!(shown(s, 11..11, RevealRule::CaretSpan).is_empty());
+    }
+
+    #[test]
+    fn heading_styling_does_not_merge_its_constructs() {
+        let s = "# plain **bold**";
+        // The caret in plain heading text shows the hashes, not the bold's
+        // markers; in the bold it shows both.
+        assert_eq!(shown(s, 4..4, RevealRule::CaretSpan), ["# "]);
+        assert_eq!(shown(s, 12..12, RevealRule::CaretSpan), ["# ", "**", "**"]);
+        let s = "- a [t](u) **b**";
+        assert_eq!(shown(s, 5..5, RevealRule::CaretSpan).concat(), "- [](u)");
+    }
+
+    #[test]
+    fn alert_prefixes_reveal_from_their_body() {
+        for (s, caret) in [
+            ("> [!NOTE] body", 12),
+            ("> [!TIP]- body", 12),
+            ("> [!NOTE]", 9),
+        ] {
+            assert_eq!(
+                visible_markers(s, caret..caret, RevealRule::CaretSpan),
+                [0..s.len().min(s.find("body").unwrap_or(s.len()))],
+                "{s:?}"
+            );
+        }
+        assert_eq!(line_prefix_len("> [!WARNING]+ x"), Some(14));
+        assert_eq!(line_prefix_len("> plain"), Some(2));
     }
 
     #[test]
