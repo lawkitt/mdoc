@@ -26,6 +26,8 @@ required-features = ["bindgen"]
 
 [dependencies]
 mdoc-detect = { path = "../mdoc-detect" }
+# The editing rules edit mode calls (src/editor.rs, ADR 0109).
+mdoc-editor-core = { path = "../mdoc-editor-core" }
 mdoc-history = { path = "../mdoc-history" }
 mdoc-import = { path = "../mdoc-import" }
 mdoc-markdown = { path = "../mdoc-markdown" }

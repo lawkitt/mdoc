@@ -4770,6 +4770,7 @@ name = "mdoc-ffi"
 version = "0.1.0"
 dependencies = [
  "mdoc-detect",
+ "mdoc-editor-core",
  "mdoc-history",
  "mdoc-import",
  "mdoc-markdown",

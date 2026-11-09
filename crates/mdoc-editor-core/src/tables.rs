@@ -77,7 +77,12 @@ pub fn caret_pos_for_cell(source: &str, row: usize, cell: usize, in_cell: usize)
     let close = (r.end..bytes.len())
         .find(|&i| bytes[i] == b'|')
         .unwrap_or(bytes.len());
-    row_start + (r.start + in_cell).min(close.saturating_sub(1))
+    let mut col = (r.start + in_cell).min(close.saturating_sub(1));
+    // An offset carried over from another cell can fall inside a character.
+    while !line.is_char_boundary(col) {
+        col -= 1;
+    }
+    row_start + col
 }
 
 fn applied(source: &str, range: &Range<usize>, text: &str) -> String {
@@ -369,6 +374,14 @@ mod tests {
         assert_eq!(run(T, |s, b| delete_row(s, b, 2)), None);
         let (out, _) = run(T, |s, b| duplicate_row(s, b, body)).unwrap();
         assert_eq!(out, "| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\nafter");
+    }
+
+    #[test]
+    fn a_carried_cell_offset_lands_on_a_character() {
+        let s = "| ab |\n| --- |\n| я |";
+        let caret = caret_pos_for_cell(s, 2, 0, 1);
+        assert!(s.is_char_boundary(caret));
+        assert_eq!(&s[caret..], "я |");
     }
 
     #[test]
