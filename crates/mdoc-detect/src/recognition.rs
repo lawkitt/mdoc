@@ -1094,6 +1094,246 @@ mod tests {
         }
     }
 
+    /// What three scans of `source` with the model's PERSON `spans` show,
+    /// each wording with its identity's alias, in order.
+    fn three_scans(source: &str, spans: &[(&str, &str)]) -> Vec<String> {
+        let mut from = 0;
+        let raw: Vec<RawEntity> = spans
+            .iter()
+            .map(|(text, _)| {
+                let start = from + source[from..].find(text).unwrap();
+                from = start + text.len();
+                RawEntity {
+                    start,
+                    end: from,
+                    label: "person".into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        let mut review = mdoc_pii::Review::default();
+        (0..3)
+            .map(|_| {
+                review.ingest(source, correct(source, &raw)).unwrap();
+                let mut shown: Vec<(usize, String)> = review
+                    .candidates()
+                    .iter()
+                    .filter_map(|candidate| {
+                        let variant = review.variant(candidate.variant)?;
+                        let alias = review
+                            .variant_identity(variant.id)
+                            .and_then(|id| review.identity(id))
+                            .map(|identity| identity.alias.clone())
+                            .unwrap_or_default();
+                        Some((
+                            candidate.range.start,
+                            format!(
+                                "{}⟦{}⟧{alias}",
+                                variant.category.token(),
+                                &source[candidate.range.clone()]
+                            ),
+                        ))
+                    })
+                    .collect();
+                shown.sort();
+                shown.dedup();
+                shown
+                    .into_iter()
+                    .map(|(_, text)| text)
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            })
+            .collect()
+    }
+
+    /// The #749 review's rows: a surname with initials that is an
+    /// institution's word, or a word of the document in lower case or
+    /// after "the", shows what main shows, and so do initialled forms two
+    /// people share; the rest spread, apart where two people may be meant.
+    /// Every scan shows the same identities.
+    #[test]
+    fn initialled_names_show_the_reviewed_rows_scan_after_scan() {
+        // The source, the model's spans and what each scan shows.
+        type Row<'a> = (&'a str, &'a [(&'a str, &'a str)], &'a str);
+        let main: &[Row] = &[
+            (
+                "Подпись: Суд Н. О.\n\nСуд установил, что Суд Н. О. не явился. Суду представлены документы. Судом рассмотрено. Арбитражный суд города Москвы. Решение суда.",
+                &[("Суд Н. О.", "P")][..],
+                "PERSON⟦Суд Н. О.⟧PERSON_1  PERSON⟦Суд Н. О.⟧PERSON_1",
+            ),
+            (
+                "Ответчик: СУД Н. О.\n\nСуд установил. СУД вынес решение.",
+                &[("СУД Н. О.", "P")][..],
+                "PERSON⟦СУД Н. О.⟧PERSON_1",
+            ),
+            (
+                "Ответчик: Н.О. Суд\n\nСуд установил. Суду виднее.",
+                &[("Н.О. Суд", "P")][..],
+                "PERSON⟦Н.О. Суд⟧PERSON_1",
+            ),
+            (
+                "Ответчик: Банк И. И.\n\nБанк отказал. Банку направлено.",
+                &[("Банк И. И.", "P")][..],
+                "PERSON⟦Банк И. И.⟧PERSON_1",
+            ),
+            (
+                "Witness: J. P. State\n\nThe State argued. State law applies.",
+                &[("J. P. State", "P")][..],
+                "PERSON⟦J. P. State⟧PERSON_1",
+            ),
+            (
+                "Witness: Crown, A. B.\n\nThe Crown argued.",
+                &[("Crown, A. B.", "P")][..],
+                "PERSON⟦Crown, A. B.⟧PERSON_1",
+            ),
+            (
+                "Witness: Judge, A. B.\n\nThe Judge ruled. Judge Smith agreed.",
+                &[("Judge, A. B.", "P")][..],
+                "PERSON⟦Judge, A. B.⟧PERSON_1",
+            ),
+            (
+                "Подпись: И. И. Суд.\n\nСуд постановил. Суду виднее, Судом решено.",
+                &[("И. И. Суд", "P")][..],
+                "PERSON⟦И. И. Суд⟧PERSON_1",
+            ),
+            (
+                "Подпись: Суд И. И.\n\nСуд постановил.",
+                &[("Суд И. И.", "P")][..],
+                "PERSON⟦Суд И. И.⟧PERSON_1",
+            ),
+            (
+                "Paid by U.S. Bank.\n\nThe Bank refused. Our Bank and the Bank of Bolton agreed.",
+                &[("U.S. Bank", "P")][..],
+                "PERSON⟦U.S. Bank⟧PERSON_1",
+            ),
+            (
+                "Quoted in N. Y. Times.\n\nThe Times ran it. Times change.",
+                &[("N. Y. Times", "P")][..],
+                "PERSON⟦N. Y. Times⟧PERSON_1",
+            ),
+            (
+                "Signed by J. Field.\n\nThe Field was wet. We walked to the Field and Field said no. Field trips end.",
+                &[("J. Field", "P")][..],
+                "PERSON⟦J. Field⟧PERSON_1",
+            ),
+            (
+                "R. Masters signed. The Masters met. The Masters of the Bench ruled.",
+                &[("R. Masters", "P")][..],
+                "PERSON⟦R. Masters⟧PERSON_1",
+            ),
+            (
+                "Witness: Court, J. P.\n\nThe Court held. Court costs follow.",
+                &[("Court, J. P.", "P")][..],
+                "",
+            ),
+            (
+                "John Penrow and James Penrow signed.\n\nPenrow agreed. J. Penrow left.",
+                &[("John Penrow", "P"), ("James Penrow", "P")][..],
+                "PERSON⟦John Penrow⟧PERSON_1  PERSON⟦James Penrow⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3  PERSON⟦J. Penrow⟧PERSON_4",
+            ),
+            (
+                "Авторы: Иванов Иван и Иванов Илья\n\nИванов И. показал. Иванову ответили.",
+                &[("Иванов Иван", "P"), ("Иванов Илья", "P")][..],
+                "PERSON⟦Иванов Иван⟧PERSON_1  PERSON⟦Иванов Илья⟧PERSON_2  PERSON⟦Иванов И.⟧PERSON_3  PERSON⟦Иванову⟧PERSON_4",
+            ),
+            (
+                "John Penrow and James Penrow signed; J. Penrow witnessed.\n\nPenrow agreed.",
+                &[
+                    ("John Penrow", "P"),
+                    ("James Penrow", "P"),
+                    ("J. Penrow", "P"),
+                ][..],
+                "PERSON⟦John Penrow⟧PERSON_1  PERSON⟦James Penrow⟧PERSON_2  PERSON⟦J. Penrow⟧PERSON_3  PERSON⟦Penrow⟧PERSON_4",
+            ),
+            (
+                "Авторы: Иванов Иван Иванович и Иванов Илья Сергеевич\n\nИванов И. показал. Иванову ответили.",
+                &[
+                    ("Иванов Иван Иванович", "P"),
+                    ("Иванов Илья Сергеевич", "P"),
+                ][..],
+                "PERSON⟦Иванов Иван Иванович⟧PERSON_1  PERSON⟦Иванов Илья Сергеевич⟧PERSON_2  PERSON⟦Иванов И.⟧PERSON_3  PERSON⟦Иванову⟧PERSON_4",
+            ),
+        ];
+        let fixed: &[Row] = &[
+            (
+                "References: Penrow, J. L. 1971.\n\nAs Penrow showed, the J. L. Penrow survey held.",
+                &[("Penrow, J. L.", "P")][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦Penrow⟧PERSON_1  PERSON⟦J. L. Penrow⟧PERSON_1",
+            ),
+            (
+                "John L. Penrow and James K. Penrow signed.\n\nPenrow agreed. J. Penrow left.",
+                &[("John L. Penrow", "P"), ("James K. Penrow", "P")][..],
+                "PERSON⟦John L. Penrow⟧PERSON_1  PERSON⟦James K. Penrow⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3  PERSON⟦J. Penrow⟧PERSON_4",
+            ),
+            (
+                "Penrow, J. L. signed; Penrow, J. witnessed.\n\nPenrow agreed.",
+                &[("Penrow, J. L.", "P"), ("Penrow, J.", "P")][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦Penrow, J.⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3",
+            ),
+            (
+                "John L. Penrow signed; Penrow, J. witnessed.\n\nPenrow agreed.",
+                &[("John L. Penrow", "P"), ("Penrow, J.", "P")][..],
+                "PERSON⟦John L. Penrow⟧PERSON_1  PERSON⟦Penrow, J.⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3",
+            ),
+            (
+                "Penrow, J. L. and Penrow, J. K. signed.\n\nPenrow agreed. J. Penrow left.",
+                &[("Penrow, J. L.", "P"), ("Penrow, J. K.", "P")][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦Penrow, J. K.⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3  PERSON⟦J. Penrow⟧PERSON_4",
+            ),
+            (
+                "Penrow, J. L. signed; Penrow, J. K. witnessed.\n\nPenrow agreed.",
+                &[("Penrow, J. L.", "P")][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦Penrow, J. K.⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3",
+            ),
+            (
+                "John L. Penrow signed; Penrow, J. K. witnessed.\n\nPenrow agreed.",
+                &[("John L. Penrow", "P")][..],
+                "PERSON⟦John L. Penrow⟧PERSON_1  PERSON⟦Penrow, J. K.⟧PERSON_2  PERSON⟦Penrow⟧PERSON_3",
+            ),
+            (
+                "Penrow, J. L. signed.\n\nPenrow, J. K. witnessed. J. Penrow agreed. Penrow left.",
+                &[("Penrow, J. L.", "P")][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦Penrow, J. K.⟧PERSON_2  PERSON⟦J. Penrow⟧PERSON_3  PERSON⟦Penrow⟧PERSON_4",
+            ),
+            (
+                "J. L. Penrow signed.\n\nLater K. Penrow and Penrow, K. came.",
+                &[("J. L. Penrow", "P")][..],
+                "PERSON⟦J. L. Penrow⟧PERSON_1  PERSON⟦K. Penrow⟧PERSON_2  PERSON⟦Penrow, K.⟧PERSON_2",
+            ),
+            (
+                "John L. Penrow signed.\n\nLater K. Penrow and Penrow, K. came.",
+                &[("John L. Penrow", "P")][..],
+                "PERSON⟦John L. Penrow⟧PERSON_1  PERSON⟦K. Penrow⟧PERSON_2  PERSON⟦Penrow, K.⟧PERSON_2",
+            ),
+            (
+                "Подписал Иванов И. И.\n\nПозже Иванов П. С. пришёл. Иванов ушёл.",
+                &[("Иванов И. И.", "P")][..],
+                "PERSON⟦Иванов И. И.⟧PERSON_1  PERSON⟦Иванов П. С.⟧PERSON_2  PERSON⟦Иванов⟧PERSON_3",
+            ),
+            (
+                "Авторы: Иванов И. И. и Иванов И. С.\n\nИванов И. показал. Иванову ответили.",
+                &[("Иванов И. И.", "P"), ("Иванов И. С.", "P")][..],
+                "PERSON⟦Иванов И. И.⟧PERSON_1  PERSON⟦Иванов И. С.⟧PERSON_2  PERSON⟦Иванов И.⟧PERSON_3  PERSON⟦Иванову⟧PERSON_4",
+            ),
+            (
+                "Penrow, J. L. wrote; J. L. Penrow signed; Penrow J. L. sealed.\n\nPenrow agreed.",
+                &[
+                    ("Penrow, J. L.", "P"),
+                    ("J. L. Penrow", "P"),
+                    ("Penrow J. L.", "P"),
+                ][..],
+                "PERSON⟦Penrow, J. L.⟧PERSON_1  PERSON⟦J. L. Penrow⟧PERSON_1  PERSON⟦Penrow J. L.⟧PERSON_1  PERSON⟦Penrow⟧PERSON_1",
+            ),
+        ];
+        for (source, spans, expected) in main.iter().chain(fixed) {
+            let scans = three_scans(source, spans);
+            for scan in &scans {
+                assert_eq!(scan, expected, "{source}");
+            }
+        }
+    }
+
     // Inject only the first mention. Exact ranges below also verify that
     // the review discovers every later mention with its own category.
     fn assert_address_proposals(source: &str, model: &[(&str, &str)], expected: &[(&str, &str)]) {

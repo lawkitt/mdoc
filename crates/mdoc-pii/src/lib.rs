@@ -840,7 +840,7 @@ impl Review {
                 *owner = target;
             }
         }
-        let people = propagation::People::new(people);
+        let people = propagation::People::new(people).reading(source);
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
@@ -1027,8 +1027,12 @@ impl Review {
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
-        // A marked full name proposes its forms elsewhere (ADR 0092).
-        if category == Category::Person && identities::split_full_name(original).is_some() {
+        // A marked full name proposes its forms elsewhere (ADR 0092), and
+        // so does a surname with initials (#749).
+        if category == Category::Person
+            && (identities::split_full_name(original).is_some()
+                || propagation::People::spreads_initialled(original))
+        {
             self.propagate(source, true);
         }
         Ok(id)

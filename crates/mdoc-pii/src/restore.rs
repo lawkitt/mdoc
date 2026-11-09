@@ -671,9 +671,18 @@ impl Review {
                 // ordinal tags count as read too, so "Pellam* *Industries
                 // Inc" ties with "Pellam Industries Inc" and the plain one
                 // wins: a reopened document restores no stray markers (#552).
-                let read = |o: &str| {
+                // A letter and its combining marks count as one, as NFC
+                // writes them, and on a tie the composed wording wins, so
+                // "Jose\u{301} García" restores as "José García" (#418).
+                let unwrapped = |o: &str| {
                     crate::view::unwrapped(&crate::view::wording(o))
                         .chars()
+                        .count()
+                };
+                let read = |o: &str| {
+                    use unicode_normalization::UnicodeNormalization;
+                    crate::view::unwrapped(&crate::view::wording(o))
+                        .nfc()
                         .count()
                 };
                 let pinned = self.identities.primary_wording(id);
@@ -684,7 +693,8 @@ impl Review {
                     .max_by_key(|(i, o)| {
                         (
                             read(o),
-                            read(o) == o.chars().count(),
+                            unwrapped(o) == o.chars().count(),
+                            unicode_normalization::is_nfc(o),
                             pinned == Some(o),
                             std::cmp::Reverse(*i),
                         )

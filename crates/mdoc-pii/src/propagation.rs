@@ -20,10 +20,12 @@ use super::{
     syntax::protected_syntax,
 };
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashSet},
     ops::Range,
     sync::{Arc, LazyLock},
 };
+use unicode_normalization::UnicodeNormalization;
 
 /// Nicknames of a lowercase given name, lowercase. Only names already in the
 /// document yield them. Data until the rule pack's `variants` section takes
@@ -489,10 +491,21 @@ pub(crate) enum Form {
     Whole(Vec<String>),
 }
 
+/// `wording` as forms read it: a word split by a line-end hyphen whole
+/// ("Верес-\nтова") and a letter written with a combining mark one letter,
+/// as NFC writes it ("Арте\u{308}ма" reads "Артёма"; #418). Spans stay the
+/// source's, and identity keys keep the wording as written.
+fn read_name(wording: &str) -> Cow<'_, str> {
+    match crate::view::unwrapped(wording) {
+        read if unicode_normalization::is_nfc(&read) => read,
+        read => Cow::Owned(read.nfc().collect()),
+    }
+}
+
 /// `wording` as a [`Form::Whole`]: two or three name words, no initials and
 /// no title before them.
 fn parse_whole(wording: &str) -> Option<Form> {
-    let wording = &crate::view::unwrapped(wording);
+    let wording = &read_name(wording);
     let cased = name_words_cased(wording);
     let titled = wording.split_whitespace().count() != cased.len();
     let words = merge_particles(&cased);
@@ -513,8 +526,9 @@ fn initials_of(word: &str) -> Option<Vec<char>> {
 }
 
 pub(crate) fn parse_form(wording: &str) -> Option<Form> {
-    // A word split by a line-end hyphen reads whole ("Верес-\nтова").
-    let wording = &crate::view::unwrapped(wording);
+    // A word split by a line-end hyphen reads whole ("Верес-\nтова"), a
+    // decomposed letter as one.
+    let wording = &read_name(wording);
     let titled = wording.split_whitespace().next().is_some_and(|first| {
         TITLES.contains(
             &first
@@ -592,6 +606,16 @@ struct Person {
     /// forms spread (#749). Any name blocks a form it fits ("Петров И.И."
     /// beside "Петрова Марина": "Петрову" is either).
     source: bool,
+    /// Written with a combining mark ("Арте\u{308}м"), so the same name
+    /// composed may be another identity of the same person (#418).
+    decomposed: bool,
+    /// A surname with initials whose surname the document also writes as
+    /// an ordinary word: in lower case, or after "the" ("Суд Н. О." beside
+    /// «суд», "U.S. Bank" beside "the Bank"). Its bare surname is no form
+    /// of it; its initialled wordings still are (#749).
+    ordinary: bool,
+    /// The wording as known, so its own variant is not its target.
+    wording: String,
     surname_forms: HashSet<String>,
     own_surname_forms: HashSet<String>,
     /// The first name's forms and its nicknames' (full names only).
@@ -653,6 +677,9 @@ impl Person {
                 given,
                 full,
                 source: true,
+                decomposed: false,
+                ordinary: false,
+                wording: String::new(),
             };
         }
         let first_forms = match given.first() {
@@ -687,6 +714,9 @@ impl Person {
             given,
             full,
             source: true,
+            decomposed: false,
+            ordinary: false,
+            wording: String::new(),
             first_forms,
             patronymic_forms,
         }
@@ -713,6 +743,7 @@ struct Spelling {
 
 impl Spelling {
     fn new(owner: u64, wording: &str) -> Option<Self> {
+        let name = read_name(wording);
         let first = |word: &str| {
             // A surname's particles are no initials: "де Лаваль" is "Л".
             word.rsplit(' ').next().and_then(|w| w.chars().next())
@@ -730,7 +761,7 @@ impl Spelling {
             }
             spelled
         };
-        if let Some((surname, given, _)) = split_full_name_inflected(wording) {
+        if let Some((surname, given, _)) = split_full_name_inflected(&name) {
             let initials: Vec<char> = given.iter().filter_map(|g| first(g)).collect();
             return Some(Self {
                 owner,
@@ -740,7 +771,7 @@ impl Spelling {
             });
         }
         // A first name, middle initials and a surname: "Ivo D. Penrow".
-        let words = name_words_cased(wording);
+        let words = name_words_cased(&name);
         let named = |w: &String| w.chars().filter(|c| c.is_alphabetic()).count() > 1;
         if let [given, middle @ .., surname] = words.as_slice()
             && !middle.is_empty()
@@ -844,9 +875,13 @@ impl People {
         let mut spellings = Vec::new();
         for (owner, wording) in names {
             spellings.extend(Spelling::new(owner, wording));
-            if let Some((surname, given, written)) = split_full_name_inflected(wording) {
-                people.push(Person::new(owner, surname, given, true, written));
-            } else if let Some((surname, given)) = initialed_name(wording) {
+            if let Some((surname, given, written)) = split_full_name_inflected(&read_name(wording))
+            {
+                let mut person = Person::new(owner, surname, given, true, written);
+                person.decomposed = !unicode_normalization::is_nfc(wording);
+                person.wording = wording.to_owned();
+                people.push(person);
+            } else if let Some((surname, given)) = initialed_name(&read_name(wording)) {
                 // Written as initials, each with its period: "C1 Penrow"
                 // (a party code) and "P Ossian" only block.
                 let initials = given.iter().filter(|g| g.chars().count() == 1).count();
@@ -866,17 +901,63 @@ impl People {
                     .map_or(owner, |p| p.owner);
                 let mut person = Person::new(owner, surname, given, false, None);
                 person.source = source;
+                person.wording = wording.to_owned();
                 people.push(person);
             }
         }
         Self(people, spellings)
     }
+    /// These people as `source` reads them: a surname with initials whose
+    /// surname is also an ordinary word there, or an institution's
+    /// ([`INSTITUTIONS`]), spreads no bare surname ([`Person::ordinary`]).
+    pub(crate) fn reading(mut self, source: &str) -> Self {
+        let initialled = |p: &Person| p.source && !p.full;
+        if !self.0.iter().any(initialled) {
+            return self;
+        }
+        let forms: HashSet<&str> = (self.0.iter().filter(|p| initialled(p)))
+            .flat_map(|p| p.surname_forms.iter().map(String::as_str))
+            .collect();
+        let mut ordinary: HashSet<String> = HashSet::new();
+        let mut after_the = false;
+        for word in TOKEN.find_iter(source).map(|m| m.as_str()) {
+            let lower = word.to_lowercase();
+            if forms.contains(lower.as_str()) && (after_the || lower == word) {
+                ordinary.insert(lower.clone());
+            }
+            after_the = lower == "the";
+        }
+        for person in &mut self.0 {
+            person.ordinary = initialled(person)
+                && (person.surname_forms.iter().any(|f| ordinary.contains(f))
+                    || INSTITUTIONS.contains(&person.surname.as_str()));
+        }
+        self
+    }
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty() && self.1.is_empty()
     }
-    /// Whether `owner` is a known name's identity, which forms may join.
-    pub(crate) fn is_target(&self, owner: u64) -> bool {
-        self.0.iter().any(|p| p.owner == owner && p.source)
+    /// Whether `owner` is a known name's identity that forms may join,
+    /// counting no name written as `wording` ("J. Penrow" between John and
+    /// James Penrow is no target of its own).
+    pub(crate) fn is_target_besides(&self, owner: u64, wording: &str) -> bool {
+        self.0
+            .iter()
+            .any(|p| p.owner == owner && p.source && p.wording != wording)
+    }
+    /// Whether `owner` has a surname with initials of `surname` and
+    /// exactly `initials`, which another wording of it may join.
+    pub(crate) fn rewords(&self, surname: &str, initials: &[char], owner: u64) -> bool {
+        self.0.iter().any(|p| {
+            p.owner == owner
+                && p.source
+                && !p.full
+                && p.surname == surname
+                && p.given
+                    .iter()
+                    .map(|g| g.chars().next())
+                    .eq(initials.iter().map(|c| Some(*c)))
+        })
     }
     /// Whether `owner` is a full name's identity, which bare initials and a
     /// scan's surname with initials may join.
@@ -888,6 +969,10 @@ impl People {
         // Bare initials are a full name's only: a surname with initials
         // ("Y. Quill") blocks them, but never proposes them (#387).
         let initials_only = matches!(form, Form::InitialsOnly(_));
+        // A bare surname that is an ordinary word too: no form of a name
+        // with initials (#749).
+        let word = matches!(form, Form::Word { .. });
+        let joins = |p: &Person| p.full || p.source && !initials_only && !(word && p.ordinary);
         // Names with initials that this form rewords: theirs when no one
         // else's ("J. L. Penrow" of "Penrow, J. L.").
         let mut rewords = BTreeSet::new();
@@ -965,21 +1050,38 @@ impl People {
             if links {
                 found.link.insert(person.owner);
             }
-            found.proposed |=
-                (person.full || person.source && !initials_only) && (proposes || links);
+            found.proposed |= joins(person) && (proposes || links);
         }
         if found.link.is_empty() && !rewords.is_empty() {
             found.link = rewords;
             found.proposed = true;
         }
-        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
-            found.target = self
-                .0
-                .iter()
-                .any(|p| p.owner == owner && (p.full || p.source && !initials_only))
-                .then_some(owner);
-        }
+        // Bare initials join a full name only (#387).
+        found.target = self.one_target(&found.link, joins);
         found
+    }
+    /// The name a form linking `link` joins, of those `joins` lets it: its
+    /// one owner's, or,
+    /// when every owner is one full name that only its letters' writing
+    /// told apart (detected with decomposed letters and composed: two
+    /// identities, one name; #418), the first of them. Namesakes written
+    /// alike stay apart.
+    fn one_target(&self, link: &BTreeSet<u64>, joins: impl Fn(&Person) -> bool) -> Option<u64> {
+        let joins = &joins;
+        let named = |owner: u64| self.0.iter().filter(move |p| p.owner == owner && joins(p));
+        let mut owners = link.iter().copied();
+        let first = owners.next()?;
+        let rest: Vec<u64> = owners.collect();
+        named(first)
+            .any(|person| {
+                let same = |p: &Person| p.surname == person.surname && p.given == person.given;
+                rest.is_empty()
+                    || rest.iter().all(|&other| named(other).any(same))
+                        && link
+                            .iter()
+                            .any(|&owner| named(owner).any(|p| same(p) && p.decomposed))
+            })
+            .then_some(first)
     }
     /// Who bare initials ("jb", lowercase) may stand for: every person
     /// whose name spells them. Proposed when a written-out name spells
@@ -992,9 +1094,7 @@ impl People {
                 found.proposed |= spelling.full;
             }
         }
-        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
-            found.target = self.is_full(owner).then_some(owner);
-        }
+        found.target = self.one_target(&found.link, |p| p.full);
         found
     }
     /// The written-out names that spell bare initials ("jb", lowercase).
@@ -1016,6 +1116,14 @@ impl People {
                 self.spelled(&initials).target
             })
     }
+    /// Whether `wording` is a surname with initials whose forms spread, as
+    /// a full name's do (#749).
+    pub(crate) fn spreads_initialled(wording: &str) -> bool {
+        Self::new([(0, wording)])
+            .0
+            .first()
+            .is_some_and(|p| p.source && !p.full)
+    }
     /// Whether `wording` is a form of the full name `full`, linked or not.
     pub(crate) fn form_of(wording: &str, full: &str) -> bool {
         parse_form(wording).is_some_and(|form| {
@@ -1034,8 +1142,11 @@ fn form_in_context(wording: &str, surname: bool) -> Option<Form> {
     }
 }
 
-static TOKEN: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\p{L}+(?:['’-]\p{Lu}\p{L}*)*").expect("name token"));
+/// A name word in the source. A combining mark belongs to its letter
+/// ("Арте\u{308}ма"); forms read the word composed ([`read_name`]).
+static TOKEN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\p{L}[\p{L}\p{M}]*(?:['’-]\p{Lu}[\p{L}\p{M}]*)*").expect("name token")
+});
 
 /// Whether the text before `start` on its line ends a sentence: a line
 /// start, a list marker, a table cell or sentence punctuation.
@@ -1075,6 +1186,19 @@ pub(crate) fn glued(source: &str, range: &Range<usize>) -> bool {
     let glue = |c: Option<char>| c.is_some_and(|c| "_/@\\".contains(c));
     glue(source[..range.start].chars().next_back()) || glue(source[range.end..].chars().next())
 }
+
+/// Lowercase nouns that name an institution or an office, which a model's
+/// surname with initials may be ("Суд Н. О.", "U.S. Bank", "J. P. State")
+/// while the bare word names the institution: their bare forms are no
+/// form of it (#749). mdoc-pii has no rule pack (ADR 0092), so the list
+/// lives here; a document that writes the word in lower case or after
+/// "the" says the same of any word ([`People::reading`]).
+#[rustfmt::skip]
+const INSTITUTIONS: &[&str] = &[
+    "суд", "банк", "государство", "прокуратура", "администрация", "министерство",
+    "court", "bank", "state", "crown", "judge", "times", "council", "city", "county",
+    "government", "ministry", "treasury",
+];
 
 /// Upper-case words of two or three letters that are abbreviations, never a
 /// person's initials, though a name's letters may spell them: US state and
@@ -1485,13 +1609,12 @@ fn find_forms_with(
     // A surname's particle, as read: "v-\nan der Berg" has "van".
     let particle = |t: &Range<usize>| is_particle(&crate::view::unwrapped(&source[t.clone()]));
     // An initial: one capital letter and its period.
-    let initial = |k: usize| {
-        capital(k)
-            && source[tokens[k].clone()].chars().count() == 1
-            && source[tokens[k].end..].starts_with('.')
-    };
+    // Letters as forms read them: a letter and its combining marks are one.
+    let letters = |k: usize| read_name(&source[tokens[k].clone()]).chars().count();
+    let initial =
+        |k: usize| capital(k) && letters(k) == 1 && source[tokens[k].end..].starts_with('.');
     // A name word: a capital and more letters.
-    let word = |k: usize| capital(k) && source[tokens[k].clone()].chars().count() > 1;
+    let word = |k: usize| capital(k) && letters(k) > 1;
     // Bare initials of a known name where initials stand; their repeats
     // elsewhere are the same wording's mentions, the same person's.
     let cells = if bare {
@@ -1641,6 +1764,19 @@ fn find_forms_with(
                 }
                 tries.push((start..tokens[i + 1].end + 1, i + 2, false));
             }
+            // After a comma: "Penrow, J. K.", so it is no bare "Penrow" of
+            // "Penrow, J. L." (#749).
+            if word(i)
+                && initial(i + 1)
+                && source[tokens[i].end..].starts_with(',')
+                && tokens[i].end + 1 < tokens[i + 1].start
+                && blank(tokens[i].end + 1, tokens[i + 1].start)
+            {
+                if initial(i + 2) && blank(tokens[i + 1].end + 1, tokens[i + 2].start) {
+                    tries.push((start..tokens[i + 2].end + 1, i + 3, false));
+                }
+                tries.push((start..tokens[i + 1].end + 1, i + 2, false));
+            }
             // A title in any case and a surname ("Ms Raman", "dr. Raman"):
             // the surname alone, the title outside the span as the guide
             // keeps it; or first name + patronymic.
@@ -1708,7 +1844,7 @@ fn find_forms_with(
 /// ("Hill") is left out: without the review's mid-sentence restriction it
 /// would spread to the word itself.
 pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
-    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
+    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n))).reading(source);
     if people.is_empty() {
         return Vec::new();
     }
@@ -1724,7 +1860,7 @@ pub fn person_forms_in(source: &str, names: &[&str]) -> Vec<Range<usize>> {
 /// "Исполнитель" column beside «Яков Викторович Ростов» (#387). The
 /// detector reads a model's organization there as the person.
 pub fn placed_initials(source: &str, names: &[&str]) -> Vec<Range<usize>> {
-    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n)));
+    let people = People::new(names.iter().enumerate().map(|(i, n)| (i as u64, *n))).reading(source);
     if people.is_empty() {
         return Vec::new();
     }
@@ -1757,7 +1893,7 @@ impl Review {
     }
     fn people(&self) -> People {
         let names = self.known_people();
-        People::new(names.iter().map(|(id, w)| (*id, w.as_ref())))
+        People::new(names.iter().map(|(id, w)| (*id, w.as_ref()))).reading(&self.source)
     }
     /// The identity a person wording joins: its one candidate full name.
     pub(super) fn propagation_target(&self, wording: &str) -> Option<u64> {
@@ -1884,6 +2020,14 @@ impl Review {
             }
             added.push(id);
         }
+        // The names just found are known now: link again, so a form two of
+        // them share ("Penrow" beside "J. L. Penrow" and a found "K.
+        // Penrow") is either at once, not only from the next scan on.
+        if !added.is_empty() {
+            self.refresh(source);
+            let people = self.people();
+            self.relink_forms(&people, marked);
+        }
         // A full name repeated in another letter case joins it by
         // normalization, as any case-only respelling does.
         let names: Vec<_> = self
@@ -1938,12 +2082,25 @@ impl Review {
                         .any(|a| a.step.original_shared().as_ref() == v.original.as_ref())
             })
             .filter_map(|v| {
-                let target = people.target_of(&v.original, v.surname);
+                // A scan's surname with initials joins a full name only, as
+                // when it was seeded, or another wording of itself ("J. L.
+                // Penrow" of "Penrow, J. L."): "Penrow, J." is no "Penrow,
+                // J. L.".
+                let target = people.target_of(&v.original, v.surname).filter(|&target| {
+                    v.managed
+                        || people.is_full(target)
+                        || match parse_form(&v.original) {
+                            Some(Form::Initials { surname, initials }) => {
+                                people.rewords(&surname, &initials, target)
+                            }
+                            _ => true,
+                        }
+                });
                 let current = self.variant_identity(v.id)?;
                 let desired = match target {
                     Some(target) => Some(target),
-                    // A managed form leaves a full name it no longer fits.
-                    None if v.managed && people.is_target(current) => None,
+                    // A managed form leaves a name it no longer fits.
+                    None if v.managed && people.is_target_besides(current, &v.original) => None,
                     None => Some(current),
                 };
                 (desired != Some(current)).then_some((v.id, desired))
@@ -1954,15 +2111,18 @@ impl Review {
                 continue;
             };
             // Its own identity, or the one a respelling of it ("MS BENNETT")
-            // left for already.
+            // left for already: no other name's, though its own wording
+            // may be a name with initials there.
+            let original = variant.original.clone();
+            let theirs = |identity: &u64| people.is_target_besides(*identity, &original);
             let own = variant
                 .own
                 .or((variant.identity == variant.id).then_some(variant.id))
-                .filter(|own| !people.is_target(*own))
+                .filter(|own| !theirs(own))
                 .or_else(|| {
                     self.identities
                         .normalized_identity(&variant.original, Category::Person)
-                        .filter(|own| !people.is_target(*own))
+                        .filter(|own| !theirs(own))
                 });
             let desired = match desired.or(own) {
                 Some(identity) => identity,
@@ -1972,7 +2132,7 @@ impl Review {
                 continue;
             };
             variant.managed = true;
-            if !people.is_target(desired) {
+            if !theirs(&desired) {
                 variant.own = Some(desired);
             }
             let (seed, original) = (variant.identity, variant.original.clone());
@@ -2248,6 +2408,62 @@ mod tests {
             assert_eq!((found.target, found.proposed), (None, false), "{name}");
             assert_eq!(target(&[name, "Paul Ossian"], "Ossian"), None, "{name}");
         }
+    }
+
+    /// #749 review: a surname with initials whose surname is also an
+    /// ordinary word of the document ("Суд Н. О.", "U.S. Bank") spreads
+    /// no bare surname, and "Penrow, J. K." is read whole.
+    #[test]
+    fn a_surname_with_initials_spreads_no_ordinary_word() {
+        let read = |name: &str, source: &str| people(&[name]).reading(source);
+        // «Суд» is a word of the document: lower case, or after "the".
+        let source = "Подпись: Суд Н. О.\n\nСуд установил. Суду представлены документы. \
+            Решение суда.";
+        let sud = read("Суд Н. О.", source);
+        for word in ["Суд", "Суду", "Судом"] {
+            let found = sud.candidates(&form(word));
+            assert_eq!((found.target, found.proposed), (None, false), "{word}");
+        }
+        // Its initialled wordings still spread.
+        for wording in ["Суду Н. О.", "Н. О. Суд"] {
+            assert_eq!(sud.candidates(&form(wording)).target, Some(1), "{wording}");
+        }
+        for (name, source, word) in [
+            ("U.S. Bank", "Paid by U.S. Bank. The Bank refused.", "Bank"),
+            (
+                "N. Y. Times",
+                "Quoted in N. Y. Times. The Times ran it.",
+                "Times",
+            ),
+            ("J. P. State", "The State argued.", "State"),
+            ("Crown, A. B.", "the Crown argued.", "Crown"),
+            ("Judge, A. B.", "The Judge ruled.", "Judge"),
+            ("Банк И. И.", "Кредит выдал банк.", "Банк"),
+        ] {
+            let found = read(name, source).candidates(&form(word));
+            assert_eq!((found.target, found.proposed), (None, false), "{name}");
+        }
+        // A name whose surname is no word there spreads it; a whole name's
+        // surname stays a form of it (its first name says it is a name).
+        let source = "As Penrow showed, the J. L. Penrow survey held.";
+        assert_eq!(
+            read("Penrow, J. L.", source)
+                .candidates(&form("Penrow"))
+                .target,
+            Some(1)
+        );
+        let whole = people(&["Иван Суд"]).reading("Решение суда.");
+        assert_eq!(whole.candidates(&form("Суд")).target, Some(1));
+        // A surname with initials after a comma is one form, so "Penrow,
+        // J. K." is no bare "Penrow" of J. L.
+        let source = "Penrow, J. K. witnessed. Penrow agreed.";
+        let found: Vec<_> = find_forms(source, &read("Penrow, J. L.", source), &[], &[])
+            .into_iter()
+            .map(|(range, ..)| &source[range])
+            .collect();
+        assert_eq!(found, ["Penrow, J. K.", "Penrow"]);
+        assert_eq!(target(&["Penrow, J. L."], "Penrow, J. K."), None);
+        assert_eq!(target(&["John Smith"], "Smith, J."), Some(1));
     }
 
     /// #749: a surname with initials proposes its surname as a whole name
@@ -2746,6 +2962,80 @@ mod tests {
         );
         assert_eq!(parse_whole("Ms Maya Bennett"), None);
         assert_eq!(parse_whole("Maya R. Bennett"), None);
+    }
+
+    /// A known full name again in each case, his and hers, is one form
+    /// that joins the person (#418); a different first name, or a
+    /// patronymic and surname without one, is not that person whole.
+    #[test]
+    fn a_full_name_in_any_case_joins_it() {
+        let found = |names: &[&str], source: &str| -> Vec<String> {
+            find_forms(source, &people(names), &[], &[])
+                .into_iter()
+                .map(|(r, ..)| source[r].to_owned())
+                .collect()
+        };
+        let whole = |names: &[&str], wording: &str| {
+            people(names)
+                .candidates(&parse_whole(wording).unwrap())
+                .target
+        };
+        let names = ["Артём Антонович Зайцев", "Анна Петровна Иванова"];
+        for wording in [
+            "Артёма Антоновича Зайцева",
+            "Артёму Антоновичу Зайцеву",
+            "Артёмом Антоновичем Зайцевым",
+            "Артёме Антоновиче Зайцеве",
+        ] {
+            assert_eq!(whole(&names, wording), Some(1), "{wording}");
+            let source = format!("Заявление {wording} принято.");
+            assert_eq!(found(&names, &source), [wording]);
+        }
+        for wording in [
+            "Анны Петровны Ивановой",
+            "Анне Петровне Ивановой",
+            "Анну Петровну Иванову",
+            "Анной Петровной Ивановой",
+        ] {
+            assert_eq!(whole(&names, wording), Some(2), "{wording}");
+            let source = format!("Заявление {wording} принято.");
+            assert_eq!(found(&names, &source), [wording]);
+        }
+        // Another first name is another person: never Артём whole.
+        assert_eq!(whole(&names, "Ивана Антоновича Зайцева"), None);
+        let found_ivan = found(&names, "Заявление Ивана Антоновича Зайцева принято.");
+        assert!(
+            !found_ivan.iter().any(|f| f.contains("Ивана")),
+            "{found_ivan:?}"
+        );
+        assert_eq!(whole(&names, "Антоновича Зайцева"), None);
+    }
+
+    /// A letter written with a combining mark reads as the one letter, as
+    /// NFC writes it (#418): "Арте\u{308}ма Антоновича Заи\u{306}цева" is
+    /// Артём Антонович Зайцев in the genitive, and its span stays the
+    /// source's, marks included.
+    #[test]
+    fn decomposed_letters_read_as_one() {
+        assert_eq!(read_name("Арте\u{308}ма Заи\u{306}цева"), "Артёма Зайцева");
+        assert_eq!(read_name("q\u{308}"), "q\u{308}", "no such letter");
+        let names = ["Артём Антонович Зайцев"];
+        assert_eq!(target(&names, "Заи\u{306}цев"), Some(1));
+        assert_eq!(target(&names, "Арте\u{308}ма Антоновича"), Some(1));
+        let source = "Обращение Арте\u{308}ма Антоновича Заи\u{306}цева принято.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Арте\u{308}ма Антоновича Заи\u{306}цева"]);
+        // The known name decomposed, its form composed.
+        let decomposed = ["Арте\u{308}м Антонович Заи\u{306}цев"];
+        let source = "Обращение Артёма Антоновича Зайцева принято.";
+        let found: Vec<_> = find_forms(source, &people(&decomposed), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Артёма Антоновича Зайцева"]);
     }
 
     #[test]
