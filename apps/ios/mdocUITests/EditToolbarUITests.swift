@@ -128,12 +128,16 @@ final class EditToolbarUITests: XCTestCase {
     /// The accessibility audit with the toolbar up, then with the
     /// formatting keyboard (ADR 0109): no issue on the toolbar's or the
     /// keyboard's keys. Issues elsewhere (the system keyboard) are printed.
+    /// The audit types are the edit-mode audit's (`LivePreviewUITests`): with
+    /// the hit-region audit too it ran past the audit's time limit on the
+    /// hosted runner; the 44 pt targets are checked by their frames in
+    /// `testToolbarBoldAndTheFormattingKeyboard`.
     @MainActor
     func testTheAccessibilityAuditWithTheToolbarUp() throws {
         let (app, _) = edit()
         func audit(_ name: String) throws -> [String] {
             var found: [String] = []
-            try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait, .hitRegion]) { issue in
+            try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait]) { issue in
                 let identifier = issue.element?.identifier ?? ""
                 let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
                 print("A11Y[\(name)] \(line)")
