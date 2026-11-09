@@ -1,6 +1,8 @@
 //! A machine-readable zone's name line (ICAO 9303; issue #495): its
 //! surname follows the document's head with no separator
-//! ("P<RUSKRENC<<LIDIIA"), yet is a word of its own.
+//! ("P<RUSKRENC<<LIDIIA"), yet is a word of its own. So is its document
+//! number, glued to its check digit ("7605318428RUS…") or, on a TD1 card,
+//! to the head too ("I<NORD231458907<<<").
 use regex::Regex;
 use std::{ops::Range, sync::OnceLock};
 
@@ -54,16 +56,90 @@ const CLOSING: &str =
 fn head() -> &'static Regex {
     static HEAD: OnceLock<Regex> = OnceLock::new();
     HEAD.get_or_init(|| {
-        let states = STATES
-            .iter()
-            .map(|state| state.replace('<', FILLER))
-            .collect::<Vec<_>>()
-            .join("|");
+        let states = states();
         Regex::new(&format!(
             r"\A{OPENING}[PIAC](?:[A-Z]|{FILLER})?(?:{states})\z"
         ))
         .expect("the zone's head")
     })
+}
+
+/// [`STATES`] as alternatives, each filler as the source may write it.
+fn states() -> String {
+    STATES
+        .iter()
+        .map(|state| state.replace('<', FILLER))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+/// What opens a TD1 card's lines: an indent and blockquote marks.
+const INDENT: &str = r"[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*";
+
+/// What may open a passport's or a TD2 card's second line before its
+/// document number (the name line's openings).
+fn opening() -> &'static Regex {
+    static OPENS: OnceLock<Regex> = OnceLock::new();
+    OPENS.get_or_init(|| Regex::new(&format!(r"\A{OPENING}\z")).expect("the zone's opening"))
+}
+
+/// A passport's or a TD2 card's second line after its document number:
+/// the fillers that pad it, its check digit, the nationality, the birth
+/// date and its check digit, the sex, the expiry date and its check digit,
+/// then capitals, digits and fillers, and what closes the line.
+fn number_line() -> &'static Regex {
+    static LINE: OnceLock<Regex> = OnceLock::new();
+    LINE.get_or_init(|| {
+        let states = states();
+        Regex::new(&format!(
+            r"\A{FILLER}*(?:[0-9]|{FILLER})(?:{states})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[MFX]|{FILLER})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[A-Z0-9]|{FILLER})*{CLOSING}\z"
+        ))
+        .expect("the zone's number line")
+    })
+}
+
+/// A TD1 card's first line before its document number: its indent, the
+/// card's code, its type and the issuing state.
+fn card_head() -> &'static Regex {
+    static HEAD: OnceLock<Regex> = OnceLock::new();
+    HEAD.get_or_init(|| {
+        let states = states();
+        Regex::new(&format!(
+            r"\A{INDENT}[IAC](?:[A-Z]|{FILLER})?(?:{states})\z"
+        ))
+        .expect("the card's head")
+    })
+}
+
+/// A TD1 card's text after its document number: the fillers that pad it,
+/// its check digit and the optional data to the line's end, then (a blank
+/// line between too) the card's second line's birth date and its check
+/// digit, sex, expiry date and its check digit, and nationality.
+fn card_rest() -> &'static Regex {
+    static REST: OnceLock<Regex> = OnceLock::new();
+    REST.get_or_init(|| {
+        Regex::new(&format!(
+            r"\A{FILLER}*(?:[0-9]|{FILLER})(?:[A-Z0-9]|{FILLER})*[\p{{Zs}}\t]*\\?\r?\n(?:[\p{{Zs}}\t]*\r?\n)?{INDENT}[0-9]{{6}}(?:[0-9]|{FILLER})(?:[MFX]|{FILLER})[0-9]{{6}}(?:[0-9]|{FILLER})(?:[A-Z]|{FILLER}){{3}}"
+        ))
+        .expect("the card's lines")
+    })
+}
+
+/// Whether `range` of `text` stands where a zone's document number does
+/// (#495): opening a passport's or a TD2 card's second line, the rest of
+/// that line of its shape, or after a TD1 card's head, the card's second
+/// line under it. What `range` holds is not read (a damaged number, or its
+/// alias), nor is any check digit checked.
+pub(crate) fn number_at(text: &str, range: &Range<usize>) -> bool {
+    if range.is_empty() || text[range.clone()].contains('\n') {
+        return false;
+    }
+    let start = text[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let before = &text[start..range.start];
+    let after = &text[range.end..];
+    let line = &after[..after.find('\n').unwrap_or(after.len())];
+    (opening().is_match(before) && number_line().is_match(line))
+        || (card_head().is_match(before) && card_rest().is_match(after))
 }
 
 /// The line from a surname on: capitals and fillers alone, then what closes

@@ -20879,7 +20879,255 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
             assert_eq!(states, expected);
             listed += 1;
         }
-        assert_eq!(listed, 2);
+        // The names' two rules and the document number's two.
+        assert_eq!(listed, 4);
+    }
+
+    /// What the review shows for `source` with the model's `entities`
+    /// (`label` and text), as text and category: the zone rules' spans
+    /// (#495).
+    fn mrz_spans_beside(source: &str, entities: &[(&str, &str)]) -> Vec<(String, String)> {
+        let raw: Vec<crate::RawEntity> = entities
+            .iter()
+            .map(|(label, text)| {
+                let start = source.find(text).unwrap();
+                crate::RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect();
+        crate::recognition::proposals(source, &raw)
+            .unwrap()
+            .into_iter()
+            .map(|span| (source[span.range].to_owned(), span.category))
+            .collect()
+    }
+
+    /// The document numbers the review shows for `source` without a model.
+    fn mrz_numbers(source: &str) -> Vec<String> {
+        mrz_spans_beside(source, &[])
+            .into_iter()
+            .filter(|(_, category)| category == "IDENTITY")
+            .map(|(text, _)| text)
+            .collect()
+    }
+
+    /// The passport the zone tests read: its names line and its second
+    /// line, whose number "760531842" is glued to its check digit 8.
+    const MRZ_NUMBER_LINE: &str = "7605318428RUS9104123F3102154<<<<<<<<<<<<<<06";
+
+    /// #495 (the maintainer's decision): a passport's document number, on
+    /// its zone's second line, is IDENTITY without the fillers that pad it
+    /// and its check digit; the names stay PERSON, and the dates, the sex
+    /// and the other check digits stay unmarked. A TD2 card's second line
+    /// (36 characters) gives its number the same way.
+    #[test]
+    fn a_machine_readable_zones_document_number_is_identity() {
+        let passport = format!(
+            "Машиночитаемая зона:\n{}\n{MRZ_NUMBER_LINE}\n",
+            mrz_line("P<RUSKRENC<<LIDIIA<ARSENEVNA", 44)
+        );
+        let expected: Vec<(String, String)> = [
+            ("KRENC", "PERSON"),
+            ("LIDIIA", "PERSON"),
+            ("ARSENEVNA", "PERSON"),
+            ("760531842", "IDENTITY"),
+        ]
+        .iter()
+        .map(|(text, category)| ((*text).to_owned(), (*category).to_owned()))
+        .collect();
+        assert_eq!(mrz_spans_beside(&passport, &[]), expected);
+        // The line alone, a number shorter than nine padded with fillers,
+        // and a TD2 card's line, whose check digit is a filler.
+        assert_eq!(mrz_numbers(MRZ_NUMBER_LINE), ["760531842"]);
+        assert_eq!(
+            mrz_numbers("X0042917<6NOR8807145M3307019<<<<<<<<<<<<<<02"),
+            ["X0042917"]
+        );
+        assert_eq!(
+            mrz_numbers("AB1234<<<4NOR8807145X3307019<<<<<<<<<<<<<<02"),
+            ["AB1234"]
+        );
+        let card = format!(
+            "{}\nD23145890<NOR8807145F3307019<<<<<<<4",
+            mrz_line("I<NORHALDOR<<VESKA<INGRID", 36)
+        );
+        assert_eq!(
+            mrz_spans_beside(&card, &[])
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>(),
+            ["HALDOR", "VESKA", "INGRID", "D23145890"]
+        );
+        // The model's guess on the number, or on more of the line, leaves
+        // the number alone.
+        for span in ["760531842", "7605318428RUS9104123F3102154"] {
+            assert_eq!(
+                mrz_spans_beside(MRZ_NUMBER_LINE, &[("passport_number", span)]),
+                [("760531842".to_owned(), "IDENTITY".to_owned())],
+                "{span}"
+            );
+        }
+        // The number in the text above the zone is the same identity's:
+        // both are proposed.
+        let source = format!("Паспорт № 760531842\n\n{MRZ_NUMBER_LINE}\n");
+        let at = source.rfind("760531842").unwrap();
+        let ranges: Vec<_> = crate::recognition::proposals(
+            &source,
+            &[crate::RawEntity {
+                start: source.find("760531842").unwrap(),
+                end: source.find("760531842").unwrap() + 9,
+                label: "passport_number".into(),
+                score: 0.9,
+                text: "760531842".into(),
+            }],
+        )
+        .unwrap()
+        .into_iter()
+        .filter(|span| span.category == "IDENTITY")
+        .map(|span| span.range)
+        .collect();
+        assert_eq!(ranges.last(), Some(&(at..at + 9)), "{ranges:?}");
+        assert_eq!(ranges.len(), 2, "{ranges:?}");
+    }
+
+    /// #495: a TD1 card's document number, after its head on its first
+    /// line (positions 6–14), with the card's second line under it; a
+    /// shorter one padded with fillers; the optional data and the second
+    /// line's dates stay unmarked.
+    #[test]
+    fn a_td1_cards_document_number_is_identity() {
+        let lines = [
+            mrz_line("I<NORD231458907", 30),
+            mrz_line("8807145F3307019NOR", 29) + "6",
+            mrz_line("QUILLAN<<ODA<RENATE", 30),
+        ];
+        let card = format!("Оборот карты:\n{}\n", lines.join("\n"));
+        assert_eq!(
+            mrz_spans_beside(&card, &[])
+                .into_iter()
+                .map(|(text, category)| format!("{category} {text}"))
+                .collect::<Vec<_>>(),
+            [
+                "IDENTITY D23145890",
+                "PERSON QUILLAN",
+                "PERSON ODA",
+                "PERSON RENATE"
+            ]
+        );
+        assert_eq!(mrz_numbers(&lines.join("\n\n")), ["D23145890"]);
+        assert_eq!(
+            mrz_numbers(&format!("> {}", lines.join("\n> "))),
+            ["D23145890"]
+        );
+        // Germany's "D<<", a shorter number padded, a filler as the check
+        // digit, optional data after it.
+        for (first, number) in [
+            ("IDD<<T220001293", "T22000129"),
+            ("I<NORD2314589<7", "D2314589"),
+            ("C<NLDSPECI2014<", "SPECI2014"),
+            ("I<NLDSPECI20142999999990", "SPECI2014"),
+        ] {
+            let source = format!(
+                "{}\n{}",
+                mrz_line(first, 30),
+                mrz_line("8807145F3307019NOR", 29) + "6"
+            );
+            assert_eq!(mrz_numbers(&source), [number], "{source}");
+        }
+    }
+
+    /// #495: fillers written escaped (`\<`, anydoc's RTF and DOCX output)
+    /// or as an entity (`&lt;`), and a hard break after the line, give the
+    /// same numbers; so does a line in Markdown or after a label.
+    #[test]
+    fn a_document_number_in_imported_text_or_markdown_is_identity() {
+        let td1 = format!(
+            "{}\n{}",
+            mrz_line("I<NORD2314589<7", 30),
+            mrz_line("8807145F3307019NOR", 29) + "6"
+        );
+        let short = "X0042917<6NOR8807145M3307019<<<<<<<<<<<<<<02";
+        for filler in ["\\<", "&lt;"] {
+            assert_eq!(
+                mrz_numbers(&MRZ_NUMBER_LINE.replace('<', filler)),
+                ["760531842"],
+                "{filler}"
+            );
+            assert_eq!(
+                mrz_numbers(&short.replace('<', filler)),
+                ["X0042917"],
+                "{filler}"
+            );
+            assert_eq!(
+                mrz_numbers(&td1.replace('<', filler)),
+                ["D2314589"],
+                "{filler}"
+            );
+        }
+        for source in [
+            format!("{MRZ_NUMBER_LINE}\\\nend"),
+            format!("> {MRZ_NUMBER_LINE}"),
+            format!("- {MRZ_NUMBER_LINE}"),
+            format!("**{MRZ_NUMBER_LINE}**"),
+            format!("`{MRZ_NUMBER_LINE}`"),
+            format!("| MRZ | {MRZ_NUMBER_LINE} |"),
+            format!("Вторая строка: {MRZ_NUMBER_LINE}"),
+            format!("\u{a0}\u{a0}{MRZ_NUMBER_LINE}"),
+        ] {
+            assert_eq!(mrz_numbers(&source), ["760531842"], "{source}");
+        }
+    }
+
+    /// #495: OCR's damage leaves the number IDENTITY while the line keeps
+    /// its shape: a letter for a digit, a check digit that does not
+    /// validate, a filler lost or added.
+    #[test]
+    fn an_ocr_damaged_document_number_is_still_identity() {
+        for (source, number) in [
+            ("76O5318420RUS9104123F3102154<<<<<<<<<<<<<<06", "76O531842"),
+            ("7605318421RUS9104123F3102154<<<<<<<<<<<<<<06", "760531842"),
+            ("X00429176NOR8807145M3307019<<<<<<<<<<<<<<02", "X0042917"),
+            ("X0042917<<6NOR8807145M3307019<<<<<<<<<<<<<<<02", "X0042917"),
+        ] {
+            assert_eq!(mrz_numbers(source), [number], "{source}");
+        }
+    }
+
+    /// #495: a masked number, or fillers alone, give nothing; so does text
+    /// of a zone line's length without its shape (an unknown state, no
+    /// sex, letters for a date, a TD1 card's first line without its second).
+    #[test]
+    fn a_masked_number_or_a_line_without_the_zones_shape_gives_no_identity() {
+        for source in [
+            "XXXXXXXXX8RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "<<<<<<<<<8RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            format!(
+                "{}\n{}",
+                mrz_line("I<NORXXXXXXXXX7", 30),
+                mrz_line("8807145F3307019NOR", 29) + "6"
+            ),
+            "1234567890123456789012345678901234567890ABCD".to_owned(),
+            "ORDER NO 4471 OF 2031 01 15 REF AB 12345678".to_owned(),
+            "THE PARTIES AGREE TO THE TERMS SET OUT BELOW".to_owned(),
+            "7605318428XYZ9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS9104123Q3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS91O4123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS9104123F3102154".to_owned(),
+            format!("{MRZ_NUMBER_LINE}<<<<<<<<<<"),
+            "Invoice 7605318428RUS9104123F3102154<<<<<<06".to_owned(),
+            mrz_line("I<NORD231458907", 30),
+            format!(
+                "{}\nThe card's back is not attached.",
+                mrz_line("I<NORD231458907", 30)
+            ),
+        ] {
+            assert!(mrz_numbers(&source).is_empty(), "{source}");
+        }
     }
 
     /// #563: ОГРН, ОГРНИП and ОКПО are TAX like ИНН, a public body's own

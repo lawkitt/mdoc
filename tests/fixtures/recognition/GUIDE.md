@@ -155,6 +155,7 @@ a boundary case.
 - A lower-case legal form opens the ORG span like «ООО»: "⟦ORG|адвокатское бюро «Валерия Конц»⟧" (hunt-ru-r6-05).
 - Name parts in separate table columns are each their own span: "| ⟦PERSON|Кий⟧ | ⟦PERSON|Ева⟧ | ⟦PERSON|Оскаровна⟧ |" (hunt-ru-r2-09).
 - Name parts in a passport's machine-readable zone are each a PERSON span, without the filler «<»: "P<RUS⟦PERSON|KRENC⟧<<⟦PERSON|LIDIIA⟧<⟦PERSON|ARSENEVNA⟧<<<" (hunt-ru-r7-05).
+- The document number in a machine-readable zone is `IDENTITY`, without the filler «<» that pads it and its check digit; the zone's dates and other check digits stay unmarked: "⟦IDENTITY|760531842⟧8RUS9104123F…" (#495).
 - An identifier wrapped across an OCR line is one span, newline included: "Эл. почта: ⟦EMAIL|ksen.rav@\nsvod.invalid⟧" (hunt-ru-r2-03).
 - A phone extension belongs to the number, inside the span: "⟦PHONE|+1 (202) 555-0164 x207⟧" (hunt-en-r5-07).
 - The title of a work is not a span, even when it reads like a name: «Кедровый свет» (hunt-ru-r3-07).

@@ -1313,3 +1313,60 @@ fn an_alias_after_a_machine_readable_zones_head_restores() {
         assert_eq!(apply(&map, text), text);
     }
 }
+
+/// #495: a zone's document number's alias stands glued to the check digit
+/// after it ("IDENTITY_18RUS…" is `IDENTITY_1`, then 8), and on a TD1 card
+/// to the head before it too; it restores there when it names a known
+/// identity, padded with fillers or not. Elsewhere the digits stay its own.
+#[test]
+fn a_document_numbers_alias_in_a_machine_readable_zone_restores() {
+    let map = RestoreMap::new(vec![identity(
+        "IDENTITY_1",
+        Category::Identity,
+        &["760531842"],
+    )]);
+    let card = "\n8807145F3307019RUS<<<<<<<<<<<6";
+    for (text, restored) in [
+        (
+            "IDENTITY_18RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "7605318428RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        ),
+        (
+            "IDENTITY_1<8RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+            "760531842<8RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        ),
+        (
+            r"MRZ: IDENTITY_18RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
+            r"MRZ: 7605318428RUS9104123F3102154\<\<<<<<<<<<<<<06".to_owned(),
+        ),
+        (
+            format!("I<RUSIDENTITY_18<<<<<<<<<<<<<<<{card}"),
+            format!("I<RUS7605318428<<<<<<<<<<<<<<<{card}"),
+        ),
+        (
+            format!("I<RUSIDENTITY_182999999990<<<<<{card}"),
+            format!("I<RUS76053184282999999990<<<<<{card}"),
+        ),
+    ] {
+        assert_eq!(apply(&map, &text), restored, "{text}");
+    }
+    for text in [
+        "IDENTITY_18 signs.".to_owned(),
+        "IDENTITY_18RUS and more.".to_owned(),
+        "XIDENTITY_18RUS9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        "IDENTITY_18XYZ9104123F3102154<<<<<<<<<<<<<<06".to_owned(),
+        "I<RUSIDENTITY_18<<<<<<<<<<<<<<< and no card line".to_owned(),
+    ] {
+        assert_eq!(apply(&map, &text), text);
+    }
+    // An alias that names no identity there is not cut short.
+    let other = RestoreMap::new(vec![identity(
+        "IDENTITY_18",
+        Category::Identity,
+        &["X0042917"],
+    )]);
+    assert_eq!(
+        apply(&other, "IDENTITY_18<6NOR8807145M3307019<<<<<<<<<<<<<<02"),
+        "X0042917<6NOR8807145M3307019<<<<<<<<<<<<<<02"
+    );
+}

@@ -106,7 +106,7 @@ impl RestoreMap {
     }
     /// Alias-shaped tokens in `text`, in source order and non-overlapping.
     pub fn tokens(&self, text: &str) -> Vec<Token> {
-        let mut tokens = generated_tokens(text)
+        let mut tokens = generated_tokens(text, &|key| self.generated.contains_key(key))
             .into_iter()
             .filter_map(|(range, key, strict)| {
                 let identity = self.generated.get(&key).copied();
@@ -118,8 +118,9 @@ impl RestoreMap {
         for (alias, index) in &self.custom {
             for (start, _) in text.match_indices(alias.as_str()) {
                 let range = start..start + alias.len();
-                if (word_start(text, start) || zone_surname(text, &range))
-                    && word_end(text, range.end)
+                if ((word_start(text, start) || zone_surname(text, &range))
+                    && word_end(text, range.end))
+                    || crate::mrz::number_at(text, &range)
                 {
                     tokens.push(Token {
                         range,
@@ -179,7 +180,7 @@ impl RestoreMap {
     /// Identity indices to offer for an unresolved `token`: those of the
     /// category it names first (`PERSON_9` offers people first).
     pub fn choices(&self, token: &str) -> Vec<usize> {
-        let category = generated_tokens(token)
+        let category = generated_tokens(token, &|_| false)
             .first()
             .map(|(_, (category, _), _)| *category);
         let mut choices: Vec<_> = (0..self.identities.len()).collect();
@@ -421,7 +422,10 @@ impl RestoreMap {
                 continue;
             };
             let old = &text[token.range.clone()];
-            let new = match (generated_tokens(old).first(), parse_alias(alias)) {
+            let new = match (
+                generated_tokens(old, &|_| false).first(),
+                parse_alias(alias),
+            ) {
                 (Some((range, (category, _), _)), Some((new_category, number)))
                     if range.len() == old.len() && *category == new_category =>
                 {
@@ -519,7 +523,13 @@ fn is_cyrillic(c: char) -> bool {
 /// Generated-alias candidates: a category token in any case, one separator
 /// (`_`, `-`, space or no-break space) and up to nine digits. `strict` marks the
 /// canonical look (uppercase, `_` or `-`) that is reported even when unknown.
-fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
+/// Where a zone's document number stood, its alias is glued to the check
+/// digit after it ("IDENTITY_18RUS…" is `IDENTITY_1` then 8, #495): a
+/// token that leaves digits there is read only when it is `known`.
+fn generated_tokens(
+    text: &str,
+    known: &dyn Fn(&(Category, u64)) -> bool,
+) -> Vec<(Range<usize>, (Category, u64), bool)> {
     // Longest first, so REDACTED is not read as a shorter token.
     let mut categories = Category::ALL;
     categories.sort_by_key(|c| std::cmp::Reverse(c.token().len()));
@@ -559,6 +569,18 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
                 .bytes()
                 .take_while(u8::is_ascii_digit)
                 .count();
+            let number = |end: usize| text[digits_start..end].parse().unwrap_or(u64::MAX);
+            let strict = prefix == token && matches!(separator, '_' | '-');
+            let zone_number = (1..digits.min(10))
+                .rev()
+                .map(|n| digits_start + n)
+                .find(|&end| {
+                    crate::mrz::number_at(text, &(at..end)) && known(&(category, number(end)))
+                });
+            if let Some(end) = zone_number {
+                matched = Some((at..end, (category, number(end)), strict));
+                break;
+            }
             let end = digits_start + digits;
             if digits == 0
                 || digits > 9
@@ -567,9 +589,7 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
             {
                 continue;
             }
-            let number = text[digits_start..end].parse().unwrap_or(u64::MAX);
-            let strict = prefix == token && matches!(separator, '_' | '-');
-            matched = Some((at..end, (category, number), strict));
+            matched = Some((at..end, (category, number(end)), strict));
             break;
         }
         match matched {
