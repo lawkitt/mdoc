@@ -362,10 +362,11 @@ guess_words = ["GmbH", "AG", "SA", "BV"]
 # People: a capitalized word that is not a never word ("Ms Bennett", not
 # "Ms" or "husband"). A manual selection of 1–4 capitalized words is a
 # person; hyphenated surnames, apostrophes and initials ("М.С.", "J.R.")
-# count.
+# count. A surname glued to its lowercase particle is capitalized after it
+# ("d'Estaing", "д'Артаньян", "al-Hadid", "аль-Хадид"; #403).
 [[shape]]
 category = "PERSON"
-word = '^\p{Uppercase}'
+word = '^(?:\p{Uppercase}|[dд][\x27’]\p{Uppercase}|(?:al|el|аль|эль)-\p{Uppercase})'
 guess = [
     '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
 ]

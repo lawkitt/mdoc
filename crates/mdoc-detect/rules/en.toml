@@ -86,6 +86,27 @@ extend = [
     '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*',
 ]
 
+# A surname's lowercase particle belongs to the name: the model's "Berg" in
+# "signed by van der Berg" grows to "van der Berg", "Vries" in "Ms de Vries"
+# to "de Vries", and "Berg" in "J. R. van der Berg" to the whole of it
+# (guide rule 1, #403). Two particles may chain ("de la Cruz"), and a glued
+# "d'" or "al-" is the word's own ("d'Estaing", "al-Hadid"). Only spaces
+# sit between, never a line. Written lowercase a particle is no sentence's
+# first word, so it joins anywhere. "van", "den", "ten", "bin" and "al" are
+# also words ("the van Smith drove", "ten Smith employees", "The van Smith
+# rented") and join only after a title, an initial or a capitalised word
+# mid-sentence on the same line, the `lead` that stays outside ("by Hans
+# ten Brink"), or before a second particle ("the van der Berg file"). Two
+# initials before the particle go with the span ("J. R. van der Berg").
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?|(?:van|den|ten|bin|al)[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+    '(?P<lead>(?:\b(?:Mr|Mrs|Ms|Mx|Miss|Dr|Prof|Professor|Sir|Dame|Lord|Lady|Judge|Justice)\.?|\b[B-HJ-Z]\.?|\b[AI]\.|[\p{L},][ \t]+[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])[ \t]+)(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+    '\b[A-Z]\.[ \t]?[A-Z]\.[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al)(?:[ \t]+(?:de|da|di|du|del|della|der|la|le|von|dos|das|ter|ibn|van|den|ten|bin|al))?[ \t]+(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+    '\b(?:d[\x27’]|(?:al|el)-)(?:[A-Z][\x27’])?[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])*',
+]
+
 # One initial, with its period or without, right before a surname belongs
 # to the name: the model's "Ashdale" in "Judge K Ashdale" grows to "K
 # Ashdale" (guide rule 1, #387). The `lead` marks the letter as an
@@ -225,6 +246,21 @@ trim_start = [
     '(?:Decl|Dep|Aff)\.[\p{Zs}\t]+of[\p{Zs}\t]+',
     'Ex\.[\p{Zs}\t]+\d+[\p{Zs}\t]+to[\p{Zs}\t]+',
 ]
+
+# A short two-part name after a courtesy title is PERSON, whatever the
+# model made of it: "Mr Li Na", "Ms Ko Un" (guide rule 1, #404). Two
+# capitalised words of two letters or more and no third one after them; the
+# title stays outside. A judge's, a speaker's or an officer's title after
+# the courtesy one is no name ("Mr Justice Ashdale", "Mr Deputy Mayor"),
+# and neither is a heading's word ("Ms Smith Re: the lease"): both are skipped.
+# "Dr" is left out, as it is also a street's "Drive".
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>{lead})(?:{name})(?P<tail>{tail})'
+parts.lead = '\b(?:Mr|Mrs|Ms|Mx|Miss)\.?[\p{Zs}\t]+'
+parts.name = '[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])?[\p{Zs}\t]+[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}](?:-[\p{Latin}&&\p{Lu}]\p{Latin}*[\p{Latin}&&\p{Ll}])?'
+parts.tail = '[\p{Zs}\t]*(?:[^\p{L}\p{N}\p{Zs}\t]|(?m:$))|[\p{Zs}\t]+[\p{Ll}\p{N}]'
+skip = '\b(?:Justice|Speaker|President|Chairman|Chairwoman|Chair|Deputy|Recorder|Registrar|Commissioner|Secretary|Attorney|General|Lord|Lady|Sir|Dame|Judge|Senator|Governor|Mayor|Chief|Vice|Acting|Dear|Re|The|And|Of)\b'
 
 # A model span that starts inside a caption's short "Ex p" ("Ex ⟦p Ossian
 # Draycott⟧") loses the "p": a lower-case "p" before a capitalised word

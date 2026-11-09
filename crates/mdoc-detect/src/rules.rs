@@ -6612,6 +6612,164 @@ mod tests {
         );
     }
 
+    /// #403: a surname's lowercase particle joins the model's surname, in
+    /// Russian and English, chained, glued, with the given names, initials
+    /// or a patronymic around it, never across a line; a particle that is
+    /// also a word («да», «фон», "van", "ten") only after a name's word, a
+    /// title or an introducing word.
+    #[test]
+    fn a_surnames_particle_joins_the_name() {
+        for (source, model, expected) in [
+            (
+                "В журнале выдачи заказ записан на фамилию де Лаваль.",
+                &["Лаваль"][..],
+                &["де Лаваль"][..],
+            ),
+            (
+                "Я, Генриетта Яновна де Лаваль, уполномочиваю представителя.",
+                &["Лаваль"],
+                &["Генриетта Яновна де Лаваль"],
+            ),
+            (
+                "Я, Генриетта Яновна де Лаваль, уполномочиваю представителя.",
+                &["Генриетта Яновна", "Лаваль"],
+                &["Генриетта Яновна де Лаваль"],
+            ),
+            (
+                "Решение согласовано с Генриеттой Яновной де Лаваль отдельно.",
+                &["Лаваль"],
+                &["Генриеттой Яновной де Лаваль"],
+            ),
+            (
+                "Иск подан против де Лаваль Генриетты Яновны в мае.",
+                &["Лаваль Генриетты Яновны"],
+                &["де Лаваль Генриетты Яновны"],
+            ),
+            (
+                "Опись передаётся Г. Я. де Лаваль лично.",
+                &["Лаваль"],
+                &["Г. Я. де Лаваль"],
+            ),
+            (
+                "Договор подписал барон фон дер Пален.",
+                &["Пален"],
+                &["фон дер Пален"],
+            ),
+            ("Ответчик ван Хорн возражал.", &["Хорн"], &["ван Хорн"]),
+            (
+                "Доверенность выдана гражданке да Силва.",
+                &["Силва"],
+                &["да Силва"],
+            ),
+            ("Отто фон Пален прибыл.", &["Пален"], &["фон Пален"]),
+            (
+                "Явился мушкетёр д'Артаньян.",
+                &["Артаньян"],
+                &["д'Артаньян"],
+            ),
+            ("Свидетель аль-Хадид показал.", &["Хадид"], &["аль-Хадид"]),
+            (
+                "The deed was signed by van der Berg today.",
+                &["Berg"],
+                &["van der Berg"],
+            ),
+            ("Dear Ms de Vries, thank you.", &["Vries"], &["de Vries"]),
+            (
+                "Witness: J. R. van der Berg, notary.",
+                &["Berg"],
+                &["J. R. van der Berg"],
+            ),
+            (
+                "The claim was heard by Hans ten Brink yesterday.",
+                &["Brink"],
+                &["ten Brink"],
+            ),
+            ("Ms Leonor de la Cruz attended.", &["Cruz"], &["de la Cruz"]),
+            (
+                "The letter came from Valéry Giscard d'Estaing himself.",
+                &["Estaing"],
+                &["d'Estaing"],
+            ),
+            // Written lowercase, a particle joins at a line's or a
+            // sentence's start too.
+            ("де Лаваль подписала опись.", &["Лаваль"], &["де Лаваль"]),
+            (
+                "Опись подписана. де Лаваль согласна.",
+                &["Лаваль"],
+                &["де Лаваль"],
+            ),
+            ("van der Berg signed.", &["Berg"], &["van der Berg"]),
+            // A particle that is also a word stays out after a lowercase
+            // word or a line's break, and no particle joins across a line.
+            ("Он сказал да Петрову.", &["Петрову"], &["Петрову"]),
+            (
+                "Всё это создаёт фон Петровой.",
+                &["Петровой"],
+                &["Петровой"],
+            ),
+            (
+                "Всё это создаёт\nфон Петровой.",
+                &["Петровой"],
+                &["Петровой"],
+            ),
+            ("Заказ на фамилию де\nЛаваль.", &["Лаваль"], &["Лаваль"]),
+            ("The van Smith rented broke down.", &["Smith"], &["Smith"]),
+            (
+                "The delivery van Smith rented broke down.",
+                &["Smith"],
+                &["Smith"],
+            ),
+            ("It took ten Smith employees.", &["Smith"], &["Smith"]),
+        ] {
+            assert_eq!(proposed_people(source, model), expected, "{source:?}");
+        }
+    }
+
+    /// #403: a surname with its particle repeats with it, inflected too.
+    #[test]
+    fn a_surnames_particle_repeats_with_it() {
+        let source = "Я, Генриетта Яновна де Лаваль, уполномочиваю. Решение \
+            согласовано с Генриеттой Яновной де Лаваль. Заказ записан на фамилию \
+            де Лаваль.";
+        assert_eq!(
+            proposed_people(source, &["Лаваль"]),
+            [
+                "Генриетта Яновна де Лаваль",
+                "Генриеттой Яновной де Лаваль",
+                "де Лаваль"
+            ]
+        );
+    }
+
+    /// #404: a short two-part name after a word that introduces a person
+    /// is PERSON with no model span; a country after «гражданин», an office
+    /// after «господин» or "Mr", and a longer name are not this rule's.
+    #[test]
+    fn a_short_name_after_an_introducing_word_is_a_person() {
+        for (source, expected) in [
+            (
+                "Я уполномочиваю гражданина Лю Бо получить экземпляры.",
+                &["Лю Бо"][..],
+            ),
+            ("Передать гражданке Ким Ир, проживающей рядом.", &["Ким Ир"]),
+            ("Направить господину Ли Вэй.", &["Ли Вэй"]),
+            ("I authorise Mr Li Na to collect the copies.", &["Li Na"]),
+            ("Ms Ko Un, the agent, signed.", &["Ko Un"]),
+            ("паспорт гражданина Российской Федерации серии 45", &[]),
+            ("гражданки Республики Казахстан, проживающей", &[]),
+            ("гражданина Украины Петренко, проживающего", &[]),
+            ("Направить господину Председателю Суда.", &[]),
+            ("Mr Justice Ashdale held that the claim failed.", &[]),
+        ] {
+            assert_eq!(proposed_people(source, &[]), expected, "{source:?}");
+        }
+        // A longer name is left to the model: the rule takes no part of it.
+        let source = "уполномочиваю гражданина Иванова Ивана Ивановича получить";
+        assert!(proposed_people(source, &[]).is_empty(), "{source:?}");
+        let source = "I authorise Mr John Paul Smith to collect.";
+        assert!(proposed_people(source, &[]).is_empty(), "{source:?}");
+    }
+
     /// The person proposals for the model's `people` spans in `source`
     /// (each its first occurrence), as the user would be shown them.
     fn proposed_people(source: &str, people: &[&str]) -> Vec<String> {

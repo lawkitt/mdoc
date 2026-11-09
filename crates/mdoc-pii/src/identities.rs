@@ -224,10 +224,45 @@ pub(crate) fn cyrillic(word: &str) -> bool {
         .all(|c| matches!(c, 'а'..='я' | 'ё' | '-' | ' '))
 }
 /// Lowercase particles that belong to the surname after them ("де Лаваль",
-/// "van der Berg").
-const PARTICLES: [&str; 20] = [
-    "de", "van", "von", "der", "den", "da", "di", "du", "del", "della", "le", "la", "фон", "ван",
-    "де", "дер", "ди", "дю", "ла", "ле",
+/// "van der Berg", "ибн Рушд"): the rule pack's PERSON particles (#403).
+const PARTICLES: [&str; 37] = [
+    "de",
+    "van",
+    "von",
+    "der",
+    "den",
+    "da",
+    "di",
+    "du",
+    "del",
+    "della",
+    "le",
+    "la",
+    "dos",
+    "das",
+    "ter",
+    "ten",
+    "bin",
+    "ibn",
+    "al",
+    "фон",
+    "ван",
+    "де",
+    "дер",
+    "ден",
+    "да",
+    "ди",
+    "дю",
+    "дель",
+    "делла",
+    "ла",
+    "ля",
+    "ле",
+    "эль",
+    "бен",
+    "бин",
+    "ибн",
+    "аль",
 ];
 /// A particle as written: lowercase only, so "Van" in "Van Morrison" is a
 /// given name.
