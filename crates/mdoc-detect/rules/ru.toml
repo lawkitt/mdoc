@@ -15,13 +15,11 @@ role_surnames = ["судья", "староста", "голова", "кузнец
 # repeat of them in the document, unless it also writes them as a
 # company's; then only the model's organization on the mention after the
 # role becomes the person (guide rule 1, issue #491). Never where the next
-# word is capitalised: the letters qualify it («гражданин РК БАВ», «СПК
-# Колос»). Each entry is one role in its case forms.
+# word qualifies them, a capitalised word or other bare initials
+# («гражданин РК БАВ», «СПК Колос», «КЛМ Групп»); an identifier's label, a
+# date mask or «ИЗЪЯТО» is none («ИП ДРС ИНН …», «БАВ ДД.ММ.ГГГГ»). Each
+# entry is one role in its case forms.
 initials_after = [
-    # «гр. БАВ», «гр-ну ЛВГ».
-    '(?i:гр\.|гр-(?:н|на|ну|ном|не|ка|ки|ке|ку|кой))',
-    # «гражданин БАВ», «гражданке ЛВГ», «гражданина КЛМ».
-    '(?i:граждан(?:ин|ина|ину|ином|ине|ка|ки|ке|ку|кой|кою))',
     # «потерпевший КЛМ», «потерпевшей ЛВГ», «Потерпевшему БАВ».
     '(?i:потерпевш(?:ий|ая|его|ей|ему|им|ем|ую|ие|их|ими))',
     # «осуждённый БАВ», «осужденной ЛВГ».
@@ -47,12 +45,24 @@ initials_after = [
     '(?i:супруг(?:|а|у|ом|е|и|ой|ов))',
 ]
 
+# Words that introduce a citizen, as `initials_after`, but only three
+# letters after one are a person's initials: two are almost always a
+# country («гражданин РА», «гражданка ЧР», «гр. РМ») (#491).
+initials_after_citizen = [
+    # «гр. БАВ», «гр-ну ЛВГ».
+    '(?i:гр\.|гр-(?:н|на|ну|ном|не|ка|ки|ке|ку|кой))',
+    # «гражданин БАВ», «гражданке ЛВГ», «гражданина КЛМ».
+    '(?i:граждан(?:ин|ина|ину|ином|ине|ка|ки|ке|ку|кой|кою))',
+]
+
 # A party's role, which a company or a public body holds too («Ответчик
-# МЧС России», «Представитель ЦЗН»): lone bare initials after one are a
-# person only where the model took exactly them for an organization, and
-# never where the document writes them as a company's (#491). Their lone
-# repeats follow the same way: the model's organization exactly on one
-# becomes the person, and nothing is added where the model found none.
+# МЧС России», «Представитель ЦЗН», «Ответчик РСА»): lone bare initials
+# after one are a person only where the model took exactly them for an
+# organization and the document gives the same letters a person's
+# evidence elsewhere, a person's own role before them or the model's
+# person on them («Истец КЛМ … Потерпевший КЛМ»), and never where it
+# writes them as a company's (#491). Their lone repeats follow the same
+# way, and nothing is added where the model found none.
 initials_after_party = [
     # «истец БАВ», «истца ЛВГ», «истцу КЛМ».
     '(?i:ист(?:ец|ца|цу|цом|це|цы|цов))',
@@ -93,6 +103,9 @@ initials_never = [
     # Farms, partnerships and well-known companies: «глава КФХ», «ответчик
     # РЖД».
     "КФХ", "ДНП", "РЖД", "ВТБ", "МТС",
+    # Insurers, funds and housing companies a party's role names:
+    # «Ответчик РСА», «Ответчик ВСК», «Должник ЖЭК».
+    "РСА", "ВСК", "ФКР", "ЕРЦ", "ДЕЗ", "ЖЭК", "ЖЭУ", "РЭУ", "УК",
     # Short function words written in capitals for emphasis: «Ответчик НЕ
     # явился».
     "НЕ", "НИ", "ДА", "НЕТ", "ОН", "ОНА", "ОНО", "ОНИ", "МЫ", "ВЫ", "ТЫ", "ВСЕ", "ВСЁ",
@@ -155,10 +168,14 @@ extend = [
 
 # Titles stay outside a person's span: "г-жа Павлова" is "Павлова" (guide
 # rule 1, #382). An entrepreneur's «ИП» comes off by its own case-sensitive
-# trim_start below (#562), so the surname «Ип» stays.
+# trim_start below (#562), so the surname «Ип» stays. The abbreviated
+# «гр.» of «гражданин» comes off the same way: the model's «гр. БАВ» and
+# «гр. Иванов» are «БАВ» and «Иванов» (#491); its dot is no word's own, so
+# it is a prefix here rather than a trim word.
 [[span]]
 category = "PERSON"
 trim = ["г-н", "г-жа", "господин", "госпожа"]
+trim_start = ['(?i:гр\.)[\p{Zs}\t]+']
 
 # Complete roles come off a person's edges (#385), in their case forms.
 # Do not trim a single role-like surname ("Иво Должник").

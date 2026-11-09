@@ -15,9 +15,12 @@
 #             a whole word just before lone bare initials (spaces and
 #             emphasis between): those initials, and their repeats, are
 #             PERSON
+#   initials_after_citizen as initials_after, for words that introduce a
+#             citizen: only three letters after one are initials
 #   initials_after_party regexes for a party's role a company may hold
 #             too: the model's organization exactly on the initials after
-#             one, or on a repeat, is PERSON; nothing is added
+#             one, or on a repeat, is PERSON where the document gives the
+#             letters a person's evidence elsewhere; nothing is added
 #   initials_companies legal forms, as written, that make bare initials
 #             beside them a company's, and keep their repeats as they are
 #   initials_never words in capitals, as written, never initials after a
