@@ -114,6 +114,39 @@ initials_never = [
     "НА", "ИЗ", "ВО", "КО", "ОБ", "ТО", "УЖЕ", "ЕЩЁ",
 ]
 
+# OCR reads a letter of a name as a digit: «Ефим0вна», «Ко3лов» (#377). As in
+# en.toml, each entry is a digit, then the capital and the small Russian
+# letter it stands for, if any: a model organization whose words read back
+# so as a person's name, «Ко3лов И. П.» alone, «Иван Ко3лов» with a
+# person's evidence (en.toml), is that person. A
+# word in Cyrillic reads a digit as its Cyrillic letter, a Latin word as
+# its Latin one; Latin look-alikes inside a Cyrillic word («Hина») are
+# letters as they are.
+ocr_letters = ["0Оо", "3Зз", "4Чч", "6б", "8В"]
+
+# A patronymic after a name, read back, makes such a name a person's
+# alone (#377): «Нина Ефим0вна Костель», «Иван Петр0вич», «Анна
+# Ильинична». Each regex is a whole word, lowercase.
+ocr_person_words = [
+    # «Петрович», «Петровича», «Ильичу», «Кузьмичом».
+    '\p{Alphabetic}{2,}ич(?:а|у|ем|ом|е)?',
+    # «Ефимовна», «Ефимовны», «Ильиничне», «Саввичной».
+    '\p{Alphabetic}{2,}(?:вн|чн)(?:а|ы|е|у|ой)',
+]
+
+# Words that keep such an organization a company's, as read back (#377):
+# «Банк», «Гр0уппа». Legal forms («ООО», «АО») keep it already.
+ocr_company_words = [
+    "банк", "банка", "группа", "групп", "холдинг", "компания", "корпорация",
+    "фонд", "центр", "завод", "комбинат", "трест", "союз", "агентство",
+    "студия", "бюро", "клиника", "фирма", "товарищество", "кооператив",
+    "партнёры", "партнеры", "консалтинг", "инвест", "траст", "капитал",
+    "страхование", "ассоциация", "институт", "университет", "академия",
+    "школа", "больница", "театр", "магазин", "ресторан", "гостиница",
+    "отель", "сервис", "системы", "технологии", "аптека", "типография",
+    "издательство", "коллегия", "палата",
+]
+
 # An organization's legal form and quotes belong to its name: the model's
 # "Северный Вектор" inside "ООО «Северный Вектор»" grows to the whole of it,
 # as does "Елагин и партнёры" in "коллегия адвокатов «Елагин и партнёры»"

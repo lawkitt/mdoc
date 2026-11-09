@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: ocr-name-category
 issue: 377
 kind: ocr
 source: import
-expect: boundary: gold PERSON "A1ice M0rgan"; proposed ORG "A1ice M0rgan"
 ---
 SERVICE AGREEM ENT
 Client: ⟦PERSON|A1ice M0rgan⟧
