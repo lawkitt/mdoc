@@ -262,7 +262,8 @@ fn safe_span(value: &str) -> bool {
 /// A web address keeps its own characters (ADR 0094): a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
 /// a link's own bracket. An email address may start with `_`
-/// ("_roman@…", #412) where that `_` is no emphasis delimiter.
+/// ("_roman@…", #412) where that `_` is no emphasis delimiter, or with
+/// the `\` of an escaped one ("\_roman@…", #746).
 fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
     // Found whole by its parts or its label, so text may follow its last line.
@@ -733,15 +734,25 @@ impl Review {
             {
                 continue;
             }
-            // #412: an address's leading `_` that opens emphasis
+            // #412: an address's leading `_` that opens emphasis around it
             // ("_quill@…_") is Markdown, and the address is the rest; one
-            // that opens none is the address's own ("_roman@…").
+            // that opens none is the address's own ("_roman@…"), and so is
+            // one whose emphasis ends inside it ("__init__@…", #746).
             if detection.category == Category::Email
                 && text.starts_with('_')
                 && syntax::emphasis_opens_at(source, detection.range.start)
+                    .is_some_and(|end| end > detection.range.end)
             {
                 let rest = text.trim_start_matches('_');
                 detection.range.start = detection.range.end - rest.len();
+            }
+            // #746: an escaped `_` ("snake\_case@…", "\_roman@…") is the
+            // address's, but in code or raw HTML its `\` is text.
+            if detection.category == Category::Email
+                && text.contains("\\_")
+                && syntax::literal_at(source, detection.range.start)
+            {
+                continue;
             }
             if !detected_span(source, &markup, &detection)
                 || syntax::crosses_syntax(&protected, &markup, source, &detection.range)

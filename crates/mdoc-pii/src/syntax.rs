@@ -451,8 +451,16 @@ pub(super) fn plain_text_span(
     if !value.contains(DELIMITERS) {
         return true;
     }
-    // A backslash before the span would escape the token's first character.
-    if source[..range.start].ends_with('\\') {
+    // A backslash before the span would escape the token's first character;
+    // an escaped one ("\\_roman@…") is text and escapes nothing (#746).
+    if source[..range.start]
+        .bytes()
+        .rev()
+        .take_while(|&b| b == b'\\')
+        .count()
+        % 2
+        == 1
+    {
         return false;
     }
     // Parse only the surrounding block: blank-line bounded.
@@ -479,31 +487,61 @@ pub(super) fn plain_text_span(
     replaced.push_str(if in_autolink { "X_X" } else { "X" });
     replaced.push_str(&block[local.end..]);
     let options = markdown::ParseOptions::gfm();
+    // An email address's rendered text is the address even where its own
+    // underscores read as emphasis ("__init__@…" shows **init**@…, #746):
+    // emphasis wholly inside it is its text. Emphasis around it stays.
+    let address = value.contains(['@', '＠']) && !value.contains(char::is_whitespace);
     match (
         markdown::to_mdast(block, &options),
         markdown::to_mdast(&replaced, &options),
     ) {
         // Only a line break the replaced value held is part of it: one
         // the replacement exposes ("Ann\<br>" ends in an escape) is syntax.
-        (Ok(before), Ok(after)) => shape(&before, &local) == shape(&after, &(0..0)),
+        (Ok(before), Ok(after)) => shape(&before, &local, address) == shape(&after, &(0..0), false),
         _ => false,
     }
 }
-/// Whether emphasis or strong emphasis opens at `at` of `source`, so the
-/// `_` or `*` there is a delimiter, not text ("_quill@…_", #412).
-pub(super) fn emphasis_opens_at(source: &str, at: usize) -> bool {
-    use markdown::mdast::Node;
+/// The parse of the blank-line bounded block around `at` of `source`, and
+/// the block's start.
+fn block_tree(source: &str, at: usize) -> Option<(markdown::mdast::Node, usize)> {
     let start = source[..at].rfind("\n\n").map_or(0, |i| i + 2);
     let end = source[at..].find("\n\n").map_or(source.len(), |i| at + i);
-    let Ok(tree) = markdown::to_mdast(&source[start..end], &markdown::ParseOptions::gfm()) else {
+    markdown::to_mdast(&source[start..end], &markdown::ParseOptions::gfm())
+        .ok()
+        .map(|tree| (tree, start))
+}
+/// Where the emphasis or strong emphasis that opens at `at` of `source`
+/// ends, the furthest if several do, so the `_` or `*` there is a
+/// delimiter, not text ("_quill@…_", #412).
+pub(super) fn emphasis_opens_at(source: &str, at: usize) -> Option<usize> {
+    use markdown::mdast::Node;
+    let (tree, start) = block_tree(source, at)?;
+    let mut stack = vec![&tree];
+    let mut end = None;
+    while let Some(node) = stack.pop() {
+        if matches!(node, Node::Emphasis(_) | Node::Strong(_))
+            && let Some(p) = node.position()
+            && p.start.offset + start == at
+        {
+            end = end.max(Some(p.end.offset + start));
+        }
+        stack.extend(node.children().into_iter().flatten());
+    }
+    end
+}
+/// Whether `at` of `source` is in code or raw HTML, where a `\` is text
+/// and escapes nothing (`` `snake\_case@…` ``, #746).
+pub(super) fn literal_at(source: &str, at: usize) -> bool {
+    use markdown::mdast::Node;
+    let Some((tree, start)) = block_tree(source, at) else {
         return false;
     };
     let mut stack = vec![&tree];
     while let Some(node) = stack.pop() {
-        if matches!(node, Node::Emphasis(_) | Node::Strong(_))
+        if matches!(node, Node::InlineCode(_) | Node::Code(_) | Node::Html(_))
             && node
                 .position()
-                .is_some_and(|p| p.start.offset + start == at)
+                .is_some_and(|p| p.start.offset + start <= at && at < p.end.offset + start)
         {
             return true;
         }
@@ -555,16 +593,41 @@ fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>
         _ => false,
     }
 }
+/// `node`'s children, with those of emphasis wholly inside `value` in its
+/// place when `inner_emphasis` holds.
+fn children_of<'a>(
+    node: &'a markdown::mdast::Node,
+    value: &std::ops::Range<usize>,
+    inner_emphasis: bool,
+    out: &mut Vec<&'a markdown::mdast::Node>,
+) {
+    use markdown::mdast::Node;
+    for child in node.children().map_or(&[][..], Vec::as_slice) {
+        if inner_emphasis
+            && matches!(child, Node::Emphasis(_) | Node::Strong(_))
+            && child
+                .position()
+                .is_some_and(|at| value.start <= at.start.offset && at.end.offset <= value.end)
+        {
+            children_of(child, value, inner_emphasis, out);
+        } else {
+            out.push(child);
+        }
+    }
+}
 fn shape(
     node: &markdown::mdast::Node,
     value: &std::ops::Range<usize>,
+    inner_emphasis: bool,
 ) -> Vec<(std::mem::Discriminant<markdown::mdast::Node>, usize)> {
     use markdown::mdast::Node;
     let mut out = Vec::new();
     let mut stack = vec![node];
     while let Some(node) = stack.pop() {
         let mut children: Vec<&Node> = Vec::new();
-        for child in node.children().map_or(&[][..], Vec::as_slice) {
+        let mut direct = Vec::new();
+        children_of(node, value, inner_emphasis, &mut direct);
+        for child in direct {
             let child = if autolink_literal(child, value) {
                 &AS_TEXT
             } else {
