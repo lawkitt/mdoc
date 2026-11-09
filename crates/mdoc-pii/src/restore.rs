@@ -106,20 +106,25 @@ impl RestoreMap {
     }
     /// Alias-shaped tokens in `text`, in source order and non-overlapping.
     pub fn tokens(&self, text: &str) -> Vec<Token> {
-        let mut tokens = generated_tokens(text)
-            .into_iter()
-            .filter_map(|(range, key, strict)| {
-                let identity = self.generated.get(&key).copied();
-                // Loose forms ("Tax 2023", "date-1") are only placeholders
-                // when they name a known identity.
-                (identity.is_some() || strict).then_some(Token { range, identity })
-            })
-            .collect::<Vec<_>>();
+        let mut tokens = generated_tokens(text, &|key| {
+            self.generated
+                .get(key)
+                .map(|&index| self.identities[index].wording())
+        })
+        .into_iter()
+        .filter_map(|(range, key, strict)| {
+            let identity = self.generated.get(&key).copied();
+            // Loose forms ("Tax 2023", "date-1") are only placeholders
+            // when they name a known identity.
+            (identity.is_some() || strict).then_some(Token { range, identity })
+        })
+        .collect::<Vec<_>>();
         for (alias, index) in &self.custom {
             for (start, _) in text.match_indices(alias.as_str()) {
                 let range = start..start + alias.len();
-                if (word_start(text, start) || zone_surname(text, &range))
-                    && word_end(text, range.end)
+                if ((word_start(text, start) || zone_surname(text, &range))
+                    && word_end(text, range.end))
+                    || crate::mrz::number_at(text, &range)
                 {
                     tokens.push(Token {
                         range,
@@ -179,7 +184,7 @@ impl RestoreMap {
     /// Identity indices to offer for an unresolved `token`: those of the
     /// category it names first (`PERSON_9` offers people first).
     pub fn choices(&self, token: &str) -> Vec<usize> {
-        let category = generated_tokens(token)
+        let category = generated_tokens(token, &|_| None)
             .first()
             .map(|(_, (category, _), _)| *category);
         let mut choices: Vec<_> = (0..self.identities.len()).collect();
@@ -421,7 +426,7 @@ impl RestoreMap {
                 continue;
             };
             let old = &text[token.range.clone()];
-            let new = match (generated_tokens(old).first(), parse_alias(alias)) {
+            let new = match (generated_tokens(old, &|_| None).first(), parse_alias(alias)) {
                 (Some((range, (category, _), _)), Some((new_category, number)))
                     if range.len() == old.len() && *category == new_category =>
                 {
@@ -519,7 +524,14 @@ fn is_cyrillic(c: char) -> bool {
 /// Generated-alias candidates: a category token in any case, one separator
 /// (`_`, `-`, space or no-break space) and up to nine digits. `strict` marks the
 /// canonical look (uppercase, `_` or `-`) that is reported even when unknown.
-fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
+/// Where a zone's document number stood, an identity document's alias is
+/// glued to the check digit after it ("IDENTITY_18RUS…" is `IDENTITY_1`
+/// then 8, #495), so a token there may leave digits after it: only one
+/// whose `lookup` gives the value it restores (see [`zone_number_cut`]).
+fn generated_tokens<'w>(
+    text: &str,
+    lookup: &dyn Fn(&(Category, u64)) -> Option<&'w str>,
+) -> Vec<(Range<usize>, (Category, u64), bool)> {
     // Longest first, so REDACTED is not read as a shorter token.
     let mut categories = Category::ALL;
     categories.sort_by_key(|c| std::cmp::Reverse(c.token().len()));
@@ -559,6 +571,23 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
                 .bytes()
                 .take_while(u8::is_ascii_digit)
                 .count();
+            let number = |end: usize| text[digits_start..end].parse().unwrap_or(u64::MAX);
+            let strict = prefix == token && matches!(separator, '_' | '-');
+            let reading = if category == Category::Identity {
+                zone_number_reading(text, at, digits_start, digits, &|end| {
+                    lookup(&(category, number(end)))
+                })
+            } else {
+                ZoneReading::Plain
+            };
+            match reading {
+                ZoneReading::Cut(end) => {
+                    matched = Some((at..end, (category, number(end)), strict));
+                    break;
+                }
+                ZoneReading::Leave => continue,
+                ZoneReading::Plain => {}
+            }
             let end = digits_start + digits;
             if digits == 0
                 || digits > 9
@@ -567,9 +596,7 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
             {
                 continue;
             }
-            let number = text[digits_start..end].parse().unwrap_or(u64::MAX);
-            let strict = prefix == token && matches!(separator, '_' | '-');
-            matched = Some((at..end, (category, number), strict));
+            matched = Some((at..end, (category, number(end)), strict));
             break;
         }
         match matched {
@@ -581,6 +608,105 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
         }
     }
     found
+}
+
+/// How an identity document's alias reads where a zone's document number
+/// stood (#495).
+enum ZoneReading {
+    /// It ends here, before its check digit.
+    Cut(usize),
+    /// It is read as anywhere else.
+    Plain,
+    /// It is left as it is: no reading is sure, and a visible alias is
+    /// better than a wrong value.
+    Leave,
+}
+
+/// How an identity document's alias at `at`, its `digits` digits from
+/// `digits_start`, reads where a zone's document number stood (#495): the
+/// check digit right after it may be a digit, or a letter OCR reads for one
+/// ("IDENTITY_1ORUS…"), and on a TD1 card optional data may follow it in
+/// digits too. A reading validates when the ICAO 9303 check digit of the
+/// value it restores (`value`, by its end) is the character after it; a
+/// filler after all the digits (a number shorter than nine, padded) makes
+/// them a reading too, checked after the fillers.
+///
+/// On a passport's or a TD2 card's line, whose nationality fixes where the
+/// check digit is, the longest cut that validates wins, else the longest
+/// known one; padded, the whole run wins unless only a cut validates. On a
+/// TD1 card a reading is taken only when it alone validates; where another
+/// is known, the card's composite check digit must also hold for it, which
+/// settles two that validate. A composite that fails (the first line it
+/// restores is not of 30 characters, say) or cannot be read (the second
+/// line is not of 30 characters) vetoes it then. Else the alias is left as
+/// it is.
+fn zone_number_reading<'w>(
+    text: &str,
+    at: usize,
+    digits_start: usize,
+    digits: usize,
+    value: &dyn Fn(usize) -> Option<&'w str>,
+) -> ZoneReading {
+    use crate::mrz::{NumberLine, card_composite, check_digit, ocr_digit};
+    if digits == 0 {
+        return ZoneReading::Plain;
+    }
+    let full = digits_start + digits;
+    let padded = digits <= 9 && crate::mrz::filler_at(text, full);
+    let lettered = digits <= 9 && text[full..].starts_with(['O', 'I', 'S', 'B', 'l']);
+    let checks = |value: &str, at: usize| {
+        check_digit(value)
+            .is_some_and(|check| text[at..].chars().next().map(ocr_digit) == Some(check))
+    };
+    let ends = (1..digits.min(10))
+        .map(|n| digits_start + n)
+        .chain(lettered.then_some(full));
+    let mut cuts: Vec<(usize, NumberLine, &str)> = ends
+        .filter_map(|end| {
+            let line = crate::mrz::number_line_at(text, &(at..end))?;
+            Some((end, line, value(end)?))
+        })
+        .collect();
+    cuts.reverse();
+    let Some(&(_, line, _)) = cuts.first() else {
+        return ZoneReading::Plain;
+    };
+    let settled: Vec<_> = cuts
+        .iter()
+        .filter(|(end, _, value)| checks(value, *end))
+        .collect();
+    let whole_value = value(full).filter(|_| padded);
+    let whole =
+        whole_value.is_some_and(|value| checks(value, crate::mrz::after_fillers(text, full)));
+    if line == NumberLine::Passport {
+        let cut = if padded {
+            settled.first().copied().filter(|_| !whole)
+        } else {
+            settled.first().copied().or(cuts.first())
+        };
+        return cut.map_or(ZoneReading::Plain, |(end, _, _)| ZoneReading::Cut(*end));
+    }
+    // Each reading that validates, by its end (none for the whole run), with
+    // the card's composite check digit for it.
+    let mut readings: Vec<(Option<usize>, Option<bool>)> = settled
+        .iter()
+        .map(|(end, _, value)| (Some(*end), card_composite(text, &(at..*end), value)))
+        .chain(
+            whole_value
+                .filter(|_| whole)
+                .map(|value| (None, card_composite(text, &(at..full), value))),
+        )
+        .collect();
+    // Where another alias is known, a reading needs the composite check
+    // digit to hold: one that fails, or cannot be read, vetoes it.
+    if cuts.len() + usize::from(whole_value.is_some()) > 1 {
+        readings.retain(|(_, composite)| *composite == Some(true));
+    }
+    match readings.as_slice() {
+        [(Some(end), _)] => ZoneReading::Cut(*end),
+        [(None, _)] => ZoneReading::Plain,
+        _ => ZoneReading::Leave,
+    }
 }
 
 impl Review {

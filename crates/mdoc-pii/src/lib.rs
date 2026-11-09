@@ -327,7 +327,9 @@ fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
             .chars()
             .next()
             .is_some_and(|c| c.is_alphanumeric() && !view::note_marker(c));
-    !left && !right
+    // A zone's document number is glued to its check digit, and on a TD1
+    // card to its head too (#495).
+    (!left && !right) || mrz::number_at(source, range)
 }
 fn interval_conflict(occupied: &BTreeMap<usize, usize>, range: &Range<usize>) -> bool {
     occupied
