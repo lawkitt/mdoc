@@ -395,6 +395,36 @@ fn underscores_in_an_email_address_are_text_unless_they_are_emphasis() {
             "_Note to trailing_@x.invalid and _Ann Lee."
         )
     );
+    // Emphasis around the brackets stays emphasis, and the parse decides
+    // whether a leading `_` opens emphasis: where it does, the address is
+    // the rest, so the italics stay where they were.
+    for (source, address, expected) in [
+        (
+            "_<tam_roe@fen-mail.invalid>_",
+            "tam_roe@fen-mail.invalid",
+            "_<EMAIL_1>_",
+        ),
+        (
+            "_Contact: <tam_roe@fen-mail.invalid>_",
+            "tam_roe@fen-mail.invalid",
+            "_Contact: <EMAIL_1>_",
+        ),
+        (
+            "Some _emph then _x@host.invalid_ ok.",
+            "_x@host.invalid",
+            "Some _emph then _EMAIL_1_ ok.",
+        ),
+        (
+            "_Note: write to _x@host.invalid_ soon.",
+            "_x@host.invalid",
+            "_Note: write to _EMAIL_1_ soon.",
+        ),
+        ("_roman@kadry.invalid", "_roman@kadry.invalid", "EMAIL_1"),
+    ] {
+        let start = source.find(address).unwrap();
+        let email = detection(start..start + address.len(), Category::Email);
+        assert_eq!(applied(source, vec![email]), expected, "{source}");
+    }
 }
 #[test]
 fn only_real_markdown_and_html_syntax_hides_a_value() {

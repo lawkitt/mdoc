@@ -734,8 +734,11 @@ impl Review {
                 continue;
             }
             // #412: an address's leading `_` that opens emphasis
-            // ("_quill@…_") is Markdown, and the address is the rest.
-            if !detected_span(source, &markup, &detection) && detection.category == Category::Email
+            // ("_quill@…_") is Markdown, and the address is the rest; one
+            // that opens none is the address's own ("_roman@…").
+            if detection.category == Category::Email
+                && text.starts_with('_')
+                && syntax::emphasis_opens_at(source, detection.range.start)
             {
                 let rest = text.trim_start_matches('_');
                 detection.range.start = detection.range.end - rest.len();
