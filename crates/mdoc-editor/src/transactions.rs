@@ -1,19 +1,9 @@
-//! Batch text construction and history-identity tests for editor transactions.
+//! History-identity tests for editor transactions; the batch text itself is
+//! built by `mdoc_editor_core::transactions`.
 #[cfg(test)]
 use mdoc_history::{SourceEdit, inverse_edits};
-use std::ops::Range;
 
-pub(crate) fn build_batch(source: &str, edits: &[(Range<usize>, String)]) -> String {
-    let mut result = String::with_capacity(source.len());
-    let mut end = 0;
-    for (range, replacement) in edits {
-        result.push_str(&source[end..range.start]);
-        result.push_str(replacement);
-        end = range.end;
-    }
-    result.push_str(&source[end..]);
-    result
-}
+pub(crate) use mdoc_editor_core::transactions::build_batch;
 
 #[cfg(test)]
 mod tests {

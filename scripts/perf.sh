@@ -29,7 +29,7 @@ run mdoc pii_annotation_geometry_matrix
 run mdoc large_markdown_scroll_budget
 [ -n "${MDOC_PERF_PREVIEW:-}" ] && run mdoc local_preview_performance
 run mdoc-spell spelling_cache_performance
-run mdoc-editor search_performance_matrix
+run mdoc-editor-core search_performance_matrix
 run gpui-pdf long_document_scroll_budget
 run mdoc-pii identity_policy_history_shares_indices_and_prunes_states
 run mdoc-pii utf8_matcher_storage_matrix

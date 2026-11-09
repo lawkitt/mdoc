@@ -13,32 +13,15 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
+use mdoc_editor_core::history::{EditKind, Snapshot};
+use mdoc_editor_core::paste::{PasteTarget, normalize_paste};
+use mdoc_editor_core::{delete, enter, format, text};
+
 use super::{
     Backspace, Bold, Code, Copy, Cut, Delete, EditorEvent, EditorState, Indent, Italic, LineBreak,
     Newline, Outdent, Paste, Redo, ShowCharacterPalette, Strike, TAB_INDENT, Underline, Undo,
     caret_line_pos, caret_off_marker_line, line_pos, markdown_syntax,
 };
-
-/// Cap on undo history (full snapshots) to bound memory.
-const UNDO_LIMIT: usize = 256;
-
-/// A restorable editor state, for undo/redo. Stores the caret offset (not a
-/// selection), so undo/redo place the caret rather than re-selecting text.
-#[derive(Clone)]
-pub(super) struct Snapshot {
-    content: String,
-    caret: usize,
-    history_id: u64,
-}
-
-/// The last edit's kind, for coalescing a run of edits into one undo step.
-/// `Insert(end)` is a single-grapheme insert whose caret ends at `end`.
-#[derive(Clone, Copy, PartialEq)]
-pub(super) enum EditKind {
-    Insert(usize),
-    Delete,
-    Other,
-}
 
 impl EditorState {
     /// A host metadata change shares Undo/Redo with text without changing source,
@@ -56,7 +39,7 @@ impl EditorState {
             }],
         );
         self.content_gen += 1;
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         self.emit_transaction(cx);
         cx.notify();
         true
@@ -117,7 +100,7 @@ impl EditorState {
         self.selected_range = selection;
         self.marked_range = None;
         self.content_gen += 1;
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         self.last_edit_keystroke = false;
         self.annotation_bounds.clear();
         self.emit_changed(cx);
@@ -153,7 +136,7 @@ impl EditorState {
         self.selection_reversed = false;
         self.marked_range = None;
         // Don't coalesce a following keystroke into this structural replacement.
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         self.emit_changed(cx);
         cx.notify();
     }
@@ -174,14 +157,9 @@ impl EditorState {
         self.selection_reversed = false;
         self.marked_range = None;
         // A programmatic load isn't undoable to the prior document.
-        self.undo_stack.clear();
-        self.redo_stack.clear();
-        self.next_history_id += 1;
-        self.history_id = self.next_history_id;
-        self.pending_changes.clear();
+        self.history.reset();
         self.last_transaction = None;
         self.position_cache.borrow_mut().clear();
-        self.last_edit = EditKind::Other;
         cx.notify();
     }
 
@@ -371,114 +349,7 @@ impl EditorState {
     /// Enter's one edit at a collapsed caret outside tables, code and math:
     /// the replaced range, its text and the caret's offset into that text.
     fn enter_edit(&self) -> (Range<usize>, String, usize) {
-        let cursor = self.cursor_offset();
-        let (line_start, line_end) = self.caret_line();
-        let line = &self.content[line_start..line_end];
-        let quote = markdown_syntax::blockquote_prefix(line);
-        let body_start = line_start + quote.unwrap_or(0);
-        let before_blank = self.content[body_start.min(cursor)..cursor]
-            .trim()
-            .is_empty();
-        let at = |text: String| {
-            let len = text.len();
-            (cursor..cursor, text, len)
-        };
-        // The list item this line belongs to: its own, or the item a chain of
-        // ⇧Enter hard breaks above continues.
-        let item_line = if markdown_syntax::list_prefix(line).is_some() {
-            Some(line_start..line_end)
-        } else if quote.is_none() {
-            self.continued_item(line_start)
-        } else {
-            None
-        };
-        let next_item = |item: &str| {
-            let (prefix_len, indent, ordered, num) = markdown_syntax::list_prefix(item)?;
-            let task = markdown_syntax::task_prefix(item);
-            let ws = &item[..indent];
-            let bullet = item.as_bytes()[indent] as char;
-            Some((
-                task.map_or(prefix_len, |(l, ..)| l),
-                if task.is_some() {
-                    format!("\n{ws}{bullet} [ ] ")
-                } else if ordered {
-                    format!("\n{ws}{}. ", num + 1)
-                } else {
-                    format!("\n{ws}{bullet} ")
-                },
-            ))
-        };
-        // Enter right after a ⇧Enter break turns that break into Enter's own:
-        // the dangling `\` would otherwise stay as literal text.
-        if before_blank && let Some(bs) = self.hard_break_above(line_start) {
-            let to = cursor.max(body_start);
-            let text = match (&item_line, quote) {
-                (Some(item), _) => next_item(&self.content[item.clone()]).map(|(_, t)| t),
-                (None, Some(plen)) => {
-                    let prefix = &line[..plen];
-                    Some(format!("\n{}\n{prefix}", prefix.trim_end()))
-                }
-                (None, None) => None,
-            }
-            .unwrap_or_else(|| "\n\n".to_string());
-            let len = text.len();
-            // As below: keep a soft-joined next line out of the new paragraph.
-            let (row, _) = self.row_col(cursor);
-            if item_line.is_none()
-                && quote.is_none()
-                && self.content[cursor..line_end].trim().is_empty()
-                && !self.row_is_blank(row + 1)
-            {
-                return (bs..to, text + "\n", len);
-            }
-            return (bs..to, text, len);
-        }
-        // List auto-continuation: Enter on a list/task item (or its
-        // continuation line) opens the next item (same marker + indent;
-        // ordered numbers increment). Enter on an *empty* item exits the list,
-        // leaving a blank line so the next text isn't a lazy continuation.
-        if let Some(item) = item_line
-            && let Some((content_start, text)) = next_item(&self.content[item.clone()])
-        {
-            let own = item.start == line_start;
-            if own && line.get(content_start..).unwrap_or("").trim().is_empty() {
-                return (line_start..line_end, "\n".into(), 1);
-            }
-            return at(text);
-        }
-        // Blockquote: Enter starts a new quoted paragraph (`>` blank line,
-        // then the same prefix); Enter on an empty quote line exits the
-        // quote, taking the bare `>` line above with it.
-        if let Some(plen) = quote {
-            if !line[plen..].trim().is_empty() {
-                let prefix = &line[..plen];
-                return at(format!("\n{}\n{prefix}", prefix.trim_end()));
-            }
-            let prev_start = self.content[..line_start.saturating_sub(1)]
-                .rfind('\n')
-                .map_or(0, |i| i + 1);
-            let prev = &self.content[prev_start..line_start.saturating_sub(1)];
-            let bare_above = line_start > 0
-                && markdown_syntax::blockquote_prefix(prev)
-                    .is_some_and(|p| prev[p..].trim().is_empty());
-            let from = if bare_above { prev_start } else { line_start };
-            return (from..line_end, "\n".into(), 1);
-        }
-        // A blank line, or the caret at a line's start: one newline adds a
-        // row or splits soft-joined lines into paragraphs.
-        if before_blank {
-            return at("\n".into());
-        }
-        // At the end of a line soft-joined to the next one, also separate the
-        // new paragraph from that line.
-        let (row, _) = self.row_col(cursor);
-        if self.content[cursor..line_end].trim().is_empty()
-            && line_end < self.content.len()
-            && !self.row_is_blank(row + 1)
-        {
-            return (cursor..cursor, "\n\n\n".into(), 2);
-        }
-        at("\n\n".into())
+        enter::enter_edit(&self.content, self.cursor_offset())
     }
 
     /// Replace `range` with `text` as one undo step, leaving the caret
@@ -530,151 +401,29 @@ impl EditorState {
             self.replace_text_in_range(None, "\n", window, cx);
             return;
         }
-        let start = self.selected_range.start;
-        let line_start = self.content[..start].rfind('\n').map_or(0, |i| i + 1);
-        let line_end = self.content[line_start..]
-            .find('\n')
-            .map_or(self.content.len(), |i| line_start + i);
-        let line = &self.content[line_start..line_end];
-        let quote = markdown_syntax::blockquote_prefix(line);
-        let item = markdown_syntax::list_prefix(line).map(|(l, ..)| l);
-        let task = markdown_syntax::task_prefix(line).map(|(l, ..)| l);
-        let body = line_start + task.or(item).or(quote).unwrap_or(0);
-        if markdown_syntax::heading_level(&self.content[body.min(line_end)..line_end]).is_some()
-            || self.content[body.min(start)..start].trim().is_empty()
-        {
-            self.newline(&Newline, window, cx);
-            return;
+        match enter::line_break(&self.content, self.selected_range.start) {
+            Some(text) => self.replace_text_in_range(None, &text, window, cx),
+            None => self.newline(&Newline, window, cx),
         }
-        let continuation = match (item, quote) {
-            (Some(len), _) => " ".repeat(len),
-            (None, Some(len)) => line[..len].to_string(),
-            // A continuation line keeps its indent (a list item's body).
-            (None, None) => line[..line.len() - line.trim_start().len()].to_string(),
-        };
-        // A `\` already before the caret becomes the break; another one
-        // would escape it into a literal backslash.
-        let marker = if trailing_backslashes(&self.content[line_start..start]) % 2 == 1 {
-            ""
-        } else {
-            "\\"
-        };
-        self.replace_text_in_range(None, &format!("{marker}\n{continuation}"), window, cx);
-    }
-
-    /// The caret line's `(start, end)` byte offsets, its newline excluded.
-    fn caret_line(&self) -> (usize, usize) {
-        let cursor = self.cursor_offset();
-        let start = self.content[..cursor].rfind('\n').map_or(0, |i| i + 1);
-        let end = self.content[start..]
-            .find('\n')
-            .map_or(self.content.len(), |i| start + i);
-        (start, end)
-    }
-
-    /// The offset of the `\` ending the line above `line_start` when that line
-    /// ends in a hard break (an unescaped `\` after text).
-    fn hard_break_above(&self, line_start: usize) -> Option<usize> {
-        let prev_end = line_start.checked_sub(1)?;
-        let prev_start = self.content[..prev_end].rfind('\n').map_or(0, |i| i + 1);
-        let prev = &self.content[prev_start..prev_end];
-        let quote = markdown_syntax::blockquote_prefix(prev).unwrap_or(0);
-        (trailing_backslashes(prev) % 2 == 1 && !prev[quote..prev.len() - 1].trim().is_empty())
-            .then(|| prev_end - 1)
-    }
-
-    /// The list item a line continues through ⇧Enter hard breaks: the byte
-    /// range of the nearest item line above, reached only through lines that
-    /// each end in a hard break.
-    fn continued_item(&self, mut line_start: usize) -> Option<Range<usize>> {
-        while let Some(bs) = self.hard_break_above(line_start) {
-            let end = bs + 1;
-            let start = self.content[..end].rfind('\n').map_or(0, |i| i + 1);
-            if markdown_syntax::list_prefix(&self.content[start..end]).is_some() {
-                return Some(start..end);
-            }
-            line_start = start;
-        }
-        None
     }
 
     /// Whether logical line `row` is literal text, where Enter types a plain
     /// newline: a fenced code block (fences included) or display math.
     fn row_is_literal(&self, row: usize) -> bool {
-        let scan = self.scan_data();
-        let starts = self.line_starts();
-        let Some(&start) = starts.get(row) else {
-            return false;
-        };
-        scan.fence_odd.get(row).copied().unwrap_or(false)
-            || self.content[start..self.line_end(row)]
-                .trim_start()
-                .starts_with("```")
-            || scan.math.iter().any(|m| m.range.contains(&row))
-    }
-
-    /// Whether logical line `row` holds only whitespace (or doesn't exist).
-    fn row_is_blank(&self, row: usize) -> bool {
-        self.line_starts()
-            .get(row)
-            .is_none_or(|&s| self.content[s..self.line_end(row)].trim().is_empty())
+        self.scan_data().blocks().row_is_literal(&self.content, row)
     }
 
     /// What ⌫ at the body start of `row` (or ⌦, with `forward`, at its end)
     /// removes around a paragraph break (ADR 0060): the range and where the
-    /// caret lands. Across one blank line the two paragraphs join, undoing
-    /// Enter. In a quote the blank line is a bare `>` and the next row's
-    /// prefix goes too; extra bare `>` rows go one at a time, as plain blank
-    /// rows already do. `None` outside that shape, across differing quote
-    /// depths, or where newlines are literal or structural (code, math,
-    /// tables).
+    /// caret lands ([`delete::break_delete_range`]).
     fn break_delete_range(&self, row: usize, forward: bool) -> Option<(Range<usize>, usize)> {
-        let (above, below) = if forward {
-            (row, row + 2)
-        } else {
-            (row.checked_sub(2)?, row)
-        };
-        let mid = above + 1;
-        let starts = self.line_starts();
-        let line = |r: usize| Some(&self.content[*starts.get(r)?..self.line_end(r)]);
-        let prefix = |r: usize| line(r).and_then(markdown_syntax::blockquote_prefix);
-        let depth = |r: usize| {
-            line(r).map(|l| prefix(r).map(|p| l[..p].bytes().filter(|&b| b == b'>').count()))
-        };
-        if depth(below)? != depth(mid)? || depth(above)? != depth(mid)? {
-            return None;
-        }
-        let blank =
-            |r: usize| line(r).is_some_and(|l| l[prefix(r).unwrap_or(0)..].trim().is_empty());
-        let scan = self.scan_data();
-        let structural =
-            |r: usize| self.row_is_literal(r) || scan.tables.iter().any(|t| t.lines.contains(&r));
-        if !blank(mid) || [above, mid, below].into_iter().any(structural) {
-            return None;
-        }
-        let quoted = prefix(mid).is_some();
-        let far = if forward { below } else { above };
-        if blank(far) {
-            // An extra blank row: plain ones delete as ordinary newlines.
-            if !quoted {
-                return None;
-            }
-            let range = starts[mid]..starts[mid + 1];
-            let caret = if forward {
-                self.line_end(row)
-            } else {
-                starts[mid] + prefix(below).unwrap_or(0)
-            };
-            return Some((range, caret));
-        }
-        let range = self.line_end(above)..starts[below] + prefix(below).unwrap_or(0);
-        Some((range.clone(), range.start))
+        delete::break_delete_range(&self.content, self.scan_data().blocks(), row, forward)
     }
 
     /// Apply [`Self::break_delete_range`] as its own undo step, not part of a
     /// preceding ⌫/⌦ run.
     fn delete_break(&mut self, range: Range<usize>, caret: usize, cx: &mut Context<Self>) {
-        self.last_edit = EditKind::Other;
+        self.history.set_last_edit(EditKind::Other);
         self.replace_range(range, "", cx);
         if self.cursor_offset() != caret {
             self.move_to(caret, cx);
@@ -699,28 +448,10 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        let sel = self.selected_range.clone();
-        if sel.start >= sel.end {
+        let Some((range, new, new_sel)) =
+            format::toggle_wrap_pair(&self.content, self.selected_range.clone(), open, close)
+        else {
             return;
-        }
-        let text = &self.content[sel.clone()];
-        let start = sel.start + (text.len() - text.trim_start().len());
-        let trimmed = start..start + text.trim().len();
-        let unwrap = self
-            .unwrap_edit(sel.clone(), open, close)
-            .or_else(|| self.unwrap_edit(trimmed.clone(), open, close));
-        let (range, new, new_sel) = match unwrap {
-            Some(edit) => edit,
-            None if trimmed.is_empty() => return,
-            None => {
-                // Plain → wrap.
-                let ol = open.len();
-                (
-                    trimmed.clone(),
-                    format!("{open}{}{close}", &self.content[trimmed.clone()]),
-                    trimmed.start + ol..trimmed.end + ol,
-                )
-            }
         };
         self.record_edit(&range, &new);
         self.content.replace_range(range.clone(), &new);
@@ -730,35 +461,6 @@ impl EditorState {
         self.remap_diagnostics(&range, new.len());
         self.emit_changed(cx);
         cx.notify();
-    }
-
-    /// The edit that strips `open`/`close` from `sel`, if they sit just
-    /// inside or just outside it: (range, replacement, new selection).
-    fn unwrap_edit(
-        &self,
-        sel: Range<usize>,
-        open: &str,
-        close: &str,
-    ) -> Option<(Range<usize>, String, Range<usize>)> {
-        let (ol, cl) = (open.len(), close.len());
-        let sel_text = &self.content[sel.clone()];
-        if sel_text.len() >= ol + cl && sel_text.starts_with(open) && sel_text.ends_with(close) {
-            // `**foo**` selected → strip the markers inside the selection.
-            let inner = self.content[sel.start + ol..sel.end - cl].to_string();
-            Some((sel.clone(), inner, sel.start..sel.end - ol - cl))
-        } else if !sel.is_empty()
-            && self.content[..sel.start].ends_with(open)
-            && self.content[sel.end..].starts_with(close)
-        {
-            // `foo` selected with the markers just outside → strip them.
-            Some((
-                sel.start - ol..sel.end + cl,
-                sel_text.to_string(),
-                sel.start - ol..sel.end - ol,
-            ))
-        } else {
-            None
-        }
     }
 
     pub(super) fn bold(&mut self, _: &Bold, _: &mut Window, cx: &mut Context<Self>) {
@@ -796,36 +498,16 @@ impl EditorState {
             }
             return;
         }
-        let cursor = self.cursor_offset();
-        let line_start = self.content[..cursor].rfind('\n').map_or(0, |i| i + 1);
-        let line_end = self.content[line_start..]
-            .find('\n')
-            .map_or(self.content.len(), |i| line_start + i);
-        let line = &self.content[line_start..line_end];
-        let item = markdown_syntax::list_prefix(line);
-        let is_item = item.is_some() || markdown_syntax::blockquote_prefix(line).is_some();
-        let indent = " ".repeat(TAB_INDENT);
-        if !is_item {
-            self.replace_text_in_range(None, &indent, window, cx);
-            return;
-        }
-        // Indenting an ordered item starts a NESTED list, so its number
-        // becomes the new list's start: rewrite it to 1. (Both views
-        // renumber the items after it, so only the start digit matters.)
-        let (range, new_text) = match item {
-            Some((_, ws, true, _)) => {
-                let de = ws + line[ws..].bytes().take_while(u8::is_ascii_digit).count();
-                (
-                    line_start..line_start + de,
-                    format!("{indent}{}1", &line[..ws]),
-                )
-            }
-            _ => (line_start..line_start, indent),
-        };
+        let (range, new_text, caret) =
+            match format::indent(&self.content, self.cursor_offset(), TAB_INDENT) {
+                format::IndentEdit::Spaces(spaces) => {
+                    self.replace_text_in_range(None, &spaces, window, cx);
+                    return;
+                }
+                format::IndentEdit::Item { range, text, caret } => (range, text, caret),
+            };
         self.record_edit(&range, &new_text);
-        let delta = new_text.len() as isize - (range.end - range.start) as isize;
         self.content.replace_range(range.clone(), &new_text);
-        let caret = (cursor as isize + delta).max(line_start as isize) as usize;
         self.selected_range = caret..caret;
         self.selection_reversed = false;
         self.goal_x = None;
@@ -847,24 +529,12 @@ impl EditorState {
             }
             return;
         }
-        let cursor = self.cursor_offset();
-        let line_start = self.content[..cursor].rfind('\n').map_or(0, |i| i + 1);
-        let line = &self.content[line_start..];
-        let removed = if line.starts_with('\t') {
-            1
-        } else {
-            line.bytes()
-                .take(TAB_INDENT)
-                .take_while(|b| *b == b' ')
-                .count()
-        };
-        if removed == 0 {
+        let Some((range, caret)) = format::outdent(&self.content, self.cursor_offset(), TAB_INDENT)
+        else {
             return;
-        }
-        let range = line_start..line_start + removed;
+        };
         self.record_edit(&range, "");
         self.content.replace_range(range.clone(), "");
-        let caret = cursor.saturating_sub(removed).max(line_start);
         self.selected_range = caret..caret;
         self.selection_reversed = false;
         self.goal_x = None;
@@ -894,38 +564,12 @@ impl EditorState {
     /// a host that already holds the text (mdoc's Paste text as new tab,
     /// issue #300) needn't wait for this editor to take focus.
     pub fn insert_pasted(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
-        // Normalize foreign line endings — a Windows/browser copy
-        // carries \r\n (or bare \r), and a literal \r in the buffer
-        // garbles rendering + desyncs the \n-based column math.
-        let mut text = if text.contains('\r') {
-            text.replace("\r\n", "\n").replace('\r', "\n")
-        } else {
-            text
+        let target = PasteTarget {
+            plain: self.plain,
+            table_cell: !self.plain && self.caret_in_table(),
+            markdown: self.markdown_style.is_some(),
         };
-        // Inside a table cell, a raw paste of newlines/pipes would
-        // break the `| … |` row markup (Enter is guarded the same
-        // way): flatten newlines and escape pipes so the paste stays
-        // one cell's content.
-        if self.plain {
-            // A plain-text field keeps the paste exactly.
-        } else if self.caret_in_table() && text.contains(['\n', '|']) {
-            // Unescape-then-escape so text already carrying `\|`
-            // doesn't double up into `\\|` (an escaped backslash
-            // followed by a live separator).
-            text = text
-                .trim_end_matches('\n')
-                .replace('\n', " ")
-                .replace("\\|", "|")
-                .replace('|', "\\|");
-        } else if self.markdown_style.is_some() && text.contains("$$") {
-            // Words-attached `$$` fences / words-mixed pairs in pasted
-            // text split onto their own lines (issue #54) — same
-            // normalization typing gets.
-            if let std::borrow::Cow::Owned(n) = mdoc_markdown::syntax::normalize_math_fences(&text)
-            {
-                text = n;
-            }
-        }
+        let text = normalize_paste(text, target);
         self.replace_text_in_range(None, &text, window, cx);
     }
 
@@ -1018,22 +662,8 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        if let Some(prev) = self.undo_stack.pop() {
-            self.pending_changes.push(super::HistoryChange {
-                before: self.history_id,
-                after: prev.history_id,
-                edits: Vec::new(),
-            });
-            self.redo_stack.push(self.snapshot());
-            let changed = self.content != prev.content;
-            self.restore(prev);
-            if changed {
-                self.emit_changed(cx);
-            } else {
-                self.emit_transaction(cx);
-            }
-            self.last_edit = EditKind::Other;
-            cx.notify();
+        if let Some(prev) = self.history.undo(&self.content, self.selected_range.end) {
+            self.travel_to(prev, cx);
         }
     }
 
@@ -1041,33 +671,21 @@ impl EditorState {
         if self.read_only {
             return;
         }
-        if let Some(next) = self.redo_stack.pop() {
-            self.pending_changes.push(super::HistoryChange {
-                before: self.history_id,
-                after: next.history_id,
-                edits: Vec::new(),
-            });
-            self.undo_stack.push(self.snapshot());
-            let changed = self.content != next.content;
-            self.restore(next);
-            if changed {
-                self.emit_changed(cx);
-            } else {
-                self.emit_transaction(cx);
-            }
-            self.last_edit = EditKind::Other;
-            cx.notify();
+        if let Some(next) = self.history.redo(&self.content, self.selected_range.end) {
+            self.travel_to(next, cx);
         }
     }
 
-    pub(super) fn snapshot(&self) -> Snapshot {
-        Snapshot {
-            content: self.content.clone(),
-            // The forward caret (selection end), so undoing a backspace lands the
-            // caret after the restored text rather than inside it.
-            caret: self.selected_range.end,
-            history_id: self.history_id,
+    /// Restore a state Undo or Redo handed back.
+    fn travel_to(&mut self, s: Snapshot, cx: &mut Context<Self>) {
+        let changed = self.content != s.content;
+        self.restore(s);
+        if changed {
+            self.emit_changed(cx);
+        } else {
+            self.emit_transaction(cx);
         }
+        cx.notify();
     }
 
     pub(super) fn restore(&mut self, s: Snapshot) {
@@ -1079,7 +697,6 @@ impl EditorState {
         self.remap_diagnostics(&edited, new_len);
         self.content_gen += 1;
         self.content = s.content;
-        self.history_id = s.history_id;
         let caret = s.caret.min(self.content.len());
         self.selected_range = caret..caret;
         self.selection_reversed = false;
@@ -1091,29 +708,10 @@ impl EditorState {
     /// one character at a time.
     pub(super) fn record_edit(&mut self, range: &Range<usize>, new_text: &str) {
         self.content_gen += 1;
-        let kind = if new_text.is_empty() {
-            EditKind::Delete
-        } else if range.start == range.end
-            && new_text != "\n"
-            && new_text.graphemes(true).count() == 1
-        {
-            EditKind::Insert(range.start + new_text.len())
-        } else {
-            EditKind::Other
-        };
-        let coalesce = match (self.last_edit, kind) {
-            (EditKind::Insert(end), EditKind::Insert(_)) => end == range.start,
-            (EditKind::Delete, EditKind::Delete) => true,
-            _ => false,
-        };
-        self.begin_history(
-            coalesce,
-            vec![super::SourceEdit {
-                range: range.clone(),
-                new_len: new_text.len(),
-            }],
-        );
-        self.last_edit = kind;
+        // The forward caret (selection end), so undoing a backspace lands the
+        // caret after the restored text rather than inside it.
+        self.history
+            .record(&self.content, self.selected_range.end, range, new_text);
         // A keystroke is one typed grapheme (incl. typed over a selection — that's
         // an auto-pair "wrap") or a single-char backspace. Multi-char edits (paste,
         // table ops, …) are not, so auto-pairing skips them.
@@ -1123,45 +721,28 @@ impl EditorState {
 
     /// Make the current state an undo point and start a new branch.
     fn push_undo_point(&mut self) {
-        self.undo_stack.push(self.snapshot());
-        if self.undo_stack.len() > UNDO_LIMIT {
-            self.undo_stack.remove(0);
-        }
-        self.redo_stack.clear();
+        self.history
+            .push_undo_point(&self.content, self.selected_range.end);
     }
 
     fn begin_history(&mut self, coalesce: bool, edits: Vec<super::SourceEdit>) {
-        if !coalesce {
-            self.push_undo_point();
-        }
-        self.redo_stack.clear();
-        let before = self.history_id;
-        self.next_history_id += 1;
-        self.history_id = self.next_history_id;
-        self.pending_changes.push(super::HistoryChange {
-            before,
-            after: self.history_id,
-            edits,
-        });
+        self.history
+            .begin(coalesce, edits, &self.content, self.selected_range.end);
     }
 
     pub fn history_id(&self) -> u64 {
-        self.history_id
+        self.history.history_id()
     }
     /// The states Undo and Redo reach from here, for hosts that travel the
     /// history by counting presses.
     pub fn history_path(&self) -> mdoc_history::HistoryPath {
-        mdoc_history::HistoryPath {
-            undo: self.undo_stack.iter().map(|s| s.history_id).collect(),
-            current: self.history_id,
-            redo: self.redo_stack.iter().rev().map(|s| s.history_id).collect(),
-        }
+        self.history.path()
     }
     pub fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
+        self.history.can_undo()
     }
     pub fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
+        self.history.can_redo()
     }
     /// Undo for hosts acting from outside the editor (e.g. a side panel).
     pub fn undo_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1179,21 +760,8 @@ impl EditorState {
         cx.notify();
     }
     fn emit_transaction(&mut self, cx: &mut Context<Self>) {
-        if !self.pending_changes.is_empty() {
-            let mut retained: Vec<_> = self
-                .undo_stack
-                .iter()
-                .chain(&self.redo_stack)
-                .map(|s| s.history_id)
-                .chain(std::iter::once(self.history_id))
-                .collect();
-            retained.sort_unstable();
-            retained.dedup();
-            let transaction = std::sync::Arc::new(super::EditorTransaction {
-                revision: self.content_gen,
-                changes: std::mem::take(&mut self.pending_changes),
-                retained,
-            });
+        if let Some(transaction) = self.history.take_transaction(self.content_gen) {
+            let transaction = std::sync::Arc::new(transaction);
             self.last_transaction = Some(transaction.clone());
             cx.emit(EditorEvent::Transaction(transaction));
         }
@@ -1251,18 +819,11 @@ impl EditorState {
     }
 
     pub(super) fn previous_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .rev()
-            .find_map(|(idx, _)| (idx < offset).then_some(idx))
-            .unwrap_or(0)
+        text::previous_boundary(&self.content, offset)
     }
 
     pub(super) fn next_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .find_map(|(idx, _)| (idx > offset).then_some(idx))
-            .unwrap_or(self.content.len())
+        text::next_boundary(&self.content, offset)
     }
 }
 
@@ -1354,17 +915,10 @@ impl EntityInputHandler for EditorState {
             self.push_undo_point();
         }
         self.content_gen += 1;
-        let before = self.history_id;
-        self.next_history_id += 1;
-        self.history_id = self.next_history_id;
-        self.pending_changes.push(super::HistoryChange {
-            before,
-            after: self.history_id,
-            edits: vec![super::SourceEdit {
-                range: range.clone(),
-                new_len: new_text.len(),
-            }],
-        });
+        self.history.advance(vec![super::SourceEdit {
+            range: range.clone(),
+            new_len: new_text.len(),
+        }]);
         self.content =
             self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
         self.marked_range =
@@ -1450,11 +1004,6 @@ fn changed_region(old: &str, new: &str) -> (Range<usize>, usize) {
         suf -= 1;
     }
     (pre..a.len() - suf, b.len() - suf - pre)
-}
-
-/// How many `\\` end `text`: odd means the last one is unescaped.
-fn trailing_backslashes(text: &str) -> usize {
-    text.bytes().rev().take_while(|&b| b == b'\\').count()
 }
 
 #[cfg(test)]

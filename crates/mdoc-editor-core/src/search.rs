@@ -9,7 +9,9 @@ use std::{cell::OnceCell, ops::Range};
 
 use caseless::{Caseless, default_case_fold_str};
 
-use crate::markdown_syntax;
+use mdoc_markdown::{lines, spans, tables};
+
+use crate::markdown;
 
 /// One logical search occurrence. A match can cover several source ranges when
 /// hidden Markdown syntax lies between its visible characters.
@@ -143,8 +145,8 @@ impl SearchIndex {
     /// offsets used by the editor.
     pub fn from_markdown(source: &str) -> Self {
         let lines = split_lines(source);
-        let table_regions = markdown_syntax::table_regions(source);
-        let math_regions = markdown_syntax::math_regions(source);
+        let table_regions = tables::table_regions(source);
+        let math_regions = markdown::math_regions(source);
         let mut table_rows = vec![false; lines.len()];
         for region in &table_regions {
             for row in region.lines.clone() {
@@ -184,7 +186,7 @@ impl SearchIndex {
             if text.trim().is_empty()
                 || math_rows[row]
                 || structural_rows[row]
-                || markdown_syntax::thematic_break(text)
+                || lines::thematic_break(text)
             {
                 row += 1;
                 continue;
@@ -196,8 +198,8 @@ impl SearchIndex {
             }
 
             if table_rows[row] {
-                if !markdown_syntax::is_table_separator(text) {
-                    for cell in markdown_syntax::table_cell_ranges(text) {
+                if !tables::is_table_separator(text) {
+                    for cell in tables::table_cell_ranges(text) {
                         let start = line.start + cell.start;
                         let end = line.start + cell.end;
                         index.add_projected_line(source, line, start..end);
@@ -207,9 +209,7 @@ impl SearchIndex {
                 continue;
             }
 
-            if markdown_syntax::image_line(text).is_some()
-                || markdown_syntax::image_row(text).is_some()
-            {
+            if markdown::image_line(text).is_some() || markdown::image_row(text).is_some() {
                 row += 1;
                 continue;
             }
@@ -385,7 +385,7 @@ impl SearchIndex {
 
         let mut visible = Vec::new();
         let mut cursor = line.start;
-        let mut spans = markdown_syntax::semantic_spans_with(source, line.start, line.end);
+        let mut spans = markdown::semantic_spans_with(source, line.start, line.end);
         spans.sort_by_key(|span| span.range.start);
         for span in spans {
             if span.range.end <= line.start || span.range.start >= line.end {
@@ -411,10 +411,10 @@ impl SearchIndex {
         }
 
         let mut objects = Vec::new();
-        for (full, _) in markdown_syntax::inline_image_spans(line_text) {
+        for (full, _) in spans::inline_image_spans(line_text) {
             objects.push((line.start + full.start)..(line.start + full.end));
         }
-        for full in markdown_syntax::inline_math_spans(line_text) {
+        for full in markdown::inline_math_spans(line_text) {
             objects.push((line.start + full.start)..(line.start + full.end));
         }
         objects.sort_by_key(|range| range.start);
@@ -517,12 +517,11 @@ fn split_lines(source: &str) -> Vec<Line> {
 }
 
 fn block_kind(line: &str) -> BlockKind {
-    if markdown_syntax::list_prefix(line).is_some() || markdown_syntax::task_prefix(line).is_some()
-    {
+    if lines::list_prefix(line).is_some() || lines::task_prefix(line).is_some() {
         BlockKind::List
-    } else if markdown_syntax::heading_level(line).is_some() {
+    } else if lines::heading_level(line).is_some() {
         BlockKind::Heading
-    } else if markdown_syntax::blockquote_prefix(line).is_some() {
+    } else if lines::blockquote_prefix(line).is_some() {
         BlockKind::Quote
     } else {
         BlockKind::Paragraph
@@ -545,13 +544,13 @@ fn contiguous_block_end(
     while end < lines.len() {
         let text = lines[end].text(source);
         if text.trim().is_empty()
-            || markdown_syntax::thematic_break(text)
+            || lines::thematic_break(text)
             || table_rows[end]
             || math_rows[end]
             || structural_rows[end]
             || text.trim_start().starts_with("```")
-            || markdown_syntax::image_line(text).is_some()
-            || markdown_syntax::image_row(text).is_some()
+            || markdown::image_line(text).is_some()
+            || markdown::image_row(text).is_some()
         {
             break;
         }

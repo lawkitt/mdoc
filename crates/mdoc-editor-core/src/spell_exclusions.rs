@@ -5,7 +5,9 @@
 
 use std::ops::Range;
 
-use crate::markdown_syntax;
+use mdoc_markdown::{spans, tables};
+
+use crate::markdown;
 
 /// Byte ranges of `source` that are not prose: fenced code blocks (with their
 /// fences), math, table style markers, image lines, inline code, inline images
@@ -14,14 +16,14 @@ use crate::markdown_syntax;
 pub fn spell_exclusions(source: &str) -> Vec<Range<usize>> {
     let lines = line_ranges(source);
     let mut whole = vec![false; lines.len()];
-    for region in markdown_syntax::math_regions(source) {
+    for region in markdown::math_regions(source) {
         for row in region.range.chain(region.marker_line) {
             if let Some(slot) = whole.get_mut(row) {
                 *slot = true;
             }
         }
     }
-    for region in markdown_syntax::table_regions(source) {
+    for region in tables::table_regions(source) {
         if let Some(slot) = region.marker_line.and_then(|row| whole.get_mut(row)) {
             *slot = true;
         }
@@ -43,23 +45,21 @@ pub fn spell_exclusions(source: &str) -> Vec<Range<usize>> {
             row = end + 1;
             continue;
         }
-        if whole[row]
-            || markdown_syntax::image_line(text).is_some()
-            || markdown_syntax::image_row(text).is_some()
+        if whole[row] || markdown::image_line(text).is_some() || markdown::image_row(text).is_some()
         {
             out.push(line);
             row += 1;
             continue;
         }
-        for span in markdown_syntax::semantic_spans_with(source, line.start, line.end) {
+        for span in markdown::semantic_spans_with(source, line.start, line.end) {
             if span.code || span.hidden || span.replacement {
                 out.push(span.range);
             }
         }
-        let local = markdown_syntax::inline_image_spans(text)
+        let local = spans::inline_image_spans(text)
             .into_iter()
             .map(|(full, _)| full)
-            .chain(markdown_syntax::inline_math_spans(text))
+            .chain(markdown::inline_math_spans(text))
             .chain(html_tags(text));
         out.extend(local.map(|r| line.start + r.start..line.start + r.end));
         row += 1;
