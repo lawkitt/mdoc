@@ -6,4 +6,5 @@
   cell. In a cell Aa shows table controls: add a row above or below,
   duplicate or delete a row, add or delete a column, align the column,
   move between cells and delete the table, each one step for Undo
-  ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
+  ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)). A `<br>` in a
+  table cell now shows as a line break, as on desktop.

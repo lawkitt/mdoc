@@ -46,12 +46,13 @@ final class LivePreview {
     /// caret left and entered; a table typed into keeps its grid and
     /// columns, and only what changed in it is laid out again. False when
     /// more than a block changed (a fence typed or removed, several edits
-    /// at once): the owner restyles the whole text.
+    /// at once, an edit across a table's edge): the owner restyles the
+    /// whole text.
     func edited(_ edits: [AppliedEdit], in view: CandidateTextView, look: Look) -> Bool {
         // The whole keystroke's restyle, as ADR 0109's budget counts it.
         let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
         defer { editingSignposter.endInterval("Restyle", interval) }
-        let intact = edits.count == 1
+        var intact = edits.count == 1
         for edit in edits {
             candidates = candidates.compactMap { candidate in
                 Self.moved(candidate.range, by: edit).map { range in
@@ -63,8 +64,16 @@ final class LivePreview {
             fences = fences.map { $0.compactMap { Self.grown($0, by: edit) } }
             visible = visible.compactMap { Self.moved($0, by: edit) }
             caretLines = caretLines.flatMap { Self.grown($0, by: edit) }
-            for table in view.tableViews where NSMaxRange(edit.range) <= table.table.range.location {
-                table.shift(by: edit.length - edit.range.length)
+            for table in view.tableViews {
+                let range = table.table.range
+                if NSMaxRange(edit.range) <= range.location {
+                    table.shift(by: edit.length - edit.range.length)
+                } else if edit.range.location < NSMaxRange(range),
+                          edit.range.location < range.location || NSMaxRange(edit.range) > NSMaxRange(range) {
+                    // Across a table's edge (a selection deleted into it,
+                    // the table deleted): more than its block may change.
+                    intact = false
+                }
             }
         }
         guard intact, let edit = edits.first else { return false }

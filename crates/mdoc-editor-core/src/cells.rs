@@ -12,7 +12,7 @@
 
 use std::ops::Range;
 
-use mdoc_markdown::tables::{Align, TableRegion, table_cell_spans};
+use mdoc_markdown::tables::{Align, TableRegion, table_cell_breaks, table_cell_spans};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::text::{line_end, line_starts, row_col, trailing_backslashes};
@@ -166,17 +166,26 @@ fn empty_caret(source: &str, span: &Range<usize>) -> usize {
 }
 
 /// The caret stops in `text` (a cell's span), relative to it: grapheme
-/// boundaries, a backslash and the punctuation it escapes counting as one.
+/// boundaries, a backslash and the punctuation it escapes counting as one,
+/// and a `<br>` tag, which the grid draws as a line break, as one.
 fn units(text: &str) -> Vec<usize> {
     let graphemes: Vec<(usize, &str)> = text.grapheme_indices(true).collect();
+    let breaks = table_cell_breaks(text);
     let mut stops = vec![0];
     let mut k = 0;
     while k < graphemes.len() {
-        let escapes = graphemes[k].1 == "\\"
-            && graphemes
-                .get(k + 1)
-                .is_some_and(|(_, g)| g.len() == 1 && g.as_bytes()[0].is_ascii_punctuation());
-        k += if escapes { 2 } else { 1 };
+        let at = graphemes[k].0;
+        if let Some(tag) = breaks.iter().find(|tag| tag.start == at) {
+            while k < graphemes.len() && graphemes[k].0 < tag.end {
+                k += 1;
+            }
+        } else {
+            let escapes = graphemes[k].1 == "\\"
+                && graphemes
+                    .get(k + 1)
+                    .is_some_and(|(_, g)| g.len() == 1 && g.as_bytes()[0].is_ascii_punctuation());
+            k += if escapes { 2 } else { 1 };
+        }
         stops.push(graphemes.get(k).map_or(text.len(), |(i, _)| *i));
     }
     stops
@@ -591,6 +600,15 @@ mod tests {
         assert_eq!(moved(T, b + 2, CellMove::Right), one);
         assert_eq!(moved(T, one, CellMove::Left), b + 2);
         assert_eq!(moved(T, a, CellMove::Left), at(T, "\n| a"));
+        // A `<br>` is one step.
+        let broken = "| a<br>b |\n| - |";
+        let tag = at(broken, "<br>");
+        assert_eq!(moved(broken, tag, CellMove::Right), tag + 4);
+        assert_eq!(moved(broken, tag + 4, CellMove::Left), tag);
+        assert_eq!(
+            keep_in_cell(broken, tag + 2..tag + 2),
+            Some(tag + 4..tag + 4)
+        );
         // An escape is one step.
         let escape = at(T, "\\|");
         assert_eq!(moved(T, escape, CellMove::Right), escape + 2);

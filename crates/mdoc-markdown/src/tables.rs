@@ -170,6 +170,62 @@ pub fn table_cell_spans(line: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// Byte ranges of the `<br>`, `<br/>` and `<br />` tags (any case) in a table
+/// cell: converted DOCX tables break cell lines with them (ADR 0046). A tag
+/// inside a code span or after a backslash is literal text, not a break.
+pub fn table_cell_breaks(content: &str) -> Vec<Range<usize>> {
+    let b = content.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            // An escaped character is literal.
+            b'\\' => i += 2,
+            // A code span runs to the next backtick run of the same length;
+            // an unmatched run is literal backticks (CommonMark).
+            b'`' => {
+                let run = b[i..].iter().take_while(|&&c| c == b'`').count();
+                let fence = &content[i..i + run];
+                let mut at = i + run;
+                let mut close = None;
+                while let Some(rel) = content[at..].find(fence) {
+                    let start = at + rel;
+                    let len = b[start..].iter().take_while(|&&c| c == b'`').count();
+                    if len == run {
+                        close = Some(start + run);
+                        break;
+                    }
+                    at = start + len;
+                }
+                i = close.unwrap_or(i + run);
+            }
+            b'<' => {
+                let tag = |len: usize| {
+                    b.get(i..i + len)
+                        .is_some_and(|t| t[1..3].eq_ignore_ascii_case(b"br"))
+                };
+                let len = [4, 5, 6].into_iter().find(|&len| {
+                    tag(len)
+                        && match len {
+                            4 => b[i + 3] == b'>',
+                            5 => &b[i + 3..i + 5] == b"/>",
+                            _ => &b[i + 3..i + 6] == b" />",
+                        }
+                });
+                match len {
+                    Some(len) => {
+                        out.push(i..i + len);
+                        i += len;
+                    }
+                    None => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
 /// If `line` is a table separator row (every cell is dashes with optional
 /// alignment colons), return its per-column alignment, else `None`.
 fn separator_aligns(line: &str) -> Option<Vec<Align>> {

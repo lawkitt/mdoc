@@ -18,7 +18,7 @@ use mdoc_markdown::{
     },
     spans::{Background, Color, Span, inline_image_spans, is_backslash_escaped, scan_line},
     syntax::{AlertKind, TableStyle, alert_prefix, ordered_marker},
-    tables::{Align, table_cell_ranges, table_cell_spans, table_regions},
+    tables::{Align, table_cell_breaks, table_cell_ranges, table_cell_spans, table_regions},
 };
 
 use crate::library::TextRange;
@@ -158,6 +158,8 @@ pub struct MarkdownTableRow {
     /// Each cell's whole span between its pipes, its spaces included: where
     /// a caret in that cell rests in edit mode (ADR 0109).
     pub spans: Vec<TextRange>,
+    /// The `<br>` tags that break a cell's lines (ADR 0046), in source order.
+    pub breaks: Vec<TextRange>,
 }
 
 /// A GFM table the rendered view draws as a grid (ADR 0096).
@@ -510,6 +512,15 @@ fn table_of(
                 spans: table_cell_spans(&text[range.clone()])
                     .into_iter()
                     .map(|span| TextRange::of(&(range.start + span.start..range.start + span.end)))
+                    .collect(),
+                breaks: row_cells(&text[range.clone()])
+                    .into_iter()
+                    .flat_map(|cell| {
+                        let start = range.start + cell.start;
+                        table_cell_breaks(&text[start..range.start + cell.end])
+                            .into_iter()
+                            .map(move |tag| TextRange::of(&(start + tag.start..start + tag.end)))
+                    })
                     .collect(),
             }
         })
@@ -1183,6 +1194,20 @@ mod tests {
         assert_eq!(rows, [vec!["A", "B"], vec!["a", "b"], vec!["c"]]);
     }
 
+    /// Each row carries its cells' spans between the pipes and the `<br>`
+    /// tags that break a cell's lines.
+    #[test]
+    fn table_rows_carry_spans_and_breaks() {
+        let text = "| A | B |\n| - | - |\n| a<br>b | `<br>` |";
+        let styling = styling(text);
+        let row = &styling.tables[0].rows[1];
+        let spans: Vec<&str> = row.spans.iter().map(|span| slice(text, *span)).collect();
+        assert_eq!(spans, [" a<br>b ", " `<br>` "]);
+        let breaks: Vec<&str> = row.breaks.iter().map(|tag| slice(text, *tag)).collect();
+        assert_eq!(breaks, ["<br>"]);
+        assert_eq!(row.breaks[0].start, 23);
+    }
+
     /// Images carry their whole range and their alt text, empty or not; code
     /// keeps its images literal.
     #[test]
@@ -1299,6 +1324,7 @@ mod block_tests {
                             range: shifted(r.range, start),
                             cells: r.cells.iter().map(|c| shifted(*c, start)).collect(),
                             spans: r.spans.iter().map(|c| shifted(*c, start)).collect(),
+                            breaks: r.breaks.iter().map(|c| shifted(*c, start)).collect(),
                         })
                         .collect(),
                     ..t.clone()

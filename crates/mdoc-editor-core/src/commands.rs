@@ -404,15 +404,16 @@ pub fn table_command(
         TableCommand::InsertRowBelow => table_rules::insert_row(source, blocks, caret, true),
         TableCommand::DeleteRow => table_rules::delete_row(source, blocks, caret),
         TableCommand::DuplicateRow => table_rules::duplicate_row(source, blocks, caret),
-        TableCommand::InsertColumnLeft => table_rules::insert_column(source, blocks, caret, false),
-        TableCommand::InsertColumnRight => table_rules::insert_column(source, blocks, caret, true),
-        TableCommand::DeleteColumn => table_rules::delete_column(source, blocks, caret),
+        TableCommand::InsertColumnLeft => column_edit(source, blocks, caret, Some(false)),
+        TableCommand::InsertColumnRight => column_edit(source, blocks, caret, Some(true)),
+        TableCommand::DeleteColumn => column_edit(source, blocks, caret, None),
         TableCommand::Align(align) => {
-            let (row, cell, _) = table_rules::cell_pos(source, blocks, caret)?;
+            let (row, _, _) = table_rules::cell_pos(source, blocks, caret)?;
             if !blocks.row_in_table_cell(row) {
                 return None;
             }
-            table_rules::set_align(source, blocks, caret, cell, *align)
+            let column = cells::cell_at(source, caret)?.column;
+            table_rules::set_align(source, blocks, caret, column, *align)
         }
         TableCommand::Style(name) => {
             let region = blocks.table_at(row_col(source, caret).0)?;
@@ -423,6 +424,31 @@ pub fn table_command(
         TableCommand::DeleteTable => table_rules::delete_table(source, blocks, caret),
     }?;
     Some(from_table(edit))
+}
+
+/// A column inserted right (`Some(true)`) or left of the caret's, or the
+/// caret's deleted (`None`), as desktop's column commands rewrite the
+/// table. The caret's column is the cells' reading
+/// ([`cells::cell_at`]), which counts a last cell left without its closing
+/// pipe; the caret stays in its cell.
+fn column_edit(
+    source: &str,
+    blocks: Blocks,
+    caret: usize,
+    insert_right: Option<bool>,
+) -> Option<TableEdit> {
+    let cell = cells::cell_at(source, caret)?;
+    let row = row_col(source, caret).0;
+    let into = caret.saturating_sub(cell.content.start);
+    let (edit, column) = match insert_right {
+        Some(true) => (table_rules::ColEdit::Insert(cell.column + 1), cell.column),
+        Some(false) => (table_rules::ColEdit::Insert(cell.column), cell.column + 1),
+        None => (table_rules::ColEdit::Delete(cell.column), cell.column),
+    };
+    let (range, text) = table_rules::rewrite_table_columns(source, blocks, row, edit)?;
+    let edited = source[..range.start].to_owned() + &text + &source[range.end..];
+    let caret = table_rules::caret_pos_for_cell(&edited, row, column, into);
+    Some((range, text, caret))
 }
 
 /// Tab, ⇧Tab or an arrow key in a rendered table (ADR 0109): the caret to
@@ -759,6 +785,26 @@ mod tests {
             Some(("- [x] t".into(), caret(7)))
         );
         assert_eq!(toggle_task("t", caret(1)), None);
+    }
+
+    /// A row left without its closing pipe still has its last cell: the
+    /// column commands act on the column the caret is in.
+    #[test]
+    fn column_commands_count_a_last_cell_without_its_pipe() {
+        let s = "| a | b |\n| - | - |\n| x | y";
+        let y = s.rfind('y').unwrap();
+        let out = table_command(s, caret(y), &TableCommand::DeleteColumn)
+            .unwrap()
+            .apply(s);
+        assert_eq!(out, "| a |\n| - |\n| x |");
+        let out = table_command(s, caret(y), &TableCommand::InsertColumnLeft)
+            .unwrap()
+            .apply(s);
+        assert_eq!(out, "| a |  | b |\n| - | --- | - |\n| x |  | y |");
+        let out = table_command(s, caret(y), &TableCommand::Align(Align::Right))
+            .unwrap()
+            .apply(s);
+        assert!(out.contains("| :-- | --: |"), "{out}");
     }
 
     #[test]

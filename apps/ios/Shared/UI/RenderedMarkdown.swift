@@ -66,6 +66,10 @@ struct RenderedCell {
     /// in this cell (ADR 0109). Its location is `NSNotFound` for a cell the
     /// row leaves out.
     var span = NSRange(location: NSNotFound, length: 0)
+    /// Where a `<br>` breaks the cell's lines, in its text: the tag's `<`
+    /// is drawn as a line separator and the rest hidden, so the text keeps
+    /// the source's length (ADR 0046).
+    var breaks: [Int] = []
 }
 
 /// A table as its grid draws it: column widths and row heights for the text
@@ -197,6 +201,7 @@ struct BlockLayout {
             guard count > 0 else { return nil }
             var rows: [[RenderedCell]] = []
             let spans = table.rows.map(\.spans)
+            let breaks = table.rows.map { $0.breaks.map { offsets.nsRange($0) } }
             for (rowIndex, row) in table.rows.map(\.cells).enumerated() {
                 var cells: [RenderedCell] = []
                 for column in 0..<count {
@@ -228,7 +233,19 @@ struct BlockLayout {
                             }
                         }
                     }
+                    var cellBreaks: [Int] = []
+                    if let content {
+                        for tag in breaks[rowIndex] where tag.length > 0 && NSLocationInRange(tag.location, content) {
+                            let at = tag.location - content.location
+                            guard NSMaxRange(tag) <= NSMaxRange(content) else { continue }
+                            piece.replaceCharacters(in: NSRange(location: at, length: 1), with: "\u{2028}")
+                            piece.addAttributes(
+                                MarkdownStyler.hiddenAttributes, range: NSRange(location: at + 1, length: tag.length - 1))
+                            cellBreaks.append(at)
+                        }
+                    }
                     var cell = RenderedCell(text: piece, location: content?.location ?? tableRange.location)
+                    cell.breaks = cellBreaks
                     if column < row.count, column < spans[rowIndex].count {
                         cell.span = offsets.nsRange(spans[rowIndex][column])
                     }
@@ -861,6 +878,18 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     var row = 0
     var column = 0
     var allowsCopy = false
+    /// Where a `<br>` tag's `<` is drawn as a line separator.
+    var breaks: [Int] = []
+
+    /// `range` of the cell's text as its source has it: each drawn break
+    /// back to its tag's `<`.
+    func source(in range: NSRange) -> String {
+        let text = NSMutableString(string: (textStorage.string as NSString).substring(with: range))
+        for at in breaks where NSLocationInRange(at, range) {
+            text.replaceCharacters(in: NSRange(location: at - range.location, length: 1), with: "<")
+        }
+        return text as String
+    }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if allowsCopy { return super.canPerformAction(action, withSender: sender) }
@@ -871,14 +900,20 @@ final class CellTextView: UITextView, UIAccessibilityContainerDataTableCell {
     }
 
     override func copy(_ sender: Any?) {
-        if allowsCopy { super.copy(sender) }
+        guard allowsCopy else { return }
+        guard !breaks.isEmpty, selectedRange.length > 0 else { return super.copy(sender) }
+        UIPasteboard.general.string = source(in: selectedRange)
     }
 
     /// In the review, where nothing copies, VoiceOver hears the cell as
     /// drawn: hidden markers as word joiners (see `spoken`).
     override func text(in range: UITextRange) -> String? {
         guard let text = super.text(in: range) else { return nil }
-        return allowsCopy ? text : attributedText.spoken(text, at: offset(from: beginningOfDocument, to: range.start))
+        let start = offset(from: beginningOfDocument, to: range.start)
+        if allowsCopy {
+            return breaks.isEmpty ? text : source(in: NSRange(location: start, length: (text as NSString).length))
+        }
+        return attributedText.spoken(text, at: start)
     }
 
     override var accessibilityValue: String? {
@@ -968,6 +1003,7 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
         configure(view)
         view.attributedText = cell.text
         view.location = cell.location
+        view.breaks = cell.breaks
         view.row = row
         view.column = column
         if row == 0 {
@@ -1013,6 +1049,7 @@ final class MarkdownTableView: UIScrollView, UIScrollViewDelegate, UIAccessibili
                     view.attributedText = cell.text
                 }
                 view.location = cell.location
+                view.breaks = cell.breaks
             }
         }
         let resized = new.columns != table.columns || new.heights != table.heights || new.style != table.style

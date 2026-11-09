@@ -172,15 +172,28 @@ extension MarkdownTextView.Coordinator {
     func typedInCell(_ view: CandidateTextView, range: NSRange, text: String) -> Bool {
         guard parent.rendered, !bridge.isChanging, view.markedTextRange == nil, text != "\n" else { return false }
         if text.isEmpty {
-            // ⌫ held (word deletes): never past the caret's cell's pipes.
             guard range.length > 0, let hit = view.cell(at: NSMaxRange(range)),
                   let span = hit.table.span(of: hit.view) else { return false }
-            let kept = NSIntersectionRange(range, span)
-            guard kept != range else { return false }
-            if kept.length > 0 {
-                bridge.replace(kept, with: "", selection: NSRange(location: kept.location, length: 0), in: view)
+            let selection = view.selectedRange
+            let kept: NSRange
+            if selection.length > 0 {
+                // A selection in one cell, deleted as the core deletes it,
+                // so a pipe after it stays what it was; one reaching out of
+                // the cell is deleted as selected.
+                guard NSIntersectionRange(range, span) == range else { return false }
+                kept = range
+            } else {
+                // One character is a structural key, the core's already;
+                // ⌫ held (word deletes) stops at the cell's pipes.
+                if StructuralKey(range: range, text: "", selection: selection, in: view.textStorage.string as NSString) != nil {
+                    return false
+                }
+                kept = NSIntersectionRange(range, span)
             }
-            return true
+            guard kept.length > 0 else { return true }
+            return typeInCell(view, range: kept) { source, selection in
+                editorBackspace(text: source, selection: selection, rendered: true)
+            }
         }
         guard text.contains(where: { "|\\\n\r".contains($0) }), let hit = view.cell(at: range.location) else { return false }
         guard view.cell(at: NSMaxRange(range))?.view === hit.view else { return true }

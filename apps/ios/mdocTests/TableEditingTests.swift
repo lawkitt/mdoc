@@ -193,7 +193,9 @@ final class TableEditingTests: XCTestCase {
         harness.view.paste(nil)
         XCTAssertTrue(harness.shown.contains("| Rent\\|a<br>bx\\|y z | £1,150 |"), harness.shown)
         XCTAssertEqual(coreText(harness), harness.shown)
-        XCTAssertEqual(try grid(harness).cells[1][0].textStorage.string, "Rent\\|a<br>bx\\|y z")
+        let cell = try grid(harness).cells[1][0]
+        XCTAssertEqual(cell.source(in: NSRange(location: 0, length: cell.textStorage.length)), "Rent\\|a<br>bx\\|y z")
+        XCTAssertEqual(cell.breaks, [7], "the `<br>` draws a line break")
         let scan = MarkdownStyling(markdown: harness.shown)
         XCTAssertEqual(scan.tables.first?.rows.map(\.cells.count), [2, 2, 2], "every row keeps its cells")
     }
@@ -214,6 +216,66 @@ final class TableEditingTests: XCTestCase {
         XCTAssertFalse(change(harness, NSRange(location: caret - 10, length: 10), ""))
         XCTAssertTrue(harness.shown.contains("\n| | £1,725 |") || harness.shown.contains("\n|  | £1,725 |"), harness.shown)
         XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    /// A selection from the text above into a cell, deleted: the text
+    /// restyles whole, its grids as the core reads the tables.
+    func testADeleteAcrossATablesEdgeRestylesTheWholeText() throws {
+        let harness = try harness()
+        let start = harness.string.range(of: "Rent\n").location
+        let end = harness.string.range(of: "| Item").location + 3
+        let range = NSRange(location: start, length: end - start)
+        harness.view.selectedRange = range
+        change(harness, range, "")
+        XCTAssertTrue(harness.shown.hasPrefix("# tem |"), harness.shown)
+        XCTAssertEqual(coreText(harness), harness.shown)
+        XCTAssertEqual(harness.view.tableViews.count, MarkdownStyling(markdown: harness.shown).tables.count)
+    }
+
+    /// A selection in a cell deleted: the core deletes it, so a backslash
+    /// left before the cell's border is doubled and the border stays one.
+    func testDeletingASelectionKeepsTheCellsBorder() throws {
+        let harness = try harness(text: "| A | B |\n| - | - |\n| \\word| b |")
+        let word = harness.string.range(of: "word")
+        harness.view.selectedRange = word
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        XCTAssertEqual(harness.view.selectedRange, word, "a selection in one cell is kept")
+        XCTAssertFalse(change(harness, word, ""))
+        XCTAssertTrue(harness.shown.hasSuffix("| \\\\| b |"), harness.shown)
+        XCTAssertEqual(MarkdownStyling(markdown: harness.shown).tables.first?.rows.map(\.cells.count), [2, 2])
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    /// Text holding a whole table replaced (Select All, typing): the grid
+    /// goes with it.
+    func testReplacingTextHoldingATableTakesItsGrid() throws {
+        let harness = try harness()
+        let all = NSRange(location: 0, length: harness.string.length)
+        harness.view.selectedRange = all
+        change(harness, all, "x")
+        XCTAssertEqual(harness.shown, "x")
+        XCTAssertTrue(harness.view.tableViews.isEmpty, "the old grid is gone")
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    /// A `<br>` in a cell is drawn as a line break, its text the same
+    /// length as the source; the caret steps over the tag whole.
+    func testABreakInACellDrawsASecondLine() throws {
+        let harness = try harness(text: "| A | B |\n| - | - |\n| one<br>two | b |")
+        let table = try grid(harness)
+        let cell = table.cells[1][0]
+        XCTAssertEqual(cell.textStorage.length, ("one<br>two" as NSString).length)
+        XCTAssertEqual(cell.breaks, [3])
+        XCTAssertGreaterThan(table.table.heights[1], table.table.heights[0] * 1.5, "two lines")
+        let tag = harness.string.range(of: "<br>").location
+        select(harness, NSRange(location: tag + 2, length: 0))
+        XCTAssertEqual(harness.view.selectedRange.location, tag + 4, "never inside the tag")
+        let below = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
+        select(harness, NSRange(location: tag, length: 0))
+        let above = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
+        XCTAssertGreaterThan(below.minY, above.maxY - 1, "after the tag the caret is on the second line")
+        cell.allowsCopy = true
+        XCTAssertEqual(cell.source(in: NSRange(location: 0, length: cell.textStorage.length)), "one<br>two")
     }
 
     // MARK: Moving between cells
