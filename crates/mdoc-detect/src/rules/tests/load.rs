@@ -551,3 +551,228 @@ fn an_alternation_finds_what_one_regex_would() {
     assert_eq!(names, ["lead", "tail"]);
 }
 
+/// Each regex the pack compiled, named by where it is. The patterns
+/// list every field, so a new field that holds a regex is named here too.
+fn pack_regexes<'p>(pack: &'p Pack) -> Vec<(String, &'p Regex)> {
+    let Pack {
+        role_surnames: _,
+        initials_after,
+        initials_companies: _,
+        initials_never: _,
+        ocr_letters: _,
+        ocr_company_words: _,
+        ocr_person_words,
+        never,
+        defined,
+        shapes,
+        contexts,
+        spans,
+        zones: _,
+        public: _,
+        references,
+        conditional_references,
+        cases,
+        party_roles: _,
+        own_before: _,
+        private,
+        labels: _,
+        lookalike_letters: _,
+        lookalike_words: _,
+        lookalike_after: _,
+    } = pack;
+    let mut regexes: Vec<(String, &Regex)> = Vec::new();
+    let mut named = |name: String, regex: &'p Regex| regexes.push((name, regex));
+    for (index, (regex, _)) in initials_after.iter().enumerate() {
+        named(format!("initials_after #{index}"), regex);
+    }
+    for (index, regex) in ocr_person_words.iter().enumerate() {
+        named(format!("ocr_person_words #{index}"), regex);
+    }
+    let never_patterns = |entry: &'p Never| -> &'p Vec<Regex> {
+        let Never {
+            form: _,
+            ending: _,
+            words: _,
+            patterns,
+            last_word_of: _,
+            anywhere_in: _,
+            not_endings: _,
+            person_endings: _,
+            surname_endings: _,
+            unless_named: _,
+            person_role: _,
+            phrase_only: _,
+            unless_titled: _,
+            unless_last_named: _,
+        } = entry;
+        patterns
+    };
+    for (index, entry) in never.iter().enumerate() {
+        for regex in never_patterns(entry) {
+            named(format!("never #{index}"), regex);
+        }
+    }
+    for (index, Defined { list, document: _ }) in defined.iter().enumerate() {
+        for regex in never_patterns(list) {
+            named(format!("defined #{index}"), regex);
+        }
+    }
+    for shape in shapes {
+        let Shape {
+            category,
+            min_code_chars: _,
+            lowercase_at_most_digits: _,
+            forbid_unlabelled,
+            require,
+            forbid,
+            case,
+            forbid_in,
+            unless_in,
+            word,
+            guess,
+            guess_words: _,
+            quotes: _,
+            quotes_after: _,
+            quotes_after_words: _,
+        } = shape;
+        let vetoes = forbid.iter().flat_map(|veto| {
+            let Veto {
+                patterns,
+                unless,
+                unless_after,
+            } = veto;
+            patterns.iter().chain(unless).chain(unless_after)
+        });
+        for regex in forbid_unlabelled
+            .iter()
+            .chain(require)
+            .chain(vetoes)
+            .chain(case)
+            .chain(forbid_in)
+            .chain(unless_in)
+            .chain(word)
+            .chain(guess)
+        {
+            named(format!("{} shape", category.token()), regex);
+        }
+    }
+    for context in contexts {
+        let Context {
+            category,
+            pattern,
+            labels: _,
+            value,
+            min_digits: _,
+            unless_after: _,
+            unless_guessed: _,
+            only_guessed: _,
+            line_start: _,
+            after: _,
+            only_after: _,
+            follow,
+            unless_slashed,
+        } = context;
+        for regex in [pattern, value]
+            .into_iter()
+            .chain(follow)
+            .chain(unless_slashed)
+        {
+            named(format!("{} context", category.token()), regex);
+        }
+    }
+    for (index, span) in spans.iter().enumerate() {
+        match span {
+            Span::Pattern {
+                category,
+                pattern,
+                absorbs,
+                continuation_after,
+                continuation_stop,
+                split,
+                line_length: _,
+                skip,
+                gaps_only: _,
+            } => {
+                for (form, regex) in pattern.0.iter().enumerate() {
+                    named(
+                        format!("{} span #{index}, form {form}", category.token()),
+                        regex,
+                    );
+                }
+                for regex in absorbs
+                    .iter()
+                    .map(|(_, regex)| regex)
+                    .chain(continuation_after)
+                    .chain(continuation_stop)
+                    .chain(split)
+                    .chain(skip)
+                {
+                    named(format!("{} span #{index}", category.token()), regex);
+                }
+            }
+            Span::Fix(SpanFix {
+                category,
+                trim: _,
+                role_trim: _,
+                trim_start,
+                extend,
+                strip_end: _,
+                person_before: _,
+                org_before: _,
+                org_after: _,
+                list_letter: _,
+                unless_over: _,
+                nested_quotes,
+            }) => {
+                let nested = nested_quotes.iter().flat_map(|(end, word)| [end, word]);
+                for regex in trim_start.iter().chain(extend).chain(nested) {
+                    named(format!("{} span fix #{index}", category.token()), regex);
+                }
+            }
+        }
+    }
+    for (kind, list) in [("reference", references), ("cited case", cases)] {
+        for (index, alternation) in list.iter().enumerate() {
+            for (form, regex) in alternation.0.iter().enumerate() {
+                named(format!("{kind} #{index}, form {form}"), regex);
+            }
+        }
+    }
+    for (index, reference) in conditional_references.iter().enumerate() {
+        let ConditionalReference {
+            pattern,
+            when,
+            categories: _,
+        } = reference;
+        for regex in std::iter::once(pattern).chain(when) {
+            named(format!("conditional reference #{index}"), regex);
+        }
+    }
+    for (index, (patterns, unless)) in private.iter().enumerate() {
+        for regex in patterns.iter().chain(unless) {
+            named(format!("private #{index}"), regex);
+        }
+    }
+    regexes
+}
+
+/// The regex crate refuses a regex over its size limit (10 MiB compiled),
+/// and the pack is read on first use, so a rule that grows a pattern past
+/// it would stop the app. Each regex the pack compiles stays within about
+/// half the limit, so the next rule fails this test instead: a pattern
+/// near the budget becomes a list of its forms (`Alternation`).
+#[test]
+fn every_pack_regex_is_within_the_size_budget() {
+    const BUDGET: usize = 6 << 20;
+    let regexes = pack_regexes(pack());
+    assert!(regexes.len() > 400, "{} regexes", regexes.len());
+    for (name, regex) in regexes {
+        assert!(
+            regex::RegexBuilder::new(regex.as_str())
+                .size_limit(BUDGET)
+                .build()
+                .is_ok(),
+            "{name}: over {BUDGET} bytes compiled; split the pattern into a list of its forms"
+        );
+    }
+}
