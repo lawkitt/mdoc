@@ -228,10 +228,13 @@ extension CandidateTextView {
             resignFirstResponder()
             return
         }
-        if selectedRange == NSRange(location: 0, length: 0), contentOffset.y > -adjustedContentInset.top + 1,
-           let top = closestPosition(to: CGPoint(x: textContainerInset.left, y: contentOffset.y + adjustedContentInset.top + 8)) {
-            // The caret starts where the reader is, not at the top.
-            let location = offset(from: beginningOfDocument, to: top)
+        // The caret starts where the reader is: at the first line in view,
+        // never where showing the text left the selection (its end). A
+        // selection made in review is kept.
+        if selectedRange.length == 0 {
+            let top = contentOffset.y + adjustedContentInset.top
+            let location = top <= 1 ? 0 : closestPosition(to: CGPoint(x: textContainerInset.left, y: top + 8))
+                .map { offset(from: beginningOfDocument, to: $0) } ?? 0
             selectedRange = NSRange(location: location, length: 0)
         }
         becomeFirstResponder()
