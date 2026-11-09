@@ -25,10 +25,13 @@ impl Rules {
         // (`+snezhana@…`) or `_` (`_roman@…`) and hold an apostrophe
         // (`eira.o'venn@…`) or `_` (`tam_roe@…`). Where a leading `_` opens
         // emphasis (`_quill@…_`), the review keeps the address after it.
+        // A Markdown-escaped `_` (`snake\_case@…`, `\_roman@…`, as the
+        // importer writes one; #746) is the local part's own, its `\`
+        // included, so nothing of the address is left out.
         let mut email = predefined::email();
         email.patterns = vec![Pattern::new(
             "mdoc Unicode email",
-            r#"(?:"[^"\r\n@]{1,64}"|[\p{L}\p{N}+_][\p{L}\p{N}._%+'’-]*)@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+"#,
+            r#"(?:"[^"\r\n@]{1,64}"|(?:[\p{L}\p{N}+_]|\\_)(?:[\p{L}\p{N}._%+'’-]|\\_)*)@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+"#,
             0.9,
         )];
         // Narrow the upstream SNILS formats to the existing contract, including
@@ -164,13 +167,24 @@ pub(super) fn scan(text: &str) -> Vec<Detection> {
                 {
                     continue;
                 }
+                // A `\` that is itself escaped (`\\_roman@…`) is text: the
+                // `_` after it escapes nothing, and the address starts there.
+                let mut start = m.start();
+                if m.as_str().starts_with('\\')
+                    && text[..start]
+                        .bytes()
+                        .rev()
+                        .take_while(|&b| b == b'\\')
+                        .count()
+                        % 2
+                        == 1
+                {
+                    start += 1;
+                }
                 let accepted = if let Some(label) = &rule.label {
-                    boundary(text, m.start(), m.end()) && context(text, m.start(), label)
+                    boundary(text, start, m.end()) && context(text, start, label)
                 } else {
-                    !text[..m.start()]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c == '@')
+                    !text[..start].chars().next_back().is_some_and(|c| c == '@')
                         && !text[m.end()..]
                             .chars()
                             .next()
@@ -178,7 +192,7 @@ pub(super) fn scan(text: &str) -> Vec<Detection> {
                 };
                 if accepted {
                     out.push(Detection {
-                        range: m.start()..m.end(),
+                        range: start..m.end(),
                         category: rule.category,
                         score: rule.score,
                         recognizer: rule.evidence,
@@ -341,6 +355,35 @@ mod captured_corpus {
             ["eira.o'venn@copper-skein.invalid"]
         );
         assert_eq!(emails("Call +7 900 000-00-00 or a@b"), Vec::<String>::new());
+    }
+
+    /// #746: a Markdown-escaped `_` is the local part's, its `\` too; an
+    /// escaped `\` is text, and `\_` without an address is none.
+    #[test]
+    fn escaped_underscores_are_the_local_parts() {
+        let emails = |source: &str| -> Vec<String> {
+            scan(source)
+                .into_iter()
+                .filter(|d| d.category == Category::Email)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert_eq!(
+            emails(r"Write to snake\_case@kadry.invalid or \_roman@kadry.invalid."),
+            [r"snake\_case@kadry.invalid", r"\_roman@kadry.invalid"]
+        );
+        assert_eq!(
+            emails(r"Mail \_first\_last@kadry.invalid"),
+            [r"\_first\_last@kadry.invalid"]
+        );
+        assert_eq!(
+            emails(r"Mail \\_roman@kadry.invalid or a\\_b@kadry.invalid"),
+            ["_roman@kadry.invalid", "_b@kadry.invalid"]
+        );
+        assert_eq!(
+            emails(r"Use snake\_case or @snake\_case, not snake\_@."),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

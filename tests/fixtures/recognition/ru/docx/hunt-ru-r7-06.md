@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: invalid-identifier-missed
 issue: 381
 kind: docx
 source: hunt-r7
-expect: miss: IDENTITY "VK-731628"
 ---
 Верхний колонтитул: порядок проверки комплекта приложений
 

@@ -262,7 +262,8 @@ fn safe_span(value: &str) -> bool {
 /// A web address keeps its own characters (ADR 0094): a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
 /// a link's own bracket. An email address may start with `_`
-/// ("_roman@…", #412) where that `_` is no emphasis delimiter.
+/// ("_roman@…", #412) where that `_` is no emphasis delimiter, or with
+/// the `\` of an escaped one ("\_roman@…", #746).
 fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
     // Found whole by its parts or its label, so text may follow its last line.
@@ -733,15 +734,18 @@ impl Review {
             {
                 continue;
             }
-            // #412: an address's leading `_` that opens emphasis
+            // #412: an address's leading `_` that opens emphasis around it
             // ("_quill@…_") is Markdown, and the address is the rest; one
-            // that opens none is the address's own ("_roman@…").
-            if detection.category == Category::Email
-                && text.starts_with('_')
-                && syntax::emphasis_opens_at(source, detection.range.start)
-            {
-                let rest = text.trim_start_matches('_');
-                detection.range.start = detection.range.end - rest.len();
+            // that opens none is the address's own ("_roman@…"), and so is
+            // one whose emphasis ends inside it ("__init__@…", "___a_@…__"
+            // keeps "_a_@…"; #746).
+            if detection.category == Category::Email && text.starts_with('_') {
+                let outer = syntax::emphasis_delimiters_at(
+                    source,
+                    detection.range.start,
+                    detection.range.end,
+                );
+                detection.range.start += outer.min(text.len());
             }
             if !detected_span(source, &markup, &detection)
                 || syntax::crosses_syntax(&protected, &markup, source, &detection.range)
@@ -840,7 +844,7 @@ impl Review {
                 *owner = target;
             }
         }
-        let people = propagation::People::new(people);
+        let people = propagation::People::new(people).reading(source);
         let mut forms = Vec::new();
         // A date of birth's labels limit its mentions (#466); a wording
         // another recognizer found too, such as the Always list, counts
@@ -862,9 +866,15 @@ impl Review {
             .collect();
         for detection in selected {
             let text = &source[detection.range.clone()];
+            // A surname with initials waits only for a full name: beside
+            // none it is a name of its own, whose surname spreads (#749).
             let joins = detection.category == Category::Person
-                && propagation::parse_form(text)
-                    .is_some_and(|form| people.candidates(&form).target.is_some());
+                && propagation::parse_form(text).is_some_and(|form| {
+                    people.candidates(&form).target.is_some_and(|target| {
+                        people.is_full(target)
+                            || !matches!(form, propagation::Form::Initials { .. })
+                    })
+                });
             if joins {
                 forms.push(detection);
             } else {
@@ -1021,8 +1031,12 @@ impl Review {
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
         self.refresh(source);
-        // A marked full name proposes its forms elsewhere (ADR 0092).
-        if category == Category::Person && identities::split_full_name(original).is_some() {
+        // A marked full name proposes its forms elsewhere (ADR 0092), and
+        // so does a surname with initials (#749).
+        if category == Category::Person
+            && (identities::split_full_name(original).is_some()
+                || propagation::People::spreads_initialled(original))
+        {
             self.propagate(source, true);
         }
         Ok(id)

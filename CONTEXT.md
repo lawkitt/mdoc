@@ -228,8 +228,13 @@ unexpected result fails it (ADR 0093, ADR 0095).
 documents and reports flaws, an Opus curator audits gold and lands fixtures,
 an Opus fixer fixes a flaw class (ADR 0093).
 
-**Holdout**: recognition documents kept in the private
-`lawkitt/mdoc-holdout`, run only by the hub, to catch overfitting.
+**Holdout**: synthetic recognition documents kept in the private
+`lawkitt/mdoc-holdout`, run by `scripts/hub-gate.sh` before each enqueue, to
+catch overfitting (ADR 0093, ADR 0108).
+
+**Real set**: about 50 real public documents (EN and RU) from a fresh probe
+round, with frozen gold, kept in `lawkitt/mdoc-probes`; 0.4.0's recognition
+targets are scored on it, and no fixer sees it (ADR 0108).
 
 **Probe**: a real public document kept in the private `lawkitt/mdoc-probes`
 and run through mdoc to find flaw classes; never a fixture (ADR 0093).
