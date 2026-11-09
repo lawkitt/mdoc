@@ -1246,10 +1246,11 @@ fn trim_at_birth_dates(
     }
 }
 
-/// A labelled value that a model span of its category holds with a damaged
+/// A labelled value that a model identifier span holds with a damaged
 /// value's one or two characters beside it, digits, OCR letters or "?",
 /// and "-" and blanks on its line ("770123456 7" after "ИНН", "4510
-/// 12345?" after "Паспорт"), gives way to that span (#381): the rule's
+/// 12345?" after "Паспорт"), gives way to that span, which takes the
+/// label's category whatever the model guessed (#381): the rule's
 /// one-short shape would cut the value the model read whole. More beside
 /// it is another field or noise ("1199900000011 500 руб.", "7701234567 1 0
 /// 1 1 0 0 1 0"), and the rule keeps it; so does a valid value's own rule
@@ -1282,7 +1283,7 @@ fn yield_to_whole_values(
                     ]
                 };
                 model.recognizer == mdoc_pii::Recognizer::Model
-                    && model.category == rule.category
+                    && rules::identifier_field(model.category)
                     && model.range.start <= rule.range.start
                     && rule.range.end <= model.range.end
                     && model.range != rule.range
@@ -1307,7 +1308,10 @@ fn yield_to_whole_values(
 /// Сергеевич" after "Табельный номер:". The review takes the rule's value
 /// over the span it overlaps, which would drop the name. Each part loses
 /// the punctuation and spaces that join it to a label or a value and must
-/// keep its category's shape; with no such part the span stays as it was.
+/// keep its category's shape; a person's part loses the lowercase words
+/// it opens with too, and is then a name's shape or nothing ("Иванову И.
+/// И." of "выдан Иванову И. И.", nothing of "серии АБ"). With no such part
+/// the span stays as it was.
 fn names_beside_rule_values(
     source: &str,
     view: &mdoc_pii::view::View,
@@ -1354,8 +1358,21 @@ fn names_beside_rule_values(
             .into_iter()
             .filter_map(|cut| {
                 let text = &source[cut.clone()];
-                let start = cut.start + (text.len() - text.trim_start_matches(joint).len());
+                let mut start = cut.start + (text.len() - text.trim_start_matches(joint).len());
                 let end = cut.start + text.trim_end_matches(joint).len();
+                if detection.category == Category::Person && start < end {
+                    let opened = start;
+                    while source[start..end].starts_with(char::is_lowercase) {
+                        let word = source[start..end]
+                            .find(char::is_whitespace)
+                            .map_or(end, |at| start + at);
+                        let rest = &source[word..end];
+                        start = word + (rest.len() - rest.trim_start_matches(joint).len());
+                    }
+                    if start != opened && !name_shaped(&source[start..end]) {
+                        return None;
+                    }
+                }
                 (start < end).then_some(start..end)
             })
             .filter(|part| {
@@ -1441,22 +1458,44 @@ fn rest_beside_rule_values<'a>(
         }
         for gap in gaps {
             // A company's legal form and quoted name between the values is
-            // the company's: "ПАО «Сбербанк»" of "40702810900000012345 в ПАО
-            // «Сбербанк», к/с …" (#381), which the wide span would lose.
+            // the company's, each of them: "ПАО «Сбербанк»" of
+            // "40702810900000012345 в ПАО «Сбербанк», к/с …" (#381), which
+            // the wide span would lose. So is a person's name, two
+            // capitalised words or more or a surname with its initials
+            // ("получатель Иванов Иван Иванович", "IVAN PETROV" after a
+            // card), outside the companies; what follows "выдан" or
+            // "issued" is the issuer's, and stays out.
             let seen = view.view_range(gap.clone());
-            if let Some(company) = rules::pack().quoted_company(&view.text[seen.clone()]) {
-                let company = seen.start + company.start..seen.start + company.end;
-                let part = view.source_range(company.clone());
-                if rules::pack().identifying_at(
-                    source,
-                    part.clone(),
-                    &view.text[company],
-                    Category::Organization,
-                ) && !detections.iter().chain(&found).any(|d| d.range == part)
+            let text = &view.text[seen.clone()];
+            let companies = rules::pack().quoted_companies(text);
+            let names: Vec<Range<usize>> = name_runs(&text[..issued_at(text)])
+                .into_iter()
+                .filter(|name| {
+                    !companies
+                        .iter()
+                        .any(|company| company.start < name.end && name.start < company.end)
+                })
+                // Words just before a number are its label, no one's name
+                // ("Invoice No. 12345678").
+                .filter(|name| {
+                    !text[name.end..]
+                        .trim_start_matches(|c: char| c.is_whitespace() || ".:№#*_-".contains(c))
+                        .starts_with(|c: char| c.is_numeric())
+                })
+                .collect();
+            for (category, found_at) in companies
+                .into_iter()
+                .map(|company| (Category::Organization, company))
+                .chain(names.into_iter().map(|name| (Category::Person, name)))
+            {
+                let at = seen.start + found_at.start..seen.start + found_at.end;
+                let part = view.source_range(at.clone());
+                if rules::pack().identifying_at(source, part.clone(), &view.text[at], category)
+                    && !detections.iter().chain(&found).any(|d| d.range == part)
                 {
                     found.push(Detection {
                         range: part,
-                        category: Category::Organization,
+                        category,
                         ..*model
                     });
                 }
@@ -1503,6 +1542,46 @@ fn rest_beside_rule_values<'a>(
         }
     }
     found
+}
+
+/// The pattern of a person's name in an identifier span's leftover text
+/// (#381): initials before a surname, a surname with its initials, two
+/// capitalised words or more, or two Latin capitals' words or more ("IVAN
+/// PETROV", as a card prints it).
+fn name_pattern() -> &'static regex::Regex {
+    static NAME: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    NAME.get_or_init(|| {
+        let word = r"\p{Lu}\p{Ll}+(?:-\p{Lu}\p{Ll}+)?";
+        let initials = r"\p{Lu}\.(?:[\p{Zs}\t]?\p{Lu}\.)?";
+        regex::Regex::new(&format!(
+            r"\b(?:{initials}[\p{{Zs}}\t]?{word}|{word}[\p{{Zs}}\t]+{initials}|{word}(?:[\p{{Zs}}\t]+{word})+|[A-Z]{{2,}}(?:[\p{{Zs}}\t]+[A-Z]{{2,}})+\b)"
+        ))
+        .expect("name pattern")
+    })
+}
+
+/// The names `name_pattern` finds in `text`.
+fn name_runs(text: &str) -> Vec<Range<usize>> {
+    name_pattern().find_iter(text).map(|m| m.range()).collect()
+}
+
+/// Whether `text` is one name of `name_pattern`'s shape, whole.
+fn name_shaped(text: &str) -> bool {
+    name_pattern()
+        .find(text)
+        .is_some_and(|m| m.start() == 0 && m.end() == text.len())
+}
+
+/// Where an issuer's words start in `text` ("выдан ОВД …", "issued by
+/// …"), or its end.
+fn issued_at(text: &str) -> usize {
+    static ISSUED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    ISSUED
+        .get_or_init(|| {
+            regex::Regex::new(r"(?i)\b(?:выдан\p{Alphabetic}*|issued)\b").expect("issuer pattern")
+        })
+        .find(text)
+        .map_or(text.len(), |m| m.start())
 }
 
 /// The values in `range` of `text`, each with the words just before it
@@ -3492,7 +3571,9 @@ mod tests {
                     "bank_account",
                     0.8,
                 )][..],
-                "TAX«7701234567» | BANK«40702810900000012345»",
+                // The name inside keeps its own span, as with the model's
+                // person span below (#381).
+                "TAX«7701234567» | PERSON«Иванов Иван Иванович» | BANK«40702810900000012345»",
             ),
             (
                 "X12b name model too",
@@ -3938,7 +4019,10 @@ mod tests {
     /// к/с …"); "карта" and "card" alone take a card's four groups only, never
     /// a process, a fuel, a SIM or an ID card's number; "и" after "паспорт"
     /// is no filler; an English passport starts with a capital or a digit;
-    /// a damaged ИНН's length waits for "ИНН" alone.
+    /// a damaged ИНН's length waits for "ИНН" alone. A wide identifier span
+    /// keeps the names and the companies inside it ("паспорт 4510 123456
+    /// Иванова Анна Петровна", "получатель Иванов Иван Иванович, к/с …"),
+    /// never an issuer's after "выдан" or a number's label ("Invoice No.").
     #[test]
     fn labelled_value_review_inputs_keep_whole_values_and_names() {
         // An input's id, its source, the model's spans and what is shown.
@@ -4194,13 +4278,13 @@ mod tests {
                 "b16-passport-name-wide",
                 "паспорт 4510 123456 Иванова Анна Петровна\n",
                 &[("4510 123456 Иванова Анна Петровна", "passport_number")][..],
-                "паспорт ⟦IDENTITY|4510 123456⟧ Иванова Анна Петровна",
+                "паспорт ⟦IDENTITY|4510 123456⟧ ⟦PERSON|Иванова Анна Петровна⟧",
             ),
             (
                 "b17-card-holder",
                 "Карта 4276 3800 1234 5678 IVAN PETROV\n",
                 &[("4276 3800 1234 5678 IVAN PETROV", "bank_account")][..],
-                "Карта ⟦BANK|4276 3800 1234 5678⟧ IVAN PETROV",
+                "Карта ⟦BANK|4276 3800 1234 5678⟧ ⟦PERSON|IVAN PETROV⟧",
             ),
             (
                 "b18-inn-model-other",
@@ -4384,6 +4468,358 @@ mod tests {
                 "Держатель Иванов Иван, карта 4276 3800 1234 5678.\n",
                 &[("Иванов Иван, карта 4276 3800 1234 5678", "person")][..],
                 "Держатель ⟦PERSON|Иванов Иван⟧, карта ⟦BANK|4276 3800 1234 5678⟧.",
+            ),
+            // The delta review of the fix (target/review-v3, n1–y13): a
+            // name or a company inside a wide identifier span, a person's
+            // part without its lowercase words, every company of a gap, a
+            // damaged value the model gave another category.
+            (
+                "n01-surname-only",
+                "Иванов, паспорт 4510 123456 выдан.\n",
+                &[("Иванов, паспорт 4510 123456", "person")][..],
+                "⟦PERSON|Иванов⟧, паспорт ⟦IDENTITY|4510 123456⟧ выдан.",
+            ),
+            (
+                "n02-initials-before",
+                "Иванов И. И., паспорт 4510 123456 выдан.\n",
+                &[("Иванов И. И., паспорт 4510 123456", "person")][..],
+                "⟦PERSON|Иванов И. И.⟧, паспорт ⟦IDENTITY|4510 123456⟧ выдан.",
+            ),
+            (
+                "n03-initials-front",
+                "И. И. Иванов, паспорт 4510 123456 выдан.\n",
+                &[("И. И. Иванов, паспорт 4510 123456", "person")][..],
+                "⟦PERSON|И. И. Иванов⟧, паспорт ⟦IDENTITY|4510 123456⟧ выдан.",
+            ),
+            (
+                "n04-after-value",
+                "Паспорт 4510 123456 выдан Иванову И. И. в 2010 году.\n",
+                &[("4510 123456 выдан Иванову И. И.", "person")][..],
+                "Паспорт ⟦IDENTITY|4510 123456⟧ выдан ⟦PERSON|Иванову И. И.⟧ в 2010 году.",
+            ),
+            (
+                "n05-after-value-label",
+                "Паспорт 4510 123456 выдан Иванову И. И. в 2010 году.\n",
+                &[("Паспорт 4510 123456 выдан Иванову И. И.", "person")][..],
+                "Паспорт ⟦IDENTITY|4510 123456⟧ выдан ⟦PERSON|Иванову И. И.⟧ в 2010 году.",
+            ),
+            (
+                "n06-after-surname",
+                "ИНН 7701234567 Иванова указан.\n",
+                &[("7701234567 Иванова", "person")][..],
+                "ИНН ⟦TAX|7701234567⟧ ⟦PERSON|Иванова⟧ указан.",
+            ),
+            (
+                "n07-paren",
+                "Иванов Иван Иванович (паспорт 4510 123456) явился.\n",
+                &[("Иванов Иван Иванович (паспорт 4510 123456)", "person")][..],
+                "⟦PERSON|Иванов Иван Иванович⟧ (паспорт ⟦IDENTITY|4510 123456⟧) явился.",
+            ),
+            (
+                "n08-gr",
+                "Гр. Иванов, паспорт 4510 123456, явился.\n",
+                &[("Гр. Иванов, паспорт 4510 123456", "person")][..],
+                "Гр. ⟦PERSON|Иванов⟧, паспорт ⟦IDENTITY|4510 123456⟧, явился.",
+            ),
+            (
+                "n09-org-bare-quoted",
+                "\"Ромашка\", ИНН 7701234567, указана.\n",
+                &[("\"Ромашка\", ИНН 7701234567", "organization")][..],
+                "⟦ORG|\"Ромашка\"⟧, ИНН ⟦TAX|7701234567⟧, указана.",
+            ),
+            (
+                "n10-org-bare-guill",
+                "«Ромашка», ИНН 7701234567, указана.\n",
+                &[("«Ромашка», ИНН 7701234567", "organization")][..],
+                "⟦ORG|«Ромашка»⟧, ИНН ⟦TAX|7701234567⟧, указана.",
+            ),
+            (
+                "n11-org-abbr",
+                "ЦБ РФ, БИК 044525000, указан.\n",
+                &[("ЦБ РФ, БИК 044525000", "organization")][..],
+                "ЦБ РФ, БИК ⟦BANK|044525000⟧, указан.",
+            ),
+            (
+                "n12-org-unquoted",
+                "Ромашка, ИНН 7701234567, указана.\n",
+                &[("Ромашка, ИНН 7701234567", "organization")][..],
+                "⟦ORG|Ромашка⟧, ИНН ⟦TAX|7701234567⟧, указана.",
+            ),
+            (
+                "n13-org-sber",
+                "ПАО Сбербанк, БИК 04452522, к/с 3010181040000000022.\n",
+                &[("ПАО Сбербанк, БИК 04452522", "organization")][..],
+                "⟦ORG|ПАО Сбербанк⟧, БИК ⟦BANK|04452522⟧, к/с ⟦BANK|3010181040000000022⟧.",
+            ),
+            (
+                "n14-person-phone",
+                "Иванов Иван, тел. 8916123456, явился.\n",
+                &[("Иванов Иван, тел. 8916123456", "person")][..],
+                "⟦PERSON|Иванов Иван, тел. 8916123456⟧, явился.",
+            ),
+            (
+                "n15-person-valid-inn",
+                "Иванов Иван 7701234560 явился.\n",
+                &[("Иванов Иван 7701234560", "person")][..],
+                "⟦PERSON|Иванов Иван 7701234560⟧ явился.",
+            ),
+            (
+                "n16-person-no-overlap",
+                "Иванов Иван, ИНН 7701234567, явился.\n",
+                &[("Иванов Иван", "person")][..],
+                "⟦PERSON|Иванов Иван⟧, ИНН ⟦TAX|7701234567⟧, явился.",
+            ),
+            (
+                "n17-two-names",
+                "Иванов Иван, паспорт 4510 123456, Петрова, явились.\n",
+                &[("Иванов Иван, паспорт 4510 123456, Петрова", "person")][..],
+                "⟦PERSON|Иванов Иван⟧, паспорт ⟦IDENTITY|4510 123456⟧, ⟦PERSON|Петрова⟧, явились.",
+            ),
+            (
+                "n18-name-lower-frag",
+                "Иванов Иван, паспорт 4510 123456 серии АБ, явился.\n",
+                &[("Иванов Иван, паспорт 4510 123456 серии АБ", "person")][..],
+                "⟦PERSON|Иванов Иван⟧, паспорт ⟦IDENTITY|4510 123456⟧ серии АБ, явился.",
+            ),
+            (
+                "n19-name-first-only",
+                "Иван, паспорт 4510 123456, явился.\n",
+                &[("Иван, паспорт 4510 123456", "person")][..],
+                "⟦PERSON|Иван⟧, паспорт ⟦IDENTITY|4510 123456⟧, явился.",
+            ),
+            (
+                "n20-en-surname",
+                "Smith, passport 123456789, appeared.\n",
+                &[("Smith, passport 123456789", "person")][..],
+                "⟦PERSON|Smith⟧, passport ⟦IDENTITY|123456789⟧, appeared.",
+            ),
+            (
+                "n21-en-initials",
+                "J. Smith, passport 123456789, appeared.\n",
+                &[("J. Smith, passport 123456789", "person")][..],
+                "⟦PERSON|J. Smith⟧, passport ⟦IDENTITY|123456789⟧, appeared.",
+            ),
+            (
+                "n22-org-oo",
+                "ООО «Ромашка», ИНН 7701234567, указана.\n",
+                &[("ООО «Ромашка», ИНН 7701234567", "organization")][..],
+                "⟦ORG|ООО «Ромашка»⟧, ИНН ⟦TAX|7701234567⟧, указана.",
+            ),
+            (
+                "n23-inside-name",
+                "Иванов паспорт 4510 123456 Иван явился.\n",
+                &[("Иванов паспорт 4510 123456 Иван", "person")][..],
+                "⟦PERSON|Иванов⟧ паспорт ⟦IDENTITY|4510 123456⟧ ⟦PERSON|Иван⟧ явился.",
+            ),
+            (
+                "q01-bank",
+                "р/с 40702810900000012345 в ПАО «Сбербанк», к/с 30101810400000000225.\n",
+                &[(
+                    "40702810900000012345 в ПАО «Сбербанк», к/с 30101810400000000225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ в ⟦ORG|ПАО «Сбербанк»⟧, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "q02-purpose",
+                "р/с 40702810900000012345, получатель АО \"Оплата по договору\", к/с 30101810400000000225.\n",
+                &[(
+                    "40702810900000012345, получатель АО \"Оплата по договору\", к/с 30101810400000000225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧, получатель ⟦ORG|АО \"Оплата по договору\"⟧, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "q03-two",
+                "р/с 40702810900000012345 в ПАО «Банк» для ООО «Ромашка», к/с 30101810400000000225.\n",
+                &[(
+                    "40702810900000012345 в ПАО «Банк» для ООО «Ромашка», к/с 30101810400000000225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ в ⟦ORG|ПАО «Банк»⟧ для ⟦ORG|ООО «Ромашка»⟧, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "q04-tax-wide",
+                "ИНН 7701234567, ООО «Ромашка», КПП 770101001.\n",
+                &[("7701234567, ООО «Ромашка», КПП 770101001", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567⟧, ООО «Ромашка», КПП 770101001.",
+            ),
+            (
+                "q05-model-org-too",
+                "р/с 40702810900000012345 в ПАО «Сбербанк России», к/с 30101810400000000225.\n",
+                &[
+                    (
+                        "40702810900000012345 в ПАО «Сбербанк России», к/с 30101810400000000225",
+                        "bank_account",
+                    ),
+                    ("Сбербанк России", "organization"),
+                ][..],
+                "р/с ⟦BANK|40702810900000012345⟧ в ⟦ORG|ПАО «Сбербанк России»⟧, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "q06-akts",
+                "р/с 40702810900000012345 акционерного общества «Альфа-Банк», к/с 30101810200000000593.\n",
+                &[(
+                    "40702810900000012345 акционерного общества «Альфа-Банк», к/с 30101810200000000593",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ ⟦ORG|акционерного общества «Альфа-Банк»⟧, к/с ⟦BANK|30101810200000000593⟧.",
+            ),
+            (
+                "q07-unclosed",
+                "р/с 40702810900000012345 в АО «Банк, к/с 30101810400000000225.\n",
+                &[(
+                    "40702810900000012345 в АО «Банк, к/с 30101810400000000225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ в АО «Банк, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "y01-inn-date",
+                "ИНН 7701234567 12 марта 2026 г. выдан.\n",
+                &[("7701234567 12", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567 12⟧ марта 2026 г. выдан.",
+            ),
+            (
+                "y01n-inn-date",
+                "ИНН 7701234567 12 марта 2026 г. выдан.\n",
+                &[][..],
+                "ИНН ⟦TAX|7701234567⟧ 12 марта 2026 г. выдан.",
+            ),
+            (
+                "y02-rs-days",
+                "р/с 40702810900000012345 15 дней.\n",
+                &[("40702810900000012345 15", "bank_account")][..],
+                "р/с ⟦BANK|40702810900000012345 15⟧ дней.",
+            ),
+            (
+                "y02n-rs-days",
+                "р/с 40702810900000012345 15 дней.\n",
+                &[][..],
+                "р/с ⟦BANK|40702810900000012345⟧ 15 дней.",
+            ),
+            (
+                "y03-pass-copies",
+                "паспорт 4510 123456 2 экз.\n",
+                &[("4510 123456 2", "passport_number")][..],
+                "паспорт ⟦IDENTITY|4510 123456 2⟧ экз.",
+            ),
+            (
+                "y03n-pass-copies",
+                "паспорт 4510 123456 2 экз.\n",
+                &[][..],
+                "паспорт ⟦IDENTITY|4510 123456⟧ 2 экз.",
+            ),
+            (
+                "y04-inn-year",
+                "ИНН 7701234567-26 года.\n",
+                &[("7701234567-26", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567-26⟧ года.",
+            ),
+            (
+                "y05-pass-letter",
+                "Паспорт 4510 123456 I выдан.\n",
+                &[("4510 123456 I", "passport_number")][..],
+                "Паспорт ⟦IDENTITY|4510 123456 I⟧ выдан.",
+            ),
+            (
+                "y06-inn-q-space",
+                "ИНН 7701234567 ? указан.\n",
+                &[("7701234567 ?", "tax_id")][..],
+                "ИНН ⟦TAX|7701234567 ?⟧ указан.",
+            ),
+            (
+                "y07-other-cat",
+                "ИНН 770123456 7 указан.\n",
+                &[("770123456 7", "bank_account")][..],
+                "ИНН ⟦TAX|770123456 7⟧ указан.",
+            ),
+            (
+                "y08-valid-inn",
+                "ИНН 7701234560 1 указан.\n",
+                &[("7701234560 1", "tax_id")][..],
+                "ИНН ⟦TAX|7701234560⟧ 1 указан.",
+            ),
+            (
+                "y09-snils-page",
+                "СНИЛС 123-456-789 00 1 стр.\n",
+                &[("123-456-789 00 1", "national_id_number")][..],
+                "СНИЛС ⟦IDENTITY|123-456-789 00 1⟧ стр.",
+            ),
+            (
+                "y10-left",
+                "ИНН 1 7701234567 указан.\n",
+                &[("1 7701234567", "tax_id")][..],
+                "ИНН ⟦TAX|1 7701234567⟧ указан.",
+            ),
+            (
+                "n25-ends-inside",
+                "Иванов Иван, паспорт 4510 123456 выдан.\n",
+                &[("Иванов Иван, паспорт 4510", "person")][..],
+                "⟦PERSON|Иванов Иван⟧, паспорт ⟦IDENTITY|4510 123456⟧ выдан.",
+            ),
+            (
+                "n26-starts-inside",
+                "Паспорт 4510 123456 Иванова выдан.\n",
+                &[("123456 Иванова", "person")][..],
+                "Паспорт ⟦IDENTITY|4510 123456⟧ ⟦PERSON|Иванова⟧ выдан.",
+            ),
+            (
+                "n27-phone",
+                "Иванов Иван +7 916 123-45-67 явился.\n",
+                &[("Иванов Иван +7 916 123-45-67", "person")][..],
+                "⟦PERSON|Иванов Иван +7 916 123-45-67⟧ явился.",
+            ),
+            (
+                "n28-org-quoted-only-after",
+                "ИНН 7701234567 «Ромашка» указана.\n",
+                &[("7701234567 «Ромашка»", "organization")][..],
+                "ИНН ⟦TAX|7701234567⟧ ⟦ORG|«Ромашка»⟧ указана.",
+            ),
+            (
+                "q08-tax-bank-org",
+                "ИНН 7701234567, ООО «Ромашка», р/с 40702810900000012345.\n",
+                &[(
+                    "7701234567, ООО «Ромашка», р/с 40702810900000012345",
+                    "bank_account",
+                )][..],
+                "ИНН ⟦TAX|7701234567⟧, ⟦ORG|ООО «Ромашка»⟧, р/с ⟦BANK|40702810900000012345⟧.",
+            ),
+            (
+                "q09-tax-tax-org",
+                "ИНН 7701234567, ООО «Ромашка», р/с 40702810900000012345.\n",
+                &[(
+                    "7701234567, ООО «Ромашка», р/с 40702810900000012345",
+                    "tax_id",
+                )][..],
+                "ИНН ⟦TAX|7701234567⟧, ⟦ORG|ООО «Ромашка»⟧, р/с ⟦BANK|40702810900000012345⟧.",
+            ),
+            (
+                "q10-bank-recipient",
+                "р/с 40702810900000012345 получатель Иванов Иван Иванович, к/с 30101810400000000225.\n",
+                &[(
+                    "40702810900000012345 получатель Иванов Иван Иванович, к/с 30101810400000000225",
+                    "bank_account",
+                )][..],
+                "р/с ⟦BANK|40702810900000012345⟧ получатель ⟦PERSON|Иванов Иван Иванович⟧, к/с ⟦BANK|30101810400000000225⟧.",
+            ),
+            (
+                "y11-snils-as-tax",
+                "СНИЛС 123-456-789 0? указан.\n",
+                &[("123-456-789 0?", "tax_id")][..],
+                "СНИЛС ⟦IDENTITY|123-456-789 0?⟧ указан.",
+            ),
+            (
+                "y12-pass-as-tax",
+                "Паспорт 4510 12345 6 выдан.\n",
+                &[("4510 12345 6", "tax_id")][..],
+                "Паспорт ⟦IDENTITY|4510 12345 6⟧ выдан.",
+            ),
+            (
+                "y13-rs-as-tax",
+                "р/с 4070281090000000123 4 в банке.\n",
+                &[("4070281090000000123 4", "tax_id")][..],
+                "р/с ⟦BANK|4070281090000000123 4⟧ в банке.",
             ),
         ];
         for (id, source, model, expected) in rows {

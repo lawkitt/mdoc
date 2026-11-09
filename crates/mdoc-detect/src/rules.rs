@@ -4907,11 +4907,13 @@ impl Pack {
         }
     }
 
-    /// The first company in `text` that a `nested_quotes` legal form and its
-    /// quoted name make, one inner pair of quotes at most: "ПАО «Сбербанк»"
-    /// of "в ПАО «Сбербанк», к/с" (#381).
-    pub(crate) fn quoted_company(&self, text: &str) -> Option<std::ops::Range<usize>> {
-        self.spans
+    /// The companies in `text` that a `nested_quotes` legal form and its
+    /// quoted name make, one inner pair of quotes at most, in order and none
+    /// over another: "ПАО «Банк»" and "ООО «Ромашка»" of "в ПАО «Банк» для
+    /// ООО «Ромашка», к/с" (#381).
+    pub(crate) fn quoted_companies(&self, text: &str) -> Vec<std::ops::Range<usize>> {
+        let mut found: Vec<std::ops::Range<usize>> = self
+            .spans
             .iter()
             .filter_map(|span| match span {
                 Span::Fix(fix) if fix.category == Category::Organization => Some(fix),
@@ -4955,7 +4957,18 @@ impl Pack {
                 }
                 None
             })
-            .min_by_key(|range| range.start)
+            .collect();
+        // The earliest first, the longest of those starting together.
+        found.sort_by_key(|range| (range.start, std::cmp::Reverse(range.end)));
+        let mut end = 0;
+        found.retain(|range| {
+            let free = end <= range.start;
+            if free {
+                end = range.end;
+            }
+            free
+        });
+        found
     }
 
     /// Where the label before the `context` value at `value` starts, on the
