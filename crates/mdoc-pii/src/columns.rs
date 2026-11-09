@@ -67,6 +67,19 @@ const NOT_NAMES: &[&str] = &[
     "tba",
     "same",
     "ditto",
+    // A form's other fields, after a label left blank («ФИО: Подпись»).
+    "подпись",
+    "дата",
+    "должность",
+    "полностью",
+    "прочерк",
+    "расшифровка",
+    "signature",
+    "sign",
+    "date",
+    "print name",
+    "title",
+    "position",
 ];
 
 /// Lowercase words a name may hold after its first ("Ana de la Vela").
@@ -184,7 +197,8 @@ fn name_part(part: &str) -> bool {
         && letters.iter().any(|c| *c != letters[0])
 }
 
-/// Labels in text that name a part of a person's name, lowercase, the
+/// Labels in text that name a part of a person's name, or the whole of it
+/// ("Full name", «ФИО» however dotted and spaced; #736), lowercase, the
 /// longer of two that share a start first. "Name" alone is none: it labels
 /// companies and files as often.
 const NAME_LABELS: &[&str] = &[
@@ -207,28 +221,38 @@ const NAME_LABELS: &[&str] = &[
     "фамилия",
     "имя",
     "отчество",
+    "фио",
+    "ф.и.о.",
+    "ф.и.о",
+    "ф. и. о.",
+    "ф. и. о",
 ];
+
+/// The [`NAME_LABELS`] that label a whole name, not a part of one.
+const FULL_NAME_LABELS: &[&str] = &["full name", "фио", "ф.и.о.", "ф.и.о", "ф. и. о.", "ф. и. о"];
 
 /// The source ranges of the values after a name part's label and a colon
 /// that look like a name, as [`name_cells`] judges a cell: "Given name:
 /// Alvora      Given name: Nerian" gives "Alvora" and "Nerian". A value
 /// ends at the line's end, at two spaces or a tab (the next column), at a
-/// "|" or before the next label. A label counts at the start of a line or
-/// a column, or right after the value before it: in prose ("the surname:
-/// is required") it is none. Code blocks, code spans and link targets are
-/// left alone.
+/// "|" or before the next label, and is judged without the `.`, `,` or `;`
+/// that ends it ("Surname: Trustee, Given name: Edda." gives "Trustee" and
+/// "Edda"; #736). A label counts at the start of a line or a column, or
+/// right after the value before it: in prose ("the surname: is required")
+/// it is none. Code blocks, code spans and link targets are left alone.
 pub fn labelled_names(source: &str) -> Vec<Range<usize>> {
     labelled_values(source)
         .into_iter()
-        .map(|(_, range)| range)
+        .map(|value| value.range)
         .collect()
 }
 
 /// The values of [`labelled_names`] a neighbouring name part's label backs:
 /// another labelled value on the same line or the line just before or after
 /// that `named` judges a name by itself ("Given name: Edda" above "Surname:
-/// Trustee"). A lone value ("Full name: Claimant") or one beside only role
-/// words has none.
+/// Trustee"). Two values after a full name's label ("Full name", «ФИО») never
+/// back each other: two full names are two people (#736). A lone value
+/// ("Full name: Claimant") or one beside only role words has none.
 pub fn backed_labelled_names(
     source: &str,
     named: &dyn Fn(Range<usize>) -> bool,
@@ -236,23 +260,33 @@ pub fn backed_labelled_names(
     let values = labelled_values(source);
     let names: Vec<bool> = values
         .iter()
-        .map(|(_, range)| named(range.clone()))
+        .map(|value| named(value.range.clone()))
         .collect();
     values
         .iter()
         .enumerate()
-        .filter(|&(i, (line, _))| {
-            values
-                .iter()
-                .enumerate()
-                .any(|(j, (other, _))| j != i && names[j] && line.abs_diff(*other) <= 1)
+        .filter(|&(i, value)| {
+            values.iter().enumerate().any(|(j, other)| {
+                j != i
+                    && names[j]
+                    && value.line.abs_diff(other.line) <= 1
+                    && !(value.full && other.full)
+            })
         })
-        .map(|(_, (_, range))| range.clone())
+        .map(|(_, value)| value.range.clone())
         .collect()
 }
 
-/// [`labelled_names`] with the index of each value's line.
-fn labelled_values(source: &str) -> Vec<(usize, Range<usize>)> {
+/// A value of [`labelled_names`]: the index of its line, its range, and
+/// whether its label names a whole name ([`FULL_NAME_LABELS`]).
+struct LabelledValue {
+    line: usize,
+    range: Range<usize>,
+    full: bool,
+}
+
+/// [`labelled_names`] with each value's line and label.
+fn labelled_values(source: &str) -> Vec<LabelledValue> {
     let mut out = Vec::new();
     let mut at = 0;
     let mut in_fence: Option<&str> = None;
@@ -280,50 +314,84 @@ fn labelled_values(source: &str) -> Vec<(usize, Range<usize>)> {
                 continue;
             }
             let region = &line[label.value_start..label.value_end];
-            let value = unwrapped(region);
+            let value = unpunctuated(region);
             let text = &region[value.clone()];
             let lower = header_name(text);
             if name_like(text) && !NOT_NAMES.contains(&lower.as_str()) && !name_header(text) {
                 let from = start + label.value_start;
-                out.push((number, from + value.start..from + value.end));
+                out.push(LabelledValue {
+                    line: number,
+                    range: from + value.start..from + value.end,
+                    full: label.full,
+                });
             }
         }
     }
     out
 }
 
+/// The range of a labelled value within `region` as [`unwrapped`] gives it,
+/// without the `.`, `,` or `;` that ends the value, inside its emphasis or
+/// after it ("**Trustee.**", "__Trustee__,"). The dot of a last "Jr.", "Sr."
+/// or "St." is the word's own and stays.
+fn unpunctuated(region: &str) -> Range<usize> {
+    let mut range = unwrapped(region);
+    loop {
+        let text = &region[range.clone()];
+        let mut trimmed = text;
+        while let Some(rest) = trimmed.strip_suffix(['.', ',', ';']) {
+            if trimmed.ends_with('.') && abbreviated(rest) {
+                break;
+            }
+            trimmed = rest.trim_end();
+        }
+        if trimmed.len() == text.len() {
+            return range;
+        }
+        let inner = unwrapped(trimmed);
+        range = range.start + inner.start..range.start + inner.end;
+    }
+}
+
+/// Whether `text` ends with a word whose dot is its own: "Jr", "Sr", "St".
+fn abbreviated(text: &str) -> bool {
+    let word = text.rsplit([' ', '\t']).next().unwrap_or(text);
+    ["jr", "sr", "st"].contains(&word.to_lowercase().as_str())
+}
+
 /// A name part's label on a line: where it starts, and the region its
-/// value may take after its colon.
+/// value may take after its colon, and whether it labels a whole name.
 struct Label {
     start: usize,
     value_start: usize,
     value_end: usize,
+    full: bool,
 }
 
 /// The name part's labels on `line`, each a whole word a colon follows
 /// (emphasis and spaces between), with its value's region up to the next
 /// label, a column gap, a "|" or the line's end.
 fn labels(line: &str) -> Vec<Label> {
-    let mut found: Vec<(usize, usize)> = Vec::new();
+    let mut found: Vec<(usize, usize, bool)> = Vec::new();
     let mut boundary = true;
     for (i, c) in line.char_indices() {
         if boundary
-            && let Some(colon) = NAME_LABELS
-                .iter()
-                .find_map(|label| label_at(&line[i..], label))
+            && let Some((colon, full)) = NAME_LABELS.iter().find_map(|label| {
+                label_at(&line[i..], label).map(|colon| (colon, FULL_NAME_LABELS.contains(label)))
+            })
         {
-            found.push((i, i + colon));
+            found.push((i, i + colon, full));
         }
         boundary = !c.is_alphanumeric();
     }
     let mut out: Vec<Label> = Vec::new();
-    for (k, &(start, value_start)) in found.iter().enumerate() {
+    for (k, &(start, value_start, full)) in found.iter().enumerate() {
         if out.last().is_some_and(|last| start < last.value_start) {
             continue;
         }
         let limit = found
             .get(k + 1)
-            .map_or(line.len(), |&(next, _)| next)
+            .map_or(line.len(), |&(next, _, _)| next)
             .max(value_start);
         // The spaces or tab after the colon are no column gap.
         let region = &line[value_start..limit];
@@ -338,6 +406,7 @@ fn labels(line: &str) -> Vec<Label> {
             start,
             value_start,
             value_end: value_start + lead + end,
+            full,
         });
     }
     out
@@ -599,6 +668,120 @@ mod tests {
         );
     }
 
+    /// #736: the `.`, `,` or `;` that ends a value is outside it, and a
+    /// comma before the next label ends the value before it.
+    #[test]
+    fn labelled_values_without_their_punctuation() {
+        assert_eq!(labelled("Surname: Trustee.\n"), ["Trustee"]);
+        let source = "Surname: Trustee, Given name: Edda.\nФ.И.О.: Ветлин Нил Олегович.\n";
+        assert_eq!(labelled(source), ["Trustee", "Edda", "Ветлин Нил Олегович"]);
+        let ranges = labelled_names(source);
+        assert_eq!(ranges[0], 9..16);
+        assert_eq!(ranges[1].start, source.find("Edda").unwrap());
+        assert_eq!(ranges[1].len(), "Edda".len());
+        for (source, expected) in [
+            (
+                "Фамилия: Кий; Имя: Ева; Отчество: Оскаровна.\n",
+                &["Кий", "Ева", "Оскаровна"][..],
+            ),
+            ("**Surname:** __Lanmark__.\n", &["Lanmark"]),
+            ("Surname: **Lanmark.**\n", &["Lanmark"]),
+            ("Surname: Lanmark...\n", &["Lanmark"]),
+            ("Surname: Lanmark .\n", &["Lanmark"]),
+            ("Surname: Lanmark.\tDate: 3 May\n", &["Lanmark"]),
+            (
+                "Surname: Lanmark,  Given name: Orvel;\n",
+                &["Lanmark", "Orvel"],
+            ),
+        ] {
+            assert_eq!(labelled(source), expected, "{source}");
+        }
+        // Punctuation inside a value still makes it no name.
+        for source in [
+            "Surname: .\n",
+            "Surname: ,Lanmark\n",
+            "Surname: Trustee,Edda\n",
+            "Full name: Orvel Lanmark, Esq.  Phone: 7\n",
+            "Surname: Lanmark:\n",
+            "Surname: N/A.\n",
+            "Surname: ________.\n",
+            "Surname: Unknown.\n",
+        ] {
+            assert!(labelled(source).is_empty(), "{source}");
+        }
+        // A last "Jr.", "Sr." or "St." keeps its dot, so the value is no
+        // bare name and no cut one ("Lanmark Jr").
+        for source in [
+            "Full name: Orvel Lanmark Jr.\n",
+            "Full name: Orvel Lanmark Sr.\n",
+            "Full name: Orvel Lanmark jr.,\n",
+            "Surname: Lanmark Jr.\n",
+            "Full name: Lanmark St.\n",
+            "**Full name:** *Orvel Lanmark Jr.*\n",
+        ] {
+            assert!(labelled(source).is_empty(), "{source}");
+        }
+        assert_eq!(labelled("Surname: Starr.\n"), ["Starr"]);
+    }
+
+    /// #736: a form's other field words after a blank label are no names.
+    #[test]
+    fn labelled_form_fields_are_no_names() {
+        for word in [
+            "Подпись",
+            "Дата",
+            "Должность",
+            "Полностью",
+            "Прочерк",
+            "Расшифровка",
+            "Signature",
+            "Sign",
+            "Date",
+            "Print Name",
+            "Title",
+            "Position",
+        ] {
+            for source in [
+                format!("ФИО: {word}\n"),
+                format!("Full name: {word}.\n"),
+                format!("Surname: {word},  Given name: {word}\n"),
+            ] {
+                assert!(labelled(&source).is_empty(), "{source}");
+            }
+        }
+    }
+
+    /// #736: «ФИО» labels a full name however it is dotted and spaced.
+    #[test]
+    fn labelled_full_names_after_fio() {
+        for source in [
+            "ФИО: Ветлин Нил Олегович\n",
+            "Ф.И.О.: Ветлин Нил Олегович.\n",
+            "Ф.И.О: Ветлин Нил Олегович\n",
+            "Ф. И. О.: Ветлин Нил Олегович;\n",
+            "**ФИО:** Ветлин Нил Олегович\n",
+            "- фио: Ветлин Нил Олегович\n",
+            "Должность: юрист    ФИО: Ветлин Нил Олегович\n",
+        ] {
+            assert_eq!(labelled(source), ["Ветлин Нил Олегович"], "{source}");
+        }
+        for source in [
+            "в графе ФИО: указать фамилию полностью\n",
+            "В графе ФИО: Ветлин Нил Олегович\n",
+            "ФИО: не указано.\n",
+            "ФИО: Не указано.\n",
+            "ФИО: ________\n",
+            "ФИО: ФИО1\n",
+            "ФИО: Ф.И.О.\n",
+            "ФИО1: Ветлин Нил Олегович\n",
+            "ИФИО: Ветлин Нил Олегович\n",
+            "`ФИО: Ветлин Нил Олегович`\n",
+            "```\nФИО: Ветлин Нил Олегович\n```\n",
+        ] {
+            assert!(labelled(source).is_empty(), "{source}");
+        }
+    }
+
     /// #601: a value is backed by another labelled name on its line or the
     /// line next to it, never by itself or a role word.
     #[test]
@@ -623,10 +806,32 @@ mod tests {
         for source in [
             "Surname: Trustee\n",
             "Фамилия: Истец\n",
+            "ФИО: Истец.\n",
             "Full name: Claimant\nFull name: Defendant\n",
             "Given name: Edda\n\nSurname: Trustee\n",
         ] {
             assert!(backed(source).is_empty(), "{source}");
         }
+        // #736: two full names are two people and never back each other;
+        // a full name and a name part do, as in #601.
+        for source in [
+            "Ф.И.О.: Ветлин Нил Олегович\nФИО: Истец\n",
+            "Full name: Edda Brannock\nFull name: Claimant\n",
+            "Full name: Edda Brannock  Full name: Claimant\n",
+        ] {
+            assert!(backed(source).is_empty(), "{source}");
+        }
+        for (source, expected) in [
+            ("Full name: Edda Brannock\nSurname: Trustee\n", "Trustee"),
+            ("Full name: Edda Brannock  Surname: Trustee\n", "Trustee"),
+            ("Full name: Edda\nSurname: Trustee\n", "Trustee"),
+            ("Given name: Edda\nFull name: Claimant\n", "Claimant"),
+        ] {
+            assert_eq!(backed(source), [expected], "{source}");
+        }
+        assert_eq!(
+            backed("Full name: Edda Brannock\nGiven name: Ivo\nSurname: Trustee\n"),
+            ["Edda Brannock", "Ivo", "Trustee"]
+        );
     }
 }
