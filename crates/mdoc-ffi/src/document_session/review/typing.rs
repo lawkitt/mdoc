@@ -117,6 +117,49 @@ impl ReviewText {
         })
     }
 
+    /// One edit-mode command's edits (sorted, not overlapping, in the
+    /// offsets of the text before any of them): a "Formatting" step of its
+    /// own, which typing never joins. Edits that change nothing make no
+    /// step. Refuses edits outside the text, inside a character or out of
+    /// order.
+    pub fn format_edit(&mut self, edits: &[(Range<usize>, String)]) -> Result<Typed, CoreError> {
+        let mut end = 0;
+        for (range, _) in edits {
+            if range.start < end
+                || range.start > range.end
+                || range.end > self.text.len()
+                || !self.text.is_char_boundary(range.start)
+                || !self.text.is_char_boundary(range.end)
+            {
+                return Err(CoreError::invalid("The edit is not in the text."));
+            }
+            end = range.end;
+        }
+        let applied = self.review.applied().len();
+        let edits: Vec<(Range<usize>, String)> = edits
+            .iter()
+            .filter(|(range, text)| self.text.get(range.clone()) != Some(text.as_str()))
+            .cloned()
+            .collect();
+        let new_step = !edits.is_empty();
+        if new_step {
+            let step = Step::new(StepKind::Formatting, String::new(), Focus::default());
+            self.step(step, |document, _| {
+                document.commit_checked(&edits);
+                Ok(())
+            })?;
+        }
+        self.typing = Run::None;
+        Ok(Typed {
+            text_revision: self.text_revision,
+            utf16_len: self.text.encode_utf16().count() as u64,
+            new_step,
+            broke_alias: self.review.applied().len() < applied,
+            can_undo: self.can_undo(),
+            can_redo: self.can_redo(),
+        })
+    }
+
     /// The next typed edit starts a step of its own: the caret moved, or
     /// the view committed something other than a keystroke.
     pub fn end_typing(&mut self) {
@@ -317,6 +360,42 @@ mod tests {
         document.type_edit(8..9, "").unwrap();
         document.discover();
         assert_eq!(proposed(&document), ["Ann Lee"]);
+    }
+
+    #[test]
+    fn a_command_is_one_step_typing_never_joins() {
+        let mut document = document("Ann Lee signed it.", &["Ann Lee"]);
+        let end = document.text.len() - 1;
+        type_at(&mut document, end, " now");
+        // Two edits (bold around "signed"), one step; the name stays proposed.
+        let at = document.text.find("signed").unwrap();
+        let typed = document
+            .format_edit(&[(at..at, "**".into()), (at + 6..at + 6, "**".into())])
+            .unwrap();
+        assert!(typed.new_step && typed.can_undo);
+        assert_eq!(document.text, "Ann Lee **signed** it now.");
+        assert_eq!(document.undo_step().unwrap().0.kind, StepKind::Formatting);
+        assert_eq!(proposed(&document), ["Ann Lee"]);
+        // Typing after it is a step of its own, even where a run would go on.
+        let end = document.text.len() - 1;
+        assert!(document.type_edit(end..end, "!").unwrap().new_step);
+        assert!(document.undo() && document.undo());
+        assert_eq!(document.text, "Ann Lee signed it now.");
+        assert!(document.undo());
+        assert_eq!(document.text, "Ann Lee signed it.");
+        // Nothing to change is no step; edits out of order or outside are refused.
+        assert!(
+            !document
+                .format_edit(&[(0..3, "Ann".into())])
+                .unwrap()
+                .new_step
+        );
+        assert!(
+            document
+                .format_edit(&[(4..5, "x".into()), (0..1, "y".into())])
+                .is_err()
+        );
+        assert!(document.format_edit(&[(0..99, String::new())]).is_err());
     }
 
     #[test]

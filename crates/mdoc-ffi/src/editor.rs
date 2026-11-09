@@ -18,6 +18,7 @@ use std::ops::Range;
 
 use mdoc_editor_core::commands::{self, InlineFormat, TableCommand};
 use mdoc_editor_core::reveal::{RevealRule, visible_markers};
+use mdoc_editor_core::toolbar;
 use mdoc_editor_core::turn_into::TurnKind;
 use mdoc_editor_core::{Edit, EditResult};
 use mdoc_markdown::tables::Align;
@@ -198,8 +199,11 @@ pub fn editor_delete_forward(
     commands::delete_forward(&text, sel, rendered).map(change)
 }
 
-/// Toggle `format` around the selection, keeping the same text selected.
-/// Nil on an empty or blank selection.
+/// Toggle `format` (the toolbar, ⌘B, ⌘I): inside a construct of that
+/// format, the caret or a selection within it, its markers come off;
+/// otherwise a selection is wrapped (the same text kept selected), a caret
+/// in a word wraps the word, and a caret elsewhere gets an empty pair to
+/// type into. Nil on a blank selection.
 #[uniffi::export]
 pub fn editor_toggle_format(
     text: String,
@@ -291,6 +295,126 @@ pub fn editor_table_command(
         EditorTableCommand::DeleteTable => TableCommand::DeleteTable,
     };
     commands::table_command(&text, sel, &command).map(change)
+}
+
+/// A link at the caret: an inline `[text](url)` or a bare URL.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct EditorLink {
+    /// The whole link.
+    pub range: TextRange,
+    pub text: String,
+    pub url: String,
+    /// An `http` or `https` URL, the only kind the app opens.
+    pub web: bool,
+}
+
+/// What the editing toolbar and the formatting keyboard show for the
+/// selection (ADR 0109).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct EditorCaretState {
+    /// The inline formats the caret is inside (or the selection lies
+    /// within): their buttons show on.
+    pub formats: Vec<EditorInlineFormat>,
+    /// Inline formats apply here: not in code or math.
+    pub can_format: bool,
+    /// The caret's block kind, selected in "Turn into".
+    pub block: EditorBlockKind,
+    /// The caret's line is a bulleted or numbered item, not a task.
+    pub list: bool,
+    /// The caret's line is a task: whether it is checked.
+    pub task: Option<bool>,
+    /// Indent nests the caret's list item under the item above it.
+    pub can_indent: bool,
+    /// The caret's line has an indent to take away.
+    pub can_outdent: bool,
+    /// The caret is in a table the view draws: the formatting keyboard's
+    /// table controls (a later slice).
+    pub in_table: bool,
+    /// The link holding or touching the caret, for its Open and Edit chip.
+    pub link: Option<EditorLink>,
+}
+
+impl From<InlineFormat> for EditorInlineFormat {
+    fn from(format: InlineFormat) -> Self {
+        match format {
+            InlineFormat::Bold => EditorInlineFormat::Bold,
+            InlineFormat::Italic => EditorInlineFormat::Italic,
+            InlineFormat::Strikethrough => EditorInlineFormat::Strikethrough,
+            InlineFormat::Code => EditorInlineFormat::Code,
+            InlineFormat::Highlight => EditorInlineFormat::Highlight,
+            InlineFormat::Underline => EditorInlineFormat::Underline,
+        }
+    }
+}
+
+/// What the toolbar shows for `selection`: one call per caret move.
+#[uniffi::export]
+pub fn editor_caret_state(text: String, selection: TextRange, rendered: bool) -> EditorCaretState {
+    let sel = self::selection(&text, selection);
+    let state = toolbar::caret_state(&text, sel, rendered);
+    EditorCaretState {
+        formats: state.formats.into_iter().map(Into::into).collect(),
+        can_format: state.can_format,
+        block: state.block.into(),
+        list: state.list,
+        task: state.task,
+        can_indent: state.can_indent,
+        can_outdent: state.can_outdent,
+        in_table: state.in_table,
+        link: state.link.map(|link| EditorLink {
+            range: TextRange::of(&link.range),
+            text: link.text,
+            url: link.url,
+            web: link.web,
+        }),
+    }
+}
+
+/// The toolbar's list button: a bulleted or numbered item turns back into
+/// text, any other block into a bulleted item.
+#[uniffi::export]
+pub fn editor_toggle_list(text: String, selection: TextRange) -> Option<EditorChange> {
+    let sel = self::selection(&text, selection);
+    toolbar::toggle_list(&text, sel).map(change)
+}
+
+/// The toolbar's task button: a task's box checks or unchecks; any other
+/// block turns into a task.
+#[uniffi::export]
+pub fn editor_task_button(text: String, selection: TextRange) -> Option<EditorChange> {
+    let sel = self::selection(&text, selection);
+    toolbar::task_button(&text, sel).map(change)
+}
+
+/// The link sheet's Done: `[link_text](url)` over the link at the caret or
+/// over the selection, the caret after it. An empty URL takes the caret's
+/// link away and keeps its text. Nil with no URL and no link.
+#[uniffi::export]
+pub fn editor_set_link(
+    text: String,
+    selection: TextRange,
+    link_text: String,
+    url: String,
+) -> Option<EditorChange> {
+    let sel = self::selection(&text, selection);
+    toolbar::set_link(&text, sel, &link_text, &url).map(change)
+}
+
+/// The formatting keyboard's Rule: `---` as a block of its own after the
+/// caret's line, the caret below it.
+#[uniffi::export]
+pub fn editor_insert_rule(text: String, selection: TextRange) -> EditorChange {
+    let sel = self::selection(&text, selection);
+    change(toolbar::insert_rule(&text, sel))
+}
+
+/// The formatting keyboard's Table: an empty two-column table (a header
+/// row and a body row) after the caret's line; the caret in its first cell
+/// with Show Markdown on, below it in live preview.
+#[uniffi::export]
+pub fn editor_insert_table(text: String, selection: TextRange, rendered: bool) -> EditorChange {
+    let sel = self::selection(&text, selection);
+    change(toolbar::insert_table(&text, sel, rendered))
 }
 
 /// Paste `pasted` (plain text, or [`crate::markdown::pasted_markdown`]'s
@@ -404,9 +528,63 @@ mod tests {
             let c = editor_toggle_format("b".into(), range(0, 1), format).unwrap();
             assert_eq!(applied("b", &c).0, wrapped);
         }
+        // A caret in a word wraps the word; inside bold, bold comes off.
+        let c = editor_toggle_format("ab".into(), caret(1), EditorInlineFormat::Bold).unwrap();
+        assert_eq!(applied("ab", &c), ("**ab**".into(), caret(3)));
+        let c = editor_toggle_format("**ab**".into(), caret(3), EditorInlineFormat::Bold).unwrap();
+        assert_eq!(applied("**ab**", &c), ("ab".into(), caret(1)));
         assert_eq!(
-            editor_toggle_format("b".into(), caret(0), EditorInlineFormat::Bold),
+            editor_toggle_format("a  b".into(), range(1, 3), EditorInlineFormat::Bold),
             None
+        );
+    }
+
+    #[test]
+    fn the_caret_state_tells_the_toolbar() {
+        let s = "- [ ] **due** [site](https://a.org)";
+        let state = editor_caret_state(s.into(), caret(9), true);
+        assert_eq!(state.formats, [EditorInlineFormat::Bold]);
+        assert_eq!(state.task, Some(false));
+        assert_eq!(state.block, EditorBlockKind::Todo);
+        assert!(!state.list && state.can_format && !state.in_table && state.link.is_none());
+        let link = editor_caret_state(s.into(), caret(16), true).link.unwrap();
+        assert_eq!(
+            &s[link.range.start as usize..link.range.end as usize],
+            "[site](https://a.org)"
+        );
+        assert_eq!(
+            (link.text.as_str(), link.url.as_str(), link.web),
+            ("site", "https://a.org", true)
+        );
+        // In a character: pulled back, as every call does.
+        let state = editor_caret_state("дa".into(), caret(1), false);
+        assert_eq!(state.block, EditorBlockKind::Text);
+    }
+
+    #[test]
+    fn toolbar_and_formatting_keyboard_commands() {
+        let c = editor_toggle_list("a".into(), caret(1)).unwrap();
+        assert_eq!(applied("a", &c).0, "- a");
+        let c = editor_task_button("- [ ] a".into(), caret(7)).unwrap();
+        assert_eq!(applied("- [ ] a", &c).0, "- [x] a");
+        let c = editor_set_link(
+            "go".into(),
+            range(0, 2),
+            "go".into(),
+            "https://a.org".into(),
+        )
+        .unwrap();
+        assert_eq!(applied("go", &c), ("[go](https://a.org)".into(), caret(19)));
+        assert_eq!(
+            editor_set_link("go".into(), caret(1), "x".into(), "".into()),
+            None
+        );
+        let c = editor_insert_rule("a".into(), caret(1));
+        assert_eq!(applied("a", &c), ("a\n\n---\n\n".into(), caret(8)));
+        let c = editor_insert_table("".into(), caret(0), false);
+        assert_eq!(
+            applied("", &c),
+            ("|  |  |\n| --- | --- |\n|  |  |\n\n".into(), caret(2))
         );
     }
 

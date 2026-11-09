@@ -5,7 +5,7 @@
 //! is `save_pending`'s, as after a review tap.
 pub use super::review::Typed;
 use super::{DocumentSession, ReviewSnapshot, no_document, span};
-use crate::{CoreError, library::TextRange};
+use crate::{CoreError, editor::EditorEdit, library::TextRange};
 use std::sync::atomic::AtomicBool;
 
 #[uniffi::export]
@@ -18,6 +18,20 @@ impl DocumentSession {
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
         document.review.type_edit(span(range), &text)
+    }
+
+    /// Apply one edit-mode command's edits (a toolbar or formatting-keyboard
+    /// button, ⌘B, the link sheet: `editor_*`'s answer as the view applied
+    /// it) as a "Formatting" undo step of its own. The edits are sorted and
+    /// in UTF-8 offsets of the text before any of them.
+    pub fn format_text(&self, edits: Vec<EditorEdit>) -> Result<Typed, CoreError> {
+        let edits: Vec<_> = edits
+            .into_iter()
+            .map(|edit| (span(edit.range), edit.text))
+            .collect();
+        let mut guard = self.lock_document();
+        let document = guard.as_mut().ok_or_else(no_document)?;
+        document.review.format_edit(&edits)
     }
 
     /// The next typed edit starts an undo step of its own: the caret moved
@@ -118,6 +132,30 @@ mod tests {
             .unwrap();
         assert_eq!(session.snapshot().unwrap().proposed, 1);
         assert_eq!(session.discover().unwrap().proposed, 2);
+    }
+
+    /// A command is one Formatting step, named by Undo.
+    #[test]
+    fn a_command_formats_as_one_step() {
+        let session = DocumentSession::new();
+        session
+            .import_text("due now".into(), "Typed".into())
+            .unwrap();
+        let change = crate::editor::editor_toggle_format(
+            "due now".into(),
+            caret(1),
+            crate::editor::EditorInlineFormat::Bold,
+        )
+        .unwrap();
+        let typed = session.format_text(change.edits).unwrap();
+        assert!(typed.new_step);
+        let snapshot = session.snapshot().unwrap();
+        assert_eq!(snapshot.text, "**due** now");
+        assert_eq!(snapshot.undo_step.unwrap().label, "Formatting");
+        assert_eq!(
+            session.review(ReviewAction::Undo, None).unwrap().text,
+            "due now"
+        );
     }
 
     #[test]

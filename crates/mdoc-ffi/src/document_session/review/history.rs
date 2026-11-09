@@ -35,6 +35,9 @@ pub enum StepKind {
     /// A run of typing in edit mode (ADR 0109), coalesced as desktop's
     /// editor coalesces it.
     Typing,
+    /// One edit-mode command (ADR 0109): a toolbar or formatting-keyboard
+    /// button, a hardware shortcut or the link sheet.
+    Formatting,
 }
 
 impl StepKind {
@@ -51,6 +54,7 @@ impl StepKind {
             Self::Owner => "Belongs to",
             Self::JoinCase => "Join case",
             Self::Typing => "Typing",
+            Self::Formatting => "Formatting",
         }
     }
 }
