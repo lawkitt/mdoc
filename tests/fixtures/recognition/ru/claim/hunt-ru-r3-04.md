@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: inverted-name-boundary
 issue: 414
 kind: claim
 source: hunt-r3
-expect: boundary: gold PERSON "Маркович, Савелий Игоревич"; proposed PERSON "Маркович", PERSON "Савелий Игоревич"
 ---
 # Иск о возврате платы за повреждённую рамку
 

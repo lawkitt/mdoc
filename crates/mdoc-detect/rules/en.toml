@@ -159,6 +159,68 @@ unless_over = [
     "relator", "commonwealth", "state", "people", "united", "states",
 ]
 
+# A surname-first name is one span, comma included: the model's "Penrow"
+# in "Penrow, J. L. 1971." grows to "Penrow, J. L.", and its "Draycott"
+# and "D.P." in "Draycott,D.P." join (guide rule 1, Examples, #414).
+# Initials after a comma name the surname's person anywhere, the comma
+# with or without a space: one to three, each with its period. Never one
+# "J." ("Brown, J., concurring" is Justice Brown) nor "C.J." (a chief
+# justice): both are judges' titles (#730), so a lone initial is never
+# "J"; never a place's "D.C.", "N.Y.", "U.S." or "U.K." ("Washington,
+# D.C."). The `tail` after the initials, outside the span, ends the name:
+# a line's end, a comma, a semicolon, a colon, a bracket, a year, "and",
+# "&" or "et al". A capitalised word there is the next person's name, the
+# initials his ("Smith, J. R. Brown"), and "and" is never crossed ("Morvilius, M. and R. Fridell" stay two people,
+# #489). Only spaces sit between, never a line. A company's legal form, a
+# greeting, a sign-off or a sentence's adverb before the comma is no
+# surname ("Acme Inc., J. R.", "Thanks, J. R.", "However, J. R.,"), nor
+# is a role (`never`).
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*|[A-Z]{2,}(?:-[A-Z]{2,})*),[ \t]?(?:(?:[ABE-MO-TV-Z]\.[ \t]?[A-Z]|C\.[ \t]?[A-IK-Z]|D\.[ \t]?[ABD-Z]|N\.[ \t]?[A-XZ]|U\.[ \t]?[A-JL-RT-Z])\.(?:[ \t]?[A-Z]\.)?|[A-IK-Z]\.)(?P<tail>[*_]*(?:\r?(?m:$)|[ \t]*(?:[,;:|)\]]|\(?\d|and\b|&|et[ \t]+al\b)))',
+]
+unless_over = [
+    "inc", "ltd", "llc", "llp", "lp", "plc", "co", "corp", "company",
+    "hi", "hello", "dear", "thanks", "regards", "sincerely", "cheers", "best",
+    "however", "therefore", "moreover", "meanwhile", "accordingly", "finally",
+    "yesterday", "today", "tomorrow", "also", "then", "thus", "hence",
+]
+
+# A given name after a surname and a comma, a middle initial or second
+# given name with it, joins the surname too: the model's "VALECROFT" and
+# "Jorin P." in "Employee: VALECROFT, Jorin P." are one span, as is
+# "Herder, Mike" in a reference list (guide rule 1, Examples, #414). A
+# given name looks like a surname, so only where a name stands alone: the
+# `lead`, outside the span, is a line's start (list, quote and table
+# marks allowed), a label's colon, a semicolon or a table cell's border,
+# a list's number after it ("; 2. "); and the `tail`, outside too, a line's end, a semicolon, a
+# bracket, or a year after a comma or a period. Mid-prose "I met Smith,
+# John said" and a list of surnames ("Smith, Jones and Brown", "Smith,
+# Jones, Brown") never join. Only spaces sit between, never a line. A
+# city's country or state is no given name ("Paris, France", "Austin,
+# Texas", "Albany, New York"); "Georgia", "Virginia" and "Carolina" are
+# given names, and "North Carolina" stops at "north".
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?:(?m:^)[ \t>*_#|-]*|[;|][ \t]*|:[*_]*[ \t]+)(?:\d{1,3}[.)][ \t]+)?)(?:(?:[A-Z][\x27’])?[A-Z][A-Za-z]*[a-z](?:-[A-Z][A-Za-z]*[a-z])*|[A-Z]{2,}(?:-[A-Z]{2,})*),[ \t]?[A-Z][a-z]+(?:-[A-Z][a-z]+)?(?:[ \t]+(?:[A-Z]\.|[A-Z][a-z]+(?:-[A-Z][a-z]+)?))?(?P<tail>[*_]*(?:\r?(?m:$)|[ \t]*(?:[;|)]|[.,][ \t]*(?:\r?(?m:$)|\(?\d)|\(?\d)))',
+]
+unless_over = [
+    "england", "scotland", "wales", "ireland", "britain", "france", "germany",
+    "italy", "spain", "portugal", "belgium", "netherlands", "holland",
+    "switzerland", "austria", "poland", "russia", "ukraine", "canada",
+    "mexico", "australia", "china", "japan", "india", "israel", "greece",
+    "sweden", "norway", "denmark", "finland",
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "hawaii", "idaho", "illinois",
+    "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland",
+    "massachusetts", "michigan", "minnesota", "mississippi", "missouri",
+    "montana", "nebraska", "nevada", "ohio", "oklahoma", "oregon",
+    "pennsylvania", "tennessee", "texas", "utah", "vermont", "wisconsin",
+    "wyoming", "new", "north", "south", "west", "rhode",
+]
+
 # "& Anor" and "& Ors" (and another, and others) in a case name come off
 # a party's edge: "Pellow Holdings Ltd & Anor" is "Pellow Holdings Ltd"
 # (guide rule 2, issue #499). The "&" goes with the end's punctuation below.

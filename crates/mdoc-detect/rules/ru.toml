@@ -164,6 +164,37 @@ extend = [
     '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
 ]
 
+# A surname-first name is one span, comma included: the model's "Иванов"
+# in "Иванов, И. И., 1999" grows to "Иванов, И. И.", and its "Иванов" and
+# "И.И." in "Иванов,И.И." join (guide rule 1, Examples, #414). Two
+# initials after a comma name the surname's person anywhere, the comma
+# with or without a space. The `tail` after them, outside the span, ends
+# the name: a line's end, a period, a comma, a semicolon, a colon, a
+# bracket, a year or «и». A capitalised word there is the next person's
+# name, the initials his ("Ветлин, Н. О. Иванов" stays apart, #391), and
+# «и» is never crossed. Only spaces sit between, never a line.
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*|[А-ЯЁ]{2,}(?:-[А-ЯЁ]{2,})*),[ \t]?[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.(?P<tail>[*_]*(?:\r?(?m:$)|\.|[ \t]*(?:[,;:|)\]]|\(?\d|и\b)))',
+]
+
+# A given name and a patronymic after a surname and a comma join it too:
+# the model's "Маркович" and "Савелий Игоревич" in "Истец, фамилия, имя и
+# отчество: Маркович, Савелий Игоревич." are one span (guide rule 1,
+# Examples, #414). Only where a name stands alone: the `lead`, outside
+# the span, is a line's start (list, quote and table marks allowed), a
+# label's colon, a semicolon or a table cell's border, a list's number
+# after it ("; 2. "); and the `tail`, outside too, a line's end, a semicolon, a bracket, or a year
+# after a comma or a period. Mid-prose «вызвали Петрова, Ивана Ивановича
+# допросили» and a list of names never join. Only spaces sit between,
+# never a line.
+[[span]]
+category = "PERSON"
+extend = [
+    '(?P<lead>(?:(?m:^)[ \t>*_#|-]*|[;|][ \t]*|:[*_]*[ \t]+)(?:\d{1,3}[.)][ \t]+)?)(?:(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*|[А-ЯЁ]{2,}(?:-[А-ЯЁ]{2,})*),[ \t]?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?[ \t]+[А-ЯЁ][а-яё]+(?:ович|евич|ьич|овн|евн|ичн)[а-яё]{0,3}(?P<tail>[*_]*(?:\r?(?m:$)|[ \t]*(?:[;|)]|[.,][ \t]*(?:\r?(?m:$)|\(?\d)|\(?\d)))',
+]
+
 # A surname's lowercase particle belongs to the name: the model's "Лаваль"
 # in "на фамилию де Лаваль" grows to "де Лаваль", and in "Генриетта Яновна
 # де Лаваль" to the whole of it, as do "фон дер Пален", "ван Хорн", "ибн
