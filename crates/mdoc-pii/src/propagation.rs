@@ -18,10 +18,12 @@ use super::{
     syntax::protected_syntax,
 };
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashSet},
     ops::Range,
     sync::{Arc, LazyLock},
 };
+use unicode_normalization::UnicodeNormalization;
 
 /// Nicknames of a lowercase given name, lowercase. Only names already in the
 /// document yield them. Data until the rule pack's `variants` section takes
@@ -487,10 +489,21 @@ pub(crate) enum Form {
     Whole(Vec<String>),
 }
 
+/// `wording` as forms read it: a word split by a line-end hyphen whole
+/// ("Верес-\nтова") and a letter written with a combining mark one letter,
+/// as NFC writes it ("Арте\u{308}ма" reads "Артёма"; #418). Spans stay the
+/// source's, and identity keys keep the wording as written.
+fn read_name(wording: &str) -> Cow<'_, str> {
+    match crate::view::unwrapped(wording) {
+        read if unicode_normalization::is_nfc(&read) => read,
+        read => Cow::Owned(read.nfc().collect()),
+    }
+}
+
 /// `wording` as a [`Form::Whole`]: two or three name words, no initials and
 /// no title before them.
 fn parse_whole(wording: &str) -> Option<Form> {
-    let wording = &crate::view::unwrapped(wording);
+    let wording = &read_name(wording);
     let cased = name_words_cased(wording);
     let titled = wording.split_whitespace().count() != cased.len();
     let words = merge_particles(&cased);
@@ -511,8 +524,9 @@ fn initials_of(word: &str) -> Option<Vec<char>> {
 }
 
 pub(crate) fn parse_form(wording: &str) -> Option<Form> {
-    // A word split by a line-end hyphen reads whole ("Верес-\nтова").
-    let wording = &crate::view::unwrapped(wording);
+    // A word split by a line-end hyphen reads whole ("Верес-\nтова"), a
+    // decomposed letter as one.
+    let wording = &read_name(wording);
     let titled = wording.split_whitespace().next().is_some_and(|first| {
         TITLES.contains(
             &first
@@ -704,6 +718,7 @@ struct Spelling {
 
 impl Spelling {
     fn new(owner: u64, wording: &str) -> Option<Self> {
+        let name = read_name(wording);
         let first = |word: &str| {
             // A surname's particles are no initials: "де Лаваль" is "Л".
             word.rsplit(' ').next().and_then(|w| w.chars().next())
@@ -721,7 +736,7 @@ impl Spelling {
             }
             spelled
         };
-        if let Some((surname, given, _)) = split_full_name_inflected(wording) {
+        if let Some((surname, given, _)) = split_full_name_inflected(&name) {
             let initials: Vec<char> = given.iter().filter_map(|g| first(g)).collect();
             return Some(Self {
                 owner,
@@ -731,7 +746,7 @@ impl Spelling {
             });
         }
         // A first name, middle initials and a surname: "Ivo D. Penrow".
-        let words = name_words_cased(wording);
+        let words = name_words_cased(&name);
         let named = |w: &String| w.chars().filter(|c| c.is_alphabetic()).count() > 1;
         if let [given, middle @ .., surname] = words.as_slice()
             && !middle.is_empty()
@@ -784,7 +799,8 @@ impl People {
         let mut spellings = Vec::new();
         for (owner, wording) in names {
             spellings.extend(Spelling::new(owner, wording));
-            if let Some((surname, given, written)) = split_full_name_inflected(wording) {
+            if let Some((surname, given, written)) = split_full_name_inflected(&read_name(wording))
+            {
                 people.push(Person::new(owner, surname, given, true, written));
             } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
                 let given = initials.iter().map(char::to_string).collect();
@@ -939,8 +955,11 @@ fn form_in_context(wording: &str, surname: bool) -> Option<Form> {
     }
 }
 
-static TOKEN: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\p{L}+(?:['’-]\p{Lu}\p{L}*)*").expect("name token"));
+/// A name word in the source. A combining mark belongs to its letter
+/// ("Арте\u{308}ма"); forms read the word composed ([`read_name`]).
+static TOKEN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\p{L}[\p{L}\p{M}]*(?:['’-]\p{Lu}[\p{L}\p{M}]*)*").expect("name token")
+});
 
 /// Whether the text before `start` on its line ends a sentence: a line
 /// start, a list marker, a table cell or sentence punctuation.
@@ -2502,6 +2521,80 @@ mod tests {
         );
         assert_eq!(parse_whole("Ms Maya Bennett"), None);
         assert_eq!(parse_whole("Maya R. Bennett"), None);
+    }
+
+    /// A known full name again in each case, his and hers, is one form
+    /// that joins the person (#418); a different first name, or a
+    /// patronymic and surname without one, is not that person whole.
+    #[test]
+    fn a_full_name_in_any_case_joins_it() {
+        let found = |names: &[&str], source: &str| -> Vec<String> {
+            find_forms(source, &people(names), &[], &[])
+                .into_iter()
+                .map(|(r, ..)| source[r].to_owned())
+                .collect()
+        };
+        let whole = |names: &[&str], wording: &str| {
+            people(names)
+                .candidates(&parse_whole(wording).unwrap())
+                .target
+        };
+        let names = ["Артём Антонович Зайцев", "Анна Петровна Иванова"];
+        for wording in [
+            "Артёма Антоновича Зайцева",
+            "Артёму Антоновичу Зайцеву",
+            "Артёмом Антоновичем Зайцевым",
+            "Артёме Антоновиче Зайцеве",
+        ] {
+            assert_eq!(whole(&names, wording), Some(1), "{wording}");
+            let source = format!("Заявление {wording} принято.");
+            assert_eq!(found(&names, &source), [wording]);
+        }
+        for wording in [
+            "Анны Петровны Ивановой",
+            "Анне Петровне Ивановой",
+            "Анну Петровну Иванову",
+            "Анной Петровной Ивановой",
+        ] {
+            assert_eq!(whole(&names, wording), Some(2), "{wording}");
+            let source = format!("Заявление {wording} принято.");
+            assert_eq!(found(&names, &source), [wording]);
+        }
+        // Another first name is another person: never Артём whole.
+        assert_eq!(whole(&names, "Ивана Антоновича Зайцева"), None);
+        let found_ivan = found(&names, "Заявление Ивана Антоновича Зайцева принято.");
+        assert!(
+            !found_ivan.iter().any(|f| f.contains("Ивана")),
+            "{found_ivan:?}"
+        );
+        assert_eq!(whole(&names, "Антоновича Зайцева"), None);
+    }
+
+    /// A letter written with a combining mark reads as the one letter, as
+    /// NFC writes it (#418): "Арте\u{308}ма Антоновича Заи\u{306}цева" is
+    /// Артём Антонович Зайцев in the genitive, and its span stays the
+    /// source's, marks included.
+    #[test]
+    fn decomposed_letters_read_as_one() {
+        assert_eq!(read_name("Арте\u{308}ма Заи\u{306}цева"), "Артёма Зайцева");
+        assert_eq!(read_name("q\u{308}"), "q\u{308}", "no such letter");
+        let names = ["Артём Антонович Зайцев"];
+        assert_eq!(target(&names, "Заи\u{306}цев"), Some(1));
+        assert_eq!(target(&names, "Арте\u{308}ма Антоновича"), Some(1));
+        let source = "Обращение Арте\u{308}ма Антоновича Заи\u{306}цева принято.";
+        let found: Vec<_> = find_forms(source, &people(&names), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Арте\u{308}ма Антоновича Заи\u{306}цева"]);
+        // The known name decomposed, its form composed.
+        let decomposed = ["Арте\u{308}м Антонович Заи\u{306}цев"];
+        let source = "Обращение Артёма Антоновича Зайцева принято.";
+        let found: Vec<_> = find_forms(source, &people(&decomposed), &[], &[])
+            .into_iter()
+            .map(|(r, ..)| &source[r])
+            .collect();
+        assert_eq!(found, ["Артёма Антоновича Зайцева"]);
     }
 
     #[test]

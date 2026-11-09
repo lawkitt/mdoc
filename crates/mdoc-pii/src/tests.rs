@@ -2995,3 +2995,39 @@ fn a_name_glued_inside_a_word_outside_a_machine_readable_line_is_no_mention() {
             .unwrap_or(true)
     );
 }
+
+/// #418: the full name again, decomposed and inflected, joins it; so does
+/// the surname alone in another case.
+#[test]
+fn a_decomposed_inflected_full_name_joins_it() {
+    let source = "Истец: Артём Антонович Зайцев. Заявление \
+        Арте\u{308}ма Антоновича Заи\u{306}цева принято. Спор с Зайцевым.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    let full = review.variant_identity(proposed(&review, "Артём Антонович Зайцев").id);
+    let repeat = proposed(&review, "Арте\u{308}ма Антоновича Заи\u{306}цева");
+    assert_eq!(repeat.mentions.len(), 1);
+    assert_eq!(review.variant_identity(repeat.id), full);
+    let surname = proposed(&review, "Зайцевым");
+    assert_eq!(review.variant_identity(surname.id), full);
+}
+
+/// #418: a different first name before the same patronymic and surname is
+/// a different person, never the known one whole.
+#[test]
+fn another_first_name_with_the_same_patronymic_and_surname_is_not_the_person() {
+    let source = "Истец: Артём Антонович Зайцев. Свидетель \
+        Ивана Антоновича Зайцева не вызывали.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| !v.original.contains("Ивана")),
+        "{:?}",
+        review
+            .variants()
+            .iter()
+            .map(|v| v.original.as_ref())
+            .collect::<Vec<_>>()
+    );
+}
