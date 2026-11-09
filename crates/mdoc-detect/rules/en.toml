@@ -1007,8 +1007,8 @@ patterns = [
     # Office", "Clerk's Office", "Agency for …", "National Security Agency",
     # "Bureau of Prisons", "Federal Election Commission", "Securities and
     # Exchange Commission", "National Labor Relations Board", "Board of
-    # Education".
-    '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t)[\p{Zs}\t]+(?:of|for)\b',
+    # Education"; and the observed OCR "Depertuent of Agriculture" (#549).
+    '(?i)\bdep(?:artments?|ts?\.?|[\x27’]t|ertuent)[\p{Zs}\t]+(?:of|for)\b',
     # A ministry continuation needs its institutional connector, never
     # just a lowercase personal name below a bare office header.
     '(?i)\bministr(?:y|ies)[\p{Zs}\t]+(?:of|for)\b',
@@ -1365,6 +1365,46 @@ forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
 [[shape]]
 category = "PERSON"
 forbid = ['^\s*U\.\s?[SK]\.(?:\s?A\.)?\s*$']
+
+# "U.S." before lowercase words only is the country before a common noun,
+# never a company: "U.S. agriculture", and "V.S. agriculture", its OCR
+# with "U" read as "V" (#549). "U.S. Bank" keeps its name, and "V.S." alone
+# may be a person's initials.
+[[shape]]
+category = "ORG"
+forbid = ['^\s*(?:U\.\s?[SK]|V\.\s?S)\.(?:\s?A\.)?(?:\s+\p{Ll}[\p{Ll}-]*)+\s*$']
+
+# OCR of an English scan reads "I" as a lowercase "l" or a "1": "PagelD" is
+# a court filing's "PageID" page stamp, no organization or person (#549).
+# One token, capitalized, whose "ID" ends it with the "l" or "1"; a name
+# never ends so.
+[[shape]]
+category = "ORG"
+forbid = ['^\s*\p{Lu}\p{Ll}+[l1]D\s*$']
+
+# The same as a person.
+[[shape]]
+category = "PERSON"
+forbid = ['^\s*\p{Lu}\p{Ll}+[l1]D\s*$']
+
+# Other OCR damage the pack can read back only token by token, since it
+# has no English dictionary (#549): "IntereStee" ("interested") and
+# "Netberlaads" ("Netherlands") name no one. Listed whole as seen.
+[[never]]
+match = "whole"
+words = ["interestee", "netberlaads"]
+
+# "LIU" in a form's "(Full name of company)" is OCR of "Full", no person
+# (#549); "Liu" elsewhere is a surname and stays.
+[[shape]]
+category = "PERSON"
+forbid_in = ['(?P<lead>\([\p{Zs}\t]*)LIU(?P<tail>[\p{Zs}\t]+name\b)']
+
+# "LIZ" in capitals right after a company's name is OCR of its "LLC", no
+# organization of its own (#549): "Acme LIZ". "Liz" elsewhere stays.
+[[shape]]
+category = "ORG"
+forbid_in = ['(?P<lead>\p{Lu}[\p{Alphabetic}&.\x27’-]*,?[\p{Zs}\t]+)LIZ\b']
 
 # Fictitious parties are placeholders, never marked (guide rule 8, the
 # maintainer's decision on #484, item 1): "John Doe", "Jane Does 1-25",
