@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: inverted-name-boundary
 issue: 414
 kind: contract
 source: hunt-r3
-expect: boundary: gold PERSON "VALECROFT, Jorin P."; proposed PERSON "VALECROFT", PERSON "Jorin P."
 ---
 # Employment agreement: records and equipment
 
