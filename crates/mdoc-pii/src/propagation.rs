@@ -599,6 +599,9 @@ struct Person {
     /// A full name, so a form may join it; a surname with initials only
     /// blocks ("Петров И.И." beside "Петрова Марина": "Петрову" is either).
     target: bool,
+    /// Written with a combining mark ("Арте\u{308}м"), so the same name
+    /// composed may be another identity of the same person (#418).
+    decomposed: bool,
     surname_forms: HashSet<String>,
     own_surname_forms: HashSet<String>,
     /// The first name's forms and its nicknames' (full names only).
@@ -659,6 +662,7 @@ impl Person {
                 surname,
                 given,
                 target,
+                decomposed: false,
             };
         }
         let first_forms = match given.first() {
@@ -692,6 +696,7 @@ impl Person {
             surname,
             given,
             target,
+            decomposed: false,
             first_forms,
             patronymic_forms,
         }
@@ -801,7 +806,9 @@ impl People {
             spellings.extend(Spelling::new(owner, wording));
             if let Some((surname, given, written)) = split_full_name_inflected(&read_name(wording))
             {
-                people.push(Person::new(owner, surname, given, true, written));
+                let mut person = Person::new(owner, surname, given, true, written);
+                person.decomposed = !unicode_normalization::is_nfc(wording);
+                people.push(person);
             } else if let Some(Form::Initials { surname, initials }) = parse_form(wording) {
                 let given = initials.iter().map(char::to_string).collect();
                 people.push(Person::new(owner, surname, given, false, None));
@@ -893,14 +900,29 @@ impl People {
             // names propagate.
             found.proposed |= person.target && (proposes || links);
         }
-        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
-            found.target = self
-                .0
-                .iter()
-                .any(|p| p.owner == owner && p.target)
-                .then_some(owner);
-        }
+        found.target = self.one_target(&found.link);
         found
+    }
+    /// The full name a form linking `link` joins: its one owner's, or,
+    /// when every owner is one full name that only its letters' writing
+    /// told apart (detected with decomposed letters and composed: two
+    /// identities, one name; #418), the first of them. Namesakes written
+    /// alike stay apart.
+    fn one_target(&self, link: &BTreeSet<u64>) -> Option<u64> {
+        let named = |owner: u64| self.0.iter().filter(move |p| p.owner == owner && p.target);
+        let mut owners = link.iter().copied();
+        let first = owners.next()?;
+        let rest: Vec<u64> = owners.collect();
+        named(first)
+            .any(|person| {
+                let same = |p: &Person| p.surname == person.surname && p.given == person.given;
+                rest.is_empty()
+                    || rest.iter().all(|&other| named(other).any(same))
+                        && link
+                            .iter()
+                            .any(|&owner| named(owner).any(|p| same(p) && p.decomposed))
+            })
+            .then_some(first)
     }
     /// Who bare initials ("jb", lowercase) may stand for: every person
     /// whose name spells them. Proposed when a written-out name spells
@@ -913,9 +935,7 @@ impl People {
                 found.proposed |= spelling.full;
             }
         }
-        if let [owner] = found.link.iter().copied().collect::<Vec<_>>()[..] {
-            found.target = self.is_target(owner).then_some(owner);
-        }
+        found.target = self.one_target(&found.link);
         found
     }
     /// The written-out names that spell bare initials ("jb", lowercase).
@@ -1389,13 +1409,12 @@ fn find_forms_with(
     // A surname's particle, as read: "v-\nan der Berg" has "van".
     let particle = |t: &Range<usize>| is_particle(&crate::view::unwrapped(&source[t.clone()]));
     // An initial: one capital letter and its period.
-    let initial = |k: usize| {
-        capital(k)
-            && source[tokens[k].clone()].chars().count() == 1
-            && source[tokens[k].end..].starts_with('.')
-    };
+    // Letters as forms read them: a letter and its combining marks are one.
+    let letters = |k: usize| read_name(&source[tokens[k].clone()]).chars().count();
+    let initial =
+        |k: usize| capital(k) && letters(k) == 1 && source[tokens[k].end..].starts_with('.');
     // A name word: a capital and more letters.
-    let word = |k: usize| capital(k) && source[tokens[k].clone()].chars().count() > 1;
+    let word = |k: usize| capital(k) && letters(k) > 1;
     // Bare initials of a known name where initials stand; their repeats
     // elsewhere are the same wording's mentions, the same person's.
     let cells = if bare {
