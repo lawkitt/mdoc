@@ -2409,6 +2409,110 @@ mod tests {
         }
     }
 
+    /// #736: a labelled value with the punctuation that ends it, and one
+    /// after «ФИО», is a person; a lone role after «ФИО» stays a form's
+    /// placeholder (#601), and a label in prose or before a filler gives none.
+    #[test]
+    fn punctuated_and_fio_labelled_names_are_people() {
+        let people = |source: &str| -> Vec<String> {
+            correct(source, &[])
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, expected) in [
+            (
+                "Surname: Trustee, Given name: Edda.\nФ.И.О.: Ветлин Нил Олегович.\n",
+                &["Trustee", "Edda", "Ветлин Нил Олегович"][..],
+            ),
+            ("Surname: McVellin.\n", &["McVellin"]),
+            (
+                "Given name: Edda.\nSurname: Trustee.\n",
+                &["Edda", "Trustee"],
+            ),
+            ("ФИО: Ветлин Нил Олегович\n", &["Ветлин Нил Олегович"]),
+            ("Ф. И. О.: Ветлин Нил Олегович;\n", &["Ветлин Нил Олегович"]),
+            ("Имя: Лада;\nФамилия: Должник.\n", &["Лада", "Должник"]),
+            // Two full names are two people: one backs no role beside it.
+            (
+                "Ф.И.О.: Ветлин Нил Олегович\nФИО: Истец\n",
+                &["Ветлин Нил Олегович"],
+            ),
+            (
+                "Full name: Edda Brannock\nFull name: Claimant\n",
+                &["Edda Brannock"],
+            ),
+            // A full name and a name part back each other, as in #601.
+            (
+                "Full name: Edda Brannock\nSurname: Trustee\n",
+                &["Edda Brannock", "Trustee"],
+            ),
+            (
+                "Full name: Edda Brannock    Surname: Trustee\n",
+                &["Edda Brannock", "Trustee"],
+            ),
+            ("Full name: Edda\nSurname: Trustee\n", &["Edda", "Trustee"]),
+        ] {
+            assert_eq!(people(source), expected, "{source}");
+        }
+        for source in [
+            "ФИО: Истец\n",
+            "Ф.И.О.: Истец.\n\nИстец просит взыскать долг с ответчика.\n",
+            "ФИО: Истец\nФИО: Ответчик\n",
+            "Surname: Trustee.\n",
+            "Full name: Claimant.\n\nThe Claimant seeks damages.\n",
+            "В графе ФИО: указать фамилию, имя и отчество полностью.\n",
+            "In this form the surname: is required.\n",
+            "ФИО: не указано.\n",
+            "ФИО: ________\n",
+            "Surname: N/A.\n",
+            "`ФИО: Ветлин Нил Олегович`\n",
+            // A form's other fields after a blank label.
+            "ФИО: Подпись\n",
+            "ФИО: Дата\n",
+            "ФИО: Должность\n",
+            "ФИО: Полностью\n",
+            "ФИО: Прочерк\n",
+            "ФИО: Расшифровка\n",
+            "Full name: Signature.\n",
+            "Full name: Sign\n",
+            "Full name: Print Name.\n",
+            "Full name: Date.\n",
+            "Full name: Title\n",
+            "Full name: Position.\n",
+        ] {
+            let proposed = recognition::proposals(source, &[]).expect("proposals");
+            assert!(proposed.is_empty(), "{source}: {proposed:?}");
+        }
+        // The dot of a last "Jr." or "Sr." is the name's own: no labelled
+        // value cuts it, and the model's span stays as it read it.
+        let model = |source: &str, text: &str| -> Vec<String> {
+            let start = source.find(text).unwrap();
+            let raw = [RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.9,
+                text: text.into(),
+            }];
+            correct(source, &raw)
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert!(people("Full name: Orvel Lanmark Jr.\n").is_empty());
+        assert_eq!(
+            model("Full name: Orvel Lanmark Jr.\n", "Orvel Lanmark Jr."),
+            ["Orvel Lanmark Jr."]
+        );
+        assert_eq!(
+            model("Full name: Orvel Lanmark Sr.\n", "Orvel Lanmark"),
+            ["Orvel Lanmark"]
+        );
+    }
+
     /// The model's `spans` (each its first occurrence) in `source`.
     fn model_spans(source: &str, spans: &[(&str, &str)]) -> Vec<RawEntity> {
         spans
