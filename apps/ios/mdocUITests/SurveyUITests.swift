@@ -242,6 +242,28 @@ final class SurveyUITests: XCTestCase {
         shot("30-review-ax-text")
     }
 
+    /// Edit mode with Show Markdown on (ADR 0109): the keyboard up, the
+    /// review bar away, names dimmed and aliases tinted.
+    @MainActor
+    func test7EditMode() throws {
+        let app = launch(seed: MdocUITest.markdownFixture)
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        app.buttons["document-menu"].tap()
+        let showMarkdown = app.descendants(matching: .any)["show-markdown"].firstMatch
+        XCTAssertTrue(showMarkdown.waitForExistence(timeout: 5))
+        showMarkdown.tap()
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        shot("42-markdown-edit-mode")
+    }
+
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.

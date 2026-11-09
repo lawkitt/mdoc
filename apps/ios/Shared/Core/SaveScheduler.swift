@@ -8,6 +8,9 @@ import Foundation
 final class SaveScheduler: @unchecked Sendable {
     /// How long taps pause before their save.
     static let pause: DispatchTimeInterval = .milliseconds(300)
+    /// How long typing pauses before its save, and before discovery
+    /// (ADR 0109: "after typing pauses (~1 s)").
+    static let typingPause: DispatchTimeInterval = .seconds(1)
 
     private let queue: DispatchQueue
     private let lock = NSLock()
@@ -25,7 +28,7 @@ final class SaveScheduler: @unchecked Sendable {
             scheduled?.cancel()
             scheduled = item
         }
-        // timing: taps coalesce this long before their save (ADR 0104)
+        // timing: taps and typing coalesce this long before their save (ADR 0104, ADR 0109)
         queue.asyncAfter(deadline: .now() + pause, execute: item)
     }
 

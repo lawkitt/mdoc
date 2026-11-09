@@ -32,6 +32,9 @@ pub enum StepKind {
     Owner,
     /// Joining a case renumbered aliases or proposed its names.
     JoinCase,
+    /// A run of typing in edit mode (ADR 0109), coalesced as desktop's
+    /// editor coalesces it.
+    Typing,
 }
 
 impl StepKind {
@@ -47,6 +50,7 @@ impl StepKind {
             Self::NewAlias => "New alias",
             Self::Owner => "Belongs to",
             Self::JoinCase => "Join case",
+            Self::Typing => "Typing",
         }
     }
 }
@@ -124,6 +128,8 @@ impl ReviewText {
         self.edits.clear();
         let result = change(self, &mut step);
         let base = self.base.take().expect("the step in progress");
+        // Typing after any other step starts a step of its own.
+        self.typing = super::typing::Run::None;
         if self.history == base.history {
             self.redo = redo;
             return result;
@@ -204,6 +210,7 @@ impl ReviewText {
 
     /// The review follows the editor to state `after`, whose text is set.
     fn travel(&mut self, before: u64, after: u64) {
+        self.typing = super::typing::Run::None;
         self.history = after;
         self.transaction += 1;
         let transaction = EditorTransaction {

@@ -166,6 +166,15 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
   real core and the sample document. Fakes, the fixed case key and the
   previews' core are behind `#if DEBUG` or in the test targets: none ships
   in the app or the extension.
+- **Edit mode types into the core** ([ADR 0109](../../docs/adr/0109-mobile-markdown-editor.md)).
+  Edit (⌘E) shows with Show Markdown on; the text view applies typing
+  natively and `TypingBridge` sends each committed edit, never marked IME
+  text, to the session (`type`) as "Typing" steps in the one undo line. Its
+  mirror of the core's text checks the edits UIKit announces, so the view's
+  string stays the core's, which is what saves; a typing pause runs
+  discovery and the save. The view is restyled in place while editing,
+  never given new text. Cut and Copy use an app-private pasteboard
+  (`InAppClipboard`); the text view's undo manager is the core's.
 - **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
   offsets into the Markdown source; `TextOffsets` converts them for UIKit.
 - **The core recognizes Markdown.** `MarkdownStyling` asks the core for a
@@ -237,7 +246,8 @@ JPEG pages as a scan) and scans it at launch with the structured rules alone:
 the only such scan, which gives the review candidates without a model. On a
 phone, where the Mac path does not exist, the seed reads the file of the same
 name that `just ios-device-test` copied into the app's container. Each launch
-clears the test library but keeps a downloaded name detector. Tests that need
-the OCR model download it and run only with `MDOC_OCR_TESTS=1` (the UI test
-also sets `MDOC_REAL_DOWNLOADS=1` for the app); the device long-jobs test sets
-it and `MDOC_UI_DETECTOR_TIER=1`.
+clears the test library but keeps a downloaded name detector;
+`MDOC_KEEP_LIBRARY=1` keeps all of it, for a test that relaunches to check a
+save. Tests that need the OCR model download it and run only with
+`MDOC_OCR_TESTS=1` (the UI test also sets `MDOC_REAL_DOWNLOADS=1` for the
+app); the device long-jobs test sets it and `MDOC_UI_DETECTOR_TIER=1`.

@@ -51,6 +51,15 @@ final class DocumentViewModel {
     /// The screen the window's steps belong to (`attachSystemUndo`).
     var systemUndoScreen: UUID?
     var showsFind = false
+    /// Edit mode (ADR 0109): the keyboard is up on the text, candidates are
+    /// dimmed and not tappable, the review bar is hidden. Changed only by
+    /// `enterEditMode` and `doneEditing`.
+    var isEditing = false
+    /// Typing's state between snapshots. Not observed: a keystroke never
+    /// draws the screen again.
+    @ObservationIgnored var typing = TypingState()
+    /// Bumped to show the system find bar over the text (ADR 0109).
+    var findBarRequest = 0
     /// Try a sample's names, proposed once recognition has read the text.
     var storedNames: [SampleDocument.Name]?
     /// Identities wanted: a regular window shows them in the inspector or
@@ -341,7 +350,7 @@ final class DocumentViewModel {
         notice = nil
     }
 
-    private func say(_ text: String, symbol: String = "checkmark.circle.fill") {
+    func say(_ text: String, symbol: String = "checkmark.circle.fill") {
         notice = text
         noticeSymbol = symbol
     }
@@ -521,6 +530,8 @@ final class DocumentViewModel {
 
     func applyReview(_ new: DocumentSnapshot) {
         snapshot = new
+        // The snapshot is the core's latest: typing's own answers are older.
+        typing.settled(at: new)
         var state = review
         state.apply(new)
         if state != review { review = state }

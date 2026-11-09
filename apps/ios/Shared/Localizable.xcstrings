@@ -275,6 +275,9 @@
     "Automatic" : {
 
     },
+    "Back to reviewing names. Your changes are saved." : {
+
+    },
     "Bank details" : {
 
     },
@@ -411,6 +414,9 @@
     "Done" : {
 
     },
+    "Done editing" : {
+
+    },
     "Download" : {
 
     },
@@ -448,6 +454,18 @@
 
     },
     "Each gets its alias. You can still keep any of them." : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit text" : {
+
+    },
+    "Edits the document's text." : {
+
+    },
+    "Edits the text. Changes save as you type." : {
 
     },
     "Email" : {
@@ -493,6 +511,9 @@
 
     },
     "Finding names stopped when mdoc left the screen." : {
+
+    },
+    "Finding names. Edit when it finishes." : {
 
     },
     "Finding names. Review when it finishes." : {
@@ -908,6 +929,9 @@
     "Recognizing text" : {
 
     },
+    "Recognizing. Edit when it finishes." : {
+
+    },
     "Redid %@" : {
 
     },
@@ -1243,6 +1267,9 @@
     "Try a sample" : {
 
     },
+    "Typing" : {
+
+    },
     "Underlined words are names mdoc found. Use the Candidates rotor to move between them." : {
 
     },
@@ -1280,6 +1307,9 @@
 
     },
     "working" : {
+
+    },
+    "You edited an alias: that mention no longer restores." : {
 
     },
     "Your carrier may charge for the data." : {
