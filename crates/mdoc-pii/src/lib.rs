@@ -261,7 +261,8 @@ fn safe_span(value: &str) -> bool {
 ///
 /// A web address keeps its own characters (ADR 0094): a final `_` and
 /// brackets that hold no Markdown link ("?ids[]=1"); the detector ends it at
-/// a link's own bracket.
+/// a link's own bracket. An email address may start with `_`
+/// ("_roman@…", #412) where that `_` is no emphasis delimiter.
 fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detection) -> bool {
     let range = &detection.range;
     // Found whole by its parts or its label, so text may follow its last line.
@@ -273,10 +274,11 @@ fn detected_span(source: &str, markup: &[view::InlineMarkup], detection: &Detect
         ) && detection.category == Category::Date);
     let value = &source[range.clone()];
     let url = detection.category == Category::Url;
+    let email = detection.category == Category::Email;
     let forbidden = if url { "`|" } else { "[]`|" };
     value.len() <= 1024
         && value.chars().any(char::is_alphanumeric)
-        && !value.starts_with('_')
+        && (email || !value.starts_with('_'))
         && (url || !value.ends_with('_'))
         && !value.chars().any(|ch| forbidden.contains(ch))
         && !(url && (value.contains("](") || value.contains("][")))
@@ -720,7 +722,7 @@ impl Review {
             .collect();
         let mut accepted = BTreeMap::new();
         let mut selected = Vec::new();
-        for detection in detections {
+        for mut detection in detections {
             // A bare category marker is not identifying, whatever category the
             // detector guesses. Do not turn it into an identity.
             let text = &source[detection.range.clone()];
@@ -730,6 +732,13 @@ impl Review {
                 || intersects(&applied, &detection.range)
             {
                 continue;
+            }
+            // #412: an address's leading `_` that opens emphasis
+            // ("_quill@…_") is Markdown, and the address is the rest.
+            if !detected_span(source, &markup, &detection) && detection.category == Category::Email
+            {
+                let rest = text.trim_start_matches('_');
+                detection.range.start = detection.range.end - rest.len();
             }
             if !detected_span(source, &markup, &detection)
                 || syntax::crosses_syntax(&protected, &markup, source, &detection.range)

@@ -4974,4 +4974,82 @@ mod tests {
             .is_err()
         );
     }
+
+    /// #412: an email address is the whole address, whatever its local part
+    /// holds: `_` (in an autolink's brackets too, without them), a leading
+    /// `_` that opens no emphasis, quotes and an apostrophe, with or without
+    /// the model's span. Prose apostrophes and quotes around the address,
+    /// emphasis around it, a mention and a bare `name@` stay out.
+    #[test]
+    fn email_local_parts_keep_underscores_quotes_and_apostrophes() {
+        let emails = |source: &str, spans: &[(&str, &str)]| -> Vec<String> {
+            shown_with(source, spans)
+                .into_iter()
+                .filter(|(_, category, _)| category == "EMAIL")
+                .map(|(_, _, text)| text)
+                .collect()
+        };
+        let underscores =
+            "Write to quill_and_ink_77@post-box.invalid or <tam_roe@fen-mail.invalid>.";
+        for spans in [
+            &[][..],
+            &[
+                ("quill_and_ink_77@post-box.invalid", "email"),
+                ("<tam_roe@fen-mail.invalid>", "email"),
+            ],
+        ] {
+            assert_eq!(
+                emails(underscores, spans),
+                [
+                    "quill_and_ink_77@post-box.invalid",
+                    "tam_roe@fen-mail.invalid"
+                ]
+            );
+        }
+        let quoted = r#"Write to "rhea desk"@ripple-spur.invalid today."#;
+        let apostrophe = "O'Venn's email is <eira.o'venn@copper-skein.invalid> now.";
+        let leading = "Адрес: _roman@kadry.invalid.";
+        for (source, spans, expected) in [
+            (quoted, &[][..], r#""rhea desk"@ripple-spur.invalid"#),
+            (
+                quoted,
+                &[("rhea desk", "person"), ("ripple-spur.invalid", "email")],
+                r#""rhea desk"@ripple-spur.invalid"#,
+            ),
+            (apostrophe, &[], "eira.o'venn@copper-skein.invalid"),
+            (
+                apostrophe,
+                &[("venn@copper-skein.invalid", "email")],
+                "eira.o'venn@copper-skein.invalid",
+            ),
+            (leading, &[], "_roman@kadry.invalid"),
+            (
+                leading,
+                &[("roman@kadry.invalid", "email")],
+                "_roman@kadry.invalid",
+            ),
+            (r#"Mail "a_b@host.invalid" now."#, &[], "a_b@host.invalid"),
+            (
+                "Write to _quill@host.invalid_ now.",
+                &[],
+                "quill@host.invalid",
+            ),
+            (
+                "Write to __quill@host.invalid__ now.",
+                &[],
+                "quill@host.invalid",
+            ),
+            (
+                "Some _emph_ then x_y@host.invalid.",
+                &[],
+                "x_y@host.invalid",
+            ),
+        ] {
+            assert_eq!(emails(source, spans), [expected], "{source}");
+        }
+        assert_eq!(
+            emails("Ping @tam_roe or tam_roe@ today.", &[]),
+            Vec::<String>::new()
+        );
+    }
 }

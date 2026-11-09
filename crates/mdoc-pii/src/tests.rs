@@ -362,6 +362,40 @@ fn applied(source: &str, detections: Vec<Detection>) -> String {
     }
     changed
 }
+/// #412: an `_` inside an email address is no emphasis, in an autolink's
+/// brackets too, and nor is a leading `_` that opens none. A leading `_`
+/// that opens emphasis stays Markdown and the address is the rest; one that
+/// closes emphasis inside the address refuses it, and a name's leading `_`
+/// stays refused.
+#[test]
+fn underscores_in_an_email_address_are_text_unless_they_are_emphasis() {
+    let source = concat!(
+        "Write to quill_and_ink_77@post-box.invalid or <tam_roe@fen-mail.invalid>.\n\n",
+        "Copy _roman@kadry.invalid; not _quill@x.invalid_.\n\n",
+        "_Note to trailing_@x.invalid and _Ann Lee."
+    );
+    let at = |text: &str| source.find(text).unwrap();
+    let span = |text: &str, category| detection(at(text)..at(text) + text.len(), category);
+    let email = |text: &str| span(text, Category::Email);
+    assert_eq!(
+        applied(
+            source,
+            vec![
+                email("quill_and_ink_77@post-box.invalid"),
+                email("tam_roe@fen-mail.invalid"),
+                email("_roman@kadry.invalid"),
+                email("_quill@x.invalid"),
+                email("trailing_@x.invalid"),
+                span("_Ann Lee", Category::Person),
+            ]
+        ),
+        concat!(
+            "Write to EMAIL_1 or <EMAIL_2>.\n\n",
+            "Copy EMAIL_3; not _EMAIL_4_.\n\n",
+            "_Note to trailing_@x.invalid and _Ann Lee."
+        )
+    );
+}
 #[test]
 fn only_real_markdown_and_html_syntax_hides_a_value() {
     // An email autolink is not a tag (#411), and a tag is protected only
