@@ -1243,7 +1243,8 @@ pub fn unwrapped(text: &str) -> std::borrow::Cow<'_, str> {
                 chars.next();
             }
             previous = None;
-        } else {
+        } else if !unicode_normalization::char::is_combining_mark(c) {
+            // A combining mark belongs to the letter before it: "Заи\u{306}-\nцева".
             previous = Some(c);
         }
     }

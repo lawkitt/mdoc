@@ -3059,3 +3059,121 @@ fn a_name_glued_inside_a_word_outside_a_machine_readable_line_is_no_mention() {
             .unwrap_or(true)
     );
 }
+
+/// #418: the full name again, decomposed and inflected, joins it; so does
+/// the surname alone in another case.
+#[test]
+fn a_decomposed_inflected_full_name_joins_it() {
+    let source = "Истец: Артём Антонович Зайцев. Заявление \
+        Арте\u{308}ма Антоновича Заи\u{306}цева принято. Спор с Зайцевым.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    let full = review.variant_identity(proposed(&review, "Артём Антонович Зайцев").id);
+    let repeat = proposed(&review, "Арте\u{308}ма Антоновича Заи\u{306}цева");
+    assert_eq!(repeat.mentions.len(), 1);
+    assert_eq!(review.variant_identity(repeat.id), full);
+    let surname = proposed(&review, "Зайцевым");
+    assert_eq!(review.variant_identity(surname.id), full);
+}
+
+/// #418: a different first name before the same patronymic and surname is
+/// a different person, never the known one whole.
+#[test]
+fn another_first_name_with_the_same_patronymic_and_surname_is_not_the_person() {
+    let source = "Истец: Артём Антонович Зайцев. Свидетель \
+        Ивана Антоновича Зайцева не вызывали.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| !v.original.contains("Ивана")),
+        "{:?}",
+        review
+            .variants()
+            .iter()
+            .map(|v| v.original.as_ref())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// #418 review: one full name detected both with decomposed letters and
+/// composed is two identities of one person; its forms join the first
+/// rather than starting a third (S2, R2b).
+#[test]
+fn a_name_written_decomposed_and_composed_takes_its_forms() {
+    let decomposed = "Арте\u{308}м Антонович Заи\u{306}цев";
+    let composed = "Артём Антонович Зайцев";
+    let source = "Истец: Арте\u{308}м Антонович Заи\u{306}цев. Ответчик Артём Антонович \
+        Зайцев. Спор с Зайцевым и Артёмом Антоновичем Зайцевым. Заявление Артёма \
+        Антоновича Заи\u{306}цева принято.";
+    let review = ingest_names(source, &[decomposed, composed]);
+    let known = [decomposed, composed].map(|n| review.variant_identity(proposed(&review, n).id));
+    for form in [
+        "Зайцевым",
+        "Артёмом Антоновичем Зайцевым",
+        "Артёма Антоновича Заи\u{306}цева",
+    ] {
+        let identity = review.variant_identity(proposed(&review, form).id);
+        assert!(known.contains(&identity), "{form}: {identity:?} {known:?}");
+    }
+    // Namesakes written alike are not one person: a user's split stays.
+    let people = crate::propagation::People::new([(1, composed), (2, composed)]);
+    let form = crate::propagation::parse_form("Зайцевым").unwrap();
+    assert_eq!(people.candidates(&form).target, None);
+}
+
+/// #418 review: a line-end hyphen after a combining mark splits one word
+/// ("Заи\u{306}-\nцева"), so the whole name is one form, not its first
+/// two words (R4).
+#[test]
+fn a_hyphen_after_a_combining_mark_splits_one_word() {
+    assert_eq!(
+        crate::view::unwrapped("Заи\u{306}-\nцева"),
+        "Заи\u{306}цева"
+    );
+    let source = "Истец: Артём Антонович Зайцев.\nЗаявление Арте\u{308}ма Антоновича \
+        Заи\u{306}-\nцева принято.";
+    let review = ingest_names(source, &["Артём Антонович Зайцев"]);
+    let full = review.variant_identity(proposed(&review, "Артём Антонович Зайцев").id);
+    let form = proposed(&review, "Арте\u{308}ма Антоновича Заи\u{306}-\nцева");
+    assert_eq!(review.variant_identity(form.id), full);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Арте\u{308}ма Антоновича")
+    );
+}
+
+/// #418 review: a decomposed wording counts its letters as read, so the
+/// composed one stays primary and restores (R5).
+#[test]
+fn a_composed_wording_stays_primary_over_its_decomposed_writing() {
+    let source = "Claimant: José García. Later Jose\u{301} Garci\u{301}a and Mr \
+        Garci\u{301}a agreed. García too.";
+    let mut review = ingest_names(source, &["José García"]);
+    let full = review.variant_identity(proposed(&review, "José García").id);
+    let decomposed = proposed(&review, "Jose\u{301} Garci\u{301}a");
+    assert_eq!(review.variant_identity(decomposed.id), full);
+    crate::restore::tests::apply_pending(&mut review, source, 1);
+    let exported = review.export_identities();
+    assert_eq!(exported.len(), 1, "{exported:?}");
+    assert_eq!(exported[0].originals[0].as_ref(), "José García");
+}
+
+/// #418 review: a capital with a combining mark and a period is an
+/// initial («Е\u{308}.»), not a name word (R13).
+#[test]
+fn a_decomposed_initial_is_an_initial() {
+    let source = "Истец: Ёсиф Петрович Ахов. Подписал Ахов Е\u{308}. П. и Ахов Ё. П.";
+    let review = ingest_names(source, &["Ёсиф Петрович Ахов"]);
+    let full = review.variant_identity(proposed(&review, "Ёсиф Петрович Ахов").id);
+    let signed = proposed(&review, "Ахов Е\u{308}. П.");
+    assert_eq!(review.variant_identity(signed.id), full);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|v| v.original.as_ref() != "Ахов Е\u{308}")
+    );
+}

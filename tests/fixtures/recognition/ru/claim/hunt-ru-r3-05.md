@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: decomposed-unicode-name
 issue: 418
 kind: claim
 source: hunt-r3
-expect: miss: PERSON "Арте\u{308}ма Антоновича Заи\u{306}цева"
 ---
 # Иск о взыскании доплаты за работу в выходной день
 
