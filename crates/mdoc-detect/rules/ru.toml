@@ -1870,7 +1870,7 @@ pattern = '(?i)(?P<lead>\bуч[её]тный[\p{Zs}\t]+номер[\p{Zs}\t]+в[\
 # (Latin H and a for «На», r for «г»), «Bce расходы» («Все»), «и T.π.» («т.п.», a
 # Latin T and a Greek π). A person's or an organization's span that reads,
 # look-alikes as their Cyrillic letters, as one of these words or a
-# `never` word is dropped in Russian text (rules.rs `lookalike_word`).
+# `never` word is dropped in Russian text (rules/ocr.rs `lookalike_word`).
 # The letters are the shapes OCR confuses: capitals and lowercase letters
 # drawn alike in both scripts, and the lowercase r, n and u of an italic or
 # worn «г», «п» and «и». A name with a letter of its own stays («Ивaнов»

@@ -1,5 +1,5 @@
 # mdoc's rule pack, part 1 of 3: rules for any language (ADR 0092).
-# Compiled in with `include_str!`; `rules.rs` checks every entry when it
+# Compiled in with `include_str!`; `src/rules/` checks every entry when it
 # loads. The pack is shared.toml, then en.toml, then ru.toml.
 #
 # Sections:
@@ -215,7 +215,7 @@
 #                         with the span
 # After these fixes a model person's span that is a company's short name
 # in the same document becomes that company (`company_short_names` in
-# rules.rs, #548).
+# rules/companies.rs, #548).
 #   list_letter = true    for PERSON or ORG: a lowercase "a. " or "(a) "
 #                         at a line start or after list punctuation comes off
 # A fixed span left without its category's shape goes. An entry takes one
