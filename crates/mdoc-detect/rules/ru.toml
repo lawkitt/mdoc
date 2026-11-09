@@ -138,6 +138,40 @@ extend = [
     '\b[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
 ]
 
+# A surname's lowercase particle belongs to the name: the model's "Лаваль"
+# in "на фамилию де Лаваль" grows to "де Лаваль", and in "Генриетта Яновна
+# де Лаваль" to the whole of it, as do "фон дер Пален", "ван Хорн", "ибн
+# Рушд" (guide rule 1, the guide's examples, #403). Two particles may chain
+# ("де ла Вега"), a surname-first name keeps the names after it ("де Лаваль
+# Генриетта Яновна", "де Лаваль Г. Я."), and a glued «д'» or «аль-» is the
+# word's own ("д'Артаньян", "аль-Хадид"). Only spaces sit between, never a
+# line. Written lowercase a particle is no sentence's first word, so it
+# joins anywhere, after a sentence's end too. «да» and «фон» are also words
+# ("сказал да Петрову", "Петров да Сидоров", "Иван да Марья", "Шумовой
+# фон Петрова", a wrapped line's "фон Петровой") and join only after a
+# patronymic, an initial or a name's introducing word on the same line, the
+# `lead` that stays outside («на фамилию», «гражданке», «господину», «г-жа»,
+# «гр.», «барон»), or before a second particle ("фон дер Пален"); a bare
+# capitalised word is no lead for them (#403 review). A given name and
+# patronymic or two initials before the particle go with the span ("Г. Я.
+# де Лаваль").
+[[span]]
+category = "PERSON"
+extend = [
+    '\b(?:(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль)(?:[ \t]+(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон))?|(?:да|фон)[ \t]+(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон))[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*(?:[ \t]+(?:[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ][а-яё]+(?:ович|евич|ьич|овн|евн|ичн)[а-яё]{0,3}|[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.))?',
+    '(?P<lead>(?:\b[А-ЯЁ][а-яё]+(?:ович|евич|ьич|овн|евн|ичн)[а-яё]{0,3}|\b[А-ЯЁ]\.|\b(?i:фамили(?:я|и|ю|ей)|граждан(?:ин|ина|ину|ином|ине|ка|ки|ке|ку|кой)|господин(?:а|у|ом|е)?|госпож(?:а|и|е|у|ой)|г-н(?:а|у|ом|е)?|г-ж(?:а|и|е|у|ой)|барон(?:а|у|ом|е|есса|ессы|ессе|ессу|ессой)?)|\bгр\.)[ \t]+)(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон)(?:[ \t]+(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон))?[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*(?:[ \t]+(?:[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ][а-яё]+(?:ович|евич|ьич|овн|евн|ичн)[а-яё]{0,3}|[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.))?',
+    '\b(?:[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*[ \t]+[А-ЯЁ][а-яё]+(?:ович|евич|ьич|овн|евн|ичн)[а-яё]{0,3}|[А-ЯЁ]\.[ \t]?[А-ЯЁ]\.)[ \t]+(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон)(?:[ \t]+(?:де|ван|дер|ден|ди|дю|ля|ла|ле|дель|делла|эль|бен|бин|ибн|аль|да|фон))?[ \t]+(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
+    '\b(?:д[\x27’]|(?:аль|эль)-)(?:[А-ЯЁ][\x27’])?[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*',
+]
+
+# A glued particle makes a capitalised word a name's («аль-Хадид»), but
+# «аль-Каида», in any case form, is an organization, never a person (#403
+# review).
+[[never]]
+match = "pattern"
+patterns = ['(?i)^[\s\p{P}]*аль-каид(?:а|ы|е|у|ой|ою)[\s\p{P}]*$']
+anywhere_in = ["PERSON"]
+
 # Common abbreviations (the never words below) come off an organization's
 # edges: "АЗС ООО «Бета-Ойл»" is "ООО «Бета-Ойл»" (guide rule 2, issue #481).
 [[span]]
@@ -630,6 +664,31 @@ pattern = '(?P<lead>{lead})(?:{name})(?P<tail>[^\p{Alphabetic}]|$)'
 parts.lead = '(?:ИП|(?i:индивидуальн\p{Alphabetic}*[\p{Zs}\t]+предпринимател\p{Alphabetic}*))[\p{Zs}\t]+'
 parts.name = '(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?|\p{Uppercase}(?:-\p{Uppercase})?\.(?:[\p{Zs}\t]?\p{Uppercase}(?:-\p{Uppercase})?\.)?[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)|(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)[\p{Zs}\t]+\p{Uppercase}[\p{Ll}\p{Lu}]*(?i:(?:ич|ыч)(?:а|у|ем|ом|е)?|(?:вн|чн)(?:а|ы|е|у|ой)|оглы|кызы)[\p{Zs}\t]+(?:\p{Uppercase}\p{Ll}+(?:-\p{Uppercase}\p{Ll}+)*|\p{Lu}{2,}(?:-\p{Lu}{2,})*)'
 absorbs.ORG = '(?P<span>{name})$'
+
+
+# A short two-part name after a word that introduces a person is PERSON,
+# whatever the model made of it: «уполномочиваю гражданина Лю Бо»,
+# «гражданке Ким Ир», «господину Ли Вэй», «г-же Пак Сун» (guide rule 1,
+# #404). Two short capitalised words, of two to four letters each, and
+# no third one after them: a longer word may be a place, a body's name or
+# a form's heading («гражданином Советского Союза», «гражданке Канады
+# Браун», «Гражданин Петров Подпись»), and a longer name is the model's.
+# Only a gap: where a name span (the model's, a name cell's) overlaps the
+# match, the match is not proposed (`gaps_only`, #404 review), so a
+# wrong word never spreads as a known name. The introducing word stays
+# outside. A country after «гражданин» is citizenship, no name («гражданина
+# Российской Федерации», «гражданки Республики Казахстан», «гражданина
+# Украины Петренко»), and an office after «господин» is a title
+# («господину Председателю Суда»): both are skipped. «гр.» is left out, as
+# it is also grams.
+[[span]]
+category = "PERSON"
+pattern = '(?P<lead>{lead})(?:{name})(?P<tail>{tail})'
+parts.lead = '\b(?:[Гг]раждан(?:ин|ина|ину|ином|ине|ка|ки|ке|ку|кой)|[Гг]осподин(?:а|у|ом|е)?|[Гг]оспож(?:а|и|е|у|ой)|[Гг]-н(?:а|у|ом|е)?|[Гг]-ж(?:а|и|е|у|ой))[\p{Zs}\t]+'
+parts.name = '\p{Lu}\p{Ll}{1,3}[\p{Zs}\t]+\p{Lu}\p{Ll}{1,3}'
+parts.tail = '[\p{Zs}\t]*(?:[^\p{L}\p{N}\p{Zs}\t]|(?m:$))|[\p{Zs}\t]+[\p{Ll}\p{N}]'
+skip = '\b(?:(?:Российск|Республик|Федераци|Королевств|Государств|Соединённ|Соединенн|Объединённ|Объединенн|Китайск|Корейск|Японск|Турецк|Индийск|Вьетнамск|Монгольск|Узбекск|Казахск|Киргизск|Кыргызск|Таджикск|Туркменск|Армянск|Азербайджанск|Грузинск|Молдавск|Белорусск|Украинск|Латвийск|Литовск|Эстонск|Израильск|Иностранн|Европейск|Председател|Директор|Начальник|Министр|Президент|Губернатор|Прокурор|Судь|Генеральн|Главн|Управляющ)\p{Ll}*|России|Украины|Беларуси|Белоруссии|Казахстана|Узбекистана|Кыргызстана|Киргизии|Таджикистана|Туркменистана|Армении|Азербайджана|Грузии|Молдовы|Молдавии|Китая|Кореи|Японии|Вьетнама|Монголии|Турции|Израиля|Германии|Франции|Италии|Испании|Польши|Индии|Латвии|Литвы|Эстонии|Сербии)\b'
+gaps_only = true
 
 # The status of an individual entrepreneur stays outside a person's span:
 # the model's «ИП Мохов Л. Р.» as a person is «Мохов Л. Р.», and so is

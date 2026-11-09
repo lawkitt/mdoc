@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: person-particle-boundary short-person-name-missed
 issue: 403 404
 kind: power-of-attorney
 source: hunt-r2
-expect: miss: PERSON "Лю Бо"
 ---
 # Доверенность на получение пробного тиража
 
