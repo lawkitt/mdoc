@@ -22,13 +22,13 @@ impl Rules {
         // Preserve mdoc's frozen EN/RU email coverage; the upstream default is
         // ASCII-only and would turn Cyrillic local parts into partial matches.
         // A local part may be quoted (`"rhea desk"@…`), start with `+`
-        // (`+snezhana@…`) and hold an apostrophe (`eira.o'venn@…`). A leading
-        // `_` stays out: the review refuses a span that starts with one (its
-        // emphasis guard), which would lose the part proposed now.
+        // (`+snezhana@…`) or `_` (`_roman@…`) and hold an apostrophe
+        // (`eira.o'venn@…`) or `_` (`tam_roe@…`). Where a leading `_` opens
+        // emphasis (`_quill@…_`), the review keeps the address after it.
         let mut email = predefined::email();
         email.patterns = vec![Pattern::new(
             "mdoc Unicode email",
-            r#"(?:"[^"\r\n@]{1,64}"|[\p{L}\p{N}+][\p{L}\p{N}._%+'’-]*)@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+"#,
+            r#"(?:"[^"\r\n@]{1,64}"|[\p{L}\p{N}+_][\p{L}\p{N}._%+'’-]*)@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+"#,
             0.9,
         )];
         // Narrow the upstream SNILS formats to the existing contract, including

@@ -1,10 +1,9 @@
 ---
-status: known-flaw
+status: pass
 flaw: email-local-part-boundary
 issue: 412
 kind: contract
 source: hunt-r3
-expect: boundary: gold EMAIL "_roman@kadry.invalid"; proposed EMAIL "roman@kadry.invalid"
 ---
 # Трудовой договор с хранителем читального зала
 
