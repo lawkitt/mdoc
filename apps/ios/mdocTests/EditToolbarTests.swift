@@ -205,6 +205,11 @@ final class EditToolbarTests: XCTestCase {
         XCTAssertFalse(harness.toolbar.isEnabled(.format(.bold)))
         XCTAssertFalse(harness.toolbar.isEnabled(.rule))
         XCTAssertTrue(harness.toolbar.isOn(.turnInto(.codeBlock)))
+        // ⌘B there does nothing either: the core leaves code's text alone.
+        let before = harness.shown, sent = harness.coordinator.bridge.sent
+        harness.view.boldKey()
+        XCTAssertEqual(harness.shown, before)
+        XCTAssertEqual(harness.coordinator.bridge.sent, sent)
         XCTAssertFalse(harness.toolbar.canUndo)
         caret(harness, at: "Last")
         run(harness, .format(.bold))

@@ -49,6 +49,12 @@ final class EditToolbarUITests: XCTestCase {
         for _ in 0..<3 { app.typeKey(.leftArrow, modifierFlags: []) }
         let bold = app.buttons["toolbar-bold"]
         XCTAssertFalse(bold.isSelected)
+        // Every button the toolbar shows is a 44 pt target.
+        for id in ["undo", "redo", "bold", "italic", "list", "task", "formatting", "hide-keyboard"] {
+            let frame = app.buttons["toolbar-\(id)"].frame
+            XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
+        }
+        XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable, "Aa always shows")
         bold.tap()
         // The caret is in the bold word: its markers show, and Bold is on.
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Pay **monthly**"), timeout: 5))
@@ -133,19 +139,20 @@ final class EditToolbarUITests: XCTestCase {
         XCTAssertEqual(try audit("formatting-keyboard"), [], "issues on the formatting keyboard")
     }
 
-    /// At the largest accessibility text size the toolbar scrolls: its last
-    /// button is reached by swiping it, and still works.
+    /// At the largest accessibility text size the capsule scrolls: its last
+    /// button is reached by swiping it, and Aa and hide keyboard stay.
     @MainActor
     func testTheToolbarScrollsAtAnAccessibilitySize() throws {
         let (app, text) = edit(contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
         app.typeText("Item")
-        let aa = app.buttons["toolbar-formatting"]
+        XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable)
+        let aa = app.buttons["toolbar-outdent"]
         XCTAssertTrue(aa.exists)
         var tries = 0
         // Undo shows first; the rest is reached by swiping the capsule.
         let undo = app.buttons["toolbar-undo"]
         XCTAssertTrue(undo.isHittable)
-        let hide = app.buttons["toolbar-hide-keyboard"].frame
+        let hide = app.buttons["toolbar-formatting"].frame
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
         let from = origin.withOffset(CGVector(dx: hide.minX - 30, dy: hide.midY))
         let to = origin.withOffset(CGVector(dx: 30, dy: hide.midY))
@@ -153,7 +160,7 @@ final class EditToolbarUITests: XCTestCase {
             from.press(forDuration: 0.05, thenDragTo: to)
             tries += 1
         }
-        XCTAssertTrue(aa.isHittable, "Aa is reached by scrolling the toolbar")
+        XCTAssertTrue(aa.isHittable, "Outdent is reached by scrolling the capsule")
         let list = app.buttons["toolbar-list"]
         if list.isHittable {
             list.tap()

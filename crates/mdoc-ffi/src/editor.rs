@@ -203,7 +203,7 @@ pub fn editor_delete_forward(
 /// format, the caret or a selection within it, its markers come off;
 /// otherwise a selection is wrapped (the same text kept selected), a caret
 /// in a word wraps the word, and a caret elsewhere gets an empty pair to
-/// type into. Nil on a blank selection.
+/// type into. Nil on a blank selection, and in code or math.
 #[uniffi::export]
 pub fn editor_toggle_format(
     text: String,

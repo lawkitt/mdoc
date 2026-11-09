@@ -135,7 +135,7 @@ pub fn link_at(source: &str, caret: usize) -> Option<LinkAt> {
         .find(|(r, _)| r.start <= col && col <= r.end)?;
     let text = if line[range.clone()].starts_with('[') {
         let close = line[range.start + 1..].find(']')? + range.start + 1;
-        line[range.start + 1..close].to_string()
+        line[range.start + 1..close].replace("\\\\", "\\")
     } else {
         url.clone()
     };
@@ -225,13 +225,20 @@ fn remaining(marker: &str, format: InlineFormat) -> String {
 /// caret, or a selection within it) its markers come off; otherwise a
 /// selection toggles as desktop's does, a caret inside a word wraps the
 /// word, and a caret elsewhere gets an empty pair to type into. `None` on
-/// a blank selection.
+/// a blank selection, and in code or math, where markers are literal text
+/// (the toolbar's button is off there, and ⌘B does nothing).
 pub fn toggle_format(
     source: &str,
     selection: Range<usize>,
     format: InlineFormat,
 ) -> Option<EditResult> {
     let sel = sorted(&selection);
+    let sel = sel.start.min(source.len())..sel.end.min(source.len());
+    let scan = BlockScan::new(source);
+    let (first, last) = (row_col(source, sel.start).0, row_col(source, sel.end).0);
+    if (first..=last).any(|row| scan.view().row_is_literal(source, row)) {
+        return None;
+    }
     if let Some(pair) = pairs_holding(source, &sel)
         .into_iter()
         .rev()
@@ -314,6 +321,15 @@ fn link_target(url: &str) -> String {
         .replace(')', "%29")
 }
 
+/// A link's text as Markdown writes it, so the shared scanner reads it
+/// back whole: one line, no brackets (its first `]` ends a label, escaped
+/// or not), backslashes doubled.
+fn link_label(text: &str) -> String {
+    text.replace(['\n', '\r'], " ")
+        .replace(['[', ']'], "")
+        .replace('\\', "\\\\")
+}
+
 /// The link sheet's Done: `[text](url)` over the link at the caret, or
 /// over the selection (the caret after it). An empty URL takes the link at
 /// the caret away, keeping its text; an empty text shows the URL. `None`
@@ -327,19 +343,20 @@ pub fn set_link(
     let sel = sorted(&selection);
     let link = link_at(source, selection.end.min(source.len()));
     let range = link.as_ref().map_or(sel, |l| l.range.clone());
-    let text = text.replace(['\n', '\r'], " ");
     let target = link_target(url);
     let replacement = if target.is_empty() {
         link.as_ref()?;
+        // The text as typed: no longer a label.
+        let text = text.replace(['\n', '\r'], " ");
         if text.is_empty() {
             link.map(|l| l.text).unwrap_or_default()
         } else {
             text
         }
-    } else if text.trim().is_empty() {
-        format!("[{target}]({target})")
+    } else if link_label(text).trim().is_empty() {
+        format!("[{}]({target})", link_label(&target))
     } else {
-        format!("[{text}]({target})")
+        format!("[{}]({target})", link_label(text))
     };
     let caret = range.start + replacement.len();
     Some(EditResult::one(range, replacement, caret))
@@ -517,6 +534,11 @@ mod tests {
             ("the ==tenant== pays".into(), 6..12)
         );
         assert_eq!(toggle_format("a  b", 1..3, Bold), None);
+        // In code and math markers are literal: nothing toggles.
+        let s = "a\n```\namount\n```\n$$\nx\n$$";
+        assert_eq!(toggle_format(s, caret(at(s, "amount") + 2), Bold), None);
+        assert_eq!(toggle_format(s, caret(at(s, "x\n$$")), Italic), None);
+        assert_eq!(toggle_format(s, 0..at(s, "amount") + 2, Bold), None);
         // Cyrillic words wrap whole.
         let s = "один два";
         assert_eq!(run(s, toggle_format(s, caret(2), Bold)).0, "**один** два");
@@ -565,6 +587,21 @@ mod tests {
             run("", set_link("", caret(0), "", "https://a.org")).0,
             "[https://a.org](https://a.org)"
         );
+        // Brackets would end the label early; backslashes are doubled, and
+        // the label reads back as typed.
+        for (typed, label, read) in [
+            ("Section 1]", "Section 1", "Section 1"),
+            ("[draft] terms", "draft terms", "draft terms"),
+            ("a\\b\\", "a\\\\b\\\\", "a\\b\\"),
+        ] {
+            let (out, _) = run("", set_link("", caret(0), typed, "https://a.org"));
+            assert_eq!(out, format!("[{label}](https://a.org)"), "{typed:?}");
+            let link = link_at(&out, 1).expect("the scanner reads it as a link");
+            assert_eq!(
+                (link.text.as_str(), link.url.as_str()),
+                (read, "https://a.org")
+            );
+        }
     }
 
     #[test]

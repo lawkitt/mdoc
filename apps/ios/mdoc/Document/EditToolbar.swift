@@ -3,12 +3,13 @@ import SwiftUI
 import UIKit
 
 /// Edit mode's toolbar above the keyboard (ADR 0109): a Liquid Glass
-/// capsule of undo, redo, bold, italic, list, task, indent, outdent and Aa,
-/// with a round button beside it that hides the keyboard. A button is on
-/// while the caret is in what it makes (bold inside `**…**`, list on a list
-/// line) and off where it cannot apply. The capsule scrolls sideways when
-/// the text size leaves it no room. With the caret in a link, a chip above
-/// it offers Open and Edit.
+/// capsule of undo, redo, bold, italic, list, task, indent and outdent,
+/// then Aa and hide keyboard as glass circles that always show. A button is
+/// on while the caret is in what it makes (bold inside `**…**`, list on a
+/// list line) and off where it cannot apply. Every button is a 44 pt
+/// target; the capsule scrolls sideways when the phone or the text size
+/// leaves it no room. With the caret in a link, a chip above it offers
+/// Open and Edit.
 struct EditToolbar: View {
     let model: EditToolbarModel
 
@@ -27,8 +28,14 @@ struct EditToolbar: View {
                     .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                     .glassEffect(.regular, in: .capsule)
                     ToolbarKey(
-                        symbol: "keyboard.chevron.compact.down", label: Text("Hide keyboard"), id: "toolbar-hide-keyboard",
-                        round: true
+                        symbol: "textformat", label: Text("Formatting"), id: "toolbar-formatting", on: model.formatting,
+                        hint: Text("Shows formatting keys in place of the keyboard.")
+                    ) {
+                        model.setFormatting(!model.formatting)
+                    }
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    ToolbarKey(
+                        symbol: "keyboard.chevron.compact.down", label: Text("Hide keyboard"), id: "toolbar-hide-keyboard"
                     ) { model.hideKeyboard() }
                         .glassEffect(.regular.interactive(), in: .circle)
                 }
@@ -52,12 +59,6 @@ struct EditToolbar: View {
         command(.task, symbol: "checklist", label: Text("Task"), id: "toolbar-task", value: model.taskValue)
         command(.indent, symbol: "increase.indent", label: Text("Indent"), id: "toolbar-indent")
         command(.outdent, symbol: "decrease.indent", label: Text("Outdent"), id: "toolbar-outdent")
-        ToolbarKey(
-            symbol: "textformat", label: Text("Formatting"), id: "toolbar-formatting", on: model.formatting,
-            hint: Text("Shows formatting keys in place of the keyboard.")
-        ) {
-            model.setFormatting(!model.formatting)
-        }
     }
 
     private func command(
@@ -71,8 +72,8 @@ struct EditToolbar: View {
     }
 }
 
-/// One toolbar button: a symbol on a 44 pt target that grows with the text.
-/// On, it is an ink capsule and VoiceOver hears it selected.
+/// One toolbar button: a symbol on a 44 pt square target that grows with
+/// the text. On, it is an ink circle and VoiceOver hears it selected.
 struct ToolbarKey: View {
     let symbol: String
     let label: Text
@@ -81,23 +82,17 @@ struct ToolbarKey: View {
     var enabled = true
     var value: String?
     var hint: Text?
-    /// The round button beside the capsule is 44 pt square.
-    var round = false
     let action: () -> Void
 
-    /// 44 pt high; 35 pt wide, so the capsule's nine buttons and the round
-    /// one fit a 390 pt phone at the default text size, as a keyboard's
-    /// keys do.
     @ScaledMetric(relativeTo: .body) private var side = Size.target
-    @ScaledMetric(relativeTo: .body) private var width: CGFloat = 35
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.body.weight(.medium))
                 .foregroundStyle(on ? Color.onAccent : enabled ? Color.primary : Color.secondary)
-                .frame(minWidth: round ? side : width, minHeight: side)
-                .background { if on { Capsule().fill(Color.ink).padding(.vertical, Space.xxs) } }
+                .frame(minWidth: side, minHeight: side)
+                .background { if on { Circle().fill(Color.ink).padding(Space.xxs) } }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
