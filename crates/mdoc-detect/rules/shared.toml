@@ -11,11 +11,17 @@
 #             to its postcode or city), and boundary fixes for model spans
 #   variants  nicknames of given names, for names already in the document
 #   role_surnames lowercase occupational surnames kept when capitalized as PERSON
-#   initials_after regexes for a person's role, each matched as a whole
-#             word just before lone bare initials (spaces and emphasis
-#             between): those initials, and their repeats, are PERSON
+#   initials_after regexes for a role only a person has, each matched as
+#             a whole word just before lone bare initials (spaces and
+#             emphasis between): those initials, and their repeats, are
+#             PERSON
+#   initials_after_party regexes for a party's role a company may hold
+#             too: the model's organization exactly on the initials after
+#             one, or on a repeat, is PERSON; nothing is added
 #   initials_companies legal forms, as written, that make bare initials
-#             after them a company's, and keep their repeats as they are
+#             beside them a company's, and keep their repeats as they are
+#   initials_never words in capitals, as written, never initials after a
+#             role (with the public bodies' `never` words)
 #   reference legal references and markers no model span is inside
 #   private   bodies that are never public, whoever owns them
 #   label     an identifier field's labels, beside values in one model span

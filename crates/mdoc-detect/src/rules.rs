@@ -73,14 +73,23 @@ struct File {
     /// Role words that are also surnames, kept when capitalized as PERSON.
     #[serde(default)]
     role_surnames: Vec<String>,
-    /// Regexes for a person's role or introducing word, after which lone
-    /// bare initials are that person (#491).
+    /// Regexes for a role only a person has or a word that introduces one,
+    /// after which lone bare initials are that person (#491).
     #[serde(default)]
     initials_after: Vec<String>,
-    /// Legal forms, as written, that make bare initials after them a
+    /// Regexes for a party's role, which a company may hold too: bare
+    /// initials after one are a person only where the model named them
+    /// (#491).
+    #[serde(default)]
+    initials_after_party: Vec<String>,
+    /// Legal forms, as written, that make bare initials beside them a
     /// company's name ("АО БАВ", #491).
     #[serde(default)]
     initials_companies: Vec<String>,
+    /// Words in capitals, as written, that are never bare initials after a
+    /// role (#491): abbreviations and short function words.
+    #[serde(default)]
+    initials_never: Vec<String>,
     #[serde(default)]
     never: Vec<NeverEntry>,
     #[serde(default)]
@@ -473,11 +482,14 @@ struct VariantsEntry {
 /// The checked pack, merged across files.
 pub(crate) struct Pack {
     role_surnames: Vec<String>,
-    /// Each `initials_after` regex, anchored before the space that ends a
-    /// line's text before bare initials, its role as group `role`.
-    initials_after: Vec<Regex>,
+    /// Each `initials_after` regex (`true`) and `initials_after_party`
+    /// regex (`false`), anchored before the space that ends a line's text
+    /// before bare initials, its role as group `role`.
+    initials_after: Vec<(Regex, bool)>,
     /// `initials_companies`, as written.
     initials_companies: Vec<String>,
+    /// `initials_never`, as written.
+    initials_never: Vec<String>,
     never: Vec<Never>,
     /// Generic nouns a document may define as a term (see `DefinedEntry`).
     defined: Vec<Defined>,
@@ -1196,6 +1208,7 @@ impl Pack {
             role_surnames: Vec::new(),
             initials_after: Vec::new(),
             initials_companies: Vec::new(),
+            initials_never: Vec::new(),
             never: Vec::new(),
             defined: Vec::new(),
             shapes: Vec::new(),
@@ -1223,9 +1236,13 @@ impl Pack {
                 return Err(format!("{name}: role_surnames needs lowercase words"));
             }
             pack.role_surnames.extend(file.role_surnames);
-            for (index, pattern) in file.initials_after.iter().enumerate() {
-                let at =
-                    |problem: String| format!("{name}: initials_after #{}: {problem}", index + 1);
+            let roles = (file
+                .initials_after
+                .iter()
+                .map(|p| ("initials_after", p, true)))
+            .chain((file.initials_after_party.iter()).map(|p| ("initials_after_party", p, false)));
+            for (index, (key, pattern, person)) in roles.enumerate() {
+                let at = |problem: String| format!("{name}: {key} #{}: {problem}", index + 1);
                 // The role is a whole word, then emphasis and spaces up to
                 // the initials: "**Потерпевший** КЛМ".
                 let anchored = format!(
@@ -1235,16 +1252,21 @@ impl Pack {
                 if regex.is_match(" ") {
                     return Err(at("matches no role".into()));
                 }
-                pack.initials_after.push(regex);
+                pack.initials_after.push((regex, person));
             }
-            if file
-                .initials_companies
-                .iter()
-                .any(|word| word.is_empty() || !word.chars().all(char::is_alphabetic))
-            {
-                return Err(format!("{name}: initials_companies needs words"));
+            for (key, words) in [
+                ("initials_companies", &file.initials_companies),
+                ("initials_never", &file.initials_never),
+            ] {
+                if words
+                    .iter()
+                    .any(|word| word.is_empty() || !word.chars().all(char::is_uppercase))
+                {
+                    return Err(format!("{name}: {key} needs words in capitals"));
+                }
             }
             pack.initials_companies.extend(file.initials_companies);
+            pack.initials_never.extend(file.initials_never);
             for (index, entry) in file.never.into_iter().enumerate() {
                 let at = |problem: String| format!("{name}: never #{}: {problem}", index + 1);
                 let ending = match (entry.form, entry.ending) {
@@ -2154,16 +2176,46 @@ impl Pack {
         }
     }
 
-    /// Where in `before`, a line's text up to bare initials, the person's
-    /// role that introduces them starts (`initials_after`, #491): 12 in
-    /// "Он и потерпевший " before "КЛМ". The longest role counts
-    /// ("законный представитель" over "представитель"); none, `None`.
-    pub(crate) fn initials_role(&self, before: &str) -> Option<usize> {
+    /// Where in `before`, a line's text up to bare initials, the role that
+    /// introduces them starts, and whether only a person holds it
+    /// (`initials_after`) or a company may too (`initials_after_party`;
+    /// #491): (5, true) for "Он и потерпевший " before "КЛМ". The longest
+    /// role counts ("законный представитель" over "представитель"); none,
+    /// `None`.
+    pub(crate) fn initials_role(&self, before: &str) -> Option<(usize, bool)> {
         self.initials_after
             .iter()
-            .filter_map(|regex| regex.captures(before)?.name("role"))
-            .map(|role| role.start())
-            .min()
+            .filter_map(|(regex, person)| Some((regex.captures(before)?.name("role")?, *person)))
+            .map(|(role, person)| (role.start(), person))
+            .min_by_key(|(start, _)| *start)
+    }
+
+    /// Whether `word`, in capitals, is never bare initials after a role
+    /// (#491): an `initials_never` word («ЖКХ», «НЕ»), or a public body's
+    /// word the `never` entries with `anywhere_in` list («МЧС», «ФМС»,
+    /// «УФК»), which [`Self::never`] leaves to the spans holding them.
+    pub(crate) fn initials_never(&self, word: &str) -> bool {
+        let lower = word.to_lowercase();
+        self.initials_never.iter().any(|never| never == word)
+            || self
+                .never
+                .iter()
+                .filter(|entry| !entry.anywhere_in.is_empty())
+                .any(|entry| entry.has(&lower))
+    }
+
+    /// Whether `source` defines `word` as a company's short name: «ООО
+    /// «Кедр Строй Сервис» (далее – КСС)», the clause before the definition
+    /// holding a legal form (`initials_companies`) or a quoted name (#491).
+    pub(crate) fn defined_company(&self, source: &str, word: &str) -> bool {
+        definitions(source).iter().any(|definition| {
+            definition.term == word
+                && (definition.subject.contains(['«', '"', '“', '„'])
+                    || definition
+                        .subject
+                        .split(|c: char| !c.is_alphanumeric())
+                        .any(|part| self.initials_companies.iter().any(|form| form == part)))
+        })
     }
 
     /// Whether `before`, a line's text up to bare initials, ends with a
@@ -16518,16 +16570,28 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
     }
 
     /// #491: the role before bare initials, as the pack reads it: a whole
-    /// word just before them, the longest phrase first, «ИП» as written;
-    /// and a legal form before them makes them a company's.
+    /// word just before them, the longest phrase first, «ИП» as written,
+    /// and whether only a person holds it; a legal form before them makes
+    /// them a company's, as a definition of a company's short name does;
+    /// abbreviations, public bodies and function words are never initials.
     #[test]
     fn initials_roles_and_companies_are_read_before_the_letters() {
         let pack = pack();
-        assert_eq!(pack.initials_role("Он и потерпевший "), Some("Он и ".len()));
-        assert_eq!(pack.initials_role("**Осуждённому** "), Some("**".len()));
-        assert_eq!(pack.initials_role("Законный представитель "), Some(0));
-        assert_eq!(pack.initials_role("что ИП "), Some("что ".len()));
-        assert_eq!(pack.initials_role("гр. "), Some(0));
+        assert_eq!(
+            pack.initials_role("Он и потерпевший "),
+            Some(("Он и ".len(), true))
+        );
+        assert_eq!(
+            pack.initials_role("**Осуждённому** "),
+            Some(("**".len(), true))
+        );
+        assert_eq!(
+            pack.initials_role("Законный представитель "),
+            Some((0, false))
+        );
+        assert_eq!(pack.initials_role("Ответчику "), Some((0, false)));
+        assert_eq!(pack.initials_role("что ИП "), Some(("что ".len(), true)));
+        assert_eq!(pack.initials_role("гр. "), Some((0, true)));
         for before in [
             "Ип ",
             "потерпевший",
@@ -16537,12 +16601,22 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
         ] {
             assert_eq!(pack.initials_role(before), None, "{before}");
         }
-        for before in ["АО ", "в ООО «", "ПАО \"", "ООО"] {
+        for before in ["АО ", "в ООО «", "ПАО \"", "ООО", "НАО "] {
             assert!(pack.initials_company(before), "{before}");
         }
-        for before in ["ИП ", "САО ", "гр. ", ""] {
+        for before in ["ИП ", "ЦАО ", "гр. ", ""] {
             assert!(!pack.initials_company(before), "{before}");
         }
+        for word in ["ЖКХ", "НЕ", "ДПС", "МЧС", "ФМС", "УФК", "СУД"] {
+            assert!(pack.initials_never(word), "{word}");
+        }
+        for word in ["КЛМ", "БАВ", "Не"] {
+            assert!(!pack.initials_never(word), "{word}");
+        }
+        let defined = "ООО «Кедр Строй Сервис» (далее – КСС) и Иванов (далее – ИАВ).";
+        assert!(pack.defined_company(defined, "КСС"));
+        assert!(!pack.defined_company(defined, "ИАВ"));
+        assert!(!pack.defined_company(defined, "ССК"));
     }
 
     #[test]
