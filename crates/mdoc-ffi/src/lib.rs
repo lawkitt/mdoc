@@ -5,13 +5,15 @@
 //! [`library`] (cases, stored documents, storage paths, restoring replies),
 //! [`document_session`] (import and OCR, scan, review, Copy for AI and Share
 //! text, saving into a case) and [`setup`] (models that fit the device,
-//! verifying and installing downloads). [`spike`] holds the feasibility
+//! verifying and installing downloads). [`editor`] exports the stateless
+//! editing rules edit mode calls (ADR 0109). [`spike`] holds the feasibility
 //! measurements and [`memory`] the footprint they report; they reach the
 //! bindings only with the `spike` feature, which the `tools/` harnesses
 //! turn on and the apps leave off.
 uniffi::setup_scaffolding!();
 
 pub mod document_session;
+pub mod editor;
 mod error;
 pub mod library;
 pub mod markdown;

@@ -13,6 +13,7 @@
 use std::ops::Range;
 
 pub mod blocks;
+pub mod commands;
 pub mod delete;
 pub mod enter;
 pub mod format;
