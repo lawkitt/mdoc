@@ -15,7 +15,7 @@ References: ⟦PERSON|Penrow, J. L.⟧ 1971. ⟦PERSON|Ostrand, D. J.⟧, and �
 Further reading held in the library:
 
 - ⟦PERSON|Alvarne, L. J.⟧ 1968. Notes on clay soils.
-- ⟦PERSON|Quessel, Mira⟧ 1972. Drainage of upland pasture.
+- ⟦PERSON|Quessel, Mira⟧. 1972. Drainage of upland pasture.
 
 The 1969 study measured runoff on two slopes only, so its figures were used for comparison and not as a baseline. The 1971 report gives the soil classes adopted in section 3 of the survey.
 
