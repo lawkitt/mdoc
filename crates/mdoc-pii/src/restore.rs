@@ -635,10 +635,11 @@ enum ZoneReading {
 /// check digit is, the longest cut that validates wins, else the longest
 /// known one; padded, the whole run wins unless only a cut validates. On a
 /// TD1 card a reading is taken only when it alone validates; where another
-/// is known, the card's composite check digit must not fail for it (it
-/// fails where the first line it restores is not of 30 characters; it
-/// cannot be read where the second line is not), and settles two that
-/// validate when it holds for one alone. Else the alias is left as it is.
+/// is known, the card's composite check digit must also hold for it, which
+/// settles two that validate. A composite that fails (the first line it
+/// restores is not of 30 characters, say) or cannot be read (the second
+/// line is not of 30 characters) vetoes it then. Else the alias is left as
+/// it is.
 fn zone_number_reading<'w>(
     text: &str,
     at: usize,
@@ -696,11 +697,10 @@ fn zone_number_reading<'w>(
                 .map(|value| (None, card_composite(text, &(at..full), value))),
         )
         .collect();
+    // Where another alias is known, a reading needs the composite check
+    // digit to hold: one that fails, or cannot be read, vetoes it.
     if cuts.len() + usize::from(whole_value.is_some()) > 1 {
-        readings.retain(|(_, composite)| *composite != Some(false));
-        if readings.len() > 1 {
-            readings.retain(|(_, composite)| *composite == Some(true));
-        }
+        readings.retain(|(_, composite)| *composite == Some(true));
     }
     match readings.as_slice() {
         [(Some(end), _)] => ZoneReading::Cut(*end),

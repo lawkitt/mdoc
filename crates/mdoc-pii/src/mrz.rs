@@ -153,13 +153,17 @@ fn card_rest() -> &'static Regex {
     })
 }
 
-/// What opens a TD1 card's second line, from its first line's end: a blank
-/// line, then what opens a passport's line.
-fn card_second_opening() -> &'static Regex {
-    static OPENS: OnceLock<Regex> = OnceLock::new();
-    OPENS.get_or_init(|| {
-        Regex::new(&format!(r"\A\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}"))
-            .expect("the card's second line's opening")
+/// A TD1 card's second line, from its first line's end: a blank line, what
+/// opens a passport's line, then (`zone`) the birth date and its check
+/// digit, which pin where the opening ends (a table row's cells too).
+fn card_second_line() -> &'static Regex {
+    static LINE: OnceLock<Regex> = OnceLock::new();
+    LINE.get_or_init(|| {
+        let date = date();
+        Regex::new(&format!(
+            r"\A\n(?:[\p{{Zs}}\t]*\r?\n)?{OPENING}(?P<zone>{date}(?:{DIGIT}|{FILLER}))"
+        ))
+        .expect("the card's second line")
     })
 }
 
@@ -194,18 +198,19 @@ fn filler_len(text: &str, at: usize) -> usize {
 /// line's dates and optional data with their check digits) holds with
 /// `value` restored at `range`, its alias's place on the first line: not
 /// when the first line so restored is not of 30 characters; none when the
-/// second line is not, or either holds a character the check cannot read.
+/// second line cannot be found or is not of 30 characters, or either holds
+/// a character the check cannot read. The caller decides what none means.
 pub(crate) fn card_composite(text: &str, range: &Range<usize>, value: &str) -> Option<bool> {
-    let end = range.end + text[range.end..].find('\n')?;
-    let opening = card_second_opening().find(&text[end..])?;
-    let second: Vec<char> = zone_chars(text, end + opening.end()).chars().collect();
-    if second.len() != 30 {
-        return None;
-    }
     let mut first: Vec<char> = value.chars().collect();
     first.extend(zone_chars(text, range.end).chars());
     if first.len() != 25 {
         return Some(false);
+    }
+    let end = range.end + text[range.end..].find('\n')?;
+    let zone = card_second_line().captures(&text[end..])?.name("zone")?;
+    let second: Vec<char> = zone_chars(text, end + zone.start()).chars().collect();
+    if second.len() != 30 {
+        return None;
     }
     // The document number's check digit, after the nine positions.
     first[9] = ocr_digit(first[9]);

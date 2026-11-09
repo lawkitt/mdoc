@@ -1530,3 +1530,52 @@ fn an_alias_before_a_letter_check_digit_restores() {
         assert_eq!(apply(&map, text), text);
     }
 }
+
+/// #495, the second delta review's rows: where two aliases could restore
+/// on a TD1 card, the composite check digit is found in a table row too,
+/// and one that cannot be read (the second line not of 30 characters)
+/// vetoes the reading, as one that fails does: the alias stays.
+#[test]
+fn a_td1_composite_in_a_table_or_on_a_line_of_other_length_settles_or_vetoes() {
+    let second = |fillers: usize, composite: char| {
+        format!("8807146F3307010RUS{}{composite}", "<".repeat(fillers))
+    };
+    let collision = format!("I<RUSIDENTITY_12345678{}", "<".repeat(9));
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_12", "K00000003")]);
+    // In a table, the composite settles it for 760531842; damaged, it
+    // vetoes both readings.
+    assert_eq!(
+        apply(&map, &format!("| {collision} |\n| {} |", second(11, '9'))),
+        format!(
+            "| I<RUS7605318422345678{} |\n| {} |",
+            "<".repeat(9),
+            second(11, '9')
+        )
+    );
+    let text = format!("| {collision} |\n| {} |", second(11, '0'));
+    assert_eq!(apply(&map, &text), text);
+    // A second line of 29 or 31 characters: no composite, no restore.
+    for fillers in [10, 12] {
+        let text = format!("{collision}\n{}", second(fillers, '9'));
+        assert_eq!(apply(&map, &text), text);
+    }
+    // 760531842's check digit read as 5, and `IDENTITY_15`'s 3 matching by
+    // chance, beside a 29-character second line or in a table.
+    let map = documents(&[("IDENTITY_1", "760531842"), ("IDENTITY_15", "K00000003")]);
+    let damaged = format!("I<RUSIDENTITY_153{}", "<".repeat(14));
+    for text in [
+        format!("{damaged}\n{}", second(10, '9')),
+        format!("| {damaged} |\n| {} |", second(11, '9')),
+    ] {
+        assert_eq!(apply(&map, &text), text);
+    }
+    // A padded number whose check digit is damaged, in a table, and
+    // `IDENTITY_1`'s check digit 2 matching by chance.
+    let map = documents(&[("IDENTITY_1", "K00000002"), ("IDENTITY_12", "A1234567")]);
+    let text = format!(
+        "| I<RUSIDENTITY_12<9{} |\n| {} |",
+        "<".repeat(15),
+        second(11, '2')
+    );
+    assert_eq!(apply(&map, &text), text);
+}
