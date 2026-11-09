@@ -144,6 +144,20 @@ Features are frozen until items 13–19 land (Q4).
     A case's names, documents and replies (desktop's ADR 0077), with Delete
     a case (Later) on it. *Done when:* grilled and built, after 20 and 21.
 
+23. **[Mobile] Editing (iOS 0.3).** *From the
+    [mobile editor grill](docs/design/mobile-editor-grill-2026-11-09.md)
+    ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).* Edit any
+    document in an Obsidian-like edit mode on a shared Rust editor core,
+    after items 13–19. Slices, one PR each: (1) the editor core extracted
+    from `mdoc-editor`, desktop switched with no behaviour change; (2) edit
+    mode with Show Markdown on: autosave, undo, proposals following edits,
+    in-app clipboard, paste, find; (3) live-preview editing: reveal rule,
+    caret over hidden markers, incremental restyle; (4) toolbar,
+    formatting keyboard, links; (5) tables; (6) new document, Find names
+    again, iPad keys. Device checks after slices 3 and 6. *Done when:*
+    ADR 0109's acceptance bars pass and the iPhone 17 Pro and 12 Pro
+    checks have no open `ui` findings.
+
 ## Android
 
 The review-first Android app on the shared Rust core, built beside iOS
@@ -184,6 +198,11 @@ Maintainer actions list the steps on the maintainer's side.
    section 14 (A1–A17). *Done when:* the section passes on the release
    build, the signed APK and its SHA-256 are on GitHub Releases, and the
    Play production release is submitted (or the slip is recorded).
+
+10. **[Android] Editing.** *From the mobile editor grill Q2.* The editor
+    screen on the editor core ADR 0109 adds, after Android's rendered
+    Markdown (#569) and iOS item 23's slice 1. *Done when:* grilled for
+    Compose specifics and built to ADR 0109's rules.
 
 ## Mobile CI/CD
 
@@ -258,6 +277,11 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
+- **[Editor]** To grill: desktop's reveal rule. Whether desktop adopts the
+  phone's (the span under the caret shows its markers), after the phone has
+  been used. *From the mobile editor grill Q12.*
+- **[Mobile]** Save reply as document: make a restored AI reply an editable
+  document of its own. *From the mobile editor grill Q23.*
 - **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
   caret and selection events); promote when a user asks or a buyer needs it
   for compliance.

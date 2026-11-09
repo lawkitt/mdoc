@@ -580,6 +580,29 @@ unchanged source, so candidate offsets stay source offsets
 **Show Markdown**: the mobile ⋯ menu checkmark that swaps the rendered view
 for the source with dimmed markers; one setting for the app.
 
+**Edit mode** (mobile): the document screen with the keyboard, the editing
+toolbar and the text editable, entered with Edit (⌘E) and left with Done;
+underlines dim and stop responding, the review bar hides. Not "edit view"
+or "editor screen": it is the same screen
+([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
+
+**Editor core**: the GUI-free Rust editing rules (Enter and list
+continuation, joins, formatting toggles, indent, turn into, table commands,
+paste, the undo line) that desktop's `mdoc-editor` and both phones call
+([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
+
+**Reveal rule**: when hidden Markdown markers show. Phone: the span the caret
+touches shows its markers dimmed, and line prefixes show on the caret's
+line. Desktop: formatting markers never show; links and other structural
+constructs do ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
+
+**Formatting keyboard** (mobile): the panel the editing toolbar's Aa key
+swaps in for the system keyboard (Turn into, styles, link, rule, table);
+inside a table it shows table controls instead. Not "format menu".
+
+**In-app clipboard** (mobile): the pasteboard edit mode's Cut and Copy write,
+which only mdoc reads; Paste reads it first, then the system clipboard.
+
 **Table pass test**: what the rendered view's tables must do inside the one
 TextKit 2 text view (wrapped cells scrolling sideways, no height for the
 source lines, tappable names, Replace… in a cell), or the view becomes a

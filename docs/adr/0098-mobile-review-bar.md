@@ -4,7 +4,9 @@ Status: Accepted, 2026-11-05; expanding, the expanded view, a decided
 card's buttons and tips amended by [ADR 0101](0101-mobile-review-bar-polish.md).
 Amends [ADR 0085](0085-mobile-apps.md)'s review screen and
 [ADR 0087](0087-ios-ui-polish.md)'s candidate sheet. Written for iOS first;
-Android follows the same decisions.
+Android follows the same decisions. "Never: … any other editing" is
+replaced by [ADR 0109](0109-mobile-markdown-editor.md) (edit mode, with
+Replace in its find bar).
 
 ## Problem
 

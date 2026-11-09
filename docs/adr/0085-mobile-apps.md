@@ -7,7 +7,9 @@ iOS 26, and the detector floor is 8 GB, measured. Android's start, minimum,
 scanner and testing are replaced by [ADR 0089](0089-android-app.md). Its CI
 and version rules are extended by [ADR 0091](0091-mobile-ci-and-releases.md).
 The review screen is amended by [ADR 0098](0098-mobile-review-bar.md) and
-the look by [ADR 0099](0099-mobile-ui-system.md).
+the look by [ADR 0099](0099-mobile-ui-system.md). "No full Markdown editor" and
+the review screen's "No text editing" are replaced by
+[ADR 0109](0109-mobile-markdown-editor.md) (edit mode).
 
 ## Problem
 

@@ -3,7 +3,9 @@
 Status: Accepted, 2026-11-03. Amends [ADR 0085](0085-mobile-apps.md)'s
 Text display rule and [ADR 0087](0087-ios-ui-polish.md)'s review-text
 styling. The separate table spike was skipped (the user's call): the
-implementation itself must meet the pass test below.
+implementation itself must meet the pass test below. "The text stays read-only" is replaced by
+[ADR 0109](0109-mobile-markdown-editor.md): the rendered view becomes
+editable in edit mode.
 
 ## Problem
 
