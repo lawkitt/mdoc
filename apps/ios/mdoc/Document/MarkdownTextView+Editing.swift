@@ -7,6 +7,11 @@ import UIKit
 struct EditActions {
     /// One committed edit; nil when the core refused it.
     var typed: (SourceRange, String) -> Typed?
+    /// One editor command's edits, one "Formatting" step; nil when the core
+    /// refused them.
+    var formatted: ([EditorEdit]) -> Typed? = { _ in nil }
+    /// The link sheet, for the Link key, ⌘K or the link chip's Edit.
+    var editLink: (LinkDraft) -> Void = { _ in }
     /// The caret moved away from where typing left it.
     var caretMoved: () -> Void
     /// The core's text now, when the view's has drifted from it.
@@ -27,6 +32,8 @@ extension EditActions {
     init(_ model: DocumentViewModel) {
         self.init(
             typed: { [weak model] in model?.typed($0, $1) },
+            formatted: { [weak model] in model?.formatted($0) },
+            editLink: { [weak model] in model?.linkDraft = $0 },
             caretMoved: { [weak model] in model?.caretMoved() },
             coreText: { [weak model] in model?.coreText() ?? "" },
             undo: { [weak model] in model?.undoTapped() },
@@ -76,6 +83,8 @@ extension MarkdownTextView.Coordinator {
             self.bridge.storageEdited(storage, in: view)
         }
         bridge.send = { range, text in actions?.typed(range, text) }
+        bridge.sendCommand = { edits in actions?.formatted(edits) }
+        connectToolbar(view)
         bridge.endTyping = { actions?.caretMoved() }
         actions?.setFlush { [weak self, weak view] in
             guard let self, let view else { return }
@@ -137,6 +146,7 @@ extension MarkdownTextView.Coordinator {
         lastSelection = view.selectedRange
         view.invalidateSpoken()
         updateTypingAttributes(view)
+        toolbarChanged(view)
     }
 
     /// Restyles the whole text as the view has it, with the candidates as
@@ -231,7 +241,8 @@ extension MarkdownTextView.Coordinator {
         // Typing right after a table (at the text's end, where a tap on it
         // puts the caret) starts a paragraph below it rather than adding to
         // its last row: tables are not edited in this slice.
-        if parent.rendered, range.length == 0, !text.isEmpty, text != "\n", textView.markedTextRange == nil,
+        if parent.rendered, !bridge.isCommanding, range.length == 0, !text.isEmpty, text != "\n",
+           textView.markedTextRange == nil,
            let view = textView as? CandidateTextView,
            view.tableViews.contains(where: { NSMaxRange($0.table.range) == range.location }) {
             let typed = "\n\n" + text
@@ -271,6 +282,7 @@ extension MarkdownTextView.Coordinator {
             lastSelection = view.selectedRange
             livePreview.selectionChanged(in: view, look: look(view))
             view.invalidateSpoken()
+            toolbarChanged(view)
         }
         updateTypingAttributes(textView)
     }

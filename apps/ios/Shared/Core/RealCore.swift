@@ -903,6 +903,12 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return typed
     }
 
+    func format(_ edits: [EditorEdit]) throws -> Typed {
+        let typed = try core { try ffi.formatText(edits: edits) }
+        scheduleSave(pause: library.typingPause)
+        return typed
+    }
+
     func endTyping() {
         ffi.endTyping()
     }

@@ -179,6 +179,14 @@ struct MarkdownTextView: UIViewRepresentable {
         var lastSelection: NSRange?
         /// Setting a snapped selection: its own change is not snapped again.
         var snapping = false
+        /// Edit mode's toolbar and formatting keyboard (ADR 0109).
+        let toolbar = EditToolbarModel()
+        /// The toolbar's caret state waits for the end of this turn of the
+        /// run loop, so a burst of caret moves asks the core once.
+        var toolbarPending = false
+        /// The system keyboard's height with the toolbar, as it last showed.
+        var keyboardHeight: CGFloat?
+        nonisolated(unsafe) var keyboardObserver: NSObjectProtocol?
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -190,6 +198,9 @@ struct MarkdownTextView: UIViewRepresentable {
         deinit {
             if let foreground {
                 NotificationCenter.default.removeObserver(foreground)
+            }
+            if let keyboardObserver {
+                NotificationCenter.default.removeObserver(keyboardObserver)
             }
         }
 
@@ -647,6 +658,39 @@ final class CandidateTextView: RenderedTextView {
     var storageObserver: NSObjectProtocol?
     /// Each edit of the storage's characters, as it is processed.
     var onStorageEdit: ((NSTextStorage) -> Void)?
+    /// Edit mode's hardware shortcuts (⌘B, ⌘I, Tab, ⇧Tab) and ⌘K.
+    var onCommand: ((EditCommand) -> Void)?
+    var onLinkKey: (() -> Void)?
+
+    /// Edit mode's shortcuts, listed when ⌘ is held (ADR 0109). ⌘E is the
+    /// Edit and Done button's, and ⌘Z and ⇧⌘Z the system's Undo and Redo,
+    /// which reach the core through `CoreUndoManager`.
+    @MainActor static let editKeyCommands: [UIKeyCommand] = {
+        func key(_ title: String, _ input: String, _ flags: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
+            let command = UIKeyCommand(
+                title: title, action: action, input: input, modifierFlags: flags, discoverabilityTitle: title)
+            command.wantsPriorityOverSystemBehavior = true
+            return command
+        }
+        return [
+            key(String(localized: "Bold"), "b", .command, #selector(boldKey)),
+            key(String(localized: "Italic"), "i", .command, #selector(italicKey)),
+            key(String(localized: "Link…"), "k", .command, #selector(linkKey)),
+            key(String(localized: "Indent"), "\t", [], #selector(indentKey)),
+            key(String(localized: "Outdent"), "\t", .shift, #selector(outdentKey)),
+        ]
+    }()
+
+    override var keyCommands: [UIKeyCommand]? {
+        guard isEditMode, isFirstResponder else { return super.keyCommands }
+        return (super.keyCommands ?? []) + Self.editKeyCommands
+    }
+
+    @objc func boldKey() { onCommand?(.format(.bold)) }
+    @objc func italicKey() { onCommand?(.format(.italic)) }
+    @objc func linkKey() { onLinkKey?() }
+    @objc func indentKey() { onCommand?(.indent) }
+    @objc func outdentKey() { onCommand?(.outdent) }
 
     /// Editable, with the core behind it.
     var isEditMode: Bool { isEditable && editActions != nil }
