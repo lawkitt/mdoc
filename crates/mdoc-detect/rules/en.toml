@@ -1598,8 +1598,10 @@ min_digits = 6
 # maintainer's decision on #381): "SSN: 123-45-6789", "SSN # …", "S.S.N.
 # …", "Social Security No. …", "Social Security Number: …". Three, two
 # and four digits, dashes or spaces between them or none, the last group
-# a digit short or long, nine digits grouped in threes ("123 456 789"),
-# OCR letters for digits ("l23-45-67B9"), also in
+# a digit short or long only when the groups are apart (so a bare ten-digit
+# phone, "Social Security: 8007721213", is no SSN), nine digits grouped in
+# threes ("123 456 789"), OCR letters for digits ("l23-45-67B9"), after a
+# bracketed label ("Social Security Number (SSN): …"), also in
 # the next cell of a table's row ("| SSN | 123-45-6789 |"). The model's
 # TAX guess on the value gives way. An EIN ("12-3456789"), a TIN
 # and an ITIN stay TAX, and "Social Security Administration" gives
@@ -1610,8 +1612,8 @@ labels = [
     "ssn", "ssn no", "ssn number", "s.s.n", "social security",
     "social security no", "social security number",
 ]
-between = '[\p{Zs}\t:*_№#.|]{1,8}'
-value = '[0-9OoIlB]{3}[\p{Zs}-]?[0-9OoIlB]{2}[\p{Zs}-]?[0-9OoIlB]{3,5}|[0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}'
+between = '[\p{Zs}\t:*_№#.|)]{1,8}'
+value = '[0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{2}[\p{Zs}-][0-9OoIlB]{3,5}|[0-9OoIlB]{3}[\p{Zs}-]?[0-9OoIlB]{2}[\p{Zs}-]?[0-9OoIlB]{4}|[0-9OoIlB]{8,9}|[0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}[\p{Zs}-][0-9OoIlB]{3}'
 min_digits = 7
 
 # A payment card's number after its label is bank details (guide rule 6,

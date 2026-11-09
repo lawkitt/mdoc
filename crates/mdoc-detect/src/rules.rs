@@ -6671,6 +6671,8 @@ mod tests {
             ("social security no 123-45-6789", "123-45-6789"),
             ("Social Security # 123-45-6789", "123-45-6789"),
             ("| SSN | 123-45-6789 |", "123-45-6789"),
+            ("Social Security Number (SSN): 123-45-6789", "123-45-6789"),
+            ("SSN (Social Security Number): 123-45-6789", "123-45-6789"),
             // Damaged: no dashes, one missing, spaces for dashes, a digit
             // short or long, grouped in threes, OCR letters for digits.
             ("SSN: 123456789", "123456789"),
@@ -6764,6 +6766,10 @@ mod tests {
             "SSN 12-3456789",
             "Social Security benefits of $1,250.00",
             "SSN: 123456789012",
+            // A bare ten-digit run is a phone, not an SSN a digit long.
+            "Social Security: 8007721213",
+            "Call Social Security 8007721213 today",
+            "SSN: 2125550142",
         ] {
             assert!(
                 proposed(source).is_empty(),
