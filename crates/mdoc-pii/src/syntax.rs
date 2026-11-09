@@ -471,10 +471,12 @@ pub(super) fn plain_text_span(
     let block = block.as_str();
     let mut replaced = String::with_capacity(block.len());
     replaced.push_str(&block[..local.start]);
-    // In a URI autolink's brackets, "<X_>" is text: "<X>" would be an HTML
-    // tag, and at a block's start an HTML block ("- <https://…>").
-    let autolink = uri_autolink(block, &local);
-    replaced.push_str(if autolink { "X_" } else { "X" });
+    // In an autolink's brackets, "<X_X>" is text: "<X>" would be an HTML
+    // tag, and at a block's start an HTML block ("- <https://…>"). Its `_`
+    // is intraword like the alias's, so it closes no emphasis around the
+    // brackets ("_<tam_roe@…>_").
+    let in_autolink = autolink(block, &local);
+    replaced.push_str(if in_autolink { "X_X" } else { "X" });
     replaced.push_str(&block[local.end..]);
     let options = markdown::ParseOptions::gfm();
     match (
@@ -487,6 +489,28 @@ pub(super) fn plain_text_span(
         _ => false,
     }
 }
+/// Whether emphasis or strong emphasis opens at `at` of `source`, so the
+/// `_` or `*` there is a delimiter, not text ("_quill@…_", #412).
+pub(super) fn emphasis_opens_at(source: &str, at: usize) -> bool {
+    use markdown::mdast::Node;
+    let start = source[..at].rfind("\n\n").map_or(0, |i| i + 2);
+    let end = source[at..].find("\n\n").map_or(source.len(), |i| at + i);
+    let Ok(tree) = markdown::to_mdast(&source[start..end], &markdown::ParseOptions::gfm()) else {
+        return false;
+    };
+    let mut stack = vec![&tree];
+    while let Some(node) = stack.pop() {
+        if matches!(node, Node::Emphasis(_) | Node::Strong(_))
+            && node
+                .position()
+                .is_some_and(|p| p.start.offset + start == at)
+        {
+            return true;
+        }
+        stack.extend(node.children().into_iter().flatten());
+    }
+    false
+}
 /// Node kinds and child counts in document order, ignoring text values.
 /// An HTML line break inside a value is text too ("27 Wisp Lane<br>Norwich",
 /// ADR 0092): `<br>` nodes wholly inside `value` are skipped and the text
@@ -497,16 +521,18 @@ static AS_TEXT: markdown::mdast::Node = markdown::mdast::Node::Text(markdown::md
     value: String::new(),
     position: None,
 });
-/// Whether `value` of `block` is a URI autolink's whole address
-/// ("<https://…>").
-fn uri_autolink(block: &str, value: &std::ops::Range<usize>) -> bool {
+/// Whether `value` of `block` is an autolink's whole address: a web address
+/// ("<https://…>") or an email address ("<tam_roe@…>", #412).
+fn autolink(block: &str, value: &std::ops::Range<usize>) -> bool {
+    let address = &block[value.clone()];
     block[..value.start].ends_with('<')
         && block[value.end..].starts_with('>')
-        && crate::web::explicit(&block[value.clone()])
+        && (crate::web::explicit(address)
+            || (address.contains('@') && !address.contains(char::is_whitespace)))
 }
 /// Whether `node` reads as plain text for `value`: a link written as its
-/// own text ("https://…", "www.…") wholly inside it, or a URI autolink
-/// around exactly it ("<https://…>").
+/// own text ("https://…", "www.…") wholly inside it, or an autolink
+/// around exactly it ("<https://…>", "<tam_roe@…>").
 fn autolink_literal(node: &markdown::mdast::Node, value: &std::ops::Range<usize>) -> bool {
     use markdown::mdast::Node;
     let (children, at) = match node {
