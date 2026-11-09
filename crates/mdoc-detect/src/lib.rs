@@ -867,6 +867,16 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         })
         .collect();
     trim_at_birth_dates(source, &view, &mut detections, &rules);
+    let rest = rest_beside_rule_values(
+        source,
+        &view,
+        &detections,
+        rules
+            .iter()
+            .chain(&addresses)
+            .chain(spans.iter().map(|(span, _)| span)),
+    );
+    detections.extend(rest);
     detections.extend(rules);
     detections.extend(addresses);
     // A model span a match holds as its own part ("Harrow House" of an
@@ -962,6 +972,314 @@ fn trim_at_birth_dates(
         {
             detection.range = part;
         }
+    }
+}
+
+/// The values a model identifier span holds beside a rule's narrower value
+/// in it (#739): "7701234567, р/с 40702810900000012345" after "ИНН", one
+/// bank account span, holds the account. The review takes the rule's value
+/// over the span it overlaps, which would show the account; each other
+/// value becomes a span of its own, its label left outside (guide rule 6).
+/// A value just after a field's label (`Pack::field_label`: "р/с", "КПП",
+/// "тел.") takes the label's category; one with no word before it the
+/// model's, where it has that category's strict shape (`identifier_shaped`);
+/// one after any other word (an amount's "на сумму", "индекс", "заказ №")
+/// gives nothing. The wide span stays, for the review to drop; where the
+/// review turns the rule's value down, the wide span wins over these
+/// again. `rules` are the non-model spans, one of an identifier category
+/// inside the model span the trigger; they and every other detection the
+/// model span overlaps (a lower-scored address) bound the values, so none
+/// takes a part of another span.
+fn rest_beside_rule_values<'a>(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    detections: &[Detection],
+    rules: impl Iterator<Item = &'a Detection>,
+) -> Vec<Detection> {
+    let rules: Vec<&Detection> = rules.collect();
+    let mut found: Vec<Detection> = Vec::new();
+    for (index, model) in detections.iter().enumerate() {
+        if model.recognizer != mdoc_pii::Recognizer::Model
+            || !rules::identifier_field(model.category)
+        {
+            continue;
+        }
+        let range = &model.range;
+        if !rules.iter().any(|rule| {
+            rules::identifier_field(rule.category)
+                && range.start <= rule.range.start
+                && rule.range.end <= range.end
+                && rule.range != *range
+        }) {
+            continue;
+        }
+        let mut taken: Vec<&Range<usize>> = rules
+            .iter()
+            .copied()
+            .chain(
+                detections
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .map(|(_, other)| other),
+            )
+            .map(|other| &other.range)
+            .filter(|taken| taken.start < range.end && range.start < taken.end)
+            .collect();
+        taken.sort_by_key(|taken| taken.start);
+        let mut gaps = Vec::new();
+        let mut at = range.start;
+        for taken in taken {
+            if at < taken.start {
+                gaps.push(at..taken.start);
+            }
+            at = at.max(taken.end);
+        }
+        if at < range.end {
+            gaps.push(at..range.end);
+        }
+        for gap in gaps {
+            for (value, label) in values_in(&view.text, view.view_range(gap)) {
+                let (category, labelled, whole) = match &label {
+                    None => (model.category, false, None),
+                    Some(label) => match rules::pack().field_label(label) {
+                        Some(rules::FieldLabel::Labelled(category, whole)) => {
+                            (category, true, whole)
+                        }
+                        Some(rules::FieldLabel::Strict(category)) => (category, false, None),
+                        None => continue,
+                    },
+                };
+                // A phone ends before a year after it ("8 495 123-45-67
+                // 2026 г.").
+                let value = if category == Category::Phone {
+                    value.start..value.start + phone_end(&view.text[value.clone()])
+                } else {
+                    value
+                };
+                let part = view.source_range(value.clone());
+                let text = &view.text[value];
+                if part.is_empty()
+                    // A context's own value, its groups' spaces aside (an
+                    // IBAN in fours).
+                    || whole.is_some_and(|whole| {
+                        !whole.is_match(text)
+                            && !whole.is_match(&text.split_whitespace().collect::<String>())
+                    })
+                    || !identifier_shaped(text, category, labelled)
+                    || !rules::pack().identifying_at(source, part.clone(), text, category)
+                    || detections.iter().chain(&found).any(|d| d.range == part)
+                {
+                    continue;
+                }
+                found.push(Detection {
+                    range: part,
+                    category,
+                    ..*model
+                });
+            }
+        }
+    }
+    found
+}
+
+/// The values in `range` of `text`, each with the words just before it
+/// (its label: "р/с", "паспорт серии", "Tel."), if any: runs of tokens
+/// holding a digit, each line apart, ended by a word, a dotted or ISO date
+/// ("01.02.2010", which is no part of a value) or a token's comma or
+/// semicolon, and joined by punctuation alone ("№", "-"). A label's words
+/// are those since the last value, date, comma or semicolon; a number
+/// sign or "No." after them and a connector before them ("и", "and") are
+/// left out. A run's edges lose their punctuation, but a phone's "+" and
+/// parentheses stay.
+fn values_in(text: &str, range: Range<usize>) -> Vec<(Range<usize>, Option<String>)> {
+    type Run<'t> = (Range<usize>, Vec<&'t str>);
+    static DATE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let date = DATE.get_or_init(|| {
+        regex::Regex::new(r"^(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:г)?|\d{4}-\d{2}-\d{2})$")
+            .expect("date token pattern")
+    });
+    static IBAN_START: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let iban_start = IBAN_START
+        .get_or_init(|| regex::Regex::new(r"^[A-Z]{2}\d{2}").expect("IBAN start pattern"));
+    let edge = |c: char| ",;:.!?«»\"'“”„*_[]{}".contains(c);
+    fn close<'t>(run: &mut Option<Run<'t>>, runs: &mut Vec<Run<'t>>) {
+        if let Some(found) = run.take() {
+            runs.push(found);
+        }
+    }
+    let mut runs: Vec<Run<'_>> = Vec::new();
+    let mut at = range.start;
+    for line in text[range].split_inclusive('\n') {
+        let mut words: Vec<&str> = Vec::new();
+        let mut run: Option<Run<'_>> = None;
+        for token in line.split(char::is_whitespace).filter(|t| !t.is_empty()) {
+            let start = at + (token.as_ptr() as usize - line.as_ptr() as usize);
+            let core = token.trim_matches(edge);
+            if date.is_match(core) {
+                close(&mut run, &mut runs);
+                words.clear();
+            } else if core.chars().any(char::is_numeric) {
+                let end = start + token.len();
+                run = Some(match run.take() {
+                    Some((found, label)) => (found.start..end, label),
+                    None => (start..end, std::mem::take(&mut words)),
+                });
+            } else if let Some((found, _)) = run.as_mut().filter(|(found, _)| {
+                iban_start.is_match(
+                    text[found.clone()].trim_start_matches(|c: char| !c.is_alphanumeric()),
+                ) && core
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            }) {
+                // An IBAN's letter group ("GB29 NWBK 6016 …").
+                found.end = start + token.len();
+            } else if core.chars().any(char::is_alphabetic) {
+                if run.is_some() {
+                    close(&mut run, &mut runs);
+                    words.clear();
+                }
+                words.push(token);
+            }
+            if token.ends_with([',', ';']) {
+                close(&mut run, &mut runs);
+                words.clear();
+            }
+        }
+        close(&mut run, &mut runs);
+        at += line.len();
+    }
+    let connector = |word: &str| {
+        ["и", "а", "and", "&", "or", "или"].contains(&rules::label_words(word).as_str())
+    };
+    let sign = |word: &str| ["no", "n", "nr", "nº"].contains(&rules::label_words(word).as_str());
+    runs.into_iter()
+        .filter_map(|(found, mut label)| {
+            while label.last().is_some_and(|word| sign(word)) {
+                label.pop();
+            }
+            let skip = label.iter().take_while(|word| connector(word)).count();
+            let label = (skip < label.len()).then(|| label[skip..].join(" "));
+            let value = &text[found.clone()];
+            let lead = value.len()
+                - value
+                    .trim_start_matches(|c: char| !(c.is_alphanumeric() || "+(".contains(c)))
+                    .len();
+            let trail = value.len()
+                - value
+                    .trim_end_matches(|c: char| !(c.is_alphanumeric() || c == ')'))
+                    .len();
+            (found.start + lead < found.end - trail)
+                .then(|| (found.start + lead..found.end - trail, label))
+        })
+        .collect()
+}
+
+/// Whether twenty digits are a Russian account's: its currency code, the
+/// sixth to eighth digits, is the rouble's or a common currency's
+/// ("40702810…"); a payment's УИН ("18810177…") or a budget code
+/// ("18210102…") has none.
+fn russian_account(value: &str) -> bool {
+    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+    ["810", "643", "840", "978", "156", "826", "756"].contains(&&digits[5..8])
+}
+
+/// How much of a phone run `value` is the phone: it ends once it has ten
+/// or eleven digits and four digits alone come next (a year: "212 555
+/// 0142 2026").
+fn phone_end(value: &str) -> usize {
+    let mut digits = 0;
+    for token in value.split(char::is_whitespace).filter(|t| !t.is_empty()) {
+        let at = token.as_ptr() as usize - value.as_ptr() as usize;
+        if (10..=11).contains(&digits)
+            && token.len() == 4
+            && token.bytes().all(|b| b.is_ascii_digit())
+        {
+            return value[..at].trim_end().len();
+        }
+        digits += token.chars().filter(char::is_ascii_digit).count();
+    }
+    value.len()
+}
+
+/// Whether `value` reads as one value of an identifier `category`: digits
+/// with spaces or dashes (#739). After its field's label (`labelled`) an
+/// account has 8 to 34 digits, a document's number 6 to 20, a tax number 8
+/// to 15 and a phone 7 to 15. With no label only the strict shapes count:
+/// a Russian account's twenty digits (`russian_account`) or an IBAN, a
+/// passport's series and number, a
+/// tax number's ten or twelve digits, a phone with "+" or a bracketed code
+/// or ten or eleven digits from 7 or 8 in groups. Thousands groups ("10 000
+/// 000"), a date ("2026-03-12"), a span of years or a ZIP code ("2019-2026",
+/// "62704-1234"), single digits apart ("1 0 1 1 0"), decimals and dotted
+/// dates are none.
+fn identifier_shaped(value: &str, category: Category, labelled: bool) -> bool {
+    static NOISE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static IBAN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static PASSPORT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static CODE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let noise = NOISE.get_or_init(|| {
+        regex::Regex::new(
+            r"^(?:\d{1,3}(?:\s\d{3})+|\d{4}-\d{2}-\d{2}|\d{4,5}[-‑]\d{4}|\d(?:\s+\d)+)$",
+        )
+        .expect("noise pattern")
+    });
+    let iban = IBAN.get_or_init(|| {
+        regex::Regex::new(r"^[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}$").expect("IBAN pattern")
+    });
+    let passport = PASSPORT.get_or_init(|| {
+        regex::Regex::new(r"^\d{2}\s?\d{2}\s?(?:№\s?)?\d{6}$").expect("passport pattern")
+    });
+    let code = CODE.get_or_init(|| {
+        regex::Regex::new(r"^(?:\+\d|[78]?[\s-]*\(\d{2,5}\))").expect("phone code pattern")
+    });
+    let digits = value.chars().filter(char::is_ascii_digit).count();
+    let letters = value.chars().filter(char::is_ascii_alphabetic).count();
+    let made_of = |extra: &str| {
+        value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || (c.is_whitespace() && c != '\n')
+                || "-‑".contains(c)
+                || extra.contains(c)
+        })
+    };
+    if noise.is_match(value) {
+        return false;
+    }
+    match category {
+        Category::Phone => {
+            let groups: Vec<&str> = value
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|group| !group.is_empty())
+                .collect();
+            letters == 0
+                && made_of("+()")
+                && (7..=15).contains(&digits)
+                && (labelled
+                    || code.is_match(value)
+                    || (10..=11).contains(&digits)
+                        && value.starts_with(['7', '8'])
+                        && groups.len() >= 3
+                        && groups.iter().all(|group| group.len() <= 4))
+        }
+        Category::Bank => {
+            made_of("")
+                && (iban.is_match(value)
+                    || letters == 0
+                        && (digits == 20 && (labelled || russian_account(value))
+                            || labelled && (8..=34).contains(&digits)))
+        }
+        Category::Identity => {
+            made_of("№")
+                && (passport.is_match(value)
+                    || labelled && letters <= 3 && (6..=20).contains(&digits))
+        }
+        Category::Tax => {
+            letters == 0
+                && made_of("")
+                && (matches!(digits, 10 | 12) || labelled && (8..=15).contains(&digits))
+        }
+        _ => false,
     }
 }
 
@@ -2088,6 +2406,1336 @@ mod tests {
         ] {
             let proposed = recognition::proposals(source, &[]).expect("proposals");
             assert!(proposed.is_empty(), "{source}: {proposed:?}");
+        }
+    }
+
+    /// #736: a labelled value with the punctuation that ends it, and one
+    /// after «ФИО», is a person; a lone role after «ФИО» stays a form's
+    /// placeholder (#601), and a label in prose or before a filler gives none.
+    #[test]
+    fn punctuated_and_fio_labelled_names_are_people() {
+        let people = |source: &str| -> Vec<String> {
+            correct(source, &[])
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        for (source, expected) in [
+            (
+                "Surname: Trustee, Given name: Edda.\nФ.И.О.: Ветлин Нил Олегович.\n",
+                &["Trustee", "Edda", "Ветлин Нил Олегович"][..],
+            ),
+            ("Surname: McVellin.\n", &["McVellin"]),
+            (
+                "Given name: Edda.\nSurname: Trustee.\n",
+                &["Edda", "Trustee"],
+            ),
+            ("ФИО: Ветлин Нил Олегович\n", &["Ветлин Нил Олегович"]),
+            ("Ф. И. О.: Ветлин Нил Олегович;\n", &["Ветлин Нил Олегович"]),
+            ("Имя: Лада;\nФамилия: Должник.\n", &["Лада", "Должник"]),
+            // Two full names are two people: one backs no role beside it.
+            (
+                "Ф.И.О.: Ветлин Нил Олегович\nФИО: Истец\n",
+                &["Ветлин Нил Олегович"],
+            ),
+            (
+                "Full name: Edda Brannock\nFull name: Claimant\n",
+                &["Edda Brannock"],
+            ),
+            // A full name and a name part back each other, as in #601.
+            (
+                "Full name: Edda Brannock\nSurname: Trustee\n",
+                &["Edda Brannock", "Trustee"],
+            ),
+            (
+                "Full name: Edda Brannock    Surname: Trustee\n",
+                &["Edda Brannock", "Trustee"],
+            ),
+            ("Full name: Edda\nSurname: Trustee\n", &["Edda", "Trustee"]),
+        ] {
+            assert_eq!(people(source), expected, "{source}");
+        }
+        for source in [
+            "ФИО: Истец\n",
+            "Ф.И.О.: Истец.\n\nИстец просит взыскать долг с ответчика.\n",
+            "ФИО: Истец\nФИО: Ответчик\n",
+            "Surname: Trustee.\n",
+            "Full name: Claimant.\n\nThe Claimant seeks damages.\n",
+            "В графе ФИО: указать фамилию, имя и отчество полностью.\n",
+            "In this form the surname: is required.\n",
+            "ФИО: не указано.\n",
+            "ФИО: ________\n",
+            "Surname: N/A.\n",
+            "`ФИО: Ветлин Нил Олегович`\n",
+            // A form's other fields after a blank label.
+            "ФИО: Подпись\n",
+            "ФИО: Дата\n",
+            "ФИО: Должность\n",
+            "ФИО: Полностью\n",
+            "ФИО: Прочерк\n",
+            "ФИО: Расшифровка\n",
+            "Full name: Signature.\n",
+            "Full name: Sign\n",
+            "Full name: Print Name.\n",
+            "Full name: Date.\n",
+            "Full name: Title\n",
+            "Full name: Position.\n",
+        ] {
+            let proposed = recognition::proposals(source, &[]).expect("proposals");
+            assert!(proposed.is_empty(), "{source}: {proposed:?}");
+        }
+        // The dot of a last "Jr." or "Sr." is the name's own: no labelled
+        // value cuts it, and the model's span stays as it read it.
+        let model = |source: &str, text: &str| -> Vec<String> {
+            let start = source.find(text).unwrap();
+            let raw = [RawEntity {
+                start,
+                end: start + text.len(),
+                label: "person".into(),
+                score: 0.9,
+                text: text.into(),
+            }];
+            correct(source, &raw)
+                .into_iter()
+                .filter(|d| d.category == Category::Person)
+                .map(|d| source[d.range].to_owned())
+                .collect()
+        };
+        assert!(people("Full name: Orvel Lanmark Jr.\n").is_empty());
+        assert_eq!(
+            model("Full name: Orvel Lanmark Jr.\n", "Orvel Lanmark Jr."),
+            ["Orvel Lanmark Jr."]
+        );
+        assert_eq!(
+            model("Full name: Orvel Lanmark Sr.\n", "Orvel Lanmark"),
+            ["Orvel Lanmark"]
+        );
+    }
+
+    /// The model's `spans` (each its first occurrence) in `source`.
+    fn model_spans(source: &str, spans: &[(&str, &str)]) -> Vec<RawEntity> {
+        spans
+            .iter()
+            .map(|(text, label)| {
+                let start = source.find(text).unwrap();
+                RawEntity {
+                    start,
+                    end: start + text.len(),
+                    label: (*label).into(),
+                    score: 0.9,
+                    text: (*text).into(),
+                }
+            })
+            .collect()
+    }
+
+    /// What the user is shown for `source` with the model's `spans`, as
+    /// (start, category, text) in source order.
+    fn shown_with(source: &str, spans: &[(&str, &str)]) -> Vec<(usize, String, String)> {
+        recognition::proposals(source, &model_spans(source, spans))
+            .unwrap()
+            .into_iter()
+            .map(|span| {
+                (
+                    span.range.start,
+                    span.category,
+                    source[span.range].to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    /// #739: a model identifier span from a labelled value into the next
+    /// field keeps that field's value, of the model's category and without
+    /// its label, where a rule's narrower value in it wins: each row of
+    /// the issue. Where no rule marks the first value (an ОКПО or an
+    /// invalid ОГРН before #563's rules), the wide span stays as it was; the
+    /// rule's value keeps the category the rule gives it alone.
+    #[test]
+    fn a_wide_identifier_span_keeps_the_field_beside_a_rule_value() {
+        for (source, wide, label, rest) in [
+            (
+                "ИНН 7701234567, р/с 40702810900000012345",
+                "7701234567, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")][..],
+            ),
+            (
+                "ИНН 772012345678, паспорт 4512 345678",
+                "772012345678, паспорт 4512 345678",
+                "passport_number",
+                &[("IDENTITY", "4512 345678")],
+            ),
+            (
+                "ОГРН 1027700132195, р/с 40702810900000012345",
+                "1027700132195, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОГРН 1029900000017, р/с 40702810900000012345",
+                "1029900000017, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОКПО 99887766, р/с 40702810900000012345",
+                "99887766, р/с 40702810900000012345",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            (
+                "ОГРНИП 329990000000012, паспорт 4512 345678",
+                "329990000000012, паспорт 4512 345678",
+                "passport_number",
+                &[("IDENTITY", "4512 345678")],
+            ),
+            (
+                "ОГРНИП 329990000000019, паспорт серии 45 12 № 345678",
+                "329990000000019, паспорт серии 45 12 № 345678",
+                "passport_number",
+                &[("IDENTITY", "45 12 № 345678")],
+            ),
+            (
+                "ОГРН 1027700132195, тел. 8 (495) 123-45-67",
+                "1027700132195, тел. 8 (495) 123-45-67",
+                "phone_number",
+                &[("PHONE", "8 (495) 123-45-67")],
+            ),
+            (
+                "ИНН 7701234567 и Tel. +7 495 123-45-67.",
+                "7701234567 и Tel. +7 495 123-45-67",
+                "phone_number",
+                &[("PHONE", "+7 495 123-45-67")],
+            ),
+            // The value before the rule's, too.
+            (
+                "р/с 40702810900000012345, ИНН 7701234567",
+                "40702810900000012345, ИНН 7701234567",
+                "bank_account",
+                &[("BANK", "40702810900000012345")],
+            ),
+            // English: a valid tax number after "Tax ID", an account after
+            // its label.
+            (
+                "Tax ID 9900123450, Account 000123456789",
+                "9900123450, Account 000123456789",
+                "bank_account",
+                &[("BANK", "000123456789")],
+            ),
+        ] {
+            let rules = shown_with(source, &[]);
+            let start = source.find(wide).unwrap();
+            let marked = rules
+                .iter()
+                .any(|(at, _, text)| start <= *at && at + text.len() <= start + wide.len());
+            let mut expected = if marked {
+                rules
+                    .into_iter()
+                    .chain(rest.iter().map(|(category, text)| {
+                        (
+                            source.find(text).unwrap(),
+                            (*category).into(),
+                            (*text).into(),
+                        )
+                    }))
+                    .collect()
+            } else {
+                let category = category_of(label).unwrap().token().to_owned();
+                vec![(start, category, wide.to_owned())]
+            };
+            expected.sort();
+            assert_eq!(shown_with(source, &[(wide, label)]), expected, "{source}");
+        }
+        // On main's rules a labelled ИНН is TAX and a valid ОГРН IDENTITY.
+        let pairs = |source: &str, spans: &[(&str, &str)]| -> Vec<(String, String)> {
+            shown_with(source, spans)
+                .into_iter()
+                .map(|(_, category, text)| (category, text))
+                .collect()
+        };
+        let source = "ИНН 7701234567, р/с 40702810900000012345";
+        let shown = pairs(
+            source,
+            &[("7701234567, р/с 40702810900000012345", "bank_account")],
+        );
+        assert!(
+            shown.contains(&("TAX".into(), "7701234567".into())),
+            "{shown:?}"
+        );
+        assert!(
+            shown.contains(&("BANK".into(), "40702810900000012345".into())),
+            "{shown:?}"
+        );
+        // The issue's synthetic reproduction: one span from each label's
+        // value to the end of its clause.
+        let source = "ИНН 7701234567, р/с 40702810900000012345; ОГРНИП 329990000000019, \
+                      паспорт 4512 345678";
+        let shown: Vec<String> = pairs(
+            source,
+            &[
+                ("7701234567, р/с 40702810900000012345", "bank_account"),
+                ("329990000000019, паспорт 4512 345678", "passport_number"),
+            ],
+        )
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+        assert_eq!(
+            shown,
+            [
+                "7701234567",
+                "40702810900000012345",
+                "329990000000019",
+                "4512 345678"
+            ]
+        );
+    }
+
+    /// #739's pre-gate review inputs (target/review-x2, c1–c5), each with
+    /// the model's spans and scores, as the user is shown them. Where a
+    /// piece would take a lower-scored address, a postcode, an amount, a
+    /// date, a ZIP code, an invoice's or an order's number or OCR noise,
+    /// what is shown is main's; a field after its own label takes the
+    /// label's category («КПП 770101001» TAX, «БИК …» BANK; ОКТМО and КБК
+    /// nothing), and a passport before its date of issue stays. The
+    /// synthetic reproduction and an ОКПО under a tax span are left to the
+    /// tests above and to #563, whose rules change what main shows there.
+    #[test]
+    fn the_wide_identifier_review_inputs_show_main_or_their_own_fields() {
+        for (id, source, model, expected) in [
+            (
+                "R1 issue row1",
+                "ИНН 7701234567, р/с 40702810900000012345",
+                &[("7701234567, р/с 40702810900000012345", "bank_account", 0.8)][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "A1 amount space phone",
+                "ИНН 7701234567, на сумму 500 000 руб.",
+                &[("7701234567, на сумму 500 000", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A2 amount nospace phone",
+                "ИНН 7701234567, на сумму 150000000 руб.",
+                &[("7701234567, на сумму 150000000", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A3 amount nospace tax",
+                "ИНН 7701234567, на сумму 150000000 руб.",
+                &[("7701234567, на сумму 150000000", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A4 amount words bank",
+                "ИНН 7701234567, на сумму 150000000 (сто пятьдесят миллионов) рублей",
+                &[("7701234567, на сумму 150000000", "bank_account", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A5 amount words phone",
+                "ИНН 7701234567, на сумму 15000000 (пятнадцать миллионов) рублей",
+                &[("7701234567, на сумму 15000000", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A6 в размере",
+                "ИНН 7701234567, задолженность в размере 2500000 руб.",
+                &[(
+                    "7701234567, задолженность в размере 2500000",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "A7 amount kop",
+                "ИНН 7701234567, сумма 2500000 руб. 00 коп.",
+                &[("7701234567, сумма 2500000 руб. 00", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "C1 case no",
+                "ИНН 7701234567, по делу № 12-345/2026",
+                &[("7701234567, по делу № 12-345/2026", "tax_id", 0.8)][..],
+                "TAX«7701234567» | CASE«12-345/2026»",
+            ),
+            (
+                "C2 case no 2-",
+                "ИНН 7701234567, по делу № 2-1234567",
+                &[("7701234567, по делу № 2-1234567", "passport_number", 0.8)][..],
+                "TAX«7701234567» | CASE«2-1234567»",
+            ),
+            (
+                "C3 case А40",
+                "ИНН 7701234567, по делу № А40-123456/2026",
+                &[(
+                    "7701234567, по делу № А40-123456/2026",
+                    "passport_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | CASE«А40-123456/2026»",
+            ),
+            (
+                "D1 date words",
+                "ИНН 7701234567, выдан 12 марта 2026 г.",
+                &[("7701234567, выдан 12 марта 2026", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "D2 date iso",
+                "ИНН 7701234567, дата 2026-03-12",
+                &[("7701234567, дата 2026-03-12", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "D3 date iso phone",
+                "ИНН 7701234567, дата 2026-03-12",
+                &[("7701234567, дата 2026-03-12", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "D4 date slash",
+                "ИНН 7701234567 от 12/03/2026",
+                &[("7701234567 от 12/03/2026", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "P1 postcode",
+                "ИНН 7701234567, адрес: 123456, г. Энск, ул. Лесная, д. 5",
+                &[("7701234567, адрес: 123456", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "P2 postcode+addr model",
+                "ИНН 7701234567, адрес: 123456, г. Энск, ул. Лесная, д. 5",
+                &[
+                    ("7701234567, адрес: 123456", "passport_number", 0.9),
+                    ("123456, г. Энск, ул. Лесная, д. 5", "address", 0.7),
+                ][..],
+                "TAX«7701234567» | ADDRESS«123456, г. Энск, ул. Лесная, д. 5»",
+            ),
+            (
+                "P3 postcode+addr model eq",
+                "ИНН 7701234567, адрес: 123456, г. Энск, ул. Лесная, д. 5",
+                &[
+                    ("7701234567, адрес: 123456", "passport_number", 0.8),
+                    ("123456, г. Энск, ул. Лесная, д. 5", "address", 0.8),
+                ][..],
+                "TAX«7701234567» | ADDRESS«123456, г. Энск, ул. Лесная, д. 5»",
+            ),
+            (
+                "O1 oktmo",
+                "ИНН 7701234567, ОКТМО 45382000",
+                &[("7701234567, ОКТМО 45382000", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "O2 kbk",
+                "ИНН 7701234567, КБК 18210102010011000110",
+                &[("7701234567, КБК 18210102010011000110", "bank_account", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "O3 okved phone",
+                "ИНН 7701234567, ОКВЭД 47.11",
+                &[("7701234567, ОКВЭД 47.11", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "O5 okato",
+                "ИНН 7701234567, ОКАТО 45286575000",
+                &[("7701234567, ОКАТО 45286575000", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "O6 knd",
+                "ИНН 7701234567, форма по КНД 1111501",
+                &[("7701234567, форма по КНД 1111501", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "I1 invoice",
+                "ИНН 7701234567, оплата по счёту № 12345678 от 01.02.2026",
+                &[(
+                    "7701234567, оплата по счёту № 12345678",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "I2 invoice phone",
+                "ИНН 7701234567, счёт-фактура № 1234567",
+                &[("7701234567, счёт-фактура № 1234567", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "I3 contract",
+                "ИНН 7701234567, договор № 12345678",
+                &[("7701234567, договор № 12345678", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "K1 flat",
+                "ИНН 7701234567, кв. 15",
+                &[("7701234567, кв. 15", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "K2 pct",
+                "ИНН 7701234567, доля 15%",
+                &[("7701234567, доля 15%", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "N1 ocr",
+                "ИНН 7701234567 1 0 1 1 0 0 1 0",
+                &[("7701234567 1 0 1 1 0 0 1 0", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "N2 ocr page",
+                "ИНН 7701234567 стр. 0 0 2 0 0 1 0",
+                &[("7701234567 стр. 0 0 2 0 0 1 0", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "N3 kpp slash",
+                "ИНН/КПП 7701234567/770101001",
+                &[("7701234567/770101001", "tax_id", 0.8)][..],
+                "TAX«7701234567/770101001»",
+            ),
+            (
+                "E1 sort",
+                "Account No. 12345678, Sort code 12-34-56",
+                &[("12345678, Sort code 12-34-56", "bank_account", 0.8)][..],
+                "BANK«12345678» | BANK«12-34-56»",
+            ),
+            (
+                "E2 tel ext",
+                "Tax ID 9900123450, Tel. 555-0142 ext. 12",
+                &[("9900123450, Tel. 555-0142 ext. 12", "phone_number", 0.8)][..],
+                "TAX«9900123450» | PHONE«555-0142»",
+            ),
+            (
+                "E3 tax+acct",
+                "Tax ID 12-3456789, Account 000123456789",
+                &[("12-3456789, Account 000123456789", "bank_account", 0.8)][..],
+                "BANK«12-3456789, Account 000123456789»",
+            ),
+            (
+                "E4 ssn amount",
+                "SSN 123-45-6789, amount 15000000 USD",
+                &[("123-45-6789, amount 15000000", "bank_account", 0.8)][..],
+                "BANK«123-45-6789, amount 15000000»",
+            ),
+            (
+                "E5 invoice",
+                "Tax ID 9900123450, Invoice No. 12345678",
+                &[("9900123450, Invoice No. 12345678", "bank_account", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "E6 phone then case",
+                "Phone +1 212 555 0142, Case No. 1:24-cv-01234",
+                &[(
+                    "+1 212 555 0142, Case No. 1:24-cv-01234",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "CASE«1:24-cv-01234»",
+            ),
+            (
+                "E7 EIN ZIP",
+                "Tax ID 9900123450, Springfield, IL 62704",
+                &[("9900123450, Springfield, IL 62704", "passport_number", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "X1 rule at end",
+                "р/с 40702810900000012345, ИНН 7701234567",
+                &[("40702810900000012345, ИНН 7701234567", "bank_account", 0.8)][..],
+                "BANK«40702810900000012345» | TAX«7701234567»",
+            ),
+            (
+                "X2 two rules inside",
+                "ИНН 7701234567, КПП 770101001, р/с 40702810900000012345, тел. 8 (495) 123-45-67",
+                &[(
+                    "7701234567, КПП 770101001, р/с 40702810900000012345, тел. 8 (495) 123-45-67",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | TAX«770101001» | BANK«40702810900000012345» | PHONE«8 (495) 123-45-67»",
+            ),
+            (
+                "X3 requisites block",
+                "Получатель: ООО «Вега», ИНН 7707083893, КПП 770701001, ОКПО 12345678, р/с 40702810900000001234 в банке, БИК 044525225, к/с 30101810400000000225, ОКТМО 45382000, КБК 18210102010011000110.",
+                &[(
+                    "7707083893, КПП 770701001, ОКПО 12345678, р/с 40702810900000001234 в банке, БИК 044525225, к/с 30101810400000000225, ОКТМО 45382000, КБК 18210102010011000110",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7707083893» | TAX«770701001» | TAX«12345678» | BANK«40702810900000001234» | BANK«044525225» | BANK«30101810400000000225»",
+            ),
+            (
+                "X4 CRLF",
+                "ИНН 7701234567,\r\nр/с 40702810900000012345\r\n",
+                &[(
+                    "7701234567,\r\nр/с 40702810900000012345",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "X5 cyr before",
+                "Счёт получателя № 40702810900000012345 ИНН 7701234567",
+                &[(
+                    "Счёт получателя № 40702810900000012345 ИНН 7701234567",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "X6 overlapping models",
+                "ИНН 7701234567, р/с 40702810900000012345, паспорт 4512 345678",
+                &[
+                    ("7701234567, р/с 40702810900000012345", "bank_account", 0.8),
+                    (
+                        "40702810900000012345, паспорт 4512 345678",
+                        "passport_number",
+                        0.8,
+                    ),
+                ][..],
+                "TAX«7701234567» | IDENTITY«40702810900000012345, паспорт 4512 345678»",
+            ),
+            (
+                "X7 passport then date",
+                "ИНН 772012345678, паспорт 4512 345678 01.02.2010 выдан ОВД",
+                &[(
+                    "772012345678, паспорт 4512 345678 01.02.2010",
+                    "passport_number",
+                    0.8,
+                )][..],
+                "TAX«772012345678» | IDENTITY«4512 345678»",
+            ),
+            (
+                "X8 two phones",
+                "тел. 8 (495) 123-45-67, 8 (916) 765-43-21",
+                &[("8 (495) 123-45-67, 8 (916) 765-43-21", "phone_number", 0.8)][..],
+                "PHONE«8 (495) 123-45-67, 8 (916) 765-43-21»",
+            ),
+            (
+                "X9 phone ext",
+                "тел. +7 (495) 123-45-67 доб. 1234",
+                &[("+7 (495) 123-45-67 доб. 1234", "phone_number", 0.8)][..],
+                "PHONE«+7 (495) 123-45-67 доб. 1234»",
+            ),
+            (
+                "X10 markdown bold",
+                "**ИНН** 7701234567, **р/с** 40702810900000012345",
+                &[(
+                    "7701234567, **р/с** 40702810900000012345",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "X11 table cell",
+                "| ИНН | 7701234567, р/с 40702810900000012345 |\n|---|---|\n",
+                &[("7701234567, р/с 40702810900000012345", "bank_account", 0.8)][..],
+                "BANK«7701234567, р/с 40702810900000012345»",
+            ),
+            (
+                "X12 name inside wide",
+                "ИНН 7701234567, получатель Иванов Иван Иванович, р/с 40702810900000012345",
+                &[(
+                    "7701234567, получатель Иванов Иван Иванович, р/с 40702810900000012345",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "X12b name model too",
+                "ИНН 7701234567, получатель Иванов Иван Иванович, р/с 40702810900000012345",
+                &[
+                    (
+                        "7701234567, получатель Иванов Иван Иванович, р/с 40702810900000012345",
+                        "bank_account",
+                        0.8,
+                    ),
+                    ("Иванов Иван Иванович", "person", 0.7),
+                ][..],
+                "TAX«7701234567» | PERSON«Иванов Иван Иванович» | BANK«40702810900000012345»",
+            ),
+            (
+                "X13 passport wide with code",
+                "паспорт 4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001",
+                &[(
+                    "4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001",
+                    "passport_number",
+                    0.8,
+                )][..],
+                "IDENTITY«4512 345678, выдан ОВД района Энск 01.02.2010, код подразделения 770-001»",
+            ),
+            (
+                "X14 wide over org",
+                "ИНН 7701234567, ООО «Ромашка-2000», р/с 40702810900000012345",
+                &[(
+                    "7701234567, ООО «Ромашка-2000», р/с 40702810900000012345",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "X15 wide phone over address",
+                "ИНН 7701234567, 123456, г. Энск, ул. Лесная, д. 5, кв. 7, тел. 8 (495) 123-45-67",
+                &[(
+                    "7701234567, 123456, г. Энск, ул. Лесная, д. 5, кв. 7, тел. 8 (495) 123-45-67",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | PHONE«8 (495) 123-45-67»",
+            ),
+            (
+                "X15b + address model",
+                "ИНН 7701234567, 123456, г. Энск, ул. Лесная, д. 5, кв. 7, тел. 8 (495) 123-45-67",
+                &[
+                    (
+                        "7701234567, 123456, г. Энск, ул. Лесная, д. 5, кв. 7, тел. 8 (495) 123-45-67",
+                        "phone_number",
+                        0.8,
+                    ),
+                    ("123456, г. Энск, ул. Лесная, д. 5, кв. 7", "address", 0.6),
+                ][..],
+                "TAX«7701234567» | ADDRESS«123456, г. Энск, ул. Лесная, д. 5, кв. 7» | PHONE«8 (495) 123-45-67»",
+            ),
+            (
+                "X16 iban",
+                "Tax ID 9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                &[(
+                    "9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«9900123450» | BANK«DE89 3704 0044 0532 0130 00»",
+            ),
+            (
+                "X17 duplicate mention",
+                "ИНН 7701234567, р/с 40702810900000012345. Повторно: 40702810900000012345.",
+                &[("7701234567, р/с 40702810900000012345", "bank_account", 0.8)][..],
+                "TAX«7701234567» | BANK«40702810900000012345» | BANK«40702810900000012345»",
+            ),
+            (
+                "X18 rule rejected? ИНН in link",
+                "[ИНН 7701234567, р/с 40702810900000012345](https://example.invalid)",
+                &[("7701234567, р/с 40702810900000012345", "bank_account", 0.8)][..],
+                "TAX«7701234567» | BANK«40702810900000012345» | URL«https://example.invalid»",
+            ),
+            (
+                "X19 nbsp groups",
+                "ИНН 7701234567, на сумму 1\u{a0}500\u{a0}000 руб.",
+                &[(
+                    "7701234567, на сумму 1\u{a0}500\u{a0}000",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "X20 wide same score diff cat neighbor",
+                "ИНН 7701234567, р/с 40702810900000012345",
+                &[
+                    ("7701234567, р/с 40702810900000012345", "bank_account", 0.8),
+                    ("40702810900000012345", "phone_number", 0.85),
+                ][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "X21 date model over piece",
+                "ИНН 7701234567 от 12345678",
+                &[("7701234567 от 12345678", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "X22 snils",
+                "ИНН 772012345678, СНИЛС 112-233-445 95",
+                &[(
+                    "772012345678, СНИЛС 112-233-445 95",
+                    "national_id_number",
+                    0.8,
+                )][..],
+                "TAX«772012345678» | IDENTITY«112-233-445 95»",
+            ),
+            (
+                "X23 card",
+                "ИНН 772012345678, карта 4276 3800 1234 5678",
+                &[(
+                    "772012345678, карта 4276 3800 1234 5678",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«772012345678»",
+            ),
+            (
+                "Q1 passport rule?",
+                "паспорт 4512 345678, выдан ОВД",
+                &[][..],
+                "",
+            ),
+            (
+                "Q2 passport+addr",
+                "ИНН 772012345678, зарегистрирован по адресу: 123456, г. Энск, ул. Лесная, д. 5",
+                &[
+                    (
+                        "772012345678, зарегистрирован по адресу: 123456",
+                        "passport_number",
+                        0.75,
+                    ),
+                    ("123456, г. Энск, ул. Лесная, д. 5", "address", 0.6),
+                ][..],
+                "TAX«772012345678» | ADDRESS«123456, г. Энск, ул. Лесная, д. 5»",
+            ),
+            (
+                "Q3 индекс",
+                "ИНН 7701234567, индекс 123456, г. Энск",
+                &[("7701234567, индекс 123456", "national_id_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q4 amount words bank",
+                "ИНН 7701234567, на сумму 15000000 (пятнадцать миллионов) рублей",
+                &[("7701234567, на сумму 15000000", "bank_account", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q5 amount words tax",
+                "ИНН 7701234567, на сумму 15000000 (пятнадцать миллионов) рублей",
+                &[("7701234567, на сумму 15000000", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q6 amount no unit",
+                "ИНН 7701234567, задолженность 2500000, пени 125000",
+                &[(
+                    "7701234567, задолженность 2500000, пени 125000",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q7 iso date tax",
+                "ИНН 7701234567, дата 2026-03-12",
+                &[("7701234567, дата 2026-03-12", "bank_account", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q8 contract bank",
+                "ИНН 7701234567, договор № 12345678",
+                &[("7701234567, договор № 12345678", "bank_account", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q9 contract phone",
+                "ИНН 7701234567, договор № 1234567",
+                &[("7701234567, договор № 1234567", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q10 order no",
+                "ИНН 7701234567, заказ № 123456789",
+                &[("7701234567, заказ № 123456789", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q11 year range",
+                "ИНН 7701234567, период 2019-2026",
+                &[("7701234567, период 2019-2026", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q12 time",
+                "ИНН 7701234567, 12:30 2026",
+                &[("7701234567, 12:30 2026", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q13 pages",
+                "ИНН 7701234567, л.д. 123-145",
+                &[("7701234567, л.д. 123-145", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q14 statute",
+                "ИНН 7701234567, ст. 1234567 ГК",
+                &[("7701234567, ст. 1234567", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q15 law number",
+                "ИНН 7701234567, Федеральный закон от 26.10.2002 № 127-ФЗ",
+                &[(
+                    "7701234567, Федеральный закон от 26.10.2002 № 127",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q16 ocr letters spaced",
+                "ИНН 7701234567 4 5 1 2 3 4 5 6 7 8",
+                &[("7701234567 4 5 1 2 3 4 5 6 7 8", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q17 kadastr",
+                "ИНН 7701234567, кадастровый номер 77:01:0001001:1234",
+                &[(
+                    "7701234567, кадастровый номер 77:01:0001001:1234",
+                    "tax_id",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | IDENTITY«77:01:0001001:1234»",
+            ),
+            (
+                "Q18 vin",
+                "ИНН 7701234567, VIN XTA21099012345678",
+                &[("7701234567, VIN XTA21099012345678", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q19 reg plate",
+                "ИНН 7701234567, гос. номер А123ВС77",
+                &[("7701234567, гос. номер А123ВС77", "passport_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q20 EN zip",
+                "Tax ID 9900123450, ZIP 62704-1234",
+                &[("9900123450, ZIP 62704-1234", "phone_number", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "Q21 EN amount",
+                "Tax ID 9900123450, amount 15000000 (fifteen million) dollars",
+                &[("9900123450, amount 15000000", "bank_account", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "Q22 EN date",
+                "Tax ID 9900123450, filed 2026-03-12",
+                &[("9900123450, filed 2026-03-12", "phone_number", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "Q23 EN case",
+                "Tax ID 9900123450, Docket 2024-123456",
+                &[("9900123450, Docket 2024-123456", "phone_number", 0.8)][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "Q24 percent model",
+                "ИНН 7701234567, ставка 7,5 %",
+                &[("7701234567, ставка 7,5", "phone_number", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "Q25 rest overlaps date model",
+                "ИНН 7701234567, 2026-03-12 года рождения",
+                &[
+                    ("7701234567, 2026-03-12", "phone_number", 0.8),
+                    ("2026-03-12", "date", 0.6),
+                ][..],
+                "TAX«7701234567» | DATE«2026-03-12»",
+            ),
+            (
+                "T1 10-digit amount words",
+                "ИНН 7701234567, на сумму 1234567890 (один миллиард) рублей",
+                &[("7701234567, на сумму 1234567890", "tax_id", 0.8)][..],
+                "TAX«7701234567»",
+            ),
+            (
+                "T2 case model overlaps",
+                "ИНН 7701234567, дело 2-1234567 рассмотрено",
+                &[
+                    ("7701234567, дело 2-1234567", "phone_number", 0.8),
+                    ("2-1234567", "case_number", 0.6),
+                ][..],
+                "TAX«7701234567» | CASE«2-1234567»",
+            ),
+            (
+                "T3 date model overlaps",
+                "ИНН 7701234567, дата рождения 1985-03-12",
+                &[
+                    ("7701234567, дата рождения 1985-03-12", "phone_number", 0.8),
+                    ("1985-03-12", "date", 0.6),
+                ][..],
+                "TAX«7701234567» | DATE«1985-03-12»",
+            ),
+            (
+                "T4 addr house model",
+                "ИНН 7701234567, адрес: ул. Лесная, д. 1234567",
+                &[
+                    (
+                        "7701234567, адрес: ул. Лесная, д. 1234567",
+                        "phone_number",
+                        0.8,
+                    ),
+                    ("ул. Лесная, д. 1234567", "address", 0.6),
+                ][..],
+                "TAX«7701234567» | ADDRESS«ул. Лесная, д. 1234567»",
+            ),
+            (
+                "T5 EN addr zip model",
+                "Tax ID 9900123450, 742 Evergreen Terrace, Springfield, IL 62704-1234",
+                &[
+                    (
+                        "9900123450, 742 Evergreen Terrace, Springfield, IL 62704-1234",
+                        "phone_number",
+                        0.8,
+                    ),
+                    (
+                        "742 Evergreen Terrace, Springfield, IL 62704-1234",
+                        "address",
+                        0.6,
+                    ),
+                ][..],
+                "TAX«9900123450» | ADDRESS«742 Evergreen Terrace, Springfield, IL 62704-1234»",
+            ),
+            (
+                "T6 EN addr zip no model addr",
+                "Tax ID 9900123450, 742 Evergreen Terrace, Springfield, IL 62704-1234",
+                &[(
+                    "9900123450, 742 Evergreen Terrace, Springfield, IL 62704-1234",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«9900123450»",
+            ),
+            (
+                "T7 rule rejected keeps wide",
+                "ИНН 7701234567, р/с 40702810900000012345",
+                &[
+                    ("7701234567, р/с 40702810900000012345", "bank_account", 0.8),
+                    ("ИНН 7701234567", "organization", 0.99),
+                ][..],
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "U1 phone label then amount",
+                "ИНН 7701234567, тел. 8 (495) 123-45-67, оплачено 2500000",
+                &[(
+                    "7701234567, тел. 8 (495) 123-45-67, оплачено 2500000",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | PHONE«8 (495) 123-45-67»",
+            ),
+            (
+                "U2 bank wide then BIK",
+                "ИНН 7701234567, р/с 40702810900000012345 в ПАО «Банк», БИК 044525225",
+                &[(
+                    "7701234567, р/с 40702810900000012345 в ПАО «Банк», БИК 044525225",
+                    "bank_account",
+                    0.8,
+                )][..],
+                "TAX«7701234567» | BANK«40702810900000012345» | BANK«044525225»",
+            ),
+            (
+                "U3 passport wide with issue date code",
+                "ИНН 772012345678, паспорт 4512 345678, выдан 01.02.2010, код 770-001",
+                &[(
+                    "772012345678, паспорт 4512 345678, выдан 01.02.2010, код 770-001",
+                    "passport_number",
+                    0.8,
+                )][..],
+                "TAX«772012345678» | IDENTITY«4512 345678»",
+            ),
+            (
+                "U4 EN ssn wide",
+                "SSN 123-45-6789, DOB 03/12/1985, Phone (212) 555-0142",
+                &[(
+                    "123-45-6789, DOB 03/12/1985, Phone (212) 555-0142",
+                    "phone_number",
+                    0.8,
+                )][..],
+                "DATE«03/12/1985» | PHONE«Phone (212) 555-0142»",
+            ),
+        ] {
+            let raw: Vec<RawEntity> = model
+                .iter()
+                .map(|(text, label, score)| {
+                    let start = source.find(text).unwrap();
+                    RawEntity {
+                        start,
+                        end: start + text.len(),
+                        label: (*label).into(),
+                        score: *score,
+                        text: (*text).into(),
+                    }
+                })
+                .collect();
+            let shown: Vec<String> = recognition::proposals(source, &raw)
+                .unwrap()
+                .into_iter()
+                .map(|span| format!("{}«{}»", span.category, &source[span.range]))
+                .collect();
+            assert_eq!(shown.join(" | "), expected, "{id}: {source}");
+        }
+    }
+
+    /// #739's delta review: a series is a passport's only after "паспорт" or
+    /// alone before a passport's shape; a `context`'s label needs a value
+    /// its `value` takes (spaces aside), and "счёт" or "сч." an account's
+    /// twenty digits; twenty digits alone need a Russian account's currency
+    /// code (no УИН, no КБК); a phone ends before a year; an IBAN keeps its
+    /// letter groups.
+    #[test]
+    fn a_wide_identifier_span_keeps_only_its_own_fields_after_the_delta_review() {
+        for (source, wide, label, expected) in [
+            // A series.
+            (
+                "ИНН 772012345678, свидетельство серии 77 № 012345678",
+                "772012345678, свидетельство серии 77 № 012345678",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            (
+                "ИНН 772012345678, бланк серии 7701 № 123456",
+                "772012345678, бланк серии 7701 № 123456",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            (
+                "ИНН 772012345678, свидетельство серии 77 № 012345678, тел. +7 495 123-45-67",
+                "772012345678, свидетельство серии 77 № 012345678, тел. +7 495 123-45-67",
+                "phone_number",
+                "TAX«772012345678» | PHONE«+7 495 123-45-67»",
+            ),
+            (
+                "ИНН 772012345678, паспорт гражданина РФ серии 45 12 № 345678",
+                "772012345678, паспорт гражданина РФ серии 45 12 № 345678",
+                "passport_number",
+                "TAX«772012345678» | IDENTITY«45 12 № 345678»",
+            ),
+            (
+                "ИНН 772012345678, серия 4512 № 345678",
+                "772012345678, серия 4512 № 345678",
+                "passport_number",
+                "TAX«772012345678» | IDENTITY«4512 № 345678»",
+            ),
+            (
+                "ИНН 772012345678, серия 77 № 0123456",
+                "772012345678, серия 77 № 0123456",
+                "passport_number",
+                "TAX«772012345678»",
+            ),
+            // A context's value, and "счёт" alone.
+            (
+                "ИНН 7701234567, счёт № 12345678 от 01.02.2026",
+                "7701234567, счёт № 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, сч. № 12345678",
+                "7701234567, сч. № 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, р/с 40702810900000012345, счёт № 12345678",
+                "7701234567, р/с 40702810900000012345, счёт № 12345678",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "ИНН 7701234567, счёт 40702810900000012345",
+                "7701234567, счёт 40702810900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            (
+                "ИНН 7701234567, кн 12345678",
+                "7701234567, кн 12345678",
+                "tax_id",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, кн 12345678, р/с 40702810900000012345",
+                "7701234567, кн 12345678, р/с 40702810900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702810900000012345»",
+            ),
+            // Twenty digits alone.
+            (
+                "ИНН 7701234567, 18810177230000123456",
+                "7701234567, 18810177230000123456",
+                "bank_account",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, 18210102010011000110",
+                "7701234567, 18210102010011000110",
+                "bank_account",
+                "TAX«7701234567»",
+            ),
+            (
+                "ИНН 7701234567, 40702978900000012345",
+                "7701234567, 40702978900000012345",
+                "bank_account",
+                "TAX«7701234567» | BANK«40702978900000012345»",
+            ),
+            // A phone before a year.
+            (
+                "ИНН 7701234567, тел. 8 495 123-45-67 2026 г.",
+                "7701234567, тел. 8 495 123-45-67 2026 г.",
+                "phone_number",
+                "TAX«7701234567» | PHONE«8 495 123-45-67»",
+            ),
+            (
+                "Tax ID 9900123450, Phone 212 555 0142 2026",
+                "9900123450, Phone 212 555 0142 2026",
+                "phone_number",
+                "TAX«9900123450» | PHONE«212 555 0142»",
+            ),
+            // An IBAN's letter groups.
+            (
+                "Tax ID 9900123450, IBAN: GB29 NWBK 6016 1331 9268 19",
+                "9900123450, IBAN: GB29 NWBK 6016 1331 9268 19",
+                "bank_account",
+                "TAX«9900123450» | BANK«GB29 NWBK 6016 1331 9268 19»",
+            ),
+            (
+                "Tax ID 9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                "9900123450, IBAN DE89 3704 0044 0532 0130 00",
+                "bank_account",
+                "TAX«9900123450» | BANK«DE89 3704 0044 0532 0130 00»",
+            ),
+        ] {
+            let shown: Vec<String> = shown_with(source, &[(wide, label)])
+                .into_iter()
+                .map(|(_, category, text)| format!("{category}«{text}»"))
+                .collect();
+            assert_eq!(shown.join(" | "), expected, "{source}");
+        }
+    }
+
+    /// #739's guards: a wide span's rest that is only a label, punctuation
+    /// or words, an amount or a date gives nothing; a value the model also
+    /// proposed on its own is not proposed twice; a rule's value that is
+    /// the whole model span, a name's or a company's span and a wide span
+    /// with no rule's value in it are as they were.
+    #[test]
+    fn a_wide_identifier_span_gives_no_amount_date_or_label() {
+        let tax = |source: &str| {
+            (
+                source.find("7701234567").unwrap(),
+                "TAX".to_owned(),
+                "7701234567".to_owned(),
+            )
+        };
+        for (source, wide, label) in [
+            ("ИНН 7701234567, р/с", "7701234567, р/с", "bank_account"),
+            (
+                "ИНН 7701234567, паспорт и",
+                "7701234567, паспорт и",
+                "passport_number",
+            ),
+            (
+                "ИНН 7701234567, на сумму 1 500 000,00 руб.",
+                "7701234567, на сумму 1 500 000,00",
+                "bank_account",
+            ),
+            (
+                "ИНН 7701234567, на сумму 10 000 000 руб.",
+                "7701234567, на сумму 10 000 000",
+                "phone_number",
+            ),
+            (
+                "ИНН 7701234567, сумма 150000000 рублей",
+                "7701234567, сумма 150000000 рублей",
+                "bank_account",
+            ),
+            (
+                "ИНН 7701234567 от 12.03.2031",
+                "7701234567 от 12.03.2031",
+                "passport_number",
+            ),
+            (
+                "ИНН 7701234567 от 12 марта 2031 г.",
+                "7701234567 от 12 марта 2031",
+                "tax_id",
+            ),
+            ("ИНН 7701234567", "7701234567", "tax_id"),
+            ("ИНН 7701234567", "7701234567", "bank_account"),
+        ] {
+            assert_eq!(
+                shown_with(source, &[(wide, label)]),
+                [tax(source)],
+                "{source}"
+            );
+        }
+        // The account the model proposed twice, on its own and in the wide
+        // span, is one span.
+        let source = "ИНН 7701234567, р/с 40702810900000012345";
+        let raw = model_spans(
+            source,
+            &[
+                ("7701234567, р/с 40702810900000012345", "bank_account"),
+                ("40702810900000012345", "bank_account"),
+            ],
+        );
+        let account = source.find("40702810900000012345").unwrap();
+        let account = account..account + 20;
+        assert_eq!(
+            correct(source, &raw)
+                .iter()
+                .filter(|detection| detection.range == account)
+                .count(),
+            1
+        );
+        assert_eq!(
+            shown_with(source, &[("40702810900000012345", "bank_account")]),
+            [
+                tax(source),
+                (account.start, "BANK".into(), "40702810900000012345".into())
+            ]
+        );
+        // No rule's value inside: the wide span is the model's as before.
+        let source = "Tax ID 12-3456789, Account 000123456789";
+        let wide = "12-3456789, Account 000123456789";
+        assert_eq!(
+            shown_with(source, &[(wide, "bank_account")]),
+            [(7, "BANK".to_owned(), wide.to_owned())]
+        );
+        // A company's or a person's span is no identifier's.
+        for (wide, label) in [
+            (
+                "ООО «Ромашка», ИНН 7701234567, р/с 40702810900000012345",
+                "organization",
+            ),
+            (
+                "Иванов Иван, ИНН 7701234567, р/с 40702810900000012345",
+                "person",
+            ),
+        ] {
+            let source = format!("{wide}.");
+            assert!(
+                shown_with(&source, &[(wide, label)])
+                    .iter()
+                    .all(|(_, category, _)| category != "BANK"),
+                "{source}"
+            );
         }
     }
 
