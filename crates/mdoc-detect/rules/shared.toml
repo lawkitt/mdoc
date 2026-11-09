@@ -162,12 +162,14 @@
 #                         except to drop a quoted public institution's own
 #                         name ("МВД России «…»");
 #                         earlier spans grow first; for PERSON only, a
-#                         group named `lead` (the only group allowed) is
-#                         context the grown span leaves out ("Judge "
-#                         before "K Ashdale"), and such a match never grows
+#                         group named `lead` or `tail` (the only groups
+#                         allowed) is context the grown span leaves out
+#                         ("Judge " before "K Ashdale", the year after
+#                         "Penrow, J. L."), and such a match never grows
 #                         over any part of another category's span
 #   unless_over = […]     with extend: lowercase words a span never grows
-#                         over ("exhibit" in "EXHIBIT A. WELK")
+#                         over, before it or after it ("exhibit" in
+#                         "EXHIBIT A. WELK", "france" in "Paris, France")
 #   trim_start = [regex…] case-sensitive prefixes that come off the start,
 #                         with some name left after them; in an entry with
 #                         `extend`, only off a span that entry grew; with a

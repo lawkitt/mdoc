@@ -2267,14 +2267,21 @@ impl Pack {
                     .map(|pattern| {
                         let regex =
                             Regex::new(&rust_classes(pattern)).map_err(|e| at(e.to_string()))?;
-                        match regex.capture_names().flatten().find(|g| *g != "lead") {
-                            Some(group) => Err(at(format!("extend group {group:?} is not `lead`"))),
-                            // Only a person's growth reads a lead: the ORG
-                            // checks (`grows_to_company`) take whole matches.
+                        match regex
+                            .capture_names()
+                            .flatten()
+                            .find(|g| *g != "lead" && *g != "tail")
+                        {
+                            Some(group) => Err(at(format!(
+                                "extend group {group:?} is not `lead` or `tail`"
+                            ))),
+                            // Only a person's growth reads a lead or a tail:
+                            // the ORG checks (`grows_to_company`) take whole
+                            // matches.
                             None if category != Category::Person
                                 && regex.capture_names().flatten().next().is_some() =>
                             {
-                                Err(at("only a PERSON extend takes a `lead`".into()))
+                                Err(at("only a PERSON extend takes a `lead` or a `tail`".into()))
                             }
                             None => Ok(regex),
                         }
@@ -3446,17 +3453,19 @@ impl Pack {
                 fix.nested_names(source, view, detections);
             }
             // A `lead` group is context the grown span leaves out ("Judge "
-            // before "K Ashdale"). The next match is searched for from just
-            // after this one's grown start, so its lead may be the end of
-            // this one ("K Ashdale and L Brown").
-            let matches: Vec<(std::ops::Range<usize>, bool)> = fix
+            // before "K Ashdale"), and so is a `tail` group after it (the
+            // year after "Penrow, J. L.", #414). The next match is searched
+            // for from just after this one's grown start, so its lead may
+            // be the end of this one ("K Ashdale and L Brown"). Each match
+            // says whether it had a lead or a tail, and whether a tail.
+            let matches: Vec<(std::ops::Range<usize>, bool, bool)> = fix
                 .extend
                 .iter()
                 .flat_map(|pattern| {
-                    if !pattern.capture_names().flatten().any(|g| g == "lead") {
+                    if pattern.capture_names().flatten().next().is_none() {
                         return pattern
                             .find_iter(source)
-                            .map(|m| (m.range(), false))
+                            .map(|m| (m.range(), false, false))
                             .collect();
                     }
                     let mut found = Vec::new();
@@ -3468,15 +3477,18 @@ impl Pack {
                         let start = captures
                             .name("lead")
                             .map_or(whole.start(), |lead| lead.end());
-                        if start < whole.end() {
-                            found.push((start..whole.end(), true));
+                        let end = captures
+                            .name("tail")
+                            .map_or(whole.end(), |tail| tail.start());
+                        if start < end {
+                            found.push((start..end, true, captures.name("tail").is_some()));
                         }
                         // Past this match's first grown character at least.
                         at = start + source[start..].chars().next().map_or(1, char::len_utf8);
                     }
                     found
                 })
-                .filter(|(m, _)| {
+                .filter(|(m, _, _)| {
                     if !source[m.clone()].contains(['«', '"'])
                         || !self.public_body(&source[m.clone()], fix.category, false)
                     {
@@ -3509,7 +3521,7 @@ impl Pack {
                 // over any part of another category's span either: "ACME
                 // LLC" stays the company's. Others may: a person's
                 // institution grows over the model's organization in it.
-                let crosses = |(m, led): &(std::ops::Range<usize>, bool)| {
+                let crosses = |(m, led, _): &(std::ops::Range<usize>, bool, bool)| {
                     order.iter().any(|&j| {
                         let other = &detections[j].range;
                         j != i
@@ -3526,31 +3538,57 @@ impl Pack {
                 // A person never grows back over a role or title before
                 // it ("Ответчик" in "Ответчик Н. О." for the model's "Н.
                 // О."); after it such a word is a surname ("J. R. Clerk").
-                let over_never = |m: &std::ops::Range<usize>| {
-                    fix.category == Category::Person
+                let over_never = |m: &std::ops::Range<usize>, tailed: bool| {
+                    (fix.category == Category::Person
                         && source[m.start..range.start]
                             .split(|c: char| !c.is_alphanumeric() && c != '-')
                             .any(|word| {
-                            !word.is_empty()
-                                && (self.never(word)
-                                    || fix.unless_over.contains(&word.to_lowercase()))
-                        })
+                                !word.is_empty()
+                                    && (self.never(word)
+                                        || fix.unless_over.contains(&word.to_lowercase()))
+                            })
                         // A supported quoted institution may grow over
                         // its public head; extension patterns must first
                         // establish the institution, not an affiliation.
                         && !(source[m.clone()].contains(['«', '"'])
-                            && self.public_body(&source[m.clone()], fix.category, false))
+                            && self.public_body(&source[m.clone()], fix.category, false)))
+                        // A match with a `tail` (a surname-first name,
+                        // #414) never grows over a role or an `unless_over`
+                        // word after the span either: "France" in "Paris,
+                        // France", "President" in "Pellwright, President".
+                        || tailed
+                            && source[range.end..m.end]
+                                .split(|c: char| !c.is_alphanumeric() && c != '-')
+                                .any(|word| {
+                                    !word.is_empty()
+                                        && (self.never(word)
+                                            || fix.unless_over.contains(&word.to_lowercase()))
+                                })
+                };
+                // A match with a `tail` grows only a span that starts with
+                // it, or the rest of a name whose start is a span: the
+                // model's "Penrow" and "J. L." in "Penrow, J. L." are one
+                // name, its "J.R." alone in "Thereafter, J.R., a minor"
+                // never takes the word before the comma (#414).
+                let starts = |m: &std::ops::Range<usize>, tailed: bool| {
+                    !tailed
+                        || range.start == m.start
+                        || order.iter().any(|&j| {
+                            let other = &detections[j].range;
+                            j != i && other.start == m.start && other.end <= m.end
+                        })
                 };
                 let grown = matches
                     .iter()
                     .filter(|found| {
-                        let m = &found.0;
+                        let (m, _, tailed) = found;
                         m.start <= range.start
                             && range.end <= m.end
                             && !crosses(found)
-                            && !over_never(m)
+                            && !over_never(m, *tailed)
+                            && starts(m, *tailed)
                     })
-                    .map(|(m, _)| m)
+                    .map(|(m, _, _)| m)
                     .max_by_key(|m| m.len())
                     .cloned()
                     .unwrap_or(range.clone());
@@ -7222,6 +7260,314 @@ mod tests {
         ] {
             assert_eq!(proposed_people(source, model), expected, "{source:?}");
         }
+    }
+
+    /// The person proposals for the model's `people` spans in `source`,
+    /// each found after the one before it, as the user would be shown them.
+    fn proposed_people_in_order(source: &str, people: &[&str]) -> Vec<String> {
+        let model: Vec<_> = people.iter().map(|text| ("person", *text)).collect();
+        proposed_marks(source, &model)
+            .into_iter()
+            .filter_map(|mark| Some(mark.strip_prefix("PERSON⟦")?.strip_suffix('⟧')?.to_owned()))
+            .collect()
+    }
+
+    /// #414: a surname-first name is one span, comma included, whether the
+    /// model gave the surname alone or the surname and the rest apart: with
+    /// initials after the comma anywhere, with a given name only where a
+    /// name stands alone (a line's start, a label, a table's cell).
+    #[test]
+    fn a_surname_first_name_is_one_span() {
+        let references = "References: Penrow, J. L. 1971. Ostrand, D. J., and \
+                          Brannock, E. E. 1969. Draycott,D.P. 1970.";
+        let whole = [
+            "Penrow, J. L.",
+            "Ostrand, D. J.",
+            "Brannock, E. E.",
+            "Draycott,D.P.",
+        ];
+        for (source, model, expected) in [
+            // The surname alone, the initials left out.
+            (
+                references,
+                &["Penrow", "Ostrand", "Brannock", "Draycott"][..],
+                &whole[..],
+            ),
+            // Split in two spans at the comma.
+            (
+                references,
+                &[
+                    "Penrow", "J. L.", "Ostrand", "D. J.", "Brannock", "E. E.", "Draycott", "D.P.",
+                ],
+                &whole,
+            ),
+            (
+                "Employee: VALECROFT, Jorin P.\nFor the employer: Siora Dennick",
+                &["VALECROFT", "Jorin P.", "Siora Dennick"],
+                &["VALECROFT, Jorin P.", "Siora Dennick"],
+            ),
+            (
+                "**Employee:** VALECROFT, Jorin P.\n",
+                &["VALECROFT"],
+                &["VALECROFT, Jorin P."],
+            ),
+            (
+                "Clark, R. L. 1970. Soils.\nHerder, Mike. 1999. Field notes.\n",
+                &["Clark", "Herder"],
+                &["Clark, R. L.", "Herder, Mike"],
+            ),
+            (
+                "| Author | Year |\n|---|---|\n| Alexander, L. J. | 1971 |\n",
+                &["Alexander", "L. J."],
+                &["Alexander, L. J."],
+            ),
+            (
+                "Cited: Hardy, T. B. (1968); Schumann, P. B. et al. 1970.",
+                &["Hardy", "Schumann"],
+                &["Hardy, T. B.", "Schumann, P. B."],
+            ),
+            // "and" is never crossed: two people (#489).
+            (
+                "Morvilius, M. and R. Fridell. 1968. Notes.",
+                &["Morvilius", "R. Fridell"],
+                &["Morvilius, M.", "R. Fridell"],
+            ),
+            (
+                "Литература: Иванов, И. И. 1999. Петров,П.П. 2001.",
+                &["Иванов", "Петров"],
+                &["Иванов, И. И.", "Петров,П.П."],
+            ),
+            (
+                "Литература: Иванов, И. И. 1999. Петров,П.П. 2001.",
+                &["Иванов", "И. И.", "Петров", "П.П."],
+                &["Иванов, И. И.", "Петров,П.П."],
+            ),
+            (
+                "Авторы: Иванов, И. И. и Петров, П. П., 1999.",
+                &["Иванов", "Петров"],
+                &["Иванов, И. И.", "Петров, П. П."],
+            ),
+            (
+                "- Истец, фамилия, имя и отчество: Маркович, Савелий Игоревич.\n",
+                &["Маркович", "Савелий Игоревич"],
+                &["Маркович, Савелий Игоревич"],
+            ),
+            (
+                "1. Маркович, Савелий Игоревич; 2. Ветлина, Анна Олеговна.",
+                &["Маркович", "Ветлина"],
+                &["Маркович, Савелий Игоревич", "Ветлина, Анна Олеговна"],
+            ),
+            // #414 review (P3-2): one "J." before a reference's year.
+            ("Brown, J. (2020). Title.", &["Brown"], &["Brown, J."]),
+            ("Smith, J. 2020. Title.", &["Smith"], &["Smith, J."]),
+            // A given name with a middle initial; a given name alone
+            // before a reference's year in brackets.
+            (
+                "Employee: Smith, John P.\n",
+                &["Smith"],
+                &["Smith, John P."],
+            ),
+            (
+                "Herder, Mike (1999). Field notes.",
+                &["Herder"],
+                &["Herder, Mike"],
+            ),
+            // Spaced initials are an author's, glued post-nominals are not.
+            (
+                "Alexander, L. J. 1971.",
+                &["Alexander"],
+                &["Alexander, L. J."],
+            ),
+            (
+                "Present: Smith, A. B., C. D. Brown\n",
+                &["Smith", "C. D. Brown"],
+                &["Smith, A. B.", "C. D. Brown"],
+            ),
+            (
+                "Свидетели: Иванов, Пётр Петрович; Петров, Иван Иванович.\n",
+                &["Иванов", "Пётр Петрович", "Петров", "Иван Иванович"],
+                &["Иванов, Пётр Петрович", "Петров, Иван Иванович"],
+            ),
+        ] {
+            assert_eq!(
+                proposed_people_in_order(source, model),
+                expected,
+                "{source:?} {model:?}"
+            );
+        }
+    }
+
+    /// #414 guards: mid-prose, a list of surnames, a place, a judge's or
+    /// a lawyer's post-nominal, a role, the next person's initials, a line
+    /// or a word before the comma that is no tagged surname keep a
+    /// surname-first growth off: the model's spans stay as they are.
+    #[test]
+    fn a_surname_first_name_needs_its_context() {
+        for (source, model) in [
+            // A given name needs a name's own place, never mid-prose.
+            ("I met Smith, John said hello.", &["Smith"][..]),
+            ("I met Smith, John said hello.", &["Smith", "John"]),
+            // A list of surnames.
+            (
+                "Smith, Jones and Brown appeared.",
+                &["Smith", "Jones", "Brown"],
+            ),
+            ("Smith, Jones, Brown\n", &["Smith", "Jones", "Brown"]),
+            ("Smith, Jones & Co\n", &["Smith"]),
+            // A city's country or state.
+            ("Paris, France\n", &["Paris"]),
+            ("Albany, New York\n", &["Albany"]),
+            ("Austin, Texas; Reno, Nevada", &["Austin", "Reno"]),
+            ("Washington, D.C. 20001", &["Washington"]),
+            ("Offices: Albany, N.Y. 12207", &["Albany"]),
+            // A judge's post-nominal is a title (#730).
+            ("Brown, J., concurring.", &["Brown"]),
+            ("Roberts, C.J., delivered the opinion.", &["Roberts"]),
+            // Initials before a capitalised word are its person's.
+            ("Smith, J. R. Brown signed.", &["Smith", "J. R. Brown"]),
+            ("Ветлин, Н. О. Иванов", &["Ветлин", "Н. О. Иванов"]),
+            ("On June 5, J. Smith signed.", &["J. Smith"]),
+            // Never across a line.
+            ("Penrow,\nJ. L. 1971.", &["Penrow"]),
+            (
+                "Employee: VALECROFT,\nJorin P.\n",
+                &["VALECROFT", "Jorin P."],
+            ),
+            (
+                "Истец: Маркович,\nСавелий Игоревич.",
+                &["Маркович", "Савелий Игоревич"],
+            ),
+            // Mid-prose in Russian too.
+            (
+                "Вызвали Петрова, Ивана Ивановича допросили.",
+                &["Петрова", "Ивана Ивановича"],
+            ),
+            ("Город: Москва, Р. Ф.\n", &["Москва"]),
+            // A company's form, a greeting or a sentence's adverb before
+            // the comma is no surname.
+            ("Acme Inc., J. R. 1971.", &["J. R."]),
+            ("Thanks, J. R.\n", &["J. R."]),
+            ("However, J. R., the witness, left.", &["J. R."]),
+            // #414 review (P1-1): two surnames, a citation's two authors.
+            ("Smith, Jones\n", &["Smith", "Jones"][..]),
+            ("Witnesses: Harlow, Brennan\n", &["Harlow", "Brennan"][..]),
+            (
+                "Present: Harlow, Brennan; Oakes, Pell.\n",
+                &["Harlow", "Brennan", "Oakes", "Pell"][..],
+            ),
+            ("| Harlow, Brennan |\n", &["Harlow", "Brennan"][..]),
+            (
+                "(Brown, 2001; Smith, Jones, 1999)",
+                &["Brown", "Smith", "Jones"][..],
+            ),
+            (
+                "Smith, A. B. Jones, C. D. Brown\n",
+                &["Smith", "A. B. Jones", "C. D. Brown"][..],
+            ),
+            // P2-2: a judge's or a lawyer's post-nominal, glued, is no initials.
+            ("Smith, J., dissenting.", &["Smith"][..]),
+            ("Roe, C.J., concurring.", &["Roe"][..]),
+            ("Denning, L.J., said the rule was plain.", &["Denning"][..]),
+            ("Harlow, P.J., concurring.", &["Harlow"][..]),
+            ("Harlow, J.A., for the court.", &["Harlow"][..]),
+            ("HARLOW, J.S.C.\n", &["HARLOW"][..]),
+            ("Harlow, A.J., dissenting.", &["Harlow"][..]),
+            ("Denning, M.R., in Harlow v Pell.", &["Denning"][..]),
+            ("Harlow, Q.C., for the claimant.", &["Harlow"][..]),
+            ("Harlow, K.C., for the claimant.", &["Harlow"][..]),
+            ("Harlow, M.D., testified.", &["Harlow"][..]),
+            ("Harlow, J.D.\n", &["Harlow"][..]),
+            ("Harlow, S.J., Senior Judge.", &["Harlow"][..]),
+            ("Harlow, D.J.\n", &["Harlow"][..]),
+            ("Harlow and Pell, JJ., dissenting.", &["Harlow", "Pell"][..]),
+            ("Roe, C. J., concurring.", &["Roe"][..]),
+            ("Doe, Inc. filed.", &["Doe"][..]),
+            ("Harlow, L.L.P.\n", &["Harlow"][..]),
+            ("Harlow, P.A.\n", &["Harlow"][..]),
+            ("Harlow, P.C., counsel.", &["Harlow"][..]),
+            ("HARLOW, P.J.\n", &["HARLOW"][..]),
+            // P2-4: a place's state, province or country.
+            ("Springfield, IL\n", &["Springfield"][..]),
+            ("Paris, TX 75460", &["Paris"][..]),
+            ("London, UK\n", &["London"][..]),
+            ("Moscow, RU\n", &["Moscow"][..]),
+            ("Washington, DC 20001", &["Washington"][..]),
+            ("Newark, N.J. 07102", &["Newark"][..]),
+            ("Wilson, N.C. 27893", &["Wilson"][..]),
+            ("Florence, S.C.\n", &["Florence"][..]),
+            ("Victoria, B.C.\n", &["Victoria"][..]),
+            ("Darwin, N.T. 0800", &["Darwin"][..]),
+            ("Hamilton, Ontario\n", &["Hamilton"][..]),
+            ("Seattle, Washington\n", &["Seattle"][..]),
+            ("Halifax, Nova Scotia\n", &["Halifax"][..]),
+            ("Address: Limassol, Cyprus\n", &["Limassol"][..]),
+            ("Vancouver, British Columbia\n", &["Vancouver"][..]),
+            ("Seoul, Korea\n", &["Seoul"][..]),
+            ("Washington, D.C.\n", &["Washington"][..]),
+            ("Jackson, Mississippi\n", &["Jackson"][..]),
+            // P2-1: with the initials alone tagged, the word before the comma
+            // never joins them.
+            ("On Monday, J. Smith left.", &["J. Smith"][..]),
+            ("On Monday, A. B. and C. D. met.", &["A. B.", "C. D."][..]),
+            ("In January, A. B. and C. D. met.", &["A. B.", "C. D."][..]),
+            ("In Paris, A. B. and C. D. met.", &["A. B.", "C. D."][..]),
+            ("Thereafter, J.R., a minor, moved.", &["J.R."][..]),
+            ("Later, A. B., the witness, left.", &["A. B."][..]),
+            ("Respectfully, A. B.\n", &["A. B."][..]),
+            ("Signed, A. B.\n", &["A. B."][..]),
+            ("Yours, A. B.\n", &["A. B."][..]),
+            ("Indeed, A. B., agreed.", &["A. B."][..]),
+            ("Signed: Harlow, June 5, 2020\n", &["Harlow"][..]),
+            ("Dear Mr Harlow,\n", &["Harlow"][..]),
+            ("Однако, И. И., возразил.", &["И. И."][..]),
+            ("Спасибо, И. И.\n", &["И. И."][..]),
+            ("Судья, И. И.\n", &["И. И."][..]),
+            ("ООО, И. И.\n", &["И. И."][..]),
+            ("See Penrow, J. L. 5 times.", &["Penrow"][..]),
+            // P1-1: a role, a suffix or a given name alone after the comma.
+            ("Plaintiff, J. Doe, appeared.", &["J. Doe"][..]),
+            ("Plaintiff, A. B., appeared.", &["A. B."][..]),
+            ("Defendant, Mr. Smith, appeared.", &["Smith"][..]),
+            ("By: Harlow, President\n", &["Harlow"][..]),
+            (
+                "Attendees: Harlow, Director; Pell, Manager.\n",
+                &["Harlow", "Pell"][..],
+            ),
+            ("cc: Harlow, Esq.\n", &["Harlow"][..]),
+            ("Re: Harlow, Deceased\n", &["Harlow"][..]),
+            ("Signed: Harlow, Trustee\n", &["Harlow"][..]),
+            ("Witness, A. B.\n", &["A. B."][..]),
+            ("Signed: Harlow, Jr.\n", &["Harlow"][..]),
+            ("| Harlow, Partner |\n", &["Harlow"][..]),
+            ("| Smith, John |\n", &["Smith"][..]),
+            ("| Smith, John |\n", &["Smith", "John"][..]),
+            ("Author: Smith, John\n", &["Smith"][..]),
+            ("Re: Smith, John\n", &["Smith"][..]),
+            ("Alexander, L. J. 1971.", &["L. J."][..]),
+            ("Employee: VALECROFT, Jorin P.\n", &["Jorin P."][..]),
+            ("Witnesses: HARLOW, BRENNAN\n", &["HARLOW", "BRENNAN"][..]),
+            // The review's real-model run: an opinion's judges and a
+            // minor's initials.
+            (
+                "HARLOW, P.J., delivered the opinion of the court. Brennan, J.A., \
+                 and Oakes, A.J., concurred.",
+                &["HARLOW", "Brennan", "Oakes"],
+            ),
+            (
+                "Thereafter, J.R., a minor, moved to Newark, N.J. 07102 with his \
+                 mother. In January, J.R. and D.M. testified. Later, J.R., the \
+                 child, returned.",
+                &["J.R.", "J.R.", "D.M.", "J.R."],
+            ),
+        ] {
+            assert_eq!(proposed_people_in_order(source, model), model, "{source:?}");
+        }
+        // An all-caps signature's growth (#387) takes no `unless_over`
+        // word after the model's span: only a `tail` match checks there.
+        assert_eq!(
+            proposed_people_in_order("JOHN Q. STATES, Magistrate\n", &["JOHN"]),
+            ["JOHN Q. STATES"]
+        );
     }
 
     /// #403 review: a glued particle keeps a surname, but "al-Qaeda" and
@@ -19705,8 +20051,12 @@ pattern = '(?P<party>Ivo Harrow (?:for|by|to|with|from|of) Pellam) v\. Ostrand, 
                 "only a PERSON extend takes a `lead`",
             ),
             (
-                "[[span]]\ncategory = \"PERSON\"\nextend = ['(?P<tail>x)y']",
-                "is not `lead`",
+                "[[span]]\ncategory = \"ORG\"\nextend = ['X Ltd(?P<tail>,)']",
+                "only a PERSON extend takes a `lead` or a `tail`",
+            ),
+            (
+                "[[span]]\ncategory = \"PERSON\"\nextend = ['(?P<name>x)y']",
+                "extend group \"name\" is not `lead` or `tail`",
             ),
             (
                 "[[span]]\ncategory = \"PERSON\"\ntrim = [\"ms\"]\nunless_over = [\"part\"]",
