@@ -13,8 +13,12 @@ final class LivePreviewUITests: XCTestCase {
     /// Opens `seed`'s document, scrolled down `pages` screens, and enters
     /// edit mode in live preview: the caret starts at the first line in view.
     @MainActor
-    private func edit(seed: String, title: String, pages: Int = 0) -> (XCUIApplication, XCUIElement) {
-        let app = MdocUITest.launch(seed: seed)
+    private func edit(seed: String, title: String, pages: Int = 0, contentSize: String? = nil) -> (XCUIApplication, XCUIElement) {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        if let contentSize { app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSize] }
+        app.launchEnvironment["MDOC_SEED_FILE"] = MdocUITest.repo.appendingPathComponent(seed).path
+        app.launch()
         // Whatever its status: the rules find no name in the legal opinion.
         MdocUITest.revealSidebar(app)
         let row = app.descendants(matching: .any)
@@ -37,7 +41,7 @@ final class LivePreviewUITests: XCTestCase {
     @MainActor
     func testAListTypedWithReturnAndUndone() throws {
         let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
-        app.typeKey(.downArrow, modifierFlags: .command)
+        toTheEnd(app, text)
         // Return ends the paragraph; Return in the list continues it. The
         // value is what VoiceOver hears: a line's hidden `- ` is silent,
         // the caret's line shows it.
@@ -54,6 +58,57 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: 5))
         app.typeKey("z", modifierFlags: [.command, .shift])
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "- Bread"), timeout: 5))
+    }
+
+    /// Puts the caret at the end of the text. A key sent while edit mode is
+    /// still settling can be lost, so it checks with a letter typed there
+    /// and taken back.
+    @MainActor
+    private func toTheEnd(_ app: XCUIApplication, _ text: XCUIElement) {
+        var there = false
+        for _ in 0..<3 where !there {
+            app.typeKey(.downArrow, modifierFlags: .command)
+            app.typeText("Q")
+            there = text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Q"), timeout: 3)
+            app.typeText(XCUIKeyboardKey.delete.rawValue)
+        }
+        XCTAssertTrue(there, "the caret reached the end")
+        XCTAssertTrue(
+            text.wait(until: NSPredicate(format: "NOT (value CONTAINS %@)", "Q"), timeout: 3),
+            String(describing: (text.value as? String)?.suffix(60).debugDescription))
+    }
+
+    /// Edit mode in live preview at the largest accessibility text size: it
+    /// opens, types and continues a list (ADR 0109's acceptance).
+    @MainActor
+    func testEditingAtAnAccessibilitySize() throws {
+        let (app, text) = edit(
+            seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle,
+            contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
+        XCTAssertTrue(app.buttons["done-editing"].isHittable)
+        toTheEnd(app, text)
+        app.typeText("\n- Milk\n")
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "Milk\n- "), timeout: 5))
+    }
+
+    /// The accessibility audit in live-preview edit mode (ADR 0109): no
+    /// issue on the edited text or Done. Issues elsewhere (the system
+    /// keyboard, the translucent bar) are printed, as the explore audit does.
+    @MainActor
+    func testTheAccessibilityAuditInEditMode() throws {
+        let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
+        app.typeKey(.upArrow, modifierFlags: .command)
+        let ours: Set<String> = ["document-text", "done-editing"]
+        var found: [String] = []
+        try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait]) { issue in
+            let identifier = issue.element?.identifier ?? ""
+            let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
+            print("A11Y[live-preview-edit] \(line)")
+            if ours.contains(identifier) { found.append(line) }
+            return true
+        }
+        XCTAssertEqual(found, [], "issues on the edited text or Done")
+        XCTAssertTrue(text.exists)
     }
 
     /// A keystroke's restyle on the legal opinion ("Restyle" signposts).

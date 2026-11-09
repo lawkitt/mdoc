@@ -78,9 +78,9 @@ final class LivePreviewTests: XCTestCase {
             edit: model.isEditing ? EditActions(model) : nil)
     }
 
-    func show(_ harness: Harness) {
+    func show(_ harness: Harness, rendered: Bool? = nil) {
         harness.coordinator.update(
-            harness.view, with: Self.textView(harness.model, rendered: harness.rendered), dynamicTypeSize: .large,
+            harness.view, with: Self.textView(harness.model, rendered: rendered ?? harness.rendered), dynamicTypeSize: .large,
             colorScheme: .light)
         harness.view.layoutIfNeeded()
     }
@@ -326,6 +326,50 @@ final class LivePreviewTests: XCTestCase {
         harness2.view.selectedRange = NSRange(location: next, length: 0)
         change(harness2, NSRange(location: next - 1, length: 1), "")
         XCTAssertEqual(harness2.shown, before)
+    }
+
+    func testTypingAfterATableAtTheEndStartsAParagraph() throws {
+        let harness = try harness(text: "a\n\n| A |\n| - |\n| 1 |")
+        let grid = try XCTUnwrap(harness.view.tableViews.first)
+        harness.view.onTableTap?(grid)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        let end = harness.string.length
+        XCTAssertEqual(harness.view.selectedRange.location, end)
+        XCTAssertFalse(change(harness, NSRange(location: end, length: 0), "x"))
+        XCTAssertEqual(harness.shown, "a\n\n| A |\n| - |\n| 1 |\n\nx", "the row keeps its cells")
+        XCTAssertEqual(harness.view.selectedRange.location, end + 3)
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    func testDeletesBesideATableAtTheStartStillWork() throws {
+        let harness = try harness(text: "| A |\n| - |\n| 1 |\nnext\n")
+        let next = location(of: "next", in: harness)
+        caret(harness, at: next)
+        caret(harness, at: next + 1)
+        backspace(harness)
+        XCTAssertEqual(harness.shown, "| A |\n| - |\n| 1 |\next\n")
+        caret(harness, at: next)
+        change(harness, NSRange(location: next, length: 1), "")
+        XCTAssertEqual(harness.shown, "| A |\n| - |\n| 1 |\nxt\n")
+        XCTAssertEqual(coreText(harness), harness.shown)
+    }
+
+    /// Show Markdown switched after typing, before the pause's snapshot:
+    /// the view restyles its own text in the new look at once.
+    func testShowMarkdownSwitchedBeforeThePauseRestyles() throws {
+        let harness = try harness(text: "Some **bold** words.\n")
+        caret(harness, at: 0)
+        type(harness, "x")
+        show(harness, rendered: false)
+        let storage = harness.view.textStorage
+        var hidden = false
+        storage.enumerateAttribute(.mdocHidden, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if value != nil { hidden = true }
+        }
+        XCTAssertFalse(hidden, "Show Markdown hides nothing")
+        let colour = storage.attribute(.foregroundColor, at: location(of: "**", in: harness), effectiveRange: nil) as? UIColor
+        XCTAssertEqual(colour, MarkdownStyler.marker)
+        XCTAssertEqual(coreText(harness), harness.shown)
     }
 
     func testStructuralKeysInShowMarkdown() throws {

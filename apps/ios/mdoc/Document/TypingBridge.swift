@@ -111,6 +111,12 @@ final class TypingBridge {
         announced.append((before, (storage.string as NSString).substring(with: edited)))
     }
 
+    /// Replaces `range` with `text` as one edit on the typing path, then
+    /// selects `selection`: what a key makes that UIKit would make otherwise.
+    func replace(_ range: NSRange, with text: String, selection: NSRange, in view: UITextView) {
+        apply(.replace(range: range, text: text, selection: selection), in: view)
+    }
+
     /// A structural key's edit, made through the text view's own
     /// `replace(_:withText:)` (which reaches `willChange` as an ordinary
     /// edit) so it is one core edit on the typing path and its undo line,

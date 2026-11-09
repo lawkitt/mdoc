@@ -461,6 +461,9 @@ struct MarkdownTextView: UIViewRepresentable {
                 if let latest = parent.edit?.revision(), snapshot.textRevision != latest,
                    view.textStorage.string != snapshot.markdown {
                     content?.textRevision = latest
+                    // What changed may be the look (Show Markdown, the text
+                    // size): the view's own text restyles with it.
+                    restyleWhole(view)
                     return
                 }
                 livePreview.reset(candidates: snapshot.candidates)

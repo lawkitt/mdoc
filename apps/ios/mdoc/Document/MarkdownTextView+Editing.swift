@@ -99,7 +99,7 @@ extension MarkdownTextView.Coordinator {
                 key, text: view.textStorage.string as NSString, selection: selection, native: range, rendered: rendered,
                 // A table and the line breaks around it: joining a line to
                 // a row would change the table.
-                protected: rendered ? view.tableViews.map { NSRange(location: max($0.table.range.location - 1, 0), length: $0.table.range.length + 2) } : [])
+                protected: rendered ? view.tableViews.map { Self.protected($0.table.range, in: view.textStorage.length) } : [])
         }
         view.hidesMarkers = parent.rendered
         view.onTableTap = actions == nil ? nil : { [weak view] table in
@@ -111,6 +111,14 @@ extension MarkdownTextView.Coordinator {
             if !view.isFirstResponder { view.becomeFirstResponder() }
             view.selectedRange = NSRange(location: after, length: 0)
         }
+    }
+
+    /// A table's range and the line breaks either side of it, within the
+    /// text: a deletion there would join a line to a row.
+    static func protected(_ table: NSRange, in length: Int) -> NSRange {
+        let start = max(table.location - 1, 0)
+        let end = min(NSMaxRange(table) + 1, length)
+        return NSRange(location: start, length: max(end - start, 0))
     }
 
     /// What the styler needs from the view now.
@@ -220,6 +228,18 @@ extension MarkdownTextView.Coordinator {
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         guard textView.isEditable, !(textView is CellTextView) else { return false }
+        // Typing right after a table (at the text's end, where a tap on it
+        // puts the caret) starts a paragraph below it rather than adding to
+        // its last row: tables are not edited in this slice.
+        if parent.rendered, range.length == 0, !text.isEmpty, text != "\n", textView.markedTextRange == nil,
+           let view = textView as? CandidateTextView,
+           view.tableViews.contains(where: { NSMaxRange($0.table.range) == range.location }) {
+            let typed = "\n\n" + text
+            bridge.replace(
+                range, with: typed, selection: NSRange(location: range.location + (typed as NSString).length, length: 0),
+                in: textView)
+            return false
+        }
         return bridge.willChange(textView, range: range, text: text)
     }
 
