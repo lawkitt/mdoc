@@ -167,14 +167,21 @@ committed as Xcode writes them, so an archive leaves the checkout clean.
   previews' core are behind `#if DEBUG` or in the test targets: none ships
   in the app or the extension.
 - **Edit mode types into the core** ([ADR 0109](../../docs/adr/0109-mobile-markdown-editor.md)).
-  Edit (⌘E) shows with Show Markdown on; the text view applies typing
-  natively and `TypingBridge` sends each committed edit, never marked IME
-  text, to the session (`type`) as "Typing" steps in the one undo line. Its
-  mirror of the core's text checks the edits UIKit announces, so the view's
-  string stays the core's, which is what saves; a typing pause runs
-  discovery and the save. The view is restyled in place while editing,
-  never given new text. Cut and Copy use an app-private pasteboard
-  (`InAppClipboard`); the text view's undo manager is the core's.
+  Edit (⌘E) shows in live preview and with Show Markdown on; the text view
+  applies typing natively and `TypingBridge` sends each committed edit,
+  never marked IME text, to the session (`type`) as "Typing" steps in the
+  one undo line. Its mirror of the core's text checks the edits UIKit
+  announces, so the view's string stays the core's, which is what saves; a
+  typing pause runs discovery and the save. Return, and ⌫ or ⌦ of one
+  character, ask the editor core (`editor_enter`, `editor_backspace`,
+  `editor_delete_forward`; `StructuralKeys`) and apply its answer as one
+  edit on that path. The view is restyled in place while editing, never
+  given new text: each keystroke restyles only its block and the lines the
+  caret left and entered (`LivePreview`, the core's
+  `markdown_block_styling`), with the caret's markers shown dimmed
+  (`editor_visible_markers`); the caret never rests in a hidden run and
+  steps over tables (`CaretSnap`). Cut and Copy use an app-private
+  pasteboard (`InAppClipboard`); the text view's undo manager is the core's.
 - **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
   offsets into the Markdown source; `TextOffsets` converts them for UIKit.
 - **The core recognizes Markdown.** `MarkdownStyling` asks the core for a

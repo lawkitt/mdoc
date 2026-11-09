@@ -47,6 +47,9 @@ final class LivePreview {
     /// fence typed or removed, several edits at once, a table edited): the
     /// owner restyles the whole text.
     func edited(_ edits: [AppliedEdit], in view: CandidateTextView, look: Look) -> Bool {
+        // The whole keystroke's restyle, as ADR 0109's budget counts it.
+        let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
+        defer { editingSignposter.endInterval("Restyle", interval) }
         var intact = edits.count == 1
         for edit in edits {
             candidates = candidates.compactMap { candidate in
@@ -68,7 +71,7 @@ final class LivePreview {
             }
         }
         guard intact, let edit = edits.first else { return false }
-        let text = view.textStorage.string
+        let text = Self.text(of: view)
         let (selection, lines) = Self.selection(in: view)
         let edited = SourceRange(start: edit.source.start, end: edit.source.start + edit.sourceLength)
         var ranges = [edited, lines]
@@ -86,7 +89,9 @@ final class LivePreview {
             caretLines = nil
             return
         }
-        let text = view.textStorage.string
+        let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
+        defer { editingSignposter.endInterval("Restyle", interval) }
+        let text = Self.text(of: view)
         let (selection, lines) = Self.selection(in: view)
         let shown = editorVisibleMarkers(text: text, selection: selection.textRange).map(SourceRange.init)
         guard force || shown != visible || lines != caretLines else { return }
@@ -95,6 +100,13 @@ final class LivePreview {
         visible = shown
         caretLines = lines
         restyle(ranges, text: text, in: view, look: look)
+    }
+
+    /// The view's text, in UTF-8 once: each core call copies it.
+    private static func text(of view: UITextView) -> String {
+        var text = view.textStorage.string
+        text.makeContiguousUTF8()
+        return text
     }
 
     /// The selection and the whole lines it is on, in UTF-8.
@@ -109,8 +121,6 @@ final class LivePreview {
     /// the text's fenced code changed beyond them.
     @discardableResult
     private func restyle(_ ranges: [SourceRange], text: String, in view: CandidateTextView, look: Look, checkFences: Bool = false) -> Bool {
-        let interval = editingSignposter.beginInterval("Restyle", id: editingSignposter.makeSignpostID())
-        defer { editingSignposter.endInterval("Restyle", interval) }
         var blocks: [MarkdownBlockStyling] = []
         for range in ranges.sorted(by: { $0.start < $1.start }) {
             if blocks.contains(where: { Int($0.range.start) <= range.start && range.end <= Int($0.range.end) }) { continue }

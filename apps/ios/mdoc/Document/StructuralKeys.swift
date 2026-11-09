@@ -60,13 +60,14 @@ enum StructuralKeys {
         var source = text as String
         source.makeContiguousUTF8()
         let selected = TypingBridge.sourceRange(selection, in: text).textRange
+        // The core call and turning its edits into one replacement.
         let interval = editingSignposter.beginInterval("Structural", id: editingSignposter.makeSignpostID())
+        defer { editingSignposter.endInterval("Structural", interval) }
         let change: EditorChange? = switch key {
         case .enter: editorEnter(text: source, selection: selected, rendered: rendered)
         case .backspace: editorBackspace(text: source, selection: selected, rendered: rendered)
         case .deleteForward: editorDeleteForward(text: source, selection: selected, rendered: rendered)
         }
-        editingSignposter.endInterval("Structural", interval)
         guard let change else { return .native }
         let map = UTF8Map(source)
         guard let first = change.edits.first, let last = change.edits.last else {

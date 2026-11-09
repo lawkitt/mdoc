@@ -264,6 +264,32 @@ final class SurveyUITests: XCTestCase {
         shot("42-markdown-edit-mode")
     }
 
+    /// Live-preview editing (ADR 0109, slice 3), Show Markdown off: the
+    /// caret on a heading shows its `#`, and inside a bold word its `**`,
+    /// dimmed.
+    @MainActor
+    func test8LivePreviewEditing() throws {
+        let app = launch(seed: MdocUITest.markdownFixture)
+        let row = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        let edit = app.buttons["edit-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        app.typeKey(.upArrow, modifierFlags: .command)
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value BEGINSWITH %@", "# "), timeout: 5))
+        shot("43-live-preview-heading")
+        // A bold word typed at the end, the caret moved back into it.
+        app.typeKey(.downArrow, modifierFlags: .command)
+        app.typeText("\nPay **monthly**")
+        for _ in 0..<4 { app.typeKey(.leftArrow, modifierFlags: []) }
+        XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "**monthly**"), timeout: 5))
+        shot("44-live-preview-bold")
+    }
+
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.

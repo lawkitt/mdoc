@@ -121,10 +121,8 @@ extension MarkdownTextView.Coordinator {
     /// The core took typed edits: the block around them restyles in place,
     /// or the whole text when more than a block changed.
     func restyle(after edits: [AppliedEdit], in view: CandidateTextView) {
-        guard view.markedTextRange == nil else {
-            restyleAfterComposing = true
-            return
-        }
+        // Marked text reaches the core only once committed, and restyles then.
+        guard view.markedTextRange == nil else { return }
         if !livePreview.edited(edits, in: view, look: look(view)) {
             restyleWhole(view)
         }
