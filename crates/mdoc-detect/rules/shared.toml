@@ -143,6 +143,18 @@
 #                             proposed: the pattern only fills gaps
 # Without a pattern an entry
 # fixes a model span's boundaries, in this order:
+#   nested_quotes = [regex…]  for ORG: legal forms before a name in nested
+#                         quotes on one line («…«…»», "…"…"", the last
+#                         inner pair closing with the outer, no deeper):
+#                         after one, every span on the form or in the
+#                         quotes grows to the whole name, form and closing
+#                         quotes included, as one span; without one, only
+#                         its pieces (spans with only spaces and quotes
+#                         between and around them) grow, to the name in its
+#                         outer quotes. A name opens with a capital or a
+#                         digit and holds no form; a growth takes no other
+#                         category's span outside the last inner pair, no
+#                         markup or cell border, and 1000 bytes at most
 #   extend    = [regex…]  a span inside a match grows to the whole match
 #                         (the longest, when several hold it), never
 #                         into part of another span of its category, and

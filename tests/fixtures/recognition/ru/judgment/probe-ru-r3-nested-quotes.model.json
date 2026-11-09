@@ -1,0 +1,11 @@
+{
+  "model": "gliner2-pii-fp16-e5948986",
+  "threshold": 0.5,
+  "entities": [
+    {"start":207,"end":232,"label":"organization","score":0.85752964,"text":"Северный мост"},
+    {"start":316,"end":326,"label":"organization","score":0.7779753,"text":"Север"},
+    {"start":66,"end":89,"label":"organization","score":0.7626009,"text":"Кедровый щит"},
+    {"start":257,"end":265,"label":"organization","score":0.65742844,"text":"Кедр"},
+    {"start":286,"end":302,"label":"organization","score":0.6435533,"text":"Общество"}
+  ]
+}
