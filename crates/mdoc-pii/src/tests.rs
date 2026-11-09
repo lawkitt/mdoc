@@ -420,11 +420,155 @@ fn underscores_in_an_email_address_are_text_unless_they_are_emphasis() {
             "_Note: write to _EMAIL_1_ soon.",
         ),
         ("_roman@kadry.invalid", "_roman@kadry.invalid", "EMAIL_1"),
+        // #746: an escaped `_` is the address's, its `\` too, and so is
+        // emphasis wholly inside the address: its rendered text is the
+        // address. Emphasis around it stays.
+        (
+            "\\_roman@kadry.invalid",
+            "\\_roman@kadry.invalid",
+            "EMAIL_1",
+        ),
+        (
+            "Write to snake\\_case@kadry.invalid.",
+            "snake\\_case@kadry.invalid",
+            "Write to EMAIL_1.",
+        ),
+        (
+            "- \\_first\\_last@kadry.invalid",
+            "\\_first\\_last@kadry.invalid",
+            "- EMAIL_1",
+        ),
+        (
+            "__init__@kadry.invalid",
+            "__init__@kadry.invalid",
+            "EMAIL_1",
+        ),
+        (
+            "Mail _a_@kadry.invalid.",
+            "_a_@kadry.invalid",
+            "Mail EMAIL_1.",
+        ),
+        (
+            "Mail __init__@kadry.invalid__ now.",
+            "__init__@kadry.invalid",
+            "Mail EMAIL_1__ now.",
+        ),
+        ("_x@y.invalid_", "_x@y.invalid", "_EMAIL_1_"),
+        ("__x@y.invalid__", "__x@y.invalid", "__EMAIL_1__"),
+        // An escaped `\` escapes nothing after it; an unescaped one does.
+        (
+            "An escaped \\\\_roman@kadry.invalid.",
+            "_roman@kadry.invalid",
+            "An escaped \\\\EMAIL_1.",
+        ),
+        (
+            "Not \\_roman@kadry.invalid.",
+            "_roman@kadry.invalid",
+            "Not \\_roman@kadry.invalid.",
+        ),
+        // Only the outer delimiters around an address are Markdown, and
+        // strikethrough wholly inside one is its text too.
+        ("___a_@x.invalid__", "___a_@x.invalid", "__EMAIL_1__"),
+        ("Mail ~a~@x.invalid.", "~a~@x.invalid", "Mail EMAIL_1."),
+        ("Mail ~~a~~@x.invalid.", "~~a~~@x.invalid", "Mail EMAIL_1."),
+        // In code and raw HTML the whole run is replaced, as a plain
+        // `snake_case@…` there is.
+        (
+            "Copy `snake\\_case@kadry.invalid` here.",
+            "snake\\_case@kadry.invalid",
+            "Copy `EMAIL_1` here.",
+        ),
+        (
+            "```\n\\_roman@kadry.invalid\n```",
+            "\\_roman@kadry.invalid",
+            "```\nEMAIL_1\n```",
+        ),
+        (
+            "Code:\n\n    \\_roman@kadry.invalid\n",
+            "\\_roman@kadry.invalid",
+            "Code:\n\n    EMAIL_1\n",
+        ),
+        (
+            "<b title=\"snake\\_case@kadry.invalid\">x</b>",
+            "snake\\_case@kadry.invalid",
+            "<b title=\"EMAIL_1\">x</b>",
+        ),
+        (
+            "<div>\n\\_roman@kadry.invalid\n</div>",
+            "\\_roman@kadry.invalid",
+            "<div>\nEMAIL_1\n</div>",
+        ),
+        (
+            "<!-- snake\\_case@kadry.invalid -->",
+            "snake\\_case@kadry.invalid",
+            "<!-- EMAIL_1 -->",
+        ),
+        // Prose after a fence holding a blank line is prose.
+        (
+            "```\ncode\n\n```\n\\_roman@kadry.invalid now",
+            "\\_roman@kadry.invalid",
+            "```\ncode\n\n```\nEMAIL_1 now",
+        ),
     ] {
         let start = source.find(address).unwrap();
         let email = detection(start..start + address.len(), Category::Email);
-        assert_eq!(applied(source, vec![email]), expected, "{source}");
+        assert_eq!(applied(source, vec![email.clone()]), expected, "{source}");
+        if expected != source {
+            let mut review = Review::default();
+            review.ingest(source, vec![email]).unwrap();
+            let changed = crate::restore::tests::apply_pending(&mut review, source, 1);
+            assert_eq!(changed, expected, "{source}");
+            let ids = review.applied().iter().map(|a| a.id).collect();
+            let mut restored = changed.clone();
+            for (range, replacement) in review.reversion_edits(&changed, &ids).unwrap().iter().rev()
+            {
+                restored.replace_range(range.clone(), replacement);
+            }
+            assert_eq!(restored, source, "{source}");
+        }
     }
+}
+/// #746: escaped and emphasis underscores of an address come back byte
+/// for byte, and an escaped `_` and a plain one are one address.
+#[test]
+fn escaped_and_emphasis_underscores_restore_exactly() {
+    let source = concat!(
+        "Write to snake\\_case@kadry.invalid or \\_roman@kadry.invalid.\n\n",
+        "Also __init__@kadry.invalid, _a_@kadry.invalid and ",
+        "[mail](mailto:_roman@kadry.invalid)."
+    );
+    let at = |text: &str| source.find(text).unwrap();
+    let email = |text: &str| detection(at(text)..at(text) + text.len(), Category::Email);
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                email("snake\\_case@kadry.invalid"),
+                email("\\_roman@kadry.invalid"),
+                email("__init__@kadry.invalid"),
+                email("_a_@kadry.invalid"),
+                detection(
+                    at("_roman@kadry.invalid)")..at("_roman@kadry.invalid)") + 20,
+                    Category::Email,
+                ),
+            ],
+        )
+        .unwrap();
+    let changed = crate::restore::tests::apply_pending(&mut review, source, 1);
+    assert_eq!(
+        changed,
+        concat!(
+            "Write to EMAIL_1 or EMAIL_2.\n\n",
+            "Also EMAIL_3, EMAIL_4 and [mail](mailto:EMAIL_2)."
+        )
+    );
+    let ids = review.applied().iter().map(|a| a.id).collect();
+    let mut restored = changed.clone();
+    for (range, replacement) in review.reversion_edits(&changed, &ids).unwrap().iter().rev() {
+        restored.replace_range(range.clone(), replacement);
+    }
+    assert_eq!(restored, source);
 }
 #[test]
 fn only_real_markdown_and_html_syntax_hides_a_value() {

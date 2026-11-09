@@ -5767,4 +5767,112 @@ mod tests {
             Vec::<String>::new()
         );
     }
+
+    /// #746: an escaped `_` (as the importer writes one) is the local
+    /// part's, its `\` too, with or without the model's span; so is
+    /// emphasis wholly inside the address, whose rendered text it is. In
+    /// code and raw HTML the whole run is the address, as a plain one is.
+    /// Emphasis around an address, `\_` in prose or a web address, an
+    /// escaped `\` and a mention stay as they were.
+    #[test]
+    fn escaped_and_emphasis_underscores_keep_the_whole_address() {
+        let emails = |source: &str, spans: &[(&str, &str)]| -> Vec<String> {
+            shown_with(source, spans)
+                .into_iter()
+                .filter(|(_, category, _)| category == "EMAIL")
+                .map(|(_, _, text)| text)
+                .collect()
+        };
+        let escaped = r"Write to snake\_case@kadry.invalid or \_roman@kadry.invalid.";
+        for spans in [
+            &[][..],
+            &[
+                ("case@kadry.invalid", "email"),
+                ("roman@kadry.invalid", "email"),
+            ],
+            &[
+                (r"_case@kadry.invalid", "email"),
+                (r"_roman@kadry.invalid", "email"),
+            ],
+        ] {
+            assert_eq!(
+                emails(escaped, spans),
+                [r"snake\_case@kadry.invalid", r"\_roman@kadry.invalid"],
+                "{spans:?}"
+            );
+        }
+        for (source, spans, expected) in [
+            (
+                r"- \_first\_last@kadry.invalid",
+                &[][..],
+                &[r"\_first\_last@kadry.invalid"][..],
+            ),
+            (
+                "Mail __init__@kadry.invalid.",
+                &[],
+                &["__init__@kadry.invalid"],
+            ),
+            (
+                "Mail __init__@kadry.invalid.",
+                &[("init__@kadry.invalid", "email")],
+                &["__init__@kadry.invalid"],
+            ),
+            ("Mail _a_@kadry.invalid.", &[], &["_a_@kadry.invalid"]),
+            ("Write to _x@y.invalid_ now.", &[], &["x@y.invalid"]),
+            (
+                r"An escaped \\_roman@kadry.invalid.",
+                &[],
+                &["_roman@kadry.invalid"],
+            ),
+            (r"Use snake\_case names.", &[], &[]),
+            (r"See https://wiki.invalid/snake\_case/page.", &[], &[]),
+            (r"Ping @snake\_case today.", &[], &[]),
+            (
+                r"Copy `snake\_case@kadry.invalid` here.",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                r"Copy `snake\_case@kadry.invalid` here.",
+                &[("case@kadry.invalid", "email")],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                "```\nsnake\\_case@kadry.invalid\n```",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                "<!-- snake\\_case@kadry.invalid -->",
+                &[],
+                &[r"snake\_case@kadry.invalid"],
+            ),
+            (
+                "```\ncode\n\n```\n\\_roman@kadry.invalid now",
+                &[],
+                &[r"\_roman@kadry.invalid"],
+            ),
+        ] {
+            assert_eq!(emails(source, spans), expected, "{source}");
+        }
+        // An escaped `_` and a plain one are one address.
+        let both = r"Write \_roman@kadry.invalid or [mail](mailto:_roman@kadry.invalid).";
+        let mut review = mdoc_pii::Review::default();
+        review.ingest(both, correct(both, &[])).unwrap();
+        let aliases: Vec<_> = review
+            .candidates()
+            .iter()
+            .map(|c| {
+                let variant = review.variant(c.variant).unwrap();
+                (&both[c.range.clone()], variant.replacement.clone())
+            })
+            .collect();
+        assert_eq!(
+            aliases,
+            [
+                (r"\_roman@kadry.invalid", "EMAIL_1".to_owned()),
+                ("_roman@kadry.invalid", "EMAIL_1".to_owned())
+            ]
+        );
+    }
 }

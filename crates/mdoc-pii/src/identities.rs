@@ -150,7 +150,9 @@ pub(crate) fn normalization_key(value: &str, category: Category) -> String {
         return url_key(value);
     }
     if category == Category::Email {
-        return canonical_raw(value);
+        // A Markdown-escaped `_` is the address's own (#746): "\_roman@…"
+        // and "_roman@…" are one address.
+        return canonical_raw(&value.replace("\\_", "_"));
     }
     let words = name_words(value);
     if category == Category::Person
