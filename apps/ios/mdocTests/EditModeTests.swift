@@ -197,6 +197,80 @@ final class EditModeTests: XCTestCase {
         XCTAssertEqual(harness.shown, "x" + Self.text)
     }
 
+    // MARK: Review findings (PR #766)
+
+    /// Done with text still marked commits it and sends it to the core
+    /// before review reads the core's text.
+    func testDoneCommitsMarkedText() throws {
+        let harness = try harness()
+        edit(harness)
+        let view = harness.view
+        XCTAssertTrue(view.becomeFirstResponder())
+        view.selectedRange = NSRange(location: 0, length: 0)
+        view.setMarkedText("日本", selectedRange: NSRange(location: 2, length: 0))
+        try XCTSkipIf(view.markedTextRange == nil, "this host does not mark text")
+        harness.coordinator.textViewDidChange(view)
+        XCTAssertFalse(coreText(harness).contains("日本"), "marked text never reaches the core")
+        harness.model.doneEditing()
+        show(harness)
+        XCTAssertTrue(coreText(harness).hasPrefix("日本"))
+        XCTAssertEqual(harness.shown, coreText(harness))
+    }
+
+    /// After typing a multi-byte character, review maps selections with
+    /// the typed text's offsets, not the ones from before the typing.
+    func testReviewOffsetsFollowTypedText() async throws {
+        let harness = try harness()
+        edit(harness)
+        type(harness, "😀", at: 0)
+        await harness.model.discoverNow()
+        show(harness)
+        harness.model.doneEditing()
+        show(harness)
+        let shown = harness.shown as NSString
+        let signs = shown.range(of: "signs")
+        let source = harness.coordinator.offsets.sourceRange(signs)
+        let bytes = Array(coreText(harness).utf8)
+        XCTAssertEqual(String(decoding: bytes[source.start..<source.end], as: UTF8.self), "signs")
+    }
+
+    /// A document emptied by editing stays editable, before and after Done.
+    func testAnEmptiedDocumentStaysEditable() async throws {
+        let harness = try harness()
+        edit(harness)
+        change(harness, NSRange(location: 0, length: (harness.shown as NSString).length), "")
+        await harness.model.discoverNow()
+        XCTAssertEqual(harness.model.snapshot.markdown, "")
+        XCTAssertTrue(harness.model.hasEditableText)
+        type(harness, "New", at: 0)
+        harness.model.doneEditing()
+        XCTAssertEqual(coreText(harness), "New")
+        harness.model.enterEditMode()
+        XCTAssertTrue(harness.model.isEditing)
+    }
+
+    /// A restyle after a typing pause keeps where typing left the caret: a
+    /// move after it still ends the step, so Undo takes back one delete.
+    func testACaretMoveAfterARestyleStillEndsTheStep() async throws {
+        let harness = try harness()
+        edit(harness)
+        // A delete before the names moves them: the pause restyles.
+        change(harness, NSRange(location: 2, length: 1), "")
+        let rebuilds = harness.coordinator.rebuilds
+        await harness.model.discoverNow()
+        show(harness)
+        XCTAssertGreaterThan(harness.coordinator.rebuilds, rebuilds, "the moved names restyle")
+        let end = (harness.shown as NSString).length
+        harness.view.selectedRange = NSRange(location: end, length: 0)
+        harness.coordinator.textViewDidChangeSelection(harness.view)
+        change(harness, NSRange(location: end - 1, length: 1), "")
+        harness.model.undoTapped()
+        show(harness)
+        var expected = Self.text
+        expected.remove(at: expected.index(expected.startIndex, offsetBy: 2))
+        XCTAssertEqual(harness.shown, expected, "only the second delete is undone")
+    }
+
     // MARK: The typing fuzz test (ADR 0109's acceptance)
 
     /// Random typing, deletes, pastes, unannounced changes, undo and redo:

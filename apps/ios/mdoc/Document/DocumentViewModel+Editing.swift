@@ -15,6 +15,9 @@ struct TypingState {
     var hintedAlias = false
     /// Discovery, once typing pauses.
     var discovery: Task<Void, Never>?
+    /// Commits marked text in the view and sends what it has not sent yet:
+    /// Done runs it first (the edit view sets it).
+    var flush: (@MainActor () -> Void)?
 
     /// A snapshot newer than any typed edit came: it says what Undo does.
     mutating func settled(at snapshot: DocumentSnapshot) {
@@ -38,9 +41,10 @@ extension DocumentViewModel {
             : String(localized: "Recognizing. Edit when it finishes.")
     }
 
-    /// The document has text to edit: read, and not empty.
+    /// The document has been read, so it has text to edit, even none: a
+    /// document emptied by editing can be typed into again.
     var hasEditableText: Bool {
-        snapshot.phase != nil && !snapshot.markdown.isEmpty
+        snapshot.phase != nil
     }
 
     /// Edit: the keyboard comes up on the text; the review bar closes.
@@ -61,6 +65,8 @@ extension DocumentViewModel {
     /// pause, and the typing is saved then rather than after it.
     func doneEditing() {
         guard isEditing else { return }
+        // Marked (IME) text is committed and sent while typing still counts.
+        typing.flush?()
         // The text as typed, before review shows it: the snapshot is older.
         applyReview(session.snapshot())
         isEditing = false

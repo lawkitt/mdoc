@@ -18,6 +18,9 @@ struct EditActions {
     /// The text revision the latest typed edit left: a snapshot of another
     /// revision is older than the view's text.
     var revision: () -> UInt64?
+    /// Hands the model what commits marked text and syncs the view, for
+    /// Done to run before it reads the core's text.
+    var setFlush: (@escaping @MainActor () -> Void) -> Void
 }
 
 extension EditActions {
@@ -30,7 +33,8 @@ extension EditActions {
             redo: { [weak model] in model?.redoTapped() },
             canUndo: { [weak model] in model?.canUndo ?? false },
             canRedo: { [weak model] in model?.canRedo ?? false },
-            revision: { [weak model] in model?.typing.revision })
+            revision: { [weak model] in model?.typing.revision },
+            setFlush: { [weak model] in model?.typing.flush = $0 })
     }
 }
 
@@ -73,6 +77,12 @@ extension MarkdownTextView.Coordinator {
         }
         bridge.send = { range, text in actions?.typed(range, text) }
         bridge.endTyping = { actions?.caretMoved() }
+        actions?.setFlush { [weak self, weak view] in
+            guard let self, let view else { return }
+            // Marked text is committed as typed, then sent.
+            if view.markedTextRange != nil { view.unmarkText() }
+            self.bridge.didChange(view)
+        }
         bridge.onTyped = { [weak self] typed in self?.shownTextChanged(to: typed.textRevision) }
         bridge.onResync = { [weak self, weak view] in
             guard let self, let view, let actions else { return }

@@ -135,7 +135,11 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var textPane: some View {
-        if model.snapshot.markdown.isEmpty && model.importNotFinished {
+        if model.isEditing || (model.snapshot.markdown.isEmpty && model.snapshot.phase != nil) {
+            // Editing, or a read document with no text (emptied by editing):
+            // the text view, so typing can go on (ADR 0109).
+            textColumn
+        } else if model.snapshot.markdown.isEmpty && model.importNotFinished {
             ContentUnavailableView(
                 "Import not finished",
                 systemImage: "doc.badge.clock",
@@ -153,18 +157,22 @@ struct DocumentScreen: View {
                     ? Text("Recognition stopped. Finished pages are kept, and resuming reads the rest.")
                     : Text("mdoc reads the text when recognition runs."))
         } else {
-            VStack(spacing: 0) {
-                if let warning = model.snapshot.warning {
-                    Label(warning, systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.orange.opacity(0.15))
-                        .accessibilityIdentifier("import-warning")
-                }
-                markdownTextView
+            textColumn
+        }
+    }
+
+    private var textColumn: some View {
+        VStack(spacing: 0) {
+            if let warning = model.snapshot.warning {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color.orange.opacity(0.15))
+                    .accessibilityIdentifier("import-warning")
             }
+            markdownTextView
         }
     }
 

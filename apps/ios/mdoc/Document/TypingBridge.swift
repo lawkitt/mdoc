@@ -42,12 +42,16 @@ final class TypingBridge {
     /// How many edits reached the core: a test hook.
     private(set) var sent = 0
 
-    /// The view shows `text`, which is the core's.
+    /// The view shows `text`, which is the core's. A restyle that kept the
+    /// text keeps where typing left the caret, so a move after it still
+    /// ends the typing step.
     func reset(to text: String) {
-        mirror = NSMutableString(string: text)
+        let kept = mirror.isEqual(to: text)
         announced.removeAll()
         composing = false
         changing = false
+        if kept { return }
+        mirror = NSMutableString(string: text)
         caretAfterEdit = nil
     }
 
