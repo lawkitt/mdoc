@@ -72,6 +72,10 @@ pub const SUPPORTED: bool = mdoc_import::ocr::SUPPORTED;
 /// A name column's cell's score, as a `context` rule's value has (#397).
 const COLUMN_SCORE: f32 = 0.95;
 
+/// The score of bare initials after a person's role, and of their repeats
+/// (#491), as a `context` rule's value has.
+const ROLE_INITIALS_SCORE: f32 = 0.95;
+
 /// Guess a manual selection's category without a model, correctable in the
 /// popup (ADR 0025): a structured rule covering exactly the selection
 /// (evaluated on its line, so labels count), else the rule pack's guesses (a
@@ -696,13 +700,277 @@ fn initials_are_people(source: &str, detections: &mut [Detection]) {
         let organization = named.iter().any(|name| {
             name.split(|c: char| !c.is_alphanumeric())
                 .any(|word| word == token)
-        }) || ["«{}»", "\"{}\"", "“{}”", "„{}“", "‘{}’", "'{}'"]
-            .iter()
-            .any(|quoted| source.contains(&quoted.replace("{}", token)))
+        }) || quoted(source, token)
             || table_column(source, &detection.range)
                 .is_some_and(|column| company_columns.contains(&column));
         if !organization {
             detection.category = Category::Person;
+        }
+    }
+}
+
+/// Whether `source` writes `word` in quotes, as a company's name is:
+/// «ЯВР».
+fn quoted(source: &str, word: &str) -> bool {
+    ["«{}»", "\"{}\"", "“{}”", "„{}“", "‘{}’", "'{}'"]
+        .iter()
+        .any(|quoted| source.contains(&quoted.replace("{}", word)))
+}
+
+/// A role before bare initials (#491): where it starts, and whether only
+/// a person holds it (the rule pack's `initials_after`: «потерпевший»,
+/// «ИП») or a company may too (`initials_after_party`: «ответчик»).
+#[derive(Clone, Copy, PartialEq)]
+struct Cue {
+    start: usize,
+    person: bool,
+}
+
+/// How bare initials in Cyrillic capitals stand in a document (#491).
+#[derive(Clone, Copy, PartialEq)]
+enum Initials {
+    /// On their own in a sentence; `cued` after a role («потерпевший
+    /// КЛМ»).
+    Lone { cued: Option<Cue> },
+    /// As a company's name: after a legal form («АО БАВ», «ООО «БАВ»»),
+    /// or before one, in brackets too («БАВ ООО», «КЛМ (ООО)»).
+    Company,
+    /// Part of a longer name: before a word they qualify, a capitalised
+    /// one or other bare initials («КЛМ Групп», «РК БАВ»). The review
+    /// would spread a person's letters to such a mention, so the rule adds
+    /// none of them where one stands.
+    Qualifying,
+    /// Neither: in an all-capitals heading, or before a quote («КЛМ
+    /// «Кедр»»).
+    Other,
+}
+
+/// Every whole word of two or three Cyrillic capitals in `source` that is
+/// bare initials ([`mdoc_pii::lone_initials`]: no abbreviation such as
+/// «ООО», «РФ», «МВД»), no word that never names anyone (the rule pack's
+/// «ТКО», «АЗС»), none that is never initials after a role (its
+/// `initials_never` and public bodies' words: «ЖКХ», «НЕ», «МЧС») and no
+/// mask of «Х»s («гр. ХХХ»), with how it stands. Letters before a word
+/// they qualify, a capitalised one or other bare initials («гражданин РК
+/// БАВ», «КЛМ Групп»), are part of a longer name. After a
+/// citizen's word («гражданин», «гр.») only three letters are cued: two
+/// are a country («гражданин РА»).
+fn cyrillic_initials(source: &str) -> Vec<(Range<usize>, Initials)> {
+    let pack = rules::pack();
+    let mut found = Vec::new();
+    let mut words = source.char_indices().peekable();
+    while let Some((start, c)) = words.next() {
+        if !c.is_alphanumeric() {
+            continue;
+        }
+        let mut end = start + c.len_utf8();
+        while let Some(&(at, next)) = words.peek() {
+            if !next.is_alphanumeric() {
+                break;
+            }
+            end = at + next.len_utf8();
+            words.next();
+        }
+        let range = start..end;
+        let word = &source[range.clone()];
+        let capitals = word.chars().all(|c| matches!(c, 'А'..='Я' | 'Ё'));
+        let mask = word.chars().all(|c| c == 'Х');
+        if !capitals
+            || mask
+            || !mdoc_pii::lone_initials(source, &range)
+            || pack.never(word)
+            || pack.initials_never(word)
+        {
+            continue;
+        }
+        let line_start = source[..start].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = source[end..].find('\n').map_or(source.len(), |i| end + i);
+        let before = &source[line_start..start];
+        let after = source[end..line_end]
+            .trim_start_matches(['*', '_'])
+            .trim_start();
+        let first_word = |text: &str| -> String {
+            text.split(|c: char| !c.is_alphanumeric())
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let next_word = first_word(after);
+        let bracketed = after.strip_prefix('(').map(first_word).unwrap_or_default();
+        // The next word qualifies the letters where it is a capitalised
+        // word («Колос», «России», «Групп») or other bare initials
+        // («гражданин РК БАВ»); never an identifier's label («ИНН»), a
+        // date mask («ДД.ММ.ГГГГ», «ХХ.ХХ») or «ИЗЪЯТО».
+        // `after` runs to the line's end, trimmed at its start only.
+        let next_start = line_end - after.len();
+        let next_range = next_start..next_start + next_word.len();
+        let qualifying = next_word.chars().next().is_some_and(char::is_uppercase)
+            && (next_word.chars().any(char::is_lowercase)
+                || mdoc_pii::lone_initials(source, &next_range)
+                    && !next_word.chars().all(|c| c == 'Х')
+                    && !pack.never(&next_word)
+                    && !pack.initials_never(&next_word));
+        // A heading in capitals has no lowercase letter and some longer
+        // word in capitals besides: «ПОТЕРПЕВШИЙ КЛМ».
+        let line = &source[line_start..line_end];
+        let heading = !line.chars().any(char::is_lowercase)
+            && line
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|w| w.chars().count() > 3 && w.chars().all(char::is_uppercase));
+        let standing = if pack.initials_company(before)
+            || [&next_word, &bracketed]
+                .iter()
+                .any(|word| !word.is_empty() && pack.initials_company(word))
+        {
+            Initials::Company
+        } else if qualifying {
+            Initials::Qualifying
+        } else if heading || after.starts_with(['«', '"', '„', '“']) {
+            Initials::Other
+        } else {
+            Initials::Lone {
+                cued: pack
+                    .initials_role(before)
+                    .filter(|role| !role.three || word.chars().count() == 3)
+                    .map(|role| Cue {
+                        start: line_start + role.start,
+                        person: role.person,
+                    }),
+            }
+        };
+        found.push((range, standing));
+    }
+    found
+}
+
+/// Bare initials in a depersonalised act are a person (guide rule 1,
+/// #491). After a role only a person has (the rule pack's
+/// `initials_after`: «потерпевший КЛМ», «ИП ДРС», «гр. БАВ») the model's
+/// organization exactly on the letters, or on the role and them («ИП
+/// ДРС»), becomes the person, and where nothing marks them a span of
+/// their own does; each lone repeat of the same letters is the person
+/// too, the model's organization exactly on one relabelled, a span added
+/// where nothing marks it. After a party's role, which a company may hold
+/// too (`initials_after_party`: «ответчик КЛМ»), only the model's
+/// organization exactly on the letters or a repeat becomes the person,
+/// and only where the document gives the letters a person's evidence
+/// elsewhere (a person's own role before them, or the model's person on
+/// them: «Истец КЛМ … Потерпевший КЛМ»); no span is added. Where the document also writes the letters as a
+/// company's (quoted, beside a legal form, inside another organization,
+/// defined as one's short name: «ООО «ДРС»», «(далее – КСС)»), or as part
+/// of a longer name («КЛМ Групп»), only the
+/// model's organization on a mention after a person's own role becomes
+/// the person and nothing is added, so the company keeps its name. A
+/// mention another span overlaps («КЛМ Групп» as one organization) stays
+/// as it is.
+fn role_initials_are_people(source: &str, detections: &mut Vec<Detection>) {
+    let found = cyrillic_initials(source);
+    let cued = |word: &str, person_only: bool| {
+        found.iter().any(|(range, standing)| {
+            matches!(standing, Initials::Lone { cued: Some(cue) } if !person_only || cue.person)
+                && &source[range.clone()] == word
+        })
+    };
+    if !found
+        .iter()
+        .any(|(_, standing)| matches!(standing, Initials::Lone { cued: Some(_) }))
+    {
+        return;
+    }
+    // The lone initials a model organization at `range` is: exactly
+    // them, or a role and them («ИП ДРС»).
+    let initials_of = |range: &Range<usize>| {
+        found.iter().find_map(|(lone, standing)| match standing {
+            Initials::Lone { cued } if lone.end == range.end && lone.start >= range.start => {
+                let whole =
+                    lone.start == range.start || cued.is_some_and(|cue| cue.start <= range.start);
+                whole.then(|| lone.clone())
+            }
+            _ => None,
+        })
+    };
+    let named: Vec<&str> = detections
+        .iter()
+        .filter(|d| d.category == Category::Organization && initials_of(&d.range).is_none())
+        .map(|d| &source[d.range.clone()])
+        .collect();
+    // The letters the model took for a person somewhere: a person's
+    // evidence for a party's role, as a person's own role is.
+    let model_people: Vec<&str> = detections
+        .iter()
+        .filter(|d| d.category == Category::Person && d.recognizer == mdoc_pii::Recognizer::Model)
+        .map(|d| &source[d.range.clone()])
+        .collect();
+    let person = |word: &str| cued(word, true) || model_people.contains(&word);
+    let pack = rules::pack();
+    let company = |word: &str| {
+        quoted(source, word)
+            || pack.defined_company(source, word)
+            || found.iter().any(|(range, standing)| {
+                matches!(standing, Initials::Company | Initials::Qualifying)
+                    && &source[range.clone()] == word
+            })
+            || named.iter().any(|name| {
+                name.split(|c: char| !c.is_alphanumeric())
+                    .any(|part| part == word)
+            })
+    };
+    for (target, standing) in &found {
+        let Initials::Lone { cued: cue } = *standing else {
+            continue;
+        };
+        let word = &source[target.clone()];
+        if !cued(word, false)
+            || !pack.identifying_at(source, target.clone(), word, Category::Person)
+        {
+            continue;
+        }
+        let company = company(word);
+        // What may change here: the model's organization, and a span of
+        // the rule's own where nothing marks the letters.
+        let (relabel, push) = match cue {
+            Some(cue) if cue.person => (true, !company),
+            Some(_) => (!company && person(word), false),
+            None => (!company && person(word), !company && cued(word, true)),
+        };
+        if !relabel {
+            continue;
+        }
+        // A span on exactly the letters, or after a person's own role on
+        // the role and them; any other span over them leaves them be.
+        let fits = |range: &Range<usize>| {
+            *range == *target
+                || cue.is_some_and(|cue| {
+                    cue.person
+                        && range.end == target.end
+                        && cue.start <= range.start
+                        && range.start <= target.start
+                })
+        };
+        let overlapping =
+            |range: &Range<usize>| range.start < target.end && target.start < range.end;
+        if detections
+            .iter()
+            .any(|d| overlapping(&d.range) && !fits(&d.range))
+        {
+            continue;
+        }
+        for detection in detections.iter_mut() {
+            if detection.category == Category::Organization && fits(&detection.range) {
+                detection.range = target.clone();
+                detection.category = Category::Person;
+            }
+        }
+        let marked = detections
+            .iter()
+            .any(|d| d.category == Category::Person && overlapping(&d.range));
+        if push && !marked {
+            detections.push(Detection {
+                range: target.clone(),
+                category: Category::Person,
+                score: ROLE_INITIALS_SCORE,
+                recognizer: mdoc_pii::Recognizer::Context,
+            });
         }
     }
 }
@@ -918,6 +1186,7 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .map(|(span, _)| span)
         .collect();
     detections.extend(spans);
+    role_initials_are_people(source, &mut detections);
     detections
 }
 
@@ -3894,6 +4163,452 @@ mod tests {
                     .all(|(category, _)| category == "ORG"),
                 "{quoted}: {found:?}"
             );
+        }
+    }
+
+    /// #491: dotless initials after a person's role are that person, and
+    /// so are their repeats, though the model took them for companies;
+    /// letters the document also writes as a company's, abbreviations,
+    /// headings and legal references stay as they were.
+    #[test]
+    fn initials_after_a_role_the_model_took_for_a_company_are_the_person() {
+        // The issue's synthetic reproduction, with the model's
+        // organizations on the initials alone and on «ИП ДРС».
+        let source = "Потерпевший КЛМ пояснил, что ИП ДРС передал ему товар; КЛМ подтвердил.";
+        let people = pairs(&[("PERSON", "КЛМ"), ("PERSON", "ДРС"), ("PERSON", "КЛМ")]);
+        for drs in ["ДРС", "ИП ДРС"] {
+            assert_eq!(
+                shown_for(
+                    source,
+                    &[
+                        ("КЛМ", "organization", 0),
+                        (drs, "organization", 0),
+                        ("КЛМ", "organization", 1)
+                    ]
+                ),
+                people,
+                "{drs}"
+            );
+        }
+        // The model found no one: the role still names them.
+        assert_eq!(shown_for(source, &[]), people);
+        // Other roles and case forms, emphasis between.
+        for (source, word) in [
+            ("Гр. БАВ задержан, БАВ отказался от подписи.", "БАВ"),
+            (
+                "Иск гражданки ЛВГ удовлетворить; ЛВГ вправе обжаловать.",
+                "ЛВГ",
+            ),
+            (
+                "**Осуждённому** БАВ назначено наказание. БАВ вину признал.",
+                "БАВ",
+            ),
+            (
+                "Законный представитель ЛВГ возражал. Несовершеннолетний ЛВГ просил отложить.",
+                "ЛВГ",
+            ),
+            (
+                "Взыскать с индивидуального предпринимателя ЛВГ долг. ЛВГ не явился.",
+                "ЛВГ",
+            ),
+        ] {
+            assert_eq!(
+                shown_for(
+                    source,
+                    &[(word, "organization", 0), (word, "organization", 1)]
+                ),
+                pairs(&[("PERSON", word), ("PERSON", word)]),
+                "{source}"
+            );
+        }
+        // A company of the letters keeps its name, and a person beside it
+        // stays a person.
+        let company = "ООО «КЛМ» и потерпевший Иванов заключили договор.";
+        assert_eq!(
+            shown_for(
+                company,
+                &[("ООО «КЛМ»", "organization", 0), ("Иванов", "person", 0)]
+            ),
+            pairs(&[("ORG", "ООО «КЛМ»"), ("PERSON", "Иванов")])
+        );
+        // Where the document also writes them as a company's, only the
+        // model's organization on the mention after a person's own role is
+        // the person: «ИП ДРС» beside «ООО «ДРС»», and «гр. БАВ» beside «АО
+        // БАВ». The company keeps its name. The bare repeat the model also
+        // took for a company is the review's: it gives the wording one
+        // category, the person's here.
+        let both = "ИП ДРС передал товар ООО «ДРС», а ДРС оплатило его.";
+        assert_eq!(
+            shown_for(
+                both,
+                &[
+                    ("ИП ДРС", "organization", 0),
+                    ("ООО «ДРС»", "organization", 0),
+                    ("ДРС", "organization", 2),
+                ],
+            ),
+            pairs(&[("PERSON", "ДРС"), ("ORG", "ООО «ДРС»"), ("PERSON", "ДРС")])
+        );
+        let both = "Гр. БАВ работает в АО БАВ.";
+        assert_eq!(
+            shown_for(
+                both,
+                &[("БАВ", "organization", 0), ("АО БАВ", "organization", 0)]
+            ),
+            pairs(&[("PERSON", "БАВ"), ("ORG", "АО БАВ")])
+        );
+        // Abbreviations after a role, a legal reference, public bodies, a
+        // heading in capitals, letters before a quote and a mask name no
+        // one.
+        for source in [
+            "Представитель ООО «Ромашка» и представитель УФК не явились.",
+            "Истец ПАО «Ромашка» обратился в суд.",
+            "Потерпевший Иванов обратился в ГИБДД МВД по ст. 158 УК РФ.",
+            "ПОТЕРПЕВШИЙ КЛМ\n\nОбстоятельства дела.",
+            "Свидетель КЛМ «Кедр» дал показания.",
+            "Представитель СФР и гр. ХХХ не явились.",
+        ] {
+            let found = shown_for(source, &[]);
+            assert!(
+                found.iter().all(|(category, text)| category != "PERSON"
+                    || !text.chars().all(char::is_uppercase)),
+                "{source}: {found:?}"
+            );
+        }
+        // Letters no role introduces stay as the model read them.
+        let alone = "Договор с КЛМ расторгнут.";
+        assert_eq!(
+            shown_for(alone, &[("КЛМ", "organization", 0)]),
+            pairs(&[("ORG", "КЛМ")])
+        );
+    }
+
+    /// #491's review: what the role path must leave as it was, as main
+    /// shows it, and what a party's role changes. Each case is a source,
+    /// the model's spans and what the user is shown.
+    #[test]
+    fn initials_after_a_role_leave_companies_bodies_and_qualifiers_be() {
+        type Case<'a> = (
+            &'a str,
+            Vec<(&'a str, &'a str, usize)>,
+            Vec<(&'a str, &'a str)>,
+        );
+        let org = "organization";
+        let cases: Vec<Case> = vec![
+            // A wider model organization over the letters keeps them, its
+            // own words included.
+            (
+                "Ответчик КЛМ Групп иск не признал.",
+                vec![("КЛМ Групп", org, 0)],
+                vec![("ORG", "КЛМ Групп")],
+            ),
+            (
+                "Истец КПК Касса взаимопомощи обратился в суд.",
+                vec![("КПК Касса взаимопомощи", org, 0)],
+                vec![("ORG", "КПК Касса взаимопомощи")],
+            ),
+            (
+                "Должник НАО ПКБ долг не погасил.",
+                vec![("НАО ПКБ", org, 0)],
+                vec![("ORG", "НАО ПКБ")],
+            ),
+            (
+                "Потерпевший КЛМ пояснил, а КЛМ Групп поставила товар. КЛМ подтвердил.",
+                vec![("КЛМ Групп", org, 0)],
+                vec![("ORG", "КЛМ Групп")],
+            ),
+            // #387's placed initials are as on main: «МТС» is no
+            // abbreviation there.
+            (
+                "Ответственный исполнитель: Мария Тимофеевна Сергеева.\n\n\
+                 | Этап | Исполнитель |\n|---|---|\n| 1 | МТС |\n| 2 | МТС |\n",
+                vec![
+                    ("Мария Тимофеевна Сергеева", "person", 0),
+                    ("МТС", org, 0),
+                    ("МТС", org, 1),
+                ],
+                vec![
+                    ("PERSON", "Мария Тимофеевна Сергеева"),
+                    ("PERSON", "МТС"),
+                    ("PERSON", "МТС"),
+                ],
+            ),
+            // Public bodies after a role.
+            (
+                "Ответчик МЧС России иск не признал. Представитель ФМС возражал.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Ответчик ТУ Росимущества в Ольховской области иск не признал. \
+                 ТУ Росимущества возражало.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Представитель ДГИ г. Москвы возражал. ДГИ г. Москвы просил отказать.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Представитель ФТС России и представитель ГСУ СК России не явились.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Представитель КДН и ЗП администрации района поддержал иск.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Представитель ОП № 5 УМВД пояснил. Представитель ЦЗН не явился.",
+                vec![],
+                vec![],
+            ),
+            ("Свидетель ДПС пояснил.", vec![], vec![]),
+            ("Представитель УУП пояснил.", vec![], vec![]),
+            ("Ответчик ЦРБ иск не признал.", vec![], vec![]),
+            (
+                "Представитель АСВ поддержал заявление. Ответчик ГК АСВ возражал.",
+                vec![],
+                vec![],
+            ),
+            // A party's role marks nothing of its own, and the model's
+            // organization exactly on the letters stays where nothing
+            // else says they are a person's.
+            (
+                "Истец АБВ обратился в суд. АБВ просит взыскать.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Истец АБВ обратился в суд. АБВ просит взыскать.",
+                vec![("АБВ", org, 0), ("АБВ", org, 1)],
+                vec![("ORG", "АБВ"), ("ORG", "АБВ")],
+            ),
+            (
+                "Ответчик РСА компенсационную выплату не произвёл. РСА возражал против иска.",
+                vec![("РСА", org, 0), ("РСА", org, 1)],
+                vec![("ORG", "РСА"), ("ORG", "РСА")],
+            ),
+            (
+                "Ответчик ВСК выплату не произвёл. ВСК возражало.",
+                vec![("ВСК", org, 0), ("ВСК", org, 1)],
+                vec![("ORG", "ВСК"), ("ORG", "ВСК")],
+            ),
+            (
+                "Ответчик ФКР взносы начислил. Истец УК обслуживает дом. \
+                 Ответчик ЕРЦ направил квитанцию.",
+                vec![("ФКР", org, 0), ("УК", org, 0), ("ЕРЦ", org, 0)],
+                vec![("ORG", "ФКР"), ("ORG", "ЕРЦ")],
+            ),
+            (
+                "Ответчик ГУП иск не признал. Ответчик ДЕЗ возражал. Ответчик ФКУ \
+                 возражал. Должник ЖЭК долг не погасил.",
+                vec![
+                    ("ГУП", org, 0),
+                    ("ДЕЗ", org, 0),
+                    ("ФКУ", org, 0),
+                    ("ЖЭК", org, 0),
+                ],
+                vec![("ORG", "ДЕЗ"), ("ORG", "ЖЭК")],
+            ),
+            (
+                "Представитель истца КЛМ пояснил. Представитель ответчика ДРС возражал.",
+                vec![("КЛМ", org, 0), ("ДРС", org, 0)],
+                vec![("ORG", "КЛМ"), ("ORG", "ДРС")],
+            ),
+            // With a person's evidence elsewhere, a person's own role or
+            // the model's person on the letters, it becomes the person.
+            (
+                "Истец КЛМ обратился с иском. КЛМ просит взыскать. Потерпевший КЛМ пояснил.",
+                vec![("КЛМ", org, 0), ("КЛМ", org, 1)],
+                vec![("PERSON", "КЛМ"), ("PERSON", "КЛМ"), ("PERSON", "КЛМ")],
+            ),
+            (
+                "Ответчик КЛМ иск не признал. Потерпевший КЛМ пояснил.",
+                vec![],
+                vec![("PERSON", "КЛМ"), ("PERSON", "КЛМ")],
+            ),
+            (
+                "Истец КЛМ обратился с иском. КЛМ просит взыскать.",
+                vec![("КЛМ", "person", 0)],
+                vec![("PERSON", "КЛМ"), ("PERSON", "КЛМ")],
+            ),
+            // The model's person with «гр.» inside is the name alone.
+            (
+                "Свидетель видела, как гр. БАВ вынес коробку.",
+                vec![("гр. БАВ", "person", 0)],
+                vec![("PERSON", "БАВ")],
+            ),
+            (
+                "Протокол составлен в отношении гр. Иванов.",
+                vec![("гр. Иванов", "person", 0)],
+                vec![("PERSON", "Иванов")],
+            ),
+            // Two letters after a citizen's word are a country.
+            (
+                "Гражданин РА, ранее не судимый, задержан. По законодательству РА он \
+                 совершеннолетний.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Гражданина РМ допросили. Гражданин США въехал. Гражданка ЧР пояснила. \
+                 Гражданин РУ въехал.",
+                vec![],
+                vec![],
+            ),
+            // An identifier's label, a date mask or «ИЗЪЯТО» after the
+            // letters qualifies nothing.
+            (
+                "ИП ДРС ИНН 771234567890 передал товар. ДРС товар не вернул.",
+                vec![("ИП ДРС", org, 0)],
+                vec![
+                    ("PERSON", "ДРС"),
+                    ("TAX", "771234567890"),
+                    ("PERSON", "ДРС"),
+                ],
+            ),
+            (
+                "ИП ДРС ИНН 771234567890 передал товар. ДРС товар не вернул.",
+                vec![],
+                vec![
+                    ("PERSON", "ДРС"),
+                    ("TAX", "771234567890"),
+                    ("PERSON", "ДРС"),
+                ],
+            ),
+            (
+                "Подсудимый БАВ ДД.ММ.ГГГГ года рождения ранее не судим.",
+                vec![],
+                vec![("PERSON", "БАВ")],
+            ),
+            (
+                "Подсудимый БАВ ХХ.ХХ.ХХХХ г.р. ранее не судим.",
+                vec![],
+                vec![("PERSON", "БАВ")],
+            ),
+            (
+                "Подсудимый БАВ ИЗЪЯТО пояснил.",
+                vec![],
+                vec![("PERSON", "БАВ")],
+            ),
+            // A repeat before a word it qualifies is part of a longer
+            // name: nothing is spread to it.
+            (
+                "Потерпевший КЛМ пояснил. КЛМ Групп поставила товар.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Потерпевший НП пояснил. Председатель НП Содружество КЛМ возражал.",
+                vec![],
+                vec![],
+            ),
+            // A definition after a person beside a company names no
+            // company.
+            (
+                "Иванов Иван Иванович, работник ООО «Ромашка» (далее – ИИИ), обратился \
+                 в полицию. Потерпевший ИИИ пояснил. ИИИ подтвердил.",
+                vec![],
+                vec![("PERSON", "ИИИ"), ("PERSON", "ИИИ"), ("PERSON", "ИИИ")],
+            ),
+            // Letters that qualify the next, capitalised word.
+            (
+                "Иск гражданина РК БАВ удовлетворить. БАВ прибыл из РК, где действует УК РК.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Гражданин КНР ЛВГ задержан. ЛВГ въехал из КНР по визе.",
+                vec![("ЛВГ", "person", 0), ("ЛВГ", "person", 1)],
+                vec![("PERSON", "ЛВГ"), ("PERSON", "ЛВГ")],
+            ),
+            (
+                "Гражданка ДНР ЛВГ и гражданин ФРГ БАВ дали показания.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Гражданина ОАЭ КЛМ и гражданина КР ДРС допросили.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Истец КПК Касса взаимопомощи обратился в суд. Ответчик СПК Колос иск признал.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Истец ДНТ Берёзка обратился в суд с иском. Ответчик НП Содружество возражал.",
+                vec![],
+                vec![],
+            ),
+            ("Ответчик ЧОП Щит иск не признал.", vec![], vec![]),
+            (
+                "Ответчик АКБ Абсолют Банк (ПАО) иск не признал.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Взыскатель НАО ПКО «Первое клиентское бюро» обратился с заявлением.",
+                vec![("НАО ПКО «Первое клиентское бюро»", org, 0)],
+                vec![("ORG", "НАО ПКО «Первое клиентское бюро»")],
+            ),
+            (
+                "Взыскатель НАО ПКО «Первое клиентское бюро» обратился с заявлением.",
+                vec![],
+                vec![],
+            ),
+            // A company's letters: a party's role yields to the company.
+            (
+                "Ответчик АО «КЛМ» возражал. Ответчик КЛМ иск не признал. КЛМ просил отказать.",
+                vec![("АО «КЛМ»", org, 0), ("КЛМ", org, 1), ("КЛМ", org, 2)],
+                vec![("ORG", "АО «КЛМ»"), ("ORG", "КЛМ"), ("ORG", "КЛМ")],
+            ),
+            (
+                "ООО «Кедр Строй Сервис» (далее – КСС) заключило договор. Ответчик КСС \
+                 обязательство не исполнил; КСС долг не оплатило.",
+                vec![
+                    ("ООО «Кедр Строй Сервис»", org, 0),
+                    ("КСС", org, 0),
+                    ("КСС", org, 1),
+                    ("КСС", org, 2),
+                ],
+                vec![
+                    ("ORG", "ООО «Кедр Строй Сервис»"),
+                    ("ORG", "КСС"),
+                    ("ORG", "КСС"),
+                    ("ORG", "КСС"),
+                ],
+            ),
+            (
+                "ООО «Кедр Строй Сервис» (далее – КСС) заключило договор. Ответчик КСС \
+                 обязательство не исполнил; КСС долг не оплатило.",
+                vec![("ООО «Кедр Строй Сервис»", org, 0)],
+                vec![("ORG", "ООО «Кедр Строй Сервис»")],
+            ),
+            (
+                "ИП ДРС передал товар ООО «ДРС», а ДРС оплатило его.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Истец ОАО КЛМ обратился. Ответчик КЛМ возражал.",
+                vec![],
+                vec![],
+            ),
+            (
+                "Потерпевший КЛМ пояснил. Ранее товар поставило КЛМ (ООО). КЛМ подтвердил.",
+                vec![],
+                vec![],
+            ),
+            // Function words in capitals.
+            ("Ответчик НЕ явился, о причинах НЕ сообщил.", vec![], vec![]),
+        ];
+        for (source, model, expected) in cases {
+            assert_eq!(shown_for(source, &model), pairs(&expected), "{source}");
         }
     }
 

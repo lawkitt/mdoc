@@ -11,7 +11,7 @@ pub mod merge_hints;
 pub mod mrz;
 mod propagation;
 pub use identities::{Identity, IdentitySnapshot};
-pub use propagation::{nicknames, person_forms_in, placed_initials};
+pub use propagation::{lone_initials, nicknames, person_forms_in, placed_initials};
 pub mod restore;
 mod syntax;
 pub mod tracking;
