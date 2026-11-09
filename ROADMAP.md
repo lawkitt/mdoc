@@ -60,16 +60,23 @@ Records: [roadmap grill](docs/design/roadmap-grill-2026-11-01.md),
    `never` for titles, roles and defined terms, HTML entities decoded
    before detection and readiness. Groundwork (loader, lists moved, no
    behaviour change) starts beside item 2; then a fix loop on hunted flaw
-   classes. *Done when:* both demos' Copy for AI hold no address, date of
-   birth or case number; every rule-pack flaw class is closed or
-   `model-limit`; the rule-pack cells are saturated.
+   classes. *Done when (amended by the
+   [run 3 grill](docs/design/recognition-run3-grill-2026-11-09.md),
+   [ADR 0108](docs/adr/0108-recognition-targets.md)):* both demos' Copy
+   for AI hold no address, date of birth or case number, and the real set
+   meets ADR 0108's targets (recall at least 95% overall and 90% per
+   leaking category, precision at least 85%) with the holdout at or above
+   97.6% recall and 94.0% precision. Miss classes block; false-hit classes
+   below ADR 0108's volume line wait in the Recognition backlog.
 4. **[Detection] Propagation in the document.** *From the 2026-11-01
    grills (U27).* ADR 0092's propagation: an applied or marked name's
    forms (surname or first name alone, first name + patronymic, surname
    with initials, inflections, nicknames) become proposals linked to it
    when the candidate is unique. *Done when:* in the Russian demo,
-   Павлова's six aliases become one and "Марина" links; every propagation
-   flaw class is closed or `model-limit`; those cells are saturated.
+   Павлова's six aliases become one and "Марина" links, and item 3's
+   targets hold ([ADR 0108](docs/adr/0108-recognition-targets.md)).
+   Run 4 (one Windows hub) works items 3 and 4 together; a model spike
+   beside it informs 0.5, not rc.1.
 The 2026-10-31 survey's polish (U13, U18, U19, U23, U24, U26 in Later)
 runs as a separate overnight hub during 0.4.0, outside the item count.
 

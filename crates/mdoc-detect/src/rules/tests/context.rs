@@ -291,6 +291,134 @@ fn labelled_invalid_english_identifiers_are_proposed() {
     }
 }
 
+/// #381, the maintainer's decision: a US Social Security number is
+/// IDENTITY, like СНИЛС, after each of its labels and when damaged
+/// (guide rule 6); the model's TAX guess on a labelled one gives way,
+/// beside money too. An EIN, a TIN and an ITIN stay TAX, and an
+/// unlabelled SSN-shaped number keeps the model's category, as before.
+#[test]
+fn a_labelled_social_security_number_is_identity() {
+    for (source, value) in [
+        // Each label form.
+        ("SSN 123-45-6789", "123-45-6789"),
+        ("SSN: 123-45-6789", "123-45-6789"),
+        ("SSN # 123-45-6789", "123-45-6789"),
+        ("SSN No. 123-45-6789", "123-45-6789"),
+        ("**SSN:** 123-45-6789", "123-45-6789"),
+        ("S.S.N. 123-45-6789", "123-45-6789"),
+        ("Social Security No. 123-45-6789", "123-45-6789"),
+        ("Social Security Number: 123-45-6789", "123-45-6789"),
+        ("social security no 123-45-6789", "123-45-6789"),
+        ("Social Security # 123-45-6789", "123-45-6789"),
+        ("| SSN | 123-45-6789 |", "123-45-6789"),
+        ("Social Security Number (SSN): 123-45-6789", "123-45-6789"),
+        ("SSN (Social Security Number): 123-45-6789", "123-45-6789"),
+        // Damaged: no dashes, one missing, spaces for dashes, a digit
+        // short or long, grouped in threes, OCR letters for digits.
+        ("SSN: 123456789", "123456789"),
+        ("SSN: 12345-6789", "12345-6789"),
+        ("SSN: 123 45 6789", "123 45 6789"),
+        ("SSN: 123-45-678", "123-45-678"),
+        ("SSN: 123-45-67890", "123-45-67890"),
+        ("SSN: 123 456 789", "123 456 789"),
+        ("SSN: l23-45-67B9", "l23-45-67B9"),
+        ("Social Security No. 123-45-678.", "123-45-678"),
+    ] {
+        assert_eq!(
+            proposed(source),
+            [(value.to_owned(), "IDENTITY".to_owned())],
+            "{source}"
+        );
+    }
+    // The model's TAX guess gives way, on the value, over its label, or
+    // beside money; its IDENTITY guess stays.
+    for (source, span, value, label) in [
+        ("SSN: 123-45-6789", "123-45-6789", "123-45-6789", "tax_id"),
+        (
+            "SSN: 123-45-6789",
+            "SSN: 123-45-6789",
+            "123-45-6789",
+            "tax_id",
+        ),
+        (
+            "Social Security No. 123 45 6789",
+            "123 45 6789",
+            "123 45 6789",
+            "tax_id",
+        ),
+        (
+            "SSN 123 45 6789 $500",
+            "123 45 6789",
+            "123 45 6789",
+            "tax_id",
+        ),
+        (
+            "SSN 123-45-6789, paid $15,000",
+            "123-45-6789",
+            "123-45-6789",
+            "tax_id",
+        ),
+        (
+            "SSN: 123-45-6789",
+            "123-45-6789",
+            "123-45-6789",
+            "national_id_number",
+        ),
+    ] {
+        assert_eq!(
+            shown(source, &[(span, label)]),
+            pairs(&[(value, "IDENTITY")]),
+            "{source} {span:?} {label}"
+        );
+    }
+    // EIN, TIN and ITIN stay TAX.
+    for (source, value) in [
+        ("EIN 12-3456789", "12-3456789"),
+        ("EIN: 98-7654321", "98-7654321"),
+        ("TIN: 123-45-6789", "123-45-6789"),
+        ("ITIN 912-70-1234", "912-70-1234"),
+        ("Tax ID 12-3456789", "12-3456789"),
+    ] {
+        assert_eq!(
+            shown(source, &[(value, "tax_id")]),
+            pairs(&[(value, "TAX")]),
+            "{source}"
+        );
+        assert!(proposed(source).is_empty(), "{source}");
+    }
+    // An unlabelled SSN-shaped number is proposed by no rule and keeps
+    // the model's category.
+    let source = "Reference 123-45-6789 here.";
+    assert!(proposed(source).is_empty());
+    for (label, category) in [("tax_id", "TAX"), ("national_id_number", "IDENTITY")] {
+        assert_eq!(
+            shown(source, &[("123-45-6789", label)]),
+            pairs(&[("123-45-6789", category)]),
+            "{label}"
+        );
+    }
+    // No value after the label, or another field's.
+    for source in [
+        "Social Security Administration",
+        "the Social Security Administration in 2026",
+        "SSN: pending",
+        "SSN: 01/02/2026",
+        "SSN 12-3456789",
+        "Social Security benefits of $1,250.00",
+        "SSN: 123456789012",
+        // A bare ten-digit run is a phone, not an SSN a digit long.
+        "Social Security: 8007721213",
+        "Call Social Security 8007721213 today",
+        "SSN: 2125550142",
+    ] {
+        assert!(
+            proposed(source).is_empty(),
+            "{source}: {:?}",
+            proposed(source)
+        );
+    }
+}
+
 /// English labels decide a bank account (a slash between sort code and
 /// number is fine) and a staff ID, even one of letters only.
 #[test]

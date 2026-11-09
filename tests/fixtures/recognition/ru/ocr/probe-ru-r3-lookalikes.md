@@ -1,9 +1,11 @@
 ---
-status: pass
+status: known-flaw
 flaw: ocr-lookalike
 issue: 549
 kind: ocr
 source: probe-r2
+expect: miss: PERSON "Пахомцева И.А."
+expect: boundary: gold PHONE "8(4999) 555-015"; proposed PHONE "(4999) 555-015"
 ---
 <!-- SPDX-License-Identifier: CC0-1.0; synthetic, invented values only. -->
 ОТЧЁТ О РАСХОДАХ ОТДЕЛЕНИЯ (копия, распознана со скана)

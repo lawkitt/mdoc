@@ -751,7 +751,8 @@ fn identifiers_beside_citation_variants_stay() {
             ("Ivo Harrow", "PERSON"),
             ("+1 (202) 555-0164", "PHONE"),
             ("123456789", "IDENTITY"),
-            ("123-45-6789", "TAX"),
+            // An SSN is IDENTITY (#381).
+            ("123-45-6789", "IDENTITY"),
             ("Rowan Pell", "PERSON"),
         ])
     );

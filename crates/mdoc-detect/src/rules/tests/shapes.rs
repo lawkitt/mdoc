@@ -2029,7 +2029,8 @@ fn english_patent_form_and_page_numbers_are_no_identifiers() {
             ("Bryn Holdings Ltd", "ORG"),
             ("07654321", "IDENTITY"),
             ("Vela Quist", "PERSON"),
-            ("123-45-6789", "TAX"),
+            // An SSN is IDENTITY (#381).
+            ("123-45-6789", "IDENTITY"),
             ("7799000011", "TAX"),
             ("AB1234567", "IDENTITY"),
             ("JaneMorgan", "PERSON"),
@@ -2841,7 +2842,8 @@ fn amount_guards_keep_identifiers_and_names() {
             "phone_number",
             "PHONE",
         ),
-        ("SSN 123 45 6789 $500", "123 45 6789", "tax_id", "TAX"),
+        // An SSN's label makes it IDENTITY (#381).
+        ("SSN 123 45 6789 $500", "123 45 6789", "tax_id", "IDENTITY"),
         ("UTR 12345 67890 £500", "12345 67890", "tax_id", "TAX"),
         (
             "IBAN DE89 3704 0044 0532 0130 00 € 500",
@@ -3199,7 +3201,13 @@ fn amount_guards_keep_additional_labelled_values() {
             "bank_account",
             "BANK",
         ),
-        ("SSN 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
+        // An SSN's label makes it IDENTITY (#381).
+        (
+            "SSN 123 456 789 dollars.",
+            "123 456 789",
+            "tax_id",
+            "IDENTITY",
+        ),
         ("UTR 123 456 789 dollars.", "123 456 789", "tax_id", "TAX"),
         // The passport's label decides its category over the model's
         // guess (#381).

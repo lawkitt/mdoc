@@ -28,6 +28,8 @@
 #   reference legal references and markers no model span is inside
 #   private   bodies that are never public, whoever owns them
 #   label     an identifier field's labels, beside values in one model span
+#   lookalike letters of another script that read as Cyrillic ones, and
+#             the common words they spell (#549)
 #   ocr_letters each a digit, then the letters of a language OCR reads as
 #             it ("1Il"): a model organization that reads as a person's
 #             name with them is that person (#377)
@@ -36,8 +38,6 @@
 #   ocr_person_words regexes for a read-back word after the first, lowercase
 #             and whole, that makes such a span a person's alone (a
 #             patronymic)
-#   lookalike letters of another script that read as Cyrillic ones, and
-#             the common words they spell (#549)
 #
 # Categories are written as their tokens: PERSON, ORG, EMAIL, PHONE,
 # ADDRESS, IDENTITY, TAX, BANK, CASE, DATE, REDACTED.
@@ -716,7 +716,7 @@ pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+
 # Imported text writes a filler escaped («\<», anydoc) and may end the
 # line in a hard break («\»); an entity («&lt;») reads as «<». The line
 # may sit in Markdown: a blockquote, a list item, a table cell, bold or
-# code marks, or after a label («MRZ: »), which the length leaves out
+# code marks, or after a label («MRZ: », «**MRZ:** »), which the length leaves out
 # (`mark` groups). A masked name («XXXXX») is no name. The zone's other
 # lines (number, dates, check digits) stay unmarked, and so do visas
 # («V…»), left out for now. A lone «<<» in prose, HTML or code, a row of
@@ -725,7 +725,7 @@ pattern = '\b\d+(?:[.,]\d+)?(?:[\p{Zs}\t]*×[\p{Zs}\t]*\d+(?:[.,]\d+)?)+\b|\b\d+
 [[span]]
 category = "PERSON"
 pattern = '(?m)(?P<lead>^(?P<mark>{opening})[PIAC](?:[A-Z]|\\?<)?(?:{state}))(?:{surname}(?:\\?<){2}(?:{given})?)(?P<tail>(?:\\?<)*(?P<mark2>{closing})$)'
-parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:[^\n:<|`*]{1,40}:[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
+parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:\*{0,2}[^\n:<|`*]{1,40}\*{0,2}:\*{0,2}[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
 parts.closing = '(?:\*{1,2}|_{1,2}|`{1,2})?(?:[\p{Zs}\t]*\|[^\n]*)?[\p{Zs}\t]*\\?[\p{Zs}\t\r]*'
 parts.surname = '[A-Z]+(?:\\?<[A-Z]+)*'
 parts.given = '[A-Z]+(?:(?:\\?<){1,2}[A-Z]+)*'
@@ -739,17 +739,78 @@ line_length = [32, 52]
 # second (birth date, check digit, sex, expiry date, check digit,
 # nationality): "ERIKSSON<<ANNA<MARIA<<<<<<<<<<". Each part is a PERSON
 # span as on a passport (above), escapes, hard breaks, masks and states
-# alike; the first two lines stay unmarked. The lines may stand in a
-# blockquote or a paragraph each (a blank line between). Each line has 26
-# to 34 characters, for OCR's lost or extra fillers.
+# alike; the first two lines stay unmarked. Each line may open and close
+# as a passport's does (a blockquote, a list item, a table cell, code
+# marks, a label) or stand in a paragraph of its own (a blank line
+# between). OCR may read a date's or a check digit's digit as «O», «I»,
+# «S», «B» or «l», though each date keeps one real digit («OOOOOO» is no
+# date). Each line has 26 to 34 characters, for OCR's lost or
+# extra fillers.
 [[span]]
 category = "PERSON"
-pattern = '(?m)(?P<lead>^(?P<mark>{indent})[IAC](?:[A-Z]|\\?<)?(?:{state})(?:[A-Z0-9]|\\?<)+{end}(?P<mark2>{indent})[0-9]{6}(?:[0-9]|\\?<)(?:[MFX]|\\?<)[0-9]{6}(?:[0-9]|\\?<)(?:[A-Z]|\\?<){3}(?:[A-Z0-9]|\\?<)*{end}(?P<mark3>{indent}))(?:{surname}(?:\\?<){2}(?:{given})?)(?P<tail>(?:\\?<)*[\p{Zs}\t]*\\?[\p{Zs}\t\r]*$)'
-parts.indent = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*'
-parts.end = '[\p{Zs}\t]*\\?\r?\n(?:[\p{Zs}\t]*\r?\n)?'
+pattern = '(?m)(?P<lead>^(?P<mark>{opening})[IAC](?:[A-Z]|\\?<)?(?:{state})(?:[A-Z0-9]|\\?<)+(?P<mark2>{closing})\n(?:[\p{Zs}\t]*\r?\n)?(?P<mark3>{opening}){date}(?:{digit}|\\?<)(?:[MFX]|\\?<){date}(?:{digit}|\\?<)(?:[A-Z]|\\?<){3}(?:[A-Z0-9]|\\?<)*(?P<mark4>{closing})\n(?:[\p{Zs}\t]*\r?\n)?(?P<mark5>{opening}))(?:{surname}(?:\\?<){2}(?:{given})?)(?P<tail>(?:\\?<)*(?P<mark6>{closing})$)'
+parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:\*{0,2}[^\n:<|`*]{1,40}\*{0,2}:\*{0,2}[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
+parts.closing = '(?:\*{1,2}|_{1,2}|`{1,2})?(?:[\p{Zs}\t]*\|[^\n]*)?[\p{Zs}\t]*\\?[\p{Zs}\t\r]*'
+parts.digit = '[0-9OISBl]'
+parts.date = '[0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9]'
 parts.surname = '[A-Z]+(?:\\?<[A-Z]+)*'
 parts.given = '[A-Z]+(?:(?:\\?<){1,2}[A-Z]+)*'
 parts.state = 'ABW|AFG|AGO|AIA|ALA|ALB|AND|ARE|ARG|ARM|ASM|ATA|ATF|ATG|AUS|AUT|AZE|BDI|BEL|BEN|BES|BFA|BGD|BGR|BHR|BHS|BIH|BLM|BLR|BLZ|BMU|BOL|BRA|BRB|BRN|BTN|BVT|BWA|CAF|CAN|CCK|CHE|CHL|CHN|CIV|CMR|COD|COG|COK|COL|COM|CPV|CRI|CUB|CUW|CXR|CYM|CYP|CZE|DEU|DJI|DMA|DNK|DOM|DZA|ECU|EGY|ERI|ESH|ESP|EST|ETH|FIN|FJI|FLK|FRA|FRO|FSM|GAB|GBR|GEO|GGY|GHA|GIB|GIN|GLP|GMB|GNB|GNQ|GRC|GRD|GRL|GTM|GUF|GUM|GUY|HKG|HMD|HND|HRV|HTI|HUN|IDN|IMN|IND|IOT|IRL|IRN|IRQ|ISL|ISR|ITA|JAM|JEY|JOR|JPN|KAZ|KEN|KGZ|KHM|KIR|KNA|KOR|KWT|LAO|LBN|LBR|LBY|LCA|LIE|LKA|LSO|LTU|LUX|LVA|MAC|MAF|MAR|MCO|MDA|MDG|MDV|MEX|MHL|MKD|MLI|MLT|MMR|MNE|MNG|MNP|MOZ|MRT|MSR|MTQ|MUS|MWI|MYS|MYT|NAM|NCL|NER|NFK|NGA|NIC|NIU|NLD|NOR|NPL|NRU|NZL|OMN|PAK|PAN|PCN|PER|PHL|PLW|PNG|POL|PRI|PRK|PRT|PRY|PSE|PYF|QAT|REU|ROU|RUS|RWA|SAU|SDN|SEN|SGP|SGS|SHN|SJM|SLB|SLE|SLV|SMR|SOM|SPM|SRB|SSD|STP|SUR|SVK|SVN|SWE|SWZ|SXM|SYC|SYR|TCA|TCD|TGO|THA|TJK|TKL|TKM|TLS|TON|TTO|TUN|TUR|TUV|TWN|TZA|UGA|UKR|UMI|URY|USA|UZB|VAT|VCT|VEN|VGB|VIR|VNM|VUT|WLF|WSM|YEM|ZAF|ZMB|ZWE|D\\?<\\?<|GBD|GBN|GBO|GBP|GBS|RKS|EUE|UNO|UNA|UNK|XBA|XIM|XCC|XCE|XCO|XEC|XPO|XES|XMP|XOM|XDC|XXA|XXB|XXC|XXX'
 split = '(?:\\?<)+'
 skip = '^X+$|XXX'
+line_length = [26, 34]
+
+# The document number in a passport's or a TD2 card's machine-readable
+# zone (ICAO 9303; #495, the maintainer's decision) is IDENTITY (guide rule
+# 6), damaged too: the number alone, without the «<» fillers that pad it
+# and its check digit ("⟦IDENTITY|760531842⟧8RUS9104123F…",
+# "⟦IDENTITY|X0042917⟧<6NOR…"). It opens the zone's second line (44
+# characters on a passport, 36 on a card), whose fixed shape holds it: the
+# number (positions 1–9: capitals and digits, an OCR letter for a digit
+# too), its check digit (a digit or «<»), the nationality (`state`, as for
+# the names above), the birth date and its check digit, the sex («M», «F»,
+# «X» or «<»), the expiry date and its check digit, then the optional
+# data and the last check digits, padded with «<». OCR may read a date's
+# or a check digit's digit as «O», «I», «S», «B» or «l» (`digit`), though
+# each date keeps one real digit (`date`); the state and the sex stay
+# strict. No check digit has to validate; the
+# dates and check digits stay unmarked. OCR may lose or add
+# some fillers, so 32 to 52 characters do. Escapes, hard breaks, entities
+# and Markdown around the line are as for the names (`mark` groups). A
+# masked number («XXXXXXXXX») or fillers alone give nothing, and so does
+# text of the line's length without its shape; a partly masked one
+# («XXXXX1842») keeps its real digits, so it is proposed.
+[[span]]
+category = "IDENTITY"
+pattern = '(?m)(?P<lead>^(?P<mark>{opening}))(?:{number})(?P<tail>(?:{digit}|\\?<)(?:{state}){date}(?:{digit}|\\?<)(?:[MFX]|\\?<){date}(?:{digit}|\\?<)(?:[A-Z0-9]|\\?<)*(?P<mark2>{closing})$)'
+parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:\*{0,2}[^\n:<|`*]{1,40}\*{0,2}:\*{0,2}[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
+parts.closing = '(?:\*{1,2}|_{1,2}|`{1,2})?(?:[\p{Zs}\t]*\|[^\n]*)?[\p{Zs}\t]*\\?[\p{Zs}\t\r]*'
+parts.number = '[A-Z0-9]{3,9}(?:\\?<)*'
+parts.digit = '[0-9OISBl]'
+parts.date = '[0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9]'
+parts.state = 'ABW|AFG|AGO|AIA|ALA|ALB|AND|ARE|ARG|ARM|ASM|ATA|ATF|ATG|AUS|AUT|AZE|BDI|BEL|BEN|BES|BFA|BGD|BGR|BHR|BHS|BIH|BLM|BLR|BLZ|BMU|BOL|BRA|BRB|BRN|BTN|BVT|BWA|CAF|CAN|CCK|CHE|CHL|CHN|CIV|CMR|COD|COG|COK|COL|COM|CPV|CRI|CUB|CUW|CXR|CYM|CYP|CZE|DEU|DJI|DMA|DNK|DOM|DZA|ECU|EGY|ERI|ESH|ESP|EST|ETH|FIN|FJI|FLK|FRA|FRO|FSM|GAB|GBR|GEO|GGY|GHA|GIB|GIN|GLP|GMB|GNB|GNQ|GRC|GRD|GRL|GTM|GUF|GUM|GUY|HKG|HMD|HND|HRV|HTI|HUN|IDN|IMN|IND|IOT|IRL|IRN|IRQ|ISL|ISR|ITA|JAM|JEY|JOR|JPN|KAZ|KEN|KGZ|KHM|KIR|KNA|KOR|KWT|LAO|LBN|LBR|LBY|LCA|LIE|LKA|LSO|LTU|LUX|LVA|MAC|MAF|MAR|MCO|MDA|MDG|MDV|MEX|MHL|MKD|MLI|MLT|MMR|MNE|MNG|MNP|MOZ|MRT|MSR|MTQ|MUS|MWI|MYS|MYT|NAM|NCL|NER|NFK|NGA|NIC|NIU|NLD|NOR|NPL|NRU|NZL|OMN|PAK|PAN|PCN|PER|PHL|PLW|PNG|POL|PRI|PRK|PRT|PRY|PSE|PYF|QAT|REU|ROU|RUS|RWA|SAU|SDN|SEN|SGP|SGS|SHN|SJM|SLB|SLE|SLV|SMR|SOM|SPM|SRB|SSD|STP|SUR|SVK|SVN|SWE|SWZ|SXM|SYC|SYR|TCA|TCD|TGO|THA|TJK|TKL|TKM|TLS|TON|TTO|TUN|TUR|TUV|TWN|TZA|UGA|UKR|UMI|URY|USA|UZB|VAT|VCT|VEN|VGB|VIR|VNM|VUT|WLF|WSM|YEM|ZAF|ZMB|ZWE|D\\?<\\?<|GBD|GBN|GBO|GBP|GBS|RKS|EUE|UNO|UNA|UNK|XBA|XIM|XCC|XCE|XCO|XEC|XPO|XES|XMP|XOM|XDC|XXA|XXB|XXC|XXX'
+split = '(?:\\?<)+'
+skip = '^X+$'
+line_length = [32, 52]
+
+# A TD1 ID card's document number, on its first line (30 characters) after
+# the code («I», «A» or «C»), the type and the issuing state (positions
+# 6–14): "I<NOR⟦IDENTITY|D23145890⟧7<<<<<<<<<<<<<<<". It is IDENTITY as on
+# a passport (above), without its fillers and its check digit, damaged,
+# escaped and masked alike; the optional data after it stays unmarked. The
+# card's second line (birth date, check digit, sex, expiry date, check
+# digit, nationality) must follow; both lines open, close and read OCR's
+# letters for digits as for the card's names, and each has 26 to 34
+# characters.
+[[span]]
+category = "IDENTITY"
+pattern = '(?m)(?P<lead>^(?P<mark>{opening})[IAC](?:[A-Z]|\\?<)?(?:{state}))(?:{number})(?P<tail>(?:{digit}|\\?<)(?:[A-Z0-9]|\\?<)*(?P<mark2>{closing})\n(?:[\p{Zs}\t]*\r?\n)?(?P<mark3>{opening}){date}(?:{digit}|\\?<)(?:[MFX]|\\?<){date}(?:{digit}|\\?<)(?:[A-Z]|\\?<){3}(?:[A-Z0-9]|\\?<)*(?P<mark4>{closing})$)'
+parts.opening = '[\p{Zs}\t]*(?:>[\p{Zs}\t]*)*(?:(?:[-*+]|\d{1,9}[.)])[\p{Zs}\t]+)?(?:\|(?:[^|\n]*\|)*[\p{Zs}\t]*)?(?:\*{0,2}[^\n:<|`*]{1,40}\*{0,2}:\*{0,2}[\p{Zs}\t]+)?(?:\*{1,2}|_{1,2}|`{1,2})?'
+parts.closing = '(?:\*{1,2}|_{1,2}|`{1,2})?(?:[\p{Zs}\t]*\|[^\n]*)?[\p{Zs}\t]*\\?[\p{Zs}\t\r]*'
+parts.number = '[A-Z0-9]{3,9}(?:\\?<)*'
+parts.digit = '[0-9OISBl]'
+parts.date = '[0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9][0-9OISBl]|[0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9OISBl][0-9]'
+parts.state = 'ABW|AFG|AGO|AIA|ALA|ALB|AND|ARE|ARG|ARM|ASM|ATA|ATF|ATG|AUS|AUT|AZE|BDI|BEL|BEN|BES|BFA|BGD|BGR|BHR|BHS|BIH|BLM|BLR|BLZ|BMU|BOL|BRA|BRB|BRN|BTN|BVT|BWA|CAF|CAN|CCK|CHE|CHL|CHN|CIV|CMR|COD|COG|COK|COL|COM|CPV|CRI|CUB|CUW|CXR|CYM|CYP|CZE|DEU|DJI|DMA|DNK|DOM|DZA|ECU|EGY|ERI|ESH|ESP|EST|ETH|FIN|FJI|FLK|FRA|FRO|FSM|GAB|GBR|GEO|GGY|GHA|GIB|GIN|GLP|GMB|GNB|GNQ|GRC|GRD|GRL|GTM|GUF|GUM|GUY|HKG|HMD|HND|HRV|HTI|HUN|IDN|IMN|IND|IOT|IRL|IRN|IRQ|ISL|ISR|ITA|JAM|JEY|JOR|JPN|KAZ|KEN|KGZ|KHM|KIR|KNA|KOR|KWT|LAO|LBN|LBR|LBY|LCA|LIE|LKA|LSO|LTU|LUX|LVA|MAC|MAF|MAR|MCO|MDA|MDG|MDV|MEX|MHL|MKD|MLI|MLT|MMR|MNE|MNG|MNP|MOZ|MRT|MSR|MTQ|MUS|MWI|MYS|MYT|NAM|NCL|NER|NFK|NGA|NIC|NIU|NLD|NOR|NPL|NRU|NZL|OMN|PAK|PAN|PCN|PER|PHL|PLW|PNG|POL|PRI|PRK|PRT|PRY|PSE|PYF|QAT|REU|ROU|RUS|RWA|SAU|SDN|SEN|SGP|SGS|SHN|SJM|SLB|SLE|SLV|SMR|SOM|SPM|SRB|SSD|STP|SUR|SVK|SVN|SWE|SWZ|SXM|SYC|SYR|TCA|TCD|TGO|THA|TJK|TKL|TKM|TLS|TON|TTO|TUN|TUR|TUV|TWN|TZA|UGA|UKR|UMI|URY|USA|UZB|VAT|VCT|VEN|VGB|VIR|VNM|VUT|WLF|WSM|YEM|ZAF|ZMB|ZWE|D\\?<\\?<|GBD|GBN|GBO|GBP|GBS|RKS|EUE|UNO|UNA|UNK|XBA|XIM|XCC|XCE|XCO|XEC|XPO|XES|XMP|XOM|XDC|XXA|XXB|XXC|XXX'
+split = '(?:\\?<)+'
+skip = '^X+$'
 line_length = [26, 34]
