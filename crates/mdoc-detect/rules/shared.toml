@@ -135,6 +135,9 @@
 #                             blockquote's marks, a label)
 #   skip        = regex       a span in which it matches is not proposed (a
 #                             masked name, "XXXXX")
+#   gaps_only   = true        a match that a span of its category already
+#                             overlaps (the model's, a name cell's) is not
+#                             proposed: the pattern only fills gaps
 # Without a pattern an entry
 # fixes a model span's boundaries, in this order:
 #   extend    = [regex…]  a span inside a match grows to the whole match
@@ -373,10 +376,11 @@ guess_words = ["GmbH", "AG", "SA", "BV"]
 # People: a capitalized word that is not a never word ("Ms Bennett", not
 # "Ms" or "husband"). A manual selection of 1–4 capitalized words is a
 # person; hyphenated surnames, apostrophes and initials ("М.С.", "J.R.")
-# count.
+# count. A surname glued to its lowercase particle is capitalized after it
+# ("d'Estaing", "д'Артаньян", "al-Hadid", "аль-Хадид"; #403).
 [[shape]]
 category = "PERSON"
-word = '^\p{Uppercase}'
+word = '^(?:\p{Uppercase}|[dд][\x27’]\p{Uppercase}|(?:al|el|аль|эль)-\p{Uppercase})'
 guess = [
     '\s*(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)(?:\s+(?:(?:\p{Uppercase}\.)+|\p{Uppercase}[\p{Alphabetic}\x27’]*(?:-\p{Uppercase}[\p{Alphabetic}\x27’]*)*)){0,3}\s*',
 ]
