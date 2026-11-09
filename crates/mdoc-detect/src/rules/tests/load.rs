@@ -1,6 +1,6 @@
 //! Reading and checking the pack.
 use super::*;
-use crate::rules::alternation::Alternation;
+use crate::rules::alternation::{Alternation, Search};
 use crate::rules::load::rust_classes;
 use mdoc_pii::Recognizer;
 use regex::Captures;
@@ -393,6 +393,19 @@ fn mistakes_in_a_rule_file_are_named() {
             "only a cited case",
         ),
         (
+            "[[reference]]\npattern = ['(?P<party>x) v', 'y']",
+            "all name a cited case's parties, or none does",
+        ),
+        ("[[reference]]\npattern = ['x']", "two at least"),
+        (
+            "[[reference]]\npattern = ['x', 'y']\nparts = { code = 'z' }",
+            "never used",
+        ),
+        (
+            "[[reference]]\npattern = ['(?P<series>C)', 'D']\nwhen = ['(?P<series>C)']\ncategories = ['PERSON']",
+            "when takes one pattern",
+        ),
+        (
             "[[reference]]\npattern = '(?P<party>x)'\nown_before = [\"This case\"]",
             "not a lowercase word",
         ),
@@ -519,7 +532,9 @@ fn mistakes_in_a_lookalike_entry_are_named() {
 
 /// Regexes searched one by one find what their alternation finds: the
 /// leftmost match, the first regex's where two start together, and
-/// each next match after the last.
+/// each next match after the last. One searcher asked again and again,
+/// from starts that go forward, stay or go back, finds the same as a
+/// search from each start alone.
 #[test]
 fn an_alternation_finds_what_one_regex_would() {
     let forms = [r"(?P<lead>a)b+", r"ab|b(?P<tail>c)", r"\bc\w*"];
@@ -544,6 +559,17 @@ fn an_alternation_finds_what_one_regex_would() {
                 split.captures_at(haystack, start).map(all),
                 one.captures_at(haystack, start).map(all),
                 "{haystack:?} at {start}"
+            );
+        }
+        let mut searcher = split.searcher(haystack);
+        let starts = (0..=haystack.len())
+            .chain((0..=haystack.len()).rev())
+            .chain((0..=haystack.len()).flat_map(|start| [start, start, start / 2]));
+        for start in starts {
+            assert_eq!(
+                searcher.captures_at(start).map(all),
+                one.captures_at(haystack, start).map(all),
+                "{haystack:?} at {start}, one searcher"
             );
         }
     }

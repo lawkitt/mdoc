@@ -292,9 +292,10 @@ fn span_ranges_sized(
         .filter(|group| numbered(group, "mark"))
         .collect();
     let mut ranges = Vec::new();
+    let mut searcher = pattern.searcher(source);
     let mut at = 0;
     while at <= source.len()
-        && let Some(found) = pattern.captures_at(source, at)
+        && let Some(found) = searcher.captures_at(at)
     {
         let whole = found.get(0).expect("group 0 is the match");
         let sized = line_length.is_none_or(|length| {

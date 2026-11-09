@@ -1,5 +1,6 @@
 //! Span patterns: addresses and machine-readable zones.
 use super::*;
+use crate::rules::alternation::SCANNED;
 use crate::rules::load::File;
 use crate::rules::test_support::{fixed, pairs, shown};
 
@@ -2759,4 +2760,51 @@ fn the_machine_readable_zone_rules_list_mdoc_piis_states() {
         listed += 1;
     }
     assert_eq!(listed, 2);
+}
+
+/// A list pattern's forms each search a text about once, however many
+/// matches it holds: over a dense list of addresses (or of cited cases)
+/// the bytes the searches cover stay a few times the forms × the text's
+/// length. Searching every form again from each match, as a form with no
+/// match ahead would scan to the text's end each time, covers the forms ×
+/// the matches × half the text.
+#[test]
+fn a_list_patterns_forms_search_a_text_about_once() {
+    let pack = pack();
+    let address = pack
+        .spans
+        .iter()
+        .find_map(|span| match span {
+            Span::Pattern {
+                category: Category::Address,
+                pattern,
+                ..
+            } if pattern.0.len() == 3 => Some(pattern),
+            _ => None,
+        })
+        .expect("the Russian forward address, three forms");
+    let line =
+        "Истец: Иванов И. И., 123456, г. Энск, ул. Ленина, д. 5, кв. 12; тел. 8-900-000-00-00\n";
+    let text = line.repeat(2000);
+    SCANNED.with(|scanned| scanned.set(0));
+    let found = crate::rules::spans::span_ranges(address, &text);
+    let scanned = SCANNED.with(std::cell::Cell::get);
+    assert_eq!(found.len(), 2000);
+    assert!(
+        scanned <= 3 * address.0.len() * text.len(),
+        "{scanned} bytes searched over {} bytes",
+        text.len()
+    );
+    let line = "See Pellam v. Ostrand, 912 F.3d 455 (2020); In re Quillon Ltd, 77 B.R. 310.\n";
+    let text = line.repeat(2000);
+    SCANNED.with(|scanned| scanned.set(0));
+    let cited = pack.cited(&text);
+    let scanned = SCANNED.with(std::cell::Cell::get);
+    assert_eq!(cited.len(), 4000);
+    let forms: usize = pack.cases.iter().map(|case| case.0.len()).sum();
+    assert!(
+        scanned <= 3 * forms * text.len(),
+        "{scanned} bytes searched over {} bytes",
+        text.len()
+    );
 }

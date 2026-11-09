@@ -1500,6 +1500,15 @@ impl Pack {
                 )
                 .map_err(at)?;
                 let cited = pattern.capture_names().flatten().any(is_party);
+                if pattern
+                    .0
+                    .iter()
+                    .any(|form| form.capture_names().flatten().any(is_party) != cited)
+                {
+                    return Err(at(
+                        "a list's forms all name a cited case's parties, or none does".into(),
+                    ));
+                }
                 if !cited
                     && (!entry.roles.is_empty()
                         || !entry.own_before.is_empty()

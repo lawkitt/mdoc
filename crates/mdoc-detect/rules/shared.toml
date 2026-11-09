@@ -131,6 +131,11 @@
 # span inside it and gives way to a model span of its category that
 # reaches past it, a span of another category across its edge and any
 # other rule's span in it; a match before a colon (a field's label) goes.
+# A pattern near the regex size limit (10 MiB compiled, a test holds
+# each at 6) is a list of its forms instead, `pattern = ['…', '…']`:
+# each is compiled alone, and they match as their alternation would
+# (`…|…`), the leftmost match of any, the first form's where two start
+# together. The parts are every form's: each is used by one at least.
 # A pattern entry may also have:
 #   split       = regex       the match, `lead` and `tail` left out, is cut
 #                             at each of its matches: every piece between
@@ -227,8 +232,8 @@
 # category inside a match is never proposed; one reaching past it stays (a
 # real number beside a citation), and labelled values (`context`) and the
 # structured rules are never checked against it. `pattern` and `parts` work
-# as in a `span` pattern, `lead` and `tail` groups included; a match stays
-# on one line.
+# as in a `span` pattern, a list and `lead` and `tail` groups included; a
+# match stays on one line.
 # With `when = [regex, ...]` and `categories = ["PERSON", "ORG"]`, a
 # reference is checked after boundary fixes, over the decoded document.
 # Each `when` regex and `pattern` must capture `series`: only series found
@@ -239,6 +244,7 @@
 #
 # A `reference` whose pattern has groups named `party`, `party2`, … is a
 # cited case ("Pellam v. Ostrand, 912 F.3d 455"), its parties those groups.
+# A list pattern's forms are all a cited case's or none is.
 # Its matches are searched over the whole text (a match may wrap), after the
 # span fixes. A name inside one goes unless it names a party of the case at
 # hand: a name the model found outside every cited case, a word of the
