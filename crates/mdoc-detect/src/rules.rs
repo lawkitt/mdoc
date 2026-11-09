@@ -552,7 +552,7 @@ struct SpanFix {
 
 /// The most bytes a company's name in nested quotes grows to
 /// (`SpanFix::nested_names`).
-const NESTED_NAME_MAX: usize = 300;
+const NESTED_NAME_MAX: usize = 1000;
 
 /// A closed pair of quotes on one line, in the source: where its opening
 /// quote starts, where its closing quote starts and where that ends.
@@ -6994,14 +6994,15 @@ mod tests {
     /// they were before #557 (the pre-gate review's P1 and P2 inputs):
     /// spans of quoted prose are no pieces of one name, a quotation opens
     /// in lowercase or holds a legal form, and a growth over markup, a cell
-    /// border, a person outside the inner name or 300 bytes would leave the
+    /// border, a person outside the inner name or 1000 bytes would leave the
     /// review no span.
     #[test]
     fn nested_quotes_leave_prose_markup_and_tables_alone() {
-        let many = format!("Он сказал: «{}«Север»» вчера.", "Кедр ".repeat(51));
-        let mut model = vec![("organization", "Кедр"); 51];
+        // Past the 1000 bytes a growth may take: the spans as they were.
+        let many = format!("Он сказал: «{}«Север»» вчера.", "Кедр ".repeat(120));
+        let mut model = vec![("organization", "Кедр"); 120];
         model.push(("organization", "Север"));
-        let mut expected = vec!["ORG⟦Кедр⟧"; 51];
+        let mut expected = vec!["ORG⟦Кедр⟧"; 120];
         expected.push("ORG⟦Север⟧");
         assert_eq!(proposed_marks(&many, &model), expected);
         let long = format!(
@@ -7171,6 +7172,53 @@ mod tests {
             ),
         ] {
             assert_eq!(proposed_marks(source, model), expected, "{source}");
+        }
+    }
+
+    /// A long name in nested quotes is still one span, up to the 1000
+    /// bytes a growth may take; two quoted words with nothing between their
+    /// quotes are one name without a legal form too, and a person in the
+    /// last inner pair is part of the company's name (guide rule 2, #557,
+    /// as «Фирма «Петров П. П.»»).
+    #[test]
+    fn nested_quotes_join_long_names_and_names_inside() {
+        let source = "Истец Общество с ограниченной ответственностью «Научно-производственное предприятие «Специальные технологии и оборудование для нефтегазовой промышленности Западной Сибири»» обратился.";
+        let name = source
+            .strip_prefix("Истец ")
+            .and_then(|rest| rest.strip_suffix(" обратился."))
+            .unwrap();
+        assert!(name.len() > 300);
+        assert_eq!(
+            proposed_marks(
+                source,
+                &[(
+                    "organization",
+                    "Специальные технологии и оборудование для нефтегазовой промышленности Западной Сибири"
+                )]
+            ),
+            [format!("ORG⟦{name}⟧")]
+        );
+        assert_eq!(
+            proposed_marks(
+                "ООО «Кедр» заключило договор «Север «Плюс»» с АО «Ель».",
+                &[
+                    ("organization", "Кедр"),
+                    ("organization", "Север"),
+                    ("organization", "Плюс"),
+                    ("organization", "Ель"),
+                ]
+            ),
+            ["ORG⟦ООО «Кедр»⟧", "ORG⟦Север «Плюс»⟧", "ORG⟦АО «Ель»⟧"]
+        );
+        for person in ["Петров", "ИП Петров"] {
+            assert_eq!(
+                proposed_marks(
+                    "Истец ООО «Кедр «ИП Петров»» обратился.",
+                    &[("organization", "Кедр"), ("person", person)]
+                ),
+                ["ORG⟦ООО «Кедр «ИП Петров»»⟧"],
+                "{person}"
+            );
         }
     }
 
