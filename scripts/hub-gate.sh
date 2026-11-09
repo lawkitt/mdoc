@@ -16,7 +16,9 @@
 # named <checkout>-hub-gate); it keeps its own target/ between runs.
 source "$(dirname "$0")/lib.sh"
 
-[ $# -eq 1 ] && [[ $1 =~ ^[0-9]+$ ]] || die "usage: scripts/hub-gate.sh <PR number>"
+if [ $# -ne 1 ] || [[ ! $1 =~ ^[0-9]+$ ]]; then
+  die "usage: scripts/hub-gate.sh <PR number>"
+fi
 pr=$1
 repo=lawkitt/mdoc
 dir=${MDOC_HUB_GATE_DIR:-$(dirname "$PWD")/$(basename "$PWD")-hub-gate}
@@ -93,7 +95,9 @@ if [ -n "${MDOC_HOLDOUT:-}" ]; then
   # The scoreboard's last "all all all" row: gold found recall proposed right precision.
   read -r recall precision < <(awk '$1 == "all" && $2 == "all" && $3 == "all" {
       r = $6; p = $9; sub(/%/, "", r); sub(/%/, "", p) } END { print r, p }' "$log")
-  [ -n "$recall" ] && [ -n "$precision" ] || die "no overall row in the holdout's scoreboard"
+  if [ -z "$recall" ] || [ -z "$precision" ]; then
+    die "no overall row in the holdout's scoreboard"
+  fi
   passing=$(grep -E '^[0-9]+ fixtures, [0-9]+ passing' "$log" | sed -E 's/^([0-9]+) fixtures, ([0-9]+) passing.*/\2 of \1 documents pass/' || true)
   holdout="holdout recall $recall% precision $precision%${passing:+, $passing}"
   if awk -v r="$recall" -v p="$precision" -v mr="$min_recall" -v mp="$min_precision" \
