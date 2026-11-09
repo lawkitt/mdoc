@@ -975,6 +975,33 @@ fn role_initials_are_people(source: &str, detections: &mut Vec<Detection>) {
     }
 }
 
+/// Each raw entity's category from its label, but a model organization
+/// that is a person's name OCR damaged is a person (the rule pack's
+/// `ocr_letters`, #377): "A1ice M0rgan" is Alice Morgan. Not where the
+/// document writes it in quotes, as it does a company's name.
+fn model_categories(
+    source: &str,
+    view: &mdoc_pii::view::View,
+    raw: &[RawEntity],
+) -> Vec<Option<Category>> {
+    let text = |entity: &RawEntity| &view.text[view.view_range(entity.start..entity.end)];
+    let organizations: Vec<&str> = raw
+        .iter()
+        .filter(|entity| category_of(&entity.label) == Some(Category::Organization))
+        .map(text)
+        .collect();
+    raw.iter()
+        .map(|entity| {
+            let category = category_of(&entity.label)?;
+            let text = text(entity);
+            let person = category == Category::Organization
+                && !quoted(source, text.trim())
+                && rules::pack().ocr_person(text, &organizations);
+            Some(if person { Category::Person } else { category })
+        })
+        .collect()
+}
+
 /// The correction stage (ADR 0092): the model's raw entities through the
 /// shape filter (`identifying`) and the rule pack's `span` fixes, then its
 /// `context` rules and
@@ -984,12 +1011,14 @@ fn role_initials_are_people(source: &str, detections: &mut Vec<Detection>) {
 /// returns them.
 pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
     let view = mdoc_pii::view::View::new(source);
+    let categories = model_categories(source, &view, raw);
     // Establish model company names before filtering reference-looking
     // short names. A trading name needs no legal form (guide rule 2).
     let organizations: Vec<&str> = raw
         .iter()
-        .filter(|entity| category_of(&entity.label) == Some(Category::Organization))
-        .filter_map(|entity| {
+        .zip(&categories)
+        .filter(|(_, category)| **category == Some(Category::Organization))
+        .filter_map(|(entity, _)| {
             let text = &view.text[view.view_range(entity.start..entity.end)];
             rules::pack()
                 .identifying_at(
@@ -1003,8 +1032,9 @@ pub fn correct(source: &str, raw: &[RawEntity]) -> Vec<Detection> {
         .collect();
     let mut detections: Vec<Detection> = raw
         .iter()
-        .filter_map(|entity| {
-            let mut category = category_of(&entity.label)?;
+        .zip(categories)
+        .filter_map(|(entity, category)| {
+            let mut category = category?;
             // Read as the model read it: "%41lice" in a link target is "Alice".
             let mut seen = view.view_range(entity.start..entity.end);
             let mut range = entity.start..entity.end;
@@ -2813,6 +2843,115 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// #377: a model organization that is a person's name OCR damaged, a
+    /// digit between two letters of a word ("A1ice M0rgan"), is a person
+    /// where the digits read back make a name of two or three words or a
+    /// surname and initials, in English and Russian; the model's person so
+    /// damaged stays one.
+    #[test]
+    fn an_ocr_damaged_name_the_model_took_for_a_company_is_a_person() {
+        for (source, name, label) in [
+            ("Client: A1ice M0rgan\n", "A1ice M0rgan", "organization"),
+            ("Client: A1ice M0rgan\n", "A1ice M0rgan", "person"),
+            (
+                "Tenant: Alice Mary M0rgan.\n",
+                "Alice Mary M0rgan",
+                "organization",
+            ),
+            ("Witness: J. Sm1th\n", "J. Sm1th", "organization"),
+            ("Signed: M00re, Alice\n", "M00re, Alice", "organization"),
+            ("Tenant: 0lga Petr0va\n", "0lga Petr0va", "organization"),
+            ("Tenant: Eileen O'Br1en\n", "Eileen O'Br1en", "organization"),
+            (
+                "Tenant: Ann Hart-W1lson\n",
+                "Ann Hart-W1lson",
+                "organization",
+            ),
+            (
+                "Заявитель: Нина Ефим0вна Костель.\n",
+                "Нина Ефим0вна Костель",
+                "organization",
+            ),
+            (
+                "Заявитель: Нина Ефим0вна Костель.\n",
+                "Нина Ефим0вна Костель",
+                "person",
+            ),
+            ("Ответчик: Ко3лов И. П.\n", "Ко3лов И. П.", "organization"),
+            ("Ответчик: Ко3лов И.П.\n", "Ко3лов И.П.", "organization"),
+            // A Latin look-alike in a Cyrillic word: the second "o" is Latin.
+            ("Истец: Иван Ко3лoв\n", "Иван Ко3лoв", "organization"),
+            ("Истец: Ольга Се6ова\n", "Ольга Се6ова", "organization"),
+        ] {
+            assert_eq!(
+                shown_with(source, &[(name, label)])
+                    .into_iter()
+                    .map(|(_, category, text)| (category, text))
+                    .collect::<Vec<_>>(),
+                [("PERSON".to_owned(), name.to_owned())],
+                "{source:?} {label}"
+            );
+        }
+    }
+
+    /// #377's guards: companies with digits, codes, the names a legal form,
+    /// a company's word or quotes make a company's, a short name of a
+    /// longer company the document names, and the model's companies without
+    /// OCR's damage all stay organizations.
+    #[test]
+    fn companies_with_digits_and_codes_stay_organizations() {
+        for (source, spans) in [
+            ("Supplier: 3M\n", &[("3M", "organization")][..]),
+            ("Supplier: 3M Company\n", &[("3M Company", "organization")]),
+            (
+                "Supplier: 7-Eleven Stores\n",
+                &[("7-Eleven Stores", "organization")],
+            ),
+            ("Venue: Studio 54\n", &[("Studio 54", "organization")]),
+            (
+                "Поставщик: 1С Бухгалтерия\n",
+                &[("1С Бухгалтерия", "organization")],
+            ),
+            ("Carrier: A1 Group\n", &[("A1 Group", "organization")]),
+            ("Carrier: A1 Telekom\n", &[("A1 Telekom", "organization")]),
+            (
+                "Broker: M0rgan Stanley Ltd\n",
+                &[("M0rgan Stanley Ltd", "organization")],
+            ),
+            (
+                "Company: N0rthbridge Legal\n",
+                &[("N0rthbridge Legal", "organization")],
+            ),
+            ("Company: Gr0up Alpha\n", &[("Gr0up Alpha", "organization")]),
+            ("Code: A1B2 C3D4\n", &[("A1B2 C3D4", "organization")]),
+            ("Client: Blue Ocean\n", &[("Blue Ocean", "organization")]),
+            ("Банк: Банк Ро3сия\n", &[("Банк Ро3сия", "organization")]),
+            ("Поставщик: ООО Ко3лов\n", &[("ООО Ко3лов", "organization")]),
+            (
+                "Поставщик: ООО «Ко3лов Плюс». Ко3лов Плюс поставил товар.\n",
+                &[("Ко3лов Плюс", "organization")],
+            ),
+            (
+                "Поставщик «Ко3лов Плюс» отгрузил товар.\n",
+                &[("Ко3лов Плюс", "organization")],
+            ),
+            (
+                "Broker: Morgan Stanley Ltd. Later M0rgan Stanley agreed.\n",
+                &[
+                    ("Morgan Stanley Ltd", "organization"),
+                    ("M0rgan Stanley", "organization"),
+                ],
+            ),
+        ] {
+            let shown = shown_with(source, spans);
+            assert!(
+                shown.len() == spans.len()
+                    && shown.iter().all(|(_, category, _)| category == "ORG"),
+                "{source:?}: {shown:?}"
+            );
+        }
     }
 
     /// #739: a model identifier span from a labelled value into the next
