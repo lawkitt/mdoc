@@ -341,3 +341,11 @@ The frontier is empty after round 4 (2026-11-09). Decisions:
 [ADR 0109](../adr/0109-mobile-markdown-editor.md); terms in `CONTEXT.md`
 (Edit mode, Editor core, Reveal rule, Formatting keyboard, In-app
 clipboard); ROADMAP iOS item 23, Android item 10, and two Later lines.
+
+## Follow-up (2026-11-10)
+
+26. **⌘N opens a new document.** Slice 6 (#772) added New document while
+    ⌘N still went to Start under the menu label "New document" (ADR 0102).
+    The maintainer chose to give ⌘N to New document; Start stays a tap away
+    in the sidebar. ADR 0102's Keys bullet and ADR 0109's hardware keys
+    are amended.

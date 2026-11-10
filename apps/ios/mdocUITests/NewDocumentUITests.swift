@@ -48,6 +48,18 @@ final class NewDocumentUITests: XCTestCase {
             .firstMatch
     }
 
+    /// ⌘N on a hardware keyboard opens a new document, as the + menu's
+    /// first item does (ADR 0109; it went to Start before).
+    @MainActor
+    func testCommandNOpensANewDocument() throws {
+        let app = launch()
+        XCTAssertTrue(app.descendants(matching: .any)["start"].firstMatch.waitForExistence(timeout: 30), "Start")
+        app.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 10), "edit mode")
+        XCTAssertEqual(app.buttons["title-menu"].label, "New document")
+        XCTAssertTrue(app.textViews["document-text"].waitForExistence(timeout: 5))
+    }
+
     /// Typed, a heading names the document: the title and the sidebar's
     /// row follow it.
     @MainActor

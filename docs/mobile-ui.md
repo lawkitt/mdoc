@@ -144,7 +144,7 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
 - **Rows:** `SidebarRowLabel`, one line, 44 pt high; a long press gives
   Rename, Move to case, Share and Delete. Delete's toast offers Undo; the
   document goes when the toast does or mdoc leaves the screen.
-- **Keys:** ⌘K search, ⌘N Start, scene commands, so iPad lists them.
+- **Keys:** ⌘K search, ⌘N New document, scene commands, so iPad lists them.
 
 ## Review bar
 
