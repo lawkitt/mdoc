@@ -287,6 +287,9 @@ extension MarkdownTextView.Coordinator {
     func textViewDidChangeSelection(_ textView: UITextView) {
         guard textView.isEditable, let view = textView as? CandidateTextView else { return }
         let moved = !bridge.isChanging && view.markedTextRange == nil
+        // The reader moved the caret (⌘↓ scrolls to it): Done keeps the
+        // place they are at now, not where the mode changed.
+        if moved, view.selectedRange != lastSelection { modeAnchor = nil }
         if moved, parent.rendered, !snapping {
             // In a drawn table the caret stays in a cell (ADR 0109).
             let snapped = keptInCell(view)

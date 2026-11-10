@@ -454,7 +454,11 @@ final class DocumentViewModel {
 
     /// Shows `pane`. In the right column a pane takes Identities' place.
     func show(_ pane: Pane) {
-        if identitiesPlacement == .column { wantsIdentities = false }
+        if identitiesPlacement == .column {
+            wantsIdentities = false
+            // A pane chosen while editing keeps the column: Done leaves it.
+            if isEditing && pane != .text { identitiesBeforeEditing = false }
+        }
         self.pane = pane
     }
 
@@ -508,7 +512,7 @@ final class DocumentViewModel {
     func restoreIdentitiesAfterEditing() {
         defer { identitiesBeforeEditing = false }
         guard identitiesBeforeEditing, identitiesPlacement != .drawer else { return }
-        wantsIdentities = true
+        showIdentities(true)
     }
 
     // MARK: Helpers
