@@ -8,6 +8,7 @@
 mod actions;
 mod editing;
 mod intake;
+mod origin;
 mod review;
 mod saving;
 mod snapshot;
@@ -20,6 +21,7 @@ use crate::{
 pub use actions::{HandOff, ProposedName, ReviewAction, SessionInfo, occurrences};
 pub use editing::Typed;
 use mdoc_pii::restore::RestoreMap;
+pub use origin::{DocumentOrigin, first_line_title};
 pub(crate) use review::Counts;
 use review::ReviewText;
 pub use review::{Scope, StepKind};
@@ -114,6 +116,12 @@ struct Document {
     /// A `save_pending` joined the case again, and no save has told the
     /// app yet (`SavedChange::rejoined`).
     rejoined: bool,
+    /// How it began, when that matters later: a new document is named
+    /// after its first line, the sample restores (ADR 0109).
+    origin: DocumentOrigin,
+    /// The first line's title a new document last took
+    /// (`follow_first_line`), so an unchanged line renames nothing.
+    followed: Option<String>,
 }
 
 #[derive(uniffi::Object)]
@@ -224,6 +232,20 @@ impl DocumentSession {
 
     /// Pasted or shared text, taken as Markdown.
     pub fn import_text(&self, text: String, title: String) -> Result<ReviewSnapshot, CoreError> {
+        self.import_text_as(text, title, DocumentOrigin::Ordinary)
+    }
+
+    /// `import_text` for a document that begins in mdoc (ADR 0109): a new
+    /// document (`DocumentOrigin::New`, its text empty) is named after its
+    /// first line until renamed and is discarded when left empty; the
+    /// sample (`DocumentOrigin::Sample`) is the one Try a sample restores.
+    /// The origin is kept with the document from its first save.
+    pub fn import_text_as(
+        &self,
+        text: String,
+        title: String,
+        origin: DocumentOrigin,
+    ) -> Result<ReviewSnapshot, CoreError> {
         let cancel = self.start_job();
         let imported = intake::Imported {
             title,
@@ -231,7 +253,7 @@ impl DocumentSession {
             warning: None,
             kept: None,
         };
-        self.open(imported, &cancel, None)
+        self.open(imported, &cancel, Some(Opened::begun(origin)))
     }
 
     /// Open `path`, a document the library keeps: it stays that file and
@@ -268,6 +290,8 @@ impl DocumentSession {
             stored,
             case,
             scanned: read.as_ref().map(|s| s.scanned),
+            origin: read.as_ref().map(|s| s.origin).unwrap_or_default(),
+            reopened: true,
         };
         let snapshot = self.open(imported, &cancel, Some(opened))?;
         #[cfg(test)]
@@ -626,22 +650,18 @@ impl DocumentSession {
         let _saving = self.lock_saving();
         let mut guard = self.lock_document();
         let document = guard.as_mut().ok_or_else(no_document)?;
-        let lock = library.lock()?;
-        let renamed = match &document.path {
-            Some(path) => library.rename_locked(&lock, path, &title)?,
-            None => library.rename_unsaved_locked(
-                &lock,
-                document.case.as_deref(),
-                &document.title,
-                &title,
-            )?,
-        };
-        if let Some(path) = &renamed.path {
-            let path = PathBuf::from(path);
-            document.stored.path = Some(std::path::absolute(&path)?);
-            document.path = Some(path);
+        let renamed = document.rename(&library, &title)?;
+        // Named by the user, a new document is an ordinary one: its title
+        // stops following its first line, and an empty one stays (ADR 0109).
+        if document.origin == DocumentOrigin::New {
+            document.origin = DocumentOrigin::Ordinary;
+            if let Some(path) = &document.path {
+                // Renamed already: an entry that cannot follow only makes
+                // the document follow its first line again when reopened.
+                let lock = library.lock()?;
+                let _ = library.record_origin(&lock, path, DocumentOrigin::Ordinary);
+            }
         }
-        document.title = renamed.title.clone();
         Ok(renamed)
     }
 }
@@ -684,7 +704,8 @@ pub(crate) fn reopened_counts(
     (review.counts(), review.has_mentions())
 }
 
-/// What a document the library keeps brings when it is opened.
+/// What a document the library keeps brings when it is opened, or what a
+/// document that begins in mdoc starts with.
 struct Opened {
     path: Option<PathBuf>,
     stored: mdoc_store::document::Document,
@@ -692,6 +713,23 @@ struct Opened {
     /// What its last save recorded; `None` for a document saved before
     /// the library kept it.
     scanned: Option<bool>,
+    origin: DocumentOrigin,
+    /// A stored document, not one just begun.
+    reopened: bool,
+}
+
+impl Opened {
+    /// A document that begins in mdoc, not yet saved.
+    fn begun(origin: DocumentOrigin) -> Self {
+        Self {
+            path: None,
+            stored: Default::default(),
+            case: None,
+            scanned: None,
+            origin,
+            reopened: false,
+        }
+    }
 }
 
 impl Document {
@@ -763,8 +801,13 @@ impl DocumentSession {
             scanned: false,
             saved: None,
             rejoined: false,
+            origin: DocumentOrigin::Ordinary,
+            followed: None,
         };
-        if let Some(opened) = opened {
+        if let Some(opened) = opened.filter(|opened| {
+            document.origin = opened.origin;
+            opened.reopened
+        }) {
             document.path = opened.path;
             document.stored = opened.stored;
             if let Some(case) = opened.case {

@@ -137,7 +137,10 @@ and [`Design/SideDrawer.swift`](../apps/ios/mdoc/Design/SideDrawer.swift).
   *Recent* (20 at most, green dot when ready); a spinner while a job works
   on a document; the open row highlighted with `Palette.chipFill`. ⚙ (a
   clear glass circle) and "+ New" (the sidebar's primary) float at the
-  bottom over a fade.
+  bottom over a fade. Its menu, nearest the button first: New document
+  (an empty document in edit mode, named after its first line until
+  renamed and gone if left empty: ADR 0109), Paste text, Files, Photos,
+  Scan; the Documents page's + has the same.
 - **Rows:** `SidebarRowLabel`, one line, 44 pt high; a long press gives
   Rename, Move to case, Share and Delete. Delete's toast offers Undo; the
   document goes when the toast does or mdoc leaves the screen.
@@ -296,6 +299,8 @@ No swipes on the document text.
 a short services agreement with made-up names, in English and Russian,
 chosen by the phone's language. It is "Try a sample" in the app and the
 fixture for previews and tests, so screenshots of it are safe to share.
+The sample is editable; Try a sample again opens it with its text as it
+came, asking "Restore the sample?" first when it was edited (ADR 0109).
 
 ## Screenshots
 

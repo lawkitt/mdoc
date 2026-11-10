@@ -273,6 +273,20 @@ struct DocumentScreen: View {
 
     @ViewBuilder
     private var titleMenu: some View {
+        if model.offersFindNamesAgain {
+            // Only outside edit mode, the same job as Find names (ADR 0109).
+            Button {
+                Task { await model.findNamesAgain() }
+            } label: {
+                Label("Find names again", systemImage: "text.magnifyingglass")
+                if let reason = model.findNamesAgainBlockedReason {
+                    Text(reason)
+                }
+            }
+            .disabled(model.findNamesAgainBlockedReason != nil)
+            .accessibilityHint(Text("Looks for names in the text as it is now, typed text too."))
+            .accessibilityIdentifier("find-names-again")
+        }
         if model.snapshot.phase == .ready {
             Button {
                 model.copyForAI { UIPasteboard.general.string = $0 }

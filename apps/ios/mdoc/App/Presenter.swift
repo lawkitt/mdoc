@@ -80,6 +80,10 @@ private struct Dialogs: ViewModifier {
         if case .error(let message) = navigator.presentation { message } else { nil }
     }
 
+    private var restoringSample: DocumentID? {
+        if case .restoreSample(let id) = navigator.presentation { id } else { nil }
+    }
+
     func body(content: Content) -> some View {
         content
             .alert("Rename document", isPresented: navigator.isPresenting { if case .renameDocument = $0 { true } else { false } }) {
@@ -113,6 +117,15 @@ private struct Dialogs: ViewModifier {
                 Text("The document leaves its case. Replies already sent still restore with the old case.")
             }
             .onChange(of: movingToNewCase) { draft = "" }
+            // Try a sample on an edited sample (ADR 0109).
+            .alert("Restore the sample?", isPresented: navigator.isPresenting { if case .restoreSample = $0 { true } else { false } }) {
+                Button("Cancel", role: .cancel) {}
+                Button("Restore", role: .destructive) {
+                    if let id = restoringSample { app.restoreSample(id) }
+                }
+            } message: {
+                Text("Your edits to it will be lost.")
+            }
             .alert(
                 "Something went wrong",
                 isPresented: navigator.isPresenting { if case .error = $0 { true } else { false } },

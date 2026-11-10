@@ -146,11 +146,17 @@ extension DocumentViewModel {
     }
 
     /// Runs discovery off the main thread and shows its snapshot, unless
-    /// typing changed the text meanwhile: the next pause runs it again.
+    /// typing changed the text meanwhile: the next pause runs it again. A
+    /// new document's title follows its first line first (ADR 0109).
     func discoverNow() async {
         let session = session
         let revision = typing.revision
-        let found = await Task.detached(priority: .userInitiated) { try? session.discover() }.value
+        let (retitled, found) = await Task.detached(priority: .userInitiated) {
+            let retitled = (try? session.followFirstLine()) != nil
+            return (retitled, try? session.discover())
+        }.value
+        // The lists show the new title now, not at the save.
+        if retitled { onChange() }
         guard let found, revision == typing.revision, found.textRevision == revision else { return }
         applyReview(found)
     }

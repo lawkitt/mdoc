@@ -5,12 +5,14 @@
 //! opened, so lists need not open each document. `documents.json` at the root, keyed as
 //! cases name members (`Library::member`): file paths, whose names are the
 //! documents' titles and can hold originals, as the files' own names do.
-//! It holds no text and nothing more of a document. Written under the
+//! It holds no text and nothing more of a document but how it began, when
+//! it began in mdoc (ADR 0109: a new document, the sample). Written under the
 //! library's write lock; entries whose file is gone (removed outside the
 //! app, or by desktop) go when the library lists its documents.
 use super::{Library, WriteLock};
 use crate::CoreError;
 pub(crate) use crate::document_session::Counts;
+use crate::document_session::DocumentOrigin;
 use std::{collections::BTreeMap, path::Path};
 
 const FILE: &str = "documents.json";
@@ -26,6 +28,9 @@ pub(crate) struct DocumentState {
     /// Seconds since the Unix epoch it was last opened or saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opened: Option<u64>,
+    /// How it began, when it began in mdoc.
+    #[serde(default, skip_serializing_if = "DocumentOrigin::is_ordinary")]
+    pub origin: DocumentOrigin,
 }
 
 /// Counts, and what they are counts of: the document's file and its case,
@@ -144,13 +149,32 @@ impl Library {
         path: &Path,
         scanned: bool,
         summary: Option<Recorded>,
+        origin: DocumentOrigin,
     ) -> Result<(), CoreError> {
         let state = DocumentState {
             scanned,
             summary: summary.filter(|summary| self.still(path, summary)),
             opened: Some(now()),
+            origin,
         };
         self.set_document_state(lock, path, Some(state))
+    }
+
+    /// The document at `path` now has `origin` (a new document renamed by
+    /// the user is an ordinary one). Nothing changes for a document with
+    /// no entry: it is saved with its origin.
+    pub(crate) fn record_origin(
+        &self,
+        lock: &WriteLock,
+        path: &Path,
+        origin: DocumentOrigin,
+    ) -> Result<(), CoreError> {
+        match self.document_state(path) {
+            Some(state) => {
+                self.set_document_state(lock, path, Some(DocumentState { origin, ..state }))
+            }
+            None => Ok(()),
+        }
     }
 
     /// The document at `path` opened now, from the entry `read` before it
@@ -172,6 +196,7 @@ impl Library {
                 scanned,
                 summary: summary.filter(|summary| self.still(path, summary)),
                 opened: Some(now()),
+                origin: read.map(|read| read.origin).unwrap_or_default(),
             }
         } else {
             match current {

@@ -200,7 +200,7 @@ final class RealLibrary: Library, @unchecked Sendable {
             return session?.loadedSummary(updated: updated) ?? LibraryDocument(
                 id: id, title: summary.title, caseID: summary.caseId.map(CaseID.init), kind: kinds(summary.path),
                 phase: summary.phase, pendingCount: Int(summary.proposed), updated: updated,
-                candidateCount: Int(summary.proposed + summary.replaced + summary.kept))
+                candidateCount: Int(summary.proposed + summary.replaced + summary.kept), origin: summary.origin)
         }
         let listed = Set(documents.map(\.id))
         let pending = lock.withLock { sessions.values.filter { !listed.contains($0.id) } }
@@ -281,10 +281,29 @@ final class RealLibrary: Library, @unchecked Sendable {
         pending.remove(document)
     }
 
+    func discardIfEmpty(_ document: DocumentID) throws -> Bool {
+        guard let session = lock.withLock({ sessions[document] }) else { return false }
+        let path = session.path
+        guard try session.discardIfEmpty() else { return false }
+        // Gone in the core: its save has nothing left to write.
+        session.cancelScheduledSave()
+        if let path {
+            lock.withLock { _ = ids.removeValue(forKey: path) }
+            originals.remove(for: path)
+        }
+        lock.withLock { _ = sessions.removeValue(forKey: document) }
+        pending.remove(document)
+        return true
+    }
+
     func renameDocument(_ document: DocumentID, to title: String) throws {
         guard let session = try session(for: document) as? RealSession else { throw CoreError.notFound }
         let (old, new) = try session.rename(to: title)
-        // What this side keeps by the file follows it.
+        renamed(session, from: old, to: new)
+    }
+
+    /// What this side keeps by the file follows a renamed document.
+    fileprivate func renamed(_ session: RealSession, from old: String?, to new: String?) {
         if let old, let new, old != new {
             lock.withLock {
                 ids[old] = nil
@@ -580,6 +599,19 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return (before.path, renamed.path ?? before.path)
     }
 
+    /// `RealLibrary.discardIfEmpty`: the core removes the file and its case.
+    fileprivate func discardIfEmpty() throws -> Bool {
+        try saving.withLock { try core { try ffi.discardIfEmpty(library: library.ffi) } }
+    }
+
+    func followFirstLine() throws -> String? {
+        let before = ffi.info()?.path
+        let renamed = try saving.withLock { try core { try ffi.followFirstLine(library: library.ffi) } }
+        guard let renamed else { return nil }
+        library.renamed(self, from: before, to: renamed.path ?? before)
+        return renamed.title
+    }
+
     /// The source file of an import not yet read.
     fileprivate var sourceFile: URL? {
         guard case .file(let url, _) = lock.withLock({ source?.input }) else { return nil }
@@ -592,7 +624,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return LibraryDocument(
             id: id, title: snapshot.title, caseID: snapshot.caseID, kind: snapshot.kind,
             phase: snapshot.phase, pendingCount: snapshot.pendingCount, updated: updated,
-            candidateCount: snapshot.candidates.count)
+            candidateCount: snapshot.candidates.count, origin: snapshot.origin)
     }
 
     /// The list row of a document this session holds, from the core's
@@ -603,7 +635,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return LibraryDocument(
             id: id, title: review.title, caseID: caseID.map(CaseID.init), kind: lock.withLock { kind },
             phase: review.phase, pendingCount: Int(review.proposed), updated: updated,
-            candidateCount: review.mentions.count)
+            candidateCount: review.mentions.count, origin: ffi.info()?.origin ?? .ordinary)
     }
 
     fileprivate func reopenLater(original: (OriginalSource, SourceKind)) {
@@ -628,11 +660,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     func snapshot() -> DocumentSnapshot {
         reopenIfPending()
         guard let review = try? ffi.snapshot() else {
-            let (kind, original, ocrStarted) = lock.withLock { (self.kind, self.original, self.ocrStarted) }
+            let (kind, original, ocrStarted, source) = lock.withLock { (self.kind, self.original, self.ocrStarted, self.source) }
+            // Before it is read, its origin is the import's.
+            let origin: DocumentOrigin = if case .text(_, let origin) = source?.input { origin } else { .ordinary }
             return DocumentSnapshot(
                 id: id, title: chosen.title, caseID: chosen.caseID.map(CaseID.init), caseName: library.caseName(chosen.caseID),
                 kind: kind, phase: nil, markdown: "", styling: .empty, candidates: [], identities: [],
-                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted)
+                original: original, pagesDone: 0, pageCount: 0, reply: nil, resumesOCR: ocrStarted, origin: origin)
         }
         return snapshot(of: review, path: ffi.info()?.path)
     }
@@ -674,7 +708,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning,
             mergeHints: review.linkHints, canUndo: review.canUndo, canRedo: review.canRedo,
             undoStep: review.undoStep, redoStep: review.redoStep,
-            counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)))
+            counts: MentionCounts(proposed: Int(review.proposed), replaced: Int(review.replaced), kept: Int(review.kept)),
+            origin: ffi.info()?.origin ?? .ordinary)
     }
 
     /// The text's Markdown styling, parsed again only when the text changed.
@@ -701,8 +736,8 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         let reporter = StageReporter(observer)
         observer.progress(JobUpdate(stage: .reading))
         switch source.input {
-        case .text(let text):
-            _ = try job(observer) { try ffi.importText(text: text, title: chosen.title) }
+        case .text(let text, let origin):
+            _ = try job(observer) { try ffi.importTextAs(text: text, title: chosen.title, origin: origin) }
         case .file(let url, let needsOcr):
             let ocr = library.setup?.ocrPaths()
             if needsOcr && ocr == nil {
@@ -1086,7 +1121,8 @@ final class RealSetup: Setup, @unchecked Sendable {
 /// or pasted text.
 struct PreparedSource: Sendable {
     enum Input: Sendable {
-        case text(String)
+        /// Text taken as Markdown, and how its document began.
+        case text(String, DocumentOrigin)
         /// `needsOcr`: page images, which only OCR can read.
         case file(URL, needsOcr: Bool)
     }
@@ -1125,7 +1161,11 @@ final class OriginalsIndex: @unchecked Sendable {
     func prepare(_ source: ImportSource, title: String) throws -> PreparedSource {
         switch source {
         case .text(let text):
-            return PreparedSource(input: .text(text), kind: .text, original: .none)
+            return PreparedSource(input: .text(text, .ordinary), kind: .text, original: .none)
+        case .newDocument:
+            return PreparedSource(input: .text("", .new), kind: .text, original: .none)
+        case .sample(let text):
+            return PreparedSource(input: .text(text, .sample), kind: .text, original: .none)
         case .file(let url, let kind):
             let named = try rename(url, to: title)
             let original: OriginalSource = kind == .pdf ? .pdf(named) : (kind == .image ? .images([named]) : .none)
@@ -1307,6 +1347,8 @@ final class PendingImports: @unchecked Sendable {
         var owned: [String]
         /// OCR began: the core keeps its finished pages. Older entries have none.
         var ocrStarted: Bool?
+        /// A text that began in mdoc: "new" or "sample" (ADR 0109).
+        var origin: String?
     }
 
     private let storage: MdocStorage
@@ -1323,7 +1365,13 @@ final class PendingImports: @unchecked Sendable {
             title: entry.title, caseID: entry.caseID, kind: source.kind.rawValue, text: nil, file: nil,
             needsOcr: false, originalKind: "none", originalFiles: [], owned: source.owned.map { relative($0) })
         switch source.input {
-        case .text(let text): stored.text = text
+        case .text(let text, let origin):
+            stored.text = text
+            stored.origin = switch origin {
+            case .new: "new"
+            case .sample: "sample"
+            case .ordinary: nil
+            }
         case .file(let file, let needsOcr):
             stored.file = relative(file)
             stored.needsOcr = needsOcr
@@ -1348,7 +1396,12 @@ final class PendingImports: @unchecked Sendable {
         lock.withLock { load() }.compactMap { id, stored in
             let input: PreparedSource.Input
             if let text = stored.text {
-                input = .text(text)
+                let origin: DocumentOrigin = switch stored.origin {
+                case "new": .new
+                case "sample": .sample
+                default: .ordinary
+                }
+                input = .text(text, origin)
             } else if let file = stored.file {
                 let url = absolute(file)
                 // A source file that is gone cannot be read again.

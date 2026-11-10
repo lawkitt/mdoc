@@ -18,6 +18,12 @@ struct SampleDocument: Sendable, Equatable {
     /// finder is downloaded.
     var names: [Name]
 
+    /// The text is one of the samples' as it came: Try a sample restores
+    /// an edited one only after asking (ADR 0109).
+    static func isOriginal(_ text: String) -> Bool {
+        text == english.text || text == russian.text
+    }
+
     /// Russian when the phone's first language is Russian, English
     /// otherwise.
     static func forLanguages(_ languages: [String] = Locale.preferredLanguages) -> SampleDocument {

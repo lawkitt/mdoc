@@ -33,7 +33,8 @@ final class DocumentViewModel {
     let findsNames: Bool
     private let jobs: LongJobRunner
     private let storage: MdocStorage
-    private let onChange: () -> Void
+    /// The lists show what changed: a title, a phase.
+    let onChange: () -> Void
 
     private(set) var snapshot: DocumentSnapshot
     /// The review bar: the name under review, its scope, the focus, the

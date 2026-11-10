@@ -106,6 +106,9 @@ pub struct SessionInfo {
     pub scanned: bool,
     pub phase: DocumentPhase,
     pub proposed: u64,
+    /// How it began: a new document follows its first line, the sample
+    /// restores (ADR 0109).
+    pub origin: super::DocumentOrigin,
 }
 
 /// Every occurrence of `wording` in `text` as UTF-8 byte ranges, left to
@@ -175,6 +178,7 @@ impl DocumentSession {
             scanned: document.scanned,
             phase: DocumentPhase::of(document.scanned, proposed),
             proposed,
+            origin: document.origin,
         })
     }
 }

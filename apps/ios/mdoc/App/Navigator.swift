@@ -39,6 +39,8 @@ enum Presentation: Identifiable {
     case intake(Intake)
     /// Something brought in, waiting for its title and case.
     case importing(PendingImport)
+    /// Try a sample on an edited sample: "Restore the sample?"
+    case restoreSample(DocumentID)
     /// Something went wrong.
     case error(String)
 
@@ -52,6 +54,7 @@ enum Presentation: Identifiable {
         case .settings: "settings"
         case .intake(let intake): "intake-\(intake.rawValue)"
         case .importing(let pending): "import-\(pending.id)"
+        case .restoreSample(let id): "restore-sample-\(id.rawValue)"
         case .error(let message): "error-\(message)"
         }
     }

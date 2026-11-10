@@ -323,6 +323,24 @@ final class SurveyUITests: XCTestCase {
         shot("47-edit-link-chip")
     }
 
+    /// New document (ADR 0109, slice 6): the sidebar's + menu with New
+    /// document first, then a new document in edit mode, named after its
+    /// first line once typing pauses.
+    @MainActor
+    func test9NewDocument() throws {
+        let app = launch(seed: nil)
+        MdocUITest.revealSidebar(app)
+        app.buttons["new-menu"].firstMatch.tap()
+        let item = app.collectionViews.buttons["New document"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        shot("50-new-menu")
+        item.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        app.typeText("# Lease agreement\n\nThe tenant pays the rent on the first day of each month.")
+        XCTAssertTrue(app.buttons["title-menu"].wait(until: NSPredicate(format: "label == 'Lease agreement'"), timeout: 10))
+        shot("51-new-document-named")
+    }
+
     /// Table editing (ADR 0109, slice 5): the caret in a drawn cell with
     /// text typed there, then Aa's table controls.
     @MainActor
