@@ -1,3 +1,4 @@
+import CoreText
 import MdocFFI
 import UIKit
 
@@ -429,12 +430,20 @@ struct BlockLayout {
             lines.append((range, role))
         }
 
-        // Ordered lists share one label width per list.
-        var labelWidths: [UInt32: CGFloat] = [:]
+        // Every item's text starts one list step in (ADR 0110); an ordered
+        // list whose widest label, or written number, does not fit widens
+        // its whole list's column.
+        let step = Self.listStep * scale
+        var columns: [UInt32: CGFloat] = [:]
         for item in styling.listItems {
             guard let list = item.list else { continue }
-            labelWidths[list] = max(labelWidths[list] ?? 0, labelWidth(item.label))
+            let marker = listMarker(of: item, at: offsets.nsRange(item.range).location)
+            let needed = max(labelWidth(item.label) + Self.labelGap * scale, ceil(sourceWidth(of: marker.glyphs)))
+            columns[list] = max(columns[list] ?? step, needed)
         }
+        // Where each depth's text starts, from the item last seen at it: a
+        // nested item starts at its parent's text.
+        var starts: [CGFloat] = []
 
         let lineHeight = body.lineHeight
         for (position, line) in lines.enumerated() {
@@ -521,24 +530,35 @@ struct BlockLayout {
                     decorated = true
                 }
             case .list(let item):
-                let x = CGFloat(item.depth) * 22 * scale
-                let column: CGFloat
-                let marker = resolved(.secondaryLabel)
+                // Bullets, numbers and task boxes start flush with the
+                // paragraph's edge, or with the parent item's text; the text
+                // starts one column in (ADR 0110).
+                let depth = Int(item.depth)
+                if starts.count > depth { starts.removeSubrange(depth...) }
+                while starts.count < depth { starts.append(CGFloat(starts.count + 1) * step) }
+                let x = starts.last ?? 0
+                let column = item.list.flatMap { columns[$0] } ?? step
+                starts.append(x + column)
                 let source = shows(range)
                 if source {
-                    // The caret's line shows its marker where the label was;
-                    // wrapped lines keep the body's indent.
-                    let width = item.list.flatMap { labelWidths[$0] } ?? labelWidth(item.label)
-                    column = item.task == nil ? max(width + 6 * scale, 18 * scale) : ceil(body.capHeight * 1.25) + 8 * scale
+                    // The caret's line draws its marker in the same column,
+                    // so its text stays where it was.
+                    fit(listMarker(of: item, at: range.location), into: column)
                 } else if let checked = item.task {
                     let size = ceil(body.capHeight * 1.25)
-                    decoration.task = (checked, x, size, marker, resolved(.tintColor), resolved(.onAccent))
-                    column = size + 8 * scale
+                    decoration.task = (checked, x, size, resolved(.secondaryLabel), resolved(.tintColor), resolved(.onAccent))
+                } else if item.list == nil {
+                    // A bullet a fifth larger than the text, centred in the
+                    // column's first 16 pt and on the text's x-height.
+                    let font = body.withSize(body.pointSize * Self.bulletScale)
+                    let label = NSAttributedString(string: item.label, attributes: [
+                        .font: font, .foregroundColor: resolved(.label),
+                        .baselineOffset: (body.xHeight - font.xHeight) / 2,
+                    ])
+                    decoration.label = (label, x + (Self.bulletBox * scale - Self.width(of: label)) / 2)
                 } else {
-                    let label = NSAttributedString(string: item.label, attributes: [.font: body, .foregroundColor: marker])
-                    let width = item.list.flatMap { labelWidths[$0] } ?? labelWidth(item.label)
+                    let label = NSAttributedString(string: item.label, attributes: [.font: body, .foregroundColor: resolved(.label)])
                     decoration.label = (label, x)
-                    column = max(width + 6 * scale, 18 * scale)
                 }
                 style.firstLineHeadIndent = source ? x : x + column
                 style.headIndent = x + column
@@ -648,6 +668,91 @@ struct BlockLayout {
 
     private func labelWidth(_ label: String) -> CGFloat {
         ceil((label as NSString).size(withAttributes: [.font: body]).width)
+    }
+
+    // MARK: List markers
+
+    /// How far a list item's text sits from its bullet's, number's or box's
+    /// left edge, and each nested level further, at the body's 17 pt
+    /// (ADR 0110).
+    static let listStep: CGFloat = 24
+    /// The least room between a number and its text.
+    static let labelGap: CGFloat = 6
+    /// A bullet's size against the text's, and the width at the column's
+    /// start it is centred in (the look chosen in ADR 0110's variants).
+    static let bulletScale: CGFloat = 1.2
+    static let bulletBox: CGFloat = 16
+    /// The least room between the caret line's source marker and its text,
+    /// and the narrowest a space inside that marker gets.
+    static let markerGap: CGFloat = 4
+    static let markerSpace: CGFloat = 2
+
+    /// Where the core's list item `item`, on the line at `start`, has its
+    /// source prefix: the indent before its marker, and the marker (`- `,
+    /// `12. `, `- [ ] `) with its space. The core decides what is an item
+    /// and a task; this only finds the characters: a marker runs to the
+    /// first space after it, and a task's box is the four after that.
+    private func listMarker(of item: MarkdownListItem, at start: Int) -> (indent: NSRange, glyphs: NSRange) {
+        let end = NSMaxRange(source.lineRange(for: NSRange(location: start, length: 0)))
+        var index = start
+        while index < end, [0x20, 0x09].contains(source.character(at: index)) { index += 1 }
+        var marker = index
+        while marker < end, source.character(at: marker) != 0x20 { marker += 1 }
+        marker = min(marker + 1 + (item.task == nil ? 0 : 4), end)
+        return (NSRange(location: start, length: index - start), NSRange(location: index, length: marker - index))
+    }
+
+    /// `range` of the source as it reads in the body font, spaces included.
+    private func sourceWidth(of range: NSRange) -> CGFloat {
+        guard range.length > 0 else { return 0 }
+        return Self.width(of: NSAttributedString(string: source.substring(with: range), attributes: [.font: body]))
+    }
+
+    /// A one-line string's advance, its trailing spaces and kerning included.
+    private static func width(of string: NSAttributedString) -> CGFloat {
+        CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(string), nil, nil, nil))
+    }
+
+    /// Sets the caret line's source marker in its list's column (ADR 0110),
+    /// so the item's text starts where it does beside a drawn label: the
+    /// indent takes no width, and the spare room goes after the marker. A
+    /// marker wider than the column (a task's `- [ ] `, at most text sizes)
+    /// has its inner spaces narrowed, then its size reduced, until it fits.
+    private func fit(_ marker: (indent: NSRange, glyphs: NSRange), into column: CGFloat) {
+        if marker.indent.length > 0 {
+            text.addAttribute(.font, value: MarkdownStyler.hiddenFont, range: marker.indent)
+        }
+        let glyphs = marker.glyphs
+        guard glyphs.length > 1 else { return }
+        // All but the marker's space.
+        let lead = NSRange(location: glyphs.location, length: glyphs.length - 1)
+        let shown = text.attribute(.font, at: glyphs.location, effectiveRange: nil) as? UIFont
+        let font = shown.flatMap { $0.pointSize >= 1 ? $0 : nil } ?? body
+        let gap = Self.markerGap * scale
+        var size = font.pointSize
+        // The marker's space keeps the line's font, so what is typed after
+        // it is not made smaller.
+        text.addAttribute(.font, value: font, range: NSRange(location: NSMaxRange(lead), length: 1))
+        for _ in 0..<4 {
+            let sized = font.withSize(size)
+            text.addAttribute(.font, value: sized, range: lead)
+            text.removeAttribute(.kern, range: glyphs)
+            var width = Self.width(of: text.attributedSubstring(from: lead))
+            if width + gap <= column { break }
+            let space = Self.width(of: NSAttributedString(string: " ", attributes: [.font: sized]))
+            let narrowest = Self.markerSpace * scale * size / font.pointSize
+            for index in lead.location..<NSMaxRange(lead) where source.character(at: index) == 0x20 {
+                text.addAttribute(.kern, value: min(0, narrowest - space), range: NSRange(location: index, length: 1))
+            }
+            width = Self.width(of: text.attributedSubstring(from: lead))
+            if width + gap <= column { break }
+            size = max(1, size * (column - gap) / width)
+        }
+        // The spare room goes before the marker's space, not on it: TextKit
+        // puts the caret after a kerned space halfway into its kerning, off
+        // the text it draws.
+        let width = Self.width(of: text.attributedSubstring(from: glyphs))
+        text.addAttribute(.kern, value: column - width, range: NSRange(location: NSMaxRange(lead) - 1, length: 1))
     }
 
     /// What an image with no alt text says in its chip.

@@ -1,4 +1,5 @@
 import MdocFFI
+import SwiftUI
 import UIKit
 import XCTest
 @testable import mdoc
@@ -261,6 +262,70 @@ final class LivePreviewTests: XCTestCase {
         caret(harness, at: rule + 1)
         XCTAssertFalse(hidden(harness, at: rule))
         XCTAssertNil(decoration(harness, at: rule)?.rule)
+    }
+
+    /// The caret's list line draws its source marker in the list's column,
+    /// so the item's text does not move sideways as the caret enters or
+    /// leaves it (ADR 0110): bullets, tasks, nested items, a two-digit
+    /// number, and at the largest text size.
+    func testTheCaretsListLineDoesNotShift() throws {
+        let numbered = (1...11).map { "\($0). Clause \($0)" }.joined(separator: "\n")
+        let text = """
+            Intro.
+
+            - Bullet item
+              - Nested item
+                - Deep item
+            - [ ] Open task
+            - [x] Done task
+
+            \(numbered)
+
+            Last line.
+            """
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let harness = try harness(text: text)
+            harness.coordinator.update(
+                harness.view, with: Self.textView(harness.model, rendered: true), dynamicTypeSize: size, colorScheme: .light)
+            harness.view.layoutIfNeeded()
+            func x(of word: String) throws -> CGFloat {
+                harness.view.layoutIfNeeded()
+                let start = location(of: word, in: harness)
+                let view = harness.view
+                let from = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: start))
+                let to = try XCTUnwrap(view.position(from: from, offset: 1))
+                return view.firstRect(for: try XCTUnwrap(view.textRange(from: from, to: to))).minX
+            }
+            for word in ["Bullet item", "Nested item", "Deep item", "Open task", "Done task", "Clause 1\n", "Clause 11"] {
+                caret(harness, at: location(of: "Last line.", in: harness))
+                let away = try x(of: word)
+                caret(harness, at: location(of: word, in: harness) + 3)
+                XCTAssertFalse(hidden(harness, at: location(of: word, in: harness) - 2), "\(word): its marker shows")
+                let on = try x(of: word)
+                XCTAssertEqual(on, away, accuracy: 0.5, "\(word) stays put as the caret enters its line (\(size))")
+                // The caret at the text's start stands at the text, not in the
+                // room before it.
+                caret(harness, at: location(of: word, in: harness))
+                harness.view.layoutIfNeeded()
+                let start = try XCTUnwrap(harness.view.selectedTextRange?.start)
+                XCTAssertEqual(harness.view.caretRect(for: start).minX, away, accuracy: 2, "\(word): the caret at its start (\(size))")
+                // What is typed there is the text's size, not a narrowed marker's.
+                let textFont = harness.view.textStorage.attribute(.font, at: location(of: word, in: harness), effectiveRange: nil) as? UIFont
+                XCTAssertEqual((harness.view.typingAttributes[.font] as? UIFont)?.pointSize, textFont?.pointSize, "\(word): typing at its start (\(size))")
+                caret(harness, at: location(of: "Last line.", in: harness))
+                XCTAssertEqual(try x(of: word), away, accuracy: 0.5, "and as it leaves (\(size))")
+            }
+            // Return after a done task gives a new task, its marker narrowed;
+            // what is typed next is the text's size.
+            let body = harness.view.textStorage.attribute(.font, at: location(of: "Done task", in: harness), effectiveRange: nil) as? UIFont
+            caret(harness, at: location(of: "Done task", in: harness) + 9)
+            type(harness, "\n")
+            XCTAssertTrue(harness.shown.contains("- [x] Done task\n- [ ] \n"), "a new task")
+            XCTAssertEqual((harness.view.typingAttributes[.font] as? UIFont)?.pointSize, body?.pointSize, "typing in a new task (\(size))")
+            type(harness, "Next")
+            let next = harness.view.textStorage.attribute(.font, at: location(of: "Next", in: harness), effectiveRange: nil) as? UIFont
+            XCTAssertEqual(next?.pointSize, body?.pointSize, "the typed text (\(size))")
+        }
     }
 
     func testVoiceOverDoesNotHearHiddenMarkers() throws {

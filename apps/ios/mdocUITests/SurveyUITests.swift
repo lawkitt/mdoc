@@ -413,6 +413,72 @@ final class SurveyUITests: XCTestCase {
         shot("56-edit-mode-keyboard")
     }
 
+    /// The list look (ADR 0110): bullets, numbers and task boxes flush with
+    /// the paragraph, their text one column in; then edit mode with the
+    /// caret in a nested item and in a task, their source markers in the
+    /// same column.
+    @MainActor
+    func test12Lists() throws {
+        let seed = FileManager.default.temporaryDirectory.appendingPathComponent("lists.md")
+        try? FileManager.default.removeItem(at: seed)
+        try Self.listsText.write(to: seed, atomically: true, encoding: .utf8)
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = seed.path
+        app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
+        app.launch()
+        let row = MdocUITest.documentRow(app, title: "lists")
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["edit-button"].waitForExistence(timeout: 30))
+        shot("65-lists-review")
+        app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
+        // From the title down past the blank line and the first item's two
+        // lines, onto the nested item.
+        app.typeKey(.upArrow, modifierFlags: .command)
+        for _ in 0..<4 { app.typeKey(.downArrow, modifierFlags: []) }
+        app.typeKey(.rightArrow, modifierFlags: .command)
+        shot("66-lists-edit-nested")
+        // Down onto the open task.
+        for _ in 0..<4 { app.typeKey(.downArrow, modifierFlags: []) }
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        app.typeKey(.rightArrow, modifierFlags: [])
+        shot("67-lists-edit-task")
+    }
+
+    private static let listsText = """
+        # Lists
+
+        - First item, long enough to wrap onto a second line of the screen
+          - Nested item, also long enough to wrap onto the next line
+            - Third level
+        - Second item
+        - [ ] Open task, long enough to wrap onto the next line of the screen
+        - [x] Done task
+
+        1. First numbered item, long enough to wrap onto a second line
+        2. Second numbered
+           - Bullet under a number
+        3. Third
+
+        9. Ninth
+        10. Tenth, with a two-digit number
+        11. Eleventh
+        12. Twelfth
+
+        > - A list inside a quote
+        > - Its second item
+
+        > [!NOTE]
+        > - A list inside an alert
+
+        Write to maya.bennett@example.com about the list.
+        """
+
     @MainActor
     func test5BelowFloor() throws {
         let app = launch(seed: nil)
