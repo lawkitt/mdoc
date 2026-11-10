@@ -378,12 +378,12 @@ final class SurveyUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         row.tap()
         XCTAssertTrue(app.textViews["document-text"].links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
-        shot("60-review-long-title")
+        shot("54-review-long-title")
         app.buttons["edit-button"].tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
-        shot("61-edit-mode-bar")
+        shot("55-edit-mode-bar")
         MdocUITest.tapIntoText(app)
-        shot("62-edit-mode-keyboard")
+        shot("56-edit-mode-keyboard")
     }
 
     @MainActor
