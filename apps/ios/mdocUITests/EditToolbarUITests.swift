@@ -28,6 +28,8 @@ final class EditToolbarUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10), "the toolbar above the keyboard")
         // A fresh Simulator's keyboard first shows its slide-to-type tip
         // over the keys and the toolbar.

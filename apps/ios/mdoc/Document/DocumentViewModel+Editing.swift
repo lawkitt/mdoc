@@ -18,6 +18,10 @@ struct TypingState {
     /// Commits marked text in the view and sends what it has not sent yet:
     /// Done runs it first (the edit view sets it).
     var flush: (@MainActor () -> Void)?
+    /// Leaves edit mode in the view, keyboard and all, before the screen
+    /// updates: hiding the keyboard inside SwiftUI's update looped there
+    /// (Done runs it after `flush`; the view sets it).
+    var leave: (@MainActor () -> Void)?
 
     /// A snapshot newer than any typed edit came: it says what Undo does.
     mutating func settled(at snapshot: DocumentSnapshot) {
@@ -47,7 +51,9 @@ extension DocumentViewModel {
         snapshot.phase != nil
     }
 
-    /// Edit: the keyboard comes up on the text; the review bar closes.
+    /// Edit: the review bar closes and Identities hide (ADR 0110). The
+    /// text view keeps its place; the keyboard comes up on a selection, or
+    /// waits for a tap in the text.
     func enterEditMode() {
         guard hasEditableText, !isEditing else { return }
         if let reason = editBlockedReason {
@@ -58,6 +64,7 @@ extension DocumentViewModel {
         toast = nil
         typing = TypingState(revision: snapshot.textRevision)
         if pane != .text && !layout.isRegular { show(.text) }
+        hideIdentitiesForEditing()
         isEditing = true
     }
 
@@ -68,9 +75,11 @@ extension DocumentViewModel {
         linkDraft = nil
         // Marked (IME) text is committed and sent while typing still counts.
         typing.flush?()
+        typing.leave?()
         // The text as typed, before review shows it: the snapshot is older.
         applyReview(session.snapshot())
         isEditing = false
+        restoreIdentitiesAfterEditing()
         session.endTyping()
         typing.discovery?.cancel()
         typing.discovery = nil

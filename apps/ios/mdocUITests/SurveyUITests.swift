@@ -259,8 +259,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         shot("42-markdown-edit-mode")
     }
 
@@ -278,7 +278,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         app.typeKey(.upArrow, modifierFlags: .command)
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value BEGINSWITH %@", "# "), timeout: 5))
         shot("43-live-preview-heading")
@@ -304,6 +305,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay **monthly**")
@@ -384,6 +387,32 @@ final class SurveyUITests: XCTestCase {
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.
+    /// Edit mode's bar (ADR 0110): review with the pencil and Identities,
+    /// then edit mode with the checkmark in its own capsule and no
+    /// Identities, under a title long enough to be cut at its end.
+    @MainActor
+    func test11EditModes() throws {
+        let title = "Settlement agreement between Harbour Street Lettings and the tenant"
+        let seed = FileManager.default.temporaryDirectory.appendingPathComponent("\(title).md")
+        try? FileManager.default.removeItem(at: seed)
+        try FileManager.default.copyItem(at: MdocUITest.repo.appendingPathComponent(MdocUITest.markdownFixture), to: seed)
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = seed.path
+        app.launchEnvironment["MDOC_SLOW_TOASTS"] = "1"
+        app.launch()
+        let row = MdocUITest.documentRow(app, title: title)
+        XCTAssertTrue(row.waitForExistence(timeout: 60))
+        row.tap()
+        XCTAssertTrue(app.textViews["document-text"].links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        shot("54-review-long-title")
+        app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        shot("55-edit-mode-bar")
+        MdocUITest.tapIntoText(app)
+        shot("56-edit-mode-keyboard")
+    }
+
     @MainActor
     func test5BelowFloor() throws {
         let app = launch(seed: nil)

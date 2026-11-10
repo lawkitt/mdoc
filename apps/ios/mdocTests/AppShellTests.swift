@@ -223,6 +223,28 @@ final class AppShellTests: XCTestCase {
         XCTAssertTrue(model.identitiesShowing, "no right pane: the inspector again")
     }
 
+    /// Identities in the narrow column give way to edit mode and come back
+    /// on Done, the bar on the text (ADR 0110); a pane chosen while editing
+    /// keeps the column after Done.
+    func testIdentitiesInTheColumnComeBackOnDone() throws {
+        let seeded = try Fixture.seeded()
+        let model = try seeded.model(seeded.quotation)
+        model.windowChanged(to: .narrow)
+        model.restore(reply: "Thanks.")
+        model.showIdentities(true)
+        model.enterEditMode()
+        XCTAssertFalse(model.identitiesShowing, "the column gives way to the original")
+        model.doneEditing()
+        XCTAssertTrue(model.identitiesShowing, "back on Done")
+        XCTAssertEqual(model.pane, .text, "the bar acts on the text, not the hidden reply")
+
+        model.enterEditMode()
+        model.show(.reply)
+        model.doneEditing()
+        XCTAssertFalse(model.identitiesShowing, "the reply chosen while editing stays")
+        XCTAssertEqual(model.pane, .reply)
+    }
+
     /// A document waiting for recognition opens without the inspector.
     func testADocumentWaitingForRecognitionOpensWithoutTheInspector() throws {
         let seeded = try Fixture.seeded()

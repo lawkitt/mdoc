@@ -18,6 +18,7 @@ struct DocumentScreen: View {
 
     private var isRegular: Bool { layout.isRegular }
     @State private var screenHeight: CGFloat = 800
+    @State private var screenWidth: CGFloat = 0
     /// The long press's Same as… with a long list: the searchable picker.
     @State private var sameAsCandidate: CandidateID?
     /// Identities' Same as…: the identity it starts from.
@@ -40,6 +41,7 @@ struct DocumentScreen: View {
             .toast($model.toast)
             .safeAreaInset(edge: .bottom) { bottomBar }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             .inspector(isPresented: inspectorBinding) {
                 identities
                     .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
@@ -117,46 +119,62 @@ struct DocumentScreen: View {
                 }
             }
         } else {
-            switch model.pane {
-            case .text:
+            // The text stays under the Original and the reply, so its view,
+            // its place, caret and selection survive the switch (ADR 0110).
+            ZStack {
                 textPane
-            case .original:
-                OriginalView(original: model.snapshot.original)
-            case .reply:
-                if let reply = model.snapshot.reply {
-                    ReplyPane(reply: reply, onClear: model.clearReply)
-                } else {
-                    textPane
+                    .opacity(textShows ? 1 : 0)
+                    .allowsHitTesting(textShows)
+                    .accessibilityHidden(!textShows)
+                switch model.pane {
+                case .text:
+                    EmptyView()
+                case .original:
+                    OriginalView(original: model.snapshot.original)
+                case .reply:
+                    if let reply = model.snapshot.reply {
+                        ReplyPane(reply: reply, onClear: model.clearReply)
+                    }
                 }
             }
         }
     }
 
+    /// The text is in view: always beside the right pane, and on iPhone
+    /// while the switch shows it.
+    private var textShows: Bool {
+        (isRegular && hasRightPane) || model.pane == .text || (model.pane == .reply && model.snapshot.reply == nil)
+    }
+
+    /// The text view shows: edit mode, a read document's text, or a read
+    /// document with none left (emptied by editing), so typing can go on
+    /// (ADR 0109). One branch, so a change of mode keeps the same view
+    /// (ADR 0110).
+    private var showsTextView: Bool {
+        model.isEditing || !model.snapshot.markdown.isEmpty || model.snapshot.phase != nil
+    }
+
     @ViewBuilder
     private var textPane: some View {
-        if model.isEditing || (model.snapshot.markdown.isEmpty && model.snapshot.phase != nil) {
-            // Editing, or a read document with no text (emptied by editing):
-            // the text view, so typing can go on (ADR 0109).
+        if showsTextView {
             textColumn
-        } else if model.snapshot.markdown.isEmpty && model.importNotFinished {
+        } else if model.importNotFinished {
             ContentUnavailableView(
                 "Import not finished",
                 systemImage: "doc.badge.clock",
                 description: Text("The import stopped before mdoc read the text. Finish import reads it now."))
-        } else if model.snapshot.markdown.isEmpty && !model.snapshot.kind.needsRecognition {
+        } else if !model.snapshot.kind.needsRecognition {
             ContentUnavailableView(
                 "No text yet",
                 systemImage: "doc.text",
                 description: Text("mdoc is reading the file."))
-        } else if model.snapshot.markdown.isEmpty {
+        } else {
             ContentUnavailableView(
                 "No text yet",
                 systemImage: "text.viewfinder",
                 description: model.snapshot.resumesOCR
                     ? Text("Recognition stopped. Finished pages are kept, and resuming reads the rest.")
                     : Text("mdoc reads the text when recognition runs."))
-        } else {
-            textColumn
         }
     }
 
@@ -189,7 +207,8 @@ struct DocumentScreen: View {
             onMenu: { model.menuOpened(on: $0) },
             menu: { id in CandidateMenu.make(for: id, model: model) { sameAsCandidate = $0 } },
             edit: model.isEditing ? EditActions(model) : nil,
-            findBar: model.findBarRequest)
+            findBar: model.findBarRequest,
+            shown: textShows)
     }
 
     /// Edit is offered while the text shows, in live preview or with Show
@@ -198,19 +217,27 @@ struct DocumentScreen: View {
         model.hasEditableText && (isRegular || model.pane == .text)
     }
 
+    /// Done: a tinted checkmark in its own capsule, the confirm style of
+    /// iOS 26 (ADR 0110).
+    private var doneButton: some View {
+        Button {
+            model.doneEditing()
+        } label: {
+            Label("Done editing", systemImage: "checkmark")
+                .fontWeight(.semibold)
+                // The system's white vanishes on dark mode's near-white ink.
+                .foregroundStyle(Color.onAccent)
+        }
+        .primaryGlass()
+        .keyboardShortcut("e", modifiers: .command)
+        .accessibilityLabel(Text("Done editing"))
+        .accessibilityHint(Text("Back to reviewing names. Your changes are saved."))
+        .accessibilityIdentifier("done-editing")
+    }
+
     @ViewBuilder
     private var editButton: some View {
-        if model.isEditing {
-            Button {
-                model.doneEditing()
-            } label: {
-                Text("Done").fontWeight(.semibold)
-            }
-            .keyboardShortcut("e", modifiers: .command)
-            .accessibilityLabel(Text("Done editing"))
-            .accessibilityHint(Text("Back to reviewing names. Your changes are saved."))
-            .accessibilityIdentifier("done-editing")
-        } else if offersEdit {
+        if offersEdit {
             Button {
                 model.enterEditMode()
             } label: {
@@ -266,7 +293,8 @@ struct DocumentScreen: View {
     private var panes: [Shown] {
         var panes: [Shown] = isRegular ? [] : [.pane(.text)]
         if model.hasOriginal || isRegular { panes.append(.pane(.original)) }
-        if identitiesInPane { panes.append(.identities) }
+        // Identities are hidden while editing (ADR 0110).
+        if identitiesInPane && !model.isEditing { panes.append(.identities) }
         if model.snapshot.reply != nil { panes.append(.pane(.reply)) }
         return panes
     }
@@ -306,7 +334,8 @@ struct DocumentScreen: View {
         }
         if panes.count == 1 {
             // Tapping the title: the document's menu, as in Claude. A title
-            // of its own truncates, so Identities and ⋯ keep their place.
+            // of its own truncates at its tail between ☰ and the trailing
+            // buttons, so they keep their place (ADR 0110).
             ToolbarItem(placement: .principal) {
                 Menu {
                     titleMenu
@@ -316,8 +345,7 @@ struct DocumentScreen: View {
                             .font(.headline)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            // Room for ☰ and the trailing buttons on a phone.
-                            .frame(maxWidth: isRegular ? 420 : 170)
+                            .frame(maxWidth: titleWidth)
                             .fixedSize(horizontal: false, vertical: true)
                         Image(systemName: "chevron.down")
                             .font(.caption2.weight(.bold))
@@ -348,39 +376,71 @@ struct DocumentScreen: View {
                 .accessibilityIdentifier("pane-picker")
             }
         }
-        // One group: beside a title menu, separate items overflow into More.
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            editButton
-            Button {
-                model.showIdentities(!model.identitiesShowing)
-            } label: {
-                Label("Identities", systemImage: "person.text.rectangle")
+        if model.isEditing {
+            // Editing: the checkmark in its own capsule, apart from ⋯, and
+            // no Identities (ADR 0110).
+            ToolbarItem(placement: .topBarTrailing) {
+                doneButton
             }
-            .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
-            .accessibilityIdentifier("identities-button")
-            Menu {
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                moreMenu
+            }
+        } else {
+            // One group: beside a title menu, separate items overflow into More.
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                editButton
                 Button {
-                    // Editing: the system find bar, with Replace (ADR 0109).
-                    if model.isEditing { model.findBarRequest += 1 } else { model.showsFind = true }
+                    model.showIdentities(!model.identitiesShowing)
                 } label: {
-                    Label("Find in document", systemImage: "magnifyingglass")
+                    Label("Identities", systemImage: "person.text.rectangle")
                 }
-                .disabled(model.snapshot.markdown.isEmpty)
-                .accessibilityIdentifier("find-in-document")
-                // The source as Copy for AI sends it, markers dimmed (ADR 0096).
-                Toggle(isOn: Bindable(preferences).showsSource) {
-                    Label("Show Markdown", systemImage: "number")
-                }
-                .accessibilityIdentifier("show-markdown")
-                // The title's menu too, where the title shows Text and Original.
-                if panes.count > 1 {
-                    Section { titleMenu }
-                }
-            } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                .disabled(model.snapshot.identities.isEmpty && model.snapshot.phase != .ready)
+                .accessibilityIdentifier("identities-button")
+                moreMenu
             }
-            .accessibilityIdentifier("document-menu")
         }
+    }
+
+    /// The title's widest, so it truncates at its tail in the room between
+    /// ☰ and the trailing buttons (ADR 0110). The bar offers a title any
+    /// width and centres it, and a toolbar item's place can't be read, so
+    /// the room comes from the screen's width less the bar's fixed
+    /// buttons: ☰ with its margin, and the trailing capsules (the review
+    /// capsule 48 pt a button, edit mode's checkmark and ⋯ capsules), a gap
+    /// either side and the chevron. The buttons keep their size at every
+    /// text size.
+    private var titleWidth: CGFloat {
+        let cap: CGFloat = isRegular ? 420 : 300
+        guard screenWidth > 0 else { return isRegular ? 420 : 140 }
+        let leading: CGFloat = 60
+        let trailing: CGFloat = model.isEditing ? 120 : 16 + 14 + 48 * (offersEdit ? 3 : 2)
+        return min(cap, max(60, screenWidth - leading - trailing - 2 * Space.xs - 22))
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button {
+                // Editing: the system find bar, with Replace (ADR 0109).
+                if model.isEditing { model.findBarRequest += 1 } else { model.showsFind = true }
+            } label: {
+                Label("Find in document", systemImage: "magnifyingglass")
+            }
+            .disabled(model.snapshot.markdown.isEmpty)
+            .accessibilityIdentifier("find-in-document")
+            // The source as Copy for AI sends it, markers dimmed (ADR 0096).
+            Toggle(isOn: Bindable(preferences).showsSource) {
+                Label("Show Markdown", systemImage: "number")
+            }
+            .accessibilityIdentifier("show-markdown")
+            // The title's menu too, where the title shows Text and Original.
+            if panes.count > 1 {
+                Section { titleMenu }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("document-menu")
     }
 
     private var paneBinding: Binding<Shown> {

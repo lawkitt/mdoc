@@ -11,7 +11,8 @@ final class LivePreviewUITests: XCTestCase {
     }
 
     /// Opens `seed`'s document, scrolled down `pages` screens, and enters
-    /// edit mode in live preview: the caret starts at the first line in view.
+    /// edit mode in live preview, a tap in the text bringing the keyboard
+    /// (ADR 0110).
     @MainActor
     private func edit(seed: String, title: String, pages: Int = 0, contentSize: String? = nil) -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()
@@ -34,9 +35,7 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
-        // The keyboard may wait for a tap in the text (ADR 0110).
-        if !app.keyboards.firstMatch.waitForExistence(timeout: 3) { text.tap() }
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        MdocUITest.tapIntoText(app)
         return (app, text)
     }
 

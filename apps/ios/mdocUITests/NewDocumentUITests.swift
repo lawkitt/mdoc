@@ -114,6 +114,9 @@ final class NewDocumentUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS 'EMAIL_1'"), timeout: 10))
 
         app.buttons["edit-button"].tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        // Below the text: the caret at its end, and the keyboard.
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         app.typeText(" Copy bob@example.com ")
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS 'bob@example.com'"), timeout: 10))

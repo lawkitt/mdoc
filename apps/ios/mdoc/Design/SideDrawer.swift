@@ -18,6 +18,9 @@ struct SideDrawer<Panel: View, Content: View>: View {
     @Binding var isOpen: Bool
     /// What VoiceOver's close action and the sliver are called.
     var closeLabel: LocalizedStringKey = "Close sidebar"
+    /// A swipe at the near edge opens the panel; off, only `isOpen` does
+    /// (Identities while editing, ADR 0110).
+    var opensFromEdge = true
     @ViewBuilder var panel: () -> Panel
     @ViewBuilder var content: () -> Content
 
@@ -113,7 +116,7 @@ struct SideDrawer<Panel: View, Content: View>: View {
                     .onPreferenceChange(InnerDrawerShows.self) { shows in
                         MainActor.assumeIsolated { innerShows = shows }
                     }
-                if !isOpen && !innerShows {
+                if opensFromEdge && !isOpen && !innerShows {
                     // The near edge opens the panel with a swipe; while an
                     // inner drawer shows, the swipe is the inner one's.
                     Color.clear

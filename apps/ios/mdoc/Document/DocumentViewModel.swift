@@ -73,6 +73,9 @@ final class DocumentViewModel {
     /// The right-edge drawer of a compact window is open. Only opening
     /// Identities there opens it: a window that narrows never does (#674).
     private(set) var identitiesDrawerOpen = false
+    /// Identities showed in a regular window when edit mode began: they
+    /// come back on Done (ADR 0110).
+    private var identitiesBeforeEditing = false
     /// The window this document shows in, which `windowChanged` sets.
     private(set) var layout: DocumentLayout = .compact
     /// Where Identities showed when the last change settled; nil before the
@@ -441,6 +444,8 @@ final class DocumentViewModel {
     /// that is the drawer. In the right column they cover the reply, so the
     /// hand-off bar goes back to acting on the document, the text in view.
     func showIdentities(_ show: Bool) {
+        // Hidden while editing (ADR 0110): no button, no edge swipe.
+        if show && isEditing { return }
         let placement = identitiesPlacement
         if show && placement == .column && pane == .reply { pane = .text }
         wantsIdentities = show
@@ -449,7 +454,11 @@ final class DocumentViewModel {
 
     /// Shows `pane`. In the right column a pane takes Identities' place.
     func show(_ pane: Pane) {
-        if identitiesPlacement == .column { wantsIdentities = false }
+        if identitiesPlacement == .column {
+            wantsIdentities = false
+            // A pane chosen while editing keeps the column: Done leaves it.
+            if isEditing && pane != .text { identitiesBeforeEditing = false }
+        }
         self.pane = pane
     }
 
@@ -483,6 +492,27 @@ final class DocumentViewModel {
         case (_, .column):
             wantsIdentities = false
         }
+        if isEditing && wantsIdentities {
+            // Wanted, but hidden until Done (ADR 0110).
+            identitiesBeforeEditing = true
+            wantsIdentities = false
+        }
+    }
+
+    /// Edit mode begins: Identities go, the drawer closed and the iPad
+    /// column or inspector given back to the Original (ADR 0110).
+    func hideIdentitiesForEditing() {
+        identitiesBeforeEditing = wantsIdentities && identitiesPlacement != .drawer
+        wantsIdentities = false
+        identitiesDrawerOpen = false
+    }
+
+    /// Done: Identities come back where they showed in a regular window.
+    /// The iPhone drawer stays shut, over the text it would cover.
+    func restoreIdentitiesAfterEditing() {
+        defer { identitiesBeforeEditing = false }
+        guard identitiesBeforeEditing, identitiesPlacement != .drawer else { return }
+        showIdentities(true)
     }
 
     // MARK: Helpers
