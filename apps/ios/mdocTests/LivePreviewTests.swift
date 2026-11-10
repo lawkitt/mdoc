@@ -263,6 +263,53 @@ final class LivePreviewTests: XCTestCase {
         XCTAssertNil(decoration(harness, at: rule)?.rule)
     }
 
+    /// The caret's list line draws its source marker in the list's column,
+    /// so the item's text does not move sideways as the caret enters or
+    /// leaves it (ADR 0110): bullets, tasks, nested items, a two-digit
+    /// number, and at the largest text size.
+    func testTheCaretsListLineDoesNotShift() throws {
+        let numbered = (1...11).map { "\($0). Clause \($0)" }.joined(separator: "\n")
+        let text = """
+            Intro.
+
+            - Bullet item
+              - Nested item
+                - Deep item
+            - [ ] Open task
+            - [x] Done task
+
+            \(numbered)
+
+            > - Quoted item
+
+            Last line.
+            """
+        for size in [DynamicTypeSize.large, .accessibility5] {
+            let harness = try harness(text: text)
+            harness.coordinator.update(
+                harness.view, with: Self.textView(harness.model, rendered: true), dynamicTypeSize: size, colorScheme: .light)
+            harness.view.layoutIfNeeded()
+            func x(of word: String) throws -> CGFloat {
+                harness.view.layoutIfNeeded()
+                let start = location(of: word, in: harness)
+                let view = harness.view
+                let from = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: start))
+                let to = try XCTUnwrap(view.position(from: from, offset: 1))
+                return view.firstRect(for: try XCTUnwrap(view.textRange(from: from, to: to))).minX
+            }
+            for word in ["Bullet item", "Nested item", "Deep item", "Open task", "Done task", "Clause 1\n", "Clause 11", "Quoted item"] {
+                caret(harness, at: location(of: "Last line.", in: harness))
+                let away = try x(of: word)
+                caret(harness, at: location(of: word, in: harness) + 3)
+                XCTAssertFalse(hidden(harness, at: location(of: word, in: harness) - 2), "\(word): its marker shows")
+                let on = try x(of: word)
+                XCTAssertEqual(on, away, accuracy: 0.5, "\(word) stays put as the caret enters its line (\(size))")
+                caret(harness, at: location(of: "Last line.", in: harness))
+                XCTAssertEqual(try x(of: word), away, accuracy: 0.5, "and as it leaves (\(size))")
+            }
+        }
+    }
+
     func testVoiceOverDoesNotHearHiddenMarkers() throws {
         let harness = try harness()
         caret(harness, at: (harness.shown as NSString).length)
