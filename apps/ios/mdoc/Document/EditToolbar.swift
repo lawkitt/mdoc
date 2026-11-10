@@ -4,8 +4,9 @@ import UIKit
 
 /// Edit mode's toolbar above the keyboard (ADR 0109): a Liquid Glass
 /// capsule of undo, redo, bold, italic, list, task, indent and outdent,
-/// then Aa and hide keyboard as glass circles that always show. A button is
-/// on while the caret is in what it makes (bold inside `**…**`, list on a
+/// then Aa and hide keyboard as glass circles that always show. With the
+/// caret in a table's cell, row below, column right and the table's ⋯ menu
+/// take the list and task buttons' place (ADR 0110). A button is on while the caret is in what it makes (bold inside `**…**`, list on a
 /// list line) and off where it cannot apply. Every button is a 44 pt
 /// target; the capsule scrolls sideways when the phone or the text size
 /// leaves it no room. With the caret in a link, a chip above it offers
@@ -20,12 +21,18 @@ struct EditToolbar: View {
                     LinkChip(link: link, model: model)
                 }
                 HStack(spacing: Space.xs) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 0) {
-                            buttons
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 0) {
+                                buttons
+                            }
                         }
+                        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                        .onChange(of: model.inCell) { _, inCell in follow(inCell, with: proxy) }
+                        // A toolbar made again (edit mode entered again)
+                        // with the caret still in a cell starts at ⋯ too.
+                        .onAppear { if model.inCell { proxy.scrollTo(Self.tableMenuID, anchor: .trailing) } }
                     }
-                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                     .glassEffect(.regular, in: .capsule)
                     ToolbarKey(
                         symbol: "textformat", label: Text("Formatting"), id: "toolbar-formatting", on: model.formatting,
@@ -50,15 +57,46 @@ struct EditToolbar: View {
         ToolbarKey(symbol: "arrow.uturn.backward", label: Text("Undo"), id: "toolbar-undo", enabled: model.canUndo) {
             model.undo()
         }
+        .id(Self.undoID)
         ToolbarKey(symbol: "arrow.uturn.forward", label: Text("Redo"), id: "toolbar-redo", enabled: model.canRedo) {
             model.redo()
         }
         command(.format(.bold), symbol: "bold", label: Text("Bold"), id: "toolbar-bold")
         command(.format(.italic), symbol: "italic", label: Text("Italic"), id: "toolbar-italic")
-        command(.list, symbol: "list.bullet", label: Text("Bulleted list"), id: "toolbar-list")
-        command(.task, symbol: "checklist", label: Text("Task"), id: "toolbar-task", value: model.taskValue)
-        command(.indent, symbol: "increase.indent", label: Text("Indent"), id: "toolbar-indent")
-        command(.outdent, symbol: "decrease.indent", label: Text("Outdent"), id: "toolbar-outdent")
+        if model.inCell {
+            // The table controls (ADR 0110): in a cell they take the list
+            // and task buttons' place; indent and outdent, which never
+            // apply in a cell, give theirs too.
+            command(.table(.insertRowBelow), symbol: "arrow.down.to.line", label: Text("Row below"), id: "table-row-below")
+            command(
+                .table(.insertColumnRight), symbol: "arrow.right.to.line", label: Text("Column right"),
+                id: "table-column-right")
+            TableMenu(model: model)
+                .id(Self.tableMenuID)
+        } else {
+            command(.list, symbol: "list.bullet", label: Text("Bulleted list"), id: "toolbar-list")
+            command(.task, symbol: "checklist", label: Text("Task"), id: "toolbar-task", value: model.taskValue)
+            command(.indent, symbol: "increase.indent", label: Text("Indent"), id: "toolbar-indent")
+            command(.outdent, symbol: "decrease.indent", label: Text("Outdent"), id: "toolbar-outdent")
+        }
+    }
+
+    /// The scroll ids of the capsule's first button and of ⋯.
+    static let undoID = "toolbar-undo"
+    static let tableMenuID = "table-more"
+
+    /// Entering a cell scrolls the capsule to its end, so ⋯ shows whole on
+    /// a phone too narrow for every button; leaving one scrolls back to
+    /// Undo.
+    private func follow(_ inCell: Bool, with proxy: ScrollViewProxy) {
+        let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .default
+        withAnimation(animation) {
+            if inCell {
+                proxy.scrollTo(Self.tableMenuID, anchor: .trailing)
+            } else {
+                proxy.scrollTo(Self.undoID, anchor: .leading)
+            }
+        }
     }
 
     private func command(
@@ -69,6 +107,71 @@ struct EditToolbar: View {
         ) {
             model.run(command)
         }
+    }
+}
+
+/// The table's ⋯ menu in the toolbar (ADR 0110): Row above, Column left,
+/// Delete row, Delete column, Align column (the column's alignment
+/// checked), then Delete table. Each item is one editor-core table
+/// command; one that cannot apply there (a row above or deleted in the
+/// header, the last column deleted) is off.
+struct TableMenu: View {
+    let model: EditToolbarModel
+
+    @ScaledMetric(relativeTo: .body) private var side = Size.target
+
+    var body: some View {
+        Menu {
+            item(.insertRowAbove, symbol: "arrow.up.to.line", label: Text("Row above"), id: "table-row-above")
+            item(.insertColumnLeft, symbol: "arrow.left.to.line", label: Text("Column left"), id: "table-column-left")
+            item(.deleteRow, symbol: "minus.rectangle", label: Text("Delete row"), id: "table-delete-row")
+            item(.deleteColumn, symbol: "minus.square", label: Text("Delete column"), id: "table-delete-column")
+            Menu {
+                Picker(selection: align) {
+                    Text("Left").tag(MarkdownAlign.left)
+                    Text("Center").tag(MarkdownAlign.center)
+                    Text("Right").tag(MarkdownAlign.right)
+                } label: {
+                    Text("Align column")
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label { Text("Align column") } icon: { Image(systemName: "text.aligncenter") }
+            }
+            .accessibilityIdentifier("table-align")
+            Divider()
+            item(.deleteTable, symbol: "trash", label: Text("Delete table"), id: "table-delete", role: .destructive)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Color.primary)
+                .frame(minWidth: side, minHeight: side)
+                .contentShape(Rectangle())
+        }
+        .menuOrder(.fixed)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Table"))
+        .accessibilityHint(Text("Rows, columns, alignment and delete table."))
+        .accessibilityIdentifier("table-more")
+    }
+
+    /// The caret's column's alignment; choosing another sets it.
+    private var align: Binding<MarkdownAlign> {
+        Binding(
+            get: { model.state?.cell?.align ?? .left },
+            set: { model.run(.table(.align(align: $0))) })
+    }
+
+    private func item(
+        _ command: EditorTableCommand, symbol: String, label: Text, id: String, role: ButtonRole? = nil
+    ) -> some View {
+        Button(role: role) {
+            model.run(.table(command))
+        } label: {
+            Label { label } icon: { Image(systemName: symbol) }
+        }
+        .disabled(!model.isEnabled(.table(command)))
+        .accessibilityIdentifier(id)
     }
 }
 

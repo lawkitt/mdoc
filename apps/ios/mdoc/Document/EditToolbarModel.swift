@@ -15,11 +15,11 @@ enum EditCommand: Hashable {
     case rule
     /// The formatting keyboard's Table: a new table.
     case insertTable
-    /// A table control on the caret's table (ADR 0109): rows, columns,
+    /// A table control on the caret's table (ADR 0110): rows, columns,
     /// alignment, delete.
     case table(EditorTableCommand)
-    /// Tab, ⇧Tab, an arrow key or a table control's move key in a cell:
-    /// no edit, but Tab from the last cell, which leaves the table.
+    /// Tab, ⇧Tab or an arrow key from a hardware keyboard in a cell: no
+    /// edit, but Tab from the last cell, which leaves the table.
     case moveInTable(EditorTableMove)
     /// ⇧Return in a cell: `<br>`.
     case lineBreak
@@ -61,7 +61,7 @@ final class EditToolbarModel {
     @ObservationIgnored var run: (EditCommand) -> Void = { _ in }
     @ObservationIgnored var undo: () -> Void = {}
     @ObservationIgnored var redo: () -> Void = {}
-    /// Aa and the formatting keyboard's keyboard key.
+    /// Aa: the formatting keyboard, or back to the system keyboard.
     @ObservationIgnored var setFormatting: (Bool) -> Void = { _ in }
     @ObservationIgnored var hideKeyboard: () -> Void = {}
     /// The Link key, ⌘K and the link chip's Edit: the link sheet.
@@ -109,8 +109,8 @@ final class EditToolbarModel {
         }
     }
 
-    /// The table controls show in place of the formatting keys: the caret
-    /// is in a drawn table's cell.
+    /// The table controls show in place of the list and task buttons
+    /// (ADR 0110): the caret is in a drawn table's cell.
     var inCell: Bool { state?.cell != nil }
 
     /// What VoiceOver says the task button's line is.

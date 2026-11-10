@@ -3,8 +3,8 @@ import XCTest
 /// Edit mode's toolbar, formatting keyboard, links and hardware keys (ADR
 /// 0109, slice 4), in live preview: the capsule above the keyboard makes a
 /// word bold and shows Bold on; Aa swaps in the formatting keyboard, whose
-/// keys turn the line into a heading and whose keyboard key brings the
-/// system keyboard back; ⌘B, Tab and ⌘K work from a hardware keyboard; and
+/// keys turn the line into a heading, and Aa again brings the system
+/// keyboard back (ADR 0110); ⌘B, Tab and ⌘K work from a hardware keyboard; and
 /// the accessibility audit passes with the toolbar up.
 final class EditToolbarUITests: XCTestCase {
     override func setUp() {
@@ -79,9 +79,11 @@ final class EditToolbarUITests: XCTestCase {
         heading.tap()
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value ENDSWITH %@", "## Pay **monthly**"), timeout: 5))
         XCTAssertTrue(heading.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5))
-        // Its keyboard key brings the system keyboard back.
-        app.buttons["formatting-keyboard-return"].tap()
+        // No key back to the system keyboard: Aa switches back (ADR 0110).
+        XCTAssertFalse(app.buttons["formatting-keyboard-return"].exists)
+        app.buttons["toolbar-formatting"].tap()
         XCTAssertTrue(heading.wait(until: NSPredicate(format: "exists == false"), timeout: 5))
+        XCTAssertFalse(app.buttons["toolbar-formatting"].isSelected)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         // The toolbar's Undo takes back the heading, one step.
         app.buttons["toolbar-undo"].tap()

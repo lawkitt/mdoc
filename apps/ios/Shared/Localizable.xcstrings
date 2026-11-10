@@ -245,16 +245,7 @@
     "Alias, %@" : {
 
     },
-    "Align center" : {
-
-    },
     "Align column" : {
-
-    },
-    "Align left" : {
-
-    },
-    "Align right" : {
 
     },
     "All" : {
@@ -308,9 +299,6 @@
     "Bold" : {
 
     },
-    "Brings back the keyboard." : {
-
-    },
     "Bulleted list" : {
 
     },
@@ -353,10 +341,7 @@
     "Caution" : {
       "comment" : "A Markdown alert's title"
     },
-    "Cell above" : {
-
-    },
-    "Cell below" : {
+    "Center" : {
 
     },
     "Change category" : {
@@ -387,9 +372,6 @@
 
     },
     "Column right" : {
-
-    },
-    "Columns" : {
 
     },
     "Continue" : {
@@ -517,9 +499,6 @@
 
     },
     "Drag to make one with another name" : {
-
-    },
-    "Duplicate row" : {
 
     },
     "Each document you add starts a case, or joins one you choose." : {
@@ -714,10 +693,10 @@
     "Kept" : {
 
     },
-    "Keyboard" : {
+    "Leave edit mode to find names" : {
 
     },
-    "Leave edit mode to find names" : {
+    "Left" : {
 
     },
     "License" : {
@@ -1222,13 +1201,16 @@
     "Review this identity" : {
 
     },
+    "Right" : {
+
+    },
     "Row above" : {
 
     },
     "Row below" : {
 
     },
-    "Rows" : {
+    "Rows, columns, alignment and delete table." : {
 
     },
     "Rule" : {

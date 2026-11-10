@@ -144,11 +144,17 @@ final class TableEditingTests: XCTestCase {
         let rect = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
         let frame = try grid(harness).cells[2][0].convert(try grid(harness).cells[2][0].bounds, to: harness.view)
         XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(CGPoint(x: rect.midX, y: rect.midY)), "\(rect) in \(frame)")
-        // Blocks are off in a cell; formats and Aa's table controls are on.
+        // Blocks are off in a cell; formats, the formatting keyboard's too,
+        // are on, and the toolbar shows the table controls (ADR 0110).
         XCTAssertFalse(harness.toolbar.isEnabled(.list))
         XCTAssertFalse(harness.toolbar.isEnabled(.task))
         XCTAssertFalse(harness.toolbar.isEnabled(.indent))
-        XCTAssertTrue(harness.toolbar.isEnabled(.format(.bold)))
+        XCTAssertFalse(harness.toolbar.isEnabled(.turnInto(.heading1)))
+        XCTAssertFalse(harness.toolbar.isEnabled(.rule))
+        XCTAssertFalse(harness.toolbar.isEnabled(.insertTable))
+        for format in [EditorInlineFormat.bold, .italic, .strikethrough, .code, .highlight] {
+            XCTAssertTrue(harness.toolbar.isEnabled(.format(format)), "\(format)")
+        }
         XCTAssertTrue(harness.toolbar.inCell)
     }
 
@@ -335,7 +341,6 @@ final class TableEditingTests: XCTestCase {
         let controls: [(EditorTableCommand, String)] = [
             (.insertRowAbove, "| Rent | £1,150 |\n|  |  |\n| Deposit"),
             (.insertRowBelow, "| Deposit | £1,725 |\n|  |  |\n\nAfter"),
-            (.duplicateRow, "| Deposit | £1,725 |\n| Deposit | £1,725 |"),
             (.deleteRow, "| --- | ---: |\n| Rent | £1,150 |\n\nAfter"),
             (.insertColumnLeft, "|  | Deposit | £1,725 |"),
             (.insertColumnRight, "| Deposit |  | £1,725 |"),
@@ -372,6 +377,72 @@ final class TableEditingTests: XCTestCase {
         caret(prose, at: "text")
         XCTAssertFalse(prose.toolbar.isEnabled(.table(.insertRowBelow)))
         XCTAssertFalse(prose.toolbar.inCell)
+    }
+
+    /// A new row takes the caret in the same column, a new column in the
+    /// same row (ADR 0110), and typing goes into that new cell.
+    func testANewRowOrColumnTakesTheCaret() throws {
+        let cases: [(EditorTableCommand, row: UInt32, column: UInt32)] = [
+            (.insertRowBelow, 2, 1), (.insertRowAbove, 1, 1), (.insertColumnRight, 1, 2), (.insertColumnLeft, 1, 1),
+        ]
+        for (command, row, column) in cases {
+            let harness = try harness()
+            try tap(harness, row: 1, column: 1)
+            harness.toolbar.run(.table(command))
+            let cell = try XCTUnwrap(harness.toolbar.state?.cell, "\(command)")
+            XCTAssertEqual([cell.row, cell.column], [row, column], "\(command)")
+            type(harness, "x")
+            let typed = try grid(harness).cells[Int(row)][Int(column)].textStorage.string
+            XCTAssertEqual(typed.trimmingCharacters(in: .whitespaces), "x", "\(command): \(harness.shown)")
+            XCTAssertEqual(coreText(harness), harness.shown)
+        }
+    }
+
+    /// Column right on a wide table's last column: the caret is in the new
+    /// column, and the grid scrolls sideways to show it (ADR 0110).
+    func testANewColumnScrollsTheGridToTheCaret() throws {
+        let wide = (1...8).map { "Column \($0) heading" }
+        let text = "| \(wide.joined(separator: " | ")) |\n|\(String(repeating: " --- |", count: 8))\n| \(wide.joined(separator: " | ")) |"
+        let harness = try harness(text: text)
+        try tap(harness, row: 1, column: 0)
+        for _ in 0..<7 { harness.toolbar.run(.moveInTable(.next)) }
+        XCTAssertEqual(harness.toolbar.state?.cell?.column, 7)
+        let before = try grid(harness).contentOffset.x
+        harness.toolbar.run(.table(.insertColumnRight))
+        XCTAssertEqual(harness.toolbar.state?.cell?.column, 8)
+        let table = try grid(harness)
+        XCTAssertGreaterThan(table.contentOffset.x, before, "the grid scrolled on to the new column")
+        let shown = table.convert(table.bounds, to: harness.view)
+        let caret = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
+        XCTAssertTrue(shown.insetBy(dx: -1, dy: -1).contains(CGPoint(x: caret.midX, y: caret.midY)), "\(caret) in \(shown)")
+        // Column left there: the new column at the caret's place shows too.
+        harness.toolbar.run(.table(.insertColumnLeft))
+        XCTAssertEqual(harness.toolbar.state?.cell?.column, 8)
+        let left = try grid(harness)
+        let leftShown = left.convert(left.bounds, to: harness.view)
+        let leftCaret = harness.view.caretRect(for: try XCTUnwrap(harness.view.selectedTextRange?.end))
+        XCTAssertTrue(leftShown.insetBy(dx: -1, dy: -1).contains(CGPoint(x: leftCaret.midX, y: leftCaret.midY)))
+    }
+
+    /// Return in the last row adds a row, the caret in the same column; on
+    /// a last row wholly empty it removes that row and leaves the table
+    /// (ADR 0110).
+    func testReturnInTheLastRowAddsARowAndAnEmptyOneLeaves() throws {
+        let harness = try harness()
+        try tap(harness, row: 2, column: 1)
+        XCTAssertFalse(change(harness, harness.view.selectedRange, "\n"))
+        harness.coordinator.refreshToolbar(harness.view)
+        let cell = try XCTUnwrap(harness.toolbar.state?.cell)
+        XCTAssertEqual([cell.row, cell.column, cell.rows], [3, 1, 4])
+        XCTAssertTrue(harness.shown.contains("| Deposit | £1,725 |\n|  |  |\n"), harness.shown)
+        XCTAssertEqual(try grid(harness).cells.count, 4)
+        XCTAssertFalse(change(harness, harness.view.selectedRange, "\n"))
+        harness.coordinator.refreshToolbar(harness.view)
+        XCTAssertNil(harness.view.caretCell, "the caret left the table")
+        XCTAssertNil(harness.toolbar.state?.cell)
+        XCTAssertFalse(harness.shown.contains("|  |  |"), "the empty row went: \(harness.shown)")
+        XCTAssertEqual(try grid(harness).cells.count, 3)
+        XCTAssertEqual(coreText(harness), harness.shown)
     }
 
     func testANewTableTakesTheCaretInItsFirstCell() throws {
