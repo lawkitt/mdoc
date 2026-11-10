@@ -21,12 +21,15 @@ struct EditToolbar: View {
                     LinkChip(link: link, model: model)
                 }
                 HStack(spacing: Space.xs) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 0) {
-                            buttons
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 0) {
+                                buttons
+                            }
                         }
+                        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                        .onChange(of: model.inCell) { _, inCell in follow(inCell, with: proxy) }
                     }
-                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                     .glassEffect(.regular, in: .capsule)
                     ToolbarKey(
                         symbol: "textformat", label: Text("Formatting"), id: "toolbar-formatting", on: model.formatting,
@@ -51,6 +54,7 @@ struct EditToolbar: View {
         ToolbarKey(symbol: "arrow.uturn.backward", label: Text("Undo"), id: "toolbar-undo", enabled: model.canUndo) {
             model.undo()
         }
+        .id(Self.undoID)
         ToolbarKey(symbol: "arrow.uturn.forward", label: Text("Redo"), id: "toolbar-redo", enabled: model.canRedo) {
             model.redo()
         }
@@ -58,18 +62,38 @@ struct EditToolbar: View {
         command(.format(.italic), symbol: "italic", label: Text("Italic"), id: "toolbar-italic")
         if model.inCell {
             // The table controls (ADR 0110): in a cell they take the list
-            // and task buttons' place.
+            // and task buttons' place; indent and outdent, which never
+            // apply in a cell, give theirs too.
             command(.table(.insertRowBelow), symbol: "arrow.down.to.line", label: Text("Row below"), id: "table-row-below")
             command(
                 .table(.insertColumnRight), symbol: "arrow.right.to.line", label: Text("Column right"),
                 id: "table-column-right")
             TableMenu(model: model)
+                .id(Self.tableMenuID)
         } else {
             command(.list, symbol: "list.bullet", label: Text("Bulleted list"), id: "toolbar-list")
             command(.task, symbol: "checklist", label: Text("Task"), id: "toolbar-task", value: model.taskValue)
+            command(.indent, symbol: "increase.indent", label: Text("Indent"), id: "toolbar-indent")
+            command(.outdent, symbol: "decrease.indent", label: Text("Outdent"), id: "toolbar-outdent")
         }
-        command(.indent, symbol: "increase.indent", label: Text("Indent"), id: "toolbar-indent")
-        command(.outdent, symbol: "decrease.indent", label: Text("Outdent"), id: "toolbar-outdent")
+    }
+
+    /// The scroll ids of the capsule's first button and of ⋯.
+    static let undoID = "toolbar-undo"
+    static let tableMenuID = "table-more"
+
+    /// Entering a cell scrolls the capsule to its end, so ⋯ shows whole on
+    /// a phone too narrow for every button; leaving one scrolls back to
+    /// Undo.
+    private func follow(_ inCell: Bool, with proxy: ScrollViewProxy) {
+        let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .default
+        withAnimation(animation) {
+            if inCell {
+                proxy.scrollTo(Self.tableMenuID, anchor: .trailing)
+            } else {
+                proxy.scrollTo(Self.undoID, anchor: .leading)
+            }
+        }
     }
 
     private func command(

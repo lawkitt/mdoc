@@ -142,7 +142,8 @@ struct FormattingKey: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .accessibilityElement(children: .ignore)
+        // The button is the one element: VoiceOver hears it dimmed when
+        // off (a new element over it, `.ignore`, lost that).
         .accessibilityLabel(label)
         .accessibilityHint(hint ?? Text(""))
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)

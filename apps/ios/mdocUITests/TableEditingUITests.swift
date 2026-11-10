@@ -33,6 +33,14 @@ final class TableEditingUITests: XCTestCase {
         // The cells take no touches in edit mode (the grid does): the
         // cell is found, and the grid under it tapped.
         XCTAssertTrue(target.waitForExistence(timeout: 10), "the cell \(cell) shows")
+        // At a large text size the table is further down: the text is
+        // dragged up until the cell is clear of the bars.
+        let text = app.textViews["document-text"]
+        let clear = app.windows.firstMatch.frame.insetBy(dx: 0, dy: 120)
+        for _ in 0..<8 where !clear.contains(target.frame) {
+            text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+        }
         XCTAssertTrue(app.windows.firstMatch.frame.contains(target.frame), "the cell \(cell) is on screen")
         // Past the text's end: the caret at the end of the cell's text.
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
@@ -64,6 +72,12 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(below.waitForExistence(timeout: 5), "the table controls in a cell")
         XCTAssertFalse(app.buttons["toolbar-list"].exists, "no list button in a cell")
         XCTAssertFalse(app.buttons["toolbar-task"].exists, "no task button in a cell")
+        XCTAssertFalse(app.buttons["toolbar-indent"].exists, "no indent in a cell, where it never applies")
+        // The capsule scrolled to its end: ⋯ shows whole, left of Aa.
+        let more = app.buttons["table-more"]
+        XCTAssertTrue(
+            MdocUITest.wait(timeout: 5) { more.frame.maxX <= app.buttons["toolbar-formatting"].frame.minX - 4 },
+            "⋯ shows whole")
         for id in ["table-row-below", "table-column-right", "table-more"] {
             let frame = app.buttons[id].frame
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 44, id)
@@ -72,12 +86,14 @@ final class TableEditingUITests: XCTestCase {
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells + 2 }, "a row of two cells")
         // The caret is in the new row, in the same column (ADR 0110).
         app.typeText("Z")
-        let text = app.textViews["document-text"]
-        let newRow = NSPredicate(format: "value MATCHES %@", "(?s).*\\| !£1,725 \\|\\n\\| *\\| *Z *\\|.*")
-        XCTAssertTrue(text.wait(until: newRow, timeout: 5), "typed into the new row's cell in the same column")
+        let typedZ = Self.cell(app, "Z")
+        XCTAssertTrue(typedZ.waitForExistence(timeout: 5), "typed into a cell")
+        let above = Self.cell(app, "!£1,725").frame
+        XCTAssertEqual(typedZ.frame.minX, above.minX, accuracy: 1, "in the same column")
+        XCTAssertEqual(typedZ.frame.minY, above.maxY, accuracy: 1, "in the new row below")
         // The toolbar's Undo takes the typing, then the row back.
         app.buttons["toolbar-undo"].tap()
-        XCTAssertTrue(MdocUITest.wait(timeout: 5) { !((text.value as? String) ?? "").contains("Z") }, "Undo takes the typing back")
+        XCTAssertTrue(typedZ.wait(until: NSPredicate(format: "exists == false"), timeout: 5), "Undo takes the typing back")
         app.buttons["toolbar-undo"].tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells }, "Undo takes the row back")
         XCTAssertTrue(Self.cell(app, "!£1,725").exists)
@@ -128,34 +144,37 @@ final class TableEditingUITests: XCTestCase {
         for id in ["format-strikethrough", "format-code", "format-highlight", "format-link"] {
             XCTAssertTrue(app.buttons[id].isEnabled, id)
         }
-        for id in ["turn-heading1", "insert-rule", "insert-table"] {
+        // Insert is below the fold; TableEditingTests checks Rule and Table.
+        for id in ["turn-text", "turn-heading1", "turn-quote"] {
             XCTAssertFalse(app.buttons[id].isEnabled, id)
         }
         XCTAssertFalse(app.buttons["formatting-keyboard-return"].exists, "no keyboard key")
         XCTAssertTrue(app.buttons["table-row-below"].exists, "the table controls stay in the toolbar")
         strike.tap()
-        let text = app.textViews["document-text"]
-        XCTAssertTrue(
-            text.wait(until: NSPredicate(format: "value CONTAINS %@", "~~ | £1,725 |"), timeout: 5), "strikethrough in the cell")
+        // The caret is in struck-through text now: the key shows on.
+        XCTAssertTrue(strike.wait(until: NSPredicate(format: "isSelected == true"), timeout: 5), "strikethrough in the cell")
+        XCTAssertTrue(app.buttons["toolbar-undo"].isEnabled, "one edit made")
     }
 
     /// At the largest accessibility text size the capsule scrolls in a
-    /// cell too: ⋯ is reached by swiping it, and Aa and hide keyboard stay.
+    /// cell too: entering the cell scrolls it to ⋯, Undo is reached by
+    /// swiping it back, and Aa and hide keyboard stay.
     @MainActor
     func testTheTableControlsScrollAtAnAccessibilitySize() throws {
         let (app, _) = Self.editCell("Депозит", contentSize: "UICTContentSizeCategoryAccessibilityXXXL")
         let more = app.buttons["table-more"]
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(more.waitUntilHittable(timeout: 5), "the capsule scrolls to ⋯ in a cell")
+        let undo = app.buttons["toolbar-undo"]
         let aa = app.buttons["toolbar-formatting"].frame
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-        let from = origin.withOffset(CGVector(dx: aa.minX - 30, dy: aa.midY))
-        let to = origin.withOffset(CGVector(dx: 30, dy: aa.midY))
+        let from = origin.withOffset(CGVector(dx: 30, dy: aa.midY))
+        let to = origin.withOffset(CGVector(dx: aa.minX - 30, dy: aa.midY))
         var tries = 0
-        while !more.isHittable && tries < 8 {
+        while !undo.isHittable && tries < 8 {
             from.press(forDuration: 0.05, thenDragTo: to)
             tries += 1
         }
-        XCTAssertTrue(more.isHittable, "⋯ is reached by scrolling the capsule")
+        XCTAssertTrue(undo.isHittable, "Undo is reached by scrolling the capsule back")
         XCTAssertTrue(app.buttons["toolbar-formatting"].isHittable)
         XCTAssertTrue(app.buttons["toolbar-hide-keyboard"].isHittable)
     }
