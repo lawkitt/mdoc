@@ -128,16 +128,18 @@ final class EditToolbarUITests: XCTestCase {
     /// The accessibility audit with the toolbar up, then with the
     /// formatting keyboard (ADR 0109): no issue on the toolbar's or the
     /// keyboard's keys. Issues elsewhere (the system keyboard) are printed.
-    /// The audit types are the edit-mode audit's (`LivePreviewUITests`): with
-    /// the hit-region audit too it ran past the audit's time limit on the
-    /// hosted runner; the 44 pt targets are checked by their frames in
+    /// Opt-in, as the repository's audits are: hosted runners are too slow
+    /// for them ("Audit failed to complete in time"). Run with
+    /// `TEST_RUNNER_MDOC_A11Y_EXPLORE=1`; the hub runs it at the phone check.
+    /// The 44 pt targets are checked always, by their frames, in
     /// `testToolbarBoldAndTheFormattingKeyboard`.
     @MainActor
     func testTheAccessibilityAuditWithTheToolbarUp() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "audits run with MDOC_A11Y_EXPLORE=1")
         let (app, _) = edit()
         func audit(_ name: String) throws -> [String] {
             var found: [String] = []
-            try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait]) { issue in
+            try app.performAccessibilityAudit(for: [.dynamicType, .elementDetection, .sufficientElementDescription, .textClipped, .trait, .hitRegion]) { issue in
                 let identifier = issue.element?.identifier ?? ""
                 let line = "\(issue.auditType) | \(issue.compactDescription) | \(issue.element?.label ?? "-") id=\(identifier)"
                 print("A11Y[\(name)] \(line)")

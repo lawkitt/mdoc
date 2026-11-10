@@ -94,8 +94,11 @@ final class LivePreviewUITests: XCTestCase {
     /// The accessibility audit in live-preview edit mode (ADR 0109): no
     /// issue on the edited text or Done. Issues elsewhere (the system
     /// keyboard, the translucent bar) are printed, as the explore audit does.
+    /// Opt-in (`TEST_RUNNER_MDOC_A11Y_EXPLORE=1`): hosted runners are too
+    /// slow for audits; the hub runs it at the phone check.
     @MainActor
     func testTheAccessibilityAuditInEditMode() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["MDOC_A11Y_EXPLORE"] == "1", "audits run with MDOC_A11Y_EXPLORE=1")
         let (app, text) = edit(seed: MdocUITest.markdownFixture, title: MdocUITest.markdownTitle)
         app.typeKey(.upArrow, modifierFlags: .command)
         let ours: Set<String> = ["document-text", "done-editing"]
