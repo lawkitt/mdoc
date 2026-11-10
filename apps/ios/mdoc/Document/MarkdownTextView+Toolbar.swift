@@ -18,6 +18,7 @@ extension MarkdownTextView.Coordinator {
                 toolbar.formatting = false
                 view.reloadInputViews()
             }
+            setToolbarRoom(0, in: view)
             return
         }
         view.onCommand = { [weak self, weak view] command in
@@ -58,7 +59,7 @@ extension MarkdownTextView.Coordinator {
             ) { [weak self, weak view] _ in
                 MainActor.assumeIsolated {
                     guard let self, let view else { return }
-                    self.keepCaretInView(view)
+                    self.keepCaretInView(view, settled: false)
                 }
             }
         }
@@ -79,10 +80,12 @@ extension MarkdownTextView.Coordinator {
         bridge.command(in: view) { text, selection in
             command.change(text: text, selection: selection, rendered: rendered)
         }
-        // A table control's cell stays in view.
+        // A table control's cell stays in view, and the caret's line
+        // above the toolbar (a heading or a list grows it).
         view.revealCaretCell()
         view.redrawCaret()
         refreshToolbar(view)
+        keepCaretInView(view, settled: false)
     }
 
     /// Swaps the formatting keyboard in for the system one, or back.
@@ -99,16 +102,75 @@ extension MarkdownTextView.Coordinator {
         } else {
             view.becomeFirstResponder()
         }
+        keepCaretInView(view, settled: false)
     }
 
-    /// The keys below the text changed height (the formatting keyboard,
-    /// the link chip): the caret's line is scrolled back into view above
-    /// them, once the text has its new size.
-    func keepCaretInView(_ view: CandidateTextView) {
+    /// The keys below the text changed (the system keyboard, the
+    /// formatting keyboard, a hardware keyboard's bare toolbar, the link
+    /// chip) or a command changed the caret's line: the room below the
+    /// text follows the toolbar, and the caret's whole line is scrolled
+    /// back above it, once the text has its new size. Unsettled, it waits
+    /// for this turn's layout to finish first.
+    func keepCaretInView(_ view: CandidateTextView, settled: Bool = true) {
+        guard settled else {
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view else { return }
+                view.window?.layoutIfNeeded()
+                self.keepCaretInView(view)
+            }
+            return
+        }
+        updateToolbarRoom(view)
+        scrollCaretLineIntoView(view)
+    }
+
+    /// Scrolls the caret's whole line into the text left in view above the
+    /// room below it.
+    func scrollCaretLineIntoView(_ view: CandidateTextView, animated: Bool = !UIAccessibility.isReduceMotionEnabled) {
         guard view.isFirstResponder, view.isEditMode, let end = view.selectedTextRange?.end else { return }
         let caret = view.caretRect(for: end)
         guard !caret.isNull, !caret.isInfinite else { return }
-        view.scrollRectToVisible(caret.insetBy(dx: 0, dy: -Space.xs), animated: !UIAccessibility.isReduceMotionEnabled)
+        // The line, not only the caret: its spacing and a little air.
+        let line = caret.insetBy(dx: 0, dy: -Space.xs)
+        let insets = view.adjustedContentInset
+        let top = view.contentOffset.y + insets.top
+        let bottom = view.contentOffset.y + view.bounds.height - insets.bottom
+        var offset = view.contentOffset.y
+        if line.maxY > bottom {
+            offset += line.maxY - bottom
+        } else if line.minY < top {
+            offset -= top - line.minY
+        }
+        offset = min(max(offset, -insets.top), max(-insets.top, view.contentSize.height + insets.bottom - view.bounds.height))
+        guard abs(offset - view.contentOffset.y) > 0.5 else { return }
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: offset), animated: animated)
+    }
+
+    /// The room below the text: as much of the text view as the floating
+    /// toolbar covers, plus air for its glass edge, while the keyboard or
+    /// a hardware keyboard's toolbar shows in edit mode; none otherwise.
+    /// UIKit keeps a typed caret above it too.
+    func updateToolbarRoom(_ view: CandidateTextView) {
+        guard view.isEditMode, view.isFirstResponder, let host = view.inputAccessoryView, let window = view.window,
+              let hostWindow = host.window, !host.isHidden else {
+            setToolbarRoom(0, in: view)
+            return
+        }
+        let toolbar = host.convert(host.bounds, to: hostWindow.screen.coordinateSpace)
+        let text = view.convert(view.bounds, to: window.screen.coordinateSpace)
+        let covered = max(0, text.maxY - toolbar.minY)
+        setToolbarRoom(covered + Self.toolbarAir, in: view)
+    }
+
+    /// Air between the last line in view and the toolbar's capsule, past
+    /// its soft glass edge.
+    static let toolbarAir: CGFloat = Space.s
+
+    func setToolbarRoom(_ room: CGFloat, in view: UIScrollView) {
+        guard abs(room - toolbarRoom) > 0.5 else { return }
+        view.contentInset.bottom += room - toolbarRoom
+        view.verticalScrollIndicatorInsets.bottom += room - toolbarRoom
+        toolbarRoom = room
     }
 
     /// The link sheet for the link at the caret, or for the selection: Done

@@ -205,6 +205,9 @@ struct MarkdownTextView: UIViewRepresentable {
         var keyboardHeight: CGFloat?
         nonisolated(unsafe) var keyboardObserver: NSObjectProtocol?
         nonisolated(unsafe) var keyboardMoved: NSObjectProtocol?
+        /// The room added below the text in edit mode so that no line
+        /// rests under the floating toolbar (ADR 0110).
+        var toolbarRoom: CGFloat = 0
 
         init(parent: MarkdownTextView) {
             self.parent = parent
@@ -800,7 +803,25 @@ final class CandidateTextView: RenderedTextView {
     // MARK: The caret in a table cell (ADR 0109)
 
     override func caretRect(for position: UITextPosition) -> CGRect {
-        cellCaretRect(for: position) ?? super.caretRect(for: position)
+        if let cell = cellCaretRect(for: position) { return cell }
+        return emptyLineCaret(super.caretRect(for: position), at: position)
+    }
+
+    /// On an empty line in edit mode the caret is as tall as on a body
+    /// line: TextKit makes it the empty line's whole height, its paragraph
+    /// spacing too (ADR 0110).
+    private func emptyLineCaret(_ rect: CGRect, at position: UITextPosition) -> CGRect {
+        guard isEditMode, !rect.isNull, !rect.isInfinite else { return rect }
+        let text = textStorage.string as NSString
+        let location = offset(from: beginningOfDocument, to: position)
+        guard location >= 0, location <= text.length else { return rect }
+        let line = text.lineRange(for: NSRange(location: location, length: 0))
+        guard text.substring(with: line).trimmingCharacters(in: .newlines).isEmpty else { return rect }
+        let height = ceil(MarkdownStyler.font(.body, traits: traitCollection).lineHeight)
+        guard rect.height > height else { return rect }
+        var caret = rect
+        caret.size.height = height
+        return caret
     }
 
     override func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {

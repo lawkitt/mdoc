@@ -582,9 +582,10 @@ for the source with dimmed markers; one setting for the app.
 
 **Edit mode** (mobile): the document screen with the keyboard, the editing
 toolbar and the text editable, entered with Edit (⌘E) and left with Done;
-underlines dim and stop responding, the review bar hides. Not "edit view"
-or "editor screen": it is the same screen
-([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
+underlines dim and stop responding, the review bar and Identities hide.
+Not "edit view" or "editor screen": it is the same screen and the same
+text view ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md),
+[ADR 0110](docs/adr/0110-mobile-editor-polish.md)).
 
 **Editor core**: the GUI-free Rust editing rules (Enter and list
 continuation, joins, formatting toggles, indent, turn into, table commands,
@@ -597,8 +598,12 @@ line. Desktop: formatting markers never show; links and other structural
 constructs do ([ADR 0109](docs/adr/0109-mobile-markdown-editor.md)).
 
 **Formatting keyboard** (mobile): the panel the editing toolbar's Aa key
-swaps in for the system keyboard (Turn into, styles, link, rule, table);
-inside a table it shows table controls instead. Not "format menu".
+swaps in for the system keyboard (Turn into, styles, link, rule, table),
+in a table too. Not "format menu".
+
+**Table controls** (mobile): what the editing toolbar shows with the caret
+in a cell: row below, column right and a ⋯ menu for the rest
+([ADR 0110](docs/adr/0110-mobile-editor-polish.md)). Not a panel.
 
 **In-app clipboard** (mobile): the pasteboard edit mode's Cut and Copy write,
 which only mdoc reads; Paste reads it first, then the system clipboard.

@@ -194,6 +194,9 @@ struct BlockLayout {
         let padding = UIEdgeInsets(top: 6 * scale, left: 8 * scale, bottom: 6 * scale, right: 8 * scale)
         let minimum = 140 * scale
         let maximum = max(minimum, width * 0.8)
+        // A column a finger can tap, an empty one too, at every text size
+        // (ADR 0110).
+        let tappable = max(Self.tappableColumn, Self.tappableColumn * scale)
         return styling.tables.compactMap { table -> RenderedTable? in
             let tableRange = offsets.nsRange(table.range)
             guard tableRange.length > 0, !table.rows.isEmpty else { return nil }
@@ -262,7 +265,8 @@ struct BlockLayout {
                     return ceil(size.height) + padding.top + padding.bottom + 2
                 }.max() ?? 0
             }
-            if let shown = kept[tableRange.location], shown.columns.count == count, shown.padding == padding {
+            if let shown = kept[tableRange.location], shown.columns.count == count, shown.padding == padding,
+               shown.columns.allSatisfy({ $0 >= tappable - 0.5 }) {
                 // A row whose cells are as shown keeps its height.
                 let heights = rows.enumerated().map { index, row -> CGFloat in
                     let same = shown.rows.indices.contains(index) && shown.rows[index].count == row.count
@@ -286,7 +290,7 @@ struct BlockLayout {
                     words[column] = max(words[column], Self.longestWord(in: cell.text) + padding.left + padding.right)
                 }
             }
-            natural = natural.map { min(max($0, 44 * scale), maximum) }
+            natural = natural.map { min(max($0, tappable), maximum) }
             // The word floor may pass the cap: a long identifier widens its
             // column and the table scrolls, rather than breaking it.
             let floors = zip(natural, words).map { max(min($0, minimum), $1) }
@@ -306,13 +310,16 @@ struct BlockLayout {
                 let total = natural.reduce(0, +)
                 columns = zip(natural, floors).map { max($0 / total * width, $1) }
             }
-            columns = columns.map { $0.rounded(.up) }
+            columns = columns.map { max($0, tappable).rounded(.up) }
             return RenderedTable(
                 anchor: tableRange.location, range: tableRange, rows: rows, columns: columns,
                 heights: rows.map { height($0, columns) },
                 style: table.style, rtl: table.rtl, padding: padding)
         }
     }
+
+    /// The narrowest a grid's column draws: a 44 pt touch target.
+    static let tappableColumn: CGFloat = 44
 
     /// The width of a cell's widest word, as drawn.
     private static func longestWord(in text: NSAttributedString) -> CGFloat {
