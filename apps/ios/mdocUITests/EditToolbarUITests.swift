@@ -37,7 +37,7 @@ final class EditToolbarUITests: XCTestCase {
         // the caret reached the end with a letter typed there.
         var there = false
         for _ in 0..<3 where !there {
-            app.typeKey(.downArrow, modifierFlags: .command)
+            MdocUITest.caretToTheEnd(app)
             app.typeText("\nQ")
             there = text.wait(until: NSPredicate(format: "value ENDSWITH %@", "\nQ"), timeout: 3)
         }

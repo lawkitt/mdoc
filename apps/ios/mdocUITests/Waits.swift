@@ -84,4 +84,17 @@ extension MdocUITest {
         }
         return latest
     }
+
+    /// ⌘↓ from the hardware keyboard: the caret to the end of the text. The
+    /// first hardware key after typing on the software keyboard hides that
+    /// keyboard, and on a slow runner the key itself can be lost in the
+    /// switch (the caret stayed at the start in queue run 42740103288), so
+    /// once the software keyboard has gone ⌘↓ is pressed again; at the end
+    /// it changes nothing.
+    @MainActor
+    static func caretToTheEnd(_ app: XCUIApplication) {
+        app.typeKey(.downArrow, modifierFlags: .command)
+        app.keyboards.firstMatch.wait(until: NSPredicate(format: "exists == false"), timeout: 2)
+        app.typeKey(.downArrow, modifierFlags: .command)
+    }
 }
