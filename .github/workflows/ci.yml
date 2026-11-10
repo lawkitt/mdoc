@@ -90,7 +90,9 @@ jobs:
 
       # gpui's compile-time pkg-config deps (xkbcommon, wayland, x11/xcb) and
       # font-kit's fontconfig/freetype. It takes about 15 s; a stalled mirror
-      # fails in minutes, after one retry (ADR 0100).
+      # fails in minutes, after one retry (ADR 0100). The retry leaves the
+      # runner's Azure mirror for archive.ubuntu.com: on 2026-11-10 the Azure
+      # mirror stalled on single packages for hours, on both attempts.
       - &linux-deps
         name: Install Linux build deps
         timeout-minutes: 5
@@ -98,6 +100,7 @@ jobs:
           for attempt in 1 2; do
             if sudo timeout 60 apt-get update &&
               sudo timeout 80 apt-get install -y -o DPkg::Lock::Timeout=20 \
+                -o Acquire::Retries=2 -o Acquire::http::Timeout=15 \
                 libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
                 libx11-dev libxcb1-dev libxcb-randr0-dev libxcb-xkb-dev \
                 libxcb-cursor-dev libxcb-shape0-dev libxcb-xfixes0-dev \
@@ -105,6 +108,9 @@ jobs:
               exit 0
             fi
             echo "::warning::Linux build deps: attempt $attempt failed"
+            for list in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors.txt; do
+              [ -f "$list" ] && sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$list"
+            done
           done
           exit 1
 
