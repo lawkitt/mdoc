@@ -70,7 +70,14 @@ final class TableEditingUITests: XCTestCase {
         }
         below.tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells + 2 }, "a row of two cells")
-        // The toolbar's Undo takes the row back, one step.
+        // The caret is in the new row, in the same column (ADR 0110).
+        app.typeText("Z")
+        let text = app.textViews["document-text"]
+        let newRow = NSPredicate(format: "value MATCHES %@", "(?s).*\\| !£1,725 \\|\\n\\| *\\| *Z *\\|.*")
+        XCTAssertTrue(text.wait(until: newRow, timeout: 5), "typed into the new row's cell in the same column")
+        // The toolbar's Undo takes the typing, then the row back.
+        app.buttons["toolbar-undo"].tap()
+        XCTAssertTrue(MdocUITest.wait(timeout: 5) { !((text.value as? String) ?? "").contains("Z") }, "Undo takes the typing back")
         app.buttons["toolbar-undo"].tap()
         XCTAssertTrue(MdocUITest.wait(timeout: 5) { app.textViews.count == cells }, "Undo takes the row back")
         XCTAssertTrue(Self.cell(app, "!£1,725").exists)

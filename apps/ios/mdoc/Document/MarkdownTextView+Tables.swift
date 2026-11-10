@@ -87,9 +87,14 @@ extension CandidateTextView {
     }
 
     /// Shows the caret's cell: the grid scrolls sideways to it, the text up
-    /// or down.
+    /// or down. A new row or column gives the table a new grid, which has
+    /// no frame and no scroll offset until a layout pass: it is laid out
+    /// first, so the grid scrolls to a new column's cell (ADR 0110).
     func revealCaretCell() {
-        guard let hit = caretCell, let inCell = position(in: hit.view, at: hit.offset) else { return }
+        guard let hit = caretCell else { return }
+        if hit.table.bounds.width == 0 { layoutIfNeeded() }
+        hit.table.layoutIfNeeded()
+        guard let inCell = position(in: hit.view, at: hit.offset) else { return }
         let caret = hit.view.convert(hit.view.caretRect(for: inCell), to: hit.table)
         hit.table.reveal(caret)
         let shown = hit.table.convert(caret, to: self)
