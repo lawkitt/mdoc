@@ -16,7 +16,7 @@ use crate::cells::{self, Cell};
 use crate::commands::InlineFormat;
 use crate::markdown::fmt_marker_pairs;
 use crate::text::{line_bounds, row_col};
-use crate::turn_into::TurnKind;
+use crate::turn_into::{TurnKind, selected_rows, turn_selection_where};
 use crate::{BlockScan, Edit, EditResult, TAB_INDENT, format};
 
 /// What the toolbar shows for the selection.
@@ -199,11 +199,12 @@ pub fn caret_state(source: &str, selection: Range<usize>, rendered: bool) -> Car
 }
 
 /// `offset` after `edits` (sorted, in the offsets before them): an offset
-/// inside a replaced range lands at the end of its replacement.
+/// inside a replaced range lands at the end of its replacement; one at its
+/// start stays before it.
 fn mapped(offset: usize, edits: &[Edit]) -> usize {
     let mut delta: isize = 0;
     for edit in edits {
-        if offset < edit.range.start {
+        if offset < edit.range.start || (offset == edit.range.start && !edit.range.is_empty()) {
             break;
         }
         if offset < edit.range.end {
@@ -296,25 +297,34 @@ pub fn toggle_format(
     ))
 }
 
-/// The list button: a bulleted or numbered item turns back into text,
-/// anything else into a bulleted item.
+/// The list button: every block the selection touches becomes a bulleted
+/// item; when each is a bulleted or numbered item already, they all turn
+/// back into text (ADR 0110).
 pub fn toggle_list(source: &str, selection: Range<usize>) -> Option<EditResult> {
-    let kind = match crate::commands::block_kind(source, selection.clone()) {
-        TurnKind::Bullet | TurnKind::Numbered => TurnKind::Text,
-        _ => TurnKind::Bullet,
-    };
-    crate::commands::turn_into(source, selection, kind)
+    let scan = BlockScan::new(source);
+    turn_selection_where(
+        source,
+        scan.view(),
+        sorted(&selection),
+        TurnKind::Bullet,
+        |k| matches!(k, TurnKind::Bullet | TurnKind::Numbered),
+    )
 }
 
-/// The task button: a task's box checks or unchecks; any other line turns
-/// into a task.
+/// The task button: on one task line its box checks or unchecks; otherwise
+/// every block the selection touches becomes a task, or, when each is a
+/// task already, they all turn back into text (ADR 0110).
 pub fn task_button(source: &str, selection: Range<usize>) -> Option<EditResult> {
-    let caret = selection.end.min(source.len());
-    let (start, end) = line_bounds(source, caret);
-    if task_prefix(&source[start..end]).is_some() {
-        return crate::commands::toggle_task(source, selection);
+    let sel = sorted(&selection);
+    let (first, last) = selected_rows(source, sel.clone());
+    let (start, end) = line_bounds(source, sel.start.min(source.len()));
+    if first == last && task_prefix(&source[start..end]).is_some() {
+        // The box swap keeps the selection as it was.
+        let caret = sel.start.min(source.len());
+        return crate::commands::toggle_task(source, caret..caret)
+            .map(|r| EditResult { selection, ..r });
     }
-    crate::commands::turn_into(source, selection, TurnKind::Todo)
+    crate::commands::turn_into(source, sel, TurnKind::Todo)
 }
 
 /// A link's URL as Markdown writes it: no spaces or parentheses to end it
@@ -564,6 +574,54 @@ mod tests {
         assert_eq!(
             run("- [x] a", task_button("- [x] a", caret(7))).0,
             "- [ ] a"
+        );
+    }
+
+    #[test]
+    fn list_and_task_buttons_reach_every_selected_block() {
+        let s = "Оплата аренды.\n\nРемонт за счёт арендатора.\n";
+        let all = 0..s.len();
+        let (out, sel) = run(s, toggle_list(s, all.clone()));
+        assert_eq!(out, "- Оплата аренды.\n- Ремонт за счёт арендатора.\n");
+        assert_eq!(
+            &out[sel.clone()],
+            "- Оплата аренды.\n- Ремонт за счёт арендатора."
+        );
+        // Every one an item already (a numbered one counts): back to text.
+        assert_eq!(run(&out, toggle_list(&out, sel)).0, s);
+        let s2 = "1. Оплата\n- Ремонт";
+        assert_eq!(run(s2, toggle_list(s2, 0..s2.len())).0, "Оплата\n\nРемонт");
+        let (out, sel) = run(s, task_button(s, all));
+        assert_eq!(
+            out,
+            "- [ ] Оплата аренды.\n- [ ] Ремонт за счёт арендатора.\n"
+        );
+        // Over several tasks the button turns them back; on one it checks.
+        assert_eq!(run(&out, task_button(&out, sel)).0, s);
+        let one = "- [ ] Оплата";
+        assert_eq!(
+            run(one, task_button(one, 6..12)),
+            ("- [x] Оплата".into(), 6..12)
+        );
+    }
+
+    #[test]
+    fn italic_on_a_bold_selection_is_bold_italic() {
+        let s = "раз **два** три";
+        let w = at(s, "два");
+        let (out, sel) = run(s, toggle_format(s, w..w + "два".len(), Italic));
+        assert_eq!(out, "раз ***два*** три");
+        assert_eq!(&out[sel.clone()], "два");
+        let (out, sel) = run(&out, toggle_format(&out, sel, Italic));
+        assert_eq!(out, "раз **два** три");
+        assert_eq!(&out[sel.clone()], "два");
+        let (out, _) = run(&out, toggle_format(&out, sel, Bold));
+        assert_eq!(out, "раз два три");
+        let s = "раз *два* три";
+        let w = at(s, "два");
+        assert_eq!(
+            run(s, toggle_format(s, w..w + "два".len(), Bold)).0,
+            "раз ***два*** три"
         );
     }
 

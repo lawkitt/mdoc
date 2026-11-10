@@ -306,8 +306,8 @@ final class TableEditingTests: XCTestCase {
         harness.toolbar.run(.moveInTable(.down))
         XCTAssertEqual(harness.view.selectedRange.location, harness.string.range(of: "Deposit").location)
         XCTAssertEqual(harness.shown, Self.text, "moves edit nothing")
-        // Tab from the last cell leaves the table, as Return from the last
-        // row does: a paragraph below it.
+        // Tab from the last cell leaves the table, as Return from an empty
+        // last row does (ADR 0110): a paragraph below it.
         harness.toolbar.run(.moveInTable(.next))
         harness.toolbar.run(.moveInTable(.next))
         XCTAssertTrue(harness.shown.contains("| £1,725 |\n\n\n"), harness.shown)
