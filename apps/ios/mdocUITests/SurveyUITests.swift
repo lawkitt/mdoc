@@ -340,8 +340,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
-        // The keyboard may wait for a tap in the text (ADR 0110).
-        if !app.buttons["toolbar-bold"].waitForExistence(timeout: 3) { text.tap() }
+        // The keyboard waits for a tap in the text (ADR 0110).
+        MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay monthly\n")
