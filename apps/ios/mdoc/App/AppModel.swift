@@ -156,7 +156,7 @@ final class AppModel {
         library.caseFilter = id
     }
 
-    /// Start: no document and no section (⌘N).
+    /// Start: no document and no section.
     func showStart() {
         show(.start)
     }
@@ -301,7 +301,7 @@ final class AppModel {
 
     // MARK: Intake
 
-    /// New document (ADR 0109): an empty document in a case of its own,
+    /// New document (ADR 0109; also ⌘N): an empty document in a case of its own,
     /// open in edit mode with the keyboard up. It is named after its first
     /// line until renamed, and goes if it is left empty.
     func newDocument() {

@@ -71,7 +71,8 @@ target feel is Obsidian's iOS live-preview editor.
   find bar in both modes, Replace in edit mode as core edits; system
   spellcheck in edit mode only.
 - **Hardware keys:** ⌘E, ⌘B, ⌘I, ⌘K, ⌘Z, ⇧⌘Z, Tab/⇧Tab (cells in a
-  table), ⌘F.
+  table), ⌘F. ⌘N opens a new document (amended 2026-11-10; it went to
+  Start under ADR 0102, whose menu label already read "New document").
 - **Acceptance:** no dropped frame per keystroke on the iPhone 12 Pro in
   the 37-page `legal-opinion.docx` fixture; restyle under 8 ms a
   keystroke, structural core calls under 16 ms; a typing fuzz test keeps

@@ -50,7 +50,9 @@ struct MdocApp: App {
             // A hardware keyboard, as in the Claude app; iPad lists them
             // when ⌘ is held.
             CommandGroup(replacing: .newItem) {
-                Button("New document") { app.showStart() }
+                // ⌘N is New document, as the + menu's first item (ADR 0109;
+                // was Start in ADR 0102).
+                Button("New document") { app.newDocument() }
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Search documents and cases") {
                     // In edit mode ⌘K is the text's Link… (ADR 0109): the

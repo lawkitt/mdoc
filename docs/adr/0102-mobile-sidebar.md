@@ -2,7 +2,8 @@
 
 Status: Accepted, 2026-11-06. Amends [ADR 0099](0099-mobile-ui-system.md)
 (Home) and [ADR 0087](0087-ios-ui-polish.md) (iPad's columns). Written for
-iOS first; Android follows the same decisions.
+iOS first; Android follows the same decisions. ⌘N is amended by
+[ADR 0109](0109-mobile-markdown-editor.md) (New document).
 
 ## Problem
 
@@ -48,7 +49,9 @@ document.
 - **A row's long press:** Rename, Move to case, Share, Delete.
 - **Review:** opening the sidebar mid-review keeps the bar's place; the bar
   slides away with the document.
-- **Keys:** ⌘K opens the sidebar's search, ⌘N goes to Start.
+- **Keys:** ⌘K opens the sidebar's search, ⌘N opens a new document
+  (amended 2026-11-10 by [ADR 0109](0109-mobile-markdown-editor.md); it
+  went to Start, which stays a tap away in the sidebar).
 
 ### Rename and Move to case
 
