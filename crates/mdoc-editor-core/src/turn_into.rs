@@ -6,7 +6,7 @@ use std::ops::Range;
 use mdoc_markdown::lines::{blockquote_prefix, heading_level, list_prefix, task_prefix};
 
 use crate::markdown::alert_kind;
-use crate::text::{line_end, line_starts, row_col};
+use crate::text::{line_starts, row_col};
 use crate::{Blocks, Edit, EditResult};
 
 /// A block kind "Turn into" converts between — flat-markdown natural: each
@@ -91,69 +91,174 @@ pub fn prefix_lines(body: &[String], p: impl Fn(usize) -> String) -> String {
         .join("\n")
 }
 
+/// The source's lines, found once per command: the per-line helpers in
+/// [`crate::text`] each rescan the source, which a command over thousands
+/// of blocks cannot afford.
+struct Lines<'a> {
+    source: &'a str,
+    starts: Vec<usize>,
+}
+
+impl<'a> Lines<'a> {
+    fn new(source: &'a str) -> Self {
+        Lines {
+            source,
+            starts: line_starts(source),
+        }
+    }
+
+    fn last_row(&self) -> usize {
+        self.starts.len() - 1
+    }
+
+    fn start(&self, row: usize) -> usize {
+        self.starts[row]
+    }
+
+    fn end(&self, row: usize) -> usize {
+        self.starts
+            .get(row + 1)
+            .map_or(self.source.len(), |&next| next - 1)
+    }
+
+    fn line(&self, row: usize) -> &'a str {
+        &self.source[self.start(row)..self.end(row)]
+    }
+
+    /// Code (fences included) or display math, as
+    /// [`Blocks::row_is_literal`] reads it.
+    fn literal(&self, blocks: Blocks, row: usize) -> bool {
+        blocks.in_fence(row)
+            || self.line(row).trim_start().starts_with("```")
+            || blocks.math_at(row).is_some()
+    }
+
+    fn quote_run(&self, row: usize) -> (usize, usize) {
+        let is_q = |r: usize| blockquote_prefix(self.line(r)).is_some();
+        let mut first = row;
+        while first > 0 && is_q(first - 1) {
+            first -= 1;
+        }
+        let mut last = row;
+        while last < self.last_row() && is_q(last + 1) {
+            last += 1;
+        }
+        (first, last)
+    }
+
+    fn kind_at(&self, blocks: Blocks, row: usize) -> TurnKind {
+        if blocks.math_at(row).is_some() {
+            return TurnKind::Math;
+        }
+        if row > self.last_row() {
+            return TurnKind::Text;
+        }
+        // The renderer's own recognizers (task/list/heading/quote/alert), so
+        // the checked kind always agrees with what WYSIWYG actually renders.
+        let line = self.line(row);
+        if blocks.in_fence(row) || line.trim_start().starts_with("```") {
+            return TurnKind::Code;
+        }
+        if task_prefix(line).is_some() {
+            return TurnKind::Todo;
+        }
+        match heading_level(line) {
+            Some(1) => return TurnKind::H1,
+            Some(2) => return TurnKind::H2,
+            Some(3) => return TurnKind::H3,
+            _ => {}
+        }
+        if let Some((_, _, ordered, _)) = list_prefix(line) {
+            return if ordered {
+                TurnKind::Numbered
+            } else {
+                TurnKind::Bullet
+            };
+        }
+        if blockquote_prefix(line).is_some() {
+            // Callout if the caret's contiguous `>`-run carries a VALID
+            // `[!KIND]` marker anywhere (marker line or body line).
+            let (first, last) = self.quote_run(row);
+            let callout = (first..=last).any(|r| {
+                let l = self.line(r);
+                let p = blockquote_prefix(l).unwrap_or(0);
+                alert_kind(&l[p..]).is_some()
+            });
+            return if callout {
+                TurnKind::Callout
+            } else {
+                TurnKind::Quote
+            };
+        }
+        TurnKind::Text
+    }
+
+    /// The block holding `row`: fenced kinds (code, math) and quote runs
+    /// are whole blocks, anything else is its line.
+    fn span_at(&self, blocks: Blocks, row: usize) -> Span {
+        let kind = self.kind_at(blocks, row);
+        let line_at = |r: usize| self.line(r).to_string();
+        let (first, last, body): (usize, usize, Vec<String>) = match (kind, blocks.math_at(row)) {
+            (TurnKind::Code, _) => {
+                // The opening fence is the first row above not inside one;
+                // the closing fence the next fence line below it.
+                let open = (0..=row).rev().find(|&r| !blocks.in_fence(r)).unwrap_or(0);
+                let close = ((open + 1)..=self.last_row())
+                    .find(|&r| self.line(r).trim_start().starts_with("```"));
+                let last = close.unwrap_or(self.last_row());
+                let body_end = close.map_or(self.last_row(), |c| c - 1);
+                let body = ((open + 1)..=body_end).map(line_at).collect();
+                (open, last, body)
+            }
+            (TurnKind::Math, Some(reg)) => {
+                let first = reg.range.start;
+                let last = reg.range.end.saturating_sub(1).max(first);
+                let body = ((first + 1)..last).map(line_at).collect();
+                (first, last, body)
+            }
+            (TurnKind::Quote | TurnKind::Callout, _) => {
+                let (first, last) = self.quote_run(row);
+                let body = (first..=last)
+                    .filter_map(|r| {
+                        let stripped = strip_block_prefix(self.line(r));
+                        // Drop the `[!KIND]` marker token; keep any title
+                        // text after it (and skip the line if that leaves
+                        // nothing).
+                        if let Some(rest) = stripped.trim_start().strip_prefix("[!") {
+                            let after = rest.split_once(']').map(|(_, a)| a).unwrap_or("");
+                            let after = after.trim_start_matches(['-', '+']).trim();
+                            return (!after.is_empty()).then(|| after.to_string());
+                        }
+                        Some(stripped.to_string())
+                    })
+                    .collect();
+                (first, last, body)
+            }
+            _ => (
+                row,
+                row,
+                vec![strip_block_prefix(self.line(row)).to_string()],
+            ),
+        };
+        Span {
+            first,
+            last,
+            kind,
+            body,
+        }
+    }
+}
+
 /// The contiguous blockquote run containing `row` (first row..=last row),
 /// by the renderer's `blockquote_prefix` test.
 pub fn quote_run_rows(source: &str, row: usize) -> (usize, usize) {
-    let starts = line_starts(source);
-    let last_row = starts.len().saturating_sub(1);
-    let is_q = |r: usize| blockquote_prefix(&source[starts[r]..line_end(source, r)]).is_some();
-    let mut first = row;
-    while first > 0 && is_q(first - 1) {
-        first -= 1;
-    }
-    let mut last = row;
-    while last < last_row && is_q(last + 1) {
-        last += 1;
-    }
-    (first, last)
+    Lines::new(source).quote_run(row)
 }
 
 /// The "Turn into" kind of the block containing `row` — what the flyout
 /// shows checked.
 pub fn block_kind_at(source: &str, blocks: Blocks, row: usize) -> TurnKind {
-    if blocks.math_at(row).is_some() {
-        return TurnKind::Math;
-    }
-    let starts = line_starts(source);
-    let Some(&start) = starts.get(row) else {
-        return TurnKind::Text;
-    };
-    // The renderer's own recognizers (task/list/heading/quote/alert), so
-    // the checked kind always agrees with what WYSIWYG actually renders.
-    let line = &source[start..line_end(source, row)];
-    if blocks.in_fence(row) || line.trim_start().starts_with("```") {
-        return TurnKind::Code;
-    }
-    if task_prefix(line).is_some() {
-        return TurnKind::Todo;
-    }
-    match heading_level(line) {
-        Some(1) => return TurnKind::H1,
-        Some(2) => return TurnKind::H2,
-        Some(3) => return TurnKind::H3,
-        _ => {}
-    }
-    if let Some((_, _, ordered, _)) = list_prefix(line) {
-        return if ordered {
-            TurnKind::Numbered
-        } else {
-            TurnKind::Bullet
-        };
-    }
-    if blockquote_prefix(line).is_some() {
-        // Callout if the caret's contiguous `>`-run carries a VALID
-        // `[!KIND]` marker anywhere (marker line or body line).
-        let (first, last) = quote_run_rows(source, row);
-        for (r, &start) in starts.iter().enumerate().take(last + 1).skip(first) {
-            let l = &source[start..line_end(source, r)];
-            let p = blockquote_prefix(l).unwrap_or(0);
-            if alert_kind(&l[p..]).is_some() {
-                return TurnKind::Callout;
-            }
-        }
-        return TurnKind::Quote;
-    }
-    TurnKind::Text
+    Lines::new(source).kind_at(blocks, row)
 }
 
 /// One block a "Turn into" rewrites: its rows, its kind and its text with
@@ -163,59 +268,6 @@ struct Span {
     last: usize,
     kind: TurnKind,
     body: Vec<String>,
-}
-
-/// The block holding `row`: fenced kinds (code, math) and quote runs are
-/// whole blocks, anything else is its line.
-fn span_at(source: &str, blocks: Blocks, row: usize) -> Span {
-    let kind = block_kind_at(source, blocks, row);
-    let starts = line_starts(source);
-    let last_row = starts.len().saturating_sub(1);
-    let line_at = |r: usize| source[starts[r]..line_end(source, r)].to_string();
-    let (first, last, body): (usize, usize, Vec<String>) = match (kind, blocks.math_at(row)) {
-        (TurnKind::Code, _) => {
-            let (open, close) = blocks.fence_block_rows(source, row);
-            let last = close.unwrap_or(last_row);
-            let body_end = close.map(|c| c.saturating_sub(1)).unwrap_or(last_row);
-            let body = ((open + 1)..=body_end).map(line_at).collect();
-            (open, last, body)
-        }
-        (TurnKind::Math, Some(reg)) => {
-            let first = reg.range.start;
-            let last = reg.range.end.saturating_sub(1).max(first);
-            let body = ((first + 1)..last).map(line_at).collect();
-            (first, last, body)
-        }
-        (TurnKind::Quote | TurnKind::Callout, _) => {
-            let (first, last) = quote_run_rows(source, row);
-            let body = (first..=last)
-                .filter_map(|r| {
-                    let line = line_at(r);
-                    let stripped = strip_block_prefix(&line);
-                    // Drop the `[!KIND]` marker token; keep any title text
-                    // after it (and skip the line if that leaves nothing).
-                    if let Some(rest) = stripped.trim_start().strip_prefix("[!") {
-                        let after = rest.split_once(']').map(|(_, a)| a).unwrap_or("");
-                        let after = after.trim_start_matches(['-', '+']).trim();
-                        return (!after.is_empty()).then(|| after.to_string());
-                    }
-                    Some(stripped.to_string())
-                })
-                .collect();
-            (first, last, body)
-        }
-        _ => (
-            row,
-            row,
-            vec![strip_block_prefix(&line_at(row)).to_string()],
-        ),
-    };
-    Span {
-        first,
-        last,
-        kind,
-        body,
-    }
 }
 
 /// The rows `selection` touches. A selection that ends at a line's start
@@ -232,14 +284,13 @@ pub fn selected_rows(source: &str, selection: Range<usize>) -> (usize, usize) {
 }
 
 /// The blocks `selection` touches, in order. Blank lines, a drawn table and
-/// its style marker are skipped; when nothing else is left, the block at the
-/// selection's start (a blank line turns into an empty item to type in).
-fn spans(source: &str, blocks: Blocks, selection: Range<usize>) -> Vec<Span> {
-    let (first, last) = selected_rows(source, selection);
-    let starts = line_starts(source);
+/// its style marker are skipped. A caret on a blank line is its block (an
+/// empty item to type in); a selection of nothing else has none.
+fn spans(lines: &Lines, blocks: Blocks, selection: Range<usize>) -> Vec<Span> {
+    let (first, last) = selected_rows(lines.source, selection.clone());
     let skipped = |r: usize| {
-        !blocks.row_is_literal(source, r)
-            && (source[starts[r]..line_end(source, r)].trim().is_empty()
+        !lines.literal(blocks, r)
+            && (lines.line(r).trim().is_empty()
                 || blocks.row_in_table(r)
                 || blocks.tables.iter().any(|t| t.marker_line == Some(r)))
     };
@@ -250,19 +301,19 @@ fn spans(source: &str, blocks: Blocks, selection: Range<usize>) -> Vec<Span> {
             row += 1;
             continue;
         }
-        let span = span_at(source, blocks, row);
+        let span = lines.span_at(blocks, row);
         row = span.last + 1;
         out.push(span);
     }
-    if out.is_empty() {
-        out.push(span_at(source, blocks, first));
+    if out.is_empty() && selection.is_empty() && lines.line(first).trim().is_empty() {
+        out.push(lines.span_at(blocks, first));
     }
     out
 }
 
 /// The kinds of the blocks `selection` touches, in order.
 pub fn selected_kinds(source: &str, blocks: Blocks, selection: Range<usize>) -> Vec<TurnKind> {
-    spans(source, blocks, selection)
+    spans(&Lines::new(source), blocks, selection)
         .into_iter()
         .map(|s| s.kind)
         .collect()
@@ -297,20 +348,22 @@ pub fn turn_selection_where(
     kind: TurnKind,
     is_kind: impl Fn(TurnKind) -> bool,
 ) -> Option<EditResult> {
-    let spans = spans(source, blocks, selection.clone());
+    let lines = Lines::new(source);
+    let sel = selection.start.min(selection.end)..selection.start.max(selection.end);
+    let spans = spans(&lines, blocks, sel);
     let target = if kind != TurnKind::Text && spans.iter().all(|s| is_kind(s.kind)) {
         TurnKind::Text
     } else {
         kind
     };
+    // No block (a table or blank lines only), or nothing to change.
     if spans.iter().all(|s| s.kind == target) {
         return None;
     }
-    let starts = line_starts(source);
-    let start = starts[spans[0].first];
-    let end = line_end(source, spans[spans.len() - 1].last);
-    let original = |s: &Span| &source[starts[s.first]..line_end(source, s.last)];
-    let between = |i: usize| &source[line_end(source, spans[i - 1].last)..starts[spans[i].first]];
+    let start = lines.start(spans[0].first);
+    let end = lines.end(spans[spans.len() - 1].last);
+    let original = |s: &Span| &source[lines.start(s.first)..lines.end(s.last)];
+    let between = |i: usize| &source[lines.end(spans[i - 1].last)..lines.start(spans[i].first)];
     let body = |s: &Span| {
         if s.body.is_empty() {
             vec![String::new()]
@@ -382,7 +435,7 @@ pub fn turn_selection_where(
                 TurnKind::Numbered => {
                     let from = number;
                     number = number.saturating_add(body.len() as u32);
-                    prefix_lines(&body, |i| format!("{}. ", from + i as u32))
+                    prefix_lines(&body, |i| format!("{}. ", from.saturating_add(i as u32)))
                 }
                 TurnKind::Todo => prefix_lines(&body, |_| "- [ ] ".into()),
                 _ => prefix_lines(&body, |_| "> ".into()),
@@ -582,6 +635,25 @@ mod tests {
         // Every block code already: back to text.
         let s = "```\nкод\n```";
         assert_eq!(turn(s, all(s), Code).unwrap().0, "код");
+    }
+
+    #[test]
+    fn a_selection_of_only_a_table_or_blank_lines_changes_nothing() {
+        let s = "| а | б |\n| - | - |\n| 1 | 2 |\n\n\nконец";
+        assert_eq!(turn(s, 0..s.find("\n\n").unwrap(), Bullet), None);
+        let blank = s.find("\n\n").unwrap() + 1;
+        assert_eq!(turn(s, blank..blank + 1, Bullet), None);
+        // A caret in a table cell is no blank line either.
+        assert_eq!(turn(s, 3..3, Bullet), None);
+    }
+
+    /// Thousands of blocks in one command: the lines are found once, not
+    /// per block (a rescan per block would take minutes here).
+    #[test]
+    fn many_blocks_turn_in_one_pass() {
+        let s = "пункт\n\n".repeat(20_000);
+        let (out, _) = turn(&s, all(&s), Bullet).unwrap();
+        assert_eq!(out, format!("{}\n\n", vec!["- пункт"; 20_000].join("\n")));
     }
 
     #[test]

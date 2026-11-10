@@ -167,14 +167,20 @@ pub fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Option<St
     }
 }
 
+/// The largest ordered number [`ordered_marker`] shows as letters or a
+/// roman numeral (`mmmcmxcix.`, `ewu.`); a larger one stays digits.
+pub const MAX_STYLED_NUMBER: u32 = 3999;
+
 /// The label for ordered item number `n` (as written) at nesting `depth`,
 /// Word-style: `1.` -> `a.` -> `i.`, cycling for deeper levels. Both views
 /// paint ordered lists with this scheme (a deliberate divergence from
 /// CommonMark's digits-everywhere), so nesting is readable at a glance. A
-/// `0`, which has no letter or numeral, stays a digit.
+/// number written that has no short letter or numeral form stays digits:
+/// `0`, and past [`MAX_STYLED_NUMBER`] (a roman numeral grows by a letter
+/// per thousand).
 pub fn ordered_marker(depth: usize, n: u32) -> String {
     match depth % 3 {
-        _ if n == 0 => "0.".to_owned(),
+        _ if n == 0 || n > MAX_STYLED_NUMBER => format!("{n}."),
         0 => format!("{n}."),
         1 => format!("{}.", letters(n)),
         _ => format!("{}.", roman(n)),
@@ -1092,6 +1098,12 @@ mod tests {
         assert_eq!(ordered_marker(2, 9), "ix.");
         assert_eq!(ordered_marker(3, 2), "2."); // cycle restarts
         assert_eq!(ordered_marker(1, 0), "0.");
+        // A number written past the styled range stays digits: no label of
+        // millions of letters for `4294967295.`.
+        assert_eq!(ordered_marker(2, 3999), "mmmcmxcix.");
+        assert_eq!(ordered_marker(2, 4000), "4000.");
+        assert_eq!(ordered_marker(1, u32::MAX), "4294967295.");
+        assert_eq!(ordered_marker(2, u32::MAX), "4294967295.");
         assert_eq!(ordered_marker(2, 0), "0.");
     }
 
