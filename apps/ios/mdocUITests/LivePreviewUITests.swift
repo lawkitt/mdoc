@@ -34,7 +34,7 @@ final class LivePreviewUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        MdocUITest.tapIntoText(app)
         return (app, text)
     }
 

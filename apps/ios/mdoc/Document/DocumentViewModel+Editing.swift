@@ -47,7 +47,9 @@ extension DocumentViewModel {
         snapshot.phase != nil
     }
 
-    /// Edit: the keyboard comes up on the text; the review bar closes.
+    /// Edit: the review bar closes and Identities hide (ADR 0110). The
+    /// text view keeps its place; the keyboard comes up on a selection, or
+    /// waits for a tap in the text.
     func enterEditMode() {
         guard hasEditableText, !isEditing else { return }
         if let reason = editBlockedReason {
@@ -58,6 +60,7 @@ extension DocumentViewModel {
         toast = nil
         typing = TypingState(revision: snapshot.textRevision)
         if pane != .text && !layout.isRegular { show(.text) }
+        hideIdentitiesForEditing()
         isEditing = true
     }
 
@@ -71,6 +74,7 @@ extension DocumentViewModel {
         // The text as typed, before review shows it: the snapshot is older.
         applyReview(session.snapshot())
         isEditing = false
+        restoreIdentitiesAfterEditing()
         session.endTyping()
         typing.discovery?.cancel()
         typing.discovery = nil

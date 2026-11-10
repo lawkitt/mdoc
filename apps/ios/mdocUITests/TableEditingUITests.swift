@@ -26,10 +26,8 @@ final class TableEditingUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 30))
         edit.tap()
-        let hide = app.buttons["toolbar-hide-keyboard"]
-        XCTAssertTrue(hide.waitForExistence(timeout: 10), "the toolbar above the keyboard")
-        hide.tap()
-        XCTAssertTrue(hide.wait(until: NSPredicate(format: "exists == false"), timeout: 5))
+        // No selection: the keyboard waits for the tap in the cell (ADR 0110).
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
         let target = Self.cell(app, cell)
         // The cells take no touches in edit mode (the grid does): the
         // cell is found, and the grid under it tapped.

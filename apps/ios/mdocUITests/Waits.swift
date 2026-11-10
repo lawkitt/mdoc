@@ -85,6 +85,16 @@ extension MdocUITest {
         return latest
     }
 
+    /// A tap in the text, near its top left: in edit mode with no
+    /// selection the keyboard waits for one (ADR 0110). Waits for the
+    /// keyboard.
+    @MainActor
+    static func tapIntoText(_ app: XCUIApplication) {
+        let text = app.textViews["document-text"]
+        text.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 60, dy: 28)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "a tap in the text brings the keyboard")
+    }
+
     /// ⌘↓ from the hardware keyboard: the caret to the end of the text. The
     /// first hardware key after typing on the software keyboard hides that
     /// keyboard, and on a slow runner the key itself can be lost in the

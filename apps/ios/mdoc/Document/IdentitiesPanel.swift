@@ -59,7 +59,9 @@ struct IdentitiesDrawer<Content: View>: View {
             SideDrawer(
                 side: .trailing,
                 isOpen: Binding(get: { model.identitiesDrawerOpen }, set: { model.showIdentities($0) }),
-                closeLabel: "Close Identities"
+                closeLabel: "Close Identities",
+                // Hidden while editing: no edge swipe until Done (ADR 0110).
+                opensFromEdge: !model.isEditing
             ) {
                 IdentitiesPanel(model: model)
             } content: {

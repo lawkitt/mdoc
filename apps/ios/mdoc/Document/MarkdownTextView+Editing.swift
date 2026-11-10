@@ -299,6 +299,25 @@ extension MarkdownTextView.Coordinator {
         }
     }
 
+    /// On iPhone the Original covers the text in edit mode: the keyboard
+    /// goes, and comes back with the text, the caret where it was
+    /// (ADR 0110).
+    func followShown(_ view: CandidateTextView) {
+        guard parent.editing else {
+            focusOnReturn = false
+            return
+        }
+        if !parent.shown {
+            if view.isFirstResponder {
+                focusOnReturn = true
+                view.resignFirstResponder()
+            }
+        } else if focusOnReturn {
+            focusOnReturn = false
+            view.becomeFirstResponder()
+        }
+    }
+
     /// The caret moved: the reveal, the toolbar and the typing look follow.
     func followSelection(_ view: CandidateTextView) {
         lastSelection = view.selectedRange
@@ -368,8 +387,14 @@ extension CandidateTextView {
     }
 
     /// Switches edit mode on or off: editable, spellcheck and autocorrect
-    /// with it (smart quotes and dashes stay off), and the keyboard.
-    func setEditMode(_ on: Bool) {
+    /// with it (smart quotes and dashes stay off), and the keyboard. The
+    /// view, its place and its selection are kept (ADR 0110): entering with
+    /// a selection brings the keyboard up on it; with none nothing moves,
+    /// and the keyboard waits for a tap in the text, but for an empty text
+    /// (a new document), where there is nothing to read first. Done keeps a
+    /// selection selected. `shown` is false while the Original covers the
+    /// text: the keyboard waits for it.
+    func setEditMode(_ on: Bool, shown: Bool = true) {
         guard isEditable != on else { return }
         isEditable = on
         smartQuotesType = .no
@@ -382,19 +407,54 @@ extension CandidateTextView {
             : String(localized: "Underlined words are names mdoc found. Use the Candidates rotor to move between them.")
         watchStorage(on)
         guard on else {
-            resignFirstResponder()
+            if selectedRange.length > 0 && isFirstResponder {
+                // The selection stays, without the keyboard.
+                reloadInputViews()
+            } else {
+                resignFirstResponder()
+            }
             return
         }
-        // The caret starts where the reader is: at the first line in view,
-        // never where showing the text left the selection (its end). A
-        // selection made in review is kept.
-        if selectedRange.length == 0 {
-            let top = contentOffset.y + adjustedContentInset.top
-            let location = top <= 1 ? 0 : closestPosition(to: CGPoint(x: textContainerInset.left, y: top + 8))
-                .map { offset(from: beginningOfDocument, to: $0) } ?? 0
-            selectedRange = NSRange(location: location, length: 0)
+        guard shown else { return }
+        if selectedRange.length > 0 || textStorage.length == 0 {
+            if isFirstResponder { reloadInputViews() } else { becomeFirstResponder() }
+        } else if isFirstResponder {
+            resignFirstResponder()
         }
-        becomeFirstResponder()
+    }
+
+    /// Where the reader is: the character at the top of the view and how
+    /// far above the top its line starts.
+    struct ScrollAnchor {
+        var location: Int
+        var delta: CGFloat
+        var atTop: Bool
+    }
+
+    func scrollAnchor() -> ScrollAnchor? {
+        guard textStorage.length > 0, bounds.height > 0 else { return nil }
+        let top = contentOffset.y + adjustedContentInset.top
+        if top <= 1 { return ScrollAnchor(location: 0, delta: 0, atTop: true) }
+        guard let position = closestPosition(to: CGPoint(x: textContainerInset.left + 1, y: top + 1)) else { return nil }
+        let location = offset(from: beginningOfDocument, to: position)
+        guard let rect = laidOutRect(of: NSRange(location: location, length: 0)) else { return nil }
+        return ScrollAnchor(location: location, delta: rect.minY - top, atTop: false)
+    }
+
+    /// Scrolls back to `anchor` once the text is laid out again.
+    func scroll(to anchor: ScrollAnchor) {
+        let insets = adjustedContentInset
+        let highest = -insets.top
+        guard !anchor.atTop else {
+            setContentOffset(CGPoint(x: contentOffset.x, y: highest), animated: false)
+            return
+        }
+        layoutIfNeeded()
+        guard anchor.location <= textStorage.length,
+              let rect = laidOutRect(of: NSRange(location: anchor.location, length: 0)) else { return }
+        let lowest = max(highest, laidOutContentHeight + insets.bottom - bounds.height)
+        let y = min(max(rect.minY - anchor.delta - insets.top, highest), lowest)
+        setContentOffset(CGPoint(x: contentOffset.x, y: y), animated: false)
     }
 
     /// The selected source, as typed: never what VoiceOver hears.

@@ -259,8 +259,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         shot("42-markdown-edit-mode")
     }
 
@@ -278,7 +278,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         app.typeKey(.upArrow, modifierFlags: .command)
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value BEGINSWITH %@", "# "), timeout: 5))
         shot("43-live-preview-heading")
@@ -304,6 +305,8 @@ final class SurveyUITests: XCTestCase {
         let edit = app.buttons["edit-button"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
         XCTAssertTrue(app.buttons["toolbar-bold"].waitForExistence(timeout: 10))
         app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText("\nPay **monthly**")

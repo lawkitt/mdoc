@@ -258,6 +258,31 @@ that only the view model changes; views send intents
   mentioned most); one Undo takes the selection back. Rows in Select have
   no swipes and no long-press menu: a tap ticks, the ≡ handle drags.
 
+## Edit mode
+
+[ADR 0109](adr/0109-mobile-markdown-editor.md), polished by
+[ADR 0110](adr/0110-mobile-editor-polish.md); code in `DocumentScreen`,
+`MarkdownTextView+Editing` and `DocumentViewModel+Editing`.
+
+- **One text view** serves review, edit mode and the Text/Original
+  switch: the pencil, Done and the switch keep the line at the top of the
+  view, the caret and a selection. On iPhone the text view stays alive,
+  hidden, under the Original.
+- **Entering** (the pencil, ⌘E): with a selection the keyboard comes up
+  on it; with none nothing moves, names dim and the keyboard waits for a
+  tap in the text. A new, empty document opens with the keyboard up.
+- **The bar:** ☰, the title (or the Text/Original switch), Done as a
+  checkmark in its own tinted glass capsule (`.glassProminent`, VoiceOver
+  "Done editing", ⌘E), and ⋯. In review: the pencil, Identities and ⋯ in
+  one capsule. The title truncates at its tail in the room between ☰ and
+  the trailing buttons, centred.
+- **The Original while editing** (iPhone): the switch stays; Original
+  hides the keyboard and keeps edit mode on, and Text brings the keyboard
+  back at the same caret.
+- **Identities are hidden:** on iPhone no button and no right-edge swipe,
+  and an open drawer closes; on iPad the inspector or the right column
+  gives way to the Original and comes back on Done if it was showing.
+
 ## Gestures
 
 Every gesture also has a visible control and a VoiceOver action; no action
@@ -272,7 +297,7 @@ exists only as a gesture ([ADR 0098](adr/0098-mobile-review-bar.md)).
 | Identities row, in Select | Drag ≡ onto another row | Same as: the two names become one |
 | Anywhere | Shake, three-finger swipe | Undo and redo |
 | Left edge (iPhone) | Swipe right | The sidebar (with Identities open, it closes Identities); tap the sliver, or swipe left from it or the panel's inner edge, to close |
-| Right edge (iPhone, a document open) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
+| Right edge (iPhone, a document open, not editing) | Swipe left | Identities; tap the sliver, or swipe right from it or the panel's inner edge, to close |
 
 No swipes on the document text.
 

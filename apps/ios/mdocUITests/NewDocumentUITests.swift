@@ -114,7 +114,9 @@ final class NewDocumentUITests: XCTestCase {
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS 'EMAIL_1'"), timeout: 10))
 
         app.buttons["edit-button"].tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
+        MdocUITest.tapIntoText(app)
+        app.typeKey(.downArrow, modifierFlags: .command)
         app.typeText(" Copy bob@example.com ")
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS 'bob@example.com'"), timeout: 10))
         app.buttons["done-editing"].tap()
