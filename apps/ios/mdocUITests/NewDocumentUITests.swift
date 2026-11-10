@@ -115,8 +115,9 @@ final class NewDocumentUITests: XCTestCase {
 
         app.buttons["edit-button"].tap()
         XCTAssertTrue(app.buttons["done-editing"].waitForExistence(timeout: 5))
-        MdocUITest.tapIntoText(app)
-        app.typeKey(.downArrow, modifierFlags: .command)
+        // Below the text: the caret at its end, and the keyboard.
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         app.typeText(" Copy bob@example.com ")
         XCTAssertTrue(text.wait(until: NSPredicate(format: "value CONTAINS 'bob@example.com'"), timeout: 10))
         app.buttons["done-editing"].tap()

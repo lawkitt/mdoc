@@ -30,6 +30,30 @@ final class IdentitiesModelTests: XCTestCase {
         XCTAssertFalse(model.wantsIdentities, "closing the drawer is not wanting them")
     }
 
+    /// Identities are hidden while editing (ADR 0110): edit mode closes
+    /// the drawer and the iPad inspector, opening them waits for Done, and
+    /// Done brings back the inspector that showed, never the drawer.
+    func testIdentitiesHideWhileEditing() throws {
+        let model = try model()
+        model.windowChanged(to: .wide)
+        model.showIdentities(true)
+        model.enterEditMode()
+        XCTAssertTrue(model.isEditing)
+        XCTAssertFalse(model.identitiesShowing, "the inspector gives way")
+        model.showIdentities(true)
+        XCTAssertFalse(model.identitiesShowing, "nothing opens them while editing")
+        model.doneEditing()
+        XCTAssertTrue(model.identitiesShowing, "Done brings the inspector back")
+
+        model.windowChanged(to: .compact)
+        model.showIdentities(true)
+        XCTAssertTrue(model.identitiesDrawerOpen)
+        model.enterEditMode()
+        XCTAssertFalse(model.identitiesDrawerOpen, "edit mode closes the drawer")
+        model.doneEditing()
+        XCTAssertFalse(model.identitiesDrawerOpen, "Done leaves the drawer shut over the text")
+    }
+
     func testTheStateButtonReplacesThenSwitchesToKept() throws {
         let model = try model()
         let identity = try XCTUnwrap(model.snapshot.identities.first { $0.state == .proposed })

@@ -18,6 +18,10 @@ struct TypingState {
     /// Commits marked text in the view and sends what it has not sent yet:
     /// Done runs it first (the edit view sets it).
     var flush: (@MainActor () -> Void)?
+    /// Leaves edit mode in the view, keyboard and all, before the screen
+    /// updates: hiding the keyboard inside SwiftUI's update looped there
+    /// (Done runs it after `flush`; the view sets it).
+    var leave: (@MainActor () -> Void)?
 
     /// A snapshot newer than any typed edit came: it says what Undo does.
     mutating func settled(at snapshot: DocumentSnapshot) {
@@ -71,6 +75,7 @@ extension DocumentViewModel {
         linkDraft = nil
         // Marked (IME) text is committed and sent while typing still counts.
         typing.flush?()
+        typing.leave?()
         // The text as typed, before review shows it: the snapshot is older.
         applyReview(session.snapshot())
         isEditing = false

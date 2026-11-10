@@ -26,6 +26,8 @@ struct EditActions {
     /// Hands the model what commits marked text and syncs the view, for
     /// Done to run before it reads the core's text.
     var setFlush: (@escaping @MainActor () -> Void) -> Void
+    /// Hands the model what leaves edit mode in the view, for Done.
+    var setLeave: (@escaping @MainActor () -> Void) -> Void = { _ in }
 }
 
 extension EditActions {
@@ -41,7 +43,8 @@ extension EditActions {
             canUndo: { [weak model] in model?.canUndo ?? false },
             canRedo: { [weak model] in model?.canRedo ?? false },
             revision: { [weak model] in model?.typing.revision },
-            setFlush: { [weak model] in model?.typing.flush = $0 })
+            setFlush: { [weak model] in model?.typing.flush = $0 },
+            setLeave: { [weak model] in model?.typing.leave = $0 })
     }
 }
 
@@ -92,6 +95,7 @@ extension MarkdownTextView.Coordinator {
             if view.markedTextRange != nil { view.unmarkText() }
             self.bridge.didChange(view)
         }
+        actions?.setLeave { [weak view] in view?.setEditMode(false) }
         bridge.onTyped = { [weak self] typed in self?.shownTextChanged(to: typed.textRevision) }
         bridge.onResync = { [weak self, weak view] in
             guard let self, let view, let actions else { return }
