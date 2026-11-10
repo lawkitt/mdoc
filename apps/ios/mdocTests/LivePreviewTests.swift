@@ -133,6 +133,49 @@ final class LivePreviewTests: XCTestCase {
         harness.session.snapshot().markdown
     }
 
+    // MARK: The caret on an empty line (ADR 0110)
+
+    /// The caret's height where it rests now, and the body line's.
+    func caretHeight(_ harness: Harness) throws -> (caret: CGFloat, body: CGFloat) {
+        harness.view.layoutIfNeeded()
+        let end = try XCTUnwrap(harness.view.selectedTextRange?.end)
+        let body = MarkdownStyler.font(.body, traits: harness.view.traitCollection)
+        return (harness.view.caretRect(for: end).height, body.lineHeight)
+    }
+
+    func assertBodyTyping(_ harness: Harness, _ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let (caret, body) = try caretHeight(harness)
+        XCTAssertGreaterThanOrEqual(caret, body * 0.95, "the caret is a body line tall \(message)", file: file, line: line)
+        let font = try XCTUnwrap(harness.view.typingAttributes[.font] as? UIFont, file: file, line: line)
+        XCTAssertEqual(font.pointSize, MarkdownStyler.font(.body, traits: harness.view.traitCollection).pointSize,
+                       "what is typed next is body-sized \(message)", file: file, line: line)
+    }
+
+    func testTheCaretOnAnEmptyLineIsABodyLineTall() throws {
+        for rendered in [true, false] {
+            let harness = try harness(rendered: rendered)
+            let mode = rendered ? "in live preview" : "with Show Markdown"
+            // A blank line between paragraphs.
+            let blank = location(of: "The **tenant**", in: harness) - 1
+            XCTAssertEqual(harness.string.character(at: blank), 0x0A)
+            caret(harness, at: blank)
+            try assertBodyTyping(harness, "on a blank line \(mode)")
+            // It shrinks back once the caret leaves, as a whole restyle draws it.
+            caret(harness, at: location(of: "monthly", in: harness))
+            assertMatchesAWholeRestyle(harness, mode)
+            // After Return at the end of a paragraph, and after a heading.
+            caret(harness, at: location(of: "Last line.", in: harness) + 10)
+            type(harness, "\n")
+            try assertBodyTyping(harness, "after Return \(mode)")
+            type(harness, "x")
+            XCTAssertTrue(harness.shown.hasSuffix("x"))
+            caret(harness, at: location(of: "# Lease", in: harness) + 7)
+            type(harness, "\n")
+            try assertBodyTyping(harness, "after a heading \(mode)")
+            assertMatchesAWholeRestyle(harness, mode)
+        }
+    }
+
     // MARK: The reveal rule
 
     func testTheCaretsBoldShowsItsMarkersDimmed() throws {
@@ -497,6 +540,7 @@ final class LivePreviewTests: XCTestCase {
             harness.view.tableViews.map { ($0.table.anchor, $0.table) }, uniquingKeysWith: { first, _ in first })
         let styling = MarkdownStyling(markdown: text)
         styler.revealed = preview.visible + (preview.caretLines.map { LivePreview.shownLines(in: styling, caret: $0) } ?? [])
+        styler.caretLine = preview.caretLine
         let expected = styler.document(markdown: text, styling: styling, candidates: preview.candidates).text
         let actual = harness.view.textStorage
         XCTAssertEqual(expected.length, actual.length, file: file, line: line)

@@ -221,10 +221,22 @@ extension MarkdownTextView.Coordinator {
             view.typingAttributes = MarkdownStyler.hiddenAttributes
             return
         }
+        let body: [NSAttributedString.Key: Any] = [
+            .font: MarkdownStyler.font(.body, traits: view.traitCollection),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: MarkdownStyler.paragraph(),
+        ]
+        // An empty line (after Return, after a heading, between paragraphs)
+        // types body text, and its caret is a body line tall (ADR 0110).
+        let content = (storage.string as NSString).substring(with: line).trimmingCharacters(in: .newlines)
+        if content.isEmpty {
+            view.typingAttributes = body
+            return
+        }
         var attributes = storage.attributes(at: location, effectiveRange: nil)
         for key in MarkdownStyler.candidateKeys { attributes[key] = nil }
         if attributes[.mdocHidden] != nil {
-            attributes = [.font: MarkdownStyler.font(.body, traits: view.traitCollection), .foregroundColor: UIColor.label]
+            attributes = body
         }
         view.typingAttributes = attributes
     }
