@@ -27,6 +27,11 @@ struct LaunchConfiguration: Sendable, Equatable {
     /// `MDOC_KEEP_LIBRARY=1`: a relaunch in a UI test opens the test library
     /// as the last launch left it, to check what was saved.
     var keepsLibrary = false
+    /// `MDOC_UI_RULES_FIND_NAMES=1`: below the floor, Find names and Find
+    /// names again show as at the detector tier and run the structured
+    /// rules in the detector's place, so a UI test finds an email it typed
+    /// without the model (ADR 0109). The app never offers this tier.
+    var rulesFindNames = false
 
     init() {}
 
@@ -38,6 +43,7 @@ struct LaunchConfiguration: Sendable, Equatable {
         realDownloads = environment["MDOC_REAL_DOWNLOADS"] == "1"
         detectorTier = environment["MDOC_UI_DETECTOR_TIER"] == "1"
         keepsLibrary = environment["MDOC_KEEP_LIBRARY"] == "1"
+        rulesFindNames = environment["MDOC_UI_RULES_FIND_NAMES"] == "1"
     }
 
     /// This process's launch, parsed on first use.

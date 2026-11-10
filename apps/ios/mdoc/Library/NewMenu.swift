@@ -1,14 +1,22 @@
 import SwiftUI
 import VisionKit
 
-/// The New menu: Paste, Files, Photos, Scan. The first item opens nearest
-/// the button, so the camera is last, away from it, and a double tap cannot
-/// open it (ADR 0088). Each opens its add flow through `Presenter`, shared
-/// by Start, the sidebar and the Documents page.
+/// The New menu: New document, Paste, Files, Photos, Scan. The first item
+/// opens nearest the button, so the camera is last, away from it, and a
+/// double tap cannot open it (ADR 0088). New document opens an empty
+/// document in edit mode (ADR 0109); the others open their add flow through
+/// `Presenter`. Shared by the sidebar and the Documents page.
 struct NewMenuItems: View {
     let app: AppModel
 
     var body: some View {
+        Button {
+            app.newDocument()
+        } label: {
+            Label("New document", systemImage: "square.and.pencil")
+        }
+        .accessibilityHint(Text("An empty document to write in."))
+        .accessibilityIdentifier("new-document")
         Button {
             app.navigator.present(.intake(.paste))
         } label: {

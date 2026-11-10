@@ -96,6 +96,8 @@ struct LibraryDocument: Identifiable, Hashable, Sendable {
     var updated: Date
     /// Every candidate, decided or not: none after a scan is "Nothing found".
     var candidateCount = 0
+    /// How it began: Try a sample finds the sample by it (ADR 0109).
+    var origin: DocumentOrigin = .ordinary
 }
 
 struct LibrarySnapshot: Sendable, Equatable {
@@ -119,6 +121,11 @@ enum ImportSource: Sendable, Equatable {
     case scan([URL])
     case photos([URL])
     case text(String)
+    /// New document: empty, named after its first line until renamed
+    /// (ADR 0109).
+    case newDocument
+    /// Try a sample's text: the document Try a sample restores.
+    case sample(String)
 }
 
 /// Each prepared document starts a new case unless the user adds it to an
@@ -283,6 +290,9 @@ struct DocumentSnapshot: Equatable, Sendable {
     /// The core's count of mentions in each state; nil for a snapshot the
     /// core did not make, which counts `candidates`.
     var counts: MentionCounts? = nil
+    /// How it began: a new document follows its first line and is
+    /// discarded when left empty; the sample restores (ADR 0109).
+    var origin: DocumentOrigin = .ordinary
 
     var pendingCount: Int {
         counts?.proposed ?? candidates.filter { $0.state == .proposed }.count

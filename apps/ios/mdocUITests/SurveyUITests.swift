@@ -290,6 +290,24 @@ final class SurveyUITests: XCTestCase {
         shot("44-live-preview-bold")
     }
 
+    /// New document (ADR 0109, slice 6): the sidebar's + menu with New
+    /// document first, then a new document in edit mode, named after its
+    /// first line once typing pauses.
+    @MainActor
+    func test9NewDocument() throws {
+        let app = launch(seed: nil)
+        MdocUITest.revealSidebar(app)
+        app.buttons["new-menu"].firstMatch.tap()
+        let item = app.collectionViews.buttons["New document"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        shot("50-new-menu")
+        item.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        app.typeText("# Lease agreement\n\nThe tenant pays the rent on the first day of each month.")
+        XCTAssertTrue(app.buttons["title-menu"].wait(until: NSPredicate(format: "label == 'Lease agreement'"), timeout: 10))
+        shot("51-new-document-named")
+    }
+
     /// Below the detector floor (ADR 0088): no setup card on Home; where
     /// Find names would be, the document says it cannot find names; Settings
     /// says the same.

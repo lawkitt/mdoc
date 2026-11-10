@@ -171,6 +171,14 @@ final class LibraryModel {
         return try library.undoMove(move)
     }
 
+    /// A new document left empty goes, with the case made for it
+    /// (ADR 0109); true when it went.
+    func discardIfEmpty(_ id: DocumentID) throws -> Bool {
+        let gone = try library.discardIfEmpty(id)
+        if gone { refresh() }
+        return gone
+    }
+
     /// Delete's first half: the document leaves the lists while its toast
     /// offers Undo.
     func hide(_ id: DocumentID) {

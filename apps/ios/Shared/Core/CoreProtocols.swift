@@ -25,6 +25,9 @@ protocol Library: AnyObject, Sendable {
     /// Stores the document and returns its session, ready for `recognize`.
     func importDocument(_ source: ImportSource, title: String, into caseChoice: CaseChoice) throws -> any DocumentSession
     func deleteDocument(_ document: DocumentID) throws
+    /// A new document left empty goes, with the case made for it, when it
+    /// is left (ADR 0109). True when it went; any other document stays.
+    func discardIfEmpty(_ document: DocumentID) throws -> Bool
     /// Restores a reply in place with one case's mapping. Needs no model,
     /// so the share extension can call it.
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult
@@ -79,6 +82,7 @@ extension Library {
     func renameCase(_ caseID: CaseID, to name: String) throws { throw CoreError.noCase }
     func moveDocument(_ document: DocumentID, to target: CaseChoice) throws -> CaseMove { throw CoreError.notFound }
     func undoMove(_ move: CaseMove) throws -> CaseMove { throw CoreError.noCase }
+    func discardIfEmpty(_ document: DocumentID) throws -> Bool { false }
 }
 
 /// One document's import, OCR, review and hand-off.
@@ -160,6 +164,10 @@ protocol DocumentSession: AnyObject, Sendable {
     /// After a typing pause: the names under review found again in what
     /// was typed. Safe off the main thread; typing goes on meanwhile.
     func discover() throws -> DocumentSnapshot
+    /// A new document's title follows its first line until the user
+    /// renames it (ADR 0109): the title it took, or nil when nothing
+    /// changed. Safe off the main thread.
+    func followFirstLine() throws -> String?
 }
 
 /// Models that fit the device, and verifying and installing downloads.

@@ -33,7 +33,8 @@ final class DocumentViewModel {
     let findsNames: Bool
     private let jobs: LongJobRunner
     private let storage: MdocStorage
-    private let onChange: () -> Void
+    /// The lists show what changed: a title, a phase.
+    let onChange: () -> Void
 
     private(set) var snapshot: DocumentSnapshot
     /// The review bar: the name under review, its scope, the focus, the
@@ -62,6 +63,9 @@ final class DocumentViewModel {
     var findBarRequest = 0
     /// Try a sample's names, proposed once recognition has read the text.
     var storedNames: [SampleDocument.Name]?
+    /// New document: edit mode starts once its (empty) text is read
+    /// (ADR 0109).
+    var editsWhenRead = false
     /// Identities wanted: a regular window shows them in the inspector or
     /// the right column. The user's intent, apart from how it shows
     /// (ADR 0104).
@@ -238,6 +242,10 @@ final class DocumentViewModel {
             applyReview(snapshot)
             if let names = storedNames, snapshot.phase != nil {
                 proposeStored(names)
+            }
+            if editsWhenRead, snapshot.phase != nil {
+                editsWhenRead = false
+                enterEditMode()
             }
         case .cancelled:
             applyReview(session.snapshot())

@@ -40,14 +40,17 @@ final class AppModel {
         downloader: any ModelDownloader,
         network: any NetworkConditions,
         preferences: Preferences = .shared,
-        startupError: String? = nil
+        startupError: String? = nil,
+        findsNamesWithRules: Bool = false
     ) {
         self.startupError = startupError
         self.core = core
         self.storage = storage
         self.preferences = preferences
         let jobs = LongJobRunner(background: background)
-        let library = LibraryModel(library: core.library, findsNames: core.setup.snapshot().tier == .detector)
+        // The UI tests' stand-in finds names with the rules (`rulesFindNames`).
+        let findsNames = findsNamesWithRules || core.setup.snapshot().tier == .detector
+        let library = LibraryModel(library: core.library, findsNames: findsNames)
         let setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, preferences: preferences)
         self.jobs = jobs
         self.library = library
@@ -56,7 +59,7 @@ final class AppModel {
         documents = DocumentStore { id in
             DocumentViewModel(
                 session: try core.library.session(for: id), jobs: jobs, storage: storage,
-                findsNames: setup.snapshot.tier == .detector
+                findsNames: findsNamesWithRules || setup.snapshot.tier == .detector
             ) { [weak library] in
                 library?.refresh()
             }
@@ -89,7 +92,8 @@ final class AppModel {
             #endif
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
-                downloader: models, network: NetworkMonitor(), preferences: preferences)
+                downloader: models, network: NetworkMonitor(), preferences: preferences,
+                findsNamesWithRules: launch.rulesFindNames)
             if let seed = launch.seedFile {
                 UITestSeed.run(UITestSeed.fixture(seed), in: app)
             }
@@ -161,11 +165,37 @@ final class AppModel {
     /// first (ADR 0104: the save follows the tap), then the models of
     /// documents no longer open go.
     private func show(_ destination: Destination) {
-        if let open = navigator.openDocument, destination != .document(open) {
+        if let open = navigator.openDocument, destination != .document(open), !discardIfEmpty(open) {
+            followFirstLine(of: open)
             saveChanges(of: open)
         }
         navigator.show(destination)
         evictClosedDocuments()
+    }
+
+    /// A new document left before its typing paused takes its first line's
+    /// title now, as the pause would have (ADR 0109).
+    private func followFirstLine(of id: DocumentID) {
+        guard let model = documents.model(for: id), model.snapshot.origin == .new else { return }
+        do {
+            if try model.session.followFirstLine() != nil { library.refresh() }
+        } catch {
+            present(error)
+        }
+    }
+
+    /// A new document left empty goes when it is left, with its case: no
+    /// empty row stays in the lists (ADR 0109). True when it went.
+    private func discardIfEmpty(_ id: DocumentID) -> Bool {
+        guard documents.model(for: id)?.snapshot.origin == .new else { return false }
+        do {
+            guard try library.discardIfEmpty(id) else { return false }
+        } catch {
+            present(error)
+            return false
+        }
+        documents.remove(id)
+        return true
     }
 
     /// ⌘K: the sidebar's search.
@@ -267,6 +297,16 @@ final class AppModel {
 
     // MARK: Intake
 
+    /// New document (ADR 0109): an empty document in a case of its own,
+    /// open in edit mode with the keyboard up. It is named after its first
+    /// line until renamed, and goes if it is left empty.
+    func newDocument() {
+        if case .settings = navigator.presentation { navigator.dismiss() }
+        let title = String(localized: "New document")
+        let pending = PendingImport(source: .newDocument, suggestedTitle: title)
+        finishImport(pending, title: title, into: .newCase(name: title))?.editsOnceRead()
+    }
+
     /// Imports into the chosen case, opens the document and starts
     /// recognition, which the user asked for by adding it.
     @discardableResult
@@ -315,15 +355,32 @@ final class AppModel {
     }
 
     /// Try a sample (ADR 0099): the made-up agreement in the phone's
-    /// language, in a case of its own, opened for review.
+    /// language, in a case of its own, opened for review. The sample is
+    /// editable; trying it again opens it with its text as it came, asking
+    /// first when it was edited (ADR 0109).
     func trySample() {
         if case .settings = navigator.presentation { navigator.dismiss() }
+        if let sample = library.documents.first(where: { $0.origin == .sample }) {
+            open(sample.id)
+            guard let model = documents.model(for: sample.id), navigator.openDocument == sample.id else { return }
+            if !SampleDocument.isOriginal(model.snapshot.markdown) {
+                navigator.present(.restoreSample(sample.id))
+            }
+            return
+        }
         let sample = SampleDocument.forLanguages()
         // Its names come in as proposals, so it reviews before the name
         // finder is downloaded; only into the sample itself, never the
         // document open before when the import fails.
-        let pending = PendingImport(source: .text(sample.text), suggestedTitle: sample.title)
+        let pending = PendingImport(source: .sample(sample.text), suggestedTitle: sample.title)
         finishImport(pending, title: sample.title, into: .newCase(name: sample.title))?.proposeStored(sample.names)
+    }
+
+    /// "Restore the sample?" answered Restore: its text as it came, with its
+    /// names proposed again. One step: Undo brings the edits back.
+    func restoreSample(_ id: DocumentID) {
+        guard let model = documents.model(for: id) else { return }
+        model.restore(SampleDocument.forLanguages())
     }
 
     // MARK: Rename and Move to case (ADR 0102)

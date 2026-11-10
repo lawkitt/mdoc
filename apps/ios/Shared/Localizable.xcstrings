@@ -263,6 +263,9 @@
     "also %@" : {
 
     },
+    "An empty document to write in." : {
+
+    },
     "Another job is running. Try again when it finishes." : {
 
     },
@@ -498,6 +501,9 @@
     "Find names" : {
 
     },
+    "Find names again" : {
+
+    },
     "Find names stopped: %@" : {
 
     },
@@ -603,6 +609,9 @@
     "Kept" : {
 
     },
+    "Leave edit mode to find names" : {
+
+    },
     "License" : {
 
     },
@@ -610,6 +619,9 @@
 
     },
     "Long-press any name for more" : {
+
+    },
+    "Looks for names in the text as it is now, typed text too." : {
 
     },
     "Looks like" : {
@@ -1026,6 +1038,9 @@
     "Restore" : {
 
     },
+    "Restore the sample?" : {
+
+    },
     "Restore with mdoc" : {
 
     },
@@ -1313,6 +1328,9 @@
 
     },
     "Your carrier may charge for the data." : {
+
+    },
+    "Your edits to it will be lost." : {
 
     }
   },
